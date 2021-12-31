@@ -76,21 +76,13 @@ where
     fn cummax(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::min_value();
 
-        // safety: we know the iterators len
-        let mut ca: Self = unsafe {
-            match reverse {
-                false => self
-                    .into_iter()
-                    .scan(init, det_max)
-                    .trust_my_length(self.len())
-                    .collect_trusted(),
-                true => self
-                    .into_iter()
-                    .rev()
-                    .scan(init, det_max)
-                    .trust_my_length(self.len())
-                    .collect_reversed(),
-            }
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_max).collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_max)
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
@@ -99,21 +91,13 @@ where
 
     fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::max_value();
-        // safety: we know the iterators len
-        let mut ca: Self = unsafe {
-            match reverse {
-                false => self
-                    .into_iter()
-                    .scan(init, det_min)
-                    .trust_my_length(self.len())
-                    .collect_trusted(),
-                true => self
-                    .into_iter()
-                    .rev()
-                    .scan(init, det_min)
-                    .trust_my_length(self.len())
-                    .collect_reversed(),
-            }
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_min).collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_min)
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
@@ -122,21 +106,13 @@ where
 
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
-        // safety: we know the iterators len
-        let mut ca: Self = unsafe {
-            match reverse {
-                false => self
-                    .into_iter()
-                    .scan(init, det_sum)
-                    .trust_my_length(self.len())
-                    .collect_trusted(),
-                true => self
-                    .into_iter()
-                    .rev()
-                    .scan(init, det_sum)
-                    .trust_my_length(self.len())
-                    .collect_reversed(),
-            }
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_sum).collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_sum)
+                .collect_reversed(),
         };
 
         ca.rename(self.name());
@@ -145,21 +121,13 @@ where
 
     fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
-        // safety: we know the iterators len
-        let mut ca: Self = unsafe {
-            match reverse {
-                false => self
-                    .into_iter()
-                    .scan(init, det_prod)
-                    .trust_my_length(self.len())
-                    .collect_trusted(),
-                true => self
-                    .into_iter()
-                    .rev()
-                    .scan(init, det_prod)
-                    .trust_my_length(self.len())
-                    .collect_reversed(),
-            }
+        let mut ca: Self = match reverse {
+            false => self.into_iter().scan(init, det_prod).collect_trusted(),
+            true => self
+                .into_iter()
+                .rev()
+                .scan(init, det_prod)
+                .collect_reversed(),
         };
 
         ca.rename(self.name());

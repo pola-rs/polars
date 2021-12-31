@@ -10,9 +10,20 @@ fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    //  we know that iterators length
-    unsafe {
-        ca.into_iter()
+    ca.into_iter()
+        .scan(None, |previous, opt_v| match opt_v {
+            Some(value) => {
+                *previous = Some(value);
+                Some(Some(value))
+            }
+            None => Some(*previous),
+        })
+        .collect_trusted()
+}
+
+macro_rules! impl_fill_forward {
+    ($ca:ident) => {{
+        $ca.into_iter()
             .scan(None, |previous, opt_v| match opt_v {
                 Some(value) => {
                     *previous = Some(value);
@@ -20,26 +31,7 @@ where
                 }
                 None => Some(*previous),
             })
-            .trust_my_length(ca.len())
             .collect_trusted()
-    }
-}
-
-macro_rules! impl_fill_forward {
-    ($ca:ident) => {{
-        //  we know that iterators length
-        unsafe {
-            $ca.into_iter()
-                .scan(None, |previous, opt_v| match opt_v {
-                    Some(value) => {
-                        *previous = Some(value);
-                        Some(Some(value))
-                    }
-                    None => Some(*previous),
-                })
-                .trust_my_length($ca.len())
-                .collect_trusted()
-        }
     }};
 }
 
@@ -47,9 +39,22 @@ fn fill_backward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    //  we know that iterators length
-    unsafe {
-        ca.into_iter()
+    ca.into_iter()
+        .rev()
+        .scan(None, |previous, opt_v| match opt_v {
+            Some(value) => {
+                *previous = Some(value);
+                Some(Some(value))
+            }
+            None => Some(*previous),
+        })
+        .collect_reversed()
+}
+
+macro_rules! impl_fill_backward {
+    ($ca:ident, $ChunkedArray:ty) => {{
+        let ca: $ChunkedArray = $ca
+            .into_iter()
             .rev()
             .scan(None, |previous, opt_v| match opt_v {
                 Some(value) => {
@@ -58,27 +63,7 @@ where
                 }
                 None => Some(*previous),
             })
-            .trust_my_length(ca.len())
-            .collect_reversed()
-    }
-}
-
-macro_rules! impl_fill_backward {
-    ($ca:ident, $ChunkedArray:ty) => {{
-        //  we know that iterators length
-        let ca: $ChunkedArray = unsafe {
-            $ca.into_iter()
-                .rev()
-                .scan(None, |previous, opt_v| match opt_v {
-                    Some(value) => {
-                        *previous = Some(value);
-                        Some(Some(value))
-                    }
-                    None => Some(*previous),
-                })
-                .trust_my_length($ca.len())
-                .collect_trusted()
-        };
+            .collect_trusted();
         ca.into_iter().rev().collect_trusted()
     }};
 }

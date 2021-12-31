@@ -9,6 +9,7 @@ use std::ptr::NonNull;
 
 #[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
+    len: usize,
     series_container: Pin<Box<Series>>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
@@ -33,8 +34,14 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
             })
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
 }
 
+// # Safety
+// we correctly implemented size_hint
 #[cfg(feature = "private")]
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
@@ -66,6 +73,7 @@ impl ListChunked {
         let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
 
         AmortizedListIter {
+            len: self.len(),
             series_container,
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,

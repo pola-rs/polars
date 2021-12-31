@@ -1,7 +1,6 @@
 mod groups;
 
 use crate::prelude::*;
-use crate::utils::CustomIterTools;
 use num::Bounded;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::borrow::Cow;
@@ -72,11 +71,7 @@ where
                             let item = tuples.last().map(|_| rhs_idx - 1);
 
                             // we know the iterators len
-                            let iter = unsafe {
-                                std::iter::repeat(item)
-                                    .take(remaining)
-                                    .trust_my_length(remaining)
-                            };
+                            let iter = std::iter::repeat(item).take(remaining);
                             tuples.extend_trusted_len(iter);
 
                             return Ok(tuples);

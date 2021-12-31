@@ -3,7 +3,7 @@ use crate::duration::Duration;
 use crate::groupby::{groupby, ClosedWindow, GroupTuples, TimeUnit};
 use crate::window::Window;
 use chrono::prelude::*;
-use polars_arrow::arrow::temporal_conversions::timestamp_ns_to_datetime;
+use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
 
 fn print_ns(ts: &[i64]) {
     for ts in ts {
