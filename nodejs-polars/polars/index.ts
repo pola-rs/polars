@@ -54,6 +54,9 @@ namespace pl {
   export import readParquet = io.readParquet;
   export import readJSON = io.readJSON;
 
+  export import readCSVStream = io.readCSVStream;
+  export import readJSONStream = io.readJSONStream;
+
   // lazy
   export import col = lazy.col
   export import cols = lazy.cols

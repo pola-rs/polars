@@ -1,5 +1,6 @@
 import pl from "@polars";
 import path from "path";
+import {Stream} from "stream";
 // eslint-disable-next-line no-undef
 const csvpath = path.resolve(__dirname, "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
@@ -83,5 +84,24 @@ describe("scan", () => {
       expect(df.shape).toStrictEqual({height: 4, width: 4});
     });
     it.todo("can read from a stream");
+  });
+});
+
+describe("stream", () => {
+  test.only("readCSV", async () => {
+    const readStream = new Stream.Readable({read(){}});
+    readStream.push(`a,b\n`);
+    readStream.push(`1,2\n`);
+    readStream.push(`2,2\n`);
+    readStream.push(`3,2\n`);
+    readStream.push(`4,2\n`);
+    readStream.push(null);
+    const expected = pl.DataFrame({
+      a: pl.Series("a", [1n, 2n, 3n, 4n], pl.Int64),
+      b: pl.Series("b", [2n, 2n, 2n, 2n], pl.Int64)
+    });
+    const df = await pl.readCSVStream(readStream);
+    expect(df).toFrameEqual(expected);
+
   });
 });
