@@ -6,6 +6,7 @@ use arrow::types::NativeType;
 use num::{Float, NumCast};
 use std::any::Any;
 use std::fmt::Debug;
+use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -99,8 +100,8 @@ fn rolling_apply_quantile<T, Fo, Fa>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[T], f64, QuantileInterpolOptions) -> f64,
-    T: Debug,
+    Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
+    T: Debug + NativeType,
 {
     let len = values.len();
     let out = (0..len)
@@ -109,20 +110,20 @@ where
             let vals = unsafe { values.get_unchecked(start..end) };
             aggregator(vals, quantile, interpolation)
         })
-        .collect_trusted::<Vec<f64>>();
+        .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
-        DataType::Float64,
+        T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
     ))
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rolling_apply_weighted_quantile<T, K, Fo, Fa>(
-    values: &[T],
-    argument: f64,
+fn rolling_apply_convolve_quantile<Fo, Fa>(
+    values: &[f64],
+    quantile: f64,
     interpolation: QuantileInterpolOptions,
     window_size: usize,
     min_periods: usize,
@@ -132,26 +133,22 @@ fn rolling_apply_weighted_quantile<T, K, Fo, Fa>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[(T, f64)], f64, QuantileInterpolOptions) -> K,
-    K: NativeType,
-    T: Debug + Copy,
+    Fa: Fn(&[f64], f64, QuantileInterpolOptions) -> f64,
 {
     assert_eq!(weights.len(), window_size);
-    let mut buf: Vec<(T, f64)> = Vec::with_capacity(window_size);
+    let mut buf = vec![0.0; window_size];
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
             let vals = unsafe { values.get_unchecked(start..end) };
-            buf = vals
-                .iter()
-                .zip(weights.iter())
-                .map(|(&x, &y)| (x, y))
-                .collect();
+            buf.iter_mut()
+                .zip(vals.iter().zip(weights))
+                .for_each(|(b, (v, w))| *b = *v * *w);
 
-            aggregator(&buf, argument, interpolation)
+            aggregator(&buf, quantile, interpolation)
         })
-        .collect_trusted::<Vec<K>>();
+        .collect_trusted::<Vec<f64>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
@@ -191,7 +188,15 @@ pub fn rolling_median<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + std::iter::Sum<T> + std::cmp::PartialOrd + num::ToPrimitive,
+    T: NativeType
+        + std::iter::Sum<T>
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_quantile(
@@ -214,27 +219,27 @@ where
         ),
         (true, Some(weights)) => {
             let values = as_floats(values);
-            rolling_apply_weighted_quantile(
+            rolling_apply_convolve_quantile(
                 values,
                 0.5,
                 QuantileInterpolOptions::Linear,
                 window_size,
                 min_periods,
                 det_offsets_center,
-                compute_weighted_quantile,
+                compute_quantile,
                 weights,
             )
         }
         (false, Some(weights)) => {
             let values = as_floats(values);
-            rolling_apply_weighted_quantile(
+            rolling_apply_convolve_quantile(
                 values,
                 0.5,
                 QuantileInterpolOptions::Linear,
                 window_size,
                 min_periods,
                 det_offsets,
-                compute_weighted_quantile,
+                compute_quantile,
                 weights,
             )
         }
@@ -251,7 +256,15 @@ pub fn rolling_quantile<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + std::iter::Sum<T> + std::cmp::PartialOrd + num::ToPrimitive,
+    T: NativeType
+        + std::iter::Sum<T>
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply_quantile(
@@ -274,27 +287,27 @@ where
         ),
         (true, Some(weights)) => {
             let values = as_floats(values);
-            rolling_apply_weighted_quantile(
+            rolling_apply_convolve_quantile(
                 values,
                 quantile,
                 interpolation,
                 window_size,
                 min_periods,
                 det_offsets_center,
-                compute_weighted_quantile,
+                compute_quantile,
                 weights,
             )
         }
         (false, Some(weights)) => {
             let values = as_floats(values);
-            rolling_apply_weighted_quantile(
+            rolling_apply_convolve_quantile(
                 values,
                 quantile,
                 interpolation,
                 window_size,
                 min_periods,
                 det_offsets,
-                compute_weighted_quantile,
+                compute_quantile,
                 weights,
             )
         }
@@ -312,15 +325,23 @@ pub(crate) fn compute_quantile<T>(
     values: &[T],
     quantile: f64,
     interpolation: QuantileInterpolOptions,
-) -> f64
+) -> T
 where
-    T: std::iter::Sum<T> + Copy + std::cmp::PartialOrd + num::ToPrimitive,
+    T: std::iter::Sum<T>
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     if !(0.0..=1.0).contains(&quantile) {
         panic!("quantile should be between 0.0 and 1.0");
     }
 
-    let mut vals: Vec<f64> = values
+    let mut vals: Vec<T> = values
         .iter()
         .copied()
         .map(|x| NumCast::from(x).unwrap())
@@ -345,7 +366,7 @@ where
             if top_idx == idx {
                 vals[idx]
             } else {
-                (vals[idx] + vals[idx + 1]) / 2.0
+                (vals[idx] + vals[idx + 1]) / T::from::<f64>(2.0f64).unwrap()
             }
         }
         QuantileInterpolOptions::Linear => {
@@ -355,109 +376,11 @@ where
             if top_idx == idx {
                 vals[idx]
             } else {
-                let proportion = float_idx - idx as f64;
+                let proportion = T::from(float_idx - idx as f64).unwrap();
                 proportion * (vals[top_idx] - vals[idx]) + vals[idx]
             }
         }
         _ => vals[idx],
-    }
-}
-
-pub(crate) fn compute_weighted_quantile<T>(
-    values: &[(T, f64)],
-    quantile: f64,
-    interpolation: QuantileInterpolOptions,
-) -> f64
-where
-    T: std::iter::Sum<T> + Copy + std::cmp::PartialOrd + num::ToPrimitive,
-{
-    if !(0.0..=1.0).contains(&quantile) {
-        panic!("quantile value must be between 0.0 and 1.0");
-    }
-
-    let mut vals: Vec<(f64, f64)> = values
-        .iter()
-        .copied()
-        .map(|(v, w)| (NumCast::from(v).unwrap(), w))
-        .collect();
-    vals.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-
-    let length = vals.len();
-    let cumulative_weights: Vec<f64> = vals
-        .iter()
-        .scan(0.0, |acc, x| {
-            *acc += x.1;
-            Some(*acc)
-        })
-        .collect();
-
-    let weight_quantile = cumulative_weights[length - 1] * quantile;
-
-    let mut idx = match interpolation {
-        QuantileInterpolOptions::Nearest => {
-            let upper_idx = cumulative_weights
-                .iter()
-                .position(|x| x >= &weight_quantile)
-                .unwrap();
-
-            let lower_idx = cumulative_weights
-                .iter()
-                .rposition(|x| x <= &weight_quantile)
-                .unwrap();
-
-            let upper_dist = cumulative_weights[upper_idx] - quantile;
-            let lower_dist = quantile - cumulative_weights[lower_idx];
-
-            if upper_dist < lower_dist {
-                upper_idx
-            } else {
-                lower_idx
-            }
-        }
-        QuantileInterpolOptions::Lower
-        | QuantileInterpolOptions::Midpoint
-        | QuantileInterpolOptions::Linear => cumulative_weights
-            .iter()
-            .rposition(|x| x <= &weight_quantile)
-            .unwrap(),
-        QuantileInterpolOptions::Higher => cumulative_weights
-            .iter()
-            .position(|x| x >= &weight_quantile)
-            .unwrap(),
-    };
-
-    idx = std::cmp::min(idx, length);
-
-    match interpolation {
-        QuantileInterpolOptions::Midpoint => {
-            let top_idx = cumulative_weights
-                .iter()
-                .position(|x| x >= &weight_quantile)
-                .unwrap();
-
-            if top_idx == idx {
-                vals[idx].0
-            } else {
-                (vals[idx].0 + vals[top_idx].0) / 2.0
-            }
-        }
-        QuantileInterpolOptions::Linear => {
-            let top_idx = cumulative_weights
-                .iter()
-                .position(|x| x >= &weight_quantile)
-                .unwrap();
-
-            let upper_lower_gap = cumulative_weights[top_idx] - cumulative_weights[idx];
-
-            if (top_idx == idx) | (upper_lower_gap == 0.0) {
-                vals[idx].0
-            } else {
-                let upper_dist = cumulative_weights[top_idx] - quantile;
-                let proportion = upper_dist / upper_lower_gap;
-                proportion * (vals[top_idx].0 - vals[idx].0) + vals[idx].0
-            }
-        }
-        _ => vals[idx].0,
     }
 }
 

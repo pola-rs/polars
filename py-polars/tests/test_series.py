@@ -439,15 +439,15 @@ def test_rolling() -> None:
         a.rolling_median(4), pl.Series("a", [None, None, None, 2, 2], dtype=Float64)
     )
     testing.assert_series_equal(
-        a.rolling_quantile(3, 0, "nearest"),
+        a.rolling_quantile(0, "nearest", 3),
         pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
     )
     testing.assert_series_equal(
-        a.rolling_quantile(3, 0, "lower"),
+        a.rolling_quantile(0, "lower", 3),
         pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
     )
     testing.assert_series_equal(
-        a.rolling_quantile(3, 0, "higher"),
+        a.rolling_quantile(0, "higher", 3),
         pl.Series("a", [None, None, 1, 2, 1], dtype=Float64),
     )
     assert a.rolling_skew(4).null_count() == 3

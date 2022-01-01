@@ -11,7 +11,7 @@ use crate::{
 };
 use numpy::PyArray1;
 use polars_core::utils::CustomIterTools;
-use polars_core::prelude::QuantileInterpolOptions;
+use polars::prelude::QuantileInterpolOptions;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 

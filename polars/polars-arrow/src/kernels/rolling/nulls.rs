@@ -3,10 +3,10 @@ use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
-use arrow::datatypes::DataType;
 use arrow::types::NativeType;
 use num::{Float, NumCast, One, Zero};
 use std::ops::AddAssign;
+use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 
 fn rolling_apply<T, K, Fo, Fa>(
@@ -78,7 +78,8 @@ where
     // QuantileInterpolOptions -> Interpolation option
     // usize -> offset in validity bytes array
     // usize -> min_periods
-    Fa: Fn(&[T], &[u8], f64, QuantileInterpolOptions, usize, usize) -> Option<f64>,
+    Fa: Fn(&[T], &[u8], f64, QuantileInterpolOptions, usize, usize) -> Option<T>,
+    T: Default + NativeType,
 {
     let len = values.len();
     let (validity_bytes, offset, _) = bitmap.as_slice();
@@ -108,14 +109,14 @@ where
                 Some(val) => val,
                 None => {
                     validity.set(idx, false);
-                    f64::default()
+                    T::default()
                 }
             }
         })
-        .collect_trusted::<Vec<f64>>();
+        .collect_trusted::<Vec<T>>();
 
     Arc::new(PrimitiveArray::from_data(
-        DataType::Float64,
+        T::PRIMITIVE.into(),
         out.into(),
         Some(validity.into()),
     ))
@@ -219,9 +220,20 @@ fn compute_quantile<T>(
     interpolation: QuantileInterpolOptions,
     offset: usize,
     min_periods: usize,
-) -> Option<f64>
+) -> Option<T>
 where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + std::cmp::PartialOrd + num::ToPrimitive,
+    T: NativeType
+        + std::iter::Sum<T>
+        + Zero
+        + AddAssign
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     if !(0.0..=1.0).contains(&quantile) {
         panic!("quantile should be between 0.0 and 1.0");
@@ -234,7 +246,7 @@ where
         return None;
     }
 
-    let mut vals: Vec<f64> = Vec::new();
+    let mut vals: Vec<T> = Vec::new();
     for (i, val) in values.iter().enumerate() {
         // Safety:
         // in bounds
@@ -259,7 +271,7 @@ where
     match interpolation {
         QuantileInterpolOptions::Midpoint => {
             let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
-            Some((vals[idx] + vals[top_idx]) / 2.0)
+            Some((vals[idx] + vals[top_idx]) / T::from::<f64>(2.0f64).unwrap())
         }
         QuantileInterpolOptions::Linear => {
             let float_idx = (length as f64 - 1.0) * quantile;
@@ -268,7 +280,7 @@ where
             if top_idx == idx {
                 Some(vals[idx])
             } else {
-                let proportion = float_idx - idx as f64;
+                let proportion = T::from(float_idx - idx as f64).unwrap();
                 Some(proportion * (vals[top_idx] - vals[idx]) + vals[idx])
             }
         }
@@ -430,7 +442,13 @@ where
         + AddAssign
         + Copy
         + std::cmp::PartialOrd
-        + num::ToPrimitive,
+        + num::ToPrimitive
+        + NumCast
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
@@ -476,7 +494,13 @@ where
         + AddAssign
         + Copy
         + std::cmp::PartialOrd
-        + num::ToPrimitive,
+        + num::ToPrimitive
+        + NumCast
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
