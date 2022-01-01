@@ -1255,6 +1255,21 @@ def test_apply_list_return() -> None:
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
+def test_apply_dataframe_return() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["c", "d", None]})
+
+    out = df.apply(lambda row: (row[0] * 10, "foo", True, row[-1]))
+    expected = pl.DataFrame(
+        {
+            "column_0": [10, 20, 30],
+            "column_1": ["foo", "foo", "foo"],
+            "column_2": [True, True, True],
+            "column_3": ["c", "d", None],
+        }
+    )
+    assert out.frame_equal(expected, null_equal=True)  # type: ignore
+
+
 def test_groupby_cat_list() -> None:  # noqa: W191,E101
     grouped = (
         pl.DataFrame(
