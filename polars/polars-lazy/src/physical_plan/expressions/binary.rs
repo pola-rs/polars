@@ -46,7 +46,7 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::TrueDivide => {
             use DataType::*;
             match left.dtype() {
-                Date | Datetime | Float32 | Float64 => Ok(left / right),
+                Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
                 _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
             }
         }
@@ -188,7 +188,11 @@ impl PhysicalExpr for BinaryExpr {
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series and apply the operators
             _ => {
-                let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
                 ac_l.combine_groups(ac_r).with_series(out, false);
                 Ok(ac_l)
             }

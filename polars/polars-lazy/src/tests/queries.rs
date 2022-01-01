@@ -498,7 +498,7 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        DatetimeChunked::new_from_naive_datetime("date", &*dates).into(),
+        DatetimeChunked::new_from_naive_datetime("date", &*dates, TimeUnit::Nanoseconds).into(),
         Series::new("data", data),
     ])
     .unwrap();
@@ -977,7 +977,9 @@ fn test_lazy_groupby_cast() {
     let _out = df
         .lazy()
         .groupby([col("a")])
-        .agg([col("b").mean().cast(DataType::Datetime)])
+        .agg([col("b")
+            .mean()
+            .cast(DataType::Datetime(TimeUnit::Nanoseconds, None))])
         .collect()
         .unwrap();
 }
@@ -2466,6 +2468,75 @@ fn test_agg_unique_first() -> Result<()> {
     let a = a.sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert_eq!(a, 10);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "parquet")]
+fn test_parquet_exec() -> Result<()> {
+    // filter
+    for par in [true, false] {
+        let out = scan_foods_parquet(par)
+            .filter(col("category").eq(lit("seafood")))
+            .collect()?;
+        assert_eq!(out.shape(), (8, 4));
+    }
+
+    // project
+    for par in [true, false] {
+        let out = scan_foods_parquet(par)
+            .select([col("category"), col("sugars_g")])
+            .collect()?;
+        assert_eq!(out.shape(), (27, 2));
+    }
+
+    // project + filter
+    for par in [true, false] {
+        let out = scan_foods_parquet(par)
+            .select([col("category"), col("sugars_g")])
+            .filter(col("category").eq(lit("seafood")))
+            .collect()?;
+        assert_eq!(out.shape(), (8, 2));
+    }
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "is_in")]
+fn test_is_in() -> Result<()> {
+    let df = fruits_cars();
+
+    // // this will be executed by apply
+    let out = df
+        .clone()
+        .lazy()
+        .groupby_stable([col("fruits")])
+        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))))])
+        .collect()?;
+    let out = out.column("cars").unwrap();
+    let out = out.explode()?;
+    let out = out.bool().unwrap();
+    assert_eq!(
+        Vec::from(out),
+        &[Some(true), Some(false), Some(true), Some(true), Some(true)]
+    );
+
+    // this will be executed by map
+    let out = df
+        .lazy()
+        .groupby_stable([col("fruits")])
+        .agg([col("cars").is_in(lit(Series::new("a", ["beetle", "vw"])))])
+        .collect()?;
+
+    let out = out.column("cars").unwrap();
+    let out = out.explode()?;
+    let out = out.bool().unwrap();
+    assert_eq!(
+        Vec::from(out),
+        &[Some(true), Some(false), Some(true), Some(true), Some(true)]
+    );
 
     Ok(())
 }

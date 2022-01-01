@@ -52,3 +52,5 @@ pub use polars_time::{groupby::ClosedWindow, Duration};
 
 #[cfg(feature = "ewma")]
 pub use polars_arrow::kernels::ewm::EWMOptions;
+
+pub(crate) use polars_arrow::export::*;

@@ -3,7 +3,11 @@ from typing import Optional, Sequence, Union, overload
 
 from polars import internals as pli
 from polars.datatypes import py_type_to_dtype
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_duration
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_duration,
+    in_nanoseconds_window,
+)
 
 try:
     from polars.polars import concat_df as _concat_df
@@ -160,6 +164,7 @@ def date_range(
     interval: Union[str, timedelta],
     closed: Optional[str] = "both",
     name: Optional[str] = None,
+    time_unit: Optional[str] = None,
 ) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
@@ -178,6 +183,8 @@ def date_range(
         Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
         Name of the output Series
+    time_unit
+        Set the time unit; one of {'ns', 'ms'}
 
     Returns
     -------
@@ -188,7 +195,7 @@ def date_range(
     >>> from datetime import datetime
     >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
-    Series: '' [datetime]
+    Series: '' [datetime[ns]]
     [
         1985-01-01 00:00:00
         1985-01-02 12:00:00
@@ -220,9 +227,15 @@ def date_range(
     """
     if isinstance(interval, timedelta):
         interval = _timedelta_to_pl_duration(interval)
-    start = _datetime_to_pl_timestamp(low)
-    stop = _datetime_to_pl_timestamp(high)
+
+    if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
+        tu = "ns"
+    else:
+        tu = "ms"
+
+    start = _datetime_to_pl_timestamp(low, tu)
+    stop = _datetime_to_pl_timestamp(high, tu)
     if name is None:
         name = ""
 
-    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name))
+    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))

@@ -19,7 +19,8 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
-        Date | Datetime => out.into_date(),
+        Date => out.into_date(),
+        Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         _ => out,

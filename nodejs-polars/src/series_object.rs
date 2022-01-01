@@ -35,6 +35,10 @@ impl JsSeries {
             napi::Property::new(env, "slice")?.with_method(str_slice),
             napi::Property::new(env, "toLowerCase")?.with_method(str_to_lowercase),
             napi::Property::new(env, "toUpperCase")?.with_method(str_to_uppercase),
+            napi::Property::new(env, "encodeHex")?.with_method(hex_encode),
+            napi::Property::new(env, "decodeHex")?.with_method(hex_decode),
+            napi::Property::new(env, "encodeBase64")?.with_method(base64_encode),
+            napi::Property::new(env, "decodeBase64")?.with_method(base64_decode),
         ])?;
 
         series.define_properties(&[

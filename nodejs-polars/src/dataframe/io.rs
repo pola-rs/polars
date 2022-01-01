@@ -1,17 +1,13 @@
 use crate::conversion::prelude::*;
-use polars::frame::row::{rows_to_schema, Row};
 use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
-use napi::{
-    CallContext, JsExternal, JsObject, JsString, JsUndefined,
-    JsUnknown,
-};
+use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown};
+use polars::frame::row::{rows_to_schema, Row};
 use polars::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
-
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -217,7 +213,56 @@ pub(crate) fn write_csv_path(cx: CallContext) -> JsResult<JsUndefined> {
 // ------
 
 #[js_function(1)]
-pub(crate) fn read_parquet(_cx: CallContext) -> JsResult<JsExternal> {
+pub(crate) fn read_parquet(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let path = params.get_as::<String>("path")?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+    let parallel: bool = params.get_or("parallel", true)?;
+    let rechunk: bool = params.get_or("rechunk", true)?;
+
+    let f = File::open(&path)?;
+
+    ParquetReader::new(f)
+        .with_projection(projection)
+        .with_columns(columns)
+        .read_parallel(parallel)
+        .with_n_rows(n_rows)
+        .set_rechunk(rechunk)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let compression = params.get_as::<String>("compression")?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let path = params.get_as::<String>("path")?;
+    let compression = match compression.as_str() {
+        "uncompressed" => ParquetCompression::Uncompressed,
+        "snappy" => ParquetCompression::Snappy,
+        "gzip" => ParquetCompression::Gzip,
+        "lzo" => ParquetCompression::Lzo,
+        "brotli" => ParquetCompression::Brotli,
+        "lz4" => ParquetCompression::Lz4,
+        "zstd" => ParquetCompression::Zstd,
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+    let f = File::create(&path)?;
+
+    ParquetWriter::new(f)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
+    cx.env.get_undefined()
+}
+#[js_function(1)]
+pub(crate) fn write_parquet_stream(cx: CallContext) -> JsResult<JsUndefined> {
+    // JSWriteStream needs to implement 'Seek'
     todo!()
 }
 
@@ -246,12 +291,13 @@ pub(crate) fn read_json_buffer(cx: CallContext) -> JsResult<JsExternal> {
     let reader = Cursor::new(buffer_value.as_ref());
 
     JsonReader::new(reader)
-        .infer_schema(infer_schema_length)
+        .infer_schema_len(infer_schema_length)
         .with_batch_size(batch_size)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub(crate) fn read_json_path(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -262,7 +308,7 @@ pub(crate) fn read_json_path(cx: CallContext) -> JsResult<JsExternal> {
     let f = File::open(&path)?;
     let reader = BufReader::new(f);
     JsonReader::new(reader)
-        .infer_schema(infer_schema_length)
+        .infer_schema_len(infer_schema_length)
         .with_batch_size(batch_size)
         .finish()
         .map_err(JsPolarsEr::from)?
@@ -270,17 +316,12 @@ pub(crate) fn read_json_path(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub(crate) fn to_json(cx: CallContext) -> JsResult<JsUndefined> {
+pub(crate) fn to_json(cx: CallContext) -> JsResult<napi::JsBuffer> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
-    let stream = params.get::<JsObject>("writeStream")?;
-    let writeable = JsWriteStream {
-        inner: stream,
-        env: cx.env,
-    };
-    serde_json::to_writer(writeable, df)?;
-
-    cx.env.get_undefined()
+    let byte_array = serde_json::to_vec(df)?;
+    let buff_val = cx.env.create_buffer_with_data(byte_array)?;
+    Ok(buff_val.into_raw())
 }
 
 #[js_function(1)]
@@ -294,13 +335,20 @@ pub(crate) fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
 pub(crate) fn write_json_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let multiline: bool = params.get_or("multiline", false)?;
     let stream = params.get::<JsObject>("writeStream")?;
     let writeable = JsWriteStream {
         inner: stream,
         env: cx.env,
     };
-    let w = JsonWriter::new(writeable);
-    w.finish(df).unwrap();
+    let json_fmt = match multiline {
+        true => JsonFormat::JsonLines,
+        false => JsonFormat::Json,
+    };
+    JsonWriter::new(writeable)
+        .with_json_format(json_fmt)
+        .finish(df)
+        .map_err(|e| JsPolarsEr::Other(format!("{:?}", e)))?;
     cx.env.get_undefined()
 }
 
@@ -309,11 +357,19 @@ pub(crate) fn write_json_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let path = params.get_as::<String>("path")?;
+    let multiline: bool = params.get_or("multiline", false)?;
+    let json_fmt = match multiline {
+        true => JsonFormat::JsonLines,
+        false => JsonFormat::Json,
+    };
+
     let p = std::path::Path::new(&path);
     let p = resolve_homedir(p);
     let f = File::create(&p)?;
-    let w = JsonWriter::new(f);
-    w.finish(df).unwrap();
+    JsonWriter::new(f)
+        .with_json_format(json_fmt)
+        .finish(df)
+        .map_err(|e| JsPolarsEr::Other(format!("{:?}", e)))?;
     cx.env.get_undefined()
 }
 
@@ -337,6 +393,7 @@ pub(crate) fn to_rows(cx: CallContext) -> JsResult<JsObject> {
     }
     Ok(arr)
 }
+
 #[js_function(1)]
 pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
@@ -357,7 +414,46 @@ pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
     Ok(row)
 }
 
+#[js_function(1)]
+pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let mut arr = cx.env.create_array()?;
+    for idx in 0..df.height() {
+        let mut obj_row = cx.env.create_object()?;
+        for col in df.get_columns().iter() {
+            let col_name = col.name();
+            let col_name_js = cx.env.create_string(col_name)?;
+            let val: Wrap<AnyValue> = col.get(idx).into();
+            let jsv = val.into_js(&cx);
+            obj_row.set_property(col_name_js, jsv)?;
+        }
+        arr.set_element(idx as u32, obj_row)?;
+    }
+    Ok(arr)
+}
 
+#[js_function(1)]
+pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let idx = params.get_as::<i64>("idx")?;
+    let idx = if idx < 0 {
+        (df.height() as i64 + idx) as usize
+    } else {
+        idx as usize
+    };
+
+    let mut obj = cx.env.create_object()?;
+    for col in df.get_columns().iter() {
+        let val: Wrap<AnyValue> = col.get(idx).into();
+        let jsv = val.into_js(&cx);
+        let col_name = col.name();
+        let col_name_js = cx.env.create_string(col_name)?;
+        obj.set_property(col_name_js, jsv)?;
+    }
+    Ok(obj)
+}
 
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
@@ -411,7 +507,6 @@ pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
     finish_from_rows(rows)?.try_into_js(&cx)
 }
 
-
 fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory
     if path.starts_with("~") {
@@ -422,6 +517,7 @@ fn resolve_homedir(path: &Path) -> PathBuf {
 
     path.into()
 }
+
 fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = rows_to_schema(&rows);
     let fields = schema

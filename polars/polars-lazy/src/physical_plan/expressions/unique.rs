@@ -27,7 +27,7 @@ impl PhysicalExpr for UniqueExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let series = ac.flat().into_owned();
+        let series = ac.flat_naive().into_owned();
 
         let groups = ac
             .groups

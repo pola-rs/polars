@@ -11,7 +11,7 @@ unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
     categorical_map: &'a Option<Arc<RevMapping>>,
-    dtype: &DataType,
+    dtype: &'a DataType,
 ) -> AnyValue<'a> {
     if arr.is_null(idx) {
         return AnyValue::Null;
@@ -47,7 +47,10 @@ unsafe fn arr_to_any_value<'a>(
         #[cfg(feature = "dtype-date")]
         DataType::Date => downcast_and_pack!(Int32Array, Date),
         #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime => downcast_and_pack!(Int64Array, Datetime),
+        DataType::Datetime(tu, tz) => {
+            let ts: i64 = downcast!(Int64Array);
+            AnyValue::Datetime(ts, *tu, tz)
+        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();

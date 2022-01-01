@@ -1050,8 +1050,6 @@ class Expr:
         ├╌╌╌╌╌╌╌╌┤
         │ ...    │
         ├╌╌╌╌╌╌╌╌┤
-        │ 4      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
         ├╌╌╌╌╌╌╌╌┤
         │ 6      │
@@ -1424,7 +1422,7 @@ class Expr:
         """
         apply a rolling min (moving min) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1456,7 +1454,7 @@ class Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1488,7 +1486,7 @@ class Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1549,7 +1547,7 @@ class Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1582,7 +1580,7 @@ class Expr:
         Compute a rolling std dev
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1615,7 +1613,7 @@ class Expr:
         Compute a rolling variance.
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -2016,15 +2014,15 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").tan())
+        >>> df.select(pl.col("a").tan().round(2))
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 1.5574077246549023 │
-        └────────────────────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.56 │
+        └──────┘
 
         """
         return np.tan(self)  # type: ignore
@@ -2161,7 +2159,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
 
     def ewm_std(
@@ -2195,7 +2193,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
 
     def ewm_var(
@@ -2229,7 +2227,7 @@ class Expr:
             Minimum number of observations in window required to have a value (otherwise result is Null).
 
         """
-        _prepare_alpha(com, span, half_life, alpha)
+        alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
 
     def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Expr":
@@ -2493,6 +2491,80 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
+    def decode(self, encoding: str, strict: bool = False) -> Expr:
+        """
+        Decodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+        strict
+            how to handle invalid inputs
+            - True: method will throw error if unable to decode a value
+            - False: unhandled values will be replaced with `None`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
+        >>> df.select(pl.col("encoded").str.decode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ encoded │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ foo     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ bar     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_decode(strict))
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_decode(strict))
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
+    def encode(self, encoding: str) -> Expr:
+        """
+        Encodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+
+        Returns
+        -------
+        Utf8 array with values encoded using provided encoding
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
+        >>> df.select(pl.col("strings").str.encode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ strings │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ 666f6f  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 626172  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_encode())
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_encode())
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
@@ -2643,7 +2715,7 @@ class ExprDateTimeNameSpace:
         >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
         >>> s
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:30:00
@@ -2673,7 +2745,7 @@ class ExprDateTimeNameSpace:
         ]
         >>> s.dt.truncate("1h")
         shape: (49,)
-        Series: 'dates' [datetime]
+        Series: 'dates' [datetime[ns]]
         [
             2001-01-01 00:00:00
             2001-01-01 00:00:00
@@ -2898,6 +2970,34 @@ class ExprDateTimeNameSpace:
         """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
+    def and_time_unit(self, tu: str) -> Expr:
+        """
+        Set time unit a Series of type Datetime
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_unit(tu), return_dtype=Datetime
+        )
+
+    def and_time_zone(self, tz: Optional[str]) -> Expr:
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
+        )
+
 
 def expr_to_lit_or_expr(
     expr: Union[Expr, bool, int, float, str, "pli.Series"],
@@ -2927,7 +3027,9 @@ def expr_to_lit_or_expr(
     elif isinstance(expr, Expr):
         return expr
     else:
-        raise Exception
+        raise ValueError(
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
+        )
 
 
 def _prepare_alpha(
@@ -2936,16 +3038,15 @@ def _prepare_alpha(
     half_life: Optional[float] = None,
     alpha: Optional[float] = None,
 ) -> float:
-
-    if com is not None and alpha is not None:
+    if com is not None and alpha is None:
         assert com >= 0.0
         alpha = 1.0 / (1.0 + com)
-    if span is not None and alpha is not None:
+    if span is not None and alpha is None:
         assert span >= 1.0
         alpha = 2.0 / (span + 1.0)
-    if half_life is not None and alpha is not None:
+    if half_life is not None and alpha is None:
         assert half_life > 0.0
         alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
     if alpha is None:
-        raise ValueError("at least one of {com, span, halflife, alpha} should be set")
+        raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha

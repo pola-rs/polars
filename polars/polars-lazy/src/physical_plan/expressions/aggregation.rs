@@ -3,6 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
@@ -71,23 +72,23 @@ impl PhysicalAggregation for AggregationExpr {
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = ac.flat().into_owned().agg_min(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = ac.flat().into_owned().agg_max(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = ac.flat().into_owned().agg_median(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = ac.flat().into_owned().agg_mean(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = ac.flat().into_owned().agg_sum(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
@@ -97,17 +98,17 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(Some(ca.into_inner().into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = ac.flat().into_owned().agg_first(ac.groups());
+                let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = ac.flat().into_owned().agg_last(ac.groups());
+                let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = ac.flat().into_owned().agg_n_unique(ac.groups());
+                let opt_agg = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -132,11 +133,11 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(Some(column.into_series()))
             }
             GroupByMethod::Std => {
-                let agg_s = ac.flat().into_owned().agg_std(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Var => {
-                let agg_s = ac.flat().into_owned().agg_var(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Quantile(_, _) => {

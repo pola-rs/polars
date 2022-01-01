@@ -4,6 +4,7 @@ use arrow::bitmap::Bitmap;
 use arrow::types::NativeType;
 use std::ops::BitAnd;
 
+#[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {
     iter: I,
     len: usize,
@@ -67,7 +68,11 @@ pub trait CustomIterTools: Iterator {
         Some(self.fold(first, f))
     }
 
-    fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
+    /// Turn any iterator in a trusted length iterator
+    ///
+    /// # Safety
+    /// The given length must be correct.
+    unsafe fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
     where
         Self: Sized,
     {

@@ -53,7 +53,7 @@ pub enum NullStrategy {
 ///
 /// ## Use declarations
 ///
-/// All the common tools can be found in [`polars_core::prelude`] (or in `polars::prelude`).
+/// All the common tools can be found in [`crate::prelude`] (or in `polars::prelude`).
 ///
 /// ```rust
 /// use polars_core::prelude::*; // if the crate polars-core is used directly
@@ -95,7 +95,7 @@ pub enum NullStrategy {
 ///
 /// ## Using a CSV file
 ///
-/// See the [`polars_io::csv::CsvReader`].
+/// See the `polars_io::csv::CsvReader`.
 ///
 /// # Indexing
 /// ## By a number
@@ -1338,7 +1338,7 @@ impl DataFrame {
     /// ```
     pub fn take_iter<I>(&self, iter: I) -> Result<Self>
     where
-        I: Iterator<Item = usize> + Clone + Sync,
+        I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
         let new_col = POOL.install(|| {
             self.columns
@@ -1359,7 +1359,7 @@ impl DataFrame {
     /// This doesn't do any bound checking but checks null validity.
     pub unsafe fn take_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
-        I: Iterator<Item = usize> + Clone + Sync,
+        I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
@@ -1408,7 +1408,7 @@ impl DataFrame {
     /// Null validity is checked
     pub unsafe fn take_opt_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
-        I: Iterator<Item = Option<usize>> + Clone + Sync,
+        I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
     {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();

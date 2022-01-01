@@ -35,7 +35,7 @@ impl PhysicalExpr for IsNullExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let s = ac.flat();
+        let s = ac.flat_naive();
         let s = s.is_null().into_series();
         ac.with_series(s, false);
 

@@ -1104,7 +1104,7 @@ class DataFrame:
         return wrap_df(self._df.div(other._s))
 
     def __add__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
+        self, other: Union["DataFrame", "pli.Series", int, float, bool, str]
     ) -> "DataFrame":
         if isinstance(other, DataFrame):
             return wrap_df(self._df.add_df(other._df))
@@ -2368,7 +2368,7 @@ class DataFrame:
         ┌─────────────────────┬─────┐
         │ time                ┆ n   │
         │ ---                 ┆ --- │
-        │ datetime            ┆ i64 │
+        │ datetime[ns]        ┆ i64 │
         ╞═════════════════════╪═════╡
         │ 2021-12-16 00:00:00 ┆ 0   │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
@@ -2396,7 +2396,7 @@ class DataFrame:
         ┌─────────────────────┬─────────────────────┬─────────────────────┐
         │ time                ┆ time_min            ┆ time_max            │
         │ ---                 ┆ ---                 ┆ ---                 │
-        │ datetime            ┆ datetime            ┆ datetime            │
+        │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        │
         ╞═════════════════════╪═════════════════════╪═════════════════════╡
         │ 2021-12-16 00:00:00 ┆ 2021-12-16 00:30:00 ┆ 2021-12-16 01:00:00 │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2416,7 +2416,7 @@ class DataFrame:
         ┌─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        │ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        ┆ u32        │
         ╞═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
         │ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 2          │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2436,7 +2436,7 @@ class DataFrame:
         ┌─────────────────────┬────────────┬─────────────────────────────────────┐
         │ time                ┆ time_count ┆ time_agg_list                       │
         │ ---                 ┆ ---        ┆ ---                                 │
-        │ datetime            ┆ u32        ┆ list [datetime]                     │
+        │ datetime[ns]        ┆ u32        ┆ list [datetime[ns]]                 │
         ╞═════════════════════╪════════════╪═════════════════════════════════════╡
         │ 2021-12-16 00:00:00 ┆ 2          ┆ [2021-12-16 00:00:00, 2021-12-16... │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2458,7 +2458,7 @@ class DataFrame:
         ┌─────────────────────┬────────────┐
         │ time                ┆ time_count │
         │ ---                 ┆ ---        │
-        │ datetime            ┆ u32        │
+        │ datetime[ns]        ┆ u32        │
         ╞═════════════════════╪════════════╡
         │ 2021-12-16 00:00:00 ┆ 3          │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2486,7 +2486,7 @@ class DataFrame:
         ┌─────────────────────┬────────┐
         │ time                ┆ groups │
         │ ---                 ┆ ---    │
-        │ datetime            ┆ str    │
+        │ datetime[ns]        ┆ str    │
         ╞═════════════════════╪════════╡
         │ 2021-12-16 00:00:00 ┆ a      │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -2515,7 +2515,7 @@ class DataFrame:
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
         │ groups ┆ _lower_boundary     ┆ _upper_boundary     ┆ time                ┆ time_count │
         │ ---    ┆ ---                 ┆ ---                 ┆ ---                 ┆ ---        │
-        │ str    ┆ datetime            ┆ datetime            ┆ datetime            ┆ u32        │
+        │ str    ┆ datetime[ns]        ┆ datetime[ns]        ┆ datetime[ns]        ┆ u32        │
         ╞════════╪═════════════════════╪═════════════════════╪═════════════════════╪════════════╡
         │ a      ┆ 2021-12-16 00:00:00 ┆ 2021-12-16 01:00:00 ┆ 2021-12-16 00:00:00 ┆ 3          │
         ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
@@ -2718,7 +2718,9 @@ class DataFrame:
         self,
         f: Callable[[Tuple[Any]], Any],
         return_dtype: Optional[Type[DataType]] = None,
-    ) -> "pli.Series":
+        batch_size: int = 2048,
+        rechunk: bool = True,
+    ) -> Union["pli.Series", "DataFrame"]:
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
@@ -2730,8 +2732,19 @@ class DataFrame:
             Custom function/ lambda function.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
+        batch_size
+            Only used in the case when the custom function returns rows. This sets the batch size in which
+            sub dataframes are created
+        rechunk
+            Only used in the case when the custom function returns rows. This rechunks the DataFrame when the apply
+            is finished
+
         """
-        return pli.wrap_s(self._df.apply(f, return_dtype))
+        out, is_df = self._df.apply(f, return_dtype, batch_size, rechunk)
+        if is_df:
+            return wrap_df(out)
+        else:
+            return pli.wrap_s(out)
 
     def with_column(self, column: Union["pli.Series", "pli.Expr"]) -> "DataFrame":
         """
@@ -3121,8 +3134,6 @@ class DataFrame:
         │ c       ┆ 3   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ ...     ┆ ... │
-        ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-        │ c       ┆ 5   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
         │ a       ┆ 6   │
         ├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
@@ -3841,7 +3852,7 @@ class DataFrame:
         ... )
         >>> df.fold(lambda s1, s2: s1 + s2)
         shape: (3,)
-        Series: '' [str]
+        Series: 'a' [str]
         [
             "foo11.0"
             "bar22.0"

@@ -7,7 +7,7 @@ import {ListFunctions} from "./series/list";
 import {DateTimeFunctions} from "./series/datetime";
 import {InvalidOperationError, todo} from "./error";
 import {RankMethod, RollingOptions} from "./utils";
-import {col} from "./lazy/lazy_functions";
+import {col} from "./lazy/functions";
 import {isExternal} from "util/types";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -16,14 +16,17 @@ type ValueOrNever<V> = V extends ArrayLike<infer U> ? Series<U> : never;
 type DataTypeOrValue<T, U> = U extends true ? DtypeToPrimitive<T> : DtypeToPrimitive<T> | null;
 type ArrayLikeDataType<T> = ArrayLike<DtypeToPrimitive<T>>
 type ArrayLikeOrDataType<T, U> = ArrayLike<DataTypeOrValue<T, U>>
+
+/** @ignore */
 export type JsSeries = any;
 
 export interface Series<T> extends ArrayLike<T> {
   [n: number]: T
+  /** @ignore */
+  _series: JsSeries;
   name: string
   dtype: DataType
   length: number
-  _series: JsSeries;
   str: StringFunctions
   lst: ListFunctions<T>
   date: DateTimeFunctions
@@ -1240,7 +1243,7 @@ export interface Series<T> extends ArrayLike<T> {
   toJS(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
 }
-
+/** @ignore */
 export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
 

@@ -3,55 +3,22 @@ use crate::chunked_array::cast::cast_chunks;
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 use crate::prelude::*;
 use arrow::compute::cast::utf8_to_large_utf8;
+use arrow::temporal_conversions::MILLISECONDS;
+#[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::NANOSECONDS;
 use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
 
-fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
-    // if inner type is Utf8, we need to convert that to large utf8
-    match fld.data_type() {
-        ArrowDataType::Utf8 => {
-            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
-            let values = arr.values();
-            let values =
-                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
-
-            Arc::new(LargeListArray::from_data(
-                ArrowDataType::LargeList(
-                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
-                ),
-                offsets,
-                Arc::new(values),
-                arr.validity().cloned(),
-            ))
-        }
-        _ => arr.clone(),
-    }
-}
-
-// TODO: add types
-impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
-    type Error = PolarsError;
-
-    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
-        let (name, chunks) = name_arr;
-
-        let mut chunks_iter = chunks.iter();
-        let data_type: &ArrowDataType = chunks_iter
-            .next()
-            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
-            .data_type();
-
-        for chunk in chunks_iter {
-            if chunk.data_type() != data_type {
-                return Err(PolarsError::InvalidOperation(
-                    "Cannot create series from multiple arrays with different types".into(),
-                ));
-            }
-        }
-
-        match data_type {
+impl Series {
+    // Create a new Series without checking if the inner dtype of the chunks is correct
+    // # Safety
+    // The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
+    pub(crate) unsafe fn try_from_unchecked(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: &ArrowDataType,
+    ) -> Result<Self> {
+        match dtype {
             ArrowDataType::LargeUtf8 => {
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -104,23 +71,23 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
             ArrowDataType::Date64 => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let ca = Int64Chunked::new_from_chunks(name, chunks);
-                let ca = ca * 1_000_000;
-                Ok(ca.into_date().into_series())
+                Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
+                // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::new_from_chunks(name, chunks)
-                    .into_date()
+                    .into_datetime(tu.into(), None)
                     .into_series();
                 if !(tz.is_none() || tz == &Some("".to_string())) {
                     println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")
                 }
                 Ok(match tu {
-                    TimeUnit::Second => &s * NANOSECONDS,
-                    TimeUnit::Millisecond => &s * 1_000_000,
-                    TimeUnit::Microsecond => &s * 1_000,
-                    TimeUnit::Nanosecond => s,
+                    ArrowTimeUnit::Second => &s * MILLISECONDS,
+                    ArrowTimeUnit::Millisecond => s,
+                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Nanosecond => s,
                 })
             }
             #[cfg(feature = "dtype-time")]
@@ -130,10 +97,10 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                     .into_time()
                     .into_series();
                 Ok(match tu {
-                    TimeUnit::Second => &s * NANOSECONDS,
-                    TimeUnit::Millisecond => &s * 1_000_000,
-                    TimeUnit::Microsecond => &s * 1_000,
-                    TimeUnit::Nanosecond => s,
+                    ArrowTimeUnit::Second => &s * NANOSECONDS,
+                    ArrowTimeUnit::Millisecond => &s * 1_000_000,
+                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Nanosecond => s,
                 })
             }
             ArrowDataType::LargeList(fld) => {
@@ -325,7 +292,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 // this is highly unsafe. it will dereference a raw ptr on the heap
                 // make sure the ptr is allocated and from this pid
                 // (the pid is checked before dereference)
-                let s = unsafe {
+                let s = {
                     let pe = PolarsExtension::new(arr.clone());
                     let s = pe.get_series();
                     pe.take_and_forget();
@@ -337,6 +304,56 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 format!("Cannot create polars series from {:?} type", dt).into(),
             )),
         }
+    }
+}
+
+fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
+    // if inner type is Utf8, we need to convert that to large utf8
+    match fld.data_type() {
+        ArrowDataType::Utf8 => {
+            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
+            let values = arr.values();
+            let values =
+                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
+
+            Arc::new(LargeListArray::from_data(
+                ArrowDataType::LargeList(
+                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
+                ),
+                offsets,
+                Arc::new(values),
+                arr.validity().cloned(),
+            ))
+        }
+        _ => arr.clone(),
+    }
+}
+
+// TODO: add types
+impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
+        let (name, chunks) = name_arr;
+
+        let mut chunks_iter = chunks.iter();
+        let data_type: ArrowDataType = chunks_iter
+            .next()
+            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .data_type()
+            .clone();
+
+        for chunk in chunks_iter {
+            if chunk.data_type() != &data_type {
+                return Err(PolarsError::InvalidOperation(
+                    "Cannot create series from multiple arrays with different types".into(),
+                ));
+            }
+        }
+        // Safety:
+        // dtype is checked
+        unsafe { Series::try_from_unchecked(name, chunks, &data_type) }
     }
 }
 

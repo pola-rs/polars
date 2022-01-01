@@ -5,6 +5,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, U
 
 import numpy as np
 
+from polars.datatypes import DataType, Date, Datetime
+
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
 else:
@@ -47,11 +49,25 @@ def _timedelta_to_pl_duration(td: timedelta) -> str:
     return f"{td.days}d{td.seconds}s{td.microseconds}us"
 
 
-def _datetime_to_pl_timestamp(dt: datetime) -> int:
+def in_nanoseconds_window(dt: datetime) -> bool:
+    return 1386 < dt.year < 2554
+
+
+def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
     """
     Converts a python datetime to a timestamp in nanoseconds
     """
-    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+    if tu == "ns":
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+    elif tu == "ms":
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+    if tu is None:
+        if in_nanoseconds_window(dt):
+            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+        else:
+            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+    else:
+        raise ValueError("expected on of {'ns', 'ms'}")
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -102,3 +118,24 @@ def handle_projection_columns(
                 "columns arg should contain a list of all integers or all strings values."
             )
     return projection, columns  # type: ignore
+
+
+def _to_python_datetime(
+    value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
+) -> Union[date, datetime]:
+    if dtype == Date:
+        # days to seconds
+        # important to create from utc. Not doing this leads
+        # to inconsistencies dependent on the timezone you are in.
+        return datetime.utcfromtimestamp(value * 3600 * 24).date()
+    elif dtype == Datetime:
+        if tu == "ns":
+            # nanoseconds to seconds
+            return datetime.utcfromtimestamp(value / 1_000_000_000)
+        elif tu == "ms":
+            # milliseconds to seconds
+            return datetime.utcfromtimestamp(value / 1_000)
+        else:
+            raise ValueError(f"time unit: {tu} not expected")
+    else:
+        raise NotImplementedError  # pragma: no cover

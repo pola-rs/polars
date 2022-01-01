@@ -63,7 +63,7 @@ export type ReadCsvOptions = {
   commentChar?: string;
   encoding?: "utf8" | "utf8-lossy";
   endRows?: number;
-  hasHeader: boolean;
+  hasHeader?: boolean;
   ignoreErrors?: boolean;
   inferSchemaLength?: number;
   lowMemory?: boolean;
@@ -76,12 +76,18 @@ export type ReadCsvOptions = {
   sep?: string;
   startRows?: number;
 };
-export type ReadJsonOptions = Partial<{
-  file: string;
+export type ReadJsonOptions = {
   inferSchemaLength?: number;
   batchSize?: number;
-  inline?: boolean;
-}>;
+};
+
+export type ReadParquetOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+  parallel?: boolean;
+  rechunk?: boolean;
+}
 export type JoinBaseOptions = {
   how?: "left" | "inner" | "outer" | "cross";
   suffix?: string;
@@ -98,7 +104,7 @@ export type WriteCsvOptions = {
   sep?: string;
 };
 export type WriteJsonOptions = {
-  file?: string;
+  orient?: "row" | "col" | "dataframe";
   multiline?: boolean;
 };
 

@@ -13,7 +13,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -154,13 +154,25 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let py_date_dtype = pl.getattr("Date").unwrap();
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
-            AnyValue::Datetime(v) => {
+            AnyValue::Datetime(v, tu, tz) => {
+                if tz.is_some() {
+                    todo!()
+                }
                 let pl = PyModule::import(py, "polars").unwrap();
                 let pli = pl.getattr("internals").unwrap();
                 let m_series = pli.getattr("series").unwrap();
                 let convert = m_series.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                convert.call1((v, py_datetime_dtype)).unwrap().into_py(py)
+                match tu {
+                    TimeUnit::Nanoseconds => convert
+                        .call1((v, py_datetime_dtype, "ns"))
+                        .unwrap()
+                        .into_py(py),
+                    TimeUnit::Milliseconds => convert
+                        .call1((v, py_datetime_dtype, "ms"))
+                        .unwrap()
+                        .into_py(py),
+                }
             }
             AnyValue::Time(v) => v.into_py(py),
             AnyValue::List(v) => {
@@ -200,7 +212,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
             DataType::List(_) => pl.getattr("List").unwrap().into(),
             DataType::Date => pl.getattr("Date").unwrap().into(),
-            DataType::Datetime => pl.getattr("Datetime").unwrap().into(),
+            DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
@@ -238,7 +250,9 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "<class 'polars.datatypes.Boolean'>" => DataType::Boolean,
             "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
             "<class 'polars.datatypes.Date'>" => DataType::Date,
-            "<class 'polars.datatypes.Datetime'>" => DataType::Datetime,
+            "<class 'polars.datatypes.Datetime'>" => {
+                DataType::Datetime(TimeUnit::Milliseconds, None)
+            }
             "<class 'polars.datatypes.Float32'>" => DataType::Float32,
             "<class 'polars.datatypes.Float64'>" => DataType::Float64,
             "<class 'polars.datatypes.Object'>" => DataType::Object("unknown"),
@@ -291,14 +305,14 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<i64>() {
+        if ob.is_instance::<PyBool>().unwrap() {
+            Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
+        } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
         } else if let Ok(v) = ob.extract::<f64>() {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if let Ok(v) = ob.extract::<bool>() {
-            Ok(AnyValue::Boolean(v).into())
         } else if ob.get_type().name()?.contains("datetime") {
             let gil = Python::acquire_gil();
             let py = gil.python();
@@ -317,8 +331,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let loc_tz = tz.call_method("localize", (dt,), Some(kwargs))?;
                 loc_tz.call_method0("timestamp")?;
                 // s to ms
-                let v = ts.extract::<f64>()? as i64;
-                Ok(AnyValue::Datetime(v * 1000).into())
+                let v = (ts.extract::<f64>()? * 1000.0) as i64;
+                Ok(AnyValue::Datetime(v, TimeUnit::Milliseconds, &None).into())
             }
             // unix
             #[cfg(not(target_arch = "windows"))]
@@ -330,8 +344,8 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 let dt = ob.call_method("replace", (), Some(kwargs))?;
                 let ts = dt.call_method0("timestamp")?;
                 // s to ms
-                let v = ts.extract::<f64>()? as i64;
-                Ok(AnyValue::Datetime(v * 1000).into())
+                let v = (ts.extract::<f64>()? * 1000.0) as i64;
+                Ok(AnyValue::Datetime(v, TimeUnit::Milliseconds, &None).into())
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())

@@ -75,17 +75,13 @@ where
 {
     fn cummax(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::min_value();
+
         let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_max)
-                .trust_my_length(self.len())
-                .collect_trusted(),
+            false => self.into_iter().scan(init, det_max).collect_trusted(),
             true => self
                 .into_iter()
                 .rev()
                 .scan(init, det_max)
-                .trust_my_length(self.len())
                 .collect_reversed(),
         };
 
@@ -96,16 +92,11 @@ where
     fn cummin(&self, reverse: bool) -> ChunkedArray<T> {
         let init = Bounded::max_value();
         let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_min)
-                .trust_my_length(self.len())
-                .collect_trusted(),
+            false => self.into_iter().scan(init, det_min).collect_trusted(),
             true => self
                 .into_iter()
                 .rev()
                 .scan(init, det_min)
-                .trust_my_length(self.len())
                 .collect_reversed(),
         };
 
@@ -116,16 +107,11 @@ where
     fn cumsum(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
         let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_sum)
-                .trust_my_length(self.len())
-                .collect_trusted(),
+            false => self.into_iter().scan(init, det_sum).collect_trusted(),
             true => self
                 .into_iter()
                 .rev()
                 .scan(init, det_sum)
-                .trust_my_length(self.len())
                 .collect_reversed(),
         };
 
@@ -136,16 +122,11 @@ where
     fn cumprod(&self, reverse: bool) -> ChunkedArray<T> {
         let init = None;
         let mut ca: Self = match reverse {
-            false => self
-                .into_iter()
-                .scan(init, det_prod)
-                .trust_my_length(self.len())
-                .collect_trusted(),
+            false => self.into_iter().scan(init, det_prod).collect_trusted(),
             true => self
                 .into_iter()
                 .rev()
                 .scan(init, det_prod)
-                .trust_my_length(self.len())
                 .collect_reversed(),
         };
 

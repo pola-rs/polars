@@ -82,6 +82,7 @@ decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
 extract_jsonpath = ["polars-core/extract_jsonpath", "polars-core/strings"]
+string_encoding = ["polars-core/string_encoding", "polars-core/strings"]
 groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
@@ -174,6 +175,7 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dot_diagram",
+  "string_encoding",
 ]
 
 bench = [

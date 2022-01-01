@@ -10,13 +10,16 @@ pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
 
 impl DateChunked {
     pub fn as_date_iter(&self) -> impl Iterator<Item = Option<NaiveDate>> + TrustedLen + '_ {
-        self.downcast_iter()
-            .map(|iter| {
-                iter.into_iter()
-                    .map(|opt_v| opt_v.copied().map(date32_to_date))
-            })
-            .flatten()
-            .trust_my_length(self.len())
+        // safety: we know the iterators len
+        unsafe {
+            self.downcast_iter()
+                .map(|iter| {
+                    iter.into_iter()
+                        .map(|opt_v| opt_v.copied().map(date32_to_date))
+                })
+                .flatten()
+                .trust_my_length(self.len())
+        }
     }
 
     /// Extract month from underlying NaiveDate representation.

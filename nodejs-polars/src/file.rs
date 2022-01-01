@@ -59,4 +59,3 @@ impl Write for JsWriteStream<'_> {
         Ok(())
     }
 }
-

@@ -1,7 +1,5 @@
-use crate::groupby::ClosedWindow;
-use crate::unit::TimeNanoseconds;
+use crate::groupby::{ClosedWindow, TimeUnit};
 use crate::Duration;
-use chrono::NaiveDateTime;
 
 const LAST_DAYS_MONTH: [u32; 12] = [
     31, // January:   31,
@@ -35,50 +33,49 @@ pub const NS_HOUR: i64 = 60 * NS_MINUTE;
 pub const NS_DAY: i64 = 24 * NS_HOUR;
 pub const NS_WEEK: i64 = 7 * NS_DAY;
 
-pub fn timestamp_ns_to_datetime(v: i64) -> NaiveDateTime {
-    NaiveDateTime::from_timestamp(
-        // extract seconds from nanoseconds
-        v / NS_SECOND,
-        // discard extracted seconds
-        (v % NS_SECOND) as u32,
-    )
-}
-
 pub fn date_range(
-    start: TimeNanoseconds,
-    stop: TimeNanoseconds,
+    start: i64,
+    stop: i64,
     every: Duration,
     closed: ClosedWindow,
-) -> Vec<TimeNanoseconds> {
-    let size = ((stop - start) / every.duration() + 1) as usize;
+    tu: TimeUnit,
+) -> Vec<i64> {
+    let size = match tu {
+        TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
+        TimeUnit::Milliseconds => ((stop - start) / every.duration_ms() + 1) as usize,
+    };
     let mut ts = Vec::with_capacity(size);
 
     let mut t = start;
+    let f = match tu {
+        TimeUnit::Nanoseconds => <Duration>::duration_ns,
+        TimeUnit::Milliseconds => <Duration>::duration_ms,
+    };
     match closed {
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t += every.duration()
+                t += f(&every)
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t += every.duration()
+                t += f(&every)
             }
         }
         ClosedWindow::Right => {
-            t += every.duration();
+            t += f(&every);
             while t <= stop {
                 ts.push(t);
-                t += every.duration()
+                t += f(&every)
             }
         }
         ClosedWindow::None => {
-            t += every.duration();
+            t += f(&every);
             while t < stop {
                 ts.push(t);
-                t += every.duration()
+                t += f(&every)
             }
         }
     }

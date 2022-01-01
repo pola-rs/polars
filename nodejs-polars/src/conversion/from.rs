@@ -56,8 +56,8 @@ impl FromJsUnknown for AnyValue<'_> {
                 if val.is_date()? {
                     let d: JsDate = unsafe { val.cast() };
                     let d = d.value_of()?;
-                    let d = d as i64 * 1000000;
-                    Ok(AnyValue::Datetime(d))
+                    let d = d as i64;
+                    Ok(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None))
                 } else {
                     Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into())
                 }

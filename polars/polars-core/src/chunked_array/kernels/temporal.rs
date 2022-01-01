@@ -5,7 +5,9 @@ use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::{date32_to_datetime, timestamp_ns_to_datetime};
+use arrow::temporal_conversions::{
+    date32_to_datetime, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+};
 use polars_time::export::chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
 
@@ -46,6 +48,7 @@ macro_rules! to_temporal_unit {
         }
     };
 }
+// Dates
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_week,
@@ -94,87 +97,8 @@ to_temporal_unit!(
     i32,
     ArrowDataType::UInt32
 );
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_week,
-    week,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_weekday,
-    p_weekday,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_year,
-    year,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::Int32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_month,
-    month,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_day,
-    day,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_hour,
-    hour,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_minute,
-    minute,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_second,
-    second,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_nanosecond,
-    nanosecond,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
-#[cfg(feature = "dtype-datetime")]
-to_temporal_unit!(
-    datetime_to_ordinal,
-    ordinal,
-    timestamp_ns_to_datetime,
-    i64,
-    ArrowDataType::UInt32
-);
 
+// Times
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_hour,
@@ -204,6 +128,171 @@ to_temporal_unit!(
     time_to_nanosecond,
     nanosecond,
     time64ns_to_time,
+    i64,
+    ArrowDataType::UInt32
+);
+
+// Datetimes nanoseconds
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_week_ns,
+    week,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_weekday_ns,
+    p_weekday,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_year_ns,
+    year,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::Int32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_month_ns,
+    month,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_day_ns,
+    day,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_hour_ns,
+    hour,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_minute_ns,
+    minute,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_second_ns,
+    second,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_nanosecond_ns,
+    nanosecond,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_ordinal_ns,
+    ordinal,
+    timestamp_ns_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+
+// Datetimes milliseconds
+
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_week_ms,
+    week,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_weekday_ms,
+    p_weekday,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_year_ms,
+    year,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::Int32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_month_ms,
+    month,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_day_ms,
+    day,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_hour_ms,
+    hour,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_minute_ms,
+    minute,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_second_ms,
+    second,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_nanosecond_ms,
+    nanosecond,
+    timestamp_ms_to_datetime,
+    i64,
+    ArrowDataType::UInt32
+);
+#[cfg(feature = "dtype-datetime")]
+to_temporal_unit!(
+    datetime_to_ordinal_ms,
+    ordinal,
+    timestamp_ms_to_datetime,
     i64,
     ArrowDataType::UInt32
 );

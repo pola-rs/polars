@@ -1,8 +1,10 @@
 use super::*;
-use crate::prelude::AnyValue;
+use crate::prelude::{AnyValue, TimeUnit};
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::{timestamp_ms_to_datetime, NANOSECONDS};
+use arrow::temporal_conversions::{
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS,
+};
 use polars_time::export::chrono::{NaiveDateTime, NaiveTime};
 
 /// Number of seconds in a day
@@ -14,7 +16,10 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => NaiveDateTime::from_timestamp(*v as i64 * SECONDS_IN_DAY, 0),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => timestamp_ms_to_datetime(*v),
+            AnyValue::Datetime(v, tu, _) => match tu {
+                TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
+                TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
+            },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
         }
     }
@@ -30,15 +35,20 @@ impl From<&AnyValue<'_>> for NaiveTime {
     }
 }
 
-// datetime is number of milliseconds since the Unix Epoch
 // Used by lazy for literal conversion
 #[cfg(feature = "private")]
-pub fn naive_datetime_to_datetime(v: &NaiveDateTime) -> i64 {
+pub fn naive_datetime_to_datetime_ns(v: &NaiveDateTime) -> i64 {
     v.timestamp_nanos()
 }
 
+// Used by lazy for literal conversion
+#[cfg(feature = "private")]
+pub fn naive_datetime_to_datetime_ms(v: &NaiveDateTime) -> i64 {
+    v.timestamp_millis()
+}
+
 pub(crate) fn naive_datetime_to_date(v: &NaiveDateTime) -> i32 {
-    (naive_datetime_to_datetime(v) / (NANOSECONDS * SECONDS_IN_DAY)) as i32
+    (naive_datetime_to_datetime_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {

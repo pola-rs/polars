@@ -237,7 +237,7 @@ impl<T> ChunkedArray<T> {
         } else {
             use DataType::*;
             match (self.dtype(), series.dtype()) {
-                (Int64, Datetime) | (Int32, Date) => {
+                (Int64, Datetime(_, _)) | (Int32, Date) => {
                     &*(series_trait as *const dyn SeriesTrait as *const ChunkedArray<T>)
                 }
                 _ => panic!(
@@ -542,10 +542,13 @@ where
            + TrustedLen {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
-        self.data_views()
-            .flatten()
-            .map(|v| *v)
-            .trust_my_length(self.len())
+        // we know the iterators len
+        unsafe {
+            self.data_views()
+                .flatten()
+                .map(|v| *v)
+                .trust_my_length(self.len())
+        }
     }
 }
 

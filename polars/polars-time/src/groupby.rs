@@ -1,5 +1,4 @@
 use crate::bounds::Bounds;
-use crate::unit::TimeNanoseconds;
 use crate::window::Window;
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
@@ -12,12 +11,18 @@ pub enum ClosedWindow {
     None,
 }
 
+pub enum TimeUnit {
+    Nanoseconds,
+    Milliseconds,
+}
+
 pub fn groupby(
     window: Window,
     time: &[i64],
     include_boundaries: bool,
     closed_window: ClosedWindow,
-) -> (GroupTuples, Vec<TimeNanoseconds>, Vec<TimeNanoseconds>) {
+    tu: TimeUnit,
+) -> (GroupTuples, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
@@ -29,17 +34,27 @@ pub fn groupby(
     };
 
     let size = if include_boundaries {
-        window.estimate_overlapping_bounds(boundary)
+        match tu {
+            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
+            TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
+        }
     } else {
         0
     };
     let mut lower_bound = Vec::with_capacity(size);
     let mut upper_bound = Vec::with_capacity(size);
 
-    let mut group_tuples = Vec::with_capacity(window.estimate_overlapping_bounds(boundary));
+    let mut group_tuples = match tu {
+        TimeUnit::Nanoseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
+        }
+        TimeUnit::Milliseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
+        }
+    };
     let mut latest_start = 0;
 
-    for bi in window.get_overlapping_bounds_iter(boundary) {
+    for bi in window.get_overlapping_bounds_iter(boundary, tu) {
         let mut group = vec![];
 
         let mut skip_window = false;

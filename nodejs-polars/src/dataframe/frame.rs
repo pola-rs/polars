@@ -3,8 +3,7 @@ use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
 use crate::prelude::JsResult;
 use napi::{
-    CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsUndefined,
-    JsUnknown,
+    CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsUndefined, JsUnknown,
 };
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;

@@ -96,6 +96,8 @@ pub struct CatIter<'a> {
     iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
 }
 
+unsafe impl<'a> TrustedLen for CatIter<'a> {}
+
 impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
 

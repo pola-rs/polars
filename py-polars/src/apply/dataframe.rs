@@ -2,16 +2,22 @@ use super::*;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsEr;
 use crate::series::PySeries;
+use crate::PyDataFrame;
 use polars::prelude::*;
-use pyo3::conversion::FromPyObject;
+use polars_core::frame::row::Row;
+use polars_core::utils::accumulate_dataframes_vertical;
+use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
 
+// the return type is Union[PySeries, PyDataFrame] and a boolean indicating if it is a dataframe or not
 pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
     py: Python,
     lambda: &'a PyAny,
-) -> PyResult<Series> {
+    batch_size: usize,
+    rechunk: bool,
+) -> PyResult<(PyObject, bool)> {
     let columns = df.get_columns();
     let mut null_count = 0;
 
@@ -23,52 +29,89 @@ pub fn apply_lambda_unknown<'a>(
         if out.is_none() {
             null_count += 1;
             continue;
-        } else if out.is_instance::<PyInt>().unwrap() {
-            let first_value = out.extract::<i64>().ok();
-            return Ok(apply_lambda_with_primitive_out_type::<Int64Type>(
-                df,
-                py,
-                lambda,
-                null_count,
-                first_value,
-            )
-            .into_series());
+        } else if out.is_instance::<PyBool>().unwrap() {
+            let first_value = out.extract::<bool>().ok();
+            return Ok((
+                PySeries::new(
+                    apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)
+                        .into_series(),
+                )
+                .into_py(py),
+                false,
+            ));
         } else if out.is_instance::<PyFloat>().unwrap() {
             let first_value = out.extract::<f64>().ok();
 
-            return Ok(apply_lambda_with_primitive_out_type::<Float64Type>(
-                df,
-                py,
-                lambda,
-                null_count,
-                first_value,
-            )
-            .into_series());
-        } else if out.is_instance::<PyBool>().unwrap() {
-            let first_value = out.extract::<bool>().ok();
-            return Ok(
-                apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)
+            return Ok((
+                PySeries::new(
+                    apply_lambda_with_primitive_out_type::<Float64Type>(
+                        df,
+                        py,
+                        lambda,
+                        null_count,
+                        first_value,
+                    )
                     .into_series(),
-            );
+                )
+                .into_py(py),
+                false,
+            ));
+        } else if out.is_instance::<PyInt>().unwrap() {
+            let first_value = out.extract::<i64>().ok();
+            return Ok((
+                PySeries::new(
+                    apply_lambda_with_primitive_out_type::<Int64Type>(
+                        df,
+                        py,
+                        lambda,
+                        null_count,
+                        first_value,
+                    )
+                    .into_series(),
+                )
+                .into_py(py),
+                false,
+            ));
         } else if out.is_instance::<PyString>().unwrap() {
             let first_value = out.extract::<&str>().ok();
-            return Ok(
-                apply_lambda_with_utf8_out_type(df, py, lambda, null_count, first_value)
-                    .into_series(),
-            );
+            return Ok((
+                PySeries::new(
+                    apply_lambda_with_utf8_out_type(df, py, lambda, null_count, first_value)
+                        .into_series(),
+                )
+                .into_py(py),
+                false,
+            ));
         } else if out.hasattr("_s")? {
             let py_pyseries = out.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             let dt = series.dtype();
-            return Ok(apply_lambda_with_list_out_type(
-                df,
-                py,
-                lambda,
-                null_count,
-                Some(&series),
-                dt,
-            )
-            .into_series());
+            return Ok((
+                PySeries::new(
+                    apply_lambda_with_list_out_type(df, py, lambda, null_count, Some(&series), dt)
+                        .into_series(),
+                )
+                .into_py(py),
+                false,
+            ));
+        } else if out.extract::<Wrap<Row<'a>>>().is_ok() {
+            let first_value = out.extract::<Wrap<Row<'a>>>().unwrap().0;
+            return Ok((
+                PyDataFrame::from(
+                    apply_lambda_with_rows_output(
+                        df,
+                        py,
+                        lambda,
+                        null_count,
+                        first_value,
+                        batch_size,
+                        rechunk,
+                    )
+                    .map_err(PyPolarsEr::from)?,
+                )
+                .into_py(py),
+                true,
+            ));
         } else if out.is_instance::<PyList>().unwrap() {
             return Err(PyPolarsEr::Other(
                 "A list output type is invalid. Do you mean to create polars List Series?\
@@ -199,4 +242,56 @@ pub fn apply_lambda_with_list_out_type<'a>(
         });
         iterator_to_list(dt, iter, init_null_count, first_value, "apply", df.height())
     }
+}
+
+pub fn apply_lambda_with_rows_output<'a>(
+    df: &'a DataFrame,
+    py: Python,
+    lambda: &'a PyAny,
+    init_null_count: usize,
+    first_value: Row<'a>,
+    batch_size: usize,
+    rechunk: bool,
+) -> Result<DataFrame> {
+    let columns = df.get_columns();
+    let width = first_value.0.len();
+    let null_row = Row::new(vec![AnyValue::Null; width]);
+
+    let skip = 1;
+    let mut row_iter = ((init_null_count + skip)..df.height()).map(|idx| {
+        let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
+        let tpl = (PyTuple::new(py, iter),);
+        match lambda.call1(tpl) {
+            Ok(val) => val
+                .extract::<Wrap<Row>>()
+                .map(|r| r.0)
+                .unwrap_or_else(|_| null_row.clone()),
+            Err(e) => panic!("python function failed {}", e),
+        }
+    });
+    let mut buf = Vec::with_capacity(batch_size);
+    buf.push(first_value);
+
+    buf.extend((&mut row_iter).take(batch_size));
+    let df = DataFrame::from_rows(&buf)?;
+    let schema = df.schema();
+
+    let mut dfs = Vec::with_capacity(df.height() / batch_size + 1);
+    dfs.push(df);
+
+    loop {
+        buf.clear();
+        buf.extend((&mut row_iter).take(batch_size));
+        if buf.is_empty() {
+            break;
+        }
+        let df = DataFrame::from_rows_and_schema(&buf, &schema)?;
+        dfs.push(df);
+    }
+
+    let mut df = accumulate_dataframes_vertical(dfs.into_iter())?;
+    if rechunk {
+        df.rechunk();
+    }
+    Ok(df)
 }

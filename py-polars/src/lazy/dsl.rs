@@ -357,11 +357,15 @@ impl PyExpr {
     pub fn str_parse_datetime(&self, fmt: Option<String>) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_datetime(fmt.as_deref()).map(|ca| ca.into_series())
+            ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)
+                .map(|ca| ca.into_series())
         };
         self.clone()
             .inner
-            .map(function, GetOutput::from_type(DataType::Datetime))
+            .map(
+                function,
+                GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
+            )
             .into()
     }
 
@@ -450,7 +454,43 @@ impl PyExpr {
             .map(function, GetOutput::from_type(DataType::Boolean))
             .into()
     }
+    pub fn str_hex_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8().map(|s| s.hex_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .into()
+    }
+    pub fn str_hex_decode(&self, strict: Option<bool>) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .into()
+    }
+    pub fn str_base64_encode(&self) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8().map(|s| s.base64_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .into()
+    }
 
+    pub fn str_base64_decode(&self, strict: Option<bool>) -> PyExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .into()
+    }
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -1020,7 +1060,7 @@ impl PyExpr {
             .clone()
             .apply(
                 move |s| match s.dtype() {
-                    DataType::Datetime => {
+                    DataType::Datetime(_, _) => {
                         Ok(s.datetime().unwrap().truncate(every, offset).into_series())
                     }
                     DataType::Date => Ok(s.date().unwrap().truncate(every, offset).into_series()),

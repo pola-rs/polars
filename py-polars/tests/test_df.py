@@ -1255,6 +1255,21 @@ def test_apply_list_return() -> None:
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
+def test_apply_dataframe_return() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["c", "d", None]})
+
+    out = df.apply(lambda row: (row[0] * 10, "foo", True, row[-1]))
+    expected = pl.DataFrame(
+        {
+            "column_0": [10, 20, 30],
+            "column_1": ["foo", "foo", "foo"],
+            "column_2": [True, True, True],
+            "column_3": ["c", "d", None],
+        }
+    )
+    assert out.frame_equal(expected, null_equal=True)  # type: ignore
+
+
 def test_groupby_cat_list() -> None:  # noqa: W191,E101
     grouped = (
         pl.DataFrame(
@@ -1343,7 +1358,7 @@ AAPL""".split(
 
     out = trades.join(quotes, on="dates", how="asof")
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
-    assert (out["dates"].cast(int) // 1000_000).to_list() == [
+    assert (out["dates"].cast(int)).to_list() == [
         1464183000023,
         1464183000038,
         1464183000048,
@@ -1642,6 +1657,19 @@ def test_arithmetic() -> None:
         pl.col("b").cast(pl.Float64)
     )
     assert out.frame_equal(expected, null_equal=True)
+
+    # cannot do arithmetics with a sequence
+    with pytest.raises(ValueError, match="Operation not supported"):
+        _ = df + [1]  # type: ignore
+
+
+def test_add_string() -> None:
+    df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
+    result = df + " hello"
+    expected = pl.DataFrame(
+        {"a": ["hi hello", "there hello"], "b": ["hello hello", "world hello"]}
+    )
+    assert result.frame_equal(expected)
 
 
 def test_getattr() -> None:

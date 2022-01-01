@@ -48,7 +48,7 @@ def test_filter_date() -> None:
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
-            "timestamp": ["2021-02-01", "2021-03-1", "2021-04-1"],
+            "timestamp": ["2021-02-01", "2021-03-1", "2850-04-1"],
             "guild": [1, 2, 3],
             "char": ["a", "a", "b"],
         }
@@ -157,8 +157,10 @@ def test_to_list() -> None:
 
 def test_rows() -> None:
     s0 = pl.Series("date", [123543, 283478, 1243]).cast(pl.Date)
-    s1 = pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]]).cast(
-        pl.Datetime
+    s1 = (
+        pl.Series("datetime", [a * 1_000_000 for a in [123543, 283478, 1243]])
+        .cast(pl.Datetime)
+        .dt.and_time_unit("ns")
     )
     df = pl.DataFrame([s0, s1])
 
@@ -182,10 +184,11 @@ def test_to_numpy() -> None:
 def test_truncate() -> None:
     start = datetime(2001, 1, 1)
     stop = datetime(2001, 1, 2)
-    s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
 
+    s1 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ms")
+    s2 = pl.date_range(start, stop, timedelta(minutes=30), name="dates", time_unit="ns")
     # we can pass strings and timedeltas
-    for out in [s.dt.truncate("1h"), s.dt.truncate(timedelta(hours=1))]:
+    for out in [s1.dt.truncate("1h"), s2.dt.truncate(timedelta(hours=1))]:
         assert out.dt[0] == start
         assert out.dt[1] == start
         assert out.dt[2] == start + timedelta(hours=1)

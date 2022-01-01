@@ -49,6 +49,8 @@ use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
+use rayon::prelude::*;
+#[cfg(feature = "temporal")]
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
@@ -459,7 +461,7 @@ where
                             to_cast.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        Date | Datetime => {
+                        Date | Datetime(_, _) => {
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
@@ -574,27 +576,32 @@ where
 
 #[cfg(feature = "temporal")]
 fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let mut cols: Vec<Series> = df.into();
+    let cols = df
+        .get_columns()
+        .par_iter()
+        .map(|s| {
+            if let Ok(ca) = s.utf8() {
+                // don't change columns that are in the fixed schema.
+                if fixed_schema.column_with_name(s.name()).is_some() {
+                    return s.clone();
+                }
 
-    for s in cols.iter_mut() {
-        if let Ok(ca) = s.utf8() {
-            // don't change columns that are in the fixed schema.
-            if fixed_schema.column_with_name(s.name()).is_some() {
-                continue;
+                #[cfg(feature = "dtype-time")]
+                if let Ok(ca) = ca.as_time(None) {
+                    return ca.into_series();
+                }
+                if let Ok(ca) = ca.as_date(None) {
+                    ca.into_series()
+                } else if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
+                    ca.into_series()
+                } else {
+                    s.clone()
+                }
+            } else {
+                s.clone()
             }
-
-            #[cfg(feature = "dtype-time")]
-            if let Ok(ca) = ca.as_time(None) {
-                *s = ca.into_series();
-                continue;
-            }
-            if let Ok(ca) = ca.as_date(None) {
-                *s = ca.into_series()
-            } else if let Ok(ca) = ca.as_datetime(None) {
-                *s = ca.into_series()
-            }
-        }
-    }
+        })
+        .collect::<Vec<_>>();
 
     DataFrame::new_no_checks(cols)
 }
@@ -999,7 +1006,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .has_header(true)
             .with_dtypes(Some(&Schema::new(vec![Field::new(
                 "b",
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
             )])))
             .finish()?;
 
@@ -1007,7 +1014,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             df.dtypes(),
             &[
                 DataType::Utf8,
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
                 DataType::Float64,
                 DataType::Float64,
                 DataType::Int64
@@ -1169,7 +1176,10 @@ bar,bar";
         let df = CsvReader::new(file).with_parse_dates(true).finish()?;
 
         let ts = df.column("timestamp")?;
-        assert_eq!(ts.dtype(), &DataType::Datetime);
+        assert_eq!(
+            ts.dtype(),
+            &DataType::Datetime(TimeUnit::Milliseconds, None)
+        );
         assert_eq!(ts.null_count(), 0);
 
         Ok(())

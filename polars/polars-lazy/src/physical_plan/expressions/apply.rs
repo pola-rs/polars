@@ -89,7 +89,9 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
-                    let s = self.function.call_udf(&mut [ac.flat().into_owned()])?;
+                    let s = self
+                        .function
+                        .call_udf(&mut [ac.flat_naive().into_owned()])?;
                     if ac.is_aggregated() {
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     }
@@ -146,7 +148,7 @@ impl PhysicalExpr for ApplyExpr {
                 ApplyOptions::ApplyFlat => {
                     let mut s = acs
                         .iter()
-                        .map(|ac| ac.flat().into_owned())
+                        .map(|ac| ac.flat_naive().into_owned())
                         .collect::<Vec<_>>();
 
                     let s = self.function.call_udf(&mut s)?;
@@ -214,7 +216,7 @@ impl PhysicalAggregation for ApplyExpr {
                     // if its flat, we just apply and return
                     // if not flat, the flattening sorts by group, so we must create new group tuples
                     // and again aggregate.
-                    let out = self.function.call_udf(&mut [ac.flat().into_owned()]);
+                    let out = self.function.call_udf(&mut [ac.flat_naive().into_owned()]);
 
                     if ac.is_not_aggregated() || !matches!(ac.series().dtype(), DataType::List(_)) {
                         out.map(Some)
@@ -237,19 +239,23 @@ impl PhysicalAggregation for ApplyExpr {
                     let mut container = vec![Default::default(); acs.len()];
                     let name = acs[0].series().name().to_string();
 
-                    // aggregate representation of the aggregation contexts
-                    // then unpack the lists and finaly create iterators from this list chunked arrays.
-                    let lists = acs
-                        .iter_mut()
-                        .map(|ac| {
-                            let s = ac.aggregated();
-                            s.list().unwrap().clone()
+                    // Don't ever try to be smart here.
+                    // Every argument needs to be aggregated; period.
+                    // We only work on groups in the groupby context.
+                    // If the argument is a literal use `map`
+                    let owned_series = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
+
+                    // now we make the iterators
+                    let mut iters = owned_series
+                        .iter()
+                        .map(|s| {
+                            let ca = s.list().unwrap();
+                            ca.into_iter()
                         })
                         .collect::<Vec<_>>();
-                    let mut iters = lists.iter().map(|ca| ca.into_iter()).collect::<Vec<_>>();
 
                     // length of the items to iterate over
-                    let len = lists[0].len();
+                    let len = groups.len();
 
                     let mut ca: ListChunked = (0..len)
                         .map(|_| {
@@ -284,7 +290,7 @@ impl PhysicalAggregation for ApplyExpr {
                                 "flat apply on any expression that is already \
                             in aggregated state is not yet suported"
                             );
-                            ac.flat().into_owned()
+                            ac.flat_naive().into_owned()
                         })
                         .collect::<Vec<_>>();
 

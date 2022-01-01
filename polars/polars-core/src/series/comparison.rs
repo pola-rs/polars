@@ -29,7 +29,7 @@ macro_rules! impl_compare {
             #[cfg(feature = "dtype-time")]
             DataType::Time => lhs.time().unwrap().$method(rhs.time().unwrap().deref()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => lhs
+            DataType::Datetime(_, _) => lhs
                 .datetime()
                 .unwrap()
                 .$method(rhs.datetime().unwrap().deref()),

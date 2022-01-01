@@ -19,7 +19,7 @@ pub(crate) enum PyDataType {
     Utf8,
     List,
     Date,
-    Datetime,
+    Datetime(TimeUnit, Option<TimeZone>),
     Time,
     Object,
     Categorical,
@@ -43,12 +43,12 @@ impl From<&DataType> for PyDataType {
             DataType::Utf8 => Utf8,
             DataType::List(_) => List,
             DataType::Date => Date,
-            DataType::Datetime => Datetime,
+            DataType::Datetime(tu, tz) => Datetime(*tu, tz.clone()),
             DataType::Time => Time,
             DataType::Object(_) => Object,
             DataType::Categorical => Categorical,
-            DataType::Null => {
-                panic!("null not expected here")
+            DataType::Null | DataType::Unknown => {
+                panic!("null or unknown not expected here")
             }
         }
     }
@@ -78,7 +78,7 @@ impl Into<DataType> for PyDataType {
             PyDataType::Utf8 => Utf8,
             PyDataType::List => List(DataType::Null.into()),
             PyDataType::Date => Date,
-            PyDataType::Datetime => Datetime,
+            PyDataType::Datetime(tu, tz) => Datetime(tu, tz),
             PyDataType::Time => Time,
             PyDataType::Object => Object("object"),
             PyDataType::Categorical => Categorical,

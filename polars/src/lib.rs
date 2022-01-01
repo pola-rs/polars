@@ -138,11 +138,11 @@
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
-//!     - `cum_agg` - [cumsum, cummin, cummax aggregation](crate::chunked_array::ops::CumAgg)
-//!     - `rolling_window` [rolling window functions, like rolling_mean](crate::chunked_array::ops::ChunkWindow)
+//!     - `cum_agg` - cumsum, cummin, cummax aggregation.
+//!     - `rolling_window` - rolling window functions, like rolling_mean
 //!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
-//!     - `list` - [List utils](crate::chunked_array::list::namespace)
+//!     - `list` - List utils.
 //!     - `rank` - Ranking algorithms.
 //!     - `moment` - kurtosis and skew statistics
 //!     - `ewma` - Exponential moving average windows

@@ -61,7 +61,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.8.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=d14ae86c69cd76957adec3b14bb62d93732b43c9#d14ae86c69cd76957adec3b14bb62d93732b43c9"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=b617331354fd8c64c2126b6f4fc6f9935f7971ab#b617331354fd8c64c2126b6f4fc6f9935f7971ab"
 dependencies = [
  "arrow-format",
  "base64",
@@ -563,6 +563,12 @@ checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "indexmap"
@@ -1169,6 +1175,7 @@ name = "polars-arrow"
 version = "0.18.0"
 dependencies = [
  "arrow2",
+ "hashbrown",
  "num",
  "thiserror",
 ]
@@ -1180,8 +1187,10 @@ dependencies = [
  "ahash",
  "anyhow",
  "arrow2",
+ "base64",
  "comfy-table",
  "hashbrown",
+ "hex",
  "jsonpath_lib",
  "lazy_static",
  "num",
@@ -1274,7 +1283,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.12.5"
+version = "0.12.7"
 dependencies = [
  "ahash",
  "bincode",

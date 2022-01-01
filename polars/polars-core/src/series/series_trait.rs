@@ -525,7 +525,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
         invalid_operation_panic!(self)
     }
@@ -542,7 +543,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
         invalid_operation_panic!(self)
     }
@@ -854,7 +856,7 @@ pub trait SeriesTrait:
     fn hour(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.hour()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.hour()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.hour()),
             _ => Err(PolarsError::InvalidOperation(
@@ -870,7 +872,7 @@ pub trait SeriesTrait:
     fn minute(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.minute()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.minute()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.minute()),
             _ => Err(PolarsError::InvalidOperation(
@@ -886,7 +888,7 @@ pub trait SeriesTrait:
     fn second(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.second()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.second()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.second()),
             _ => Err(PolarsError::InvalidOperation(
@@ -902,7 +904,7 @@ pub trait SeriesTrait:
     fn nanosecond(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.nanosecond()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.nanosecond()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.nanosecond()),
             _ => Err(PolarsError::InvalidOperation(
@@ -922,7 +924,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.day()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.day()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.day()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -936,7 +938,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.weekday()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.weekday()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.weekday()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -952,7 +954,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.week()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.week()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.week()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -969,7 +971,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.ordinal()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.ordinal()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.ordinal()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -987,7 +989,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.month()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.month()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.month()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -1003,7 +1005,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.year()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.year()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.year()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -1018,7 +1020,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.strftime(fmt).into_series()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.strftime(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(
@@ -1033,11 +1035,18 @@ pub trait SeriesTrait:
     fn timestamp(&self) -> Result<Int64Chunked> {
         match self.dtype() {
             DataType::Date => self
-                .cast(&DataType::Datetime)
+                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                 .unwrap()
                 .datetime()
-                .map(|ca| (ca.deref() * 1000)),
-            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
+                .map(|ca| (ca.deref().clone())),
+            DataType::Datetime(tu, tz) => {
+                use TimeUnit::*;
+                match (tu, tz) {
+                    (Nanoseconds, None) => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
+                    (Milliseconds, None) => self.datetime().map(|ca| ca.deref().clone()),
+                    _ => todo!(),
+                }
+            }
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),

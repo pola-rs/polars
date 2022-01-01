@@ -1,15 +1,13 @@
-/* eslint-disable no-redeclare */
-import {DataFrame, dfWrapper, _wrapDataFrame} from "./dataframe";
+import {DataFrame, dfWrapper} from "./dataframe";
 import * as utils from "./utils";
-import type {ColumnSelection} from "./utils";
-const inspect = Symbol.for("nodejs.util.inspect.custom");
 import util from "util";
-import {InvalidOperationError, todo} from "./error";
+import {InvalidOperationError} from "./error";
 import {Expr} from "./lazy/expr";
+import {col, exclude} from "./lazy/functions";
+import pli from "./internals/polars_internal";
 
 
-import {col, exclude} from "./lazy/lazy_functions";
-
+const inspect = Symbol.for("nodejs.util.inspect.custom");
 const inspectOpts = {colors:true, depth:null};
 
 /**
@@ -224,9 +222,9 @@ export function GroupBy(
     agg,
     pivot,
     aggList: () => agg(exclude(by as any).list()),
-    count: () => _wrapDataFrame(df, "groupby", {by, agg: "count"}),
+    count: () => dfWrapper(pli.df.groupby({by, agg: "count", _df: df})),
     first: () => agg(exclude(by as any).first()),
-    groups: () => _wrapDataFrame(df, "groupby", {by, agg: "groups"}),
+    groups: () => dfWrapper(pli.df.groupby({by, agg: "groups", _df: df})),
     head: (n=5) => agg(exclude(by as any).head(n)),
     last: () => agg(exclude(by as any).last()),
     max: () => agg(exclude(by as any).max()),
@@ -248,7 +246,7 @@ function PivotOps(
   valueCol: string
 ): PivotOps {
 
-  const pivot =  (agg) => () =>  _wrapDataFrame(df, "pivot", {by, pivotCol, valueCol, agg});
+  const pivot =  (agg) => () =>  dfWrapper(pli.df.pivot({by, pivotCol, valueCol, agg, _df: df}));
   const customInspect = () => util.formatWithOptions(inspectOpts, "PivotOps {by: %O}", by);
 
   return {

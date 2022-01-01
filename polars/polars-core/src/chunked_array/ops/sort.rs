@@ -222,10 +222,12 @@ where
             }
 
             self.downcast_iter().for_each(|arr| {
-                let iter = arr
-                    .iter()
-                    .filter_map(|v| v.copied())
-                    .trust_my_length(len - null_count);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    arr.iter()
+                        .filter_map(|v| v.copied())
+                        .trust_my_length(len - null_count)
+                };
                 vals.extend_trusted_len(iter);
             });
             let mut_slice = if options.nulls_last {
@@ -609,7 +611,6 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
         let mut vals = self
             .into_iter()
             .zip(self.iter_str())
-            .trust_my_length(self.len())
             .collect_trusted::<Vec<_>>();
 
         argsort_branch(
@@ -634,6 +635,7 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
         let mut count: u32 = 0;
+        // safety: we know the iterators len
         let mut vals = self
             .iter_str()
             .map(|s| {
@@ -641,7 +643,6 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
                 count += 1;
                 (i, s)
             })
-            .trust_my_length(self.len())
             .collect_trusted::<Vec<_>>();
 
         argsort_branch(

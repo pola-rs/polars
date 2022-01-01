@@ -16,17 +16,21 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;
-                let iter = sub_seq
-                    .iter()?
-                    .map(|v| {
-                        let v = v.unwrap();
-                        if v.is_none() {
-                            None
-                        } else {
-                            Some(v.extract::<i64>().unwrap())
-                        }
-                    })
-                    .trust_my_length(len);
+
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    sub_seq
+                        .iter()?
+                        .map(|v| {
+                            let v = v.unwrap();
+                            if v.is_none() {
+                                None
+                            } else {
+                                Some(v.extract::<i64>().unwrap())
+                            }
+                        })
+                        .trust_my_length(len)
+                };
                 builder.append_iter(iter)
             }
             builder.finish().into_series()
@@ -37,17 +41,20 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;
-                let iter = sub_seq
-                    .iter()?
-                    .map(|v| {
-                        let v = v.unwrap();
-                        if v.is_none() {
-                            None
-                        } else {
-                            Some(v.extract::<f64>().unwrap())
-                        }
-                    })
-                    .trust_my_length(len);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    sub_seq
+                        .iter()?
+                        .map(|v| {
+                            let v = v.unwrap();
+                            if v.is_none() {
+                                None
+                            } else {
+                                Some(v.extract::<f64>().unwrap())
+                            }
+                        })
+                        .trust_my_length(len)
+                };
                 builder.append_iter(iter)
             }
             builder.finish().into_series()
@@ -57,17 +64,20 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;
-                let iter = sub_seq
-                    .iter()?
-                    .map(|v| {
-                        let v = v.unwrap();
-                        if v.is_none() {
-                            None
-                        } else {
-                            Some(v.extract::<bool>().unwrap())
-                        }
-                    })
-                    .trust_my_length(len);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    sub_seq
+                        .iter()?
+                        .map(|v| {
+                            let v = v.unwrap();
+                            if v.is_none() {
+                                None
+                            } else {
+                                Some(v.extract::<bool>().unwrap())
+                            }
+                        })
+                        .trust_my_length(len)
+                };
                 builder.append_iter(iter)
             }
             builder.finish().into_series()
@@ -77,17 +87,20 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;
-                let iter = sub_seq
-                    .iter()?
-                    .map(|v| {
-                        let v = v.unwrap();
-                        if v.is_none() {
-                            None
-                        } else {
-                            Some(v.extract::<&str>().unwrap())
-                        }
-                    })
-                    .trust_my_length(len);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    sub_seq
+                        .iter()?
+                        .map(|v| {
+                            let v = v.unwrap();
+                            if v.is_none() {
+                                None
+                            } else {
+                                Some(v.extract::<&str>().unwrap())
+                            }
+                        })
+                        .trust_my_length(len)
+                };
                 builder.append_iter(iter)
             }
             builder.finish().into_series()

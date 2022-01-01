@@ -189,6 +189,7 @@ impl Default for LogicalPlan {
 }
 
 impl LogicalPlan {
+    #[cfg(feature = "dot_diagram")]
     fn write_dot(
         &self,
         acc_str: &mut String,
@@ -370,6 +371,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dot_diagram")]
     fn test_dot() {
         let left = df!("days" => &[0, 1, 2, 3, 4],
         "temp" => [22.1, 19.9, 7., 2., 3.],

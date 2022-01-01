@@ -1,11 +1,14 @@
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-use std::borrow::Cow;
+
+#[cfg(feature = "string_encoding")]
+mod encoding;
 
 use crate::prelude::*;
 use arrow::compute::substring::substring;
 use polars_arrow::kernels::string::*;
 use regex::Regex;
+use std::borrow::Cow;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
     reg.captures(input)

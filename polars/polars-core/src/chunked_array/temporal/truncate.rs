@@ -1,12 +1,19 @@
 use crate::prelude::*;
-use arrow::temporal_conversions::NANOSECONDS;
+use arrow::temporal_conversions::MILLISECONDS;
 use polars_time::{Duration, Window};
 
 #[cfg(feature = "dtype-datetime")]
 impl DatetimeChunked {
     pub fn truncate(&self, every: Duration, offset: Duration) -> Self {
         let w = Window::new(every, every, offset);
-        self.apply(|t| w.truncate(t)).into_date()
+
+        let func = match self.time_unit() {
+            TimeUnit::Nanoseconds => Window::truncate_ns,
+            TimeUnit::Milliseconds => Window::truncate_ms,
+        };
+
+        self.apply(|t| func(&w, t))
+            .into_datetime(self.time_unit(), self.time_zone().clone())
     }
 }
 
@@ -15,8 +22,8 @@ impl DateChunked {
     pub fn truncate(&self, every: Duration, offset: Duration) -> Self {
         let w = Window::new(every, every, offset);
         self.apply(|t| {
-            const NSECS_IN_DAY: i64 = NANOSECONDS * SECONDS_IN_DAY;
-            (w.truncate(NSECS_IN_DAY * t as i64) / NSECS_IN_DAY) as i32
+            const MSECS_IN_DAY: i64 = MILLISECONDS * SECONDS_IN_DAY;
+            (w.truncate_ms(MSECS_IN_DAY * t as i64) / MSECS_IN_DAY) as i32
         })
         .into_date()
     }

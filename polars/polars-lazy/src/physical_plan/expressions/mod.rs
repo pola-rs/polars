@@ -130,7 +130,7 @@ impl<'a> AggregationContext<'a> {
         match (
             &self.groups,
             self.sorted,
-            self.original_len,
+            self.is_original_len(),
             &other.groups,
             other.sorted,
             other.original_len,
@@ -205,6 +205,10 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    pub(crate) fn is_original_len(&self) -> bool {
+        self.original_len
+    }
+
     pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
         self.original_len = original_len;
         self
@@ -229,15 +233,17 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
+    /// Update the group tuples
     pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat().into_owned(), false);
+        self.with_series(self.flat_naive().into_owned(), false);
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
         self
     }
 
+    /// Get the aggregated version of the series.
     pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
         // we clone, because we only want to call `self.groups()` if needed.
         // self groups may instantiate new groups and thus can be expensive.
@@ -278,7 +284,11 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
-    pub(crate) fn flat(&self) -> Cow<'_, Series> {
+    /// Get the not-aggregated version of the series.
+    /// Note that we call it naive, because if a previous expr
+    /// has filtered or sorted this, this information is in the
+    /// group tuples not the flattened series.
+    pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
         match &self.series {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
             AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
@@ -287,6 +297,7 @@ impl<'a> AggregationContext<'a> {
         }
     }
 
+    /// Take the series.
     pub(crate) fn take(&mut self) -> Series {
         match std::mem::take(&mut self.series) {
             AggState::NotAggregated(s)
