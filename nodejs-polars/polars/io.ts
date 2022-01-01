@@ -210,7 +210,9 @@ class LineBatcher extends Stream.Transform {
  *
  * **Warning:** this is much slower than `scanCSV` or `readCSV`
  *
+ * This will consume the entire stream into a single buffer and then call `readCSV`
  * Only use it when you must consume from a stream, or when performance is not a major consideration
+ *
  * ___
  * @param stream - readable stream containing csv data
  * @param options
