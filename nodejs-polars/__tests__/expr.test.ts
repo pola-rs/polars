@@ -1559,7 +1559,7 @@ describe("expr.str", () => {
     expect(actual).toFrameEqual(expected);
     expect(seriesActual).toFrameEqual(expected);
   });
-  test.only("base64 decode", () => {
+  test("base64 decode", () => {
     const _df = pl.DataFrame({"strings": ["666f6f", "626172", null]});
     console.log(_df.select(col("strings").str.decode("hex")));
     const df = pl.DataFrame({

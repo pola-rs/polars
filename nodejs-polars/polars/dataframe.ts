@@ -1114,6 +1114,7 @@ export interface DataFrame {
    */
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
+  toParquet(destination: string, compression: "uncompressed" | "snappy" | "gzip" | "lzo" | "brotli" | "lz4" | "zstd"): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1619,6 +1620,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         // toJSON(writeStream, options)
         return writeToStreamOrString(arg0, "json", options);
       }
+    },
+    toParquet(path, compression) {
+      return unwrap("writeParquet", {path, compression});
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),
