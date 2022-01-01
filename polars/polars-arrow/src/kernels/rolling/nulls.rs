@@ -262,11 +262,11 @@ where
         QuantileInterpolOptions::Nearest => ((length as f64) * quantile) as usize,
         QuantileInterpolOptions::Lower
         | QuantileInterpolOptions::Midpoint
-        | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * quantile) as usize,
+        | QuantileInterpolOptions::Linear => ((length as f64 - 1.0) * quantile).floor() as usize,
         QuantileInterpolOptions::Higher => ((length as f64 - 1.0) * quantile).ceil() as usize,
     };
 
-    idx = std::cmp::min(idx, length);
+    idx = std::cmp::min(idx, length - 1);
 
     match interpolation {
         QuantileInterpolOptions::Midpoint => {
@@ -458,7 +458,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             0.5,
-            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Linear,
             window_size,
             min_periods,
             det_offsets_center,
@@ -469,7 +469,7 @@ where
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             0.5,
-            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Linear,
             window_size,
             min_periods,
             det_offsets,
@@ -674,6 +674,41 @@ mod test {
     }
 
     #[test]
+    fn test_rolling_median_nulls() {
+        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
+        let arr = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, false, true, true])),
+        );
+
+        let out = rolling_median(arr, 2, 2, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, Some(3.5)]);
+
+        let out = rolling_median(arr, 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.5)]);
+
+        let out = rolling_median(arr, 4, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(1.0), Some(2.0), Some(3.0)]);
+
+        let out = rolling_median(arr, 4, 1, true, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(3.5)]);
+
+        let out = rolling_median(arr, 4, 4, true, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
+
+    #[test]
     fn test_rolling_max_no_nulls() {
         let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0]);
         let arr = &PrimitiveArray::from_data(
@@ -695,5 +730,58 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(4.0)])
+    }
+
+    #[test]
+    fn test_rolling_quantile_nulls_limits() {
+        // compare quantiles to corresponding min/max/median values
+        let buf = Buffer::from(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let values = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, false, false, true, true])),
+        );
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
+        ];
+
+        for interpol in interpol_options {
+            let out1 = rolling_min(values, 2, 1, false, None);
+            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = rolling_quantile(values, 0.0, interpol, 2, 1, false, None);
+            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            assert_eq!(out1, out2);
+
+            let out1 = rolling_max(values, 2, 1, false, None);
+            let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+            let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            let out2 = rolling_quantile(values, 1.0, interpol, 2, 1, false, None);
+            let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+            let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+            assert_eq!(out1, out2);
+        }
+
+        let out1 = rolling_median(values, 2, 1, false, None);
+        let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        let out2 = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            2,
+            1,
+            false,
+            None,
+        );
+        let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out1, out2);
     }
 }

@@ -10,8 +10,8 @@ use crate::{
     prelude::*,
 };
 use numpy::PyArray1;
+use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::CustomIterTools;
-use polars::prelude::QuantileInterpolOptions;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
@@ -1145,7 +1145,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_median(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_median(options)
+            .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
@@ -1165,7 +1168,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_quantile(quantile, interpolation, options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_quantile(quantile, interpolation, options)
+            .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
