@@ -8,7 +8,7 @@ import {concat} from "./functions";
 
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 50,
-  batchSize: 1000,
+  batchSize: 10000,
   ignoreErrors: true,
   hasHeader: true,
   sep: ",",
@@ -175,7 +175,7 @@ class LineBatcher extends Stream.Transform {
     super(options);
     this.#lines = [];
     this.#accumulatedLines = 0;
-    this.#batchSize = (options && options.batchSize) || 1000;
+    this.#batchSize = options.batchSize;
   }
 
   _transform(chunk, _encoding, done) {
@@ -271,7 +271,7 @@ class LineBatcher extends Stream.Transform {
  * ```
  */
 export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promise<DataFrame>  {
-  let batchSize = options?.batchSize ?? 100000;
+  let batchSize = options?.batchSize ?? 10000;
   let count = 0;
   let end = options?.endRows ?? Number.POSITIVE_INFINITY;
 
@@ -335,12 +335,13 @@ export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promi
  * ```
  */
 export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Promise<DataFrame>  {
-  let batchSize = options?.batchSize ?? 100000;
+  let batchSize = options?.batchSize ?? 10000;
 
   return new Promise((resolve, reject) => {
     const chunks: any[] = [];
 
-    stream.pipe(new LineBatcher({batchSize}))
+    stream
+      .pipe(new LineBatcher({batchSize}))
       .on("data", (chunk) => {
         try {
           const df = readJSONBuffer(chunk, options);
