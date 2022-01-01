@@ -2463,15 +2463,15 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
-    def decode(self, encoding:str, strict: bool = False) -> Expr:
+    def decode(self, encoding: str, strict: bool = False) -> Expr:
         if encoding == "hex":
-             return wrap_expr(self._pyexpr.str_hex_decode(strict))
+            return wrap_expr(self._pyexpr.str_hex_decode(strict))
         elif encoding == "base64":
-             return wrap_expr(self._pyexpr.str_base64_decode(strict))
+            return wrap_expr(self._pyexpr.str_base64_decode(strict))
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 
-    def encode(self, encoding:str) -> Expr:
+    def encode(self, encoding: str) -> Expr:
         """
         Encodes a value using the provided encoding
 
@@ -2502,9 +2502,9 @@ class ExprStringNameSpace:
         └─────────┘
         """
         if encoding == "hex":
-             return wrap_expr(self._pyexpr.str_hex_encode())
+            return wrap_expr(self._pyexpr.str_hex_encode())
         elif encoding == "base64":
-             return wrap_expr(self._pyexpr.str_base64_encode())
+            return wrap_expr(self._pyexpr.str_base64_encode())
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 

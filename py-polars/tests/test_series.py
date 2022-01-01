@@ -1109,6 +1109,7 @@ def test_str_decode_exception() -> None:
     with pytest.raises(ValueError):
         s.str.decode("utf8")
 
+
 def test_str_replace_str_replace_all() -> None:
     s = pl.Series(["hello", "world", "test"])
     expected = pl.Series(["hell0", "w0rld", "test"])

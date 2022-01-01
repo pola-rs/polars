@@ -175,6 +175,7 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dot_diagram",
+  "string_encoding",
 ]
 
 bench = [

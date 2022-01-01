@@ -7,7 +7,7 @@ impl Utf8Chunked {
     #[cfg(feature = "string_encoding")]
     pub fn hex_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
         let ca = self.apply_on_opt(|e| {
-            e.and_then(|s|{
+            e.and_then(|s| {
                 hex::decode(s)
                     // Safety
                     // We already know that it is a valid utf8.
@@ -30,8 +30,7 @@ impl Utf8Chunked {
     #[cfg(feature = "string_encoding")]
     pub fn base64_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
         let ca = self.apply_on_opt(|e| {
-            e.and_then(|s|{
-
+            e.and_then(|s| {
                 base64::decode(s)
                     // Safety
                     // We already know that it is a valid utf8.

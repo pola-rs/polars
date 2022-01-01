@@ -3363,7 +3363,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern))
 
-    def decode(self, encoding:str, strict: bool = False) -> Series:
+    def decode(self, encoding: str, strict: bool = False) -> Series:
         """
         Decodes a value using the provided encoding
 
@@ -3371,7 +3371,7 @@ class StringNameSpace:
         ----------
         encoding
             'hex' or 'base64'
-        strict 
+        strict
             how to handle invalid inputs
             - True: method will throw error if unable to decode a value
             - False: unhandled values will be replaced with `None`
@@ -3394,13 +3394,13 @@ class StringNameSpace:
         └─────────┘
         """
         if encoding == "hex":
-             return wrap_s(self._s.str_hex_decode(strict))
+            return wrap_s(self._s.str_hex_decode(strict))
         elif encoding == "base64":
-             return wrap_s(self._s.str_base64_decode(strict))
+            return wrap_s(self._s.str_base64_decode(strict))
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 
-    def encode(self, encoding:str) -> Series:
+    def encode(self, encoding: str) -> Series:
         """
         Encodes a value using the provided encoding
 
@@ -3426,9 +3426,9 @@ class StringNameSpace:
         ]
         """
         if encoding == "hex":
-             return wrap_s(self._s.str_hex_encode())
+            return wrap_s(self._s.str_hex_encode())
         elif encoding == "base64":
-             return wrap_s(self._s.str_base64_encode())
+            return wrap_s(self._s.str_base64_encode())
         else:
             raise ValueError("supported encodings are 'hex' and 'base64'")
 
