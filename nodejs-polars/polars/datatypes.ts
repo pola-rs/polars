@@ -63,7 +63,7 @@ export type ReadCsvOptions = {
   commentChar?: string;
   encoding?: "utf8" | "utf8-lossy";
   endRows?: number;
-  hasHeader: boolean;
+  hasHeader?: boolean;
   ignoreErrors?: boolean;
   inferSchemaLength?: number;
   lowMemory?: boolean;
@@ -80,6 +80,14 @@ export type ReadJsonOptions = {
   inferSchemaLength?: number;
   batchSize?: number;
 };
+
+export type ReadParquetOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+  parallel?: boolean;
+  rechunk?: boolean;
+}
 export type JoinBaseOptions = {
   how?: "left" | "inner" | "outer" | "cross";
   suffix?: string;

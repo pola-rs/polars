@@ -1,4 +1,4 @@
-import { ReadCsvOptions, ReadJsonOptions } from "./datatypes";
+import { ReadCsvOptions, ReadJsonOptions, ReadParquetOptions } from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
@@ -154,7 +154,11 @@ export function scanCSV(arg: Partial<ReadCsvOptions> | string, options?: any): L
 
   return LazyDataFrame(pli.ldf.scanCSV(options));
 }
-export function readParquet() {}
+
+export function readParquet(path: string, options?: ReadParquetOptions): DataFrame {
+  return dfWrapper(pli.df.readParquet({path, ...options}));
+}
+
 export function scanParquet() {}
 export function readIPC() {}
 export function scanIPC() {}
@@ -204,9 +208,9 @@ class LineBatcher extends Stream.Transform {
 /**
  * __Read a stream into a Dataframe.__
  *
- * **Warning:** this is almost always slower than `scanCSV` or `readCSV`
+ * **Warning:** this is much slower than `scanCSV` or `readCSV`
  *
- * Only use it when you must consume from a stream, or when performance is not important
+ * Only use it when you must consume from a stream, or when performance is not a major consideration
  * ___
  * @param stream - readable stream containing csv data
  * @param options
@@ -294,9 +298,8 @@ export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promi
 }
 
 /**
- * __Read a JSON stream into a DataFrame.__
+ * __Read a newline delimited JSON stream into a DataFrame.__
  *
- * _Note: Currently only newline delimited JSON is supported_
  * @param stream - readable stream containing json data
  * @param options
  * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.

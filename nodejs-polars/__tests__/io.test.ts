@@ -88,7 +88,7 @@ describe("scan", () => {
 });
 
 describe("stream", () => {
-  test.only("readCSV", async () => {
+  test("readCSV", async () => {
     const readStream = new Stream.Readable({read(){}});
     readStream.push(`a,b\n`);
     readStream.push(`1,2\n`);
@@ -100,8 +100,60 @@ describe("stream", () => {
       a: pl.Series("a", [1n, 2n, 3n, 4n], pl.Int64),
       b: pl.Series("b", [2n, 2n, 2n, 2n], pl.Int64)
     });
-    const df = await pl.readCSVStream(readStream);
+    const df = await pl.readCSVStream(readStream, {batchSize: 2});
     expect(df).toFrameEqual(expected);
+  });
+
+  test("readCSV:schema mismatch", async () => {
+    const readStream = new Stream.Readable({read(){}});
+    readStream.push(`a,b,c\n`);
+    readStream.push(`1,2\n`);
+    readStream.push(`2,2\n`);
+    readStream.push(`3,2\n`);
+    readStream.push(`11,1,2,3,4,5,1\n`);
+    readStream.push(`null`);
+    readStream.push(null);
+
+    const promise =  pl.readCSVStream(readStream, {inferSchemaLength: 2, ignoreErrors: false});
+    await expect(promise).rejects.toBeDefined();
+  });
+
+  test("readJSON", async () => {
+    const readStream = new Stream.Readable({read(){}});
+    readStream.push(`${JSON.stringify({a: 1, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 2, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 3, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 4, b: 2})} \n`);
+    readStream.push(null);
+
+    const expected = pl.DataFrame({
+      a: pl.Series("a", [1n, 2n, 3n, 4n], pl.Int64),
+      b: pl.Series("b", [2n, 2n, 2n, 2n], pl.Int64)
+    });
+    const df = await pl.readJSONStream(readStream);
+    expect(df).toFrameEqual(expected);
+  });
+
+  test("readJSON:error", async () => {
+    const readStream = new Stream.Readable({read(){}});
+    readStream.push(`${JSON.stringify({a: 1, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 2, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 3, b: 2})} \n`);
+    readStream.push(`not parseable json `);
+    readStream.push(null);
+
+    await expect(pl.readJSONStream(readStream)).rejects.toBeDefined();
+
+  });
+  test("readJSON:schema mismatch", async () => {
+    const readStream = new Stream.Readable({read(){}});
+    readStream.push(`${JSON.stringify({a: 1, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 2, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({a: 3, b: 2})} \n`);
+    readStream.push(`${JSON.stringify({b: "3", d: 2})} \n`);
+    readStream.push(null);
+
+    await expect(pl.readJSONStream(readStream, {batchSize: 2})).rejects.toBeDefined();
 
   });
 });

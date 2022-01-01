@@ -97,7 +97,8 @@ impl JsDataFrame {
             napi::Property::new(env, "readCSVPath")?.with_method(io::read_csv_path),
             napi::Property::new(env, "readJSONBuffer")?.with_method(io::read_json_buffer),
             napi::Property::new(env, "readJSONPath")?.with_method(io::read_json_path),
-            napi::Property::new(env, "read_parquet")?.with_method(io::read_parquet),
+            napi::Property::new(env, "readParquet")?.with_method(io::read_parquet),
+            napi::Property::new(env, "writeParquet")?.with_method(io::write_parquet_path),
             napi::Property::new(env, "read_rows")?.with_method(io::read_rows),
         ])?;
         Ok(df_obj)
