@@ -9,51 +9,16 @@ use arrow::temporal_conversions::NANOSECONDS;
 use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
 
-fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
-    // if inner type is Utf8, we need to convert that to large utf8
-    match fld.data_type() {
-        ArrowDataType::Utf8 => {
-            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
-            let values = arr.values();
-            let values =
-                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
-
-            Arc::new(LargeListArray::from_data(
-                ArrowDataType::LargeList(
-                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
-                ),
-                offsets,
-                Arc::new(values),
-                arr.validity().cloned(),
-            ))
-        }
-        _ => arr.clone(),
-    }
-}
-
-// TODO: add types
-impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
-    type Error = PolarsError;
-
-    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
-        let (name, chunks) = name_arr;
-
-        let mut chunks_iter = chunks.iter();
-        let data_type: &ArrowDataType = chunks_iter
-            .next()
-            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
-            .data_type();
-
-        for chunk in chunks_iter {
-            if chunk.data_type() != data_type {
-                return Err(PolarsError::InvalidOperation(
-                    "Cannot create series from multiple arrays with different types".into(),
-                ));
-            }
-        }
-
-        match data_type {
+impl Series {
+    // Create a new Series without checking if the inner dtype of the chunks is correct
+    // # Safety
+    // The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
+    pub(crate) unsafe fn try_from_unchecked(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: &ArrowDataType,
+    ) -> Result<Self> {
+        match dtype {
             ArrowDataType::LargeUtf8 => {
                 Ok(Utf8Chunked::new_from_chunks(name, chunks).into_series())
             }
@@ -327,7 +292,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 // this is highly unsafe. it will dereference a raw ptr on the heap
                 // make sure the ptr is allocated and from this pid
                 // (the pid is checked before dereference)
-                let s = unsafe {
+                let s = {
                     let pe = PolarsExtension::new(arr.clone());
                     let s = pe.get_series();
                     pe.take_and_forget();
@@ -339,6 +304,56 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
                 format!("Cannot create polars series from {:?} type", dt).into(),
             )),
         }
+    }
+}
+
+fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
+    // if inner type is Utf8, we need to convert that to large utf8
+    match fld.data_type() {
+        ArrowDataType::Utf8 => {
+            let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
+            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
+            let values = arr.values();
+            let values =
+                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
+
+            Arc::new(LargeListArray::from_data(
+                ArrowDataType::LargeList(
+                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
+                ),
+                offsets,
+                Arc::new(values),
+                arr.validity().cloned(),
+            ))
+        }
+        _ => arr.clone(),
+    }
+}
+
+// TODO: add types
+impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
+    type Error = PolarsError;
+
+    fn try_from(name_arr: (&str, Vec<ArrayRef>)) -> Result<Self> {
+        let (name, chunks) = name_arr;
+
+        let mut chunks_iter = chunks.iter();
+        let data_type: ArrowDataType = chunks_iter
+            .next()
+            .ok_or_else(|| PolarsError::NoData("Expected at least on ArrayRef".into()))?
+            .data_type()
+            .clone();
+
+        for chunk in chunks_iter {
+            if chunk.data_type() != &data_type {
+                return Err(PolarsError::InvalidOperation(
+                    "Cannot create series from multiple arrays with different types".into(),
+                ));
+            }
+        }
+        // Safety:
+        // dtype is checked
+        unsafe { Series::try_from_unchecked(name, chunks, &data_type) }
     }
 }
 

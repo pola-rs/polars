@@ -227,6 +227,8 @@ impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
+        let dtype = self.inner_dtype().to_arrow();
+
         // we know that we only iterate over length == self.len()
         unsafe {
             Box::new(
@@ -234,7 +236,11 @@ impl<'a> IntoIterator for &'a ListChunked {
                     .map(|arr| arr.iter())
                     .flatten()
                     .trust_my_length(self.len())
-                    .map(|arr| arr.map(|arr| Series::try_from(("", arr)).unwrap())),
+                    .map(move |arr| {
+                        arr.map(|arr| {
+                            Series::try_from_unchecked("", vec![Arc::from(arr)], &dtype).unwrap()
+                        })
+                    }),
             )
         }
     }
