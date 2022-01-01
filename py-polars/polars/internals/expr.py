@@ -1986,15 +1986,15 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").tan())
+        >>> df.select(pl.col("a").tan().round(2))
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 1.5574077246549023 │
-        └────────────────────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.56 │
+        └──────┘
 
         """
         return np.tan(self)  # type: ignore
@@ -2462,6 +2462,80 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
+
+    def decode(self, encoding: str, strict: bool = False) -> Expr:
+        """
+        Decodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+        strict
+            how to handle invalid inputs
+            - True: method will throw error if unable to decode a value
+            - False: unhandled values will be replaced with `None`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
+        >>> df.select(pl.col("encoded").str.decode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ encoded │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ foo     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ bar     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_decode(strict))
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_decode(strict))
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
+    def encode(self, encoding: str) -> Expr:
+        """
+        Encodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+
+        Returns
+        -------
+        Utf8 array with values encoded using provided encoding
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
+        >>> df.select(pl.col("strings").str.encode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ strings │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ 666f6f  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 626172  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_encode())
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_encode())
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
 
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""

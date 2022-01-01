@@ -354,7 +354,7 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
             }
             builder.finish().into_series()
         }
-        DataType::Datetime(_,_) => {
+        DataType::Datetime(_, _) => {
             let mut builder = ListPrimitiveChunkedBuilder::<i64>::new(
                 name,
                 len as usize,

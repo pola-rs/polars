@@ -67,6 +67,55 @@ export interface ExprStringFunctions {
   /** Check if strings in Series contain regex pattern. */
   contains(pat: string | RegExp): Expr;
   /**
+   * Decodes a value using the provided encoding
+   * @param encoding - hex | base64
+   * @param strict - how to handle invalid inputs
+   *
+   *     - true: method will throw error if unable to decode a value
+   *     - false: unhandled values will be replaced with `null`
+   * @example
+   * ```
+   * >>> df = pl.DataFrame({"strings": ["666f6f", "626172", null]})
+   * >>> df.select(col("strings").str.decode("hex"))
+   * shape: (3, 1)
+   * ┌─────────┐
+   * │ strings │
+   * │ ---     │
+   * │ str     │
+   * ╞═════════╡
+   * │ foo     │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ bar     │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ null    │
+   * └─────────┘
+   * ```
+   */
+  decode(encoding: "hex" | "base64", strict?: boolean): Expr
+  decode(options: {encoding: "hex" | "base64", strict?: boolean}): Expr
+  /**
+   * Encodes a value using the provided encoding
+   * @param encoding - hex | base64
+   * @example
+   * ```
+   * >>> df = pl.DataFrame({"strings", ["foo", "bar", null]})
+   * >>> df.select(col("strings").str.encode("hex"))
+   * shape: (3, 1)
+   * ┌─────────┐
+   * │ strings │
+   * │ ---     │
+   * │ str     │
+   * ╞═════════╡
+   * │ 666f6f  │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ 626172  │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ null    │
+   * └─────────┘
+   * ```
+   */
+  encode(encoding: "hex" | "base64"): Expr
+  /**
    * Extract the target capture group from provided patterns.
    * @param pattern A valid regex pattern
    * @param groupIndex Index of the targeted capture group.
@@ -948,6 +997,16 @@ const ExprStringFunctions = (_expr: JsExpr): ExprStringFunctions => {
 
     return Expr(pli.expr.str[method]({_expr, ...args }));
   };
+  const handleDecode = (encoding, strict) => {
+    switch (encoding) {
+    case "hex":
+      return wrap(`decodeHex`, {strict});
+    case "base64":
+      return wrap(`decodeBase64`, {strict});
+    default:
+      throw new RangeError("supported encodings are 'hex' and 'base64'");
+    }
+  };
 
   return {
     concat(delimiter: string) {
@@ -955,6 +1014,23 @@ const ExprStringFunctions = (_expr: JsExpr): ExprStringFunctions => {
     },
     contains(pat: string | RegExp) {
       return wrap("contains", {pat: regexToString(pat)});
+    },
+    decode(arg, strict=false) {
+      if(typeof arg === "string") {
+        return handleDecode(arg, strict);
+      }
+
+      return handleDecode(arg.encoding, arg.strict);
+    },
+    encode(encoding) {
+      switch (encoding) {
+      case "hex":
+        return wrap(`encodeHex`);
+      case "base64":
+        return wrap(`encodeBase64`);
+      default:
+        throw new RangeError("supported encodings are 'hex' and 'base64'");
+      }
     },
     extract(pat: string | RegExp, groupIndex: number) {
       return wrap("extract", {pat: regexToString(pat), groupIndex});

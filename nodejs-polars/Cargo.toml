@@ -72,6 +72,7 @@ features = [
   "repeat_by",
   "horizontal_concat",
   "dataframe_arithmetic",
+  "string_encoding",
 ]
 path = "../polars"
 

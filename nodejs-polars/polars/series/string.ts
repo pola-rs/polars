@@ -25,6 +25,45 @@ export interface StringFunctions {
    */
   contains(pattern: string | RegExp): Series<boolean>
   /**
+   * Decodes a value using the provided encoding
+   * @param encoding - hex | base64
+   * @param strict - how to handle invalid inputs
+   *
+   *     - true: method will throw error if unable to decode a value
+   *     - false: unhandled values will be replaced with `null`
+   * @example
+   * ```
+   * s = pl.Series("strings", ["666f6f", "626172", null])
+   * s.str.decode("hex")
+   * shape: (3,)
+   * Series: 'strings' [str]
+   * [
+   *     "foo",
+   *     "bar",
+   *     null
+   * ]
+   * ```
+   */
+  decode(encoding: "hex" | "base64", strict?: boolean): Series<string>
+  decode(options: {encoding: "hex" | "base64", strict?: boolean}): Series<string>
+  /**
+   * Encodes a value using the provided encoding
+   * @param encoding - hex | base64
+   * @example
+   * ```
+   * s = pl.Series("strings", ["foo", "bar", null])
+   * s.str.encode("hex")
+   * shape: (3,)
+   * Series: 'strings' [str]
+   * [
+   *     "666f6f",
+   *     "626172",
+   *     null
+   * ]
+   * ```
+   */
+  encode(encoding: "hex" | "base64"): Series<string>
+  /**
    * Extract the target capture group from provided patterns.
    * @param pattern A valid regex pattern
    * @param groupIndex Index of the targeted capture group.
@@ -126,6 +165,16 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
   const wrap = (method, args?, _series = _s): any => {
     return seriesWrapper(pli.series.str[method]({_series, ...args }));
   };
+  const handleDecode = (encoding, strict) => {
+    switch (encoding) {
+    case "hex":
+      return wrap(`decodeHex`, {strict});
+    case "base64":
+      return wrap(`decodeBase64`, {strict});
+    default:
+      throw new RangeError("supported encodings are 'hex' and 'base64'");
+    }
+  };
 
   return {
     concat(delimiter: string) {
@@ -143,6 +192,23 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
     },
     contains(pat: string | RegExp) {
       return wrap("contains", {pat: regexToString(pat)});
+    },
+    decode(arg, strict=false) {
+      if(typeof arg === "string") {
+        return handleDecode(arg, strict);
+      }
+
+      return handleDecode(arg.encoding, arg.strict);
+    },
+    encode(encoding) {
+      switch (encoding) {
+      case "hex":
+        return wrap(`encodeHex`);
+      case "base64":
+        return wrap(`encodeBase64`);
+      default:
+        throw new RangeError("supported encodings are 'hex' and 'base64'");
+      }
     },
     extract(pat: string | RegExp, groupIndex: number) {
       return wrap("extract", {pat: regexToString(pat), groupIndex});

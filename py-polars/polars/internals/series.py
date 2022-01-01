@@ -3363,6 +3363,70 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_contains(pattern))
 
+    def decode(self, encoding: str, strict: bool = False) -> Series:
+        """
+        Decodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+        strict
+            how to handle invalid inputs
+            - True: method will throw error if unable to decode a value
+            - False: unhandled values will be replaced with `None`
+
+        Examples
+        --------
+        >>> s = pl.Series(["666f6f", "626172", None])
+        >>> s.str.decode("hex")
+        shape: (3,)
+        Series: '' [str]
+        [
+            "foo"
+            "bar"
+            null
+        ]
+        """
+        if encoding == "hex":
+            return wrap_s(self._s.str_hex_decode(strict))
+        elif encoding == "base64":
+            return wrap_s(self._s.str_base64_decode(strict))
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
+    def encode(self, encoding: str) -> Series:
+        """
+        Encodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+
+        Returns
+        -------
+        Utf8 array with values encoded using provided encoding
+
+        Examples
+        --------
+        >>> s = pl.Series(["foo", "bar", None])
+        >>> s.str.encode("hex")
+        shape: (3,)
+        Series: '' [str]
+        [
+            "666f6f"
+            "626172"
+            null
+        ]
+        """
+        if encoding == "hex":
+            return wrap_s(self._s.str_hex_encode())
+        elif encoding == "base64":
+            return wrap_s(self._s.str_base64_encode())
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
     def json_path_match(self, json_path: str) -> Series:
         """
         Extract the first match of json string with provided JSONPath expression.

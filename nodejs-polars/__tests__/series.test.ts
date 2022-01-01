@@ -821,4 +821,44 @@ describe("StringFunctions", () => {
 
     expect(expected).toStrictEqual(actual);
   });
+
+  test("hex encode", () => {
+    const s = pl.Series("strings", ["foo", "bar", null]);
+    const expected = pl.Series("encoded", ["666f6f", "626172", null]);
+    const encoded = s.str.encode("hex").alias("encoded");
+    expect(encoded).toSeriesEqual(expected);
+  });
+  test("hex decode", () => {
+    const s = pl.Series("encoded", ["666f6f", "626172", "invalid", null]);
+    const expected = pl.Series("decoded", ["foo", "bar", null, null]);
+    const decoded = s.str.decode("hex").alias("decoded");
+    expect(decoded).toSeriesEqual(expected);
+  });
+  test("hex decode strict", () => {
+    const s = pl.Series("encoded", ["666f6f", "626172", "invalid", null]);
+    const fn0  = () => s.str.decode("hex", true).alias("decoded");
+    const fn1  = () => s.str.decode({encoding: "hex", strict: true}).alias("decoded");
+    expect(fn0).toThrow();
+    expect(fn1).toThrow();
+  });
+  test("encode base64", () => {
+    const s = pl.Series("strings", ["foo", "bar"]);
+    const expected = pl.Series("encoded", ["Zm9v", "YmFy"]);
+    const encoded = s.str.encode("base64").alias("encoded");
+    expect(encoded).toSeriesEqual(expected);
+  });
+  test("base64 decode strict", () => {
+    const s = pl.Series("encoded", ["Zm9v", "YmFy", "not base64 encoded", null]);
+    const fn0  = () => s.str.decode("base64", true).alias("decoded");
+    const fn1  = () => s.str.decode({encoding: "base64", strict: true}).alias("decoded");
+    expect(fn0).toThrow();
+    expect(fn1).toThrow();
+  });
+  test("base64 decode", () => {
+    const s = pl.Series("encoded", ["Zm9v", "YmFy", "invalid", null]);
+    const decoded = pl.Series("decoded", ["foo", "bar", null, null]);
+
+    const actual =  s.str.decode("base64").alias("decoded");
+    expect(actual).toSeriesEqual(decoded);
+  });
 });

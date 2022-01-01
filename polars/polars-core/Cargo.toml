@@ -23,7 +23,7 @@ performant = []
 
 # extra utilities for Utf8Chunked
 strings = ["regex", "polars-arrow/strings", "arrow/compute_substring"]
-
+string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
@@ -128,13 +128,17 @@ docs-selection = [
   "horizontal_concat",
   "abs",
   "dataframe_arithmetic",
+  "string_encoding",
 ]
 
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
 
+base64 = { version = "0.13", optional = true }
 comfy-table = { version = "4.0", optional = true }
+hashbrown = { version = "0.11", features = ["rayon"] }
+hex = { version = "0.4", optional = true }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }

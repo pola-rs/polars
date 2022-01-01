@@ -1453,6 +1453,158 @@ describe("expr.str", () => {
     expect(actual).toFrameEqual(expected);
     expect(seriesActual).toFrameEqual(expected);
   });
+  test("hex encode", () => {
+    const df = pl.DataFrame({
+      "original": [
+        "foo",
+        "bar",
+        null
+      ]
+    });
+    const expected = pl.DataFrame({
+      "encoded": [
+        "666f6f",
+        "626172",
+        null
+      ]
+    });
+    const seriesActual = df.getColumn("original")
+      .str
+      .encode("hex")
+      .rename("encoded")
+      .toFrame();
+    const actual = df.select(
+      col("original")
+        .str
+        .encode("hex")
+        .as("encoded")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("hex decode", () => {
+    const df = pl.DataFrame({
+      "encoded": [
+        "666f6f",
+        "626172",
+        null
+      ]
+    });
+    const expected = pl.DataFrame({
+      "decoded": [
+        "foo",
+        "bar",
+        null
+      ]
+    });
+    const seriesActual = df.getColumn("encoded")
+      .str
+      .decode("hex")
+      .rename("decoded")
+      .toFrame();
+    const actual = df.select(
+      col("encoded")
+        .str
+        .decode("hex")
+        .as("decoded")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("hex decode strict", () => {
+    const df = pl.DataFrame({
+      "encoded": [
+        "666f6f",
+        "626172",
+        "not a hex",
+        null
+      ]
+    });
+
+    const fn = () =>  df.select(
+      col("encoded")
+        .str
+        .decode({encoding:"hex", strict:true})
+        .as("decoded")
+    );
+    expect(fn).toThrow();
+  });
+
+  test("encode base64", () => {
+    const df = pl.DataFrame({
+      "original": [
+        "foo",
+        "bar",
+        null
+      ]
+    });
+    const expected = pl.DataFrame({
+      "encoded": [
+        "Zm9v",
+        "YmFy",
+        null
+      ]
+    });
+    const seriesActual = df.getColumn("original")
+      .str
+      .encode("base64")
+      .rename("encoded")
+      .toFrame();
+    const actual = df.select(
+      col("original")
+        .str
+        .encode("base64")
+        .as("encoded")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test.only("base64 decode", () => {
+    const _df = pl.DataFrame({"strings": ["666f6f", "626172", null]});
+    console.log(_df.select(col("strings").str.decode("hex")));
+    const df = pl.DataFrame({
+      "encoded": [
+        "Zm9v",
+        "YmFy",
+        null
+      ]
+    });
+    const expected = pl.DataFrame({
+      "decoded": [
+        "foo",
+        "bar",
+        null
+      ]
+    });
+    const seriesActual = df.getColumn("encoded")
+      .str
+      .decode("base64")
+      .rename("decoded")
+      .toFrame();
+    const actual = df.select(
+      col("encoded")
+        .str
+        .decode("base64", false)
+        .as("decoded")
+    );
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("base64 decode strict", () => {
+    const df = pl.DataFrame({
+      "encoded": [
+        "not a base64"
+      ]
+    });
+
+    const fn = () =>  df.select(
+      col("encoded")
+        .str
+        .decode({encoding:"base64", strict:true})
+        .as("decoded")
+    );
+    expect(fn).toThrow();
+  });
 });
 describe("expr.lst", () => {
   test("get", () => {

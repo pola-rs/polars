@@ -1081,6 +1081,35 @@ def test_str_contains() -> None:
     verify_series_and_expr_api(s, expected, "str.contains", "mes")
 
 
+def test_str_encode() -> None:
+    s = pl.Series(["foo", "bar", None])
+    hex_encoded = pl.Series(["666f6f", "626172", None])
+    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
+    verify_series_and_expr_api(s, hex_encoded, "str.encode", "hex")
+    verify_series_and_expr_api(s, base64_encoded, "str.encode", "base64")
+    with pytest.raises(ValueError):
+        s.str.encode("utf8")
+
+
+def test_str_decode() -> None:
+    hex_encoded = pl.Series(["666f6f", "626172", None])
+    base64_encoded = pl.Series(["Zm9v", "YmFy", None])
+    expected = pl.Series(["foo", "bar", None])
+
+    verify_series_and_expr_api(hex_encoded, expected, "str.decode", "hex")
+    verify_series_and_expr_api(base64_encoded, expected, "str.decode", "base64")
+
+
+def test_str_decode_exception() -> None:
+    s = pl.Series(["not a valid", "626172", None])
+    with pytest.raises(Exception):
+        s.str.decode(encoding="hex", strict=True)
+    with pytest.raises(Exception):
+        s.str.decode(encoding="base64", strict=True)
+    with pytest.raises(ValueError):
+        s.str.decode("utf8")
+
+
 def test_str_replace_str_replace_all() -> None:
     s = pl.Series(["hello", "world", "test"])
     expected = pl.Series(["hell0", "w0rld", "test"])

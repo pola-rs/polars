@@ -1065,6 +1065,35 @@ impl PySeries {
         Ok(s.into())
     }
 
+    pub fn str_hex_encode(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.hex_encode().into_series();
+        Ok(s.into())
+    }
+    pub fn str_hex_decode(&self, strict: Option<bool>) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .hex_decode(strict)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+
+        Ok(s.into())
+    }
+    pub fn str_base64_encode(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.base64_encode().into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_base64_decode(&self, strict: Option<bool>) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .base64_decode(strict)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
     pub fn strftime(&self, fmt: &str) -> PyResult<Self> {
         let s = self.series.strftime(fmt).map_err(PyPolarsEr::from)?;
         Ok(s.into())

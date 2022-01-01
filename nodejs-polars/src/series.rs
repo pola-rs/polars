@@ -812,10 +812,7 @@ pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => cx
-                    .env
-                    .create_date(v as f64)
-                    .map(|v| v.into_unknown()),
+                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
                 None => cx.env.get_null().map(|v| v.into_unknown()),
             }
         }
@@ -838,9 +835,7 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
             match ca.get(index) {
                 Some(v) => {
                     println!("value={:#?}", v);
-                    cx.env
-                        .create_date(v as f64)
-                        .map(|v| v.into_unknown())
+                    cx.env.create_date(v as f64).map(|v| v.into_unknown())
                 }
                 None => {
                     println!("none at idx={:#?}", index);
@@ -1225,6 +1220,47 @@ impl_str_method_with_err!(str_extract, extract, &str, "pat", usize, "groupIndex"
 impl_str_method_with_err!(str_replace, replace, &str, "pat", &str, "val");
 impl_str_method_with_err!(str_replace_all, replace_all, &str, "pat", &str, "val");
 impl_str_method_with_err!(str_slice, str_slice, i64, "start", Option<u64>, "length");
+
+#[js_function(1)]
+pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let ca = series.utf8().map_err(JsPolarsEr::from)?;
+    ca.hex_encode().into_series().try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn hex_decode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let strict = params.get_as::<Option<bool>>("strict")?;
+
+    let ca = series.utf8().map_err(JsPolarsEr::from)?;
+    ca.hex_decode(strict)
+        .map_err(JsPolarsEr::from)?
+        .into_series()
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn base64_encode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let ca = series.utf8().map_err(JsPolarsEr::from)?;
+    ca.base64_encode().into_series().try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn base64_decode(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let strict = params.get_as::<Option<bool>>("strict")?;
+
+    let ca = series.utf8().map_err(JsPolarsEr::from)?;
+    ca.base64_decode(strict)
+        .map_err(JsPolarsEr::from)?
+        .into_series()
+        .try_into_js(&cx)
+}
 
 macro_rules! impl_rolling_method {
     ($name:ident) => {
