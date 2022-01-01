@@ -278,6 +278,8 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
+    ExprStringNameSpace.encode
+    ExprStringNameSpace.decode
 
 Lists
 -----
