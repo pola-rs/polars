@@ -73,7 +73,7 @@ features = [
   "horizontal_concat",
   "dataframe_arithmetic",
   "string_encoding",
-  "parquet"
+  "parquet",
 ]
 path = "../polars"
 
