@@ -1,60 +1,54 @@
 use crate::prelude::*;
-use std::borrow::Cow;
 
-use hex;
 use base64;
+use hex;
 
 impl Utf8Chunked {
-  #[cfg(feature = "string_encoding")]
-  pub fn hex_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
-    self.try_apply(|s: &str| {
-      let decoded = hex::decode(s);
+    #[cfg(feature = "string_encoding")]
+    pub fn hex_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
+        let ca = self.apply_on_opt(|e| {
+            e.and_then(|s|{
+                hex::decode(s)
+                    // Safety
+                    // We already know that it is a valid utf8.
+                    .map(|bytes| Some(unsafe { String::from_utf8_unchecked(bytes) }.into()))
+                    .unwrap_or(None)
+            })
+        });
 
-      match decoded {
-        Ok(v) => {
-          let utf8 = String::from_utf8(v).unwrap();
-          Ok(Cow::Owned(utf8))
+        if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
+            Err(PolarsError::ValueError("Unable to decode inputs".into()))
+        } else {
+            Ok(ca)
         }
-        Err(_) => {
-          if strict.unwrap_or(false) {
-            Err(PolarsError::ValueError("unable to decode input".into()))
-          } else {
-            Ok(Cow::Borrowed(s))
-          }
-        },
-      }
-    })
-  }
-  #[cfg(feature = "string_encoding")]
-  pub fn hex_encode(&self) -> Utf8Chunked {
-    self.apply(|s| hex::encode(s).into())
-  }
+    }
+    #[cfg(feature = "string_encoding")]
+    pub fn hex_encode(&self) -> Utf8Chunked {
+        self.apply(|s| hex::encode(s).into())
+    }
 
-  #[cfg(feature = "string_encoding")]
-  pub fn base64_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
-    self.try_apply(|s: &str| {
-      let decoded = base64::decode(s);
+    #[cfg(feature = "string_encoding")]
+    pub fn base64_decode(&self, strict: Option<bool>) -> Result<Utf8Chunked> {
+        let ca = self.apply_on_opt(|e| {
+            e.and_then(|s|{
 
-      match decoded {
-        Ok(v) => {
-          let utf8 = String::from_utf8(v).unwrap();
-          Ok(Cow::Owned(utf8))
+                base64::decode(s)
+                    // Safety
+                    // We already know that it is a valid utf8.
+                    .map(|bytes| Some(unsafe { String::from_utf8_unchecked(bytes) }.into()))
+                    .unwrap_or(None)
+            })
+        });
+
+        if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
+            Err(PolarsError::ValueError("Unable to decode inputs".into()))
+        } else {
+            Ok(ca)
         }
-        Err(_) => {
-          if strict.unwrap_or(false) {
-            Err(PolarsError::ValueError("unable to decode input".into()))
-          } else {
-            Ok(Cow::Borrowed(s))
-          }
+    }
 
-        },
-      }
-    })
-  }
-
-  #[cfg(feature = "string_encoding")]
-  pub fn base64_encode(&self) -> Utf8Chunked {
-    self.apply(|s| base64::encode(s).into())
-  }
-
+    #[cfg(feature = "string_encoding")]
+    pub fn base64_encode(&self) -> Utf8Chunked {
+        self.apply(|s| base64::encode(s).into())
+    }
 }

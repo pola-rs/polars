@@ -9,8 +9,11 @@ use polars::lazy::dsl;
 use polars::prelude::*;
 
 pub struct JsExpr {}
+
 pub struct JsWhen {}
+
 pub struct JsWhenThen {}
+
 pub struct JsWhenThenThen {}
 
 impl IntoJs<JsExternal> for Expr {

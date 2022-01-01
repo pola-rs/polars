@@ -830,7 +830,7 @@ describe("StringFunctions", () => {
   });
   test("hex decode", () => {
     const s = pl.Series("encoded", ["666f6f", "626172", "invalid", null]);
-    const expected = pl.Series("decoded", ["foo", "bar", "invalid", null]);
+    const expected = pl.Series("decoded", ["foo", "bar", null, null]);
     const decoded = s.str.decode("hex").alias("decoded");
     expect(decoded).toSeriesEqual(expected);
   });
@@ -848,10 +848,17 @@ describe("StringFunctions", () => {
     expect(encoded).toSeriesEqual(expected);
   });
   test("base64 decode strict", () => {
-    const s = pl.Series("encoded", ["Zm9v", "YmFy", "invalid", null]);
+    const s = pl.Series("encoded", ["Zm9v", "YmFy", "not base64 encoded", null]);
     const fn0  = () => s.str.decode("base64", true).alias("decoded");
     const fn1  = () => s.str.decode({encoding: "base64", strict: true}).alias("decoded");
     expect(fn0).toThrow();
     expect(fn1).toThrow();
+  });
+  test("base64 decode", () => {
+    const s = pl.Series("encoded", ["Zm9v", "YmFy", "invalid", null]);
+    const decoded = pl.Series("decoded", ["foo", "bar", null, null]);
+
+    const actual =  s.str.decode("base64").alias("decoded");
+    expect(actual).toSeriesEqual(decoded);
   });
 });

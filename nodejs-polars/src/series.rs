@@ -1226,9 +1226,7 @@ pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.hex_encode()
-        .into_series()
-        .try_into_js(&cx)
+    ca.hex_encode().into_series().try_into_js(&cx)
 }
 #[js_function(1)]
 pub fn hex_decode(cx: CallContext) -> JsResult<JsExternal> {
@@ -1248,12 +1246,8 @@ pub fn base64_encode(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.base64_encode()
-        .into_series()
-        .try_into_js(&cx)
+    ca.base64_encode().into_series().try_into_js(&cx)
 }
-
-
 
 #[js_function(1)]
 pub fn base64_decode(cx: CallContext) -> JsResult<JsExternal> {

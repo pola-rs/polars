@@ -2463,6 +2463,51 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
+    def decode(self, encoding:str, strict: bool = False) -> Expr:
+        if encoding == "hex":
+             return wrap_expr(self._pyexpr.str_hex_decode(strict))
+        elif encoding == "base64":
+             return wrap_expr(self._pyexpr.str_base64_decode(strict))
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
+    def encode(self, encoding:str) -> Expr:
+        """
+        Encodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+
+        Returns
+        -------
+        Utf8 array with values encoded using provided encoding
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"strings", ["foo", "bar", null]})
+        >>> df.select(col("strings").str.encode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ strings │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ 666f6f  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 626172  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+             return wrap_expr(self._pyexpr.str_hex_encode())
+        elif encoding == "base64":
+             return wrap_expr(self._pyexpr.str_base64_encode())
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.

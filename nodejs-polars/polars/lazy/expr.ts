@@ -66,7 +66,7 @@ export interface ExprStringFunctions {
   concat(delimiter: string): Expr;
   /** Check if strings in Series contain regex pattern. */
   contains(pat: string | RegExp): Expr;
-    /**
+  /**
    * Decodes a value using the provided encoding
    * @param encoding - hex | base64
    * @param strict - how to handle invalid inputs
@@ -75,35 +75,45 @@ export interface ExprStringFunctions {
    *     - false: unhandled values will be replaced with `null`
    * @example
    * ```
-   * s = pl.Series("strings", ["666f6f", "626172", null])
-   * s.str.decode("hex")
-   * shape: (3,)
-   * Series: 'strings' [str]
-   * [
-   *     "foo",
-   *     "bar",
-   *     null
-   * ]
+   * >>> df = pl.DataFrame({"strings": ["666f6f", "626172", null]})
+   * >>> df.select(col("strings").str.decode("hex"))
+   * shape: (3, 1)
+   * ┌─────────┐
+   * │ strings │
+   * │ ---     │
+   * │ str     │
+   * ╞═════════╡
+   * │ foo     │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ bar     │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ null    │
+   * └─────────┘
    * ```
    */
-   decode(encoding: "hex" | "base64", strict?: boolean): Expr
-   decode(options: {encoding: "hex" | "base64", strict?: boolean}): Expr
+  decode(encoding: "hex" | "base64", strict?: boolean): Expr
+  decode(options: {encoding: "hex" | "base64", strict?: boolean}): Expr
   /**
-    * Encodes a value using the provided encoding
-    * @param encoding - hex | base64
-    * @example
-    * ```
-    * s = pl.Series("strings", ["foo", "bar", null])
-    * s.str.encode("hex")
-    * shape: (3,)
-    * Series: 'strings' [str]
-    * [
-    *     "666f6f",
-    *     "626172",
-    *     null
-    * ]
-    * ```
-    */
+   * Encodes a value using the provided encoding
+   * @param encoding - hex | base64
+   * @example
+   * ```
+   * >>> df = pl.DataFrame({"strings", ["foo", "bar", null]})
+   * >>> df.select(col("strings").str.encode("hex"))
+   * shape: (3, 1)
+   * ┌─────────┐
+   * │ strings │
+   * │ ---     │
+   * │ str     │
+   * ╞═════════╡
+   * │ 666f6f  │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ 626172  │
+   * ├╌╌╌╌╌╌╌╌╌┤
+   * │ null    │
+   * └─────────┘
+   * ```
+   */
   encode(encoding: "hex" | "base64"): Expr
   /**
    * Extract the target capture group from provided patterns.
