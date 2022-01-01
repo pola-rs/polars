@@ -928,7 +928,13 @@ impl PyDataFrame {
         df.into()
     }
 
-    pub fn apply(&self, lambda: &PyAny, output_type: &PyAny) -> PyResult<PySeries> {
+    pub fn apply(
+        &self,
+        lambda: &PyAny,
+        output_type: &PyAny,
+        batch_size: usize,
+        rechunk: bool,
+    ) -> PyResult<(PyObject, bool)> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let df = &self.df;
@@ -981,10 +987,10 @@ impl PyDataFrame {
             Some(DataType::Utf8) => {
                 apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
             }
-            _ => apply_lambda_unknown(df, py, lambda)?,
+            _ => return apply_lambda_unknown(df, py, lambda, batch_size, rechunk),
         };
 
-        Ok(out.into())
+        Ok((PySeries::from(out).into_py(py), false))
     }
 
     pub fn shrink_to_fit(&mut self) {

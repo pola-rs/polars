@@ -5,6 +5,12 @@ use std::fmt::{Debug, Formatter};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
+impl<'a> Row<'a> {
+    pub fn new(values: Vec<AnyValue<'a>>) -> Self {
+        Row(values)
+    }
+}
+
 impl DataFrame {
     /// Get a row from a DataFrame. Use of this is discouraged as it will likely be slow.
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]

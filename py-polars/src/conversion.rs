@@ -13,7 +13,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -305,14 +305,14 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if let Ok(v) = ob.extract::<i64>() {
+        if ob.is_instance::<PyBool>().unwrap() {
+            Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
+        } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
         } else if let Ok(v) = ob.extract::<f64>() {
             Ok(AnyValue::Float64(v).into())
         } else if let Ok(v) = ob.extract::<&'s str>() {
             Ok(AnyValue::Utf8(v).into())
-        } else if let Ok(v) = ob.extract::<bool>() {
-            Ok(AnyValue::Boolean(v).into())
         } else if ob.get_type().name()?.contains("datetime") {
             let gil = Python::acquire_gil();
             let py = gil.python();
