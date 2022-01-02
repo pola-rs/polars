@@ -44,8 +44,8 @@ export interface GroupBy {
    *
    * ```
    */
-   agg(...columns: Expr[]): DataFrame
-   agg(columns: Record<string, keyof Expr | (keyof Expr)[]>): DataFrame
+  agg(...columns: Expr[]): DataFrame
+  agg(columns: Record<string, keyof Expr | (keyof Expr)[]>): DataFrame
   /**
    * Count the number of values in each group.
    */
@@ -111,7 +111,7 @@ export interface GroupBy {
    * ╰─────────┴─────╯
    * ```
    */
-  head(n: number): DataFrame
+  head(n?: number): DataFrame
   /**
    * Aggregate the last values in the group.
    */
@@ -152,7 +152,7 @@ export interface GroupBy {
    * Reduce the groups to the sum.
    */
   sum(): DataFrame
-  tail(): DataFrame
+  tail(n?: number): DataFrame
   toString(): string
 
 
@@ -172,16 +172,11 @@ export type PivotOps = Pick<GroupBy,
 export function GroupBy(
   df: DataFrame,
   by: string[],
-  maintainOrder = false,
-  downsample = false
+  maintainOrder = false
 ) {
   const customInspect = () => util.formatWithOptions(inspectOpts, "GroupBy {by: %O}", by);
 
   const pivot = (opts: {pivotCol: string, valuesCol: string} | string, valuesCol?: string): PivotOps => {
-    if(downsample) {
-      throw new InvalidOperationError("pivot", "downsample");
-    }
-
     if(typeof opts === "string") {
       if(valuesCol) {
         return pivot({pivotCol: opts, valuesCol});

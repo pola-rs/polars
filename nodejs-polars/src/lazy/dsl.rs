@@ -3,6 +3,7 @@ use crate::conversion::utils;
 use crate::datatypes::JsDataType;
 use crate::prelude::JsResult;
 use napi::*;
+use polars::lazy::dsl::Operator;
 
 use crate::error::JsPolarsEr;
 use polars::lazy::dsl;
@@ -20,6 +21,47 @@ impl IntoJs<JsExternal> for Expr {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
         cx.env.create_external(self, None)
     }
+}
+
+#[js_function(1)]
+pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let other = params.get_external::<Expr>(&cx, "other")?.clone();
+    dsl::binary_expr(expr, Operator::Plus, other).try_into_js(&cx)
+
+}
+
+#[js_function(1)]
+pub(crate) fn sub(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let other = params.get_external::<Expr>(&cx, "other")?.clone();
+    dsl::binary_expr(expr, Operator::Minus, other).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn mul(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let other = params.get_external::<Expr>(&cx, "other")?.clone();
+    dsl::binary_expr(expr, Operator::Multiply, other).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn div(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let other = params.get_external::<Expr>(&cx, "other")?.clone();
+    dsl::binary_expr(expr, Operator::Divide, other).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn rem(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
+    let other = params.get_external::<Expr>(&cx, "other")?.clone();
+    dsl::binary_expr(expr, Operator::Modulus, other).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -643,6 +685,7 @@ macro_rules! impl_expr {
         }
     };
 }
+
 impl_expr!(eq);
 impl_expr!(neq);
 impl_expr!(gt);
@@ -760,6 +803,7 @@ impl_rolling_method!(rolling_min);
 impl_rolling_method!(rolling_mean);
 impl_rolling_method!(rolling_std);
 impl_rolling_method!(rolling_var);
+impl_rolling_method!(rolling_sum);
 
 #[js_function(1)]
 pub fn rolling_median(cx: CallContext) -> JsResult<JsExternal> {
