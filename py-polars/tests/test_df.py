@@ -876,7 +876,7 @@ def test_read_csv_categorical() -> None:
 
 def test_df_apply() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.apply(lambda x: len(x), None)
+    out = df.apply(lambda x: len(x), None).to_series()
     assert out.sum() == 9
 
 
@@ -1251,7 +1251,7 @@ def test_slicing() -> None:
 
 def test_apply_list_return() -> None:
     df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
-    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))  # type: ignore
+    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1))).to_series()
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
 
 
@@ -1267,7 +1267,7 @@ def test_apply_dataframe_return() -> None:
             "column_3": ["c", "d", None],
         }
     )
-    assert out.frame_equal(expected, null_equal=True)  # type: ignore
+    assert out.frame_equal(expected, null_equal=True)
 
 
 def test_groupby_cat_list() -> None:  # noqa: W191,E101

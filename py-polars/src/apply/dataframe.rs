@@ -4,8 +4,7 @@ use crate::error::PyPolarsEr;
 use crate::series::PySeries;
 use crate::PyDataFrame;
 use polars::prelude::*;
-use polars_core::frame::row::Row;
-use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::frame::row::{rows_to_schema, Row};
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
@@ -15,8 +14,7 @@ pub fn apply_lambda_unknown<'a>(
     df: &'a DataFrame,
     py: Python,
     lambda: &'a PyAny,
-    batch_size: usize,
-    rechunk: bool,
+    inference_size: usize,
 ) -> PyResult<(PyObject, bool)> {
     let columns = df.get_columns();
     let mut null_count = 0;
@@ -104,8 +102,7 @@ pub fn apply_lambda_unknown<'a>(
                         lambda,
                         null_count,
                         first_value,
-                        batch_size,
-                        rechunk,
+                        inference_size,
                     )
                     .map_err(PyPolarsEr::from)?,
                 )
@@ -126,10 +123,31 @@ Then return a Series object."
     Err(PyPolarsEr::Other("Could not determine output type".into()).into())
 }
 
+fn apply_iter<'a, T>(
+    df: &'a DataFrame,
+    py: Python<'a>,
+    lambda: &'a PyAny,
+    init_null_count: usize,
+    skip: usize,
+) -> impl Iterator<Item = Option<T>> + 'a
+where
+    T: FromPyObject<'a>,
+{
+    let columns = df.get_columns();
+    ((init_null_count + skip)..df.height()).map(move |idx| {
+        let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
+        let tpl = (PyTuple::new(py, iter),);
+        match lambda.call1(tpl) {
+            Ok(val) => val.extract::<T>().ok(),
+            Err(e) => panic!("python function failed {}", e),
+        }
+    })
+}
+
 /// Apply a lambda with a primitive output type
 pub fn apply_lambda_with_primitive_out_type<'a, D>(
     df: &'a DataFrame,
-    py: Python,
+    py: Python<'a>,
     lambda: &'a PyAny,
     init_null_count: usize,
     first_value: Option<D::Native>,
@@ -138,20 +156,11 @@ where
     D: PyArrowPrimitiveType,
     D::Native: ToPyObject + FromPyObject<'a>,
 {
-    let columns = df.get_columns();
-
     let skip = if first_value.is_some() { 1 } else { 0 };
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
-        let iter = ((init_null_count + skip)..df.height()).map(|idx| {
-            let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
-            let tpl = (PyTuple::new(py, iter),);
-            match lambda.call1(tpl) {
-                Ok(val) => val.extract::<D::Native>().ok(),
-                Err(e) => panic!("python function failed {}", e),
-            }
-        });
+        let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_primitive(iter, init_null_count, first_value, "apply", df.height())
     }
 }
@@ -164,20 +173,11 @@ pub fn apply_lambda_with_bool_out_type<'a>(
     init_null_count: usize,
     first_value: Option<bool>,
 ) -> ChunkedArray<BooleanType> {
-    let columns = df.get_columns();
-
     let skip = if first_value.is_some() { 1 } else { 0 };
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
-        let iter = ((init_null_count + skip)..df.height()).map(|idx| {
-            let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
-            let tpl = (PyTuple::new(py, iter),);
-            match lambda.call1(tpl) {
-                Ok(val) => val.extract::<bool>().ok(),
-                Err(e) => panic!("python function failed {}", e),
-            }
-        });
+        let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_bool(iter, init_null_count, first_value, "apply", df.height())
     }
 }
@@ -190,20 +190,11 @@ pub fn apply_lambda_with_utf8_out_type<'a>(
     init_null_count: usize,
     first_value: Option<&str>,
 ) -> Utf8Chunked {
-    let columns = df.get_columns();
-
     let skip = if first_value.is_some() { 1 } else { 0 };
     if init_null_count == df.height() {
         ChunkedArray::full_null("apply", df.height())
     } else {
-        let iter = ((init_null_count + skip)..df.height()).map(|idx| {
-            let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
-            let tpl = (PyTuple::new(py, iter),);
-            match lambda.call1(tpl) {
-                Ok(val) => val.extract::<&str>().ok(),
-                Err(e) => panic!("python function failed {}", e),
-            }
-        });
+        let iter = apply_iter::<&str>(df, py, lambda, init_null_count, skip);
         iterator_to_utf8(iter, init_null_count, first_value, "apply", df.height())
     }
 }
@@ -250,48 +241,61 @@ pub fn apply_lambda_with_rows_output<'a>(
     lambda: &'a PyAny,
     init_null_count: usize,
     first_value: Row<'a>,
-    batch_size: usize,
-    rechunk: bool,
+    inference_size: usize,
 ) -> Result<DataFrame> {
     let columns = df.get_columns();
     let width = first_value.0.len();
     let null_row = Row::new(vec![AnyValue::Null; width]);
+
+    let mut row_buf = Row::default();
 
     let skip = 1;
     let mut row_iter = ((init_null_count + skip)..df.height()).map(|idx| {
         let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
         let tpl = (PyTuple::new(py, iter),);
         match lambda.call1(tpl) {
-            Ok(val) => val
-                .extract::<Wrap<Row>>()
-                .map(|r| r.0)
-                .unwrap_or_else(|_| null_row.clone()),
+            Ok(val) => {
+                match val.downcast::<PyTuple>().ok() {
+                    Some(tuple) => {
+                        row_buf.0.clear();
+                        for v in tuple {
+                            let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
+                            row_buf.0.push(v);
+                        }
+                        let ptr = &row_buf as *const Row;
+                        // Safety:
+                        // we know that row constructor of polars dataframe does not keep a reference
+                        // to the row. Before we mutate the row buf again, the reference is dropped.
+                        // we only cannot prove it to the compiler.
+                        // we still to this because it save a Vec allocation in a hot loop.
+                        unsafe { &*ptr }
+                    }
+                    None => &null_row,
+                }
+            }
             Err(e) => panic!("python function failed {}", e),
         }
     });
-    let mut buf = Vec::with_capacity(batch_size);
+
+    // first rows for schema inference
+    let mut buf = Vec::with_capacity(inference_size);
     buf.push(first_value);
+    buf.extend((&mut row_iter).take(inference_size).cloned());
+    let schema = rows_to_schema(&buf);
 
-    buf.extend((&mut row_iter).take(batch_size));
-    let df = DataFrame::from_rows(&buf)?;
-    let schema = df.schema();
-
-    let mut dfs = Vec::with_capacity(df.height() / batch_size + 1);
-    dfs.push(df);
-
-    loop {
-        buf.clear();
-        buf.extend((&mut row_iter).take(batch_size));
-        if buf.is_empty() {
-            break;
-        }
-        let df = DataFrame::from_rows_and_schema(&buf, &schema)?;
-        dfs.push(df);
+    if init_null_count > 0 {
+        // Safety: we know the iterators size
+        let iter = unsafe {
+            (0..init_null_count)
+                .map(|_| &null_row)
+                .chain(buf.iter())
+                .chain(row_iter)
+                .trust_my_length(df.height())
+        };
+        DataFrame::from_rows_iter_and_schema(iter, &schema)
+    } else {
+        // Safety: we know the iterators size
+        let iter = unsafe { buf.iter().chain(row_iter).trust_my_length(df.height()) };
+        DataFrame::from_rows_iter_and_schema(iter, &schema)
     }
-
-    let mut df = accumulate_dataframes_vertical(dfs.into_iter())?;
-    if rechunk {
-        df.rechunk();
-    }
-    Ok(df)
 }

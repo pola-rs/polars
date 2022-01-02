@@ -2716,11 +2716,10 @@ class DataFrame:
 
     def apply(
         self,
-        f: Callable[[Tuple[Any]], Any],
+        f: Callable[[Tuple[Any, ...]], Any],
         return_dtype: Optional[Type[DataType]] = None,
-        batch_size: int = 2048,
-        rechunk: bool = True,
-    ) -> Union["pli.Series", "DataFrame"]:
+        inference_size: int = 256,
+    ) -> "DataFrame":
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
@@ -2732,19 +2731,16 @@ class DataFrame:
             Custom function/ lambda function.
         return_dtype
             Output type of the operation. If none given, Polars tries to infer the type.
-        batch_size
-            Only used in the case when the custom function returns rows. This sets the batch size in which
-            sub dataframes are created
-        rechunk
-            Only used in the case when the custom function returns rows. This rechunks the DataFrame when the apply
-            is finished
+        inference_size
+            Only used in the case when the custom function returns rows.
+            This uses the first `n` rows to determine the output schema
 
         """
-        out, is_df = self._df.apply(f, return_dtype, batch_size, rechunk)
+        out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
             return wrap_df(out)
         else:
-            return pli.wrap_s(out)
+            return pli.wrap_s(out).to_frame()
 
     def with_column(self, column: Union["pli.Series", "pli.Expr"]) -> "DataFrame":
         """
