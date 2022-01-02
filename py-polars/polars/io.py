@@ -582,6 +582,7 @@ def scan_parquet(
     n_rows: Optional[int] = None,
     cache: bool = True,
     parallel: bool = True,
+    rechunk: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -600,6 +601,8 @@ def scan_parquet(
         Cache the result after reading.
     parallel
         Read the parquet file in parallel. The single threaded reader consumes less memory.
+    rechunk
+        In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -609,7 +612,7 @@ def scan_parquet(
         file = str(file)
 
     return LazyFrame.scan_parquet(
-        file=file, n_rows=n_rows, cache=cache, parallel=parallel
+        file=file, n_rows=n_rows, cache=cache, parallel=parallel, rechunk=rechunk
     )
 
 

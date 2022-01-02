@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 use polars_core::toggle_string_cache;
 use std::sync::Arc;
 
+use crate::functions::concat;
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
@@ -308,11 +309,8 @@ impl LazyFrame {
         let logical_plan = self.clone().get_plan_builder().build();
         logical_plan.schema().clone()
     }
-
-    /// Create a LazyFrame directly from a parquet scan.
     #[cfg(feature = "parquet")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
-    pub fn scan_parquet(
+    fn scan_parquet_impl(
         path: String,
         n_rows: Option<usize>,
         cache: bool,
@@ -323,6 +321,34 @@ impl LazyFrame {
             .into();
         lf.opt_state.agg_scan_projection = true;
         Ok(lf)
+    }
+
+    /// Create a LazyFrame directly from a parquet scan.
+    #[cfg(feature = "parquet")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
+    pub fn scan_parquet(
+        path: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        parallel: bool,
+        rechunk: bool,
+    ) -> Result<Self> {
+        if path.contains('*') {
+            let paths = glob::glob(&path)
+                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+            let lfs = paths
+                .map(|r| {
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                    let path_string = path.to_string_lossy().into_owned();
+                    Self::scan_parquet_impl(path_string, n_rows, cache, false)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            concat(&lfs, rechunk)
+                .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
+        } else {
+            Self::scan_parquet_impl(path, n_rows, cache, parallel)
+        }
     }
 
     /// Create a LazyFrame directly from a ipc scan.

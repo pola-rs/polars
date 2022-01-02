@@ -2472,37 +2472,6 @@ fn test_agg_unique_first() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "parquet")]
-fn test_parquet_exec() -> Result<()> {
-    // filter
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .filter(col("category").eq(lit("seafood")))
-            .collect()?;
-        assert_eq!(out.shape(), (8, 4));
-    }
-
-    // project
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .select([col("category"), col("sugars_g")])
-            .collect()?;
-        assert_eq!(out.shape(), (27, 2));
-    }
-
-    // project + filter
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .select([col("category"), col("sugars_g")])
-            .filter(col("category").eq(lit("seafood")))
-            .collect()?;
-        assert_eq!(out.shape(), (8, 2));
-    }
-
-    Ok(())
-}
-
-#[test]
 #[cfg(feature = "is_in")]
 fn test_is_in() -> Result<()> {
     let df = fruits_cars();

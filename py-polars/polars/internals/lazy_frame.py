@@ -107,13 +107,14 @@ class LazyFrame:
         n_rows: Optional[int] = None,
         cache: bool = True,
         parallel: bool = True,
+        rechunk: bool = True,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_parquet`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_parquet(file, n_rows, cache, parallel)
+        self._ldf = PyLazyFrame.new_from_parquet(file, n_rows, cache, parallel, rechunk)
         return self
 
     @staticmethod
