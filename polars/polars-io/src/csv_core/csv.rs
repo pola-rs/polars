@@ -14,7 +14,7 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
-pub fn to_cast(df: &mut DataFrame, to_cast: &[&Field]) -> Result<()> {
+pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field]) -> Result<()> {
     // cast to the original dtypes in the schema
     for fld in to_cast {
         use DataType::*;
@@ -503,7 +503,7 @@ impl<'a> CoreReader<'a> {
                         }
 
                         df.map(|mut df| {
-                            to_cast(&mut df, self.to_cast)?;
+                            cast_columns(&mut df, self.to_cast)?;
                             Ok(df)
                         })
                         .transpose()
@@ -581,7 +581,7 @@ impl<'a> CoreReader<'a> {
                                 .collect::<Result<_>>()?,
                         );
 
-                        to_cast(&mut df, self.to_cast)?;
+                        cast_columns(&mut df, self.to_cast)?;
                         Ok(df)
                     })
                     .collect::<Result<Vec<_>>>()
