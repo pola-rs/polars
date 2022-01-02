@@ -261,7 +261,7 @@ pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
     cx.env.get_undefined()
 }
 #[js_function(1)]
-pub(crate) fn write_parquet_stream(cx: CallContext) -> JsResult<JsUndefined> {
+pub(crate) fn write_parquet_stream(_cx: CallContext) -> JsResult<JsUndefined> {
     // JSWriteStream needs to implement 'Seek'
     todo!()
 }

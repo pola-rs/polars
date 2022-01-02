@@ -32,9 +32,8 @@ type LazyOptions = {
 }
 
 /**
- * Representation of a Lazy computation graph/ query.
+ * Representation of a Lazy computation graph / query.
  */
-
 export interface LazyDataFrame {
   /** @ignore */
   _ldf: any;

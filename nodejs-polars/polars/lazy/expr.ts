@@ -11,7 +11,7 @@ import {
 import {isExternal} from "util/types";
 import {Series} from "../series";
 
-import * as expr from "./expr_internal";
+import * as expr from "./expr/";
 import {Arithmetic, Comparison, Cumulative, Rolling} from "../shared_traits";
 
 export interface Expr extends
@@ -431,7 +431,6 @@ export interface Expr extends
   repeatBy(by: Expr | string): Expr
   /** Reverse the arrays in the list */
   reverse(): Expr
-
   /**
    * Round underlying floating point data by `decimals` digits.
    * @param decimals Number of decimals to round by.
