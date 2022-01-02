@@ -74,7 +74,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
-    use std::convert::TryFrom;
 
     let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);
