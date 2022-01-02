@@ -55,16 +55,19 @@ impl Utf8Chunked {
     }
 
     /// Modify the strings to their lowercase equivalent
+    #[must_use]
     pub fn to_lowercase(&self) -> Utf8Chunked {
         self.apply(|s| str::to_lowercase(s).into())
     }
 
     /// Modify the strings to their uppercase equivalent
+    #[must_use]
     pub fn to_uppercase(&self) -> Utf8Chunked {
         self.apply(|s| str::to_uppercase(s).into())
     }
 
     /// Concat with the values from a second Utf8Chunked
+    #[must_use]
     pub fn concat(&self, other: &Utf8Chunked) -> Self {
         self + other
     }

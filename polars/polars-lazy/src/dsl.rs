@@ -271,6 +271,7 @@ impl From<AggExpr> for Expr {
 
 /// Queries consists of multiple expressions.
 #[derive(Clone, PartialEq)]
+#[must_use]
 pub enum Expr {
     Alias(Box<Expr>, Arc<str>),
     Column(Arc<str>),
@@ -534,6 +535,7 @@ pub struct WhenThen {
 /// .otherwise(..)`
 /// ```
 #[derive(Clone)]
+#[must_use]
 pub struct WhenThenThen {
     predicates: Vec<Expr>,
     thens: Vec<Expr>,
@@ -2325,16 +2327,5 @@ mod test {
             &[Some(true), Some(true), Some(false)]
         );
         Ok(())
-    }
-
-    #[test]
-    fn test_when_then_when_then() {
-        let e = when(col("a"))
-            .then(col("b"))
-            .when(col("c"))
-            .then(col("d"))
-            .otherwise(col("f"));
-
-        dbg!(e);
     }
 }

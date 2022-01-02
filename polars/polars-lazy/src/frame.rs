@@ -51,6 +51,7 @@ pub struct LazyCsvReader<'a> {
 }
 
 #[cfg(feature = "csv-file")]
+#[must_use]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: String) -> Self {
         LazyCsvReader {
@@ -73,6 +74,7 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
+    #[must_use]
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
         self
@@ -81,24 +83,28 @@ impl<'a> LazyCsvReader<'a> {
     /// Set the number of rows to use when inferring the csv schema.
     /// the default is 100 rows.
     /// Setting to `None` will do a full table scan, very slow.
+    #[must_use]
     pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
         self.infer_schema_length = num_rows;
         self
     }
 
     /// Continue with next batch when a ParserError is encountered.
+    #[must_use]
     pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
         self.ignore_errors = ignore;
         self
     }
 
     /// Set the CSV file's schema
+    #[must_use]
     pub fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.schema = Some(schema);
         self
     }
 
     /// Skip the first `n` rows during parsing.
+    #[must_use]
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
         self
@@ -106,48 +112,56 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
     /// of the total schema.
+    #[must_use]
     pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
         self.schema_overwrite = schema;
         self
     }
 
     /// Set whether the CSV file has headers
+    #[must_use]
     pub fn has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
         self
     }
 
     /// Set the CSV file's column delimiter as a byte character
+    #[must_use]
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
         self.delimiter = delimiter;
         self
     }
 
     /// Set the comment character. Lines starting with this character will be ignored.
+    #[must_use]
     pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
         self.comment_char = comment_char;
         self
     }
 
     /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
+    #[must_use]
     pub fn with_quote_char(mut self, quote: Option<u8>) -> Self {
         self.quote_char = quote;
         self
     }
 
     /// Set values that will be interpreted as missing/ null.
+    #[must_use]
     pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
         self.null_values = null_values;
         self
     }
 
     /// Cache the DataFrame after reading.
+    #[must_use]
     pub fn with_cache(mut self, cache: bool) -> Self {
         self.cache = cache;
         self
     }
 
     /// Reduce memory usage in expensive of performance
+    #[must_use]
     pub fn low_memory(mut self, toggle: bool) -> Self {
         self.low_memory = toggle;
         self
@@ -240,6 +254,7 @@ impl IntoLazy for DataFrame {
 /// It really is an abstraction over a logical plan. The methods of this struct will incrementally
 /// modify a logical plan until output is requested (via [collect](crate::frame::LazyFrame::collect))
 #[derive(Clone, Default)]
+#[must_use]
 pub struct LazyFrame {
     pub(crate) logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
@@ -1197,8 +1212,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .map(|k| expr_to_root_column_names(k).into_iter())
-            .flatten()
+            .flat_map(|k| expr_to_root_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
@@ -1210,8 +1224,7 @@ impl LazyGroupBy {
         let keys = self
             .keys
             .iter()
-            .map(|k| expr_to_root_column_names(k).into_iter())
-            .flatten()
+            .flat_map(|k| expr_to_root_column_names(k).into_iter())
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n).list().keep_name()])
@@ -1237,6 +1250,7 @@ impl LazyGroupBy {
     }
 }
 
+#[must_use]
 pub struct JoinBuilder {
     lf: LazyFrame,
     how: JoinType,

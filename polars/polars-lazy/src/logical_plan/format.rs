@@ -428,8 +428,8 @@ fn fmt_predicate(predicate: Option<&Expr>) -> String {
     if let Some(predicate) = predicate {
         let n = 25;
         let mut pred_fmt = format!("{:?}", predicate);
-        pred_fmt = pred_fmt.replace("[", "");
-        pred_fmt = pred_fmt.replace("]", "");
+        pred_fmt = pred_fmt.replace('[', "");
+        pred_fmt = pred_fmt.replace(']', "");
         if pred_fmt.len() > n {
             pred_fmt.truncate(n);
             pred_fmt.push_str("...")

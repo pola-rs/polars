@@ -16,11 +16,10 @@ impl TimeChunked {
         // we know the iterators len
         unsafe {
             self.downcast_iter()
-                .map(|iter| {
+                .flat_map(|iter| {
                     iter.into_iter()
                         .map(|opt_v| opt_v.copied().map(time64ns_to_time))
                 })
-                .flatten()
                 .trust_my_length(self.len())
         }
     }

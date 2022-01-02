@@ -63,8 +63,7 @@ pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
             .into(),
         ));
     }
-    let (first, by, reverse) =
-        prepare_argsort(by.to_vec(), reverse.iter().copied().collect()).unwrap();
+    let (first, by, reverse) = prepare_argsort(by.to_vec(), reverse.to_vec()).unwrap();
     first.argsort_multiple(&by, &reverse)
 }
 

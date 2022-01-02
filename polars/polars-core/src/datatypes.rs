@@ -348,6 +348,7 @@ impl<'a> AnyValue<'a> {
         }
     }
 
+    #[must_use]
     pub fn add<'b>(&self, rhs: &AnyValue<'b>) -> Self {
         use AnyValue::*;
         match (self, rhs) {
@@ -601,6 +602,7 @@ impl DataType {
     }
 
     /// Convert to the physical data type
+    #[must_use]
     pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {

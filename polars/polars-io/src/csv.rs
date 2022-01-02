@@ -57,6 +57,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Write a DataFrame to csv.
+#[must_use]
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
@@ -189,6 +190,7 @@ impl NullValues {
 ///             .finish()
 /// }
 /// ```
+#[must_use]
 pub struct CsvReader<'a, R>
 where
     R: MmapBytesReader,
@@ -608,7 +610,6 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::csv_core::utils::infer_file_schema;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;

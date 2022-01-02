@@ -319,6 +319,7 @@ impl DataFrame {
     }
 
     /// Aggregate all chunks to contiguous memory.
+    #[must_use]
     pub fn agg_chunks(&self) -> Self {
         // Don't parallelize this. Memory overhead
         let f = |s: &Series| s.rechunk();
@@ -1356,6 +1357,7 @@ impl DataFrame {
     /// # Safety
     ///
     /// This doesn't do any bound checking but checks null validity.
+    #[must_use]
     pub unsafe fn take_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
@@ -1405,6 +1407,7 @@ impl DataFrame {
     ///
     /// This doesn't do any bound checking. Out of bounds may access uninitialized memory.
     /// Null validity is checked
+    #[must_use]
     pub unsafe fn take_opt_iter_unchecked<I>(&self, mut iter: I) -> Self
     where
         I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
@@ -1953,6 +1956,7 @@ impl DataFrame {
     /// | Fig   | Red   |
     /// +-------+-------+
     /// ```
+    #[must_use]
     pub fn slice(&self, offset: i64, length: usize) -> Self {
         let col = self
             .columns
@@ -1995,6 +1999,7 @@ impl DataFrame {
     /// | 3                  | Asia          | Japan         | Tokyo      |
     /// +--------------------+---------------+---------------+------------+
     /// ```
+    #[must_use]
     pub fn head(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
@@ -2034,6 +2039,7 @@ impl DataFrame {
     /// | 109         | 0.63               | Turkey  |
     /// +-------------+--------------------+---------+
     /// ```
+    #[must_use]
     pub fn tail(&self, length: Option<usize>) -> Self {
         let col = self
             .columns
@@ -2060,6 +2066,7 @@ impl DataFrame {
     }
 
     /// Get a `DataFrame` with all the columns in reversed order.
+    #[must_use]
     pub fn reverse(&self) -> Self {
         let col = self.columns.iter().map(|s| s.reverse()).collect::<Vec<_>>();
         DataFrame::new_no_checks(col)
@@ -2069,6 +2076,7 @@ impl DataFrame {
     /// with `Nones`.
     ///
     /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
+    #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
         let col = POOL.install(|| self.columns.par_iter().map(|s| s.shift(periods)).collect());
         DataFrame::new_no_checks(col)
@@ -2120,6 +2128,7 @@ impl DataFrame {
     /// | 6       | 5       |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn max(&self) -> Self {
         let columns = POOL.install(|| self.columns.par_iter().map(|s| s.max_as_series()).collect());
         DataFrame::new_no_checks(columns)
@@ -2153,6 +2162,7 @@ impl DataFrame {
     /// | 2.280350850198276 | 1.0954451150103321 |
     /// +-------------------+--------------------+
     /// ```
+    #[must_use]
     pub fn std(&self) -> Self {
         let columns = POOL.install(|| self.columns.par_iter().map(|s| s.std_as_series()).collect());
         DataFrame::new_no_checks(columns)
@@ -2185,6 +2195,7 @@ impl DataFrame {
     /// | 5.2     | 1.2     |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn var(&self) -> Self {
         let columns = POOL.install(|| self.columns.par_iter().map(|s| s.var_as_series()).collect());
         DataFrame::new_no_checks(columns)
@@ -2218,6 +2229,7 @@ impl DataFrame {
     /// | 1       | 2       |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn min(&self) -> Self {
         let columns = POOL.install(|| self.columns.par_iter().map(|s| s.min_as_series()).collect());
         DataFrame::new_no_checks(columns)
@@ -2251,6 +2263,7 @@ impl DataFrame {
     /// | 16      | 16      |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn sum(&self) -> Self {
         let columns = POOL.install(|| self.columns.par_iter().map(|s| s.sum_as_series()).collect());
         DataFrame::new_no_checks(columns)
@@ -2284,6 +2297,7 @@ impl DataFrame {
     /// | 3.2     | 3.2     |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn mean(&self) -> Self {
         let columns = POOL.install(|| {
             self.columns
@@ -2322,6 +2336,7 @@ impl DataFrame {
     /// | 3       | 3       |
     /// +---------+---------+
     /// ```
+    #[must_use]
     pub fn median(&self) -> Self {
         let columns = POOL.install(|| {
             self.columns
@@ -2621,6 +2636,7 @@ impl DataFrame {
     }
 
     /// Create a new `DataFrame` that shows the null counts per column.
+    #[must_use]
     pub fn null_count(&self) -> Self {
         let cols = self
             .columns
