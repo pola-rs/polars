@@ -55,7 +55,7 @@ impl PyLazyGroupBy {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -83,38 +83,6 @@ impl From<LazyFrame> for PyLazyFrame {
         PyLazyFrame { ldf }
     }
 }
-
-// pub fn apply(&mut self, lambda: PyObject) -> PyLazyFrame {
-//     let lgb = self.lgb.take().unwrap();
-//
-//     let function = move |df: DataFrame| {
-//         let gil = Python::acquire_gil();
-//         let py = gil.python();
-//         // get the pypolars module
-//         let pypolars = PyModule::import(py, "polars").unwrap();
-//
-//         // create a PyDataFrame struct/object for Python
-//         let pydf = PyDataFrame::new(df);
-//
-//         // Wrap this PySeries object in the python side DataFrame wrapper
-//         let python_df_wrapper = pypolars.getattr("wrap_df").unwrap().call1((pydf,)).unwrap();
-//
-//         // call the lambda and get a python side DataFrame wrapper
-//         let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
-//             Ok(pyobj) => pyobj,
-//             Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
-//         };
-//         // unpack the wrapper in a PyDataFrame
-//         let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
-//             "Could net get DataFrame attribute '_df'. Make sure that you return a DataFrame object.",
-//         );
-//         // Downcast to Rust
-//         let pydf = py_pydf.extract::<PyDataFrame>(py).unwrap();
-//         // Finally get the actual DataFrame
-//         Ok(pydf.df)
-//     };
-//     lgb.apply(function).into()
-// }
 
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
@@ -304,6 +272,7 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn groupby_dynamic(
         &mut self,
         time_column: String,
@@ -337,6 +306,7 @@ impl PyLazyFrame {
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn join(
         &mut self,
         other: PyLazyFrame,
@@ -526,7 +496,7 @@ impl PyLazyFrame {
             // call the lambda and get a python side Series wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(

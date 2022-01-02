@@ -686,7 +686,7 @@ impl PySeries {
                             v.append(python.None()).unwrap();
                         }
                         Some(s) => {
-                            let pylst = primitive_to_list(&inner_dtype, s.as_ref());
+                            let pylst = primitive_to_list(inner_dtype, s.as_ref());
                             v.append(pylst).unwrap();
                         }
                     }
