@@ -170,9 +170,10 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         parallel: bool,
+        rechunk: bool,
     ) -> PyResult<Self> {
-        let lf =
-            LazyFrame::scan_parquet(path, n_rows, cache, parallel).map_err(PyPolarsEr::from)?;
+        let lf = LazyFrame::scan_parquet(path, n_rows, cache, parallel, rechunk)
+            .map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
