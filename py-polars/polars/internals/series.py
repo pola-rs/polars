@@ -1973,7 +1973,7 @@ class Series:
             if self.dtype == Date:
                 tp = "datetime64[D]"
             else:
-                tp = "datetime64[ns]"
+                tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)
 
         if _PYARROW_AVAILABLE and not self.is_datelike():
