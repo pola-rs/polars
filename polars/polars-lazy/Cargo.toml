@@ -2,7 +2,7 @@
 name = "polars-lazy"
 version = "0.18.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
 description = "Lazy query engine for the Polars DataFrame library"
