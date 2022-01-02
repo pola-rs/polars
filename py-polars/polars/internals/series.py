@@ -2723,6 +2723,9 @@ class Series:
             Set the labels at the center of the window
 
         """
+        if min_periods is None:
+            min_periods = window_size
+
         return self.to_frame().select(
             pli.col(self.name).rolling_median(window_size, weights, min_periods, center)
         )[self.name]
@@ -2756,6 +2759,9 @@ class Series:
             Set the labels at the center of the window
 
         """
+        if min_periods is None:
+            min_periods = window_size
+
         return self.to_frame().select(
             pli.col(self.name).rolling_quantile(
                 quantile, interpolation, window_size, weights, min_periods, center

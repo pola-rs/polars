@@ -8,6 +8,7 @@ use polars::frame::row::Row;
 use polars::frame::NullStrategy;
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
+use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::arrow::types::NativeType;
 use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
@@ -230,6 +231,20 @@ impl FromPyObject<'_> for Wrap<ClosedWindow> {
             "left" => ClosedWindow::Left,
             "right" => ClosedWindow::Right,
             _ => panic!("{}", "closed should be any of {'none', 'left', 'right'}"),
+        }))
+    }
+}
+
+impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
+    fn extract(ob: &'_ PyAny) -> PyResult<Self> {
+        let s = ob.extract::<&str>()?;
+        Ok(Wrap(match s {
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "linear" => QuantileInterpolOptions::Linear,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            _ => panic!("{}", "interpolation should be any of {'lower', 'higher', 'nearest', 'linear', 'midpoint'}"),
         }))
     }
 }

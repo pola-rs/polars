@@ -1187,7 +1187,7 @@ impl PySeries {
     pub fn rolling_quantile(
         &self,
         quantile: f64,
-        interpolation: QuantileInterpolOptions,
+        interpolation: Wrap<QuantileInterpolOptions>,
         window_size: usize,
         weights: Option<Vec<f64>>,
         min_periods: usize,
@@ -1200,9 +1200,10 @@ impl PySeries {
             center,
         };
 
+        let interpol = interpolation.0;
         let s = self
             .series
-            .rolling_quantile(quantile, interpolation, options)
+            .rolling_quantile(quantile, interpol, options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
