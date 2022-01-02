@@ -28,14 +28,16 @@ impl ListChunked {
 
     pub fn lst_mean(&self) -> Float64Chunked {
         self.amortized_iter()
-            .map(|s| s.map(|s| s.as_ref().mean()).flatten())
+            .map(|s| s.and_then(|s| s.as_ref().mean()))
             .collect()
     }
 
+    #[must_use]
     pub fn lst_sort(&self, reverse: bool) -> ListChunked {
         self.apply_amortized(|s| s.as_ref().sort(reverse))
     }
 
+    #[must_use]
     pub fn lst_reverse(&self) -> ListChunked {
         self.apply_amortized(|s| s.as_ref().reverse())
     }

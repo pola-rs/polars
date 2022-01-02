@@ -58,6 +58,7 @@ pub trait ToList<T: PolarsDataType> {
 
 #[cfg(feature = "interpolate")]
 pub trait Interpolate {
+    #[must_use]
     fn interpolate(&self) -> Self;
 }
 
@@ -199,6 +200,7 @@ pub trait ChunkTake {
     /// # Safety
     ///
     /// Doesn't do any bound checking.
+    #[must_use]
     unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
     where
         Self: std::marker::Sized,
@@ -324,6 +326,7 @@ pub trait ChunkApply<'a, A, B> {
     ///     ca.apply(|v| v * 2)
     /// }
     /// ```
+    #[must_use]
     fn apply<F>(&'a self, f: F) -> Self
     where
         F: Fn(A) -> B + Copy;
@@ -334,16 +337,19 @@ pub trait ChunkApply<'a, A, B> {
         Self: Sized;
 
     /// Apply a closure elementwise including null values.
+    #[must_use]
     fn apply_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn(Option<A>) -> Option<B> + Copy;
 
     /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    #[must_use]
     fn apply_with_idx<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, A)) -> B + Copy;
 
     /// Apply a closure elementwise. The closure gets the index of the element as first argument.
+    #[must_use]
     fn apply_with_idx_on_opt<F>(&'a self, f: F) -> Self
     where
         F: Fn((usize, Option<A>)) -> Option<B> + Copy;
@@ -689,6 +695,7 @@ pub trait ChunkZip<T> {
 /// Apply kernels on the arrow array chunks in a ChunkedArray.
 pub trait ChunkApplyKernel<A: Array> {
     /// Apply kernel and return result as a new ChunkedArray.
+    #[must_use]
     fn apply_kernel<F>(&self, f: F) -> Self
     where
         F: Fn(&A) -> ArrayRef;
@@ -790,6 +797,7 @@ pub trait ChunkLen {
 
 pub trait ChunkOps: ChunkLen {
     /// Aggregate to contiguous memory.
+    #[must_use]
     fn rechunk(&self) -> Self
     where
         Self: std::marker::Sized;
@@ -799,11 +807,13 @@ pub trait ChunkOps: ChunkLen {
     /// When offset is negative it will be counted from the end of the array.
     /// This method will never error,
     /// and will slice the best match when offset, or length is out of bounds
+    #[must_use]
     fn slice(&self, offset: i64, length: usize) -> Self
     where
         Self: std::marker::Sized;
 
     /// Take a view of top n elements
+    #[must_use]
     fn limit(&self, num_elements: usize) -> Self
     where
         Self: Sized,
@@ -812,6 +822,7 @@ pub trait ChunkOps: ChunkLen {
     }
 
     /// Get the head of the ChunkedArray
+    #[must_use]
     fn head(&self, length: Option<usize>) -> Self
     where
         Self: Sized,
@@ -823,6 +834,7 @@ pub trait ChunkOps: ChunkLen {
     }
 
     /// Get the tail of the ChunkedArray
+    #[must_use]
     fn tail(&self, length: Option<usize>) -> Self
     where
         Self: Sized,

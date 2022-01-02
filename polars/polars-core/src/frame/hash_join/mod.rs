@@ -536,8 +536,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
+                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
@@ -546,8 +545,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
+                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
@@ -614,8 +612,7 @@ where
                     // we know that we only iterate over length == self.len()
                     unsafe {
                         ca.downcast_iter()
-                            .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                            .flatten()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                             .trust_my_length(ca.len())
                             .collect_trusted::<Vec<_>>()
                     }
@@ -628,8 +625,7 @@ where
                     // we know that we only iterate over length == self.len()
                     unsafe {
                         ca.downcast_iter()
-                            .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                            .flatten()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                             .trust_my_length(ca.len())
                             .collect_trusted::<Vec<_>>()
                     }

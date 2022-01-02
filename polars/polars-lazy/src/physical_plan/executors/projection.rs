@@ -18,7 +18,9 @@ impl Executor for ProjectionExec {
 
         let df = evaluate_physical_expressions(&df, &self.expr, state);
 
+        // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]
+        #[allow(unused_must_use)]
         {
             // TODO: check also the types.
             df.as_ref().map(|df| {

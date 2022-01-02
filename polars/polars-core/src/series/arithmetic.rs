@@ -153,7 +153,7 @@ pub mod checked {
             Ok((l)
                 .downcast_iter()
                 .zip(r.downcast_iter())
-                .map(|(l_arr, r_arr)| {
+                .flat_map(|(l_arr, r_arr)| {
                     l_arr
                         .into_iter()
                         .zip(r_arr)
@@ -164,7 +164,6 @@ pub mod checked {
                             _ => None,
                         })
                 })
-                .flatten()
                 .collect::<ChunkedArray<T>>()
                 .into_series())
         }
@@ -180,7 +179,7 @@ pub mod checked {
             Ok((l)
                 .downcast_iter()
                 .zip(r.downcast_iter())
-                .map(|(l_arr, r_arr)| {
+                .flat_map(|(l_arr, r_arr)| {
                     l_arr
                         .into_iter()
                         .zip(r_arr)
@@ -197,7 +196,6 @@ pub mod checked {
                             _ => None,
                         })
                 })
-                .flatten()
                 .collect::<Float32Chunked>()
                 .into_series())
         }
@@ -213,7 +211,7 @@ pub mod checked {
             Ok((l)
                 .downcast_iter()
                 .zip(r.downcast_iter())
-                .map(|(l_arr, r_arr)| {
+                .flat_map(|(l_arr, r_arr)| {
                     l_arr
                         .into_iter()
                         .zip(r_arr)
@@ -230,7 +228,6 @@ pub mod checked {
                             _ => None,
                         })
                 })
-                .flatten()
                 .collect::<Float64Chunked>()
                 .into_series())
         }
@@ -574,18 +571,21 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     /// Apply lhs - self
+    #[must_use]
     pub fn lhs_sub<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs - v)
     }
 
     /// Apply lhs / self
+    #[must_use]
     pub fn lhs_div<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs / v)
     }
 
     /// Apply lhs % self
+    #[must_use]
     pub fn lhs_rem<N: Num + NumCast>(&self, lhs: N) -> Self {
         let lhs: T::Native = NumCast::from(lhs).expect("could not cast");
         self.apply(|v| lhs % v)

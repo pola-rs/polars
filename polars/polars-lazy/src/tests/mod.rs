@@ -3,8 +3,7 @@ mod queries;
 
 use polars_core::prelude::*;
 use polars_io::prelude::*;
-use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
 
 use crate::functions::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
@@ -30,7 +29,7 @@ fn scan_foods_parquet(par: bool) -> LazyFrame {
     if std::fs::metadata(&out_path).is_err() {
         let df = CsvReader::from_path(path).unwrap().finish().unwrap();
         let f = std::fs::File::create(&out_path).unwrap();
-        ParquetWriter::new(f).finish(&df);
+        ParquetWriter::new(f).finish(&df).unwrap();
     }
     LazyFrame::scan_parquet(out_path, None, false, par).unwrap()
 }

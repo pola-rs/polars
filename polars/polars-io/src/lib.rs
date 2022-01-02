@@ -39,6 +39,7 @@ where
     fn new(reader: R) -> Self;
 
     /// Rechunk to a single chunk after Reading file.
+    #[must_use]
     fn set_rechunk(self, _rechunk: bool) -> Self
     where
         Self: std::marker::Sized,

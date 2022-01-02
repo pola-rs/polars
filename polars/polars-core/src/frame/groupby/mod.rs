@@ -528,6 +528,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///
     /// Note that making a selection with this method is not required. If you
     /// skip it all columns (except for the keys) will be selected for aggregation.
+    #[must_use]
     pub fn select<S, J>(mut self, selection: S) -> Self
     where
         S: Selection<'selection_str, J>,

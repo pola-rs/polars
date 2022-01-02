@@ -5,6 +5,7 @@ pub use average::*;
 pub use variance::*;
 
 #[derive(Debug, Copy, Clone)]
+#[must_use]
 pub struct EWMOptions {
     pub alpha: f64,
     pub adjust: bool,

@@ -13,11 +13,10 @@ impl DateChunked {
         // safety: we know the iterators len
         unsafe {
             self.downcast_iter()
-                .map(|iter| {
+                .flat_map(|iter| {
                     iter.into_iter()
                         .map(|opt_v| opt_v.copied().map(date32_to_date))
                 })
-                .flatten()
                 .trust_my_length(self.len())
         }
     }

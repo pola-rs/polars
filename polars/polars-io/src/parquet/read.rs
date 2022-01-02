@@ -12,6 +12,7 @@ use std::io::{Read, Seek};
 use std::sync::Arc;
 
 /// Read Apache parquet format into a DataFrame.
+#[must_use]
 pub struct ParquetReader<R: Read + Seek> {
     reader: R,
     rechunk: bool,

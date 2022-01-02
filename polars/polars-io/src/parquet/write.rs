@@ -41,6 +41,7 @@ impl FallibleStreamingIterator for Bla {
 /// # Example
 ///
 ///
+#[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
     compression: write::Compression,
