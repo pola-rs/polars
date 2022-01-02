@@ -932,8 +932,7 @@ impl PyDataFrame {
         &self,
         lambda: &PyAny,
         output_type: &PyAny,
-        batch_size: usize,
-        rechunk: bool,
+        inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
         let gil = Python::acquire_gil();
         let py = gil.python();
@@ -987,7 +986,7 @@ impl PyDataFrame {
             Some(DataType::Utf8) => {
                 apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
             }
-            _ => return apply_lambda_unknown(df, py, lambda, batch_size, rechunk),
+            _ => return apply_lambda_unknown(df, py, lambda, inference_size),
         };
 
         Ok((PySeries::from(out).into_py(py), false))

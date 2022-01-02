@@ -2,7 +2,7 @@ use crate::prelude::*;
 use crate::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
 impl<'a> Row<'a> {
@@ -56,7 +56,10 @@ impl DataFrame {
         Self::from_rows_iter_and_schema(rows.iter(), schema)
     }
 
-    fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> Result<Self>
+    /// Create a new DataFrame from an iterator over rows. This should only be used when you have row wise data,
+    /// as this is a lot slower than creating the `Series` in a columnar fashion
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
+    pub fn from_rows_iter_and_schema<'a, I>(mut rows: I, schema: &Schema) -> Result<Self>
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
