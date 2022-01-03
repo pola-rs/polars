@@ -9,6 +9,7 @@ mod time;
 #[cfg(feature = "temporal")]
 pub mod truncate;
 mod utf8;
+mod duration;
 
 pub use self::conversion::*;
 use crate::chunked_array::kernels::temporal::*;

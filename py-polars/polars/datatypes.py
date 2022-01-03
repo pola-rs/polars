@@ -75,6 +75,10 @@ class Datetime(DataType):
     pass
 
 
+class Duration(DataType):
+    pass
+
+
 class Time(DataType):
     pass
 
@@ -103,6 +107,7 @@ _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     List: "list",
     Date: "date",
     Datetime: "datetime",
+    Duration: "timedelta",
     Time: "time",
     Object: "object",
     Categorical: "categorical",
@@ -121,6 +126,7 @@ _DTYPE_TO_CTYPE = {
     Float32: ctypes.c_float,
     Float64: ctypes.c_double,
     Datetime: ctypes.c_int64,
+    Duration: ctypes.c_int64,
     Time: ctypes.c_int64,
 }
 

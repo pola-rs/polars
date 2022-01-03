@@ -430,6 +430,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt32, Date) => Some(Int64),
         #[cfg(feature = "dtype-datetime")]
         (UInt32, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (UInt32, Duration(_)) => Some(Int64),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -465,6 +467,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int32, Date) => Some(Int32),
         #[cfg(feature = "dtype-datetime")]
         (Int32, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Int32, Duration(_)) => Some(Int64),
         #[cfg(feature = "dtype-time")]
         (Int32, Time) => Some(Int64),
         (Int32, Boolean) => Some(Int32),
@@ -477,6 +481,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Float64) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
         (Int64, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Int64, Duration(_)) => Some(Int64),
         #[cfg(feature = "dtype-date")]
         (Int64, Date) => Some(Int32),
         #[cfg(feature = "dtype-time")]
@@ -489,6 +495,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Float32, Date) => Some(Float32),
         #[cfg(feature = "dtype-datetime")]
         (Float32, Datetime(_, _)) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Float32, Duration(_)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float32, Time) => Some(Float64),
         (Float64, Float32) => Some(Float64),
@@ -497,6 +505,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Float64, Date) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
         (Float64, Datetime(_, _)) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Float64, Duration(_)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float64, Time) => Some(Float64),
         (Float64, Boolean) => Some(Float64),
@@ -530,6 +540,19 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Datetime(_, _), Float64) => Some(Float64),
         #[cfg(feature = "dtype-date")]
         (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
+        
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), UInt32) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), UInt64) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Int32) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Int64) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Float32) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Float64) => Some(Float64),
 
         #[cfg(feature = "dtype-time")]
         (Time, Int32) => Some(Int64),
@@ -567,6 +590,41 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (dt, Null) => Some(dt.clone()),
         (Null, dt) => Some(dt.clone()),
 
+        (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Nanoseconds, None)) => {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        },
+        (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Nanoseconds, Some(tz))) => {
+            if tz == "" {
+                Some(Datetime(TimeUnit::Nanoseconds, None))
+            } else {
+                Some(Datetime(TimeUnit::Nanoseconds, Some(tz.clone())))
+            }
+        },
+        (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Milliseconds, None))
+        | (Datetime(TimeUnit::Milliseconds, None), Duration(TimeUnit::Milliseconds))
+        | (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Milliseconds, None))
+        | (Datetime(TimeUnit::Milliseconds, None), Duration(TimeUnit::Nanoseconds))
+        | (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Nanoseconds, None))
+        | (Datetime(TimeUnit::Nanoseconds, None), Duration(TimeUnit::Milliseconds)) => {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        },
+        (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Milliseconds, Some(tz)))
+        | (Datetime(TimeUnit::Milliseconds, Some(tz)), Duration(TimeUnit::Milliseconds))
+        | (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Milliseconds, Some(tz)))
+        | (Datetime(TimeUnit::Milliseconds, Some(tz)), Duration(TimeUnit::Nanoseconds))
+        | (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Nanoseconds, Some(tz)))
+        | (Datetime(TimeUnit::Nanoseconds, Some(tz)), Duration(TimeUnit::Milliseconds)) => {
+            if tz == "" {
+                Some(Datetime(TimeUnit::Milliseconds, None))
+            } else {
+                Some(Datetime(TimeUnit::Milliseconds, Some(tz.clone())))
+            }
+        },
+
+        (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds))
+        | (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
+            Some(Duration(TimeUnit::Milliseconds))
+        },
         // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
         (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
         | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {

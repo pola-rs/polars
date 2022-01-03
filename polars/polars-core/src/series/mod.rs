@@ -337,7 +337,7 @@ impl Series {
         use DataType::*;
         match self.dtype() {
             Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
-            Datetime(_, _) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -698,11 +698,23 @@ impl Series {
             _ => unimplemented!(),
         }
     }
+    pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+        match self.dtype() {
+            #[cfg(feature = "dtype-duration")]
+            DataType::Int64 => self
+                .i64()
+                .unwrap()
+                .clone()
+                .into_duration(timeunit)
+                .into_series(),
+            _ => unimplemented!(),
+        }
+    }
 
     /// Check if the underlying data is a logical type.
     pub fn is_logical(&self) -> bool {
         use DataType::*;
-        matches!(self.dtype(), Date | Datetime(_, _) | Time | Categorical)
+        matches!(self.dtype(), Date | Duration (_) | Datetime(_, _) | Time | Categorical)
     }
 
     /// Check if underlying physical data is numeric.
@@ -729,6 +741,7 @@ impl Series {
             | DataType::Categorical
             | DataType::Date
             | DataType::Datetime(_, _)
+            | DataType::Duration(_)
             | DataType::Boolean
             | DataType::Null => false,
             #[cfg(feature = "object")]

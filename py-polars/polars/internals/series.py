@@ -69,6 +69,7 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
+    _to_python_timedelta,
     range_to_slice,
 )
 
@@ -86,9 +87,9 @@ else:
 
 
 def get_ffi_func(
-    name: str,
-    dtype: Type["DataType"],
-    obj: "PySeries",
+        name: str,
+        dtype: Type["DataType"],
+        obj: "PySeries",
 ) -> Optional[Callable[..., Any]]:
     """
     Dynamically obtain the proper ffi function/ method.
@@ -118,7 +119,8 @@ def wrap_s(s: "PySeries") -> "Series":
 
 
 ArrayLike = Union[
-    Sequence[Any], "Series", "pa.Array", np.ndarray, "pd.Series", "pd.DatetimeIndex"
+    Sequence[
+        Any], "Series", "pa.Array", np.ndarray, "pd.Series", "pd.DatetimeIndex"
 ]
 
 
@@ -189,12 +191,12 @@ class Series:
     """
 
     def __init__(
-        self,
-        name: Optional[Union[str, ArrayLike]] = None,
-        values: Optional[ArrayLike] = None,
-        dtype: Optional[Type[DataType]] = None,
-        strict: bool = True,
-        nan_to_null: bool = False,
+            self,
+            name: Optional[Union[str, ArrayLike]] = None,
+            values: Optional[ArrayLike] = None,
+            dtype: Optional[Type[DataType]] = None,
+            strict: bool = True,
+            nan_to_null: bool = False,
     ):
 
         # Handle case where values are passed as the first argument
@@ -218,8 +220,10 @@ class Series:
         elif isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
         elif isinstance(values, Sequence):
-            self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
-        elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
+            self._s = sequence_to_pyseries(name, values, dtype=dtype,
+                                           strict=strict)
+        elif _PANDAS_AVAILABLE and isinstance(values,
+                                              (pd.Series, pd.DatetimeIndex)):
             self._s = pandas_to_pyseries(name, values)
         else:
             raise ValueError("Series constructor not called properly.")
@@ -232,13 +236,14 @@ class Series:
 
     @classmethod
     def _repeat(
-        cls, name: str, val: Union[int, float, str, bool], n: int, dtype: Type[DataType]
+            cls, name: str, val: Union[int, float, str, bool], n: int,
+            dtype: Type[DataType]
     ) -> "Series":
         return cls._from_pyseries(PySeries.repeat(name, val, n, dtype))
 
     @classmethod
     def _from_arrow(
-        cls, name: str, values: "pa.Array", rechunk: bool = True
+            cls, name: str, values: "pa.Array", rechunk: bool = True
     ) -> "Series":
         """
         Construct a Series from an Arrow Array.
@@ -247,10 +252,10 @@ class Series:
 
     @classmethod
     def _from_pandas(
-        cls,
-        name: str,
-        values: Union["pd.Series", "pd.DatetimeIndex"],
-        nan_to_none: bool = True,
+            cls,
+            name: str,
+            values: Union["pd.Series", "pd.DatetimeIndex"],
+            nan_to_none: bool = True,
     ) -> "Series":
         """
         Construct a Series from a pandas Series or DatetimeIndex.
@@ -443,10 +448,12 @@ class Series:
         raise NotImplementedError
 
     def __setitem__(
-        self, key: Union[int, "Series", np.ndarray, List, Tuple], value: Any
+            self, key: Union[int, "Series", np.ndarray, List, Tuple],
+            value: Any
     ) -> None:
         if isinstance(value, list):
-            raise ValueError("cannot set with a list as value, use a primitive value")
+            raise ValueError(
+                "cannot set with a list as value, use a primitive value")
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
@@ -766,7 +773,8 @@ class Series:
         """
         return self._s.median()
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> float:
+    def quantile(self, quantile: float,
+                 interpolation: str = "nearest") -> float:
         """
         Get the quantile value of this Series.
 
@@ -1188,7 +1196,7 @@ class Series:
 
     @overload
     def sort(
-        self, reverse: bool = False, *, in_place: Literal[False] = ...
+            self, reverse: bool = False, *, in_place: Literal[False] = ...
     ) -> "Series":
         ...
 
@@ -1198,12 +1206,12 @@ class Series:
 
     @overload
     def sort(
-        self, reverse: bool = False, *, in_place: bool = False
+            self, reverse: bool = False, *, in_place: bool = False
     ) -> Optional["Series"]:
         ...
 
     def sort(
-        self, reverse: bool = False, *, in_place: bool = False
+            self, reverse: bool = False, *, in_place: bool = False
     ) -> Optional["Series"]:
         """
         Sort this Series.
@@ -1638,7 +1646,8 @@ class Series:
         return wrap_s(self._s.explode())
 
     def series_equal(
-        self, other: "Series", null_equal: bool = False, strict: bool = False
+            self, other: "Series", null_equal: bool = False,
+            strict: bool = False
     ) -> bool:
         """
         Check if series is equal with another Series.
@@ -1688,9 +1697,10 @@ class Series:
         return self.len()
 
     def cast(
-        self,
-        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
-        strict: bool = True,
+            self,
+            dtype: Union[
+                Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+            strict: bool = True,
     ) -> "Series":
         """
         Cast between data types.
@@ -1898,7 +1908,8 @@ class Series:
         return self.to_numpy().__array__(dtype)
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+            self, ufunc: Callable[..., Any], method: str, *inputs: Any,
+            **kwargs: Any
     ) -> "Series":
         """
         Numpy universal functions.
@@ -1941,7 +1952,7 @@ class Series:
             return NotImplemented
 
     def to_numpy(
-        self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
+            self, *args: Any, zero_copy_only: bool = False, **kwargs: Any
     ) -> np.ndarray:
         """
         Convert this Series to numpy. This operation clones data but is completely safe.
@@ -2026,9 +2037,9 @@ class Series:
         return wrap_s(f(filter._s, value))
 
     def set_at_idx(
-        self,
-        idx: Union["Series", np.ndarray, List[int], Tuple[int]],
-        value: Union[int, float, str, bool],
+            self,
+            idx: Union["Series", np.ndarray, List[int], Tuple[int]],
+            value: Union[int, float, str, bool],
     ) -> "Series":
         """
         Set values at the index locations.
@@ -2120,7 +2131,8 @@ class Series:
                * "zero"
         """
         if not isinstance(strategy, str):
-            return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
+            return \
+            self.to_frame().select(pli.col(self.name).fill_null(strategy))[
                 self.name
             ]
         return wrap_s(self._s.fill_null(strategy))
@@ -2312,9 +2324,9 @@ class Series:
         return np.arctan(self)  # type: ignore
 
     def apply(
-        self,
-        func: Callable[[Any], Any],
-        return_dtype: Optional[Type[DataType]] = None,
+            self,
+            func: Callable[[Any], Any],
+            return_dtype: Optional[Type[DataType]] = None,
     ) -> "Series":
         """
         Apply a function over elements in this Series and return a new Series.
@@ -2383,7 +2395,7 @@ class Series:
         return wrap_s(self._s.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: Union[int, "pli.Expr"]
+            self, periods: int, fill_value: Union[int, "pli.Expr"]
     ) -> "Series":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
@@ -2418,11 +2430,11 @@ class Series:
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
     def rolling_min(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -2460,14 +2472,15 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_min(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_min(window_size, weights, min_periods, center))
 
     def rolling_max(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -2505,14 +2518,15 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_max(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_max(window_size, weights, min_periods, center))
 
     def rolling_mean(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -2550,14 +2564,15 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_mean(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_mean(window_size, weights, min_periods, center))
 
     def rolling_sum(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -2595,14 +2610,15 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_sum(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_sum(window_size, weights, min_periods, center))
 
     def rolling_std(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         Compute a rolling std dev
@@ -2627,14 +2643,15 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_std(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_std(window_size, weights, min_periods, center))
 
     def rolling_var(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
+            self,
+            window_size: int,
+            weights: Optional[List[float]] = None,
+            min_periods: Optional[int] = None,
+            center: bool = False,
     ) -> "Series":
         """
         Compute a rolling variance.
@@ -2659,10 +2676,11 @@ class Series:
         """
         if min_periods is None:
             min_periods = window_size
-        return wrap_s(self._s.rolling_var(window_size, weights, min_periods, center))
+        return wrap_s(
+            self._s.rolling_var(window_size, weights, min_periods, center))
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pli.Series"], Any]
+            self, window_size: int, function: Callable[["pli.Series"], Any]
     ) -> "pli.Series":
         """
         Allows a custom rolling window function.
@@ -2709,12 +2727,14 @@ class Series:
         window_size
             Size of the rolling window
         """
-        return self.to_frame().select(pli.col(self.name).rolling_median(window_size))[
+        return \
+        self.to_frame().select(pli.col(self.name).rolling_median(window_size))[
             self.name
         ]
 
     def rolling_quantile(
-        self, window_size: int, quantile: float, interpolation: str = "nearest"
+            self, window_size: int, quantile: float,
+            interpolation: str = "nearest"
     ) -> "Series":
         """
         Compute a rolling quantile
@@ -2729,7 +2749,8 @@ class Series:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
         return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(window_size, quantile, interpolation)
+            pli.col(self.name).rolling_quantile(window_size, quantile,
+                                                interpolation)
         )[self.name]
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
@@ -2748,11 +2769,11 @@ class Series:
         )[self.name]
 
     def sample(
-        self,
-        n: Optional[int] = None,
-        frac: Optional[float] = None,
-        with_replacement: bool = False,
-        seed: int = 0,
+            self,
+            n: Optional[int] = None,
+            frac: Optional[float] = None,
+            with_replacement: bool = False,
+            seed: int = 0,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -2863,7 +2884,8 @@ class Series:
             series._s.shrink_to_fit()
             return series
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "pli.Series":
+    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2,
+             k3: int = 3) -> "pli.Series":
         """
         Hash the Series.
 
@@ -3021,7 +3043,8 @@ class Series:
             3
         ]
         """
-        return self.to_frame().select(pli.col(self.name).pct_change(n)).to_series()
+        return self.to_frame().select(
+            pli.col(self.name).pct_change(n)).to_series()
 
     def skew(self, bias: bool = True) -> Optional[float]:
         r"""Compute the sample skewness of a data set.
@@ -3061,7 +3084,8 @@ class Series:
         """
         return self._s.skew(bias)
 
-    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Optional[float]:
+    def kurtosis(self, fisher: bool = True, bias: bool = True) -> Optional[
+        float]:
         """Compute the kurtosis (Fisher or Pearson) of a dataset.
         Kurtosis is the fourth central moment divided by the square of the
         variance. If Fisher's definition is used, then 3.0 is subtracted from
@@ -3081,7 +3105,8 @@ class Series:
         """
         return self._s.kurtosis(fisher, bias)
 
-    def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Series":
+    def clip(self, min_val: Union[int, float],
+             max_val: Union[int, float]) -> "Series":
         """
         Clip (limit) the values in an array.
 
@@ -3090,7 +3115,8 @@ class Series:
         min_val, max_val
             Minimum and maximum value.
         """
-        return self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
+        return \
+        self.to_frame().select(pli.col(self.name).clip(min_val, max_val))[
             self.name
         ]
 
@@ -3108,7 +3134,8 @@ class Series:
         '1-null-2'
 
         """
-        return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
+        return \
+        self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
             self.name
         ]
 
@@ -3142,13 +3169,13 @@ class Series:
         return wrap_s(self._s.shuffle(seed))
 
     def ewm_mean(
-        self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
-        adjust: bool = True,
-        min_periods: int = 1,
+            self,
+            com: Optional[float] = None,
+            span: Optional[float] = None,
+            half_life: Optional[float] = None,
+            alpha: Optional[float] = None,
+            adjust: bool = True,
+            min_periods: int = 1,
     ) -> "Series":
         r"""
         Exponential moving average.
@@ -3174,22 +3201,22 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(
+                .select(
                 pli.col(self.name).ewm_mean(
                     com, span, half_life, alpha, adjust, min_periods
                 )
             )
-            .to_series()
+                .to_series()
         )
 
     def ewm_std(
-        self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
-        adjust: bool = True,
-        min_periods: int = 1,
+            self,
+            com: Optional[float] = None,
+            span: Optional[float] = None,
+            half_life: Optional[float] = None,
+            alpha: Optional[float] = None,
+            adjust: bool = True,
+            min_periods: int = 1,
     ) -> "Series":
         r"""
         Exponential moving standard deviation.
@@ -3215,22 +3242,22 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(
+                .select(
                 pli.col(self.name).ewm_std(
                     com, span, half_life, alpha, adjust, min_periods
                 )
             )
-            .to_series()
+                .to_series()
         )
 
     def ewm_var(
-        self,
-        com: Optional[float] = None,
-        span: Optional[float] = None,
-        half_life: Optional[float] = None,
-        alpha: Optional[float] = None,
-        adjust: bool = True,
-        min_periods: int = 1,
+            self,
+            com: Optional[float] = None,
+            span: Optional[float] = None,
+            half_life: Optional[float] = None,
+            alpha: Optional[float] = None,
+            adjust: bool = True,
+            min_periods: int = 1,
     ) -> "Series":
         r"""
         Exponential moving standard variation.
@@ -3256,15 +3283,16 @@ class Series:
         """
         return (
             self.to_frame()
-            .select(
+                .select(
                 pli.col(self.name).ewm_var(
                     com, span, half_life, alpha, adjust, min_periods
                 )
             )
-            .to_series()
+                .to_series()
         )
 
-    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
+    def extend(self, value: Optional[Union[int, float, str, bool]],
+               n: int) -> "Series":
         """
         Extend the Series with given number of values.
 
@@ -3317,7 +3345,8 @@ class StringNameSpace:
     def __init__(self, series: "Series"):
         self._s = series._s
 
-    def strptime(self, datatype: Type[DataType], fmt: Optional[str] = None) -> Series:
+    def strptime(self, datatype: Type[DataType],
+                 fmt: Optional[str] = None) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
 
@@ -3619,7 +3648,8 @@ class ListNameSpace:
         """
         Sort the arrays in the list
         """
-        return pli.select(pli.lit(wrap_s(self._s)).arr.sort(reverse)).to_series()
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.sort(reverse)).to_series()
 
     def reverse(self) -> Series:
         """
@@ -3677,7 +3707,8 @@ class ListNameSpace:
         """
         return self.get(-1)
 
-    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Series":
+    def contains(self, item: Union[
+        float, str, bool, int, date, datetime]) -> "Series":
         """
         Check if sublists contain the given item.
 
@@ -3705,9 +3736,9 @@ class DateTimeNameSpace:
         self._s = series._s
 
     def truncate(
-        self,
-        every: Union[str, timedelta],
-        offset: Optional[Union[str, timedelta]] = None,
+            self,
+            every: Union[str, timedelta],
+            offset: Optional[Union[str, timedelta]] = None,
     ) -> Series:
         """
         .. warning::

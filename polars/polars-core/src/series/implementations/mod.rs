@@ -14,6 +14,8 @@ mod list;
 #[cfg(feature = "object")]
 mod object;
 mod utf8;
+#[cfg(feature = "dtype-duration")]
+mod duration;
 
 #[cfg(feature = "object")]
 use std::any::Any;

@@ -16,13 +16,13 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
-impl IntoSeries for DatetimeChunked {
+impl IntoSeries for DurationChunked {
     fn into_series(self) -> Series {
         Series(Arc::new(SeriesWrap(self)))
     }
 }
 
-impl private::PrivateSeriesNumeric for SeriesWrap<DatetimeChunked> {
+impl private::PrivateSeriesNumeric for SeriesWrap<DurationChunked> {
     fn bit_repr_is_large(&self) -> bool {
         true
     }
@@ -31,7 +31,7 @@ impl private::PrivateSeriesNumeric for SeriesWrap<DatetimeChunked> {
     }
 }
 
-impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
+impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Owned(self.0.field())
     }
@@ -42,7 +42,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
             .explode_by_offsets(offsets)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -50,7 +50,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _cummax(&self, reverse: bool) -> Series {
         self.0
             .cummax(reverse)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -58,7 +58,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _cummin(&self, reverse: bool) -> Series {
         self.0
             .cummin(reverse)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -85,7 +85,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let other = other.to_physical_repr().into_owned();
         self.0.zip_with(mask, other.as_ref().as_ref()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -105,14 +105,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_min(groups).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
 
     fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_max(groups).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -125,14 +125,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.0
             .agg_first(groups)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
         self.0
             .agg_last(groups)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -165,14 +165,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         interpol: QuantileInterpolOptions,
     ) -> Option<Series> {
         self.0.agg_quantile(groups, quantile, interpol).map(|s| {
-            s.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            s.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
 
     fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_median(groups).map(|s| {
-            s.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            s.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -221,24 +221,13 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         let right_column = right_column.to_physical_repr().into_owned();
         self.0
             .zip_outer_join_column(&right_column, opt_join_tuples)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
     fn subtract(&self, rhs: &Series) -> Result<Series> {
         match (self.dtype(), rhs.dtype()) {
-            (DataType::Datetime(tu, tz), DataType::Datetime(tur, tzr)) => {
+            (DataType::Duration(tu), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
-                assert_eq!(tz, tzr);
-                let lhs = self.cast(&DataType::Int64).unwrap();
-                let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs
-                    .subtract(&rhs)?
-                    .into_duration(*tu)
-                    .into_series())
-            }
-            (DataType::Datetime(tu, tz), DataType::Datetime(tur, tzr)) => {
-                assert_eq!(tu, tur);
-                assert_eq!(tz, tzr);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
@@ -255,10 +244,25 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             )),
         }
     }
-    fn add_to(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do addition on logical".into(),
-        ))
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Duration(tu), DataType::Duration(tur)) => {
+                assert_eq!(tu, tur);
+                let lhs = self.cast(&DataType::Int64).unwrap();
+                let rhs = rhs.cast(&DataType::Int64).unwrap();
+                Ok(lhs
+                    .add_to(&rhs)?
+                    .into_duration(*tu)
+                    .into_series())
+            }
+            (dtl, dtr) => Err(PolarsError::ComputeError(
+                format!(
+                    "cannot do subtraction on these date types: {:?}, {:?}",
+                    dtl, dtr
+                )
+                .into(),
+            )),
+        }
     }
     fn multiply(&self, _rhs: &Series) -> Result<Series> {
         Err(PolarsError::ComputeError(
@@ -289,12 +293,12 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 }
 
-impl SeriesTrait for SeriesWrap<DatetimeChunked> {
+impl SeriesTrait for SeriesWrap<DurationChunked> {
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0
             .interpolate()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -317,8 +321,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.shrink_to_fit()
     }
 
-    fn datetime(&self) -> Result<&DatetimeChunked> {
-        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DatetimeChunked)) }
+    fn duration(&self) -> Result<&DurationChunked> {
+        unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DurationChunked)) }
     }
 
     fn append_array(&mut self, other: ArrayRef) -> Result<()> {
@@ -328,7 +332,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0
             .slice(offset, length)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -354,21 +358,21 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         self.0.filter(filter).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
 
     fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
         ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
         ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -376,32 +380,32 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn take_every(&self, n: usize) -> Series {
         self.0
             .take_every(n)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
         Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
         ChunkTake::take_unchecked(self.0.deref(), iter.into())
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
         ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -413,62 +417,43 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn rechunk(&self) -> Series {
         self.0
             .rechunk()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn head(&self, length: Option<usize>) -> Series {
         self.0
             .head(length)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn tail(&self, length: Option<usize>) -> Series {
         self.0
             .tail(length)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
         self.0
             .expand_at_index(index, length)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        const NS_IN_DAY: i64 = 86_400_000_000_000;
-        const MS_IN_DAY: i64 = 86400000;
         use DataType::*;
         let ca = match (self.dtype(), data_type) {
-            (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
+            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
                 return Ok((self.0.as_ref() * 1_000_000i64)
-                    .into_datetime(TimeUnit::Nanoseconds, tz.clone())
+                    .into_duration(TimeUnit::Nanoseconds)
                     .into_series())
             }
-            (Datetime(TimeUnit::Nanoseconds, _), Datetime(TimeUnit::Milliseconds, tz)) => {
+            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds)) => {
                 return Ok((self.0.as_ref() / 1_000_000i64)
-                    .into_datetime(TimeUnit::Milliseconds, tz.clone())
+                    .into_duration(TimeUnit::Milliseconds)
                     .into_series())
-            }
-            #[cfg(feature = "dtype-date")]
-            (Datetime(tu, _), Date) => match tu {
-                TimeUnit::Nanoseconds => {
-                    return Ok((self.0.as_ref() / NS_IN_DAY)
-                        .cast(&Int32)
-                        .unwrap()
-                        .into_date()
-                        .into_series());
-                }
-                TimeUnit::Milliseconds => {
-                    return Ok((self.0.as_ref() / MS_IN_DAY)
-                        .cast(&Int32)
-                        .unwrap()
-                        .into_date()
-                        .into_series());
-                }
             },
             _ => Cow::Borrowed(self.0.deref()),
         };
@@ -491,13 +476,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0
             .get_any_value_unchecked(index)
-            .into_datetime(self.0.time_unit(), self.0.time_zone())
+            .into_duration(self.0.time_unit())
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
         self.0
             .sort_with(options)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -515,7 +500,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn unique(&self) -> Result<Series> {
         self.0.unique().map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -555,7 +540,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn reverse(&self) -> Series {
         self.0
             .reverse()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
@@ -566,13 +551,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn shift(&self, periods: i64) -> Series {
         self.0
             .shift(periods)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
             .into_series()
     }
 
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
         self.0.fill_null(strategy).map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }
@@ -585,12 +570,12 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn max_as_series(&self) -> Series {
         self.0
             .max_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
     }
     fn min_as_series(&self) -> Series {
         self.0
             .min_as_series()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_duration(self.0.time_unit())
     }
     fn mean_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
@@ -645,9 +630,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
         self.0
             .repeat_by(by)
-            .cast(&DataType::List(Box::new(DataType::Datetime(
+            .cast(&DataType::List(Box::new(DataType::Duration(
                 self.0.time_unit(),
-                self.0.time_zone().clone(),
             ))))
             .unwrap()
             .list()
@@ -667,7 +651,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         self.0.mode().map(|ca| {
-            ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            ca.into_duration(self.0.time_unit())
                 .into_series()
         })
     }

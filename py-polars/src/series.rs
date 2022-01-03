@@ -1429,15 +1429,22 @@ impl PySeries {
         }
     }
     pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
-        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
-        let tu = match tu {
-            "ms" => TimeUnit::Milliseconds,
-            "ns" => TimeUnit::Nanoseconds,
-            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
+        let unit = match tu {
+          "ns" => TimeUnit::Nanoseconds,
+          "ms" => TimeUnit::Milliseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}"))
         };
-        dt.set_time_unit(tu);
-        Ok(dt.into_series().into())
+        if let DataType::Duration(_) = self.series.dtype() {
+            let mut dt = self.series.duration().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        } else {
+            let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        }
     }
+
     pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
         let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
         dt.set_time_zone(tz);

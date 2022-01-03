@@ -34,6 +34,11 @@ impl Series {
                 let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
                 Arc::from(arr)
             }
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => {
+                let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
+                Arc::from(arr)
+            }
             #[cfg(feature = "dtype-time")]
             DataType::Time => {
                 let arr = cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap();

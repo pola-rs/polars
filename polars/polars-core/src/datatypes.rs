@@ -64,6 +64,7 @@ impl_polars_datatype!(Float32Type, Float32, f32);
 impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
+impl_polars_datatype!(DurationType, Unknown, i64);
 impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
@@ -244,6 +245,9 @@ pub enum AnyValue<'a> {
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
+    // A 64-bit integer representing difference between date-times in nanoseconds or milliseconds
+    #[cfg(feature="dtype-duration")]
+    Duration(i64, TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
     Time(i64),
@@ -334,6 +338,14 @@ impl<'a> AnyValue<'a> {
         match self {
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Int64(v) => AnyValue::Datetime(v, tu, tz),
+            AnyValue::Null => AnyValue::Null,
+            dt => panic!("cannot create date from other type. dtype: {}", dt),
+        }
+    }
+    pub(crate) fn into_duration(self, tu: TimeUnit) -> Self {
+        match self {
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {}", dt),
         }
@@ -432,6 +444,7 @@ impl Display for DataType {
                 };
                 return f.write_str(&s);
             }
+            DataType::Duration(tu) => return write!(f, "duration[{}]", tu),
             DataType::Time => "time",
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
@@ -578,6 +591,8 @@ pub enum DataType {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in milliseconds (64 bits).
     Datetime(TimeUnit, Option<TimeZone>),
+    // 64-bit integer representing difference between times in milliseconds or nanoseconds
+    Duration(TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     Time,
     List(Box<DataType>),
@@ -606,6 +621,7 @@ impl DataType {
         match self {
             Date => Int32,
             Datetime(_, _) => Int64,
+            Duration(_) => Int64,
             Time => Int64,
             Categorical => UInt32,
             _ => self.clone(),
@@ -630,6 +646,7 @@ impl DataType {
             Utf8 => ArrowDataType::LargeUtf8,
             Date => ArrowDataType::Date32,
             Datetime(unit, tz) => ArrowDataType::Timestamp(unit.to_arrow(), tz.clone()),
+            Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
                 "",
@@ -909,6 +926,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::List(f) => DataType::List(Box::new(f.data_type().into())),
             ArrowDataType::Date32 => DataType::Date,
             ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), tz.clone()),
+            ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
@@ -963,6 +981,14 @@ mod test {
     #[test]
     fn test_arrow_dtypes_to_polars() {
         let dtypes = [
+            (
+                ArrowDataType::Duration(ArrowTimeUnit::Nanosecond),
+                DataType::Duration(TimeUnit::Nanoseconds)
+            ),
+            (
+                ArrowDataType::Duration(ArrowTimeUnit::Millisecond),
+                DataType::Duration(TimeUnit::Milliseconds)
+            ),
             (
                 ArrowDataType::Date64,
                 DataType::Datetime(TimeUnit::Milliseconds, None),

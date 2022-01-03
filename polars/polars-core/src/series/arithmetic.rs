@@ -412,6 +412,8 @@ fn finish_cast(inp: &Series, out: Series) -> Series {
         DataType::Date => out.into_date(),
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         DataType::Time => out.into_time(),
         _ => out,

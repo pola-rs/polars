@@ -35,6 +35,12 @@ impl CastExpr {
                         .into_datetime(*tu, tz.clone())
                         .into_series())
                 }
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => {
+                    return Ok(Int64Chunked::full_null(input.name(), input.len())
+                        .into_duration(*tu)
+                        .into_series())
+                }
                 _ => {}
             }
         }

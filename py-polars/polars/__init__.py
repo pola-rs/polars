@@ -8,6 +8,7 @@ except ImportError as e:  # pragma: no cover
     def version() -> str:
         return ""
 
+
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
 
@@ -16,13 +17,15 @@ from polars.cfg import (  # flake8: noqa. We do not export in __all__
     Config,
     toggle_string_cache,
 )
-from polars.convert import from_arrow, from_dict, from_dicts, from_pandas, from_records
+from polars.convert import from_arrow, from_dict, from_dicts, from_pandas, \
+    from_records
 from polars.datatypes import (
     Boolean,
     Categorical,
     DataType,
     Date,
     Datetime,
+    Duration,
     Float32,
     Float64,
     Int8,
@@ -208,6 +211,7 @@ __all__ = [
 ]
 
 __version__ = version()
+
 import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

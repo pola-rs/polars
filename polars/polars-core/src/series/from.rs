@@ -409,6 +409,13 @@ impl From<DatetimeChunked> for Series {
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+impl From<DurationChunked> for Series {
+    fn from(a: DurationChunked) -> Self {
+        a.into_series()
+    }
+}
+
 #[cfg(feature = "dtype-time")]
 impl From<TimeChunked> for Series {
     fn from(a: TimeChunked) -> Self {

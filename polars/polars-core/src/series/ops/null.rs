@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::datatypes::DataType::Int64;
 
 impl Series {
     pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
@@ -31,6 +32,10 @@ impl Series {
                 #[cfg(feature = "dtype-datetime")]
                 DataType::Datetime(tu, tz) => Int64Chunked::full_null(name, size)
                     .into_datetime(*tu, tz.clone())
+                    .into_series(),
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => Int64Chunked::full_null(name, size)
+                    .into_duration(*tu)
                     .into_series(),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => Int64Chunked::full_null(name, size)

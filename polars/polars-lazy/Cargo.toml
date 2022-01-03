@@ -27,6 +27,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime"]
+dtype-duration = ["polars-core/dtype-duration"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 object = ["polars-core/object"]
 # uncomment to have datafusion integration

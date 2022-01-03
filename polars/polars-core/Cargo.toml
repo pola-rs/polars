@@ -82,6 +82,7 @@ dynamic_groupby = ["polars-time", "dtype-datetime", "dtype-date"]
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
 dtype-datetime = ["temporal"]
+dtype-duration = ["temporal"]
 dtype-time = ["temporal"]
 dtype-i8 = []
 dtype-i16 = []

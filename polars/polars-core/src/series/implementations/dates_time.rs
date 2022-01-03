@@ -735,7 +735,7 @@ mod test {
         let out = s.subtract(&s)?;
         assert!(matches!(
             out.dtype(),
-            DataType::Datetime(TimeUnit::Nanoseconds, None)
+            DataType::Duration(TimeUnit::Nanoseconds)
         ));
 
         let mut a = s.clone();
@@ -752,7 +752,7 @@ mod test {
             .into_series();
 
         // check if we don't panic.
-        let out = &s * 100;
+        let out: Series = &s * 100;
         assert_eq!(
             out.dtype(),
             &DataType::Datetime(TimeUnit::Nanoseconds, None)
