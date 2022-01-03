@@ -65,6 +65,15 @@ describe("read:json", () => {
     const df = pl.readJSON(jsonpath, {batchSize: 10, inferSchemaLength: 100});
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
+  it("can read from a json buffer", () => {
+    const json = [
+      JSON.stringify({foo: 1, bar: "1"}),
+      JSON.stringify({foo: 2, bar: "1"}),
+      ""
+    ].join("\n");
+    const df = pl.readJSON(Buffer.from(json));
+    expect(df.toJSON({multiline:true})).toEqual(json.toString());
+  });
 });
 describe("scan", () => {
   describe("csv", () => {

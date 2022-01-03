@@ -804,53 +804,7 @@ describe("expr", () => {
     );
     expect(actual).toFrameEqual(expected);
   });
-  test("rollingMedian", () => {
-    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
-    const expected = pl.DataFrame({
-      "a": [1, 2, 3, 3, 2, 10, 8],
-      "rolling_median_a": [null, 1.5, 2.5, 3, 2.5, 6, 9]
-    });
-    const actual = df.withColumn(
-      col("a")
-        .rollingMedian({windowSize: 2})
-        .prefix("rolling_median_")
-    );
-    expect(actual).toFrameStrictEqual(expected);
-  });
-  test("rollingQuantile", () => {
-    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
-    const expected = pl.DataFrame({
-      "a": [1, 2, 3, 3, 2, 10, 8],
-      "rolling_quantile_a": [null, 2, 3, 3, 3, 10, 10]
-    });
-    const actual = df.withColumn(
-      col("a")
-        .rollingQuantile({windowSize: 2, quantile: 0.5})
-        .prefix("rolling_quantile_")
-    );
-    expect(actual).toFrameStrictEqual(expected);
-  });
-  test("rollingSkew", () => {
-    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
-    const expected = pl.DataFrame({
-      "a": [1, 2, 3, 3, 2, 10, 8],
-      "bias_true": [null, null, null, "-0.49338220021815865", "0.0", "1.097025449363867", "0.09770939201338157"],
-      "bias_false": [null, null, null, "-0.8545630383279711", "0.0", "1.9001038154942962", "0.16923763134384154"]
-    });
-    const actual = df.withColumns(
-      col("a")
-        .cast(pl.UInt64)
-        .rollingSkew(4)
-        .cast(pl.Utf8) // casted to string to retain precision when extracting to JS
-        .as("bias_true"),
-      col("a")
-        .cast(pl.UInt64)
-        .rollingSkew({windowSize: 4, bias:false})
-        .cast(pl.Utf8) // casted to string to retain precision when extracting to JS
-        .as("bias_false")
-    );
-    expect(actual).toFrameStrictEqual(expected);
-  });
+
   test("round", () => {
     const df = pl.DataFrame({"a": [1.00123, 2.32878, 3.3349999]});
     const expected = pl.DataFrame({"rounded": [1, 2.33, 3.33]});
@@ -1561,7 +1515,6 @@ describe("expr.str", () => {
   });
   test("base64 decode", () => {
     const _df = pl.DataFrame({"strings": ["666f6f", "626172", null]});
-    console.log(_df.select(col("strings").str.decode("hex")));
     const df = pl.DataFrame({
       "encoded": [
         "Zm9v",
@@ -1898,5 +1851,148 @@ describe("expr metadata", () => {
     const exprString = expr.toString();
     expect(actualInspect).toStrictEqual(expected);
     expect(exprString).toStrictEqual(expected);
+  });
+});
+
+describe("rolling", () => {
+  test("rollingMax", () => {
+    const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
+    const expected = pl.Series("rolling", [null, 2, 3, 3, 2], pl.Float64).toFrame();
+    const actual = df.select(col("rolling").rollingMax(2));
+    expect(actual).toFrameEqual(expected);
+  });
+  test("rollingMean", () => {
+    const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
+    const expected = pl.Series("rolling", [null, 1.5, 2.5, 2.5, 1.5], pl.Float64).toFrame();
+    const actual = df.select(col("rolling").rollingMean(2));
+    expect(actual).toFrameEqual(expected);
+  });
+  test("rollingMin", () => {
+    const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
+    const expected = pl.Series("rolling", [null, 1, 2, 2, 1], pl.Float64).toFrame();
+    const actual = df.select(col("rolling").rollingMin(2));
+    expect(actual).toFrameEqual(expected);
+  });
+  test("rollingSum", () => {
+    const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
+    const expected = pl.Series("rolling", [null, 3, 5, 5, 3], pl.Float64).toFrame();
+    const actual = df.select(col("rolling").rollingSum(2));
+    expect(actual).toFrameEqual(expected);
+  });
+  test("rollingVar", () => {
+    const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
+    const actual = df.select(col("rolling").rollingVar(2)).row(1);
+    expect(actual).toEqual([0.5]);
+  });
+  test("rollingMedian", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
+    const expected = pl.DataFrame({
+      "a": [1, 2, 3, 3, 2, 10, 8],
+      "rolling_median_a": [null, 1.5, 2.5, 3, 2.5, 6, 9]
+    });
+    const actual = df.withColumn(
+      col("a")
+        .rollingMedian({windowSize: 2})
+        .prefix("rolling_median_")
+    );
+    expect(actual).toFrameStrictEqual(expected);
+  });
+  test("rollingQuantile", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
+    const expected = pl.DataFrame({
+      "a": [1, 2, 3, 3, 2, 10, 8],
+      "rolling_quantile_a": [null, 2, 3, 3, 3, 10, 10]
+    });
+    const actual = df.withColumn(
+      col("a")
+        .rollingQuantile({windowSize: 2, quantile: 0.5})
+        .prefix("rolling_quantile_")
+    );
+    expect(actual).toFrameStrictEqual(expected);
+  });
+  test("rollingSkew", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});
+    const expected = pl.DataFrame({
+      "a": [1, 2, 3, 3, 2, 10, 8],
+      "bias_true": [null, null, null, "-0.49338220021815865", "0.0", "1.097025449363867", "0.09770939201338157"],
+      "bias_false": [null, null, null, "-0.8545630383279711", "0.0", "1.9001038154942962", "0.16923763134384154"]
+    });
+    const actual = df.withColumns(
+      col("a")
+        .cast(pl.UInt64)
+        .rollingSkew(4)
+        .cast(pl.Utf8) // casted to string to retain precision when extracting to JS
+        .as("bias_true"),
+      col("a")
+        .cast(pl.UInt64)
+        .rollingSkew({windowSize: 4, bias:false})
+        .cast(pl.Utf8) // casted to string to retain precision when extracting to JS
+        .as("bias_false")
+    );
+    expect(actual).toFrameStrictEqual(expected);
+  });
+});
+
+describe("arithmetic", () => {
+
+  test("add/plus", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+    });
+    const expected = pl.DataFrame({
+      a: [2, 3, 4],
+    });
+    const actual = df.select(col("a").add(1));
+    expect(actual).toEqual(expected);
+    const actual1 = df.select(col("a").plus(1));
+    expect(actual1).toEqual(expected);
+  });
+  test("sub/minus", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+    });
+    const expected = pl.DataFrame({
+      a: [0, 1, 2],
+    });
+    const actual = df.select(col("a").sub(1));
+    expect(actual).toEqual(expected);
+    const actual1 = df.select(col("a").minus(1));
+    expect(actual1).toEqual(expected);
+  });
+  test("div/divideBy", () => {
+    const df = pl.DataFrame({
+      a: [2, 4, 6],
+    });
+    const expected = pl.DataFrame({
+      a: [1, 2, 3],
+    });
+    const actual = df.select(col("a").div(2));
+    expect(actual).toEqual(expected);
+    const actual1 = df.select(col("a").divideBy(2));
+    expect(actual1).toEqual(expected);
+  });
+  test("mul/multiplyBy", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+    });
+    const expected = pl.DataFrame({
+      a: [2, 4, 6],
+    });
+    const actual = df.select(col("a").mul(2));
+    expect(actual).toEqual(expected);
+    const actual1 = df.select(col("a").multiplyBy(2));
+    expect(actual1).toEqual(expected);
+  });
+  test("rem/modulo", () => {
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+    });
+    const expected = pl.DataFrame({
+      a: [1, 0, 1],
+    });
+    const actual = df.select(col("a").rem(2));
+    expect(actual).toEqual(expected);
+    const actual1 = df.select(col("a").modulo(2));
+    expect(actual1).toEqual(expected);
   });
 });

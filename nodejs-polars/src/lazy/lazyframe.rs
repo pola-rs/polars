@@ -160,6 +160,40 @@ pub fn collect_sync(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
+pub struct Fetch {
+    ldf: LazyFrame,
+    n_rows: usize,
+}
+
+impl napi::Task for Fetch {
+    type Output = DataFrame;
+    type JsValue = JsExternal;
+
+    fn compute(&mut self) -> JsResult<Self::Output> {
+        self.ldf
+            .clone()
+            .fetch(self.n_rows)
+            .map_err(|err| JsPolarsEr::from(err).into())
+    }
+
+    fn resolve(self, env: napi::Env, output: Self::Output) -> JsResult<Self::JsValue> {
+        env.create_external(output, None)
+    }
+}
+
+#[js_function(1)]
+pub fn fetch(cx: CallContext) -> JsResult<JsObject> {
+    let params = get_params(&cx)?;
+    let ldf: LazyFrame = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
+    let n_rows: usize = params.get_or("numRows", 500 as usize)?;
+
+    let fetch_task = Fetch {
+        ldf,
+        n_rows
+    };
+    cx.env.spawn(fetch_task).map(|task| task.promise_object())
+}
+
 #[js_function(1)]
 pub fn fetch_sync(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -392,6 +426,7 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
 
     ldf.with_row_count(&name).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn drop_columns(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -400,6 +435,7 @@ pub fn drop_columns(cx: CallContext) -> JsResult<JsExternal> {
 
     ldf.drop_columns(cols).try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn columns(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;

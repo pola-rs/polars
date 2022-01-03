@@ -32,9 +32,8 @@ type LazyOptions = {
 }
 
 /**
- * Representation of a Lazy computation graph/ query.
+ * Representation of a Lazy computation graph / query.
  */
-
 export interface LazyDataFrame {
   /** @ignore */
   _ldf: any;
@@ -43,7 +42,8 @@ export interface LazyDataFrame {
    * Cache the result once the execution of the physical plan hits this node.
    */
   cache(): LazyDataFrame
-  /**
+  clone(): LazyDataFrame
+   /**
    *
    * Collect into a DataFrame.
    * Note: use `fetch` if you want to run this query on the first `n` rows only.
@@ -91,7 +91,6 @@ export interface LazyDataFrame {
   dropNulls(column: string): LazyDataFrame
   dropNulls(columns: string[]): LazyDataFrame
   dropNulls(...columns: string[]): LazyDataFrame
-
   /**
    * Explode lists to long format.
    */
@@ -100,7 +99,6 @@ export interface LazyDataFrame {
   explode(column: ExprOrString, ...columns: ExprOrString[]): LazyDataFrame
   /**
    * Fetch is like a collect operation, but it overwrites the number of rows read by every scan
-   *
    *
    * Note that the fetch does not guarantee the final number of rows in the DataFrame.
    * Filter, join operations and a lower number of rows available in the scanned file influence
@@ -113,8 +111,11 @@ export interface LazyDataFrame {
    * @param opts.simplifyExpression - Run simplify expressions optimization.
    * @param opts.stringCache - Use a global string cache in this query.
    */
-  fetch(numRows?: number): DataFrame
-  fetch(numRows: number, opts: LazyOptions): DataFrame
+  fetch(numRows?: number): Promise<DataFrame>
+  fetch(numRows: number, opts: LazyOptions): Promise<DataFrame>
+  /** Behaves the same as fetch, but will perform the actions syncronously */
+  fetchSync(numRows?: number): DataFrame
+  fetchSync(numRows: number, opts: LazyOptions): DataFrame
   /**
    * Fill missing values
    * @param fillValue value to fill the missing values with
@@ -194,7 +195,6 @@ export interface LazyDataFrame {
    * @see {@link DataFrame.min}
    */
   min(): LazyDataFrame
-  // pipe() todo
   /**
    * @see {@link DataFrame.quantile}
    */
@@ -294,6 +294,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     describePlan: () => unwrap("describePlan"),
     describeOptimizedPlan: withOptimizationToggle("describeOptimizedPlan"),
     cache: wrapNullArgs("cache"),
+    clone: wrapNullArgs("clone"),
     collectSync: () => dfWrapper(unwrap("collectSync")),
     collect: () => unwrap("collect").then(dfWrapper),
     drop(...cols) {
@@ -325,7 +326,7 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
 
       return wrap("explode", {column});
     },
-    fetch(numRows, opts?: LazyOptions) {
+    fetchSync(numRows, opts?) {
       if(opts?.noOptimization) {
         opts.predicatePushdown = false;
         opts.projectionPushdown = false;
@@ -340,8 +341,23 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       return dfWrapper(unwrap("fetchSync", {numRows}));
 
     },
+    fetch(numRows, opts?) {
+      if(opts?.noOptimization) {
+        opts.predicatePushdown = false;
+        opts.projectionPushdown = false;
+      }
+      if(opts) {
+        const _ldf = unwrap("optimizationToggle", opts);
+
+        return unwrap("fetch", {numRows}, _ldf).then(dfWrapper);
+
+      }
+
+      return unwrap("fetch", {numRows}).then(dfWrapper);
+
+    },
     first() {
-      return this.fetch(1);
+      return this.fetchSync(1);
     },
     fillNull(exprOrValue) {
       const fillValue = exprToLitOrExpr(exprOrValue)._expr;

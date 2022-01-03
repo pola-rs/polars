@@ -54,3 +54,5 @@ export const regexToString = (r: string | RegExp): string => {
 
   return r;
 };
+
+export const INSPECT_SYMBOL = Symbol.for("nodejs.util.inspect.custom");
