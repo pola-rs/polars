@@ -1734,6 +1734,8 @@ class Expr:
             quantile to compute
         interpolation
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+        window_size
+            The length of the window.
         weights
             An optional slice with the same length of the window that will be used to weight the values in the quantile calculation.
         min_periods
