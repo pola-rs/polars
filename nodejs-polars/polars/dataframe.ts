@@ -291,7 +291,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    *  - Float32 + Float64 = Float64
    * ___
    * @param operation - function that takes two `Series` and returns a `Series`.
-   * @returns Series1
+   * @returns Series
    * @example
    * ```
    * >>> // A horizontal sum operation
