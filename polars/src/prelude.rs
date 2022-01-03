@@ -1,3 +1,4 @@
+pub use polars_core::prelude::QuantileInterpolOptions;
 pub use polars_core::{prelude::*, utils::NoNull};
 #[cfg(feature = "polars-io")]
 pub use polars_io::prelude::*;

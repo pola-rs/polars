@@ -29,6 +29,7 @@ mod inner_mod {
     use arrow::bitmap::MutableBitmap;
     use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
+    use polars_arrow::prelude::QuantileInterpolOptions;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
 
@@ -111,6 +112,99 @@ mod inner_mod {
                 ),
             };
             Series::try_from((self.name(), arr))
+        }
+
+        /// Apply a rolling median (moving median) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be weighted according to the `weights` vector.
+        pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+            match self.dtype() {
+                DataType::Float32 | DataType::Float64 => {
+                    check_input(options.window_size, options.min_periods)?;
+                    let ca = self.rechunk();
+
+                    if options.weights.is_some()
+                        && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+                    {
+                        let s = ca.cast(&DataType::Float64).unwrap();
+                        return s.rolling_median(options);
+                    }
+
+                    let arr = ca.downcast_iter().next().unwrap();
+                    let arr = match self.has_validity() {
+                        false => rolling::no_nulls::rolling_median(
+                            arr.values(),
+                            options.window_size,
+                            options.min_periods,
+                            options.center,
+                            options.weights.as_deref(),
+                        ),
+                        _ => rolling::nulls::rolling_median(
+                            arr,
+                            options.window_size,
+                            options.min_periods,
+                            options.center,
+                            options.weights.as_deref(),
+                        ),
+                    };
+                    Series::try_from((self.name(), arr))
+                }
+                _ => {
+                    let s = self.cast(&DataType::Float64)?;
+                    s.rolling_median(options)
+                }
+            }
+        }
+
+        /// Apply a rolling quantile (moving quantile) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be weighted according to the `weights` vector.
+        pub fn rolling_quantile(
+            &self,
+            quantile: f64,
+            interpolation: QuantileInterpolOptions,
+            options: RollingOptions,
+        ) -> Result<Series> {
+            match self.dtype() {
+                DataType::Float32 | DataType::Float64 => {
+                    check_input(options.window_size, options.min_periods)?;
+                    let ca = self.rechunk();
+
+                    if options.weights.is_some()
+                        && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+                    {
+                        let s = ca.cast(&DataType::Float64).unwrap();
+                        return s.rolling_quantile(quantile, interpolation, options);
+                    }
+
+                    let arr = ca.downcast_iter().next().unwrap();
+                    let arr = match self.has_validity() {
+                        false => rolling::no_nulls::rolling_quantile(
+                            arr.values(),
+                            quantile,
+                            interpolation,
+                            options.window_size,
+                            options.min_periods,
+                            options.center,
+                            options.weights.as_deref(),
+                        ),
+                        _ => rolling::nulls::rolling_quantile(
+                            arr,
+                            quantile,
+                            interpolation,
+                            options.window_size,
+                            options.min_periods,
+                            options.center,
+                            options.weights.as_deref(),
+                        ),
+                    };
+                    Series::try_from((self.name(), arr))
+                }
+                _ => {
+                    let s = self.cast(&DataType::Float64)?;
+                    s.rolling_quantile(quantile, interpolation, options)
+                }
+            }
         }
 
         /// Apply a rolling min (moving min) over the values in this array.
@@ -566,5 +660,122 @@ mod test {
             Vec::from(out),
             &[None, None, Some(17), Some(10), Some(20), Some(34),]
         );
+    }
+
+    #[test]
+    fn test_median_quantile_types() {
+        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
+
+        let ca = Float32Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float32);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float32);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float32);
+
+        let ca = Float64Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
     }
 }

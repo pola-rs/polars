@@ -24,6 +24,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars_core::prelude::QuantileInterpolOptions;
 
 #[pyclass]
 #[repr(transparent)]

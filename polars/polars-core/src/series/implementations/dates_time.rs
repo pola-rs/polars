@@ -21,6 +21,7 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;

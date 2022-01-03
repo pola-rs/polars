@@ -1,6 +1,7 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;

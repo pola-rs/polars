@@ -10,6 +10,7 @@ use crate::{
     prelude::*,
 };
 use numpy::PyArray1;
+use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyList, PyTuple};
@@ -1158,6 +1159,51 @@ impl PySeries {
         let s = self
             .series
             .rolling_mean(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_median(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        let s = self
+            .series
+            .rolling_median(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        let interpol = interpolation.0;
+        let s = self
+            .series
+            .rolling_quantile(quantile, interpol, options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }

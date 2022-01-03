@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub(crate) mod arithmetic;
 mod comparison;
@@ -615,6 +616,37 @@ impl Series {
         #[cfg(feature = "rolling_window")]
         {
             self._rolling_sum(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+    /// Apply a rolling median to a Series. See:
+    /// [ChunkedArray::rolling_median](crate::prelude::ChunkWindow::rolling_median).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_median(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+    /// Apply a rolling quantile to a Series. See:
+    /// [ChunkedArray::rolling_quantile](crate::prelude::ChunkWindow::rolling_quantile).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_quantile(
+        &self,
+        _quantile: f64,
+        _interpolation: QuantileInterpolOptions,
+        _options: RollingOptions,
+    ) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_quantile(_quantile, _interpolation, _options)
         }
         #[cfg(not(feature = "rolling_window"))]
         {

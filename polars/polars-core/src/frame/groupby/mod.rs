@@ -12,6 +12,7 @@ use crate::POOL;
 use ahash::{CallHasher, RandomState};
 use hashbrown::HashMap;
 use num::NumCast;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -856,9 +857,11 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
+    /// # use polars_arrow::prelude::QuantileInterpolOptions;
+    ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///     df.groupby("date")?.select("temp").quantile(0.2, QuantileInterpolOptions::default())
-    /// } //TODO: update this
+    /// }
     /// ```
     pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<DataFrame> {
         if !(0.0..=1.0).contains(&quantile) {
@@ -1258,6 +1261,7 @@ mod test {
     use crate::prelude::*;
     use crate::utils::split_ca;
     use num::traits::FloatConst;
+    use polars_arrow::prelude::QuantileInterpolOptions;
 
     #[test]
     #[cfg(feature = "dtype-date")]
