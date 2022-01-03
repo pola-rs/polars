@@ -3,7 +3,7 @@ use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use num::{Float, NumCast};
+use num::{Float, NumCast, ToPrimitive, Zero};
 use std::any::Any;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
@@ -121,8 +121,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn rolling_apply_convolve_quantile<Fo, Fa>(
-    values: &[f64],
+fn rolling_apply_convolve_quantile<T, Fo, Fa>(
+    values: &[T],
     quantile: f64,
     interpolation: QuantileInterpolOptions,
     window_size: usize,
@@ -133,10 +133,11 @@ fn rolling_apply_convolve_quantile<Fo, Fa>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[f64], f64, QuantileInterpolOptions) -> f64,
+    Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
+    T: Debug + NativeType + Mul<Output = T> + NumCast + ToPrimitive + Zero,
 {
     assert_eq!(weights.len(), window_size);
-    let mut buf = vec![0.0; window_size];
+    let mut buf = vec![T::zero(); window_size];
     let len = values.len();
     let out = (0..len)
         .map(|idx| {
@@ -144,15 +145,15 @@ where
             let vals = unsafe { values.get_unchecked(start..end) };
             buf.iter_mut()
                 .zip(vals.iter().zip(weights))
-                .for_each(|(b, (v, w))| *b = *v * *w);
+                .for_each(|(b, (v, w))| *b = *v * NumCast::from(*w).unwrap());
 
             aggregator(&buf, quantile, interpolation)
         })
-        .collect_trusted::<Vec<f64>>();
+        .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
-        DataType::Float64,
+        T::PRIMITIVE.into(),
         out.into(),
         validity.map(|b| b.into()),
     ))
@@ -264,7 +265,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + Div<Output = T>
-        + Mul<Output = T>,
+        + Mul<Output = T>
+        + Zero,
 {
     match (center, weights) {
         (true, None) => rolling_apply_quantile(
@@ -285,32 +287,26 @@ where
             det_offsets,
             compute_quantile,
         ),
-        (true, Some(weights)) => {
-            let values = as_floats(values);
-            rolling_apply_convolve_quantile(
-                values,
-                quantile,
-                interpolation,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_quantile,
-                weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let values = as_floats(values);
-            rolling_apply_convolve_quantile(
-                values,
-                quantile,
-                interpolation,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_quantile,
-                weights,
-            )
-        }
+        (true, Some(weights)) => rolling_apply_convolve_quantile(
+            values,
+            quantile,
+            interpolation,
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_quantile,
+            weights,
+        ),
+        (false, Some(weights)) => rolling_apply_convolve_quantile(
+            values,
+            quantile,
+            interpolation,
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_quantile,
+            weights,
+        ),
     }
 }
 

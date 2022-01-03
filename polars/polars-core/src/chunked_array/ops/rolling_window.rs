@@ -661,4 +661,121 @@ mod test {
             &[None, None, Some(17), Some(10), Some(20), Some(34),]
         );
     }
+
+    #[test]
+    fn test_median_quantile_types() {
+        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
+
+        let ca = Float32Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float32);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float32);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float32);
+
+        let ca = Float64Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
+        let rolmed = ca
+            .rolling_median(RollingOptions {
+                window_size: 2,
+                min_periods: 1,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let rol_quantile = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        let rol_quantile_weighted = ca
+            .rolling_quantile(
+                0.3,
+                QuantileInterpolOptions::Linear,
+                RollingOptions {
+                    window_size: 2,
+                    min_periods: 1,
+                    weights: Some(vec![1.0, 2.0]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(*rolmed.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
+        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
+    }
 }
