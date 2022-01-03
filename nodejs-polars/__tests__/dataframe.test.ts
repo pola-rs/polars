@@ -29,10 +29,17 @@ describe("dataframe", () => {
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).shape;
     expect(actual).toEqual(expected);
   });
-  test("columns", () => {
+  test("get columns", () => {
     const expected = ["a", "b"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).columns;
     expect(actual).toEqual(expected);
+  });
+  test("set columns", () => {
+    const expected = ["d", "e"];
+    const df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]});
+    df.columns = expected;
+
+    expect(df.columns).toEqual(expected);
   });
   test("clone", () => {
     const expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]});
@@ -1804,7 +1811,6 @@ describe("meta", () => {
     df["os"] = pl.Series(["mac", "ubuntu"]);
     expect(df["os"][0]).toStrictEqual("mac");
   });
-
   test("object.keys shows column names", () => {
     const df = pl.DataFrame({
       os: ["apple", "linux"],

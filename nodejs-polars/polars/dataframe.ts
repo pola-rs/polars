@@ -40,7 +40,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   height: number
   shape: {height: number, width: number}
   width: number
-  columns: string[]
+  get columns(): string[]
+  set columns(cols: string[])
   [inspect](): string;
   [Symbol.iterator](): Generator<any, void, any>;
   /**
@@ -1203,6 +1204,7 @@ function prepareOtherArg<T>(anyValue: T | Series<T>): Series<T> {
     return Series([anyValue]) as Series<T>;
   }
 }
+
 function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
 
   return df.rows().map(fn);
@@ -1278,6 +1280,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     get columns() {
       return unwrap<string[]>("columns");
     },
+    set columns(names) {
+      unwrap<string[]>("set_column_names", {names});
+    },
     clone: noArgWrap("clone"),
     describe() {
       const describeCast = (df: DataFrame) => {
@@ -1307,8 +1312,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return summary;
     },
-    drop(name, ...names) {
-      names.unshift(name);
+    drop(...names) {
       if(!Array.isArray(names[0]) && names.length === 1) {
         return wrap("drop", {name: names[0]});
       }
@@ -1340,7 +1344,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("drop_duplicates", {maintainOrder, subset});
     },
     explode(...columns)  {
-      return dfWrapper(_df).lazy()
+      return dfWrapper(_df)
+        .lazy()
         .explode(columns)
         .collectSync({noOptimization:true});
     },
@@ -1423,7 +1428,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
-    max(axis=0){
+    max(axis=0) {
       if(axis === 1) {
         return seriesWrapper(unwrap("hmax")) as any;
       } else {
@@ -1618,7 +1623,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),
-
     var: noArgWrap("var"),
     map: (fn) => map(dfWrapper(_df), fn as any) as any,
     row: (index) => unwrap("to_row", {idx: index}),
@@ -1630,7 +1634,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return this.withColumns(column);
       }
     },
-    withColumns(column, ...columns: Expr[] | Series<any>[])  {
+    withColumns(column, ...columns: Expr[] | Series<any>[]) {
       columns.unshift(column as any);
 
       if(isSeriesArray(columns)) {
