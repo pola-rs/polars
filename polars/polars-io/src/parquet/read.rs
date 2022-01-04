@@ -1,10 +1,11 @@
-use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_par::parallel_read;
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::io::parquet::read;
 use polars_arrow::io::read_parquet;
+use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use std::convert::TryFrom;
@@ -34,17 +35,29 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         match (aggregate.is_some(), predicate.is_some(), self.parallel) {
             (true, true, _) | (true, false, _) | (false, true, false) => {
                 // this path take aggregations, predicates and projections into account
+                let metadata = read::read_metadata(&mut self.reader)?;
+                let mut schema = read::schema::get_schema(&metadata)?;
+
                 let rechunk = self.rechunk;
+                let projection = projection.map(|x| {
+                    let mut x = x.to_vec();
+                    x.sort_unstable();
+                    x
+                });
+
+                if let Some(projection) = &projection {
+                    schema = apply_projection(&schema, projection);
+                };
 
                 let reader = read::RecordReader::try_new(
                     &mut self.reader,
-                    projection.map(|x| x.to_vec()),
+                    projection,
                     self.n_rows,
                     None,
                     None,
                 )?;
 
-                finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+                finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
             }
             (false, false, _) => {
                 // this path takes optional parallelism and projection into account
@@ -121,12 +134,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
 }
 
 impl<R: Read + Seek> ArrowReader for read::RecordReader<R> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
-    }
-
-    fn schema(&self) -> Arc<Schema> {
-        Arc::new((&*self.schema().clone()).into())
     }
 }
 

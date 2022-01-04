@@ -1,12 +1,8 @@
 use crate::error::PyPolarsEr;
 use crate::prelude::ArrowDataType;
-use polars_core::prelude::Arc;
-use polars_core::utils::arrow::{
-    array::ArrayRef,
-    datatypes::{Field, Schema},
-    ffi,
-    record_batch::RecordBatch,
-};
+use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
+use polars_core::utils::arrow::{array::ArrayRef, ffi};
 use polars_core::utils::arrow::{array::PrimitiveArray, bitmap::MutableBitmap};
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
@@ -43,38 +39,27 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     }
 }
 
-pub fn to_rust_rb(rb: &[&PyAny]) -> PyResult<Vec<RecordBatch>> {
+pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
     let schema = rb
         .get(0)
         .ok_or_else(|| PyPolarsEr::Other("empty table".into()))?
         .getattr("schema")?;
     let names = schema.getattr("names")?.extract::<Vec<String>>()?;
 
-    let arrays = rb
+    let dfs = rb
         .iter()
         .map(|rb| {
             let columns = (0..names.len())
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
-                    array_to_rust(array)
+                    let arr = array_to_rust(array)?;
+                    let s = Series::try_from((names[i].as_str(), arr)).map_err(PyPolarsEr::from)?;
+                    Ok(s)
                 })
                 .collect::<PyResult<_>>()?;
-            Ok(columns)
+            Ok(DataFrame::new(columns).map_err(PyPolarsEr::from)?)
         })
-        .collect::<PyResult<Vec<Vec<_>>>>()?;
+        .collect::<PyResult<Vec<_>>>()?;
 
-    let fields = arrays[0]
-        .iter()
-        .zip(&names)
-        .map(|(arr, name)| {
-            let dtype = arr.data_type().clone();
-            Field::new(name, dtype, true)
-        })
-        .collect();
-    let schema = Arc::new(Schema::new(fields));
-
-    Ok(arrays
-        .into_iter()
-        .map(|columns| RecordBatch::try_new(schema.clone(), columns).unwrap())
-        .collect())
+    Ok(accumulate_dataframes_vertical(dfs).map_err(PyPolarsEr::from)?)
 }

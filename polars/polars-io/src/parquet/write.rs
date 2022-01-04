@@ -73,7 +73,7 @@ where
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
         let fields = df.schema().to_arrow().fields().clone();
-        let rb_iter = df.iter_record_batches();
+        let rb_iter = df.iter_chunks();
 
         let options = write::WriteOptions {
             write_statistics: false,
