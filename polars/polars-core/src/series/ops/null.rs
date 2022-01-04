@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::datatypes::DataType::Int64;
 
 impl Series {
     pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {

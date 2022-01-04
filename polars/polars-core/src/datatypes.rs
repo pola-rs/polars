@@ -246,7 +246,7 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-datetime")]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
     // A 64-bit integer representing difference between date-times in nanoseconds or milliseconds
-    #[cfg(feature="dtype-duration")]
+    #[cfg(feature = "dtype-duration")]
     Duration(i64, TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
@@ -983,11 +983,11 @@ mod test {
         let dtypes = [
             (
                 ArrowDataType::Duration(ArrowTimeUnit::Nanosecond),
-                DataType::Duration(TimeUnit::Nanoseconds)
+                DataType::Duration(TimeUnit::Nanoseconds),
             ),
             (
                 ArrowDataType::Duration(ArrowTimeUnit::Millisecond),
-                DataType::Duration(TimeUnit::Milliseconds)
+                DataType::Duration(TimeUnit::Milliseconds),
             ),
             (
                 ArrowDataType::Date64,

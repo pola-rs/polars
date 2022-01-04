@@ -231,19 +231,15 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 assert_eq!(tz, tzr);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs
-                    .subtract(&rhs)?
-                    .into_duration(*tu)
-                    .into_series())
+                Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             }
-            (DataType::Datetime(tu, tz), DataType::Datetime(tur, tzr)) => {
+            (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
                 assert_eq!(tu, tur);
-                assert_eq!(tz, tzr);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs
                     .subtract(&rhs)?
-                    .into_duration(*tu)
+                    .into_datetime(*tu, tz.clone())
                     .into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
@@ -255,10 +251,25 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             )),
         }
     }
-    fn add_to(&self, _rhs: &Series) -> Result<Series> {
-        Err(PolarsError::ComputeError(
-            "cannot do addition on logical".into(),
-        ))
+    fn add_to(&self, rhs: &Series) -> Result<Series> {
+        match (self.dtype(), rhs.dtype()) {
+            (DataType::Datetime(tu, tz), DataType::Duration(tur)) => {
+                assert_eq!(tu, tur);
+                let lhs = self.cast(&DataType::Int64).unwrap();
+                let rhs = rhs.cast(&DataType::Int64).unwrap();
+                Ok(lhs
+                    .add_to(&rhs)?
+                    .into_datetime(*tu, tz.clone())
+                    .into_series())
+            }
+            (dtl, dtr) => Err(PolarsError::ComputeError(
+                format!(
+                    "cannot do addition on these date types: {:?}, {:?}",
+                    dtl, dtr
+                )
+                .into(),
+            )),
+        }
     }
     fn multiply(&self, _rhs: &Series) -> Result<Series> {
         Err(PolarsError::ComputeError(

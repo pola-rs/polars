@@ -1,10 +1,10 @@
 use crate::prelude::*;
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{Duration, NaiveDate, NaiveDateTime};
+use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 
 #[cfg(feature = "dtype-datetime")]
-use polars_core::time::{in_nanoseconds_window};
+use polars_core::time::in_nanoseconds_window;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum LiteralValue {
@@ -45,7 +45,7 @@ pub enum LiteralValue {
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
     DateTime(NaiveDateTime, TimeUnit),
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-    Duration(Duration, TimeUnit),
+    Duration(ChronoDuration, TimeUnit),
     Series(NoEq<Series>),
 }
 
@@ -143,8 +143,8 @@ impl Literal for NaiveDateTime {
     }
 }
 
-#[cfg(all(feature = "temporal", feature="dtype-duration"))]
-impl Literal for Duration {
+#[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+impl Literal for ChronoDuration {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Duration(self, TimeUnit::Nanoseconds))
     }

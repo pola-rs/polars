@@ -330,6 +330,13 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    if let (&DataType::Datetime(_, _), &DataType::Duration(_)) = (lhs.dtype(), rhs.dtype()) {
+        return coerce_time_units(lhs, rhs);
+    }
+    if let (&DataType::Duration(_), &DataType::Datetime(_, _)) = (lhs.dtype(), rhs.dtype()) {
+        return coerce_time_units(lhs, rhs);
+    }
+
     let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
     let left = if lhs.dtype() == &dtype {
         Cow::Borrowed(lhs)
@@ -342,6 +349,42 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         Cow::Owned(rhs.cast(&dtype)?)
     };
     Ok((left, right))
+}
+
+fn coerce_time_units<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    return if let (DataType::Datetime(lu, t), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
+        let units = if *lu == TimeUnit::Nanoseconds && *ru == TimeUnit::Nanoseconds {
+            TimeUnit::Nanoseconds
+        } else {
+            TimeUnit::Milliseconds
+        };
+        let left = if *lu == units {
+            Cow::Borrowed(lhs)
+        } else {
+            Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone()))?)
+        };
+        let right = if *ru == units {
+            Cow::Borrowed(rhs)
+        } else {
+            Cow::Owned(rhs.cast(&DataType::Duration(units))?)
+        };
+        Ok((left, right))
+    } else if let (DataType::Duration(_), DataType::Datetime(_, _)) = (lhs.dtype(), rhs.dtype()) {
+        let dtypes = coerce_time_units(rhs, lhs)?;
+        Ok((dtypes.1, dtypes.0))
+    } else {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "Cannot coerce time units for {} {}",
+                lhs.dtype(),
+                rhs.dtype()
+            )
+            .into(),
+        ))
+    };
 }
 
 impl ops::Sub for &Series {

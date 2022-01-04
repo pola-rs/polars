@@ -356,6 +356,15 @@ macro_rules! df {
     }
 }
 
+#[cfg(feature = "private")]
+pub fn get_time_units(l: TimeUnit, r: TimeUnit) -> TimeUnit {
+    if l == r {
+        l
+    } else {
+        TimeUnit::Milliseconds
+    }
+}
+
 /// Given two datatypes, determine the supertype that both types can safely be cast to
 #[cfg(feature = "private")]
 pub fn get_supertype(l: &DataType, r: &DataType) -> Result<DataType> {
@@ -540,7 +549,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Datetime(_, _), Float64) => Some(Float64),
         #[cfg(feature = "dtype-date")]
         (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
-        
+
         #[cfg(feature = "dtype-duration")]
         (Duration(_), UInt32) => Some(Int64),
         #[cfg(feature = "dtype-duration")]
@@ -590,41 +599,17 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (dt, Null) => Some(dt.clone()),
         (Null, dt) => Some(dt.clone()),
 
-        (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Nanoseconds, None)) => {
-            Some(Datetime(TimeUnit::Nanoseconds, None))
-        },
-        (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Nanoseconds, Some(tz))) => {
+        (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
             if tz == "" {
-                Some(Datetime(TimeUnit::Nanoseconds, None))
+                Some(Datetime(get_time_units(*lu, *ru), None))
             } else {
-                Some(Datetime(TimeUnit::Nanoseconds, Some(tz.clone())))
+                Some(Datetime(get_time_units(*lu, *ru), Some(tz.clone())))
             }
-        },
-        (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Milliseconds, None))
-        | (Datetime(TimeUnit::Milliseconds, None), Duration(TimeUnit::Milliseconds))
-        | (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Milliseconds, None))
-        | (Datetime(TimeUnit::Milliseconds, None), Duration(TimeUnit::Nanoseconds))
-        | (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Nanoseconds, None))
-        | (Datetime(TimeUnit::Nanoseconds, None), Duration(TimeUnit::Milliseconds)) => {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        },
-        (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Milliseconds, Some(tz)))
-        | (Datetime(TimeUnit::Milliseconds, Some(tz)), Duration(TimeUnit::Milliseconds))
-        | (Duration(TimeUnit::Nanoseconds), Datetime(TimeUnit::Milliseconds, Some(tz)))
-        | (Datetime(TimeUnit::Milliseconds, Some(tz)), Duration(TimeUnit::Nanoseconds))
-        | (Duration(TimeUnit::Milliseconds), Datetime(TimeUnit::Nanoseconds, Some(tz)))
-        | (Datetime(TimeUnit::Nanoseconds, Some(tz)), Duration(TimeUnit::Milliseconds)) => {
-            if tz == "" {
-                Some(Datetime(TimeUnit::Milliseconds, None))
-            } else {
-                Some(Datetime(TimeUnit::Milliseconds, Some(tz.clone())))
-            }
-        },
-
-        (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds))
-        | (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
-            Some(Duration(TimeUnit::Milliseconds))
-        },
+        }
+        (Duration(lu), Datetime(ru, None)) | (Datetime(lu, None), Duration(ru)) => {
+            Some(Datetime(get_time_units(*lu, *ru), None))
+        }
+        (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(*lu, *ru))),
         // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
         (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
         | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {

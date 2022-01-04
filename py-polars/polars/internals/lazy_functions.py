@@ -6,7 +6,12 @@ import numpy as np
 
 from polars import internals as pli
 from polars.datatypes import DataType, Date, Datetime, Duration
-from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_duration, in_nanoseconds_window, timedelta_in_nanoseconds_window
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_duration,
+    in_nanoseconds_window,
+    timedelta_in_nanoseconds_window,
+)
 
 try:
     from polars.polars import arange as pyarange

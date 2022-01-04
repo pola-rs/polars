@@ -752,7 +752,7 @@ mod test {
             .into_series();
 
         // check if we don't panic.
-        let out: Series = &s * 100;
+        let out = &s * 100;
         assert_eq!(
             out.dtype(),
             &DataType::Datetime(TimeUnit::Nanoseconds, None)
@@ -803,5 +803,34 @@ mod test {
             out.dtype(),
             &DataType::Datetime(TimeUnit::Nanoseconds, None)
         );
+    }
+
+    #[test]
+    fn test_duration() -> Result<()> {
+        let a = Int64Chunked::new("", &[1, 2, 3])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
+        let b = Int64Chunked::new("", &[2, 3, 4])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
+        let c = Int64Chunked::new("", &[1, 1, 1])
+            .into_duration(TimeUnit::Nanoseconds)
+            .into_series();
+        assert_eq!(
+            *b.subtract(&a)?.dtype(),
+            DataType::Duration(TimeUnit::Nanoseconds)
+        );
+        assert_eq!(
+            *a.add_to(&c)?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
+        assert_eq!(
+            b.subtract(&a)?,
+            Int64Chunked::full("", 1, a.len())
+                .into_duration(TimeUnit::Nanoseconds)
+                .into_series()
+        );
+        // assert_eq!(a.add_to(&c)?, b);
+        Ok(())
     }
 }

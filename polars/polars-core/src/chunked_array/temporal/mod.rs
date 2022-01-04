@@ -4,12 +4,12 @@ pub mod conversion;
 mod date;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
 #[cfg(feature = "temporal")]
 pub mod truncate;
 mod utf8;
-mod duration;
 
 pub use self::conversion::*;
 use crate::chunked_array::kernels::temporal::*;

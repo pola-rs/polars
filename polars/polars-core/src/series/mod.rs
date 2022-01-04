@@ -714,7 +714,10 @@ impl Series {
     /// Check if the underlying data is a logical type.
     pub fn is_logical(&self) -> bool {
         use DataType::*;
-        matches!(self.dtype(), Date | Duration (_) | Datetime(_, _) | Time | Categorical)
+        matches!(
+            self.dtype(),
+            Date | Duration(_) | Datetime(_, _) | Time | Categorical
+        )
     }
 
     /// Check if underlying physical data is numeric.

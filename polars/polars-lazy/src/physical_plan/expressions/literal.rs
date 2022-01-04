@@ -101,8 +101,8 @@ impl PhysicalExpr for LiteralExpr {
                     }
                 };
                 Int64Chunked::full("literal", duration, 1)
-                        .into_duration(*tu)
-                        .into_series()
+                    .into_duration(*tu)
+                    .into_series()
             }
             Series(series) => series.deref().clone(),
         };

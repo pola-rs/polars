@@ -500,7 +500,12 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
-const SIZES: [i64; 4] = [86_400_000_000_000, 3_600_000_000_000, 60_000_000_000, 1_000_000_000];
+const SIZES: [i64; 4] = [
+    86_400_000_000_000,
+    3_600_000_000_000,
+    60_000_000_000,
+    1_000_000_000,
+];
 const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
 
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
@@ -516,7 +521,7 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
         if whole_num <= -1 || whole_num >= 1 {
             write!(f, "{} {}", whole_num, NAMES[i])?;
             if whole_num != 1 {
-                write!(f, "s");
+                write!(f, "s")?;
             }
             if v % SIZES[i] != 0 {
                 write!(f, " ")?;
@@ -530,7 +535,7 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     } else if v % 1_000_000_000 != 0 {
         write!(f, "{} milliseconds", (v % 1_000_000_000) / 1_000_000)?;
     }
-    return Ok(())
+    return Ok(());
 }
 
 impl Display for AnyValue<'_> {

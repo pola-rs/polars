@@ -1,8 +1,7 @@
 import ctypes
 import sys
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, \
-    Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
@@ -15,7 +14,7 @@ else:
 
 
 def _process_null_values(
-        null_values: Union[None, str, List[str], Dict[str, str]] = None,
+    null_values: Union[None, str, List[str], Dict[str, str]] = None,
 ) -> Union[None, str, List[str], List[Tuple[str, str]]]:
     if isinstance(null_values, dict):
         return list(null_values.items())
@@ -95,7 +94,7 @@ def _date_to_pl_date(d: date) -> int:
 
 
 def is_str_sequence(
-        val: Sequence[object], allow_str: bool = False
+    val: Sequence[object], allow_str: bool = False
 ) -> TypeGuard[Sequence[str]]:
     """
     Checks that `val` is a sequence of strings. Note that a single string is a sequence of strings
@@ -111,8 +110,7 @@ def is_int_sequence(val: Sequence[object]) -> TypeGuard[Sequence[int]]:
 
 
 def _is_iterable_of(val: Iterable, itertype: Type, eltype: Type) -> bool:
-    return isinstance(val, itertype) and all(
-        isinstance(x, eltype) for x in val)
+    return isinstance(val, itertype) and all(isinstance(x, eltype) for x in val)
 
 
 def range_to_slice(rng: range) -> slice:
@@ -126,7 +124,7 @@ def range_to_slice(rng: range) -> slice:
 
 
 def handle_projection_columns(
-        columns: Optional[Union[List[str], List[int]]]
+    columns: Optional[Union[List[str], List[int]]]
 ) -> Tuple[Optional[List[int]], Optional[List[str]]]:
     projection: Optional[List[int]] = None
     if columns:
@@ -140,8 +138,9 @@ def handle_projection_columns(
     return projection, columns  # type: ignore
 
 
-def _to_python_timedelta(value: Union[int, float],
-                         tu: Optional[str] = "ns") -> timedelta:
+def _to_python_timedelta(
+    value: Union[int, float], tu: Optional[str] = "ns"
+) -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
     elif tu == "ms":
@@ -151,8 +150,7 @@ def _to_python_timedelta(value: Union[int, float],
 
 
 def _to_python_datetime(
-        value: Union[int, float], dtype: Type[DataType],
-        tu: Optional[str] = "ns"
+    value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
 ) -> Union[date, datetime]:
     if dtype == Date:
         # days to seconds

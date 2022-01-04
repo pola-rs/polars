@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::utils::rename_field;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
-use polars_core::utils::get_supertype;
+use polars_core::utils::{get_supertype, get_time_units};
 use polars_utils::arena::{Arena, Node};
 use std::sync::Arc;
 
@@ -175,6 +175,8 @@ impl AExpr {
             }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
+                use DataType::*;
+
                 let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
                 let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
 
@@ -187,6 +189,11 @@ impl AExpr {
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
+                    Operator::Minus => match (left_type, right_type) {
+                        // T - T != T if T is a datetime
+                        (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, tur)),
+                        (left, right) => get_supertype(&left, &right)?,
+                    },
                     _ => get_supertype(&left_type, &right_type)?,
                 };
 

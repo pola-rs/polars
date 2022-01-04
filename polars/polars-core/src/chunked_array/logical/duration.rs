@@ -18,8 +18,6 @@ impl LogicalType for DurationChunked {
 
     #[cfg(feature = "dtype-duration")]
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
-        self.0
-            .get_any_value(i)
-            .into_duration(self.time_unit())
+        self.0.get_any_value(i).into_duration(self.time_unit())
     }
 }

@@ -84,10 +84,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         let other = other.to_physical_repr().into_owned();
-        self.0.zip_with(mask, other.as_ref().as_ref()).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .zip_with(mask, other.as_ref().as_ref())
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
@@ -104,17 +103,15 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_min(groups).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .agg_min(groups)
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_max(groups).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .agg_max(groups)
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -164,17 +161,15 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Option<Series> {
-        self.0.agg_quantile(groups, quantile, interpol).map(|s| {
-            s.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .agg_quantile(groups, quantile, interpol)
+            .map(|s| s.into_duration(self.0.time_unit()).into_series())
     }
 
     fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_median(groups).map(|s| {
-            s.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .agg_median(groups)
+            .map(|s| s.into_duration(self.0.time_unit()).into_series())
     }
     #[cfg(feature = "lazy")]
     fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -230,10 +225,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs
-                    .subtract(&rhs)?
-                    .into_duration(*tu)
-                    .into_series())
+                Ok(lhs.subtract(&rhs)?.into_duration(*tu).into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
                 format!(
@@ -250,10 +242,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 assert_eq!(tu, tur);
                 let lhs = self.cast(&DataType::Int64).unwrap();
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
-                Ok(lhs
-                    .add_to(&rhs)?
-                    .into_duration(*tu)
-                    .into_series())
+                Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
             }
             (dtl, dtr) => Err(PolarsError::ComputeError(
                 format!(
@@ -357,24 +346,19 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
-        self.0.filter(filter).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .filter(filter)
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
-        ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        ChunkTake::take(self.0.deref(), indices.into())
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
-        ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        ChunkTake::take(self.0.deref(), iter.into())
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn take_every(&self, n: usize) -> Series {
@@ -404,10 +388,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
-        ChunkTake::take(self.0.deref(), iter.into()).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        ChunkTake::take(self.0.deref(), iter.into())
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn len(&self) -> usize {
@@ -454,7 +436,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
                 return Ok((self.0.as_ref() / 1_000_000i64)
                     .into_duration(TimeUnit::Milliseconds)
                     .into_series())
-            },
+            }
             _ => Cow::Borrowed(self.0.deref()),
         };
         ca.cast(data_type)
@@ -499,10 +481,9 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn unique(&self) -> Result<Series> {
-        self.0.unique().map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .unique()
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn n_unique(&self) -> Result<usize> {
@@ -556,10 +537,9 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
-        self.0.fill_null(strategy).map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .fill_null(strategy)
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
     fn _sum_as_series(&self) -> Series {
@@ -568,14 +548,10 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .unwrap()
     }
     fn max_as_series(&self) -> Series {
-        self.0
-            .max_as_series()
-            .into_duration(self.0.time_unit())
+        self.0.max_as_series().into_duration(self.0.time_unit())
     }
     fn min_as_series(&self) -> Series {
-        self.0
-            .min_as_series()
-            .into_duration(self.0.time_unit())
+        self.0.min_as_series().into_duration(self.0.time_unit())
     }
     fn mean_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
@@ -650,9 +626,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
 
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
-        self.0.mode().map(|ca| {
-            ca.into_duration(self.0.time_unit())
-                .into_series()
-        })
+        self.0
+            .mode()
+            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 }

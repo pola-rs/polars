@@ -137,7 +137,14 @@ impl OptimizationRule for TypeCoercionRule {
                         && type_right == DataType::Utf8)
                         || (type_left == DataType::Utf8 && type_right == DataType::Categorical));
 
-                    if type_left == type_right || compare_cat_to_string {
+                    let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
+                        && matches!(
+                            (&type_left, &type_right),
+                            (DataType::Datetime(_, _), DataType::Duration(_))
+                                | (DataType::Duration(_), DataType::Datetime(_, _))
+                        );
+
+                    if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
                         None
                     } else {
                         let mut st = get_supertype(&type_left, &type_right)
