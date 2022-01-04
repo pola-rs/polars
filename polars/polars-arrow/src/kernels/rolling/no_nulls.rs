@@ -197,7 +197,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + Div<Output = T>
-        + Mul<Output = T>,
+        + Mul<Output = T>
+        + Zero,
 {
     match (center, weights) {
         (true, None) => rolling_apply_quantile(
@@ -218,32 +219,26 @@ where
             det_offsets,
             compute_quantile,
         ),
-        (true, Some(weights)) => {
-            let values = as_floats(values);
-            rolling_apply_convolve_quantile(
-                values,
-                0.5,
-                QuantileInterpolOptions::Linear,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_quantile,
-                weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let values = as_floats(values);
-            rolling_apply_convolve_quantile(
-                values,
-                0.5,
-                QuantileInterpolOptions::Linear,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_quantile,
-                weights,
-            )
-        }
+        (true, Some(weights)) => rolling_apply_convolve_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            window_size,
+            min_periods,
+            det_offsets_center,
+            compute_quantile,
+            weights,
+        ),
+        (false, Some(weights)) => rolling_apply_convolve_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            window_size,
+            min_periods,
+            det_offsets,
+            compute_quantile,
+            weights,
+        ),
     }
 }
 
