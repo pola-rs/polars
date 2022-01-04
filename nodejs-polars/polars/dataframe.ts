@@ -27,21 +27,23 @@ import {
   ExprOrString
 } from "./utils";
 
+import {Arithmetic} from "./shared_traits";
+import {col} from "./lazy/functions";
+
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
 
-export interface DataFrame {
+export interface DataFrame extends Arithmetic<DataFrame> {
   /** @ignore */
   _df: JsDataFrame
   dtypes: DataType[]
   height: number
   shape: {height: number, width: number}
   width: number
-  columns: string[]
+  get columns(): string[]
+  set columns(cols: string[])
   [inspect](): string;
   [Symbol.iterator](): Generator<any, void, any>;
-  inner(): JsDataFrame
-
   /**
    * Very cheap deep clone.
    */
@@ -119,7 +121,6 @@ export interface DataFrame {
    */
   dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
   dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
-
   /**
    * __Return a new DataFrame where the null values are dropped.__
    *
@@ -623,10 +624,11 @@ export interface DataFrame {
    * ```
    */
   nullCount(): DataFrame
-  /**
-   * Apply a function on Self.
-   */
-  pipe<T>(func: (...args: any[]) => T, ...args: any[]): T
+  // TODO!
+  // /**
+  //  * Apply a function on Self.
+  //  */
+  // pipe<T>(func: (...args: any[]) => T, ...args: any[]): T
   /**
    * Aggregate the columns of this DataFrame to their quantile value.
    * @example
@@ -1192,17 +1194,6 @@ export interface DataFrame {
   withRowCount(name?: string): DataFrame
   /** @see {@link filter} */
   where(predicate: any): DataFrame
-
-  add(other: any): DataFrame
-  sub(other: any): DataFrame
-  div(other: any): DataFrame
-  mul(other: any): DataFrame
-  rem(other: any): DataFrame
-  plus(other: any): DataFrame
-  minus(other: any): DataFrame
-  divideBy(other: any): DataFrame
-  multiplyBy(other: any): DataFrame
-  modulo(other: any): DataFrame
 }
 
 function prepareOtherArg<T>(anyValue: T | Series<T>): Series<T> {
@@ -1213,6 +1204,7 @@ function prepareOtherArg<T>(anyValue: T | Series<T>): Series<T> {
     return Series([anyValue]) as Series<T>;
   }
 }
+
 function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
 
   return df.rows().map(fn);
@@ -1257,6 +1249,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   };
   const df = {
+    /** @ignore */
     _df,
     [inspect]() {
       return unwrap<Buffer>("as_str").toString();
@@ -1287,7 +1280,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     get columns() {
       return unwrap<string[]>("columns");
     },
-    inner: () => _df,
+    set columns(names) {
+      unwrap<string[]>("set_column_names", {names});
+    },
     clone: noArgWrap("clone"),
     describe() {
       const describeCast = (df: DataFrame) => {
@@ -1317,8 +1312,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return summary;
     },
-    drop(name, ...names) {
-      names.unshift(name);
+    drop(...names) {
       if(!Array.isArray(names[0]) && names.length === 1) {
         return wrap("drop", {name: names[0]});
       }
@@ -1350,7 +1344,8 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("drop_duplicates", {maintainOrder, subset});
     },
     explode(...columns)  {
-      return dfWrapper(_df).lazy()
+      return dfWrapper(_df)
+        .lazy()
         .explode(columns)
         .collectSync({noOptimization:true});
     },
@@ -1399,7 +1394,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       });
     },
     insertAtIdx: (index, s) => unwrap("insert_at_idx", {index, new_col: s._series}),
-    interpolate: noArgWrap("interpolate"),
+    interpolate() {
+      return this.select(col("*").interpolate());
+    },
     isDuplicated: () => seriesWrapper(unwrap("is_duplicated")),
     isEmpty: () => unwrap("height") === 0,
     isUnique: () => seriesWrapper(unwrap("is_unique")),
@@ -1431,7 +1428,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     lazy: () => LazyDataFrame(unwrap("lazy")),
     limit: (length=5) => wrap("head", {length}),
-    max(axis=0){
+    max(axis=0) {
       if(axis === 1) {
         return seriesWrapper(unwrap("hmax")) as any;
       } else {
@@ -1626,16 +1623,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),
-    add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
-    sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
-    div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
-    mul: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
-    rem: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
-    plus: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
-    minus: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
-    divideBy: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
-    multiplyBy: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
-    modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
     var: noArgWrap("var"),
     map: (fn) => map(dfWrapper(_df), fn as any) as any,
     row: (index) => unwrap("to_row", {idx: index}),
@@ -1647,7 +1634,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return this.withColumns(column);
       }
     },
-    withColumns(column, ...columns: Expr[] | Series<any>[])  {
+    withColumns(column, ...columns: Expr[] | Series<any>[]) {
       columns.unshift(column as any);
 
       if(isSeriesArray(columns)) {
@@ -1670,8 +1657,19 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     withRowCount: (name="row_nr") => wrap("with_row_count", {name}),
     where(predicate) {
       return this.filter(predicate);
-    }
-  } as any as DataFrame;
+    },
+
+    add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
+    sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
+    div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
+    mul: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
+    rem: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
+    plus: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
+    minus: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
+    divideBy: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
+    multiplyBy: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
+    modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
+  } as DataFrame;
 
   return new Proxy(df, {
     get(target: DataFrame, prop, receiver) {
@@ -1691,11 +1689,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         if(typeof prop === "string" && target.columns.includes(prop)) {
           const idx = target.columns.indexOf(prop);
           target.replaceAtIdx(idx, receiver.alias(prop));
-
-          return true;
-        }
-        if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
-          target.replaceAtIdx(Number(prop), receiver);
 
           return true;
         }

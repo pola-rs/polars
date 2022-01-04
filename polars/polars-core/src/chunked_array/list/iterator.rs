@@ -77,12 +77,13 @@ impl ListChunked {
             series_container,
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
-            iter: self.downcast_iter().map(|arr| arr.iter()).flatten(),
+            iter: self.downcast_iter().flat_map(|arr| arr.iter()),
         }
     }
 
     /// Apply a closure `F` elementwise.
     #[cfg(feature = "private")]
+    #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where
         F: FnMut(UnstableSeries<'a>) -> Series,

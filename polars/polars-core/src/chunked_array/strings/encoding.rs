@@ -23,6 +23,7 @@ impl Utf8Chunked {
         }
     }
     #[cfg(feature = "string_encoding")]
+    #[must_use]
     pub fn hex_encode(&self) -> Utf8Chunked {
         self.apply(|s| hex::encode(s).into())
     }
@@ -47,6 +48,7 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "string_encoding")]
+    #[must_use]
     pub fn base64_encode(&self) -> Utf8Chunked {
         self.apply(|s| base64::encode(s).into())
     }

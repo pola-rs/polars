@@ -2,6 +2,7 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 
 pub(crate) mod arithmetic;
 mod comparison;
@@ -130,6 +131,7 @@ use std::sync::Arc;
 ///
 /// ```
 #[derive(Clone)]
+#[must_use]
 pub struct Series(pub Arc<dyn SeriesTrait>);
 
 #[cfg(feature = "groupby_list")]
@@ -620,6 +622,37 @@ impl Series {
             panic!("activate 'rolling_window' feature")
         }
     }
+    /// Apply a rolling median to a Series. See:
+    /// [ChunkedArray::rolling_median](crate::prelude::ChunkWindow::rolling_median).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_median(_options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
+    /// Apply a rolling quantile to a Series. See:
+    /// [ChunkedArray::rolling_quantile](crate::prelude::ChunkWindow::rolling_quantile).
+    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
+    pub fn rolling_quantile(
+        &self,
+        _quantile: f64,
+        _interpolation: QuantileInterpolOptions,
+        _options: RollingOptions,
+    ) -> Result<Series> {
+        #[cfg(feature = "rolling_window")]
+        {
+            self._rolling_quantile(_quantile, _interpolation, _options)
+        }
+        #[cfg(not(feature = "rolling_window"))]
+        {
+            panic!("activate 'rolling_window' feature")
+        }
+    }
     /// Apply a rolling min to a Series. See:
     /// [ChunkedArray::rolling_min]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
@@ -858,10 +891,10 @@ mod test {
 
     #[test]
     fn new_series() {
-        Series::new("boolean series", &vec![true, false, true]);
-        Series::new("int series", &[1, 2, 3]);
+        let _ = Series::new("boolean series", &vec![true, false, true]);
+        let _ = Series::new("int series", &[1, 2, 3]);
         let ca = Int32Chunked::new("a", &[1, 2, 3]);
-        ca.into_series();
+        let _ = ca.into_series();
     }
 
     #[test]
@@ -869,7 +902,7 @@ mod test {
         let array = UInt32Array::from_slice(&[1, 2, 3, 4, 5]);
         let array_ref: ArrayRef = Arc::new(array);
 
-        Series::try_from(("foo", array_ref)).unwrap();
+        let _ = Series::try_from(("foo", array_ref)).unwrap();
     }
 
     #[test]
@@ -901,9 +934,9 @@ mod test {
     fn out_of_range_slice_does_not_panic() {
         let series = Series::new("a", &[1i64, 2, 3, 4, 5]);
 
-        series.slice(-3, 4);
-        series.slice(-6, 2);
-        series.slice(4, 2);
+        let _ = series.slice(-3, 4);
+        let _ = series.slice(-6, 2);
+        let _ = series.slice(4, 2);
     }
 
     #[test]

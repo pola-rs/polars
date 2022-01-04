@@ -174,10 +174,17 @@ def test_to_numpy() -> None:
     s1 = pl.Series(
         "datetime", [datetime(2021, 1, 2, 3, 4, 5), datetime(2021, 2, 3, 4, 5, 6)]
     )
+    s2 = pl.date_range(
+        datetime(2021, 1, 1, 0), datetime(2021, 1, 1, 1), interval="1h", time_unit="ms"
+    )
     assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
     assert (
         str(s1.to_numpy()[:2])
         == "['2021-01-02T03:04:05.000000000' '2021-02-03T04:05:06.000000000']"
+    )
+    assert (
+        str(s2.to_numpy()[:2])
+        == "['2021-01-01T00:00:00.000' '2021-01-01T01:00:00.000']"
     )
 
 

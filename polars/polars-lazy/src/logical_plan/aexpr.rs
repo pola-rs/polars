@@ -1,6 +1,7 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_time_units};
@@ -192,6 +193,7 @@ impl AExpr {
                     Operator::Minus => match (left_type, right_type) {
                         // T - T != T if T is a datetime
                         (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, tur)),
+                        (Date, Date) => Duration(TimeUnit::Milliseconds),
                         (left, right) => get_supertype(&left, &right)?,
                     },
                     _ => get_supertype(&left_type, &right_type)?,

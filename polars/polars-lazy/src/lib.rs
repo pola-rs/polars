@@ -92,6 +92,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
+//! use polars_arrow::prelude::QuantileInterpolOptions;
 //!
 //! fn example() -> Result<DataFrame> {
 //!     let df = df!(

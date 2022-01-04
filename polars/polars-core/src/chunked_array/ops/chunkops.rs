@@ -27,12 +27,11 @@ fn slice(
             remaining_offset -= chunk_len;
             continue;
         }
-        let take_len;
-        if remaining_length + remaining_offset > chunk_len {
-            take_len = chunk_len - remaining_offset;
+        let take_len = if remaining_length + remaining_offset > chunk_len {
+            chunk_len - remaining_offset
         } else {
-            take_len = remaining_length;
-        }
+            remaining_length
+        };
 
         new_chunks.push(chunk.slice(remaining_offset, take_len).into());
         remaining_length -= take_len;
@@ -216,7 +215,7 @@ mod test {
         let mut a = s.cast(&DataType::Categorical).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
-        a.rechunk();
+        let a = a.rechunk();
         assert!(a.categorical().unwrap().categorical_map.is_some());
     }
 }

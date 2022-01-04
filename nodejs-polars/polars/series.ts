@@ -9,6 +9,7 @@ import {InvalidOperationError, todo} from "./error";
 import {RankMethod, RollingOptions} from "./utils";
 import {col} from "./lazy/functions";
 import {isExternal} from "util/types";
+import {Arithmetic, Comparison, Cumulative, Rolling} from "./shared_traits";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -20,7 +21,13 @@ type ArrayLikeOrDataType<T, U> = ArrayLike<DataTypeOrValue<T, U>>
 /** @ignore */
 export type JsSeries = any;
 
-export interface Series<T> extends ArrayLike<T> {
+
+export interface Series<T> extends
+  ArrayLike<T>,
+  Rolling<Series<T>>,
+  Arithmetic<Series<T>>,
+  Comparison<Series<boolean>>,
+  Cumulative<Series<T>> {
   [n: number]: T
   /** @ignore */
   _series: JsSeries;
@@ -33,28 +40,6 @@ export interface Series<T> extends ArrayLike<T> {
   [inspect](): string;
   [Symbol.iterator](): Generator<T, void, any>;
   inner(): JsSeries
-  eq(field: Series<T> | number | bigint | string): Series<boolean>
-  equals(field: Series<T> | number | bigint | string): Series<boolean>
-  gtEq(field: Series<T> | number | bigint | string): Series<boolean>
-  greaterThanEquals(field: Series<T> | number | bigint | string): Series<boolean>
-  gt(field: Series<T> | number | bigint | string): Series<boolean>
-  greaterThan(field: Series<T> | number | bigint | string): Series<boolean>
-  ltEq(field: Series<T> | number | bigint | string): Series<boolean>
-  lessThanEquals(field: Series<T> | number | bigint | string): Series<boolean>
-  lt(field: Series<T> | number | bigint | string): Series<boolean>
-  lessThan(field: Series<T> | number | bigint | string): Series<boolean>
-  neq(field: Series<T> | number | bigint | string): Series<boolean>
-  notEquals(field: Series<T> | number | bigint | string): Series<boolean>
-  add(field: Series<T> | number | bigint): Series<T>
-  sub(field: Series<T> | number | bigint): Series<T>
-  div(field: Series<T> | number | bigint): Series<T>
-  mul(field: Series<T> | number | bigint): Series<T>
-  rem(field: Series<T> | number | bigint | string): Series<T>
-  plus(field: Series<T> | number | bigint): Series<T>
-  minus(field: Series<T> | number | bigint): Series<T>
-  divideBy(field: Series<T> | number | bigint): Series<T>
-  times(field: Series<T> | number | bigint): Series<T>
-  modulo(field: Series<T> | number | bigint | string): Series<T>
   bitand(other: Series<any>): Series<T>
   bitor(other: Series<any>): Series<T>
   bitxor(other: Series<any>): Series<T>
@@ -162,87 +147,8 @@ export interface Series<T> extends ArrayLike<T> {
    */
   clone(): Series<T>
   concat(other: Series<T>): Series<T>
+
   /**
-   * __Get an array with the cumulative max computes at every element.__
-   * ___
-   * @param reverse - reverse the operation
-   * @example
-   * ```
-   * > const s = pl.Series("a", [1, 2, 3])
-   * > s.cumMax()
-   * shape: (3,)
-   * Series: 'b' [i64]
-   * [
-   *         1
-   *         2
-   *         3
-   * ]
-   * ```
-   */
-  cumMax(): Series<T>
-  cumMax(reverse: boolean): Series<T>
-  cumMax({reverse}: {reverse: boolean}): Series<T>
-   /**
-   * __Get an array with the cumulative min computed at every element.__
-   * ___
-   * @param reverse - reverse the operation
-   * @example
-   * ```
-   * > const s = pl.Series("a", [1, 2, 3])
-   * > s.cumMin()
-   * shape: (3,)
-   * Series: 'b' [i64]
-   * [
-   *         1
-   *         1
-   *         1
-   * ]
-   * ```
-   */
-  cumMin(): Series<T>
-  cumMin(reverse: boolean): Series<T>
-  cumMin({reverse}: {reverse: boolean}): Series<T>
-  /**
-  * __Get an array with the cumulative product computed at every element.__
-  * ___
-  * @param reverse - reverse the operation
-  * @example
-  * ```
-  * > const s = pl.Series("a", [1, 2, 3])
-  * > s.cumProd()
-  * shape: (3,)
-  * Series: 'b' [i64]
-  * [
-  *         1
-  *         2
-  *         6
-  * ]
-  * ```
-  */
-  cumProd(): Series<T>
-  cumProd(reverse: boolean): Series<T>
-  cumProd({reverse}: {reverse: boolean}): Series<T>
-  /**
-   * __Get an array with the cumulative sum computed at every element.__
-   * ___
-   * @param reverse - reverse the operation
-   * @example
-   * ```
-   * > const s = pl.Series("a", [1, 2, 3])
-   * > s.cumSum()
-   * shape: (3,)
-   * Series: 'b' [i64]
-   * [
-   *         1
-   *         3
-   *         6
-   * ]
-   * ```
-   */
-  cumSum(): Series<T>
-  cumSum(reverse: boolean): Series<T>
-  cumSum({reverse}: {reverse: boolean}): Series<T>
-   /**
    * __Quick summary statistics of a series. __
    *
    * Series with mixed datatypes will return summary statistics for the datatype of the first value.
@@ -818,156 +724,6 @@ export interface Series<T> extends ArrayLike<T> {
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
   rename({name, inPlace}: {name: string, inPlace: true}): void
   /**
-   * __Apply a rolling max (moving max) over the values in this Series.__
-   *
-   * A window of length `window_size` will traverse the series. The values that fill this window
-   * will (optionally) be multiplied with the weights given by the `weight` vector.
-   *
-   * The resulting parameters' values will be aggregated into their sum.
-   * ___
-   * @param windowSize - The length of the window.
-   * @param weights - An optional slice with the same length as the window that will be multiplied
-   * elementwise with the values in the window.
-   * @param minPeriods The number of values in the window that should be non-null before computing a result.
-   * If undefined, it will be set equal to window size.
-   * @param center - Set the labels at the center of the window
-   * ___
-   * @example
-   * ```
-   * s = pl.Series("a", [100, 200, 300, 400, 500])
-   * s.rollingMax(2)
-   * shape: (5,)
-   * Series: '' [i64]
-   * [
-   *         null
-   *         null
-   *         300
-   *         400
-   *         500
-   * ]
-   * ```
-   * @see {@link rollingMean}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
-   */
-  rollingMax(options: RollingOptions): Series<T>
-  rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
-   /**
-   * __Apply a rolling mean (moving mean) over the values in this Series.__
-   *
-   * A window of length `window_size` will traverse the series. The values that fill this window
-   * will (optionally) be multiplied with the weights given by the `weight` vector.
-   *
-   * The resulting parameters' values will be aggregated into their sum.
-   * ___
-   * @param windowSize - The length of the window.
-   * @param weights - An optional slice with the same length as the window that will be multiplied
-   * elementwise with the values in the window.
-   * @param minPeriods The number of values in the window that should be non-null before computing a result.
-   * If undefined, it will be set equal to window size.
-   * @param center - Set the labels at the center of the window
-   * ___
-   * @example
-   * ```
-   * s = pl.Series("a", [100, 200, 300, 400, 500])
-   * s.rollingMean(2)
-   * shape: (5,)
-   * Series: '' [i64]
-   * [
-   *         null
-   *         150
-   *         250
-   *         350
-   *         450
-   * ]
-   * ```
-   * @see {@link rollingMax}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
-   */
-  rollingMean(options: RollingOptions): Series<T>
-  rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
-  /**
-   * __Apply a rolling min (moving min) over the values in this Series.__
-   *
-   * A window of length `window_size` will traverse the series. The values that fill this window
-   * will (optionally) be multiplied with the weights given by the `weight` vector.
-   *
-   * The resulting parameters' values will be aggregated into their sum.
-   * ___
-   * @param windowSize - The length of the window.
-   * @param weights - An optional slice with the same length as the window that will be multiplied
-   * elementwise with the values in the window.
-   * @param minPeriods The number of values in the window that should be non-null before computing a result.
-   * If undefined, it will be set equal to window size.
-   * @param center - Set the labels at the center of the window
-   * ___
-   * @example
-   * ```
-   * s = pl.Series("a", [100, 200, 300, 400, 500])
-   * s.rollingMin(2)
-   * shape: (5,)
-   * Series: '' [i64]
-   * [
-   *         null
-   *         null
-   *         100
-   *         200
-   *         300
-   * ]
-   * ```
-   * @see {@link rollingMax}, {@link rollingMean}, {@link rollingSum}, {@link rollingVar}
-   */
-  rollingMin(options: RollingOptions): Series<T>
-  rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
-  /**
-   * __Apply a rolling sum (moving sum) over the values in this Series.__
-   *
-   * A window of length `window_size` will traverse the series. The values that fill this window
-   * will (optionally) be multiplied with the weights given by the `weight` vector.
-   *
-   * The resulting parameters' values will be aggregated into their sum.
-   * ___
-   * @param windowSize - The length of the window.
-   * @param weights - An optional slice with the same length as the window that will be multiplied
-   * elementwise with the values in the window.
-   * @param minPeriods The number of values in the window that should be non-null before computing a result.
-   * If undefined, it will be set equal to window size.
-   * @param center - Set the labels at the center of the window
-   * ___
-   * @example
-   * ```
-   * s = pl.Series("a", [1, 2, 3, 4, 5])
-   * s.rollingSum(2)
-   * shape: (5,)
-   * Series: '' [i64]
-   * [
-   *         null
-   *         3
-   *         5
-   *         7
-   *         9
-   * ]
-   * ```
-   * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingVar}
-   */
-  rollingSum(options: RollingOptions): Series<T>
-  rollingSum(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
-  /**
-   * __Compute a rolling variance.__
-   *
-   * A window of length `window_size` will traverse the series. The values that fill this window
-   * will (optionally) be multiplied with the weights given by the `weight` vector.
-   *
-   * The resulting parameters' values will be aggregated into their sum.
-   * ___
-   * @param windowSize - The length of the window.
-   * @param weights - An optional slice with the same length as the window that will be multiplied
-   * elementwise with the values in the window.
-   * @param minPeriods The number of values in the window that should be non-null before computing a result.
-   * If undefined, it will be set equal to window size.
-   * @param center - Set the labels at the center of the window
-   * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingSum}
-   */
-  rollingVar(options: RollingOptions): Series<T>
-  rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): Series<T>
-  /**
    * Round underlying floating point data by `decimals` digits.
    *
    * Similar functionality to javascript `toFixed`
@@ -1243,6 +999,7 @@ export interface Series<T> extends ArrayLike<T> {
   toJS(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
 }
+
 /** @ignore */
 export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
@@ -1377,6 +1134,12 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       unwrap("append", { other: other._series }, s._series);
 
       return s;
+    },
+    cumCount(reverse?) {
+      return this
+        .toFrame()
+        .select(col(this.name).cumCount(reverse))
+        .getColumn(this.name);
     },
     cumMax(reverse: any = false) {
       return typeof reverse === "boolean" ?
@@ -1636,7 +1399,26 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     rollingMean: rolling("rolling_mean"),
     rollingMin: rolling("rolling_min"),
     rollingSum: rolling("rolling_sum"),
+    rollingStd: rolling("rolling_std"),
     rollingVar: rolling("rolling_var"),
+    rollingMedian(windowSize) {
+      return this
+        .toFrame()
+        .select(col(this.name).rollingMedian(windowSize))
+        .getColumn(this.name);
+    },
+    rollingQuantile(windowSize, quantile?) {
+      return this
+        .toFrame()
+        .select(col(this.name).rollingQuantile(windowSize, quantile))
+        .getColumn(this.name);
+    },
+    rollingSkew(windowSize, bias?) {
+      return this
+        .toFrame()
+        .select(col(this.name).rollingSkew(windowSize, bias))
+        .getColumn(this.name);
+    },
     round(opt): any {
       if(this.isNumeric()) {
         if(typeof opt === "number") {
@@ -1734,7 +1516,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     tail: (length=5) => wrap("tail", {length}),
     take: (indices) => wrap("take", {indices}),
     takeEvery: (n) => wrap("take_every", {n}),
-    times: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
+    multiplyBy: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
     toArray() {
       const series = seriesWrapper<any>(_s);
 

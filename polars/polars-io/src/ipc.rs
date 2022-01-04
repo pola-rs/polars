@@ -58,6 +58,7 @@ use std::sync::Arc;
 ///         .finish()
 /// }
 /// ```
+#[must_use]
 pub struct IpcReader<R> {
     /// File or Stream object
     reader: R,
@@ -215,6 +216,7 @@ where
 /// }
 ///
 /// ```
+#[must_use]
 pub struct IpcWriter<W> {
     writer: W,
     compression: Option<write::Compression>,

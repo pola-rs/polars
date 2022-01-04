@@ -24,6 +24,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars_core::prelude::QuantileInterpolOptions;
 
 #[pyclass]
 #[repr(transparent)]
@@ -747,7 +748,7 @@ impl PyDataFrame {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -932,8 +933,7 @@ impl PyDataFrame {
         &self,
         lambda: &PyAny,
         output_type: &PyAny,
-        batch_size: usize,
-        rechunk: bool,
+        inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
         let gil = Python::acquire_gil();
         let py = gil.python();
@@ -987,7 +987,7 @@ impl PyDataFrame {
             Some(DataType::Utf8) => {
                 apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
             }
-            _ => return apply_lambda_unknown(df, py, lambda, batch_size, rechunk),
+            _ => return apply_lambda_unknown(df, py, lambda, inference_size),
         };
 
         Ok((PySeries::from(out).into_py(py), false))

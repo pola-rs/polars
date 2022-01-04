@@ -39,6 +39,7 @@ where
     fn new(reader: R) -> Self;
 
     /// Rechunk to a single chunk after Reading file.
+    #[must_use]
     fn set_rechunk(self, _rechunk: bool) -> Self
     where
         Self: std::marker::Sized,
@@ -73,7 +74,6 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     aggregate: Option<&[ScanAggregation]>,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
-    use std::convert::TryFrom;
 
     let mut num_rows = 0;
     let mut parsed_dfs = Vec::with_capacity(1024);

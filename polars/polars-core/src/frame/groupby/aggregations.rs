@@ -13,6 +13,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
 use polars_arrow::kernels::take_agg::*;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::ops::Deref;
 
@@ -631,7 +632,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let iter = unsafe {
             groups
                 .iter()
-                .map(|(_, idx)| {
+                .flat_map(|(_, idx)| {
                     // Safety:
                     // group tuples always in bounds
                     let group_vals =
@@ -649,7 +650,6 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                     let arr = group_vals.downcast_iter().next().unwrap().clone();
                     arr.into_iter_cloned()
                 })
-                .flatten()
                 .trust_my_length(self.len())
         };
 

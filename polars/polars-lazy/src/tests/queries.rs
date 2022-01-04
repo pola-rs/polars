@@ -1,4 +1,5 @@
 use super::*;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::series::ops::NullBehavior;
 
 #[test]
@@ -2541,37 +2542,6 @@ fn test_agg_unique_first() -> Result<()> {
     let a = a.sum::<i32>().unwrap();
     // can be both because unique does not guarantee order
     assert_eq!(a, 10);
-
-    Ok(())
-}
-
-#[test]
-#[cfg(feature = "parquet")]
-fn test_parquet_exec() -> Result<()> {
-    // filter
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .filter(col("category").eq(lit("seafood")))
-            .collect()?;
-        assert_eq!(out.shape(), (8, 4));
-    }
-
-    // project
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .select([col("category"), col("sugars_g")])
-            .collect()?;
-        assert_eq!(out.shape(), (27, 2));
-    }
-
-    // project + filter
-    for par in [true, false] {
-        let out = scan_foods_parquet(par)
-            .select([col("category"), col("sugars_g")])
-            .filter(col("category").eq(lit("seafood")))
-            .collect()?;
-        assert_eq!(out.shape(), (8, 2));
-    }
 
     Ok(())
 }

@@ -720,11 +720,11 @@ describe("comparators & math", () => {
     expect(s.sub(1)).toSeriesEqual(expected);
     expect(s.minus(1)).toSeriesEqual(expected);
   });
-  test("mul/times", () => {
+  test("mul/multiplyBy", () => {
     const s = pl.Series([1, 2]);
     const expected = pl.Series([10, 20]);
     expect(s.mul(10)).toSeriesEqual(expected);
-    expect(s.times(10)).toSeriesEqual(expected);
+    expect(s.multiplyBy(10)).toSeriesEqual(expected);
   });
   test("div/divideBy", () => {
     const s = pl.Series([2, 4]);

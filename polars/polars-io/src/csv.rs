@@ -41,7 +41,7 @@
 //! }
 //! ```
 //!
-use crate::csv_core::csv::CoreReader;
+use crate::csv_core::csv::{cast_columns, CoreReader};
 use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::utils::resolve_homedir;
@@ -57,6 +57,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Write a DataFrame to csv.
+#[must_use]
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
@@ -189,6 +190,7 @@ impl NullValues {
 ///             .finish()
 /// }
 /// ```
+#[must_use]
 pub struct CsvReader<'a, R>
 where
     R: MmapBytesReader,
@@ -444,6 +446,8 @@ where
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
+        // we cannot append categorical under local string cache, so we cast them later.
+        let mut to_cast_local = vec![];
 
         let mut df = if let Some(schema) = self.schema_overwrite {
             // This branch we check if there are dtypes we cannot parse.
@@ -458,7 +462,7 @@ where
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
                         Categorical => {
-                            to_cast.push(fld);
+                            to_cast_local.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
                         Date | Datetime(_, _) => {
@@ -570,6 +574,9 @@ where
             };
             df = parse_dates(df, &*fixed_schema)
         }
+
+        // TODO: parallelize this?
+        cast_columns(&mut df, &to_cast_local)?;
         Ok(df)
     }
 }
@@ -608,7 +615,6 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::csv_core::utils::infer_file_schema;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;

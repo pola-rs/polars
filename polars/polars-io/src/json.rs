@@ -75,6 +75,7 @@ pub enum JsonFormat {
 }
 
 // Write a DataFrame to JSON
+#[must_use]
 pub struct JsonWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
@@ -119,6 +120,7 @@ where
     }
 }
 
+#[must_use]
 pub struct JsonReader<R>
 where
     R: BufRead + Seek,
@@ -162,19 +164,16 @@ where
         let projection = self
             .projection
             .map(|projection| {
-                Some(
-                    projection
-                        .iter()
-                        .map(|name| {
-                            fields
-                                .iter()
-                                .position(|fld| fld.name() == name)
-                                .ok_or_else(|| PolarsError::NotFound(name.into()))
-                        })
-                        .collect::<Result<Vec<_>>>(),
-                )
+                projection
+                    .iter()
+                    .map(|name| {
+                        fields
+                            .iter()
+                            .position(|fld| fld.name() == name)
+                            .ok_or_else(|| PolarsError::NotFound(name.into()))
+                    })
+                    .collect::<Result<Vec<_>>>()
             })
-            .flatten()
             .transpose()?;
 
         let mut dfs = vec![];

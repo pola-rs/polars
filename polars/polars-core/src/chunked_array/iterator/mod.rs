@@ -134,8 +134,7 @@ impl BooleanChunked {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .map(BoolIterNoNull::new)
-                .flatten()
+                .flat_map(BoolIterNoNull::new)
                 .trust_my_length(self.len())
         }
     }
@@ -216,8 +215,7 @@ impl Utf8Chunked {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .map(Utf8IterNoNull::new)
-                .flatten()
+                .flat_map(Utf8IterNoNull::new)
                 .trust_my_length(self.len())
         }
     }
@@ -233,8 +231,7 @@ impl<'a> IntoIterator for &'a ListChunked {
         unsafe {
             Box::new(
                 self.downcast_iter()
-                    .map(|arr| arr.iter())
-                    .flatten()
+                    .flat_map(|arr| arr.iter())
                     .trust_my_length(self.len())
                     .map(move |arr| {
                         arr.map(|arr| {
@@ -314,8 +311,7 @@ impl ListChunked {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .map(ListIterNoNull::new)
-                .flatten()
+                .flat_map(ListIterNoNull::new)
                 .trust_my_length(self.len())
         }
     }
@@ -344,8 +340,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
         // we know that we only iterate over length == self.len()
         unsafe {
             self.downcast_iter()
-                .map(|arr| arr.values().iter())
-                .flatten()
+                .flat_map(|arr| arr.values().iter())
                 .trust_my_length(self.len())
         }
     }

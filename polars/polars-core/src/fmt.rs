@@ -535,7 +535,7 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     } else if v % 1_000_000_000 != 0 {
         write!(f, "{} milliseconds", (v % 1_000_000_000) / 1_000_000)?;
     }
-    return Ok(());
+    Ok(())
 }
 
 impl Display for AnyValue<'_> {

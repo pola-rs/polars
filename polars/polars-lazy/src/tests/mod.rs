@@ -1,10 +1,11 @@
+#[cfg(feature = "parquet")]
+mod io;
 mod predicate_pushdown;
 mod queries;
 
 use polars_core::prelude::*;
 use polars_io::prelude::*;
-use std::fs::File;
-use std::io::{Cursor, Read, Write};
+use std::io::Cursor;
 
 use crate::functions::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
@@ -22,17 +23,27 @@ fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
+fn init_parquet() {
+    for path in &[
+        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
+        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
+    ] {
+        let out_path = path.replace(".csv", ".parquet");
+
+        if std::fs::metadata(&out_path).is_err() {
+            let df = CsvReader::from_path(path).unwrap().finish().unwrap();
+            let f = std::fs::File::create(&out_path).unwrap();
+            ParquetWriter::new(f).finish(&df).unwrap();
+        }
+    }
+}
+
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(par: bool) -> LazyFrame {
-    let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    let out_path = path.replace(".csv", ".parquet");
-
-    if std::fs::metadata(&out_path).is_err() {
-        let df = CsvReader::from_path(path).unwrap().finish().unwrap();
-        let f = std::fs::File::create(&out_path).unwrap();
-        ParquetWriter::new(f).finish(&df);
-    }
-    LazyFrame::scan_parquet(out_path, None, false, par).unwrap()
+    init_parquet();
+    let out_path =
+        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet".into();
+    LazyFrame::scan_parquet(out_path, None, false, par, true).unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

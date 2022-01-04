@@ -600,7 +600,7 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Null, dt) => Some(dt.clone()),
 
         (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
-            if tz == "" {
+            if tz.is_empty() {
                 Some(Datetime(get_time_units(*lu, *ru), None))
             } else {
                 Some(Datetime(get_time_units(*lu, *ru), Some(tz.clone())))

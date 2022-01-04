@@ -49,7 +49,7 @@ impl DataFrame {
 
         let groups = if by.is_empty() {
             dt.downcast_iter()
-                .map(|vals| {
+                .flat_map(|vals| {
                     let ts = vals.values().as_slice();
                     let (groups, lower, upper) = polars_time::groupby::groupby(
                         w,
@@ -71,7 +71,6 @@ impl DataFrame {
                     }
                     groups
                 })
-                .flatten()
                 .collect::<Vec<_>>()
         } else {
             let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
@@ -81,7 +80,7 @@ impl DataFrame {
             if options.include_boundaries {
                 groups
                     .iter()
-                    .map(|base_g| {
+                    .flat_map(|base_g| {
                         let dt = unsafe {
                             dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
                         };
@@ -123,13 +122,12 @@ impl DataFrame {
                         });
                         sub_groups
                     })
-                    .flatten()
                     .collect::<Vec<_>>()
             } else {
                 POOL.install(|| {
                     groups
                         .par_iter()
-                        .map(|base_g| {
+                        .flat_map(|base_g| {
                             let dt = unsafe {
                                 dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
                             };
@@ -152,7 +150,6 @@ impl DataFrame {
                             });
                             sub_groups
                         })
-                        .flatten()
                         .collect::<Vec<_>>()
                 })
             }

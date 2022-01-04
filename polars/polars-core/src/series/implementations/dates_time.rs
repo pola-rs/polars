@@ -21,6 +21,7 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
+use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
@@ -218,9 +219,9 @@ macro_rules! impl_dyn_series {
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {
-                        let lhs = self.cast(&DataType::Int32).unwrap();
-                        let rhs = rhs.cast(&DataType::Int32).unwrap();
-                        Ok(lhs.subtract(&rhs)?.$into_logical().into_series())
+                        let lhs = self.cast(&DataType::Int64).unwrap();
+                        let rhs = rhs.cast(&DataType::Int64).unwrap();
+                        Ok((lhs.subtract(&rhs)? * 86_400_000).into_duration(TimeUnit::Milliseconds).into_series())
                     }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(

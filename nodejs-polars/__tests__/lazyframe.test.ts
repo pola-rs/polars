@@ -238,7 +238,22 @@ describe("lazyframe", () => {
 
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("fetch", () => {
+  test("fetch", async () => {
+    const df = pl.DataFrame({
+      "foo": [1, 2],
+      "bar": ["a", "b"]
+    });
+    const expected = pl.DataFrame({
+      "foo": [1],
+      "bar": ["a"]
+    });
+    const actual = await df
+      .lazy()
+      .select("*")
+      .fetch(1);
+    expect(actual).toFrameEqual(expected);
+  });
+  test("fetchSync", () => {
     const df = pl.DataFrame({
       "foo": [1, 2],
       "bar": ["a", "b"]
@@ -250,7 +265,7 @@ describe("lazyframe", () => {
     const actual = df
       .lazy()
       .select("*")
-      .fetch(1);
+      .fetchSync(1);
     expect(actual).toFrameEqual(expected);
   });
   test("fillNull:zero", () => {

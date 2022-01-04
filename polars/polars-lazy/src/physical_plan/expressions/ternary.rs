@@ -51,7 +51,7 @@ impl PhysicalExpr for TernaryExpr {
         let mask_s = ac_mask.flat_naive();
 
         assert!(
-            !(mask_s.len() != required_height),
+            (mask_s.len() == required_height),
             "The predicate is of a different length than the groups.\
 The predicate produced {} values. Where the original DataFrame has {} values",
             mask_s.len(),
@@ -186,7 +186,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                     .flat_naive()
                     .zip_with(mask, ac_falsy.flat_naive().as_ref())?;
 
-                assert!(!(out.len() != required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
+                assert!((out.len() == required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
 The expr produced {} values. Where the original DataFrame has {} values",
                         out.len(),
                         required_height);

@@ -12,6 +12,8 @@ impl JsLazyFrame {
             napi::Property::new(env, "describePlan")?.with_method(lazyframe::describe_plan),
             napi::Property::new(env, "describeOptimizedPlan")?
                 .with_method(lazyframe::describe_optimized_plan),
+            napi::Property::new(env, "cache")?.with_method(lazyframe::cache),
+            napi::Property::new(env, "clone")?.with_method(lazyframe::clone),
             napi::Property::new(env, "collect")?.with_method(lazyframe::collect),
             napi::Property::new(env, "collectSync")?.with_method(lazyframe::collect_sync),
             napi::Property::new(env, "columns")?.with_method(lazyframe::columns),
@@ -19,6 +21,7 @@ impl JsLazyFrame {
             napi::Property::new(env, "dropDuplicates")?.with_method(lazyframe::drop_duplicates),
             napi::Property::new(env, "dropNulls")?.with_method(lazyframe::drop_nulls),
             napi::Property::new(env, "explode")?.with_method(lazyframe::explode),
+            napi::Property::new(env, "fetch")?.with_method(lazyframe::fetch),
             napi::Property::new(env, "fetchSync")?.with_method(lazyframe::fetch_sync),
             napi::Property::new(env, "fillNan")?.with_method(lazyframe::fill_nan),
             napi::Property::new(env, "fillNull")?.with_method(lazyframe::fill_null),

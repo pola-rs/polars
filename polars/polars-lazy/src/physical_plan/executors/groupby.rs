@@ -164,7 +164,7 @@ fn run_partitions(
                         Ok(opt_agg)
                     }).collect::<Result<Vec<_>>>()?;
 
-                columns.extend(agg_columns.into_iter().flatten().map(|v| v.into_iter()).flatten());
+                columns.extend(agg_columns.into_iter().flatten().flat_map(|v| v.into_iter()));
 
                 let df = DataFrame::new_no_checks(columns);
                 Ok(df)
