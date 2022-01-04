@@ -267,7 +267,7 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
 
     let dict = PyDict::new(py);
-    for field in metadata.schema().fields() {
+    for field in metadata.schema.fields() {
         let dt: Wrap<DataType> = Wrap((&field.data_type).into());
         dict.set_item(field.name(), dt.to_object(py))?;
     }

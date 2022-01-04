@@ -32,7 +32,7 @@
 //! let df_read = IpcReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::prelude::*;
 use crate::{PhysicalIoExpr, ScanAggregation};
 use ahash::AHashMap;
@@ -73,13 +73,13 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok((&**metadata.schema()).into())
+        Ok((&metadata.schema).into())
     }
 
-    /// Get arrow schema of the Ipc File, this is faster than a polars schema.
-    pub fn arrow_schema(&mut self) -> Result<Arc<ArrowSchema>> {
+    /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
+    pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok(metadata.schema().clone())
+        Ok(metadata.schema)
     }
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
@@ -110,17 +110,21 @@ impl<R: Read + Seek> IpcReader<R> {
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let reader = read::FileReader::new(
-            &mut self.reader,
-            metadata,
-            projection.map(|x| {
-                let mut x = x.to_vec();
-                x.sort_unstable();
-                x
-            }),
-        );
+        let projection = projection.map(|x| {
+            let mut x = x.to_vec();
+            x.sort_unstable();
+            x
+        });
 
-        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate)
+        let schema = if let Some(projection) = &projection {
+            apply_projection(&metadata.schema, projection)
+        } else {
+            metadata.schema.clone()
+        };
+
+        let reader = read::FileReader::new(&mut self.reader, metadata, projection);
+
+        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
     }
 }
 
@@ -128,12 +132,8 @@ impl<R> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
-    }
-
-    fn schema(&self) -> Arc<Schema> {
-        Arc::new((&**self.schema()).into())
     }
 }
 
@@ -159,7 +159,7 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let schema = metadata.schema();
+        let schema = &metadata.schema;
 
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -193,8 +193,14 @@ where
             self.projection = Some(prj);
         }
 
+        let schema = if let Some(projection) = &self.projection {
+            apply_projection(&metadata.schema, projection)
+        } else {
+            metadata.schema.clone()
+        };
+
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
-        finish_reader(ipc_reader, rechunk, self.n_rows, None, None)
+        finish_reader(ipc_reader, rechunk, self.n_rows, None, None, &schema)
     }
 }
 
@@ -222,6 +228,7 @@ pub struct IpcWriter<W> {
     compression: Option<write::Compression>,
 }
 
+use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 
 impl<W> IpcWriter<W>
@@ -256,7 +263,7 @@ where
             },
         )?;
 
-        let iter = df.iter_record_batches();
+        let iter = df.iter_chunks();
 
         for batch in iter {
             ipc_writer.write(&batch, None)?

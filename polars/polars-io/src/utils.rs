@@ -1,6 +1,9 @@
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+use crate::ArrowSchema;
 use dirs::home_dir;
 use std::path::{Path, PathBuf};
 
+// used by python polars
 pub fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory
     if path.starts_with("~") {
@@ -10,6 +13,13 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
     }
 
     path.into()
+}
+
+#[cfg(any(feature = "ipc", feature = "parquet"))]
+pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
+    let fields = schema.fields();
+    let fields = projection.iter().map(|idx| fields[*idx].clone()).collect();
+    ArrowSchema::new(fields)
 }
 
 #[cfg(test)]

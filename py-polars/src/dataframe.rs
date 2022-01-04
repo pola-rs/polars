@@ -1,12 +1,8 @@
-use std::convert::TryFrom;
-
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
-#[cfg(feature = "downsample")]
-use polars_core::frame::groupby::resample::SampleRule;
 
 use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
@@ -261,8 +257,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
-        let batches = arrow_interop::to_rust::to_rust_rb(&rb)?;
-        let df = DataFrame::try_from(batches).map_err(PyPolarsEr::from)?;
+        let df = arrow_interop::to_rust::to_rust_df(&rb)?;
         Ok(Self::from(df))
     }
 
@@ -379,11 +374,12 @@ impl PyDataFrame {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
+        let names = self.df.get_column_names();
 
         let rbs = self
             .df
-            .iter_record_batches()
-            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, py, pyarrow))
+            .iter_chunks()
+            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }

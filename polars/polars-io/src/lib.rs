@@ -22,11 +22,11 @@ pub mod prelude;
 mod tests;
 pub(crate) mod utils;
 
-use arrow::{error::Result as ArrowResult, record_batch::RecordBatch};
+use arrow::error::Result as ArrowResult;
 
+use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
-use std::sync::Arc;
 
 pub trait PhysicalIoExpr: Send + Sync {
     fn evaluate(&self, df: &DataFrame) -> Result<Series>;
@@ -60,9 +60,7 @@ where
 }
 
 pub trait ArrowReader {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>>;
-
-    fn schema(&self) -> Arc<Schema>;
+    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
@@ -72,6 +70,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     n_rows: Option<usize>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
+    arrow_schema: &ArrowSchema,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
@@ -79,9 +78,9 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
-        num_rows += batch.num_rows();
+        num_rows += batch.len();
 
-        let mut df = DataFrame::try_from(batch)?;
+        let mut df = DataFrame::try_from((batch, arrow_schema.fields().as_slice()))?;
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate(&df)?;
