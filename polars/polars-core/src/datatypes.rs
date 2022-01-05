@@ -345,6 +345,7 @@ impl<'a> AnyValue<'a> {
 
     pub(crate) fn into_duration(self, tu: TimeUnit) -> Self {
         match self {
+            #[cfg(feature = "dtype-duration")]
             AnyValue::Int64(v) => AnyValue::Duration(v, tu),
             AnyValue::Null => AnyValue::Null,
             dt => panic!("cannot create date from other type. dtype: {}", dt),
