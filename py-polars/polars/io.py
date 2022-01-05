@@ -425,10 +425,11 @@ def scan_csv(
     infer_schema_length: Optional[int] = 100,
     n_rows: Optional[int] = None,
     low_memory: bool = False,
+    rechunk: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
-    Lazily read from a CSV file.
+    Lazily read from a CSV file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and
     projections to the scan level, thereby potentially reducing
@@ -479,6 +480,8 @@ def scan_csv(
         Stop reading from CSV file after reading ``n_rows``.
     low_memory
         Reduce memory usage in expense of performance.
+    rechunk
+        Reallocate to contiguous memory when all chunks/ files are parsed.
 
     Examples
     --------
@@ -543,6 +546,7 @@ def scan_csv(
         infer_schema_length=infer_schema_length,
         n_rows=n_rows,
         low_memory=low_memory,
+        rechunk=rechunk,
     )
 
 
@@ -550,10 +554,11 @@ def scan_ipc(
     file: Union[str, Path],
     n_rows: Optional[int] = None,
     cache: bool = True,
+    rechunk: bool = True,
     **kwargs: Any,
 ) -> LazyFrame:
     """
-    Lazily read from an Arrow IPC (Feather v2) file.
+    Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan level,
     thereby potentially reducing memory overhead.
@@ -566,6 +571,8 @@ def scan_ipc(
         Stop reading from IPC file after reading ``n_rows``.
     cache
         Cache the result after reading.
+    rechunk
+        Reallocate to contiguous memory when all chunks/ files are parsed.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -574,7 +581,7 @@ def scan_ipc(
     if isinstance(file, Path):
         file = str(file)
 
-    return LazyFrame.scan_ipc(file=file, n_rows=n_rows, cache=cache)
+    return LazyFrame.scan_ipc(file=file, n_rows=n_rows, cache=cache, rechunk=rechunk)
 
 
 def scan_parquet(
@@ -586,7 +593,7 @@ def scan_parquet(
     **kwargs: Any,
 ) -> LazyFrame:
     """
-    Lazily read from a parquet file.
+    Lazily read from a parquet file or multiple files via glob patterns.
 
     This allows the query optimizer to push down predicates and projections to the scan level,
     thereby potentially reducing memory overhead.

@@ -7,30 +7,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[cfg(feature = "private")]
-pub(crate) fn equal_aexprs(left: &[Node], right: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    left.iter()
-        .zip(right.iter())
-        .all(|(l, r)| AExpr::eq(*l, *r, expr_arena))
-}
-
-pub(crate) fn remove_duplicate_aexprs(exprs: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Node> {
-    let mut unique = HashSet::with_capacity_and_hasher(exprs.len(), RandomState::new());
-    let mut new = Vec::with_capacity(exprs.len());
-    for node in exprs {
-        let mut can_insert = false;
-        for name in aexpr_to_root_names(*node, expr_arena) {
-            if unique.insert(name) {
-                can_insert = true
-            }
-        }
-        if can_insert {
-            new.push(*node)
-        }
-    }
-    new
-}
-
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
 }

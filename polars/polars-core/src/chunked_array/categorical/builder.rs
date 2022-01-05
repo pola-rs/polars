@@ -265,13 +265,13 @@ mod test {
 
             let s = builder1.finish().into_series();
             assert_eq!(s.str_value(0), "null");
-            assert_eq!(s.str_value(1), "\"hello\"");
-            assert_eq!(s.str_value(2), "\"vietnam\"");
+            assert_eq!(s.str_value(1), "hello");
+            assert_eq!(s.str_value(2), "vietnam");
 
             let s = builder2.finish().into_series();
-            assert_eq!(s.str_value(0), "\"hello\"");
+            assert_eq!(s.str_value(0), "hello");
             assert_eq!(s.str_value(1), "null");
-            assert_eq!(s.str_value(2), "\"world\"");
+            assert_eq!(s.str_value(2), "world");
         }
     }
 }

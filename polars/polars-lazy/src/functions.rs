@@ -326,7 +326,10 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
         lps.push(lp)
     }
 
-    let lp = LogicalPlan::Union { inputs: lps };
+    let lp = LogicalPlan::Union {
+        inputs: lps,
+        options: Default::default(),
+    };
     let mut lf = LazyFrame::from(lp);
     lf.opt_state = opt_state;
 

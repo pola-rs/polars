@@ -20,7 +20,7 @@
 //! {"a":1, "b":0.6, "c":false, "d":"text"}
 //! {"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":1, "b":-3.5, "c":true, "d":"4"}
-//! {"a":100000000000000, "b":0.6, "c":false, "d":"text"}"#;
+//! {"a":1, "b":0.6, "c":false, "d":"text"}"#;
 //! let file = Cursor::new(basic_json);
 //! let df = JsonReader::new(file)
 //! .infer_schema_len(Some(3))
@@ -61,9 +61,7 @@
 //! ```
 //!
 use crate::prelude::*;
-pub use arrow::{
-    error::Result as ArrowResult, io::json::read, io::json::write, record_batch::RecordBatch,
-};
+pub use arrow::{error::Result as ArrowResult, io::json::read, io::json::write};
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use std::convert::TryFrom;
@@ -101,17 +99,21 @@ where
     }
 
     fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let batches = df.iter_record_batches().map(Ok);
+        let batches = df.iter_chunks().map(Ok);
+        let names = df.get_column_names_owned();
 
         match self.json_format {
             JsonFormat::JsonLines => {
                 let format = write::LineDelimited::default();
-                let blocks = write::Serializer::new(batches, Vec::with_capacity(1024), format);
+
+                let blocks =
+                    write::Serializer::new(batches, names, Vec::with_capacity(1024), format);
                 write::write(&mut self.buffer, format, blocks)?;
             }
             JsonFormat::Json => {
                 let format = write::JsonArray::default();
-                let blocks = write::Serializer::new(batches, Vec::with_capacity(1024), format);
+                let blocks =
+                    write::Serializer::new(batches, names, Vec::with_capacity(1024), format);
                 write::write(&mut self.buffer, format, blocks)?;
             }
         }
@@ -186,13 +188,14 @@ where
                 break;
             }
             let read_rows = &rows[..read];
-            let rb = read::deserialize(read_rows, fields.clone())?;
-            let df = DataFrame::try_from(rb)?;
+            let rb = read::deserialize(read_rows, &fields)?;
+            let df = DataFrame::try_from((rb, fields.as_slice()))?;
+            let cols = df.get_columns();
 
             if let Some(projection) = &projection {
                 let cols = projection
                     .iter()
-                    .map(|idx| df.get_columns()[*idx].clone())
+                    .map(|idx| cols[*idx].clone())
                     .collect::<Vec<_>>();
                 dfs.push(DataFrame::new_no_checks(cols))
             } else {

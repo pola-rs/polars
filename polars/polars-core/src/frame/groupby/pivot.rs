@@ -3,6 +3,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use hashbrown::HashMap;
 use num::{Num, NumCast, Zero};
+use std::cmp::Ordering;
 use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Deref};
@@ -232,6 +233,16 @@ where
     columns_agg_map_main
 }
 
+fn sort_cols(cols: &mut [Series]) {
+    (&mut cols[1..]).sort_unstable_by(|s1, s2| {
+        if s1.name() > s2.name() {
+            Ordering::Greater
+        } else {
+            Ordering::Less
+        }
+    });
+}
+
 impl<T> ChunkPivot for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -305,6 +316,7 @@ where
             let ca = builder.finish();
             cols.push(ca.into_series());
         }
+        sort_cols(&mut cols);
 
         DataFrame::new(cols)
     }
@@ -369,6 +381,7 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
         let ca = builder.finish();
         cols.push(ca.into_series());
     }
+    sort_cols(&mut cols);
 
     DataFrame::new(cols)
 }
@@ -485,6 +498,7 @@ impl ChunkPivot for ListChunked {
             let ca = builder.finish();
             cols.push(ca.into_series());
         }
+        sort_cols(&mut cols);
 
         DataFrame::new(cols)
     }
@@ -655,9 +669,9 @@ mod test {
         let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
         let s2 = Series::new("bar", ["k", "l", "m", "m", "l"].as_ref());
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-        println!("{:?}", df);
 
         let pvt = df.groupby("foo").unwrap().pivot("bar", "N").sum().unwrap();
+        assert_eq!(pvt.get_column_names(), &["foo", "k", "l", "m"]);
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(6)]

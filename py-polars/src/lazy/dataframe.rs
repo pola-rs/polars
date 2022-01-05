@@ -2,7 +2,7 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::NullValues;
+use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -104,6 +104,7 @@ impl PyLazyFrame {
         null_values: Option<Wrap<NullValues>>,
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<PyObject>,
+        rechunk: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -133,6 +134,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
+            .with_rechunk(rechunk)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
@@ -172,14 +174,29 @@ impl PyLazyFrame {
         parallel: bool,
         rechunk: bool,
     ) -> PyResult<Self> {
-        let lf = LazyFrame::scan_parquet(path, n_rows, cache, parallel, rechunk)
-            .map_err(PyPolarsEr::from)?;
+        let args = ScanArgsParquet {
+            n_rows,
+            cache,
+            parallel,
+            rechunk,
+        };
+        let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
     #[staticmethod]
-    pub fn new_from_ipc(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
-        let lf = LazyFrame::scan_ipc(path, n_rows, cache).map_err(PyPolarsEr::from)?;
+    pub fn new_from_ipc(
+        path: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        rechunk: bool,
+    ) -> PyResult<Self> {
+        let args = ScanArgsIpc {
+            n_rows,
+            cache,
+            rechunk,
+        };
+        let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
@@ -206,6 +223,7 @@ impl PyLazyFrame {
         projection_pushdown: bool,
         simplify_expr: bool,
         string_cache: bool,
+        slice_pushdown: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
@@ -213,6 +231,7 @@ impl PyLazyFrame {
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
             .with_string_cache(string_cache)
+            .with_slice_pushdown(slice_pushdown)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }
@@ -458,12 +477,12 @@ impl PyLazyFrame {
             .into()
     }
 
-    pub fn slice(&self, offset: i64, len: usize) -> Self {
+    pub fn slice(&self, offset: i64, len: u32) -> Self {
         let ldf = self.ldf.clone();
         ldf.slice(offset, len).into()
     }
 
-    pub fn tail(&self, n: usize) -> Self {
+    pub fn tail(&self, n: u32) -> Self {
         let ldf = self.ldf.clone();
         ldf.tail(n).into()
     }

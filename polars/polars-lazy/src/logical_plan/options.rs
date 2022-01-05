@@ -13,6 +13,7 @@ pub struct CsvParserOptions {
     pub(crate) ignore_errors: bool,
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
+    pub(crate) rechunk: bool,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
@@ -24,8 +25,15 @@ pub struct ParquetOptions {
 }
 
 #[derive(Clone, Debug)]
-pub struct ScanOptions {
+pub struct LpScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,
+}
+
+#[derive(Clone, Debug, Copy, Default)]
+pub struct UnionOptions {
+    pub(crate) slice: bool,
+    pub(crate) slice_offset: i64,
+    pub(crate) slice_len: u32,
 }

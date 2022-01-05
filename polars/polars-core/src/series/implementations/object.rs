@@ -46,12 +46,6 @@ where
         self.0.agg_list(groups)
     }
 
-    fn str_value(&self, index: usize) -> Cow<str> {
-        match (&self.0).get(index) {
-            None => Cow::Borrowed("null"),
-            Some(val) => Cow::Owned(format!("{}", val)),
-        }
-    }
     fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
         (&self.0).into_partial_eq_inner()
     }
@@ -154,14 +148,6 @@ where
 
     fn rechunk(&self) -> Series {
         ChunkOps::rechunk(&self.0).into_series()
-    }
-
-    fn head(&self, length: Option<usize>) -> Series {
-        ObjectChunked::head(&self.0, length).into_series()
-    }
-
-    fn tail(&self, length: Option<usize>) -> Series {
-        ObjectChunked::tail(&self.0, length).into_series()
     }
 
     fn take_every(&self, n: usize) -> Series {

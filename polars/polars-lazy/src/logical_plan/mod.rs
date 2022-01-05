@@ -1,10 +1,6 @@
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
-use std::{
-    cell::Cell,
-    fmt::{Debug, Write},
-    sync::Arc,
-};
+use std::{cell::Cell, fmt::Debug, sync::Arc};
 
 use polars_core::prelude::*;
 
@@ -21,15 +17,15 @@ mod format;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
+mod options;
 mod projection;
-mod scans;
 
 use polars_core::frame::groupby::DynamicGroupOptions;
 
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
-pub(crate) use scans::*;
+pub(crate) use options::*;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -51,9 +47,7 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache {
-        input: Box<LogicalPlan>,
-    },
+    Cache { input: Box<LogicalPlan> },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -80,7 +74,7 @@ pub enum LogicalPlan {
     IpcScan {
         path: PathBuf,
         schema: SchemaRef,
-        options: ScanOptions,
+        options: LpScanOptions,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
     },
@@ -151,7 +145,7 @@ pub enum LogicalPlan {
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
-        len: usize,
+        len: u32,
     },
     /// A Melt operation
     Melt {
@@ -172,6 +166,7 @@ pub enum LogicalPlan {
     },
     Union {
         inputs: Vec<LogicalPlan>,
+        options: UnionOptions,
     },
 }
 
@@ -189,21 +184,6 @@ impl Default for LogicalPlan {
 }
 
 impl LogicalPlan {
-    #[cfg(feature = "dot_diagram")]
-    fn write_dot(
-        &self,
-        acc_str: &mut String,
-        prev_node: &str,
-        current_node: &str,
-        id: usize,
-    ) -> std::fmt::Result {
-        if id == 0 {
-            writeln!(acc_str, "graph  polars_query {{")
-        } else {
-            writeln!(acc_str, "\"{}\" -- \"{}\"", prev_node, current_node)
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);

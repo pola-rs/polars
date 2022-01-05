@@ -9,7 +9,6 @@ pub use crate::json::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
 
-#[cfg(feature = "private")]
 pub use crate::utils::*;
 
 #[cfg(test)]

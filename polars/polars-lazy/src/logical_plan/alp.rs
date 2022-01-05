@@ -1,7 +1,7 @@
+#[cfg(feature = "ipc")]
+use crate::logical_plan::LpScanOptions;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::ScanOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
@@ -26,7 +26,7 @@ pub enum ALogicalPlan {
     Slice {
         input: Node,
         offset: i64,
-        len: usize,
+        len: u32,
     },
     Selection {
         input: Node,
@@ -49,7 +49,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: ScanOptions,
+        options: LpScanOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
@@ -130,6 +130,7 @@ pub enum ALogicalPlan {
     },
     Union {
         inputs: Vec<Node>,
+        options: UnionOptions,
     },
 }
 
@@ -186,81 +187,6 @@ impl ALogicalPlan {
             },
         }
     }
-
-    /// Check ALogicalPlan equality. The nodes may differ.
-    ///
-    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
-    /// but would have different node values.
-    #[cfg(feature = "private")]
-    pub(crate) fn eq(
-        node_left: Node,
-        node_right: Node,
-        lp_arena: &Arena<ALogicalPlan>,
-        expr_arena: &Arena<AExpr>,
-    ) -> bool {
-        use crate::logical_plan::iterator::ArenaLpIter;
-        use std::fs::canonicalize;
-
-        let cmp = |(node_left, node_right)| {
-            use ALogicalPlan::*;
-            match (lp_arena.get(node_left), lp_arena.get(node_right)) {
-                #[cfg(feature = "csv-file")]
-                (CsvScan { path: path_a, .. }, CsvScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                #[cfg(feature = "parquet")]
-                (ParquetScan { path: path_a, .. }, ParquetScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                #[cfg(feature = "ipc")]
-                (IpcScan { path: path_a, .. }, IpcScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
-                    df_a.ptr_equal(df_b)
-                }
-                // the following don't affect the schema, but do affect the # of rows or the row order.
-                (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
-                    AExpr::eq(*l, *r, expr_arena)
-                }
-                (
-                    Sort {
-                        by_column: l,
-                        reverse: r_l,
-                        ..
-                    },
-                    Sort {
-                        by_column: r,
-                        reverse: r_r,
-                        ..
-                    },
-                ) => l == r && r_l == r_r,
-                (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
-                (
-                    Distinct {
-                        maintain_order: l1,
-                        subset: l2,
-                        ..
-                    },
-                    Distinct {
-                        maintain_order: r1,
-                        subset: r2,
-                        ..
-                    },
-                ) => l1 == r1 && l2 == r2,
-                (a, b) => {
-                    std::mem::discriminant(a) == std::mem::discriminant(b)
-                        && a.schema(lp_arena) == b.schema(lp_arena)
-                }
-            }
-        };
-
-        lp_arena
-            .iter(node_left)
-            .zip(lp_arena.iter(node_right))
-            .map(|(tpll, tplr)| (tpll.0, tplr.0))
-            .all(cmp)
-    }
 }
 
 impl ALogicalPlan {
@@ -269,7 +195,10 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
-            Union { .. } => Union { inputs },
+            Union { options, .. } => Union {
+                inputs,
+                options: *options,
+            },
             Melt {
                 id_vars,
                 value_vars,

@@ -71,6 +71,7 @@ class LazyFrame:
         infer_schema_length: Optional[int] = 100,
         n_rows: Optional[int] = None,
         low_memory: bool = False,
+        rechunk: bool = True,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -98,6 +99,7 @@ class LazyFrame:
             processed_null_values,
             infer_schema_length,
             with_column_names,
+            rechunk,
         )
         return self
 
@@ -119,14 +121,17 @@ class LazyFrame:
 
     @staticmethod
     def scan_ipc(
-        file: str, n_rows: Optional[int] = None, cache: bool = True
+        file: str,
+        n_rows: Optional[int] = None,
+        cache: bool = True,
+        rechunk: bool = True,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_ipc`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache)
+        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache, rechunk)
         return self
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -156,6 +161,7 @@ class LazyFrame:
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
+        slice_pushdown: bool = True,
     ) -> str:
         """
         A string representation of the optimized query plan.
@@ -167,6 +173,7 @@ class LazyFrame:
             projection_pushdown,
             simplify_expression,
             string_cache=False,
+            slice_pushdown=slice_pushdown,
         )
 
         return ldf.describe_optimized_plan()
@@ -282,6 +289,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = False,
         no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> pli.DataFrame:
         """
         Collect into a DataFrame.
@@ -308,6 +316,8 @@ class LazyFrame:
                 global cache when the query is finished.
         no_optimization
             Turn off optimizations.
+        slice_pushdown
+            Slice pushdown optimization.
 
         Returns
         -------
@@ -316,6 +326,7 @@ class LazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
+            slice_pushdown = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -323,6 +334,7 @@ class LazyFrame:
             projection_pushdown,
             simplify_expression,
             string_cache,
+            slice_pushdown,
         )
         return pli.wrap_df(ldf.collect())
 
@@ -335,6 +347,7 @@ class LazyFrame:
         simplify_expression: bool = True,
         string_cache: bool = True,
         no_optimization: bool = False,
+        slice_pushdown: bool = True,
     ) -> pli.DataFrame:
         """
         Fetch is like a collect operation, but it overwrites the number of rows read by every scan
@@ -361,6 +374,8 @@ class LazyFrame:
             This is needed if you want to join on categorical columns.
         no_optimization
             Turn off optimizations.
+        slice_pushdown
+            Slice pushdown opitmizaiton
 
         Returns
         -------
@@ -369,6 +384,7 @@ class LazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
+            slice_pushdown = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -376,6 +392,7 @@ class LazyFrame:
             projection_pushdown,
             simplify_expression,
             string_cache,
+            slice_pushdown,
         )
         return pli.wrap_df(ldf.fetch(n_rows))
 

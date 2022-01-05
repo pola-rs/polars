@@ -6,11 +6,10 @@ pub(crate) mod aggregate_pushdown;
 pub(crate) mod aggregate_scan_projections;
 pub(crate) mod drop_nulls;
 pub(crate) mod fast_projection;
-#[cfg(feature = "private")]
-pub(crate) mod join_pruning;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
+pub(crate) mod slice_pushdown;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
 

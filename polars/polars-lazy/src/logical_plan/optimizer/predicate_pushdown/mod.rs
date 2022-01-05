@@ -291,6 +291,7 @@ impl PredicatePushDown {
                 maintain_order,
                 dynamic_options,
             } => {
+                // start with a new empty predicate aggregator
                 self.pushdown_and_assign(input, optimizer::init_hashmap(), lp_arena, expr_arena)?;
 
                 // dont push down predicates. An aggregation needs all rows
@@ -476,24 +477,16 @@ impl PredicatePushDown {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 
-                let new_inputs = if inputs.len() == 1 {
-                    let node = inputs[0];
-                    let alp = lp_arena.take(node);
-                    let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, alp);
-                    vec![node]
-                } else {
-                    inputs
-                        .iter()
-                        .map(|&node| {
-                            let alp = lp_arena.take(node);
-                            let alp =
-                                self.push_down(alp, acc_predicates.clone(), lp_arena, expr_arena)?;
-                            lp_arena.replace(node, alp);
-                            Ok(node)
-                        })
-                        .collect::<Result<Vec<_>>>()?
-                };
+                let new_inputs = inputs
+                    .iter()
+                    .map(|&node| {
+                        let alp = lp_arena.take(node);
+                        let alp =
+                            self.push_down(alp, acc_predicates.clone(), lp_arena, expr_arena)?;
+                        lp_arena.replace(node, alp);
+                        Ok(node)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
 
                 Ok(lp.from_exprs_and_input(exprs, new_inputs))
             }

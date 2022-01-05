@@ -90,12 +90,13 @@ where
 
     fn finish(self, df: &DataFrame) -> Result<()> {
         let mut writer = self.writer_builder.from_writer(self.buffer);
-        let iter = df.iter_record_batches();
+        let iter = df.iter_chunks();
+        let names = df.get_column_names();
         if self.header {
-            write::write_header(&mut writer, &df.schema().to_arrow())?;
+            write::write_header(&mut writer, &names)?;
         }
         for batch in iter {
-            write::write_batch(&mut writer, &batch, &self.options)?;
+            write::write_chunk(&mut writer, &batch, &self.options)?;
         }
         Ok(())
     }

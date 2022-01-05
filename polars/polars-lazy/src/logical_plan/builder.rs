@@ -66,7 +66,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: ScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: LpScanOptions) -> Result<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -100,6 +100,7 @@ impl LogicalPlanBuilder {
         quote_char: Option<u8>,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
+        rechunk: bool,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -143,6 +144,7 @@ impl LogicalPlanBuilder {
                 comment_char,
                 quote_char,
                 null_values,
+                rechunk,
             },
             predicate: None,
             aggregate: vec![],
@@ -355,7 +357,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn slice(self, offset: i64, len: usize) -> Self {
+    pub fn slice(self, offset: i64, len: u32) -> Self {
         LogicalPlan::Slice {
             input: Box::new(self.0),
             offset,
