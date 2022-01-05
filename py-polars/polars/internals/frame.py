@@ -63,6 +63,7 @@ from polars.utils import (
     _process_null_values,
     handle_projection_columns,
     is_int_sequence,
+    is_str_sequence,
     range_to_slice,
 )
 
@@ -471,8 +472,6 @@ class DataFrame:
             if isinstance(file, StringIO):
                 file = file.getvalue().encode()
 
-        projection, columns = handle_projection_columns(columns)
-
         dtype_list: Optional[List[Tuple[str, Type[DataType]]]] = None
         dtype_slice: Optional[List[Type[DataType]]] = None
         if dtypes is not None:
@@ -486,6 +485,42 @@ class DataFrame:
                 raise ValueError("dtype arg should be list or dict")
 
         processed_null_values = _process_null_values(null_values)
+
+        if isinstance(file, str) and "*" in file:
+            dtypes_dict = None
+            if dtype_list is not None:
+                dtypes_dict = {name: dt for (name, dt) in dtype_list}
+            if dtype_slice is not None:
+                raise ValueError(
+                    "cannot use glob patterns and unamed dtypes as `dtypes` argument; Use dtypes: Mapping[str, Type[DataType]"
+                )
+            from polars import scan_csv
+
+            scan = scan_csv(
+                file,
+                has_header=has_header,
+                sep=sep,
+                comment_char=comment_char,
+                quote_char=quote_char,
+                skip_rows=skip_rows,
+                dtypes=dtypes_dict,
+                null_values=null_values,
+                ignore_errors=ignore_errors,
+                infer_schema_length=infer_schema_length,
+                n_rows=n_rows,
+                low_memory=low_memory,
+                rechunk=rechunk,
+            )
+            if columns is None:
+                return scan.collect(no_optimization=True)
+            elif is_str_sequence(columns, False):
+                return scan.select(columns).collect()
+            else:
+                raise ValueError(
+                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                )
+
+        projection, columns = handle_projection_columns(columns)
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -533,6 +568,20 @@ class DataFrame:
         parallel
             Read the parquet file in parallel. The single threaded reader consumes less memory.
         """
+        if isinstance(file, str) and "*" in file:
+            from polars import scan_parquet
+
+            scan = scan_parquet(file, n_rows=n_rows, rechunk=True, parallel=parallel)
+
+            if columns is None:
+                return scan.collect(no_optimization=True)
+            elif is_str_sequence(columns, False):
+                return scan.select(columns).collect()
+            else:
+                raise ValueError(
+                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                )
+
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows, parallel)
@@ -560,6 +609,20 @@ class DataFrame:
         -------
         DataFrame
         """
+
+        if isinstance(file, str) and "*" in file:
+            from polars import scan_ipc
+
+            scan = scan_ipc(file, n_rows=n_rows, rechunk=True)
+            if columns is None:
+                scan.collect()
+            elif is_str_sequence(columns, False):
+                scan.select(columns).collect()
+            else:
+                raise ValueError(
+                    "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
+                )
+
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)

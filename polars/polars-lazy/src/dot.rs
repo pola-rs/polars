@@ -1,11 +1,11 @@
 use crate::prelude::*;
 use crate::utils::expr_to_root_column_names;
 use polars_core::prelude::*;
+use polars_utils::arena::Arena;
 use std::fmt::Write;
 
 impl LazyFrame {
     /// Get a dot language representation of the LogicalPlan.
-    #[cfg(feature = "dot_diagram")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub fn to_dot(&self, optimized: bool) -> Result<String> {
         let mut s = String::with_capacity(512);
@@ -47,7 +47,6 @@ impl LogicalPlan {
     ///     Used to make sure that the dot boxes are distinct.
     ///     branch is an id per join branch
     ///     id is incremented by the depth traversal of the tree.
-    #[cfg(feature = "dot_diagram")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub(crate) fn dot(
         &self,

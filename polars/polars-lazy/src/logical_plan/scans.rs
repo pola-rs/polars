@@ -13,6 +13,7 @@ pub struct CsvParserOptions {
     pub(crate) ignore_errors: bool,
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
+    pub(crate) rechunk: bool,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]

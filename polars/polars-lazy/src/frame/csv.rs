@@ -1,3 +1,4 @@
+use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::NullValues;
@@ -21,6 +22,7 @@ pub struct LazyCsvReader<'a> {
     quote_char: Option<u8>,
     null_values: Option<NullValues>,
     infer_schema_length: Option<usize>,
+    rechunk: bool,
 }
 
 #[cfg(feature = "csv-file")]
@@ -42,6 +44,7 @@ impl<'a> LazyCsvReader<'a> {
             quote_char: Some(b'"'),
             null_values: None,
             infer_schema_length: Some(100),
+            rechunk: true,
         }
     }
 
@@ -140,6 +143,13 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Rechunk the memory to contiguous chunks when parsing is done.
+    #[must_use]
+    pub fn with_rechunk(mut self, toggle: bool) -> Self {
+        self.rechunk = toggle;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -165,7 +175,7 @@ impl<'a> LazyCsvReader<'a> {
         Ok(self.with_schema(Arc::new(schema)))
     }
 
-    pub fn finish(self) -> Result<LazyFrame> {
+    pub fn finish_impl(self) -> Result<LazyFrame> {
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
             self.path,
             self.delimiter,
@@ -181,10 +191,34 @@ impl<'a> LazyCsvReader<'a> {
             self.quote_char,
             self.null_values,
             self.infer_schema_length,
+            self.rechunk,
         )?
         .build()
         .into();
         lf.opt_state.agg_scan_projection = true;
         Ok(lf)
+    }
+
+    pub fn finish(self) -> Result<LazyFrame> {
+        if self.path.contains('*') {
+            let paths = glob::glob(&self.path)
+                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+            let lfs = paths
+                .map(|r| {
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                    let path_string = path.to_string_lossy().into_owned();
+                    let mut builder = self.clone();
+                    builder.path = path_string;
+                    // do no rechunk yet.
+                    builder.rechunk = false;
+                    builder.finish_impl()
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            concat(&lfs, self.rechunk)
+                .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
+        } else {
+            self.finish_impl()
+        }
     }
 }

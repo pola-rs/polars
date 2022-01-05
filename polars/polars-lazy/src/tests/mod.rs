@@ -23,24 +23,33 @@ fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
-fn init_parquet() {
+fn init_files() {
     for path in &[
         "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
         "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
     ] {
-        let out_path = path.replace(".csv", ".parquet");
+        let out_path1 = path.replace(".csv", ".parquet");
+        let out_path2 = path.replace(".csv", ".ipc");
 
-        if std::fs::metadata(&out_path).is_err() {
-            let df = CsvReader::from_path(path).unwrap().finish().unwrap();
-            let f = std::fs::File::create(&out_path).unwrap();
-            ParquetWriter::new(f).finish(&df).unwrap();
+        for out_path in [out_path1, out_path2] {
+            if std::fs::metadata(&out_path).is_err() {
+                let df = CsvReader::from_path(path).unwrap().finish().unwrap();
+
+                if out_path.ends_with("parquet") {
+                    let f = std::fs::File::create(&out_path).unwrap();
+                    ParquetWriter::new(f).finish(&df).unwrap();
+                } else {
+                    let f = std::fs::File::create(&out_path).unwrap();
+                    IpcWriter::new(f).finish(&df).unwrap();
+                }
+            }
         }
     }
 }
 
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
-    init_parquet();
+    init_files();
     let out_path =
         "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet".into();
 
