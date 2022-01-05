@@ -24,7 +24,7 @@ pub struct ParquetOptions {
 }
 
 #[derive(Clone, Debug)]
-pub struct ScanOptions {
+pub struct LpScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,

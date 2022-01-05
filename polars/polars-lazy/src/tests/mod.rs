@@ -39,11 +39,18 @@ fn init_parquet() {
 }
 
 #[cfg(feature = "parquet")]
-fn scan_foods_parquet(par: bool) -> LazyFrame {
+fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_parquet();
     let out_path =
         "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet".into();
-    LazyFrame::scan_parquet(out_path, None, false, par, true).unwrap()
+
+    let args = ScanArgsParquet {
+        n_rows: None,
+        cache: false,
+        parallel,
+        rechunk: true,
+    };
+    LazyFrame::scan_parquet(out_path, args).unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

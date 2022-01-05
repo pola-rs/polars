@@ -14,7 +14,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 # this depeadency gets activated
 compile = []
 default = ["compile"]
-parquet = ["polars-core/parquet", "polars-io/parquet", "glob"]
+parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal"]
@@ -79,7 +79,7 @@ test = [
 
 [dependencies]
 ahash = "0.7"
-glob = { version = "0.3", optional = true }
+glob = "0.3"
 rayon = "1.5"
 regex = { version = "1.4", optional = true }
 
