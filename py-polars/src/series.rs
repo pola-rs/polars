@@ -182,9 +182,9 @@ impl From<Series> for PySeries {
 
 #[pymethods]
 #[allow(
-clippy::wrong_self_convention,
-clippy::should_implement_trait,
-clippy::len_without_is_empty
+    clippy::wrong_self_convention,
+    clippy::should_implement_trait,
+    clippy::len_without_is_empty
 )]
 impl PySeries {
     #[staticmethod]
@@ -736,7 +736,7 @@ impl PySeries {
                 .expect("invalid quantile")
                 .get(0),
         )
-            .into_py(py)
+        .into_py(py)
     }
 
     /// Rechunk and return a pointer to the start of the Series.
@@ -1478,7 +1478,7 @@ impl PySeries {
         let unit = match tu {
             "ns" => TimeUnit::Nanoseconds,
             "ms" => TimeUnit::Milliseconds,
-            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}"))
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
         };
         if let DataType::Duration(_) = self.series.dtype() {
             let mut dt = self.series.duration().map_err(PyPolarsEr::from)?.clone();

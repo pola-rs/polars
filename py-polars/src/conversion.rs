@@ -181,14 +181,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let m_series = pli.getattr("series").unwrap();
                 let convert = m_series.getattr("_to_python_datetime").unwrap();
                 match tu {
-                    TimeUnit::Nanoseconds => convert
-                        .call1((v, "ns"))
-                        .unwrap()
-                        .into_py(py),
-                    TimeUnit::Milliseconds => convert
-                        .call1((v, "ms"))
-                        .unwrap()
-                        .into_py(py),
+                    TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
+                    TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
                 }
             }
             AnyValue::Time(v) => v.into_py(py),
