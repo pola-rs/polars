@@ -328,7 +328,7 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
     if let Ok(result) = coerce_time_units(lhs, rhs) {
-         return Ok(result);
+        return Ok(result);
     }
 
     let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
