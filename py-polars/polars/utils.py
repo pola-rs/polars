@@ -54,7 +54,7 @@ def in_nanoseconds_window(dt: datetime) -> bool:
 
 
 def timedelta_in_nanoseconds_window(td: timedelta) -> bool:
-    return abs(td.total_seconds()) < 2 ** 63 / 1e9
+    return in_nanoseconds_window(datetime(1970, 1, 1) + td)
 
 
 def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:

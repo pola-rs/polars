@@ -314,7 +314,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op)(other._s))
-        other = maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype, self.time_unit)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -341,7 +341,7 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-        other = maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype, self.time_unit)
         f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             return NotImplemented

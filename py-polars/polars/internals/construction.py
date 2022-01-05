@@ -1,5 +1,5 @@
 import warnings
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -10,6 +10,7 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
+    Duration,
     Float32,
     Time,
     py_type_to_arrow_type,
@@ -126,7 +127,7 @@ def sequence_to_pyseries(
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
 
-        if dtype in (Date, Datetime, Time, Categorical):
+        if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(str(dtype), True)
 
         return pyseries
@@ -135,11 +136,13 @@ def sequence_to_pyseries(
         value = _get_first_non_none(values)
         dtype_ = type(value) if value is not None else float
 
-        if dtype_ == date or dtype_ == datetime:
+        if dtype_ in {date, datetime, timedelta}:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
                 )
+            # let arrow infer dtype if not timedelta
+            # arrow uses microsecond durations by default, not supported yet.
             return arrow_to_pyseries(name, pa.array(values))
 
         elif dtype_ == list or dtype_ == tuple:
