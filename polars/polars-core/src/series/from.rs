@@ -90,6 +90,19 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             }
+            #[cfg(feature = "dtype-duration")]
+            ArrowDataType::Duration(tu) => {
+                let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
+                let s = Int64Chunked::new_from_chunks(name, chunks)
+                    .into_duration(tu.into())
+                    .into_series();
+                Ok(match tu {
+                    ArrowTimeUnit::Second => &s * MILLISECONDS,
+                    ArrowTimeUnit::Millisecond => s,
+                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Nanosecond => s,
+                })
+            }
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
