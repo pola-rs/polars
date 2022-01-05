@@ -77,7 +77,7 @@ macro_rules! format_array {
 fn format_object_array(
     limit: usize,
     f: &mut Formatter<'_>,
-    object: &dyn SeriesTrait,
+    object: &Series,
     name: &str,
     array_type: &str,
 ) -> fmt::Result {
@@ -265,9 +265,7 @@ impl Debug for Series {
                 "Series"
             ),
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
-                format_object_array(limit, f, self.as_ref(), self.name(), "Series")
-            }
+            DataType::Object(_) => format_object_array(limit, f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => format_array!(
                 limit,

@@ -794,6 +794,34 @@ impl Series {
         };
         Ok(out)
     }
+
+    #[cfg(feature = "private")]
+    // used for formatting
+    pub fn str_value(&self, index: usize) -> Cow<str> {
+        match self.0.get(index) {
+            AnyValue::Utf8(s) => Cow::Borrowed(s),
+            AnyValue::Null => Cow::Borrowed("null"),
+            #[cfg(feature = "dtype-categorical")]
+            AnyValue::Categorical(idx, rev) => Cow::Borrowed(rev.get(idx)),
+            av => Cow::Owned(format!("{}", av)),
+        }
+    }
+    /// Get the head of the Series.
+    pub fn head(&self, length: Option<usize>) -> Series {
+        match length {
+            Some(len) => self.slice(0, std::cmp::min(len, self.len())),
+            None => self.slice(0, std::cmp::min(10, self.len())),
+        }
+    }
+
+    /// Get the tail of the Series.
+    pub fn tail(&self, length: Option<usize>) -> Series {
+        let len = match length {
+            Some(len) => std::cmp::min(len, self.len()),
+            None => std::cmp::min(10, self.len()),
+        };
+        self.slice(-(len as i64), len)
+    }
 }
 
 impl Deref for Series {

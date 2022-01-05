@@ -147,13 +147,6 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
         self.0.argsort_multiple(by, reverse)
     }
-
-    fn str_value(&self, index: usize) -> Cow<str> {
-        match self.0.get(index) {
-            Some(s) => Cow::Borrowed(s),
-            None => Cow::Borrowed("null"),
-        }
-    }
 }
 
 impl SeriesTrait for SeriesWrap<Utf8Chunked> {
@@ -264,14 +257,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
 
     fn rechunk(&self) -> Series {
         ChunkOps::rechunk(&self.0).into_series()
-    }
-
-    fn head(&self, length: Option<usize>) -> Series {
-        self.0.head(length).into_series()
-    }
-
-    fn tail(&self, length: Option<usize>) -> Series {
-        self.0.tail(length).into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
