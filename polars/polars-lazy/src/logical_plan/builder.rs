@@ -66,7 +66,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: ScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: LpScanOptions) -> Result<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();

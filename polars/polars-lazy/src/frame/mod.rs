@@ -1,4 +1,18 @@
 //! Lazy variant of a [DataFrame](polars_core::frame::DataFrame).
+#[cfg(feature = "csv-file")]
+mod csv;
+#[cfg(feature = "ipc")]
+mod ipc;
+#[cfg(feature = "parquet")]
+mod parquet;
+
+#[cfg(feature = "csv-file")]
+pub use csv::*;
+#[cfg(feature = "ipc")]
+pub use ipc::*;
+#[cfg(feature = "parquet")]
+pub use parquet::*;
+
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
 use polars_core::frame::groupby::DynamicGroupOptions;
@@ -8,7 +22,6 @@ use polars_core::prelude::*;
 use polars_core::toggle_string_cache;
 use std::sync::Arc;
 
-use crate::functions::concat;
 use crate::logical_plan::optimizer::aggregate_pushdown::AggregatePushdown;
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use crate::logical_plan::optimizer::aggregate_scan_projections::AggScanProjection;
@@ -17,7 +30,6 @@ use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer
 use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
-use crate::logical_plan::ScanOptions;
 use crate::physical_plan::state::ExecutionState;
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
@@ -27,196 +39,6 @@ use crate::prelude::simplify_expr::SimplifyBooleanRule;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_io::csv::NullValues;
-#[cfg(feature = "csv-file")]
-use polars_io::csv_core::utils::get_reader_bytes;
-#[cfg(feature = "csv-file")]
-use polars_io::csv_core::utils::infer_file_schema;
-
-#[derive(Clone)]
-#[cfg(feature = "csv-file")]
-pub struct LazyCsvReader<'a> {
-    path: String,
-    delimiter: u8,
-    has_header: bool,
-    ignore_errors: bool,
-    skip_rows: usize,
-    n_rows: Option<usize>,
-    cache: bool,
-    schema: Option<SchemaRef>,
-    schema_overwrite: Option<&'a Schema>,
-    low_memory: bool,
-    comment_char: Option<u8>,
-    quote_char: Option<u8>,
-    null_values: Option<NullValues>,
-    infer_schema_length: Option<usize>,
-}
-
-#[cfg(feature = "csv-file")]
-#[must_use]
-impl<'a> LazyCsvReader<'a> {
-    pub fn new(path: String) -> Self {
-        LazyCsvReader {
-            path,
-            delimiter: b',',
-            has_header: true,
-            ignore_errors: false,
-            skip_rows: 0,
-            n_rows: None,
-            cache: true,
-            schema: None,
-            schema_overwrite: None,
-            low_memory: false,
-            comment_char: None,
-            quote_char: Some(b'"'),
-            null_values: None,
-            infer_schema_length: Some(100),
-        }
-    }
-
-    /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
-    /// be guaranteed.
-    #[must_use]
-    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.n_rows = num_rows;
-        self
-    }
-
-    /// Set the number of rows to use when inferring the csv schema.
-    /// the default is 100 rows.
-    /// Setting to `None` will do a full table scan, very slow.
-    #[must_use]
-    pub fn with_infer_schema_length(mut self, num_rows: Option<usize>) -> Self {
-        self.infer_schema_length = num_rows;
-        self
-    }
-
-    /// Continue with next batch when a ParserError is encountered.
-    #[must_use]
-    pub fn with_ignore_parser_errors(mut self, ignore: bool) -> Self {
-        self.ignore_errors = ignore;
-        self
-    }
-
-    /// Set the CSV file's schema
-    #[must_use]
-    pub fn with_schema(mut self, schema: SchemaRef) -> Self {
-        self.schema = Some(schema);
-        self
-    }
-
-    /// Skip the first `n` rows during parsing.
-    #[must_use]
-    pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
-        self.skip_rows = skip_rows;
-        self
-    }
-
-    /// Overwrite the schema with the dtypes in this given Schema. The given schema may be a subset
-    /// of the total schema.
-    #[must_use]
-    pub fn with_dtype_overwrite(mut self, schema: Option<&'a Schema>) -> Self {
-        self.schema_overwrite = schema;
-        self
-    }
-
-    /// Set whether the CSV file has headers
-    #[must_use]
-    pub fn has_header(mut self, has_header: bool) -> Self {
-        self.has_header = has_header;
-        self
-    }
-
-    /// Set the CSV file's column delimiter as a byte character
-    #[must_use]
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.delimiter = delimiter;
-        self
-    }
-
-    /// Set the comment character. Lines starting with this character will be ignored.
-    #[must_use]
-    pub fn with_comment_char(mut self, comment_char: Option<u8>) -> Self {
-        self.comment_char = comment_char;
-        self
-    }
-
-    /// Set the `char` used as quote char. The default is `b'"'`. If set to `[None]` quoting is disabled.
-    #[must_use]
-    pub fn with_quote_char(mut self, quote: Option<u8>) -> Self {
-        self.quote_char = quote;
-        self
-    }
-
-    /// Set values that will be interpreted as missing/ null.
-    #[must_use]
-    pub fn with_null_values(mut self, null_values: Option<NullValues>) -> Self {
-        self.null_values = null_values;
-        self
-    }
-
-    /// Cache the DataFrame after reading.
-    #[must_use]
-    pub fn with_cache(mut self, cache: bool) -> Self {
-        self.cache = cache;
-        self
-    }
-
-    /// Reduce memory usage in expensive of performance
-    #[must_use]
-    pub fn low_memory(mut self, toggle: bool) -> Self {
-        self.low_memory = toggle;
-        self
-    }
-
-    /// Modify a schema before we run the lazy scanning.
-    ///
-    /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(mut self, f: F) -> Result<Self>
-    where
-        F: Fn(Schema) -> Result<Schema>,
-    {
-        let mut file = std::fs::File::open(&self.path)?;
-        let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
-
-        let (schema, _) = infer_file_schema(
-            &reader_bytes,
-            self.delimiter,
-            self.infer_schema_length,
-            self.has_header,
-            self.schema_overwrite,
-            &mut self.skip_rows,
-            self.comment_char,
-            self.quote_char,
-            None,
-        )?;
-        let schema = f(schema)?;
-        Ok(self.with_schema(Arc::new(schema)))
-    }
-
-    pub fn finish(self) -> Result<LazyFrame> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_csv(
-            self.path,
-            self.delimiter,
-            self.has_header,
-            self.ignore_errors,
-            self.skip_rows,
-            self.n_rows,
-            self.cache,
-            self.schema,
-            self.schema_overwrite,
-            self.low_memory,
-            self.comment_char,
-            self.quote_char,
-            self.null_values,
-            self.infer_schema_length,
-        )?
-        .build()
-        .into();
-        lf.opt_state.agg_scan_projection = true;
-        Ok(lf)
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct JoinOptions {
@@ -310,84 +132,8 @@ impl LazyFrame {
         let logical_plan = self.clone().get_plan_builder().build();
         logical_plan.schema().clone()
     }
-    #[cfg(feature = "parquet")]
-    fn scan_parquet_impl(
-        path: String,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: bool,
-    ) -> Result<Self> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel)?
-            .build()
-            .into();
-        lf.opt_state.agg_scan_projection = true;
-        Ok(lf)
-    }
 
-    /// Create a LazyFrame directly from a parquet scan.
-    #[cfg(feature = "parquet")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
-    pub fn scan_parquet(
-        path: String,
-        n_rows: Option<usize>,
-        cache: bool,
-        parallel: bool,
-        rechunk: bool,
-    ) -> Result<Self> {
-        if path.contains('*') {
-            let paths = glob::glob(&path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
-            let lfs = paths
-                .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
-                    let path_string = path.to_string_lossy().into_owned();
-                    Self::scan_parquet_impl(path_string, n_rows, cache, false)
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            concat(&lfs, rechunk)
-                .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-        } else {
-            Self::scan_parquet_impl(path, n_rows, cache, parallel)
-        }
-    }
-
-    /// Create a LazyFrame directly from a ipc scan.
-    #[cfg(feature = "ipc")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc(path: String, n_rows: Option<usize>, cache: bool) -> Result<Self> {
-        let options = ScanOptions {
-            n_rows,
-            cache,
-            with_columns: None,
-        };
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
-        lf.opt_state.agg_scan_projection = true;
-        Ok(lf)
-    }
-
-    /// Get a dot language representation of the LogicalPlan.
-    #[cfg(feature = "dot_diagram")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
-    pub fn to_dot(&self, optimized: bool) -> Result<String> {
-        let mut s = String::with_capacity(512);
-
-        let mut logical_plan = self.clone().get_plan_builder().build();
-        if optimized {
-            // initialize arena's
-            let mut expr_arena = Arena::with_capacity(64);
-            let mut lp_arena = Arena::with_capacity(32);
-
-            let lp_top = self.clone().optimize(&mut lp_arena, &mut expr_arena)?;
-            logical_plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
-        }
-
-        logical_plan.dot(&mut s, (0, 0), "").expect("io error");
-        s.push_str("\n}");
-        Ok(s)
-    }
-
-    fn get_plan_builder(self) -> LogicalPlanBuilder {
+    pub(crate) fn get_plan_builder(self) -> LogicalPlanBuilder {
         LogicalPlanBuilder::from(self.logical_plan)
     }
 

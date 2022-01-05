@@ -1,10 +1,6 @@
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
-use std::{
-    cell::Cell,
-    fmt::{Debug, Write},
-    sync::Arc,
-};
+use std::{cell::Cell, fmt::Debug, sync::Arc};
 
 use polars_core::prelude::*;
 
@@ -80,7 +76,7 @@ pub enum LogicalPlan {
     IpcScan {
         path: PathBuf,
         schema: SchemaRef,
-        options: ScanOptions,
+        options: LpScanOptions,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
     },
@@ -189,21 +185,6 @@ impl Default for LogicalPlan {
 }
 
 impl LogicalPlan {
-    #[cfg(feature = "dot_diagram")]
-    fn write_dot(
-        &self,
-        acc_str: &mut String,
-        prev_node: &str,
-        current_node: &str,
-        id: usize,
-    ) -> std::fmt::Result {
-        if id == 0 {
-            writeln!(acc_str, "graph  polars_query {{")
-        } else {
-            writeln!(acc_str, "\"{}\" -- \"{}\"", prev_node, current_node)
-        }
-    }
-
     #[cfg(test)]
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);

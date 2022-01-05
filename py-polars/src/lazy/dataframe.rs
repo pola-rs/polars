@@ -2,7 +2,7 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::NullValues;
+use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -172,14 +172,25 @@ impl PyLazyFrame {
         parallel: bool,
         rechunk: bool,
     ) -> PyResult<Self> {
-        let lf = LazyFrame::scan_parquet(path, n_rows, cache, parallel, rechunk)
+        let args = ScanArgsParquet {
+            n_rows,
+            cache,
+            parallel,
+            rechunk
+        };
+        let lf = LazyFrame::scan_parquet(path, args)
             .map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
     #[staticmethod]
     pub fn new_from_ipc(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
-        let lf = LazyFrame::scan_ipc(path, n_rows, cache).map_err(PyPolarsEr::from)?;
+        let args = ScanArgsIpc {
+            n_rows,
+            cache,
+            rechunk: true
+        };
+        let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 

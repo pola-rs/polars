@@ -1,9 +1,9 @@
 use super::*;
 use crate::logical_plan::CsvParserOptions;
+#[cfg(feature = "ipc")]
+use crate::logical_plan::LpScanOptions;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::ScanOptions;
 use crate::utils::try_path_to_str;
 use polars_io::prelude::*;
 use polars_io::{csv::CsvEncoding, ScanAggregation};
@@ -75,7 +75,7 @@ pub struct IpcExec {
     pub(crate) schema: SchemaRef,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) aggregate: Vec<ScanAggregation>,
-    pub(crate) options: ScanOptions,
+    pub(crate) options: LpScanOptions,
 }
 
 #[cfg(feature = "ipc")]

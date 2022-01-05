@@ -31,10 +31,19 @@ fn test_parquet_exec() -> Result<()> {
 }
 
 #[test]
-#[cfg(target_os = "unix")]
+#[cfg(not(target_os = "windows"))]
 fn test_parquet_globbing() -> Result<()> {
     let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
-    let df = LazyFrame::scan_parquet(glob.into(), None, false, true, false)?.collect()?;
+    let df = LazyFrame::scan_parquet(
+        glob.into(),
+        ScanArgsParquet {
+            n_rows: None,
+            cache: true,
+            parallel: true,
+            rechunk: false,
+        },
+    )?
+    .collect()?;
     assert_eq!(df.shape(), (54, 4));
     let cal = df.column("calories")?;
     assert_eq!(cal.get(0), AnyValue::Int64(45));

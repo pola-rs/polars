@@ -188,6 +188,8 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #[cfg(all(feature = "datafusion", feature = "compile"))]
 mod datafusion;
+#[cfg(feature = "dot_diagram")]
+mod dot;
 #[cfg(feature = "compile")]
 pub mod dsl;
 #[cfg(feature = "compile")]
