@@ -558,7 +558,7 @@ def lit(
         return (
             lit(_timedelta_to_pl_timedelta(value, tu))
             .cast(Duration)
-            .dt.and_time_unit(tu)
+            .dt.and_time_unit(tu, dtype=Duration)
         )
 
     if isinstance(value, date):
