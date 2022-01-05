@@ -9,6 +9,7 @@ pub(crate) mod fast_projection;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
+pub(crate) mod slice_pushdown;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
 

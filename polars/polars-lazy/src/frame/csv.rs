@@ -203,20 +203,29 @@ impl<'a> LazyCsvReader<'a> {
         if self.path.contains('*') {
             let paths = glob::glob(&self.path)
                 .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let path_string = path.to_string_lossy().into_owned();
                     let mut builder = self.clone();
                     builder.path = path_string;
+                    builder.skip_rows = 0;
+                    builder.n_rows = None;
                     // do no rechunk yet.
                     builder.rechunk = false;
                     builder.finish_impl()
                 })
                 .collect::<Result<Vec<_>>>()?;
-
             concat(&lfs, self.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
+                .map(|lf| {
+                    if self.skip_rows != 0 || self.n_rows.is_some() {
+                        lf.slice(self.skip_rows as i64, self.n_rows.unwrap() as u32)
+                    } else {
+                        lf
+                    }
+                })
         } else {
             self.finish_impl()
         }

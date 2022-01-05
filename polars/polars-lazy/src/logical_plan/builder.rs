@@ -357,7 +357,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn slice(self, offset: i64, len: usize) -> Self {
+    pub fn slice(self, offset: i64, len: u32) -> Self {
         LogicalPlan::Slice {
             input: Box::new(self.0),
             offset,
