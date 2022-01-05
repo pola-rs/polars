@@ -512,7 +512,7 @@ class DataFrame:
                 rechunk=rechunk,
             )
             if columns is None:
-                return scan.collect(no_optimization=True)
+                return scan.collect()
             elif is_str_sequence(columns, False):
                 return scan.select(columns).collect()
             else:
@@ -574,7 +574,7 @@ class DataFrame:
             scan = scan_parquet(file, n_rows=n_rows, rechunk=True, parallel=parallel)
 
             if columns is None:
-                return scan.collect(no_optimization=True)
+                return scan.collect()
             elif is_str_sequence(columns, False):
                 return scan.select(columns).collect()
             else:
