@@ -104,6 +104,7 @@ impl PyLazyFrame {
         null_values: Option<Wrap<NullValues>>,
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<PyObject>,
+        rechunk: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -133,6 +134,7 @@ impl PyLazyFrame {
             .low_memory(low_memory)
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
+            .with_rechunk(rechunk)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
@@ -176,19 +178,23 @@ impl PyLazyFrame {
             n_rows,
             cache,
             parallel,
-            rechunk
+            rechunk,
         };
-        let lf = LazyFrame::scan_parquet(path, args)
-            .map_err(PyPolarsEr::from)?;
+        let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
     }
 
     #[staticmethod]
-    pub fn new_from_ipc(path: String, n_rows: Option<usize>, cache: bool) -> PyResult<Self> {
+    pub fn new_from_ipc(
+        path: String,
+        n_rows: Option<usize>,
+        cache: bool,
+        rechunk: bool,
+    ) -> PyResult<Self> {
         let args = ScanArgsIpc {
             n_rows,
             cache,
-            rechunk: true
+            rechunk,
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())

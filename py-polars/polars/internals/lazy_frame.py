@@ -71,6 +71,7 @@ class LazyFrame:
         infer_schema_length: Optional[int] = 100,
         n_rows: Optional[int] = None,
         low_memory: bool = False,
+        rechunk: bool = True,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -98,6 +99,7 @@ class LazyFrame:
             processed_null_values,
             infer_schema_length,
             with_column_names,
+            rechunk,
         )
         return self
 
@@ -119,14 +121,17 @@ class LazyFrame:
 
     @staticmethod
     def scan_ipc(
-        file: str, n_rows: Optional[int] = None, cache: bool = True
+        file: str,
+        n_rows: Optional[int] = None,
+        cache: bool = True,
+        rechunk: bool = True,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_ipc`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache)
+        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache, rechunk)
         return self
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

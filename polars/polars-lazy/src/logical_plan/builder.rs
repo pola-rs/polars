@@ -100,6 +100,7 @@ impl LogicalPlanBuilder {
         quote_char: Option<u8>,
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
+        rechunk: bool,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -143,6 +144,7 @@ impl LogicalPlanBuilder {
                 comment_char,
                 quote_char,
                 null_values,
+                rechunk,
             },
             predicate: None,
             aggregate: vec![],

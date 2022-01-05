@@ -515,3 +515,40 @@ def test_csv_date_handling() -> None:
     dtypes = {"date": pl.Date}
     out = pl.read_csv(csv.encode(), dtypes=dtypes)
     assert out.frame_equal(expected, null_equal=True)
+
+
+def test_csv_globbing() -> None:
+    path = os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "examples",
+            "aggregate_multiple_files_in_chunks",
+            "datasets",
+            "*.csv",
+        )
+    )
+    df = pl.read_csv(path)
+    assert df.shape == (135, 4)
+
+    with pytest.raises(ValueError):
+        _ = pl.read_csv(path, columns=[0, 1])
+
+    df = pl.read_csv(path, columns=["category", "sugars_g"])
+    assert df.shape == (135, 2)
+    assert df.row(-1) == ("seafood", 1)
+    assert df.row(0) == ("vegetables", 2)
+
+    with pytest.raises(ValueError):
+        _ = pl.read_csv(path, dtypes=[pl.Utf8, pl.Int64, pl.Int64, pl.Int64])
+
+    dtypes = {
+        "category": pl.Utf8,
+        "calories": pl.Int32,
+        "fats_g": pl.Float32,
+        "sugars_g": pl.Int32,
+    }
+
+    df = pl.read_csv(path, dtypes=dtypes)
+    assert df.dtypes == list(dtypes.values())

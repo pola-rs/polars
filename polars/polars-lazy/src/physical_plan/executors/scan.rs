@@ -233,6 +233,7 @@ impl Executor for CsvExec {
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
             .with_quote_char(self.options.quote_char)
+            .with_rechunk(self.options.rechunk)
             .finish()?;
 
         if self.options.cache {
