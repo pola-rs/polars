@@ -395,7 +395,7 @@ pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let offset: i64 = params.get_as("offset")?;
-    let len: usize = params.get_as("len")?;
+    let len: u32 = params.get_as("len")?;
 
     ldf.slice(offset, len).try_into_js(&cx)
 }
@@ -413,7 +413,7 @@ pub fn melt(cx: CallContext) -> JsResult<JsExternal> {
 pub fn tail(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
-    let length: usize = params.get_as("length")?;
+    let length: u32 = params.get_as("length")?;
 
     ldf.tail(length).try_into_js(&cx)
 }

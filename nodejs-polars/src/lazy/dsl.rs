@@ -804,17 +804,7 @@ impl_rolling_method!(rolling_mean);
 impl_rolling_method!(rolling_std);
 impl_rolling_method!(rolling_var);
 impl_rolling_method!(rolling_sum);
-
-#[js_function(1)]
-pub fn rolling_median(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let window_size = params.get_as::<usize>("windowSize")?;
-
-    expr.clone()
-        .rolling_apply_float(window_size, |ca| ChunkAgg::median(ca))
-        .try_into_js(&cx)
-}
+impl_rolling_method!(rolling_median);
 
 #[js_function(1)]
 pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {

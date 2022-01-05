@@ -1401,12 +1401,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     rollingSum: rolling("rolling_sum"),
     rollingStd: rolling("rolling_std"),
     rollingVar: rolling("rolling_var"),
-    rollingMedian(windowSize) {
-      return this
-        .toFrame()
-        .select(col(this.name).rollingMedian(windowSize))
-        .getColumn(this.name);
-    },
+    rollingMedian: rolling("rollingMedian"),
     rollingQuantile(windowSize, quantile?) {
       return this
         .toFrame()

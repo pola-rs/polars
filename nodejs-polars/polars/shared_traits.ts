@@ -131,7 +131,6 @@ export interface Rolling<T> {
    * @param minPeriods The number of values in the window that should be non-null before computing a result.
    * If undefined, it will be set equal to window size.
    * @param center - Set the labels at the center of the window
-   * @see {@link rollingMean}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMax(options: RollingOptions): T
   rollingMax(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
@@ -149,7 +148,6 @@ export interface Rolling<T> {
    * @param minPeriods The number of values in the window that should be non-null before computing a result.
    * If undefined, it will be set equal to window size.
    * @param center - Set the labels at the center of the window
-   * @see {@link rollingMax}, {@link rollingMin}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMean(options: RollingOptions): T
   rollingMean(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
@@ -167,7 +165,6 @@ export interface Rolling<T> {
    * @param minPeriods The number of values in the window that should be non-null before computing a result.
    * If undefined, it will be set equal to window size.
    * @param center - Set the labels at the center of the window
-   * @see {@link rollingMax}, {@link rollingMean}, {@link rollingSum}, {@link rollingVar}
    */
   rollingMin(options: RollingOptions): T
   rollingMin(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
@@ -218,13 +215,12 @@ export interface Rolling<T> {
    * @param minPeriods The number of values in the window that should be non-null before computing a result.
    * If undefined, it will be set equal to window size.
    * @param center - Set the labels at the center of the window
-   * @see {@link rollingMax}, {@link rollingMin}, {@link rollingMean}, {@link rollingSum}
    */
   rollingVar(options: RollingOptions): T
   rollingVar(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
   /** Compute a rolling median */
-  rollingMedian(windowSize: number): T
-  rollingMedian({windowSize}: {windowSize: number}): T
+  rollingMedian(options: RollingOptions): T
+  rollingMedian(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
   /**
    * Compute a rolling quantile
    * @param windowSize Size of the rolling window

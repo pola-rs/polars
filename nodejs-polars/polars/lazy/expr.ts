@@ -689,7 +689,7 @@ const _Expr = (_expr: any): Expr => {
     rollingSum: rolling("rollingSum"),
     rollingStd: rolling("rollingStd"),
     rollingVar: rolling("rollingVar"),
-    rollingMedian: wrapUnary("rollingMedian", "windowSize"),
+    rollingMedian: rolling("rollingMedian"),
     rollingQuantile: wrapBinary("rollingQuantile", "windowSize", "quantile"),
     rollingSkew(val, bias=true)  {
       if(typeof val === "number") {
