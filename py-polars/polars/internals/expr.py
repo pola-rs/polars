@@ -341,15 +341,16 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
-        elif not isinstance(columns, list) and issubclass(
-            columns, DataType
-        ):  # type: ignore
+        elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
             columns = [columns]  # type: ignore
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
         if not all(
-            [isinstance(a, str) or issubclass(a, DataType) for a in columns]
-        ):  # type: ignore
+            [
+                isinstance(a, str) or issubclass(a, DataType)
+                for a in columns  # type: ignore
+            ]
+        ):
             raise ValueError("input should be all string or all DataType")
 
         if isinstance(columns[0], str):  # type: ignore
