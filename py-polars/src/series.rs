@@ -1685,6 +1685,8 @@ impl_arithmetic!(sub_i8, i8, -);
 impl_arithmetic!(sub_i16, i16, -);
 impl_arithmetic!(sub_i32, i32, -);
 impl_arithmetic!(sub_i64, i64, -);
+impl_arithmetic!(sub_datetime, i64, -);
+impl_arithmetic!(sub_duration, i64, -);
 impl_arithmetic!(sub_f32, f32, -);
 impl_arithmetic!(sub_f64, f64, -);
 impl_arithmetic!(div_u8, u8, /);

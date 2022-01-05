@@ -498,13 +498,16 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+
 const SIZES_NS: [i64; 4] = [
-    86_400_000_000_000,
-    3_600_000_000_000,
-    60_000_000_000,
-    1_000_000_000,
+86_400_000_000_000,
+3_600_000_000_000,
+60_000_000_000,
+1_000_000_000,
 ];
-const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
+const NAMES: [ & str; 4] = ["day", "hour", "minute", "second"];
+const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
+
 
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
@@ -521,8 +524,6 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
-const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
-
 fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
         return write!(f, "0 ms");
@@ -534,7 +535,6 @@ fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     Ok(())
 }
 
-// Show maximum whole parts of each unit before moving on to smaller units.
 fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
     for i in 0..4 {
         let whole_num = if i == 0 {

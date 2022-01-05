@@ -731,9 +731,9 @@ impl Series {
             _ => unimplemented!(),
         }
     }
+
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
         match self.dtype() {
-            #[cfg(feature = "dtype-duration")]
             DataType::Int64 => self
                 .i64()
                 .unwrap()
