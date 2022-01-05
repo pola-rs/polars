@@ -291,6 +291,7 @@ impl PredicatePushDown {
                 maintain_order,
                 dynamic_options,
             } => {
+                // start with a new empty predicate aggregator
                 self.pushdown_and_assign(input, optimizer::init_hashmap(), lp_arena, expr_arena)?;
 
                 // dont push down predicates. An aggregation needs all rows

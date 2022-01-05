@@ -98,12 +98,12 @@ impl DefaultPlanner {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
-            Union { inputs } => {
+            Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()
                     .map(|node| self.create_physical_plan(node, lp_arena, expr_arena))
                     .collect::<Result<Vec<_>>>()?;
-                Ok(Box::new(UnionExec { inputs }))
+                Ok(Box::new(UnionExec { inputs, options }))
             }
             Melt {
                 input,

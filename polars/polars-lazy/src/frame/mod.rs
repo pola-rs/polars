@@ -36,6 +36,7 @@ use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::drop_nulls::ReplaceDropNulls;
 use crate::prelude::fast_projection::FastProjection;
 use crate::prelude::simplify_expr::SimplifyBooleanRule;
+use crate::prelude::slice_pushdown::SlicePushDown;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -104,7 +105,7 @@ pub struct OptState {
     pub agg_scan_projection: bool,
     pub aggregate_pushdown: bool,
     pub global_string_cache: bool,
-    pub join_pruning: bool,
+    pub slice_pushdown: bool,
 }
 
 impl Default for OptState {
@@ -115,7 +116,7 @@ impl Default for OptState {
             type_coercion: true,
             simplify_expr: true,
             global_string_cache: true,
-            join_pruning: true,
+            slice_pushdown: true,
             // will be toggled by a scan operation such as csv scan or parquet scan
             agg_scan_projection: false,
             aggregate_pushdown: false,
@@ -192,9 +193,9 @@ impl LazyFrame {
         self
     }
 
-    /// Toggle join pruning optimization
-    pub fn with_join_pruning(mut self, toggle: bool) -> Self {
-        self.opt_state.join_pruning = toggle;
+    /// Toggle slice pushdown optimization
+    pub fn with_slice_pushdown(mut self, toggle: bool) -> Self {
+        self.opt_state.slice_pushdown = toggle;
         self
     }
 
@@ -399,6 +400,7 @@ impl LazyFrame {
         let projection_pushdown = self.opt_state.projection_pushdown;
         let type_coercion = self.opt_state.type_coercion;
         let simplify_expr = self.opt_state.simplify_expr;
+        let slice_pushdown = self.opt_state.slice_pushdown;
 
         #[cfg(any(feature = "parquet", feature = "csv-file"))]
         let agg_scan_projection = self.opt_state.agg_scan_projection;
@@ -409,9 +411,6 @@ impl LazyFrame {
         // gradually fill the rules passed to the optimizer
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
 
-        let predicate_pushdown_opt = PredicatePushDown::default();
-        let projection_pushdown_opt = ProjectionPushDown {};
-
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
@@ -419,6 +418,7 @@ impl LazyFrame {
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena);
 
         if projection_pushdown {
+            let projection_pushdown_opt = ProjectionPushDown {};
             let alp = lp_arena.take(lp_top);
             let alp = projection_pushdown_opt
                 .optimize(alp, lp_arena, expr_arena)
@@ -427,10 +427,21 @@ impl LazyFrame {
         }
 
         if predicate_pushdown {
+            let predicate_pushdown_opt = PredicatePushDown::default();
             let alp = lp_arena.take(lp_top);
             let alp = predicate_pushdown_opt
                 .optimize(alp, lp_arena, expr_arena)
                 .expect("predicate pushdown failed");
+            lp_arena.replace(lp_top, alp);
+        }
+
+        if slice_pushdown {
+            let slice_pushdown_opt = SlicePushDown {};
+            let alp = lp_arena.take(lp_top);
+            let alp = slice_pushdown_opt
+                .optimize(alp, lp_arena, expr_arena)
+                .expect("slice pushdown failed");
+
             lp_arena.replace(lp_top, alp);
         }
 
@@ -852,7 +863,7 @@ impl LazyFrame {
     }
 
     /// Slice the DataFrame.
-    pub fn slice(self, offset: i64, len: usize) -> LazyFrame {
+    pub fn slice(self, offset: i64, len: u32) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
         Self::from_logical_plan(lp, opt_state)
@@ -869,7 +880,7 @@ impl LazyFrame {
     }
 
     /// Get the n last rows
-    pub fn tail(self, n: usize) -> LazyFrame {
+    pub fn tail(self, n: u32) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
@@ -886,7 +897,7 @@ impl LazyFrame {
 
     /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
     /// use [fetch](LazyFrame::fetch).
-    pub fn limit(self, n: usize) -> LazyFrame {
+    pub fn limit(self, n: u32) -> LazyFrame {
         self.slice(0, n)
     }
 

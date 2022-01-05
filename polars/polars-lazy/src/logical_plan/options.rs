@@ -30,3 +30,10 @@ pub struct LpScanOptions {
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,
 }
+
+#[derive(Clone, Debug, Copy, Default)]
+pub struct UnionOptions {
+    pub(crate) slice: bool,
+    pub(crate) slice_offset: i64,
+    pub(crate) slice_len: u32,
+}

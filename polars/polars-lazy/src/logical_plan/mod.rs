@@ -17,15 +17,15 @@ mod format;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
+mod options;
 mod projection;
-mod scans;
 
 use polars_core::frame::groupby::DynamicGroupOptions;
 
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
-pub(crate) use scans::*;
+pub(crate) use options::*;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -47,9 +47,7 @@ pub enum LogicalPlan {
         predicate: Expr,
     },
     /// Cache the input at this point in the LP
-    Cache {
-        input: Box<LogicalPlan>,
-    },
+    Cache { input: Box<LogicalPlan> },
     /// Scan a CSV file
     #[cfg(feature = "csv-file")]
     CsvScan {
@@ -147,7 +145,7 @@ pub enum LogicalPlan {
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
-        len: usize,
+        len: u32,
     },
     /// A Melt operation
     Melt {
@@ -168,6 +166,7 @@ pub enum LogicalPlan {
     },
     Union {
         inputs: Vec<LogicalPlan>,
+        options: UnionOptions,
     },
 }
 

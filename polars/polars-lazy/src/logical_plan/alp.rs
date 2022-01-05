@@ -26,7 +26,7 @@ pub enum ALogicalPlan {
     Slice {
         input: Node,
         offset: i64,
-        len: usize,
+        len: u32,
     },
     Selection {
         input: Node,
@@ -130,6 +130,7 @@ pub enum ALogicalPlan {
     },
     Union {
         inputs: Vec<Node>,
+        options: UnionOptions,
     },
 }
 
@@ -194,7 +195,10 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
-            Union { .. } => Union { inputs },
+            Union { options, .. } => Union {
+                inputs,
+                options: *options,
+            },
             Melt {
                 id_vars,
                 value_vars,

@@ -45,12 +45,19 @@ impl LazyFrame {
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
                     let path_string = path.to_string_lossy().into_owned();
-                    Self::scan_parquet_impl(path_string, args.n_rows, args.cache, false)
+                    Self::scan_parquet_impl(path_string, None, args.cache, false)
                 })
                 .collect::<Result<Vec<_>>>()?;
 
             concat(&lfs, args.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
+                .map(|lf| {
+                    if let Some(n_rows) = args.n_rows {
+                        lf.slice(0, n_rows as u32)
+                    } else {
+                        lf
+                    }
+                })
         } else {
             Self::scan_parquet_impl(path, args.n_rows, args.cache, args.parallel)
         }

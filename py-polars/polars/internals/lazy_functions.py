@@ -1136,6 +1136,7 @@ def collect_all(
     simplify_expression: bool = True,
     string_cache: bool = False,
     no_optimization: bool = False,
+    slice_pushdown: bool = False,
 ) -> "List[pli.DataFrame]":
     """
     Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
@@ -1160,6 +1161,8 @@ def collect_all(
             global cache when the query is finished.
     no_optimization
         Turn off optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
 
     Returns
     -------
@@ -1168,6 +1171,7 @@ def collect_all(
     if no_optimization:
         predicate_pushdown = False
         projection_pushdown = False
+        slice_pushdown = False
 
     prepared = []
 
@@ -1178,6 +1182,7 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             string_cache,
+            slice_pushdown,
         )
         prepared.append(ldf)
 

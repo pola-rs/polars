@@ -223,6 +223,7 @@ impl PyLazyFrame {
         projection_pushdown: bool,
         simplify_expr: bool,
         string_cache: bool,
+        slice_pushdown: bool,
     ) -> PyLazyFrame {
         let ldf = self.ldf.clone();
         let ldf = ldf
@@ -230,6 +231,7 @@ impl PyLazyFrame {
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expr)
             .with_string_cache(string_cache)
+            .with_slice_pushdown(slice_pushdown)
             .with_projection_pushdown(projection_pushdown);
         ldf.into()
     }
@@ -475,12 +477,12 @@ impl PyLazyFrame {
             .into()
     }
 
-    pub fn slice(&self, offset: i64, len: usize) -> Self {
+    pub fn slice(&self, offset: i64, len: u32) -> Self {
         let ldf = self.ldf.clone();
         ldf.slice(offset, len).into()
     }
 
-    pub fn tail(&self, n: usize) -> Self {
+    pub fn tail(&self, n: u32) -> Self {
         let ldf = self.ldf.clone();
         ldf.tail(n).into()
     }

@@ -157,12 +157,12 @@ pub(crate) fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
     let v = match lp {
-        LogicalPlan::Union { inputs } => {
+        LogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect();
-            ALogicalPlan::Union { inputs }
+            ALogicalPlan::Union { inputs, options }
         }
         LogicalPlan::Selection { input, predicate } => {
             let i = to_alp(*input, expr_arena, lp_arena);
@@ -642,12 +642,12 @@ pub(crate) fn node_to_lp(
     let lp = std::mem::take(lp);
 
     match lp {
-        ALogicalPlan::Union { inputs } => {
+        ALogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|node| node_to_lp(node, expr_arena, lp_arena))
                 .collect();
-            LogicalPlan::Union { inputs }
+            LogicalPlan::Union { inputs, options }
         }
         ALogicalPlan::Slice { input, offset, len } => {
             let lp = node_to_lp(input, expr_arena, lp_arena);
