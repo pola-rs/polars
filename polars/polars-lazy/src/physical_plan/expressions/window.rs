@@ -16,6 +16,7 @@ pub struct WindowExpr {
     pub(crate) function: Expr,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) options: WindowOptions,
+    pub(crate) expr: Expr,
 }
 
 impl PhysicalExpr for WindowExpr {
@@ -37,17 +38,40 @@ impl PhysicalExpr for WindowExpr {
             .map(|e| e.evaluate(df, state))
             .collect::<Result<Vec<_>>>()?;
 
-        let mut gb = df.groupby_with_series(groupby_columns.clone(), true)?;
-        let mut groups = std::mem::take(gb.get_groups_mut());
+        let create_groups = || {
+            let mut gb = df.groupby_with_series(groupby_columns.clone(), true)?;
+            let out: Result<GroupTuples> = Ok(std::mem::take(gb.get_groups_mut()));
+            out
+        };
+
+        // Try to get cached grouptuples
+        let (mut groups, cached, cache_key) = if state.cache_window {
+            let mut cache_key = String::with_capacity(32 * groupby_columns.len());
+            for s in &groupby_columns {
+                cache_key.push_str(s.name());
+            }
+
+            let mut gt_map = state.group_tuples.lock().unwrap();
+            // we run sequential and partitioned
+            // and every partition run the cache should be empty so we expect a max of 1.
+            debug_assert!(gt_map.len() <= 1);
+            if let Some(gt) = gt_map.get_mut(&cache_key) {
+                (std::mem::take(gt), true, cache_key)
+            } else {
+                (create_groups()?, false, cache_key)
+            }
+        } else {
+            (create_groups()?, false, "".to_string())
+        };
 
         // if we flatten this column we need to make sure the groups are sorted.
-        if self.options.explode {
+        if !cached && self.options.explode {
             groups.sort_unstable_by_key(|t| t.0);
         }
 
         // 2. create GroupBy object and apply aggregation
         let apply_columns = self.apply_columns.iter().map(|s| s.as_ref()).collect();
-        let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
+        let mut gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let out = match self.phys_function.as_agg_expr() {
             // this branch catches all aggregation expressions
@@ -75,8 +99,14 @@ impl PhysicalExpr for WindowExpr {
                 Ok(DataFrame::new_no_checks(cols))
             }
         }?;
-        // drop the group tuples before we do the left join to reduce allocated memory.
-        drop(gb);
+        if state.cache_window {
+            let groups = std::mem::take(gb.get_groups_mut());
+            let mut gt_map = state.group_tuples.lock().unwrap();
+            gt_map.insert(cache_key.clone(), groups);
+        } else {
+            // drop the group tuples before we do the left join to reduce allocated memory.
+            drop(gb);
+        }
 
         // 3. get the join tuples and use them to take the new Series
         let out_column = out.select_at_idx(out.width() - 1).unwrap();
@@ -88,14 +118,32 @@ impl PhysicalExpr for WindowExpr {
             return Ok(out);
         }
 
-        let opt_join_tuples = if groupby_columns.len() == 1 {
-            // group key from right column
-            let right = out.select_at_idx(0).unwrap();
-            groupby_columns[0].hash_join_left(right)
+        let get_join_tuples = || {
+            if groupby_columns.len() == 1 {
+                // group key from right column
+                let right = out.select_at_idx(0).unwrap();
+                groupby_columns[0].hash_join_left(right)
+            } else {
+                let df_right =
+                    DataFrame::new_no_checks(out.get_columns()[..out.width() - 1].to_vec());
+                let df_left = DataFrame::new_no_checks(groupby_columns);
+                private_left_join_multiple_keys(&df_left, &df_right)
+            }
+        };
+
+        // try to get cached join_tuples
+        let opt_join_tuples = if state.cache_window {
+            let mut jt_map = state.join_tuples.lock().unwrap();
+            // we run sequential and partitioned
+            // and every partition run the cache should be empty so we expect a max of 1.
+            debug_assert!(jt_map.len() <= 1);
+            if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
+                std::mem::take(opt_join_tuples)
+            } else {
+                get_join_tuples()
+            }
         } else {
-            let df_right = DataFrame::new_no_checks(out.get_columns()[..out.width() - 1].to_vec());
-            let df_left = DataFrame::new_no_checks(groupby_columns);
-            private_left_join_multiple_keys(&df_left, &df_right)
+            get_join_tuples()
         };
 
         let mut iter = opt_join_tuples
@@ -106,6 +154,12 @@ impl PhysicalExpr for WindowExpr {
         if let Some(name) = &self.out_name {
             out.rename(name.as_ref());
         }
+
+        if state.cache_window {
+            let mut jt_map = state.join_tuples.lock().unwrap();
+            jt_map.insert(cache_key, opt_join_tuples);
+        }
+
         Ok(out)
     }
 
@@ -126,6 +180,6 @@ impl PhysicalExpr for WindowExpr {
     }
 
     fn as_expression(&self) -> &Expr {
-        todo!()
+        &self.expr
     }
 }

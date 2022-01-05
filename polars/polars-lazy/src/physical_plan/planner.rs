@@ -6,7 +6,7 @@ use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
-use crate::utils::expr_to_root_column_name;
+use crate::utils::{expr_to_root_column_name, has_window_aexpr};
 use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
@@ -195,12 +195,14 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
+                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(ProjectionExec {
                     input,
                     expr: phys_expr,
+                    has_windows,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -211,12 +213,14 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
+                let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&expr, Context::Default, expr_arena)?;
                 Ok(Box::new(ProjectionExec {
                     input,
                     expr: phys_expr,
+                    has_windows,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -227,6 +231,14 @@ impl DefaultPlanner {
                 selection,
                 ..
             } => {
+                let has_windows = if let Some(projection) = &projection {
+                    projection
+                        .iter()
+                        .any(|node| has_window_aexpr(*node, expr_arena))
+                } else {
+                    false
+                };
+
                 let selection = selection
                     .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
                     .map_or(Ok(None), |v| v.map(Some))?;
@@ -235,7 +247,12 @@ impl DefaultPlanner {
                         self.create_physical_expressions(&proj, Context::Default, expr_arena)
                     })
                     .map_or(Ok(None), |v| v.map(Some))?;
-                Ok(Box::new(DataFrameExec::new(df, projection, selection)))
+                Ok(Box::new(DataFrameExec {
+                    df,
+                    projection,
+                    selection,
+                    has_windows,
+                }))
             }
             Sort {
                 input,
@@ -442,10 +459,15 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
+                let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
                     self.create_physical_expressions(&exprs, Context::Default, expr_arena)?;
-                Ok(Box::new(StackExec::new(input, phys_expr)))
+                Ok(Box::new(StackExec {
+                    input,
+                    has_windows,
+                    expr: phys_expr,
+                }))
             }
             Udf {
                 input, function, ..
@@ -511,6 +533,7 @@ impl DefaultPlanner {
                     function,
                     phys_function,
                     options,
+                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Literal(value) => Ok(Arc::new(LiteralExpr::new(

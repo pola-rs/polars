@@ -731,7 +731,6 @@ fn test_lazy_window_functions() {
         Vec::from(out.select_at_idx(1).unwrap().i32().unwrap()),
         correct
     );
-    dbg!(out);
 }
 
 #[test]

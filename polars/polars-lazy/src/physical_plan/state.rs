@@ -16,6 +16,7 @@ pub struct ExecutionState {
     /// Used by Window Expression to prevent redundant joins
     pub(crate) join_tuples: JoinTuplesCache,
     pub(crate) verbose: bool,
+    pub(crate) cache_window: bool,
 }
 
 impl ExecutionState {
@@ -25,6 +26,7 @@ impl ExecutionState {
             group_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
             join_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
             verbose: std::env::var("POLARS_VERBOSE").is_ok(),
+            cache_window: true,
         }
     }
 

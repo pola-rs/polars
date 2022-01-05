@@ -64,6 +64,10 @@ where
     arena.iter(current_node).any(|(_node, e)| matches(e))
 }
 
+pub(crate) fn has_window_aexpr(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
+}
+
 /// Can check if an expression tree has a matching_expr. This
 /// requires a dummy expression to be created that will be used to patter match against.
 pub(crate) fn has_expr<F>(current_expr: &Expr, matches: F) -> bool
@@ -87,6 +91,8 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
 pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {
+            // don't follow the partition by branch
+            Expr::Window { function, .. } => return output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
             _ => {}
