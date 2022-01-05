@@ -977,8 +977,14 @@ impl DataFrame {
 
     /// Add a new column to this `DataFrame` or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
-        let series = column.into_series();
-        if series.len() == self.height() || self.is_empty() {
+        let mut series = column.into_series();
+
+        let height = self.height();
+        if series.len() == 1 && height > 1 {
+            series = series.expand_at_index(0, height);
+        }
+
+        if series.len() == height || self.is_empty() || series.len() == 1 {
             if let Some(idx) = self.find_idx_by_name(series.name()) {
                 self.replace_at_idx(idx, series)?;
             } else {

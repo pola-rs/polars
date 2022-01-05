@@ -13,7 +13,6 @@ pub struct StackExec {
 impl Executor for StackExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let mut df = self.input.execute(state)?;
-        let height = df.height();
 
         let res = if self.has_windows {
             execute_projection_cached_window_fns(&df, &self.expr, state)?
@@ -21,16 +20,7 @@ impl Executor for StackExec {
             POOL.install(|| {
                 self.expr
                     .par_iter()
-                    .map(|expr| {
-                        expr.evaluate(&df, state).map(|series| {
-                            // literal series. Should be whole column size
-                            if series.len() == 1 && height > 1 {
-                                series.expand_at_index(0, height)
-                            } else {
-                                series
-                            }
-                        })
-                    })
+                    .map(|expr| expr.evaluate(&df, state))
                     .collect::<Result<Vec<_>>>()
             })?
         };
