@@ -8,6 +8,7 @@ use polars_core::prelude::*;
 pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
+    pub(crate) has_windows: bool,
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
 }
@@ -16,7 +17,7 @@ impl Executor for ProjectionExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
 
-        let df = evaluate_physical_expressions(&df, &self.expr, state);
+        let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
 
         // this only runs during testing and check if the runtime type matches the predicted schema
         #[cfg(test)]

@@ -186,8 +186,6 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#[cfg(all(feature = "datafusion", feature = "compile"))]
-mod datafusion;
 #[cfg(all(feature = "dot_diagram", feature = "compile"))]
 mod dot;
 #[cfg(feature = "compile")]

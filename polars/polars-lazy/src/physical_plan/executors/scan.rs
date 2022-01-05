@@ -249,23 +249,10 @@ impl Executor for CsvExec {
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
-    df: Arc<DataFrame>,
-    projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
-    selection: Option<Arc<dyn PhysicalExpr>>,
-}
-
-impl DataFrameExec {
-    pub(crate) fn new(
-        df: Arc<DataFrame>,
-        projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
-        selection: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Self {
-        DataFrameExec {
-            df,
-            projection,
-            selection,
-        }
-    }
+    pub(crate) df: Arc<DataFrame>,
+    pub(crate) projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
+    pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) has_windows: bool,
 }
 
 impl Executor for DataFrameExec {
@@ -276,7 +263,7 @@ impl Executor for DataFrameExec {
         // projection should be before selection as those are free
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
-            df = evaluate_physical_expressions(&df, projection, state)?;
+            df = evaluate_physical_expressions(&df, projection, state, self.has_windows)?;
         }
 
         if let Some(selection) = &self.selection {
