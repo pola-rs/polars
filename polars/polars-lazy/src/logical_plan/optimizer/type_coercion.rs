@@ -142,6 +142,8 @@ impl OptimizationRule for TypeCoercionRule {
                             (&type_left, &type_right),
                             (DataType::Datetime(_, _), DataType::Duration(_))
                                 | (DataType::Duration(_), DataType::Datetime(_, _))
+                                | (DataType::Date, DataType::Duration(_))
+                                | (DataType::Duration(_), DataType::Date)
                         );
 
                     if type_left == type_right || compare_cat_to_string || datetime_arithmetic {

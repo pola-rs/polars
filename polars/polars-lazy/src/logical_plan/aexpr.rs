@@ -191,8 +191,10 @@ impl AExpr {
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
                     Operator::Minus => match (left_type, right_type) {
-                        // T - T != T if T is a datetime
-                        (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, tur)),
+                        // T - T != T if T is a datetime / date
+                        (Datetime(tul, _), Datetime(tur, _)) => {
+                            Duration(get_time_units(&tul, &tur))
+                        }
                         (Date, Date) => Duration(TimeUnit::Milliseconds),
                         (left, right) => get_supertype(&left, &right)?,
                     },

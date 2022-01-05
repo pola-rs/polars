@@ -74,7 +74,7 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
         raise ValueError("expected on of {'ns', 'ms'}")
 
 
-def _timedelta_to_duration(td: timedelta, tu: Optional[str] = None) -> int:
+def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
     if tu == "ns":
         return int(td.total_seconds() * 1e9)
     elif tu == "ms":

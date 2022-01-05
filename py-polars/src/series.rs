@@ -182,9 +182,9 @@ impl From<Series> for PySeries {
 
 #[pymethods]
 #[allow(
-    clippy::wrong_self_convention,
-    clippy::should_implement_trait,
-    clippy::len_without_is_empty
+clippy::wrong_self_convention,
+clippy::should_implement_trait,
+clippy::len_without_is_empty
 )]
 impl PySeries {
     #[staticmethod]
@@ -736,7 +736,7 @@ impl PySeries {
                 .expect("invalid quantile")
                 .get(0),
         )
-        .into_py(py)
+            .into_py(py)
     }
 
     /// Rechunk and return a pointer to the start of the Series.
@@ -954,7 +954,7 @@ impl PySeries {
                 ca.into_series()
             }
             None => {
-                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda)
+                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda);
             }
 
             _ => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
@@ -1465,7 +1465,7 @@ impl PySeries {
     }
 
     pub fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(tu, _) = self.series.dtype() {
+        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
             Some(match tu {
                 TimeUnit::Nanoseconds => "ns",
                 TimeUnit::Milliseconds => "ms",
@@ -1476,8 +1476,8 @@ impl PySeries {
     }
     pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
         let unit = match tu {
-          "ns" => TimeUnit::Nanoseconds,
-          "ms" => TimeUnit::Milliseconds,
+            "ns" => TimeUnit::Nanoseconds,
+            "ms" => TimeUnit::Milliseconds,
             _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}"))
         };
         if let DataType::Duration(_) = self.series.dtype() {
@@ -1652,6 +1652,7 @@ impl_get!(get_i64, i64, i64);
 impl_get!(get_str, utf8, &str);
 impl_get!(get_date, date, i32);
 impl_get!(get_datetime, datetime, i64);
+impl_get!(get_duration, duration, i64);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {

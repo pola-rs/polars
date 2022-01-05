@@ -500,7 +500,7 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
-const SIZES: [i64; 4] = [
+const SIZES_NS: [i64; 4] = [
     86_400_000_000_000,
     3_600_000_000_000,
     60_000_000_000,
@@ -510,30 +510,49 @@ const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
 
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     if v == 0 {
-        return write!(f, "0 nanoseconds");
+        return write!(f, "0 ns");
     }
+    format_duration(f, v, SIZES_NS.as_slice(), NAMES.as_slice())?;
+    if v % 1000 != 0 {
+        write!(f, "{} ns", v % 1_000_000_000)?;
+    } else if v % 1_000_000 != 0 {
+        write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
+    } else if v % 1_000_000_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
+
+fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 ms");
+    }
+    format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
+    if v % 1_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+// Show maximum whole parts of each unit before moving on to smaller units.
+fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
     for i in 0..4 {
         let whole_num = if i == 0 {
-            v / SIZES[i]
+            v / sizes[i]
         } else {
-            (v % SIZES[i - 1]) / SIZES[i]
+            (v % sizes[i - 1]) / sizes[i]
         };
         if whole_num <= -1 || whole_num >= 1 {
-            write!(f, "{} {}", whole_num, NAMES[i])?;
+            write!(f, "{} {}", whole_num, names[i])?;
             if whole_num != 1 {
                 write!(f, "s")?;
             }
-            if v % SIZES[i] != 0 {
+            if v % sizes[i] != 0 {
                 write!(f, " ")?;
             }
         }
-    }
-    if v % 1000 != 0 {
-        write!(f, "{} nanoseconds", v % 1_000_000_000)?;
-    } else if v % 1_000_000 != 0 {
-        write!(f, "{} microseconds", (v % 1_000_000_000) / 1000)?;
-    } else if v % 1_000_000_000 != 0 {
-        write!(f, "{} milliseconds", (v % 1_000_000_000) / 1_000_000)?;
     }
     Ok(())
 }
@@ -565,7 +584,7 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
-                TimeUnit::Milliseconds => fmt_duration_ns(f, *v * 1_000_000),
+                TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {

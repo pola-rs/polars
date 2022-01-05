@@ -357,9 +357,9 @@ macro_rules! df {
 }
 
 #[cfg(feature = "private")]
-pub fn get_time_units(l: TimeUnit, r: TimeUnit) -> TimeUnit {
+pub fn get_time_units(l: &TimeUnit, r: &TimeUnit) -> TimeUnit {
     if l == r {
-        l
+        *l
     } else {
         TimeUnit::Milliseconds
     }
@@ -601,15 +601,16 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
             if tz.is_empty() {
-                Some(Datetime(get_time_units(*lu, *ru), None))
+                Some(Datetime(get_time_units(lu, ru), None))
             } else {
-                Some(Datetime(get_time_units(*lu, *ru), Some(tz.clone())))
+                Some(Datetime(get_time_units(lu, ru), Some(tz.clone())))
             }
         }
         (Duration(lu), Datetime(ru, None)) | (Datetime(lu, None), Duration(ru)) => {
-            Some(Datetime(get_time_units(*lu, *ru), None))
+            Some(Datetime(get_time_units(lu, ru), None))
         }
-        (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(*lu, *ru))),
+        (Duration(_), Date) | (Date, Duration(_)) => Some(Datetime(TimeUnit::Milliseconds, None)),
+        (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
         // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
         (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
         | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {

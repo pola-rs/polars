@@ -107,7 +107,7 @@ _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     List: "list",
     Date: "date",
     Datetime: "datetime",
-    Duration: "timedelta",
+    Duration: "duration",
     Time: "time",
     Object: "object",
     Categorical: "categorical",

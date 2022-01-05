@@ -59,9 +59,8 @@ def test_diff_datetime() -> None:
             [
                 pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
             ]
-        ).with_columns([pl.col("timestamp").diff().over(pl.col("char"))])
+        ).with_columns([pl.col("timestamp").diff().over("char")])
     )["timestamp"]
-
     assert out[0] == out[1]
 
 

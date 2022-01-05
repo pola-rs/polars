@@ -8,7 +8,7 @@ from polars import internals as pli
 from polars.datatypes import DataType, Date, Datetime, Duration
 from polars.utils import (
     _datetime_to_pl_timestamp,
-    _timedelta_to_duration,
+    _timedelta_to_pl_timedelta,
     in_nanoseconds_window,
     timedelta_in_nanoseconds_window,
 )
@@ -556,9 +556,9 @@ def lit(
         else:
             tu = "ms"
         return (
-            lit(_timedelta_to_duration(value, tu))
+            lit(_timedelta_to_pl_timedelta(value, tu))
             .cast(Duration)
-            .dt.and_time_unit(tu, dtype=Duration)
+            .dt.and_time_unit(tu)
         )
 
     if isinstance(value, date):

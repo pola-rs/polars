@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::{get_supertype, get_time_units};
 use num::{Num, NumCast};
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -327,11 +327,9 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
-    if let (&DataType::Datetime(_, _), &DataType::Duration(_)) = (lhs.dtype(), rhs.dtype()) {
-        return coerce_time_units(lhs, rhs);
-    }
-    if let (&DataType::Duration(_), &DataType::Datetime(_, _)) = (lhs.dtype(), rhs.dtype()) {
-        return coerce_time_units(lhs, rhs);
+    match coerce_time_units(lhs, rhs) {
+        Ok(result) => return Ok(result),
+        _ => {}
     }
 
     let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
@@ -348,16 +346,15 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     Ok((left, right))
 }
 
+// Handle (Date | Datetime) +/- (Duration) | (Duration) +/- (Date | Datetime)
+// Time arithmetic is only implemented on the date / datetime so ensure that's on left
+
 fn coerce_time_units<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
     return if let (DataType::Datetime(lu, t), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
-        let units = if *lu == TimeUnit::Nanoseconds && *ru == TimeUnit::Nanoseconds {
-            TimeUnit::Nanoseconds
-        } else {
-            TimeUnit::Milliseconds
-        };
+        let units = get_time_units(lu, ru);
         let left = if *lu == units {
             Cow::Borrowed(lhs)
         } else {
@@ -369,9 +366,14 @@ fn coerce_time_units<'a>(
             Cow::Owned(rhs.cast(&DataType::Duration(units))?)
         };
         Ok((left, right))
-    } else if let (DataType::Duration(_), DataType::Datetime(_, _)) = (lhs.dtype(), rhs.dtype()) {
-        let dtypes = coerce_time_units(rhs, lhs)?;
-        Ok((dtypes.1, dtypes.0))
+    } else if let (DataType::Date, DataType::Duration(units)) = (lhs.dtype(), rhs.dtype()) {
+        let left = Cow::Owned(lhs.cast(&DataType::Datetime(*units, None))?);
+        Ok((left, Cow::Borrowed(rhs)))
+    } else if let (DataType::Duration(_), DataType::Datetime(_, _))
+    | (DataType::Duration(_), DataType::Date) = (lhs.dtype(), rhs.dtype())
+    {
+        let (right, left) = coerce_time_units(rhs, lhs)?;
+        Ok((left, right))
     } else {
         Err(PolarsError::InvalidOperation(
             format!(

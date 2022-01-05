@@ -413,7 +413,7 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (PlList, Date, Datetime, Object):
+            if self.dtype in (PlList, Date, Datetime, Duration, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
@@ -1827,7 +1827,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date, Datetime)
+        return self.dtype in (Date, Datetime, Duration)
 
     def is_float(self) -> bool:
         """

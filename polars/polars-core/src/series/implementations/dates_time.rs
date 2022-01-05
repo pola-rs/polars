@@ -219,9 +219,10 @@ macro_rules! impl_dyn_series {
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {
-                        let lhs = self.cast(&DataType::Int64).unwrap();
-                        let rhs = rhs.cast(&DataType::Int64).unwrap();
-                        Ok((lhs.subtract(&rhs)? * 86_400_000).into_duration(TimeUnit::Milliseconds).into_series())
+                        let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
+                        let lhs = self.cast(&dt)?;
+                        let rhs = rhs.cast(&dt)?;
+                        lhs.subtract(&rhs)
                     }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
@@ -232,10 +233,16 @@ macro_rules! impl_dyn_series {
                     )),
                 }
             }
-            fn add_to(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot do addition on logical".into(),
-                ))
+            fn add_to(&self, rhs: &Series) -> Result<Series> {
+                match (self.dtype(), rhs.dtype()) {
+                    (dtl, dtr) => Err(PolarsError::ComputeError(
+                        format!(
+                            "cannot do addition on these date types: {:?}, {:?}",
+                            dtl, dtr
+                        )
+                        .into(),
+                    )),
+                }
             }
             fn multiply(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(

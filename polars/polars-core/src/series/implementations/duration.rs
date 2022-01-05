@@ -244,9 +244,18 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
                 let rhs = rhs.cast(&DataType::Int64).unwrap();
                 Ok(lhs.add_to(&rhs)?.into_duration(*tu).into_series())
             }
+            (DataType::Duration(tu), DataType::Datetime(tur, tz)) => {
+                assert_eq!(tu, tur);
+                let lhs = self.cast(&DataType::Int64).unwrap();
+                let rhs = rhs.cast(&DataType::Int64).unwrap();
+                Ok(lhs
+                    .add_to(&rhs)?
+                    .into_datetime(*tu, tz.clone())
+                    .into_series())
+            }
             (dtl, dtr) => Err(PolarsError::ComputeError(
                 format!(
-                    "cannot do subtraction on these date types: {:?}, {:?}",
+                    "cannot do addition on these date types: {:?}, {:?}",
                     dtl, dtr
                 )
                 .into(),
