@@ -487,12 +487,19 @@ fn fmt_integer<T: Num + NumCast + Display>(
     write!(f, "{:>width$}", v, width = width)
 }
 
+const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
-    if v == 0.0 {
+    // show integers as 0.0, 1.0 ... 101.0
+    if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
         write!(f, "{:>width$.1}", v, width = width)
-    } else if !(0.0001..=9999.).contains(&v) {
-        write!(f, "{:>width$e}", v, width = width)
+    } else if format!("{}", v).len() > 9 {
+        // large and small floats in scientific notation
+        if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
+            write!(f, "{:>width$.4e}", v, width = width)
+        } else {
+            write!(f, "{:>width$.6}", v, width = width)
+        }
     } else {
         write!(f, "{:>width$}", v, width = width)
     }
