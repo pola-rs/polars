@@ -1292,6 +1292,7 @@ impl_rolling_method!(rolling_max);
 impl_rolling_method!(rolling_min);
 impl_rolling_method!(rolling_var);
 impl_rolling_method!(rolling_std);
+impl_rolling_method!(rolling_median);
 
 macro_rules! impl_set_with_mask {
     ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
