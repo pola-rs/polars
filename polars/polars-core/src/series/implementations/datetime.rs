@@ -272,11 +272,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
         self.0.deref().argsort_multiple(by, reverse)
     }
-
-    fn str_value(&self, index: usize) -> Cow<str> {
-        // get AnyValue
-        Cow::Owned(format!("{}", self.get(index)))
-    }
 }
 
 impl SeriesTrait for SeriesWrap<DatetimeChunked> {
@@ -403,20 +398,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn rechunk(&self) -> Series {
         self.0
             .rechunk()
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
-    fn head(&self, length: Option<usize>) -> Series {
-        self.0
-            .head(length)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
-    fn tail(&self, length: Option<usize>) -> Series {
-        self.0
-            .tail(length)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }

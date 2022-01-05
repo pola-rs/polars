@@ -284,10 +284,6 @@ pub(crate) mod private {
                 "argsort_multiple is not implemented for this Series".into(),
             ))
         }
-        /// Formatted string representation. Can used in formatting.
-        fn str_value(&self, _index: usize) -> Cow<str> {
-            invalid_operation_panic!(self)
-        }
     }
 }
 
@@ -573,16 +569,6 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get the head of the Series.
-    fn head(&self, _length: Option<usize>) -> Series {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get the tail of the Series.
-    fn tail(&self, _length: Option<usize>) -> Series {
         invalid_operation_panic!(self)
     }
 
