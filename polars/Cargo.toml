@@ -123,7 +123,7 @@ dtype-full = [
 dtype-slim = [
   "dtype-date",
   "dtype-datetime",
-  "dtype-duration"
+  "dtype-duration",
 ]
 
 # opt-in datatypes for Series
