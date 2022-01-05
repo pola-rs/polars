@@ -362,47 +362,6 @@ impl AExpr {
             Wildcard => panic!("should be no wildcard at this point"),
         }
     }
-
-    /// Check if AExpr equality. The nodes may differ.
-    ///
-    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
-    /// but would have different node values.
-    #[cfg(feature = "private")]
-    pub(crate) fn eq(node_left: Node, node_right: Node, expr_arena: &Arena<AExpr>) -> bool {
-        use crate::logical_plan::iterator::ArenaExprIter;
-        let cmp = |(node_left, node_right)| {
-            use AExpr::*;
-            match (expr_arena.get(node_left), expr_arena.get(node_right)) {
-                (Alias(_, name_l), Alias(_, name_r)) => name_l == name_r,
-                (Column(name_l), Column(name_r)) => name_l == name_r,
-                (Literal(left), Literal(right)) => left == right,
-                (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
-                (Cast { data_type: l, .. }, Cast { data_type: r, .. }) => l == r,
-                (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-                (SortBy { reverse: l, .. }, SortBy { reverse: r, .. }) => l == r,
-                (Shift { periods: l, .. }, Shift { periods: r, .. }) => l == r,
-                (
-                    Slice {
-                        offset: offset_l,
-                        length: length_l,
-                        ..
-                    },
-                    Slice {
-                        offset: offset_r,
-                        length: length_r,
-                        ..
-                    },
-                ) => offset_l == offset_r && length_l == length_r,
-                (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
-            }
-        };
-
-        expr_arena
-            .iter(node_left)
-            .zip(expr_arena.iter(node_right))
-            .map(|(tpll, tplr)| (tpll.0, tplr.0))
-            .all(cmp)
-    }
 }
 
 pub(crate) fn field_by_context(
