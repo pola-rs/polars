@@ -66,8 +66,10 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
     assert df.frame_equal(truth)
 
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="row")
-    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    df = pl.DataFrame([[1, 2.0, "a"], [None, None, None]], orient="row")
+    truth = pl.DataFrame(
+        {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
+    )
     assert df.frame_equal(truth)
 
     # TODO: Uncomment tests below when removing deprecation warning
