@@ -14,7 +14,8 @@ pub trait IntoJs<T>: Send + Sized {
 
 pub trait IntoJsRef<T>: Send + Sized {
     fn into_js_ref(&self, cx: &CallContext) -> T {
-        self.try_into_js_ref(cx).expect("Use 'try_into_js_ref' instead")
+        self.try_into_js_ref(cx)
+            .expect("Use 'try_into_js_ref' instead")
     }
     fn try_into_js_ref(&self, cx: &CallContext) -> Result<T>;
 }
@@ -129,9 +130,7 @@ impl IntoJsRef<JsObject> for DatetimeChunked {
         let mut arr = cx.env.create_array()?;
         for (i, val) in self.into_iter().enumerate() {
             match val {
-                Some(v) => {
-                    arr.set_element(i as u32, cx.env.create_date(v as f64)?)?
-                },
+                Some(v) => arr.set_element(i as u32, cx.env.create_date(v as f64)?)?,
                 None => arr.set_element(i as u32, cx.env.get_null()?)?,
             };
         }
@@ -143,17 +142,13 @@ impl IntoJsRef<JsObject> for DateChunked {
         let mut arr = cx.env.create_array()?;
         for (i, val) in self.into_iter().enumerate() {
             match val {
-                Some(v) => {
-                    arr.set_element(i as u32, cx.env.create_date(v as f64)?)?
-                },
+                Some(v) => arr.set_element(i as u32, cx.env.create_date(v as f64)?)?,
                 None => arr.set_element(i as u32, cx.env.get_null()?)?,
             };
         }
         Ok(arr)
     }
 }
-
-
 
 into_js_chunked!(Int8Chunked);
 into_js_chunked!(Int16Chunked);
@@ -168,7 +163,38 @@ into_js_chunked!(Float64Chunked);
 into_js_chunked!(BooleanChunked);
 into_js_chunked!(Utf8Chunked);
 
-
+impl IntoJsRef<JsObject> for Series {
+    fn try_into_js_ref(&self, cx: &CallContext) -> Result<JsObject> {
+        match *self.dtype() {
+            DataType::Null => {
+                let mut arr = cx.env.create_array()?;
+                let null_count = self.null_count();
+                for i in 0..null_count {
+                    arr.set_element(i as u32, cx.env.get_null()?)?;
+                }
+                Ok(arr)
+            }
+            DataType::Boolean => self.bool().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Utf8 => self.utf8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Float32 => self.f32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Float64 => self.f64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::UInt8 => self.u8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::UInt16 => self.u16().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::UInt32 => self.u32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::UInt64 => self.u64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Int8 => self.i8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Int16 => self.i16().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Int32 => self.i32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Int64 => self.i64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Date => self.date().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Datetime(_, _) => self
+                .datetime()
+                .map_err(JsPolarsEr::from)?
+                .try_into_js_ref(&cx),
+            _ => panic!("not yet supported"),
+        }
+    }
+}
 
 impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
     fn try_into_js(self, cx: &CallContext) -> Result<JsUnknown> {
@@ -187,37 +213,7 @@ impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
             AnyValue::Float64(v) => cx.env.create_double(v).map(|v| v.into_unknown()),
             AnyValue::Date(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
             AnyValue::Datetime(v, _, _) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-            AnyValue::List(v) => {
-                let v = match *v.dtype() {
-                    DataType::Null => {
-                        let mut arr = cx.env.create_array()?;
-                        let null_count = v.null_count();
-                        for i in 0..null_count {
-                            arr.set_element(i as u32, cx.env.get_null()?)?;
-                        }
-                        Ok(arr)
-                    }
-                    DataType::Boolean => v.bool().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Utf8 => v.utf8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Float32 => v.f32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Float64 => v.f64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::UInt8 => v.u8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::UInt16 => v.u16().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::UInt32 => v.u32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::UInt64 => v.u64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Int8 => v.i8().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Int16 => v.i16().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Int32 => v.i32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Int64 => v.i64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Date => v.date().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-                    DataType::Datetime(_, _) => v.datetime().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
-
-                    _ => panic!("unsupported"),
-                };
-
-                v.map(|val| val.into_unknown())
-                
-            }
+            AnyValue::List(v) => v.try_into_js_ref(&cx).map(|v| v.into_unknown()),
             _ => cx.env.get_null().map(|v| v.into_unknown()),
         }
     }
