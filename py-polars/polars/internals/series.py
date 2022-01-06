@@ -1904,7 +1904,7 @@ class Series:
         """
         Numpy universal functions.
         """
-        if self._s.n_chunks() > 0:
+        if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
         if method == "__call__":
