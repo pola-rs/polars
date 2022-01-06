@@ -1684,7 +1684,7 @@ class Expr:
         ... )
         >>> df.select(
         ...     [
-        ...         pl.col("A").rolling_apply(3, lambda s: s.std()),
+        ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
         ...     ]
         ... )
         shape: (5, 1)
