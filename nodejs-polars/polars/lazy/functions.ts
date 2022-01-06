@@ -241,7 +241,7 @@ export function cov(a: ExprOrString, b: ExprOrString): Expr {
  * >>> pl.col("*").exclude(columns)
  * ```
  */
-export function exclude(columns: string[] | string)
+export function exclude(columns: string[] | string): Expr
 export function exclude(col: string, ...cols: string[]): Expr
 export function exclude(...columns): Expr {
   return col("*").exclude(columns as any);
