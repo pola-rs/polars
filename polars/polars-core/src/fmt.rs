@@ -256,6 +256,17 @@ impl Debug for Series {
                     "Series"
                 )
             }
+            DataType::Duration(_) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(
+                    limit,
+                    f,
+                    self.duration().unwrap(),
+                    &dt,
+                    self.name(),
+                    "Series"
+                )
+            }
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -487,6 +498,61 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
     }
 }
 
+const SIZES_NS: [i64; 4] = [
+    86_400_000_000_000,
+    3_600_000_000_000,
+    60_000_000_000,
+    1_000_000_000,
+];
+const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
+const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
+
+fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 ns");
+    }
+    format_duration(f, v, SIZES_NS.as_slice(), NAMES.as_slice())?;
+    if v % 1000 != 0 {
+        write!(f, "{} ns", v % 1_000_000_000)?;
+    } else if v % 1_000_000 != 0 {
+        write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
+    } else if v % 1_000_000_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 ms");
+    }
+    format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
+    if v % 1_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
+    for i in 0..4 {
+        let whole_num = if i == 0 {
+            v / sizes[i]
+        } else {
+            (v % sizes[i - 1]) / sizes[i]
+        };
+        if whole_num <= -1 || whole_num >= 1 {
+            write!(f, "{} {}", whole_num, names[i])?;
+            if whole_num != 1 {
+                write!(f, "s")?;
+            }
+            if v % sizes[i] != 0 {
+                write!(f, " ")?;
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Display for AnyValue<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let width = 0;
@@ -510,6 +576,11 @@ impl Display for AnyValue<'_> {
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
                 TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            },
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Duration(v, tu) => match tu {
+                TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
+                TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
@@ -598,6 +669,13 @@ impl FmtList for DateChunked {
 
 #[cfg(feature = "dtype-datetime")]
 impl FmtList for DatetimeChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl FmtList for DurationChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

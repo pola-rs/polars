@@ -1,12 +1,17 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import DataType, Date, Datetime
-from polars.utils import _datetime_to_pl_timestamp, in_nanoseconds_window
+from polars.datatypes import DataType, Date, Datetime, Duration
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_timedelta,
+    in_nanoseconds_window,
+    timedelta_in_nanoseconds_window,
+)
 
 try:
     from polars.polars import arange as pyarange
@@ -544,6 +549,16 @@ def lit(
             lit(_datetime_to_pl_timestamp(value, tu))
             .cast(Datetime)
             .dt.and_time_unit(tu)
+        )
+    if isinstance(value, timedelta):
+        if timedelta_in_nanoseconds_window(value):
+            tu = "ns"
+        else:
+            tu = "ms"
+        return (
+            lit(_timedelta_to_pl_timedelta(value, tu))
+            .cast(Duration)
+            .dt.and_time_unit(tu, dtype=Duration)
         )
 
     if isinstance(value, date):

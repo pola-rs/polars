@@ -69,7 +69,7 @@ impl PhysicalExpr for LiteralExpr {
                 dt => {
                     return Err(PolarsError::InvalidOperation(
                         format!("datatype {:?} not supported as range", dt).into(),
-                    ))
+                    ));
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
@@ -82,6 +82,26 @@ impl PhysicalExpr for LiteralExpr {
                 };
                 Int64Chunked::full("literal", timestamp, 1)
                     .into_datetime(*tu, None)
+                    .into_series()
+            }
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            Duration(v, tu) => {
+                let duration = match tu {
+                    TimeUnit::Milliseconds => v.num_milliseconds(),
+                    TimeUnit::Nanoseconds => {
+                        match v.num_nanoseconds() {
+                            Some(v) => v,
+                            None => {
+                                // Overflow
+                                return Err(PolarsError::InvalidOperation(
+                                    format!("cannot represent {:?} as {:?}", v, tu).into(),
+                                ));
+                            }
+                        }
+                    }
+                };
+                Int64Chunked::full("literal", duration, 1)
+                    .into_duration(*tu)
                     .into_series()
             }
             Series(series) => series.deref().clone(),
@@ -124,6 +144,8 @@ impl PhysicalExpr for LiteralExpr {
             Range { data_type, .. } => Field::new(name, data_type.clone()),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             DateTime(_, tu) => Field::new(name, DataType::Datetime(*tu, None)),
+            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            Duration(_, tu) => Field::new(name, DataType::Duration(*tu)),
             Series(s) => s.field().into_owned(),
         };
         Ok(field)

@@ -1,5 +1,6 @@
 import ctypes
-from typing import Any, Dict, Type
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, Type
 
 try:
     import pyarrow as pa
@@ -75,6 +76,10 @@ class Datetime(DataType):
     pass
 
 
+class Duration(DataType):
+    pass
+
+
 class Time(DataType):
     pass
 
@@ -103,6 +108,7 @@ _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     List: "list",
     Date: "date",
     Datetime: "datetime",
+    Duration: "duration",
     Time: "time",
     Object: "object",
     Categorical: "categorical",
@@ -121,6 +127,7 @@ _DTYPE_TO_CTYPE = {
     Float32: ctypes.c_float,
     Float64: ctypes.c_double,
     Datetime: ctypes.c_int64,
+    Duration: ctypes.c_int64,
     Time: ctypes.c_int64,
 }
 
@@ -199,8 +206,16 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 
 
-def maybe_cast(el: Type[DataType], dtype: Type) -> Type[DataType]:
+def maybe_cast(
+    el: Type[DataType], dtype: Type, time_unit: Optional[str] = None
+) -> Type[DataType]:
     # cast el if it doesn't match
+    from polars.utils import _datetime_to_pl_timestamp, _timedelta_to_pl_timedelta
+
+    if isinstance(el, datetime):
+        return _datetime_to_pl_timestamp(el, time_unit)
+    elif isinstance(el, timedelta):
+        return _timedelta_to_pl_timedelta(el, time_unit)
     py_type = dtype_to_py_type(dtype)
     if not isinstance(el, py_type):
         el = py_type(el)

@@ -954,7 +954,7 @@ impl PySeries {
                 ca.into_series()
             }
             None => {
-                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda)
+                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda);
             }
 
             _ => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
@@ -1465,7 +1465,7 @@ impl PySeries {
     }
 
     pub fn time_unit(&self) -> Option<&str> {
-        if let DataType::Datetime(tu, _) = self.series.dtype() {
+        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
             Some(match tu {
                 TimeUnit::Nanoseconds => "ns",
                 TimeUnit::Milliseconds => "ms",
@@ -1475,15 +1475,22 @@ impl PySeries {
         }
     }
     pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
-        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
-        let tu = match tu {
-            "ms" => TimeUnit::Milliseconds,
+        let unit = match tu {
             "ns" => TimeUnit::Nanoseconds,
+            "ms" => TimeUnit::Milliseconds,
             _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
         };
-        dt.set_time_unit(tu);
-        Ok(dt.into_series().into())
+        if let DataType::Duration(_) = self.series.dtype() {
+            let mut dt = self.series.duration().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        } else {
+            let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        }
     }
+
     pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
         let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
         dt.set_time_zone(tz);
@@ -1645,6 +1652,7 @@ impl_get!(get_i64, i64, i64);
 impl_get!(get_str, utf8, &str);
 impl_get!(get_date, date, i32);
 impl_get!(get_datetime, datetime, i64);
+impl_get!(get_duration, duration, i64);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
@@ -1665,6 +1673,8 @@ impl_arithmetic!(add_i8, i8, +);
 impl_arithmetic!(add_i16, i16, +);
 impl_arithmetic!(add_i32, i32, +);
 impl_arithmetic!(add_i64, i64, +);
+impl_arithmetic!(add_datetime, i64, +);
+impl_arithmetic!(add_duration, i64, +);
 impl_arithmetic!(add_f32, f32, +);
 impl_arithmetic!(add_f64, f64, +);
 impl_arithmetic!(sub_u8, u8, -);
@@ -1675,6 +1685,8 @@ impl_arithmetic!(sub_i8, i8, -);
 impl_arithmetic!(sub_i16, i16, -);
 impl_arithmetic!(sub_i32, i32, -);
 impl_arithmetic!(sub_i64, i64, -);
+impl_arithmetic!(sub_datetime, i64, -);
+impl_arithmetic!(sub_duration, i64, -);
 impl_arithmetic!(sub_f32, f32, -);
 impl_arithmetic!(sub_f64, f64, -);
 impl_arithmetic!(div_u8, u8, /);

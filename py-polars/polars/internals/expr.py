@@ -345,7 +345,12 @@ class Expr:
             columns = [columns]  # type: ignore
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
-        if not all([isinstance(a, str) or issubclass(a, DataType) for a in columns]):  # type: ignore
+        if not all(
+            [
+                isinstance(a, str) or issubclass(a, DataType)
+                for a in columns  # type: ignore
+            ]
+        ):
             raise ValueError("input should be all string or all DataType")
 
         if isinstance(columns[0], str):  # type: ignore
@@ -2972,7 +2977,7 @@ class ExprDateTimeNameSpace:
         """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
-    def and_time_unit(self, tu: str) -> Expr:
+    def and_time_unit(self, tu: str, dtype: Type[DataType] = Datetime) -> Expr:
         """
         Set time unit a Series of type Datetime
 
@@ -2980,10 +2985,11 @@ class ExprDateTimeNameSpace:
         ----------
         tu
             Time unit for the `Datetime` Series: any of {"ns", "ms"}
-
+        dtype
+            Output data type.
         """
         return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.and_time_unit(tu), return_dtype=Datetime
+            lambda s: s.dt.and_time_unit(tu), return_dtype=dtype
         )
 
     def and_time_zone(self, tz: Optional[str]) -> Expr:

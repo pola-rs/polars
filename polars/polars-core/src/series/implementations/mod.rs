@@ -9,6 +9,8 @@ mod categorical;
 mod dates_time;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+#[cfg(feature = "dtype-duration")]
+mod duration;
 mod floats;
 mod list;
 #[cfg(feature = "object")]

@@ -51,6 +51,11 @@ unsafe fn arr_to_any_value<'a>(
             let ts: i64 = downcast!(Int64Array);
             AnyValue::Datetime(ts, *tu, tz)
         }
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => {
+            let delta: i64 = downcast!(Int64Array);
+            AnyValue::Duration(delta, *tu)
+        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();

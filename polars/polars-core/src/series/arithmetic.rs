@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::get_supertype;
+use crate::utils::{get_supertype, get_time_units};
 use num::{Num, NumCast};
 use std::borrow::Cow;
 use std::fmt::Debug;
@@ -327,6 +327,10 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     lhs: &'a Series,
     rhs: &'a Series,
 ) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    if let Ok(result) = coerce_time_units(lhs, rhs) {
+        return Ok(result);
+    }
+
     let dtype = get_supertype(lhs.dtype(), rhs.dtype())?;
     let left = if lhs.dtype() == &dtype {
         Cow::Borrowed(lhs)
@@ -339,6 +343,46 @@ pub(crate) fn coerce_lhs_rhs<'a>(
         Cow::Owned(rhs.cast(&dtype)?)
     };
     Ok((left, right))
+}
+
+// Handle (Date | Datetime) +/- (Duration) | (Duration) +/- (Date | Datetime)
+// Time arithmetic is only implemented on the date / datetime so ensure that's on left
+
+fn coerce_time_units<'a>(
+    lhs: &'a Series,
+    rhs: &'a Series,
+) -> Result<(Cow<'a, Series>, Cow<'a, Series>)> {
+    return if let (DataType::Datetime(lu, t), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
+        let units = get_time_units(lu, ru);
+        let left = if *lu == units {
+            Cow::Borrowed(lhs)
+        } else {
+            Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone()))?)
+        };
+        let right = if *ru == units {
+            Cow::Borrowed(rhs)
+        } else {
+            Cow::Owned(rhs.cast(&DataType::Duration(units))?)
+        };
+        Ok((left, right))
+    } else if let (DataType::Date, DataType::Duration(units)) = (lhs.dtype(), rhs.dtype()) {
+        let left = Cow::Owned(lhs.cast(&DataType::Datetime(*units, None))?);
+        Ok((left, Cow::Borrowed(rhs)))
+    } else if let (DataType::Duration(_), DataType::Datetime(_, _))
+    | (DataType::Duration(_), DataType::Date) = (lhs.dtype(), rhs.dtype())
+    {
+        let (right, left) = coerce_time_units(rhs, lhs)?;
+        Ok((left, right))
+    } else {
+        Err(PolarsError::InvalidOperation(
+            format!(
+                "Cannot coerce time units for {} {}",
+                lhs.dtype(),
+                rhs.dtype()
+            )
+            .into(),
+        ))
+    };
 }
 
 impl ops::Sub for &Series {
@@ -409,6 +453,8 @@ fn finish_cast(inp: &Series, out: Series) -> Series {
         DataType::Date => out.into_date(),
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         DataType::Time => out.into_time(),
         _ => out,

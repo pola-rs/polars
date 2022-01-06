@@ -44,6 +44,7 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
+    Duration,
     Float32,
     Float64,
     Int8,
@@ -313,7 +314,7 @@ class Series:
             other = Series("", other)
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op)(other._s))
-        other = maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype, self.time_unit)
         f = get_ffi_func(op + "_<>", self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -340,7 +341,7 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-        other = maybe_cast(other, self.dtype)
+        other = maybe_cast(other, self.dtype, self.time_unit)
         f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
             return NotImplemented
@@ -412,7 +413,7 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (PlList, Date, Datetime, Object):
+            if self.dtype in (PlList, Date, Datetime, Duration, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
@@ -1826,7 +1827,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date, Datetime)
+        return self.dtype in (Date, Datetime, Duration)
 
     def is_float(self) -> bool:
         """
@@ -1972,6 +1973,8 @@ class Series:
         def convert_to_date(arr):  # type: ignore
             if self.dtype == Date:
                 tp = "datetime64[D]"
+            elif self.dtype == Duration:
+                tp = f"timedelta64[{self.time_unit}]"
             else:
                 tp = f"datetime64[{self.time_unit}]"
             return arr.astype(tp)

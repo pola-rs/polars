@@ -53,6 +53,10 @@ def in_nanoseconds_window(dt: datetime) -> bool:
     return 1386 < dt.year < 2554
 
 
+def timedelta_in_nanoseconds_window(td: timedelta) -> bool:
+    return in_nanoseconds_window(datetime(1970, 1, 1) + td)
+
+
 def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
     """
     Converts a python datetime to a timestamp in nanoseconds
@@ -68,6 +72,20 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
             return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
     else:
         raise ValueError("expected on of {'ns', 'ms'}")
+
+
+def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
+    if tu == "ns":
+        return int(td.total_seconds() * 1e9)
+    elif tu == "ms":
+        return int(td.total_seconds() * 1e3)
+    if tu is None:
+        if timedelta_in_nanoseconds_window(td):
+            return int(td.total_seconds() * 1e9)
+        else:
+            return int(td.total_seconds() * 1e3)
+    else:
+        raise ValueError("expected one of {'ns', 'ms'}")
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -118,6 +136,17 @@ def handle_projection_columns(
                 "columns arg should contain a list of all integers or all strings values."
             )
     return projection, columns  # type: ignore
+
+
+def _to_python_timedelta(
+    value: Union[int, float], tu: Optional[str] = "ns"
+) -> timedelta:
+    if tu == "ns":
+        return timedelta(microseconds=value // 1e3)
+    elif tu == "ms":
+        return timedelta(milliseconds=value)
+    else:
+        raise ValueError(f"time unit: {tu} not expected")
 
 
 def _to_python_datetime(

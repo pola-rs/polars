@@ -470,6 +470,13 @@ pub trait SeriesTrait:
         ))
     }
 
+    /// Unpack to ChunkedArray of dtype duration
+    fn duration(&self) -> Result<&DurationChunked> {
+        Err(PolarsError::SchemaMisMatch(
+            format!("Series dtype {:?} != duration", self.dtype()).into(),
+        ))
+    }
+
     /// Unpack to ChunkedArray of dtype list
     fn list(&self) -> Result<&ListChunked> {
         Err(PolarsError::SchemaMisMatch(

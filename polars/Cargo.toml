@@ -110,6 +110,7 @@ private = ["polars-lazy/private"]
 dtype-full = [
   "dtype-date",
   "dtype-datetime",
+  "dtype-duration",
   "dtype-time",
   "dtype-i8",
   "dtype-i16",
@@ -122,11 +123,13 @@ dtype-full = [
 dtype-slim = [
   "dtype-date",
   "dtype-datetime",
+  "dtype-duration",
 ]
 
 # opt-in datatypes for Series
 dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
+dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration"]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]

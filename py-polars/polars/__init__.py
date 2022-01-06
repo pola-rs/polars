@@ -23,6 +23,7 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
+    Duration,
     Float32,
     Float64,
     Int8,
@@ -208,6 +209,7 @@ __all__ = [
 ]
 
 __version__ = version()
+
 import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"

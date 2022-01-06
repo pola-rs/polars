@@ -45,6 +45,24 @@ def test_filter_date() -> None:
     assert df.filter(pl.col("date") < pl.lit(datetime(2020, 1, 5))).shape[0] == 3
 
 
+def test_series_add_timedelta() -> None:
+    dates = pl.Series(
+        [datetime(2000, 1, 1), datetime(2027, 5, 19), datetime(2054, 10, 4)]
+    )
+    out = pl.Series(
+        [datetime(2027, 5, 19), datetime(2054, 10, 4), datetime(2082, 2, 19)]
+    )
+    assert (dates + timedelta(days=10_000)).series_equal(out)
+
+
+def test_series_add_datetime() -> None:
+    deltas = pl.Series([timedelta(10_000), timedelta(20_000), timedelta(30_000)])
+    out = pl.Series(
+        [datetime(2027, 5, 19), datetime(2054, 10, 4), datetime(2082, 2, 19)]
+    )
+    assert (deltas + pl.Series([datetime(2000, 1, 1)])) == out
+
+
 def test_diff_datetime() -> None:
     df = pl.DataFrame(
         {
@@ -59,9 +77,8 @@ def test_diff_datetime() -> None:
             [
                 pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
             ]
-        ).with_columns([pl.col("timestamp").diff().over(pl.col("char"))])
+        ).with_columns([pl.col("timestamp").diff().over("char")])
     )["timestamp"]
-
     assert out[0] == out[1]
 
 
@@ -186,6 +203,9 @@ def test_to_numpy() -> None:
         str(s2.to_numpy()[:2])
         == "['2021-01-01T00:00:00.000' '2021-01-01T01:00:00.000']"
     )
+    s3 = pl.Series([timedelta(hours=1), timedelta(hours=-2)])
+    out = np.array([3_600_000_000_000, -7_200_000_000_000], dtype="timedelta64[ns]")
+    assert (s3.to_numpy() == out).all()
 
 
 def test_truncate() -> None:

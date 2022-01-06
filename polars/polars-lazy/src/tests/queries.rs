@@ -486,6 +486,80 @@ fn test_lazy_query_9() -> Result<()> {
 
 #[test]
 #[cfg(feature = "temporal")]
+fn test_lazy_query_10() {
+    use polars_core::export::chrono::Duration as ChronoDuration;
+    let date = NaiveDate::from_ymd(2021, 3, 5);
+    let x: Series = DatetimeChunked::new_from_naive_datetime(
+        "x",
+        &*vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(13, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(14, 0, 0)),
+        ],
+        TimeUnit::Nanoseconds,
+    )
+    .into();
+    let y: Series = DatetimeChunked::new_from_naive_datetime(
+        "y",
+        &*vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
+        ],
+        TimeUnit::Nanoseconds,
+    )
+    .into();
+    let df = DataFrame::new(vec![x, y]).unwrap();
+    let out = df
+        .lazy()
+        .select(&[(col("x") - col("y")).alias("z")])
+        .collect()
+        .unwrap();
+    let z: Series = DurationChunked::new_from_duration(
+        "z",
+        &*vec![
+            ChronoDuration::hours(1),
+            ChronoDuration::hours(2),
+            ChronoDuration::hours(3),
+        ],
+        TimeUnit::Nanoseconds,
+    )
+    .into();
+    assert!(out.column("z").unwrap().series_equal(&z));
+    let x: Series = DatetimeChunked::new_from_naive_datetime(
+        "x",
+        &*vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(2, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(3, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(4, 0, 0)),
+        ],
+        TimeUnit::Milliseconds,
+    )
+    .into();
+    let y: Series = DatetimeChunked::new_from_naive_datetime(
+        "y",
+        &*vec![
+            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
+            NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
+        ],
+        TimeUnit::Nanoseconds,
+    )
+    .into();
+    let df = DataFrame::new(vec![x, y]).unwrap();
+    let out = df
+        .lazy()
+        .select(&[(col("x") - col("y")).alias("z")])
+        .collect()
+        .unwrap();
+    assert!(out
+        .column("z")
+        .unwrap()
+        .series_equal(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+}
+
+#[test]
+#[cfg(feature = "temporal")]
 fn test_lazy_query_7() {
     let date = NaiveDate::from_ymd(2021, 3, 5);
     let dates = vec![

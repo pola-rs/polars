@@ -219,9 +219,10 @@ macro_rules! impl_dyn_series {
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {
-                        let lhs = self.cast(&DataType::Int32).unwrap();
-                        let rhs = rhs.cast(&DataType::Int32).unwrap();
-                        Ok(lhs.subtract(&rhs)?.$into_logical().into_series())
+                        let dt = DataType::Datetime(TimeUnit::Milliseconds, None);
+                        let lhs = self.cast(&dt)?;
+                        let rhs = rhs.cast(&dt)?;
+                        lhs.subtract(&rhs)
                     }
                     (dtl, dtr) => Err(PolarsError::ComputeError(
                         format!(
@@ -232,10 +233,16 @@ macro_rules! impl_dyn_series {
                     )),
                 }
             }
-            fn add_to(&self, _rhs: &Series) -> Result<Series> {
-                Err(PolarsError::ComputeError(
-                    "cannot do addition on logical".into(),
-                ))
+            fn add_to(&self, rhs: &Series) -> Result<Series> {
+                match (self.dtype(), rhs.dtype()) {
+                    (dtl, dtr) => Err(PolarsError::ComputeError(
+                        format!(
+                            "cannot do addition on these date types: {:?}, {:?}",
+                            dtl, dtr
+                        )
+                        .into(),
+                    )),
+                }
             }
             fn multiply(&self, _rhs: &Series) -> Result<Series> {
                 Err(PolarsError::ComputeError(
@@ -723,7 +730,7 @@ mod test {
         let out = s.subtract(&s)?;
         assert!(matches!(
             out.dtype(),
-            DataType::Datetime(TimeUnit::Nanoseconds, None)
+            DataType::Duration(TimeUnit::Nanoseconds)
         ));
 
         let mut a = s.clone();
@@ -791,5 +798,34 @@ mod test {
             out.dtype(),
             &DataType::Datetime(TimeUnit::Nanoseconds, None)
         );
+    }
+
+    #[test]
+    fn test_duration() -> Result<()> {
+        let a = Int64Chunked::new("", &[1, 2, 3])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
+        let b = Int64Chunked::new("", &[2, 3, 4])
+            .into_datetime(TimeUnit::Nanoseconds, None)
+            .into_series();
+        let c = Int64Chunked::new("", &[1, 1, 1])
+            .into_duration(TimeUnit::Nanoseconds)
+            .into_series();
+        assert_eq!(
+            *b.subtract(&a)?.dtype(),
+            DataType::Duration(TimeUnit::Nanoseconds)
+        );
+        assert_eq!(
+            *a.add_to(&c)?.dtype(),
+            DataType::Datetime(TimeUnit::Nanoseconds, None)
+        );
+        assert_eq!(
+            b.subtract(&a)?,
+            Int64Chunked::full("", 1, a.len())
+                .into_duration(TimeUnit::Nanoseconds)
+                .into_series()
+        );
+        // assert_eq!(a.add_to(&c)?, b);
+        Ok(())
     }
 }

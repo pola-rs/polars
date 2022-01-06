@@ -21,6 +21,7 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     let out = match dtype {
         Date => out.into_date(),
         Datetime(tu, tz) => out.into_datetime(*tu, tz.clone()),
+        Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
         _ => out,

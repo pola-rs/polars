@@ -2,6 +2,7 @@ use crate::prelude::*;
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
+    feature = "dtype-duration",
     feature = "dtype-time"
 ))]
 use polars_arrow::compute::cast::cast;
@@ -31,6 +32,11 @@ impl Series {
             }
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
+                let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
+                Arc::from(arr)
+            }
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => {
                 let arr = cast(&*self.chunks()[chunk_idx], &self.dtype().to_arrow()).unwrap();
                 Arc::from(arr)
             }

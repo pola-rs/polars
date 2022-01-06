@@ -32,6 +32,10 @@ impl Series {
                 DataType::Datetime(tu, tz) => Int64Chunked::full_null(name, size)
                     .into_datetime(*tu, tz.clone())
                     .into_series(),
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => Int64Chunked::full_null(name, size)
+                    .into_duration(*tu)
+                    .into_series(),
                 #[cfg(feature = "dtype-time")]
                 DataType::Time => Int64Chunked::full_null(name, size)
                     .into_time()

@@ -175,6 +175,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                         .into_py(py),
                 }
             }
+            AnyValue::Duration(v, tu) => {
+                let pl = PyModule::import(py, "polars").unwrap();
+                let pli = pl.getattr("internals").unwrap();
+                let m_series = pli.getattr("series").unwrap();
+                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                match tu {
+                    TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
+                    TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
+                }
+            }
             AnyValue::Time(v) => v.into_py(py),
             AnyValue::List(v) => {
                 let pypolars = PyModule::import(py, "polars").unwrap();
@@ -214,6 +224,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::List(_) => pl.getattr("List").unwrap().into(),
             DataType::Date => pl.getattr("Date").unwrap().into(),
             DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
+            DataType::Duration(_) => pl.getattr("Duration").unwrap().into(),
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),

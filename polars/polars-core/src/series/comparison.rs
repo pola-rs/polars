@@ -33,6 +33,11 @@ macro_rules! impl_compare {
                 .datetime()
                 .unwrap()
                 .$method(rhs.datetime().unwrap().deref()),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => lhs
+                .duration()
+                .unwrap()
+                .$method(rhs.duration().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => lhs
