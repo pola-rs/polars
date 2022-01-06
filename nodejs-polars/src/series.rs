@@ -157,6 +157,14 @@ pub fn repeat(cx: CallContext) -> JsResult<JsExternal> {
             ca.rename(name);
             ca.into_series()
         }
+        DataType::Datetime(_, _) => {
+            let val = val.extract::<i64>().unwrap();
+            let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
+            ca.rename(name);
+            ca.clone()
+                .into_datetime(TimeUnit::Milliseconds, None)
+                .into_series()
+        }
         dt => {
             panic!("cannot create repeat with dtype: {:?}", dt);
         }
