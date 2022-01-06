@@ -3672,7 +3672,7 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
-    def concat(self, other: Union[List[Series], Series]) -> "Series":
+    def concat(self, other: Union[List[Series], Series, List[Any]]) -> "Series":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -3681,14 +3681,8 @@ class ListNameSpace:
         other
             Columns to concat into a List Series
         """
-        if not isinstance(other, list):
-            other = [other]
         s = wrap_s(self._s)
-        names = [s.name for s in other]
-        names.insert(0, s.name)
-        df = pli.DataFrame(other)
-        df.insert_at_idx(0, s)
-        return df.select(pli.concat_list(names))[s.name]
+        return s.to_frame().select(pli.col(s.name).arr.concat(other)).to_series()
 
     def get(self, index: int) -> "Series":
         """

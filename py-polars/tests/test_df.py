@@ -1762,3 +1762,9 @@ def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
     for v in s.values():
         assert isinstance(v, inner_dtype)
         assert len(v) == len(df)
+
+
+def test_df_broadcast() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    out = df.with_column(pl.Series([[1, 2]]))
+    assert out.shape == (3, 2)

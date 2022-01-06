@@ -2331,7 +2331,9 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(self, other: Union[List[Union[Expr, str]], Expr, str]) -> "Expr":
+    def concat(
+        self, other: Union[List[Union[Expr, str]], Expr, str, "pli.Series", List[Any]]
+    ) -> "Expr":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -2340,11 +2342,17 @@ class ExprListNameSpace:
         other
             Columns to concat into a List Series
         """
-        other_list: List[Union[Expr, str]]
+        if isinstance(other, list) and (
+            not isinstance(other[0], (Expr, str, pli.Series))
+        ):
+            return self.concat(pli.Series([other]))
+
+        other_list: List[Union[Expr, str, "pli.Series"]]
         if not isinstance(other, list):
             other_list = [other]
         else:
-            other_list = copy.copy(other)
+            other_list = copy.copy(other)  # type: ignore
+
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
 
