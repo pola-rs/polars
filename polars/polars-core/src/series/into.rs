@@ -2,6 +2,7 @@ use crate::prelude::*;
 #[cfg(any(
     feature = "dtype-datetime",
     feature = "dtype-date",
+    feature = "dtype-duration",
     feature = "dtype-time"
 ))]
 use polars_arrow::compute::cast::cast;
