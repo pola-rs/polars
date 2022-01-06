@@ -741,6 +741,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-datetime")]
     fn test_arithmetic_dispatch() {
         let s = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)

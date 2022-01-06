@@ -60,12 +60,20 @@ unsafe fn arr_to_any_value<'a>(
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
 
-            if let DataType::Categorical = **dt {
-                let mut s_new = s.cast(&DataType::Categorical).unwrap();
-                let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
-                ca.categorical_map = categorical_map.clone();
-                s = s_new;
+            match **dt {
+                DataType::Categorical => {
+                    let mut s_new = s.cast(&DataType::Categorical).unwrap();
+                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
+                    ca.categorical_map = categorical_map.clone();
+                    s = s_new;
+                }
+                DataType::Date
+                | DataType::Datetime(_, _)
+                | DataType::Time
+                | DataType::Duration(_) => s = s.cast(dt).unwrap(),
+                _ => {}
             }
+
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-categorical")]

@@ -249,7 +249,7 @@ impl ChunkExplode for ListChunked {
                     last = o;
                 }
                 if !has_empty {
-                    panic!()
+                    panic!("could have fast exploded")
                 }
             }
 
@@ -257,11 +257,24 @@ impl ChunkExplode for ListChunked {
             values.explode_by_offsets(offsets)
         };
         debug_assert_eq!(s.name(), self.name());
-        if let DataType::Categorical = self.inner_dtype() {
-            let ca = s.u32().unwrap();
-            let mut ca = ca.clone();
-            ca.categorical_map = self.categorical_map.clone();
-            s = ca.cast(&DataType::Categorical)?;
+        // make sure we restore the logical type
+        match self.inner_dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical => {
+                let ca = s.u32().unwrap();
+                let mut ca = ca.clone();
+                ca.categorical_map = self.categorical_map.clone();
+                s = ca.cast(&DataType::Categorical)?;
+            }
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => s = s.into_date(),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(tu, tz) => s = s.into_datetime(tu, tz),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(tu) => s = s.into_duration(tu),
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => s = s.into_time(),
+            _ => {}
         }
 
         Ok((s, offsets_buf))
