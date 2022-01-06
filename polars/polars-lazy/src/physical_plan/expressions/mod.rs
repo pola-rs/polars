@@ -228,7 +228,15 @@ impl<'a> AggregationContext<'a> {
                 assert_eq!(series.len(), self.groups.len());
                 AggState::AggregatedList(series)
             }
-            _ => AggState::NotAggregated(series),
+            _ => {
+                // already aggregated to sum, min even this series was flattened it never could
+                // retrieve the length before grouping, so it stays  in this state.
+                if let AggState::AggregatedFlat(_) = self.series {
+                    AggState::AggregatedFlat(series)
+                } else {
+                    AggState::NotAggregated(series)
+                }
+            }
         };
         self
     }

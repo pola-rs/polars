@@ -1948,6 +1948,47 @@ fn test_round_after_agg() -> Result<()> {
         .collect()?;
 
     assert!(out.column("foo")?.f32().is_ok());
+
+    let df = df![
+        "groups" => ["pigeon",
+                 "rabbit",
+                 "rabbit",
+                 "Chris",
+                 "pigeon",
+                 "fast",
+                 "fast",
+                 "pigeon",
+                 "rabbit",
+                 "Chris"],
+        "b" => [5409, 4848, 4864, 3540, 8103, 3083, 8575, 9963, 8809, 5425],
+        "c" => [0.4517241160719615,
+                  0.2551467646274673,
+                  0.8682045191407308,
+                  0.9925316385786037,
+                  0.5392027792928116,
+                  0.7633847828107002,
+                  0.7967295231651537,
+                  0.01444779067224733,
+                  0.23807484087472652,
+                  0.10985868798350984]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby_stable([col("groups")])
+        .agg([((col("b") * col("c")).sum() / col("b").sum())
+            .round(2)
+            .alias("foo")])
+        .collect()?;
+
+    let out = out.column("foo")?;
+    let out = out.f64()?;
+
+    assert_eq!(
+        Vec::from(out),
+        &[Some(0.3), Some(0.41), Some(0.46), Some(0.79)]
+    );
+
     Ok(())
 }
 
