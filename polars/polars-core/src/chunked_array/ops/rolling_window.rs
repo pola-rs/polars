@@ -279,10 +279,16 @@ mod inner_mod {
         Self: IntoSeries,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
-        fn rolling_apply(&self, window_size: usize, f: &dyn Fn(&Series) -> Series) -> Result<Self> {
-            if window_size >= self.len() {
+        fn rolling_apply(
+            &self,
+            f: &dyn Fn(&Series) -> Series,
+            options: RollingOptions,
+        ) -> Result<Self> {
+            if options.window_size >= self.len() {
                 return Ok(Self::full_null(self.name(), self.len()));
             }
+
+            let len = self.len();
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
 
@@ -291,24 +297,36 @@ mod inner_mod {
             let array_ptr = &series_container.chunks()[0];
             let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
-            for _ in 0..window_size - 1 {
-                builder.append_null();
-            }
 
-            for offset in 0..self.len() + 1 - window_size {
-                let arr_window = arr.slice(offset, window_size);
+            for idx in 0..len {
+                let (start, end) = if options.center {
+                    (
+                        idx.saturating_sub(options.window_size / 2),
+                        std::cmp::min(len, idx + options.window_size / 2),
+                    )
+                } else {
+                    (idx.saturating_sub(options.window_size - 1), idx + 1)
+                };
 
-                // Safety.
-                // ptr is not dropped as we are in scope
-                // We are also the only owner of the contents of the Arc
-                // we do this to reduce heap allocs.
-                unsafe {
-                    *ptr = arr_window;
+                let size = end - start;
+
+                if size < options.min_periods {
+                    builder.append_null();
+                } else {
+                    let arr_window = arr.slice(start, size);
+
+                    // Safety.
+                    // ptr is not dropped as we are in scope
+                    // We are also the only owner of the contents of the Arc
+                    // we do this to reduce heap allocs.
+                    unsafe {
+                        *ptr = arr_window;
+                    }
+
+                    let s = f(&series_container);
+                    let out = self.unpack_series_matching_type(&s)?;
+                    builder.append_option(out.get(0));
                 }
-
-                let s = f(&series_container);
-                let out = self.unpack_series_matching_type(&s)?;
-                builder.append_option(out.get(0));
             }
 
             Ok(builder.finish())
@@ -577,7 +595,16 @@ mod test {
             ],
         );
 
-        let out = ca.rolling_apply(3, &|s| s.sum_as_series()).unwrap();
+        let out = ca
+            .rolling_apply(
+                &|s| s.sum_as_series(),
+                RollingOptions {
+                    window_size: 3,
+                    min_periods: 3,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
         assert_eq!(
             Vec::from(&out),
             &[

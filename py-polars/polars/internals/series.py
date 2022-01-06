@@ -2665,7 +2665,12 @@ class Series:
         return wrap_s(self._s.rolling_var(window_size, weights, min_periods, center))
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pli.Series"], Any]
+        self,
+        function: Callable[["pli.Series"], Any],
+        window_size: int,
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "pli.Series":
         """
         Allows a custom rolling window function.
@@ -2679,15 +2684,23 @@ class Series:
 
         Parameters
         ----------
-        window_size
-            Size of the rolling window
         function
             Aggregation function
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
         >>> s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-        >>> s.rolling_apply(window_size=3, function=lambda s: s.std())
+        >>> s.rolling_apply(function=lambda s: s.std(), window_size=3)
         shape: (5,)
         Series: 'A' [f64]
         [
@@ -2699,8 +2712,12 @@ class Series:
         ]
 
         """
+        if min_periods is None:
+            min_periods = window_size
         return self.to_frame().select(
-            pli.col(self.name).rolling_apply(window_size, function)
+            pli.col(self.name).rolling_apply(
+                function, window_size, weights, min_periods, center
+            )
         )[self.name]
 
     def rolling_median(
@@ -2718,7 +2735,8 @@ class Series:
         window_size
             The length of the window.
         weights
-            An optional slice with the same length of the window that will be used to weight the values in the median calculation.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
@@ -2754,7 +2772,8 @@ class Series:
         window_size
             The length of the window.
         weights
-            An optional slice with the same length of the window that will be used to weight the values in the quantile calculation.
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
         min_periods
             The number of values in the window that should be non-null before computing a result.
             If None, it will be set equal to window size.
