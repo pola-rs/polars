@@ -236,6 +236,15 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
+    for tu in ["ns", "ms"]:
+        rng = pl.date_range(
+            datetime(2020, 1, 1), datetime(2020, 1, 2), "2h", time_unit=tu
+        )
+        assert rng.time_unit == tu
+        assert rng.shape == (13,)
+        assert rng.dt[0] == datetime(2020, 1, 1)
+        assert rng.dt[-1] == datetime(2020, 1, 2)
+
 
 def test_date_comp() -> None:
     one = datetime(2001, 1, 1)

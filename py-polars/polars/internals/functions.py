@@ -230,6 +230,8 @@ def date_range(
 
     if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
         tu = "ns"
+    elif time_unit is not None:
+        tu = time_unit
     else:
         tu = "ms"
 
