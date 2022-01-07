@@ -1,4 +1,4 @@
-use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
 use crate::prelude::*;
 use std::borrow::Cow;
 
@@ -58,14 +58,26 @@ impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
-        let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+        let list_cap = series_slice.len();
 
         let dt = series_slice[0].dtype();
-        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
-        for series in series_slice {
-            builder.append_series(series)
+
+        // inner type is also list so we need the anonymous builder
+        if matches!(dt, DataType::List(_)) {
+            let mut builder = AnonymousListBuilder::new(name, list_cap);
+            for s in series_slice {
+                builder.append_series(s)
+            }
+            builder.finish().into_series()
+        } else {
+            let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+
+            let mut builder = get_list_builder(dt, values_cap, list_cap, name);
+            for series in series_slice {
+                builder.append_series(series)
+            }
+            builder.finish().into_series()
         }
-        builder.finish().into_series()
     }
 }
 

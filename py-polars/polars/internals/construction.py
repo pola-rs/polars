@@ -149,6 +149,18 @@ def sequence_to_pyseries(
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
 
+            # recursively call Series constructor
+            if nested_dtype == list:
+                return sequence_to_pyseries(
+                    name=name,
+                    values=[
+                        sequence_to_pyseries(name, seq, dtype=None, strict=strict)
+                        for seq in values
+                    ],
+                    dtype=None,
+                    strict=strict,
+                )
+
             # logs will show a panic if we infer wrong dtype
             # and its hard to error from rust side
             # to reduce the likelihood of this happening
@@ -184,6 +196,8 @@ def sequence_to_pyseries(
 
         elif dtype_ == pli.Series:
             return PySeries.new_series_list(name, [v.inner() for v in values], strict)
+        elif dtype_ == PySeries:
+            return PySeries.new_series_list(name, values, strict)
 
         else:
             constructor = py_type_to_constructor(dtype_)

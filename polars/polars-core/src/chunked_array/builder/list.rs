@@ -1,5 +1,5 @@
 use super::*;
-use polars_arrow::prelude::PolarsArray;
+use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
 
 pub trait ListBuilderTrait {
     fn append_opt_series(&mut self, opt_s: Option<&Series>);
@@ -318,4 +318,41 @@ pub fn get_list_builder(
         get_utf8_builder,
         get_bool_builder
     )
+}
+
+pub struct AnonymousListBuilder<'a> {
+    name: String,
+    builder: AnonymousBuilder<'a>,
+}
+
+impl<'a> AnonymousListBuilder<'a> {
+    pub fn new(name: &str, capacity: usize) -> Self {
+        Self {
+            name: name.into(),
+            builder: AnonymousBuilder::new(capacity),
+        }
+    }
+
+    pub fn append_opt_series(&mut self, opt_s: Option<&'a Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.append_null();
+            }
+        }
+    }
+
+    pub fn append_null(&mut self) {
+        self.builder.push_null();
+    }
+
+    pub fn append_series(&mut self, s: &'a Series) {
+        assert_eq!(s.chunks().len(), 1);
+        self.builder.push(s.chunks()[0].as_ref())
+    }
+
+    pub fn finish(self) -> ListChunked {
+        let arr = self.builder.finish().unwrap();
+        ListChunked::new_from_chunks(&self.name, vec![Arc::new(arr)])
+    }
 }
