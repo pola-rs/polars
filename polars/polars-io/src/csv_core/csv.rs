@@ -14,21 +14,39 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
-pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field]) -> Result<()> {
-    // cast to the original dtypes in the schema
-    for fld in to_cast {
-        use DataType::*;
-        df.may_apply(fld.name(), |s| match (s.dtype(), fld.data_type()) {
-            #[cfg(feature = "temporal")]
-            (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
-            #[cfg(feature = "temporal")]
-            (Utf8, Datetime(tu, _)) => s
-                .utf8()
-                .unwrap()
-                .as_datetime(None, *tu)
-                .map(|ca| ca.into_series()),
-            (_, dt) => s.cast(dt),
-        })?;
+pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field], parallel: bool) -> Result<()> {
+    use DataType::*;
+
+    let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
+        #[cfg(feature = "temporal")]
+        (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
+        #[cfg(feature = "temporal")]
+        (Utf8, Datetime(tu, _)) => s
+            .utf8()
+            .unwrap()
+            .as_datetime(None, *tu)
+            .map(|ca| ca.into_series()),
+        (_, dt) => s.cast(dt),
+    };
+
+    if parallel {
+        let cols = df
+            .get_columns()
+            .iter()
+            .map(|s| {
+                if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    cast_fn(s, fld)
+                } else {
+                    Ok(s.clone())
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        *df = DataFrame::new_no_checks(cols)
+    } else {
+        // cast to the original dtypes in the schema
+        for fld in to_cast {
+            df.may_apply(fld.name(), |s| cast_fn(s, fld))?;
+        }
     }
     Ok(())
 }
@@ -503,7 +521,7 @@ impl<'a> CoreReader<'a> {
                         }
 
                         df.map(|mut df| {
-                            cast_columns(&mut df, self.to_cast)?;
+                            cast_columns(&mut df, self.to_cast, false)?;
                             Ok(df)
                         })
                         .transpose()
@@ -581,7 +599,7 @@ impl<'a> CoreReader<'a> {
                                 .collect::<Result<_>>()?,
                         );
 
-                        cast_columns(&mut df, self.to_cast)?;
+                        cast_columns(&mut df, self.to_cast, false)?;
                         Ok(df)
                     })
                     .collect::<Result<Vec<_>>>()

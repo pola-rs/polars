@@ -576,8 +576,7 @@ where
             df = parse_dates(df, &*fixed_schema)
         }
 
-        // TODO: parallelize this?
-        cast_columns(&mut df, &to_cast_local)?;
+        cast_columns(&mut df, &to_cast_local, true)?;
         Ok(df)
     }
 }
