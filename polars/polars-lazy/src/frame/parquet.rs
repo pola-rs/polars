@@ -43,7 +43,7 @@ impl LazyFrame {
                 .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
                     Self::scan_parquet_impl(path_string, None, args.cache, false)
                 })

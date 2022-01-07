@@ -206,7 +206,7 @@ impl<'a> LazyCsvReader<'a> {
 
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
                     let mut builder = self.clone();
                     builder.path = path_string;
