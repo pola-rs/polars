@@ -413,7 +413,7 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (PlList, Date, Datetime, Duration, Object):
+            if self.dtype in (PlList, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
@@ -3872,8 +3872,7 @@ class DateTimeNameSpace:
 
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
-        out = s[item]
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return s[item]
 
     def strftime(self, fmt: str) -> Series:
         """
