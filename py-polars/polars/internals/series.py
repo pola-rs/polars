@@ -484,6 +484,26 @@ class Series:
         """
         return self ** 0.5
 
+    def any(self) -> "Series":
+        """
+        Check if any boolean value in the column is `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return self.to_frame().select(pli.col(self.name).any()).to_series()
+
+    def all(self) -> "Series":
+        """
+        Check if all boolean values in the column are `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return self.to_frame().select(pli.col(self.name).all()).to_series()
+
     def log(self) -> "Series":
         """
         Natural logarithm, element-wise.

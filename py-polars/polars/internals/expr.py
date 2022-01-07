@@ -200,6 +200,26 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.to_physical())
 
+    def any(self) -> "Expr":
+        """
+        Check if any boolean value in the column is `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.any())
+
+    def all(self) -> "Expr":
+        """
+        Check if all boolean values in the column are `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.all())
+
     def sqrt(self) -> "Expr":
         """
         Compute the square root of the elements

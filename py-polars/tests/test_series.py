@@ -1362,3 +1362,23 @@ def test_extend() -> None:
 
     expected = pl.Series("a", [1, 2, 3, None, None, None])
     verify_series_and_expr_api(a, expected, "extend", None, 3)
+
+
+def test_any_all() -> None:
+    a = pl.Series("a", [True, False, True])
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "all")
+
+    a = pl.Series("a", [True, True, True])
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "all")
+
+    a = pl.Series("a", [False, False, False])
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "all")

@@ -106,6 +106,8 @@ Boolean
     Expr.is_duplicated
     Expr.is_between
     Expr.is_in
+    Expr.any
+    Expr.all
 
 
 Computations
