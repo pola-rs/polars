@@ -1134,6 +1134,13 @@ impl PyExpr {
             )
             .into()
     }
+    pub fn any(&self) -> Self {
+        self.inner.clone().any().into()
+    }
+
+    pub fn all(&self) -> Self {
+        self.inner.clone().all().into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

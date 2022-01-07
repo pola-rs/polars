@@ -83,6 +83,13 @@ Descriptive stats
     Series.n_unique
     Series.has_validity
 
+Boolean
+-------
+.. autosummary::
+   :toctree: api/
+
+    Series.any
+    Series.all
 
 Computations
 ------------

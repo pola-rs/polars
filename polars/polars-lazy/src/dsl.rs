@@ -1954,6 +1954,38 @@ impl Expr {
             }),
         )
     }
+
+    /// Check if any boolean value is `true`
+    pub fn any(self) -> Self {
+        self.apply(
+            move |s| {
+                let boolean = s.bool()?;
+                // TODO! Optimize this in arrow2/ polars-arrow
+                if boolean.all_false() {
+                    Ok(Series::new(s.name(), [false]))
+                } else {
+                    Ok(Series::new(s.name(), [true]))
+                }
+            },
+            GetOutput::from_type(DataType::Boolean),
+        )
+    }
+
+    /// Check if all boolean values are `true`
+    pub fn all(self) -> Self {
+        self.apply(
+            move |s| {
+                let boolean = s.bool()?;
+                // TODO! Optimize this in arrow2/ polars-arrow
+                if boolean.all_true() {
+                    Ok(Series::new(s.name(), [true]))
+                } else {
+                    Ok(Series::new(s.name(), [false]))
+                }
+            },
+            GetOutput::from_type(DataType::Boolean),
+        )
+    }
 }
 
 /// Create a Column Expression based on a column name.
