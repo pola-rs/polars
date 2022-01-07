@@ -319,6 +319,14 @@ def test_ufunc() -> None:
     b = np.exp(a)
     assert b.null_count() == 1
 
+    # test if it works with chunked series.
+    a = pl.Series("a", [1.0, None, 3.0])
+    b = pl.Series("b", [4.0, 5.0, None])
+    a.append(b)
+    assert a.n_chunks() == 2
+    c = np.multiply(a, 3)
+    testing.assert_series_equal(c, pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]))
+
 
 def test_get() -> None:
     a = pl.Series("a", [1, 2, 3])
