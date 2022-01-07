@@ -335,3 +335,11 @@ def test_truncate_negative_offset() -> None:
         datetime(2021, 5, 1),
         datetime(2021, 4, 1),
     ]
+
+
+def test_to_arrow() -> None:
+    date_series = pl.Series("dates", ["2022-01-16", "2022-01-17"]).str.strptime(
+        pl.Date, "%Y-%m-%d"
+    )
+    arr = date_series.to_arrow()
+    assert arr.type == pa.date32()
