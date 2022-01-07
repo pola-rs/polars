@@ -370,9 +370,9 @@ impl Display for DataFrame {
             let s = format!("{}\n---\n{}", name, f.data_type());
             (s, lower_bounds)
         };
-        let tbl_lb = |l: usize| comfy_table::ColumnConstraint::LowerBoundary(
-            comfy_table::Width::Fixed(l as u16),
-        );
+        let tbl_lb = |l: usize| {
+            comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
+        };
 
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
         let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
