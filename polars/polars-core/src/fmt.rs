@@ -412,7 +412,6 @@ impl Display for DataFrame {
             };
 
             table
-                
                 .load_preset(preset)
                 .set_content_arrangement(ContentArrangement::Dynamic);
 
