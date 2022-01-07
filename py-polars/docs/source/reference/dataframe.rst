@@ -19,6 +19,7 @@ Attributes
     DataFrame.width
     DataFrame.columns
     DataFrame.dtypes
+    DataFrame.schema
 
 Conversion
 ----------
