@@ -55,6 +55,7 @@ from polars.datatypes import (
 from polars.datatypes import List as PlList
 from polars.datatypes import (
     Object,
+    Time,
     UInt8,
     UInt16,
     UInt32,
@@ -356,6 +357,9 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     def __truediv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
+
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float():
             return self._arithmetic(other, "div", "div_<>")
@@ -363,18 +367,30 @@ class Series:
         return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         result = self._arithmetic(other, "div", "div_<>")
         if self.is_float():
             result = result.floor()
         return result
 
     def __mul__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before applying modulo on datelike dtypes"
+            )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before applying modulo on datelike dtypes"
+            )
         return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> "Series":
@@ -389,6 +405,8 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
             self.__rfloordiv__(other)
 
@@ -398,13 +416,28 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, power: float, modulo: None = None) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
         return np.power(self, power)  # type: ignore
+
+    def __rpow__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
+        return np.power(other, self)  # type: ignore
 
     def __neg__(self) -> "Series":
         return 0 - self
@@ -1847,7 +1880,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date, Datetime, Duration)
+        return self.dtype in (Date, Datetime, Duration, Time)
 
     def is_float(self) -> bool:
         """
