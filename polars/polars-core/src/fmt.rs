@@ -391,7 +391,7 @@ impl Display for DataFrame {
         }
         if reduce_columns {
             names.push("...".into());
-            
+
             #[cfg(feature = "pretty_fmt")]
             constraints.push(tbl_lb(5));
         }
@@ -414,8 +414,7 @@ impl Display for DataFrame {
             table
                 
                 .load_preset(preset)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .force_no_tty();
+                .set_content_arrangement(ContentArrangement::Dynamic);
 
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
