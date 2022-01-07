@@ -302,24 +302,24 @@ impl Debug for DataFrame {
         Display::fmt(self, f)
     }
 }
+#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+fn make_str_val(v: &str) -> String {
+    let string_limit = 32;
+    let v_trunc = &v[..v
+        .char_indices()
+        .take(string_limit)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0)];
+    if v == v_trunc {
+        v.to_string()
+    } else {
+        format!("{}...", v_trunc)
+    }
+}
 
 #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
-    fn make_str_val(v: &str) -> String {
-        let string_limit = 32;
-        let v_trunc = &v[..v
-            .char_indices()
-            .take(string_limit)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0)];
-        if v == v_trunc {
-            v.to_string()
-        } else {
-            format!("{}...", v_trunc)
-        }
-    }
-
     let reduce_columns = n_first + n_last < row.len();
     let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
     for v in row[0..n_first].iter() {
@@ -364,20 +364,36 @@ impl Display for DataFrame {
             (self.width(), 0)
         };
         let reduce_columns = n_first + n_last < self.width();
-
-        let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
+        let field_to_str = |f: &Field| {
+            let name = make_str_val(f.name());
+            let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
+            let s = format!("{}\n---\n{}", name, f.data_type());
+            (s, lower_bounds)
+        };
 
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+        let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
         let schema = self.schema();
         let fields = schema.fields();
         for field in fields[0..n_first].iter() {
-            names.push(field_to_str(field))
+            let (s, l) = field_to_str(field);
+            constraints.push(comfy_table::ColumnConstraint::LowerBoundary(
+                comfy_table::Width::Fixed(l as u16),
+            ));
+            names.push(s);
         }
         if reduce_columns {
-            names.push("...".to_string())
+            names.push("...".into());
+            constraints.push(comfy_table::ColumnConstraint::Absolute(
+                comfy_table::Width::Fixed(5u16),
+            ));
         }
         for field in fields[self.width() - n_last..].iter() {
-            names.push(field_to_str(field))
+            let (s, l) = field_to_str(field);
+            constraints.push(comfy_table::ColumnConstraint::LowerBoundary(
+                comfy_table::Width::Fixed(l as u16),
+            ));
+            names.push(s);
         }
         #[cfg(feature = "pretty_fmt")]
         {
@@ -390,16 +406,8 @@ impl Display for DataFrame {
 
             table
                 .load_preset(preset)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_table_width(
-                    std::env::var("POLARS_TABLE_WIDTH")
-                        .map(|s| {
-                            s.parse::<u16>()
-                                .expect("could not parse table width argument")
-                        })
-                        .unwrap_or(100),
-                )
-                .set_header(names);
+                .set_content_arrangement(ContentArrangement::Dynamic);
+
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
@@ -425,6 +433,19 @@ impl Display for DataFrame {
                     }
                 }
             }
+            let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
+                .map(|s| {
+                    Some(
+                        s.parse::<u16>()
+                            .expect("could not parse table width argument"),
+                    )
+                })
+                .unwrap_or(None);
+
+            if let Some(w) = tbl_width {
+                table.set_table_width(w);
+            };
+            table.set_header(names).set_constraints(constraints);
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
@@ -440,7 +461,12 @@ impl Display for DataFrame {
         #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
         {
             let mut table = Table::new();
-            table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
+            table.set_titles(Row::new(
+                names
+                    .into_iter()
+                    .map(|s| Cell::new(&s).add_attribute(Attr::Bold))
+                    .collect(),
+            ));
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
