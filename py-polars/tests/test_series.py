@@ -182,6 +182,28 @@ def test_arithmetic(s: pl.Series) -> None:
     assert ((1.0 + a) == [2, 3]).sum() == 2
     assert ((1.0 % a) == [0, 1]).sum() == 2
 
+    a = pl.Series("a", [datetime(2021, 1, 1)])
+    with pytest.raises(ValueError):
+        a // 2
+    with pytest.raises(ValueError):
+        a / 2
+    with pytest.raises(ValueError):
+        a * 2
+    with pytest.raises(ValueError):
+        a % 2
+    with pytest.raises(ValueError):
+        a ** 2
+    with pytest.raises(ValueError):
+        2 / a
+    with pytest.raises(ValueError):
+        2 // a
+    with pytest.raises(ValueError):
+        2 * a
+    with pytest.raises(ValueError):
+        2 % a
+    with pytest.raises(ValueError):
+        2 ** a
+
 
 def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
