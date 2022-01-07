@@ -761,7 +761,8 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
-        arrow_interop::to_py::to_py_array(self.series.chunks()[0].clone(), py, pyarrow)
+
+        arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
     }
 
     #[cfg(feature = "is_in")]
