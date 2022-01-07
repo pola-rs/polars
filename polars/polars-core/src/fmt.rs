@@ -370,6 +370,9 @@ impl Display for DataFrame {
             let s = format!("{}\n---\n{}", name, f.data_type());
             (s, lower_bounds)
         };
+        let tbl_lb = |l: usize| comfy_table::ColumnConstraint::LowerBoundary(
+            comfy_table::Width::Fixed(l as u16),
+        );
 
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
         let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
@@ -377,22 +380,16 @@ impl Display for DataFrame {
         let fields = schema.fields();
         for field in fields[0..n_first].iter() {
             let (s, l) = field_to_str(field);
-            constraints.push(comfy_table::ColumnConstraint::LowerBoundary(
-                comfy_table::Width::Fixed(l as u16),
-            ));
+            constraints.push(tbl_lb(l));
             names.push(s);
         }
         if reduce_columns {
             names.push("...".into());
-            constraints.push(comfy_table::ColumnConstraint::Absolute(
-                comfy_table::Width::Fixed(5u16),
-            ));
+            constraints.push(tbl_lb(5));
         }
         for field in fields[self.width() - n_last..].iter() {
             let (s, l) = field_to_str(field);
-            constraints.push(comfy_table::ColumnConstraint::LowerBoundary(
-                comfy_table::Width::Fixed(l as u16),
-            ));
+            constraints.push(tbl_lb(l));
             names.push(s);
         }
         #[cfg(feature = "pretty_fmt")]
@@ -461,12 +458,7 @@ impl Display for DataFrame {
         #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
         {
             let mut table = Table::new();
-            table.set_titles(Row::new(
-                names
-                    .into_iter()
-                    .map(|s| Cell::new(&s).add_attribute(Attr::Bold))
-                    .collect(),
-            ));
+            table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
