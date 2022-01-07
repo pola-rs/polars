@@ -45,7 +45,7 @@ impl LazyFrame {
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
-                    Self::scan_parquet_impl(path_string, None, args.cache, false)
+                    Self::scan_parquet_impl(path_string, args.n_rows, args.cache, false)
                 })
                 .collect::<Result<Vec<_>>>()?;
 
