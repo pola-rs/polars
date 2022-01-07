@@ -370,27 +370,37 @@ impl Display for DataFrame {
             let s = format!("{}\n---\n{}", name, f.data_type());
             (s, lower_bounds)
         };
+        let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+
+        #[cfg(feature = "pretty_fmt")]
         let tbl_lb = |l: usize| {
             comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
         };
 
-        let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+        #[cfg(feature = "pretty_fmt")]
         let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+
         let schema = self.schema();
         let fields = schema.fields();
         for field in fields[0..n_first].iter() {
             let (s, l) = field_to_str(field);
-            constraints.push(tbl_lb(l));
             names.push(s);
+
+            #[cfg(feature = "pretty_fmt")]
+            constraints.push(tbl_lb(l));
         }
         if reduce_columns {
             names.push("...".into());
+            
+            #[cfg(feature = "pretty_fmt")]
             constraints.push(tbl_lb(5));
         }
         for field in fields[self.width() - n_last..].iter() {
             let (s, l) = field_to_str(field);
-            constraints.push(tbl_lb(l));
             names.push(s);
+
+            #[cfg(feature = "pretty_fmt")]
+            constraints.push(tbl_lb(l));
         }
         #[cfg(feature = "pretty_fmt")]
         {
@@ -402,8 +412,10 @@ impl Display for DataFrame {
             };
 
             table
+                
                 .load_preset(preset)
-                .set_content_arrangement(ContentArrangement::Dynamic);
+                .set_content_arrangement(ContentArrangement::Dynamic)
+                .force_no_tty();
 
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
@@ -439,9 +451,16 @@ impl Display for DataFrame {
                 })
                 .unwrap_or(None);
 
+            // if tbl_width is explicitly set, use it
             if let Some(w) = tbl_width {
                 table.set_table_width(w);
             };
+
+            // if no tbl_width (its not-tty && it is not explicitly set), then set default
+            if let None = table.get_table_width() {
+                table.set_table_width(100);
+            }
+
             table.set_header(names).set_constraints(constraints);
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
