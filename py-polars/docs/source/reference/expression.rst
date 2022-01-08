@@ -78,9 +78,11 @@ Aggregation
     Expr.min
     Expr.sum
     Expr.mean
+    Expr.mean
     Expr.median
     Expr.first
     Expr.last
+    Expr.product
     Expr.list
     Expr.agg_groups
     Expr.count

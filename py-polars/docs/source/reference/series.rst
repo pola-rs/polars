@@ -50,6 +50,7 @@ Aggregation
     Series.var
     Series.median
     Series.quantile
+    Series.product
     Series.mode
     Series.arg_min
     Series.arg_max

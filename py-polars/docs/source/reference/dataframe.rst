@@ -48,6 +48,7 @@ Aggregation
     DataFrame.var
     DataFrame.median
     DataFrame.quantile
+    DataFrame.product
 
 Descriptive stats
 -----------------

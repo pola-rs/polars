@@ -89,6 +89,7 @@ features = [
   "dataframe_arithmetic",
   "json",
   "string_encoding",
+  "product",
 ]
 
 # [patch.crates-io]

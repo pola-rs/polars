@@ -76,6 +76,7 @@ horizontal_concat = []
 abs = []
 ewma = ["polars-utils"]
 dataframe_arithmetic = []
+product = []
 
 dynamic_groupby = ["polars-time", "dtype-datetime", "dtype-date"]
 
@@ -130,6 +131,7 @@ docs-selection = [
   "abs",
   "dataframe_arithmetic",
   "string_encoding",
+  "product",
 ]
 
 [dependencies]

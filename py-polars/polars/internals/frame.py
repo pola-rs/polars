@@ -3696,6 +3696,12 @@ class DataFrame:
         """
         return wrap_df(self._df.median())
 
+    def product(self) -> "DataFrame":
+        """
+        Aggregate the columns of this DataFrame to their product values
+        """
+        return self.select(pli.all().product())
+
     def quantile(self, quantile: float, interpolation: str = "nearest") -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their quantile value.

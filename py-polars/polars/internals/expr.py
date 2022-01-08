@@ -1000,6 +1000,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.median())
 
+    def product(self) -> "Expr":
+        """
+        Compute the product of an expression
+        """
+        return wrap_expr(self._pyexpr.product())
+
     def n_unique(self) -> "Expr":
         """Count unique values."""
         return wrap_expr(self._pyexpr.n_unique())

@@ -31,6 +31,10 @@ pub trait ChunkAggSeries {
     fn median_as_series(&self) -> Series {
         unimplemented!()
     }
+    /// Get the product of the ChunkedArray as a new Series of length 1.
+    fn prod_as_series(&self) -> Series {
+        unimplemented!()
+    }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
     fn quantile_as_series(
         &self,
@@ -343,6 +347,19 @@ where
         let val = [self.median()];
         Series::new(self.name(), val)
     }
+
+    fn prod_as_series(&self) -> Series {
+        let mut prod = None;
+        for opt_v in self.into_iter() {
+            match (prod, opt_v) {
+                (_, None) => return Self::full_null(self.name(), 1).into_series(),
+                (None, Some(v)) => prod = Some(v),
+                (Some(p), Some(v)) => prod = Some(p * v),
+            }
+        }
+        Self::new_from_opt_slice(self.name(), &[prod]).into_series()
+    }
+
     fn quantile_as_series(
         &self,
         quantile: f64,
