@@ -1068,6 +1068,7 @@ class DataFrame:
                 str,
             ]
         ] = "snappy",
+        statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -1087,6 +1088,8 @@ class DataFrame:
                 - "brotli"
                 - "lz4"
                 - "zstd"
+        statistics
+            Write statistics to the parquet headers. This requires extra compute.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -1119,10 +1122,14 @@ class DataFrame:
             tbl = pa.table(data)
 
             pa.parquet.write_table(
-                table=tbl, where=file, compression=compression, **kwargs
+                table=tbl,
+                where=file,
+                compression=compression,
+                write_statistics=statistics,
+                **kwargs,
             )
         else:
-            self._df.to_parquet(file, compression)
+            self._df.to_parquet(file, compression, statistics)
 
     def to_numpy(self) -> np.ndarray:
         """
