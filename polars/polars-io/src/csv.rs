@@ -1396,4 +1396,13 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         assert_eq!(df.dtypes(), expected);
         Ok(())
     }
+
+    #[test]
+    fn test_comma_separated_field_in_tsv() -> Result<()> {
+        let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+        assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
+        Ok(())
+    }
 }
