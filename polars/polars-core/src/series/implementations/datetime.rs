@@ -62,11 +62,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    #[cfg(feature = "cum_agg")]
-    fn _cumsum(&self, _reverse: bool) -> Series {
-        panic!("cannot sum logical")
-    }
-
     #[cfg(feature = "asof_join")]
     fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
         let other = other.to_physical_repr();

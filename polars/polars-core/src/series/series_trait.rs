@@ -129,18 +129,6 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumsum(&self, _reverse: bool) -> Series {
-            panic!("operation cumsum not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumprod(&self, _reverse: bool) -> Series {
-            panic!("operation cumprod not supported for this dtype")
-        }
-
         #[cfg(feature = "asof_join")]
         fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
             invalid_operation!(self)
