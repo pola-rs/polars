@@ -364,7 +364,7 @@ class DataFrame:
         )
 
     @staticmethod
-    def read_csv(
+    def _read_csv(
         file: Union[str, BinaryIO, bytes],
         has_header: bool = True,
         columns: Optional[Union[List[int], List[str]]] = None,
@@ -548,7 +548,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_parquet(
+    def _read_parquet(
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
@@ -588,7 +588,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_ipc(
+    def _read_ipc(
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
@@ -629,7 +629,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_json(file: Union[str, BytesIO]) -> "DataFrame":
+    def _read_json(file: Union[str, BytesIO]) -> "DataFrame":
         """
         Read into a DataFrame from JSON format.
 
