@@ -37,6 +37,11 @@ Conversion
     DataFrame.to_numpy
     DataFrame.to_dict
 
+    DataFrame.read_csv
+    DataFrame.read_ipc
+    DataFrame.read_parquet
+    DataFrame.read_json
+
 Aggregation
 -----------
 .. autosummary::
