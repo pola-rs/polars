@@ -5,6 +5,8 @@ DataFrame
 
 Constructor
 -----------
+.. autosummary::
+   :toctree: api/
 
    DataFrame
 
