@@ -19,14 +19,14 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use std::iter::FromIterator;
 
 fn scan_foods_csv() -> LazyFrame {
-    let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+    let path = "../../examples/datasets/foods1.csv";
     LazyCsvReader::new(path.to_string()).finish().unwrap()
 }
 
 fn init_files() {
     for path in &[
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
+        "../../examples/datasets/foods1.csv",
+        "../../examples/datasets/foods2.csv",
     ] {
         let out_path1 = path.replace(".csv", ".parquet");
         let out_path2 = path.replace(".csv", ".ipc");
@@ -50,8 +50,7 @@ fn init_files() {
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_files();
-    let out_path =
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet".into();
+    let out_path = "../../examples/datasets/foods1.parquet".into();
 
     let args = ScanArgsParquet {
         n_rows: None,

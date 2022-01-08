@@ -643,7 +643,7 @@ mod test {
 
     #[test]
     fn test_read_csv_file() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let path = "../../examples/datasets/foods1.csv";
         let file = std::fs::File::open(path).unwrap();
         let df = CsvReader::new(file)
             .with_path(Some(path.to_string()))
@@ -756,7 +756,7 @@ mod test {
 
     #[test]
     fn test_projection() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let path = "../../examples/datasets/foods1.csv";
         let df = CsvReader::from_path(path)
             .unwrap()
             .with_projection(Some(vec![0, 2]))

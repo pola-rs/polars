@@ -2,7 +2,7 @@ import pl from "@polars";
 import path from "path";
 import {Stream} from "stream";
 // eslint-disable-next-line no-undef
-const csvpath = path.resolve(__dirname, "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
+const csvpath = path.resolve(__dirname, "../../examples/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
 const jsonpath = path.resolve(__dirname, "./examples/foods.json");
 
@@ -13,7 +13,7 @@ describe("read:csv", () => {
   });
 
   it("can read from a relative file", () => {
-    const df = pl.readCSV("../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
+    const df = pl.readCSV("../examples/datasets/foods1.csv");
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
   it("can read from a csv file with options", () => {
