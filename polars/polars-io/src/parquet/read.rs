@@ -1,8 +1,9 @@
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::mmap::MmapBytesReader;
 use crate::parquet::read_par::parallel_read;
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::{PhysicalIoExpr, ScanAggregation};
+use crate::ScanAggregation;
 use arrow::io::parquet::read;
 use polars_arrow::io::read_parquet;
 use polars_core::frame::ArrowChunk;
@@ -34,6 +35,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     ) -> Result<DataFrame> {
         match (aggregate.is_some(), predicate.is_some(), self.parallel) {
             (true, true, _) | (true, false, _) | (false, true, false) => {
+                dbg!("path 1");
                 // this path take aggregations, predicates and projections into account
                 let metadata = read::read_metadata(&mut self.reader)?;
                 let mut schema = read::schema::get_schema(&metadata)?;
@@ -60,13 +62,15 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                 finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
             }
             (false, false, _) => {
+                dbg!("path 2");
                 // this path takes optional parallelism and projection into account
                 self.projection = projection.map(|s| s.to_vec());
                 self.finish()
             }
 
             (false, true, true) => {
-                // this path takes parallelism and projection into account
+                dbg!("path 3");
+                // this path takes predicates and parallelism into account
                 let metadata = read::read_metadata(&mut self.reader)?;
                 let schema = read::schema::get_schema(&metadata)?;
 

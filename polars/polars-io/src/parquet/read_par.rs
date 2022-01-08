@@ -1,5 +1,7 @@
 use crate::mmap::{MmapBytesReader, ReaderBytes};
-use crate::PhysicalIoExpr;
+use crate::parquet::predicates::collect_statistics;
+use crate::predicates::{arrow_schema_to_empty_df, PhysicalIoExpr};
+use crate::utils::apply_projection;
 use arrow::array::ArrayRef;
 use arrow::io::parquet::read;
 use arrow::io::parquet::read::{FileMetaData, MutStreamingIterator};
@@ -52,6 +54,22 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
     let cont_pool = LowContentionPool::<Vec<u8>>::new(pool_size);
 
     for row_group in 0..n_groups {
+        let md = &file_metadata.row_groups[0];
+        if let Some(pred) = &predicate {
+            if let Some(pred) = pred.as_stats_evaluator() {
+                if let Some(stats) = collect_statistics(md.columns(), arrow_schema)? {
+                    if !pred.should_read(&stats)? {
+                        continue;
+                    }
+                }
+            }
+        }
+        // test we don't read the parquet file if this env var is set
+        #[cfg(debug_assertions)]
+        {
+            assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
+        }
+
         let columns = POOL.install(|| {
             parq_fields
                 .par_iter()
@@ -100,7 +118,7 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
                 .collect::<Result<Vec<_>>>()
         })?;
         let mut df = DataFrame::new_no_checks(columns);
-        if let Some(predicate) = &predicate {
+        if let (Some(predicate), false) = (&predicate, df.is_empty()) {
             let s = predicate.evaluate(&df)?;
             let mask = s.bool().expect("filter predicates was not of type boolean");
             df = df.filter(mask)?;
@@ -108,5 +126,14 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
         dfs.push(df)
     }
 
-    accumulate_dataframes_vertical(dfs.into_iter()).map(|df| df.slice(0, limit))
+    if dfs.is_empty() {
+        let schema = if let Some(proj) = projection {
+            Cow::Owned(apply_projection(arrow_schema, proj))
+        } else {
+            Cow::Borrowed(arrow_schema)
+        };
+        Ok(arrow_schema_to_empty_df(&schema))
+    } else {
+        accumulate_dataframes_vertical(dfs.into_iter()).map(|df| df.slice(0, limit))
+    }
 }

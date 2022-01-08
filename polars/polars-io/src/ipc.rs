@@ -33,8 +33,9 @@
 //! assert!(df.frame_equal(&df_read));
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult};
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::{PhysicalIoExpr, ScanAggregation};
+use crate::ScanAggregation;
 use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};

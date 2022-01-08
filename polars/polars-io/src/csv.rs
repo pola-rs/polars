@@ -44,8 +44,9 @@
 use crate::csv_core::csv::{cast_columns, CoreReader};
 use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
+use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
-use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
+use crate::{ScanAggregation, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]

@@ -45,7 +45,10 @@ fn init_files() {
 
                 if out_path.ends_with("parquet") {
                     let f = std::fs::File::create(&out_path).unwrap();
-                    ParquetWriter::new(f).finish(&df).unwrap();
+                    ParquetWriter::new(f)
+                        .with_statistics(true)
+                        .finish(&df)
+                        .unwrap();
                 } else {
                     let f = std::fs::File::create(&out_path).unwrap();
                     IpcWriter::new(f).finish(&df).unwrap();

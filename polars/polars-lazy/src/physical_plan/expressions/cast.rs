@@ -78,7 +78,10 @@ impl PhysicalExpr for CastExpr {
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.input.to_field(input_schema)
+        self.input.to_field(input_schema).map(|mut fld| {
+            fld.coerce(self.data_type.clone());
+            fld
+        })
     }
 
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {

@@ -2,7 +2,7 @@ use crate::csv::{CsvEncoding, NullValues};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
-use crate::PhysicalIoExpr;
+use crate::predicates::PhysicalIoExpr;
 use crate::ScanAggregation;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;

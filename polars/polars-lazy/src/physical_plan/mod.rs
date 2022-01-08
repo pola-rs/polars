@@ -6,7 +6,7 @@ pub(crate) mod state;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::PhysicalIoExpr;
+use polars_io::predicates::PhysicalIoExpr;
 
 /// A type that implements this transforms a LogicalPlan to a physical plan.
 ///

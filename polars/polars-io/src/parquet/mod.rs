@@ -14,6 +14,7 @@
 //! }
 //! ```
 //!
+pub mod predicates;
 mod read;
 mod read_par;
 mod write;

@@ -6,6 +6,7 @@ pub mod csv;
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv_core;
+pub mod export;
 #[cfg(feature = "ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
 pub mod ipc;
@@ -17,6 +18,8 @@ pub mod mmap;
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
+#[cfg(feature = "private")]
+pub mod predicates;
 pub mod prelude;
 #[cfg(all(test, feature = "csv-file"))]
 mod tests;
@@ -24,13 +27,11 @@ pub(crate) mod utils;
 
 use arrow::error::Result as ArrowResult;
 
+#[cfg(feature = "parquet")]
+use crate::predicates::PhysicalIoExpr;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
-
-pub trait PhysicalIoExpr: Send + Sync {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
-}
 
 pub trait SerReader<R>
 where

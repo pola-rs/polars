@@ -1,7 +1,14 @@
 use super::*;
+use polars_core::export::lazy_static::lazy_static;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref PARQUET_IO_LOCK: Mutex<()> = Mutex::new(());
+}
 
 #[test]
 fn test_parquet_exec() -> Result<()> {
+    let guard = PARQUET_IO_LOCK.lock().unwrap();
     // filter
     for par in [true, false] {
         let out = scan_foods_parquet(par)
@@ -31,10 +38,72 @@ fn test_parquet_exec() -> Result<()> {
 }
 
 #[test]
+fn test_parquet_statistics_no_skip() {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    init_files();
+    let par = true;
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").gt(lit(0i32)))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(1000i32)))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(0i32).lt(col("calories")))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(1000i32).gt(col("calories")))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+}
+
+#[test]
+fn test_parquet_statistics() -> Result<()> {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    init_files();
+    std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
+    let par = true;
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(0i32)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").gt(lit(1000)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(0i32).gt(col("calories")))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(1000i32).lt(col("calories")))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+    std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
+
+    Ok(())
+}
+
+#[test]
 #[cfg(not(target_os = "windows"))]
 fn test_parquet_globbing() -> Result<()> {
     // for side effects
     init_files();
+    let guard = PARQUET_IO_LOCK.lock().unwrap();
     let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
         glob.into(),
