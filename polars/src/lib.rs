@@ -148,6 +148,7 @@
 //!     - `ewma` - Exponential moving average windows
 //!     - `abs` - Get absolute values of Series
 //!     - `arange` - Range operation on Series
+//!     - `product` - Compute the product of a Series.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)
@@ -165,13 +166,14 @@
 //!
 //! | data type               | feature flag      |
 //! |-------------------------|-------------------|
-//! | DateType                | dtype-date        |
-//! | DatetimeType            | dtype-datetime    |
-//! | TimeType                | dtype-time        |
-//! | Int8Type                | dtype-i8          |
-//! | Int16Type               | dtype-i16         |
-//! | UInt8Type               | dtype-u8          |
-//! | UInt16Type              | dtype-u16         |
+//! | Date                    | dtype-date        |
+//! | Datetime                | dtype-datetime    |
+//! | Time                    | dtype-time        |
+//! | Duration                | dtype-duration    |
+//! | Int8                    | dtype-i8          |
+//! | Int16                   | dtype-i16         |
+//! | UInt8                   | dtype-u8          |
+//! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
 //!
 //!

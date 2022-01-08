@@ -1404,3 +1404,15 @@ def test_any_all() -> None:
     verify_series_and_expr_api(a, expected, "any")
     expected = pl.Series("a", [False])
     verify_series_and_expr_api(a, expected, "all")
+
+
+def test_product() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    out = a.product()
+    assert out == 6
+    a = pl.Series("a", [1, 2, None])
+    out = a.product()
+    assert out is None
+    a = pl.Series("a", [None, 2, 3])
+    out = a.product()
+    assert out is None

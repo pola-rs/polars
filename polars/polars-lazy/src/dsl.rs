@@ -1113,7 +1113,14 @@ impl Expr {
     pub fn cumprod(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cumprod(reverse)),
-            GetOutput::same_type(),
+            GetOutput::map_dtype(|dt| {
+                use DataType::*;
+                match dt {
+                    Float32 => Float32,
+                    Float64 => Float64,
+                    _ => Int64,
+                }
+            }),
         )
     }
 
@@ -1131,7 +1138,30 @@ impl Expr {
     pub fn cummax(self, reverse: bool) -> Self {
         self.apply(
             move |s: Series| Ok(s.cummax(reverse)),
-            GetOutput::same_type(),
+            GetOutput::map_dtype(|dt| {
+                use DataType::*;
+                match dt {
+                    Float32 => Float32,
+                    Float64 => Float64,
+                    _ => Int64,
+                }
+            }),
+        )
+    }
+
+    /// Get the product aggreagtion of an expresion
+    #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
+    pub fn product(self) -> Self {
+        self.apply(
+            move |s: Series| Ok(s.product()),
+            GetOutput::map_dtype(|dt| {
+                use DataType::*;
+                match dt {
+                    Float32 => Float32,
+                    Float64 => Float64,
+                    _ => Int64,
+                }
+            }),
         )
     }
 

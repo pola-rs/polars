@@ -1770,3 +1770,17 @@ def test_df_broadcast() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     out = df.with_column(pl.Series([[1, 2]]))
     assert out.shape == (3, 2)
+
+
+def test_product() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "flt": [-1.0, 12.0, 9.0],
+            "bool_0": [True, False, True],
+            "bool_1": [True, True, True],
+        }
+    )
+    out = df.product()
+    expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
+    assert out.frame_equal(expected)
