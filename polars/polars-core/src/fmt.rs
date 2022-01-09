@@ -401,20 +401,15 @@ impl Display for DataFrame {
             for field in fields[0..n_first].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);
-    
-                #[cfg(feature = "pretty_fmt")]
                 constraints.push(tbl_lower_bounds(l));
             }
             if reduce_columns {
                 names.push("...".into());
-    
-                #[cfg(feature = "pretty_fmt")]
                 constraints.push(tbl_lower_bounds(5));
             }
             for field in fields[self.width() - n_last..].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);
-    
                 constraints.push(tbl_lower_bounds(l));
             }
             let mut table = Table::new();
