@@ -659,7 +659,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         // this is safe because we just created the PolarsExtension
         // meaning that the sentinel is heap allocated and the dereference of the
         // pointer does not fail
-        unsafe { pe.set_to_series_fn::<T>(self.name()) };
+        unsafe { pe.set_to_series_fn::<T>() };
         let extension_array = Arc::new(pe.take_and_forget()) as ArrayRef;
         let extension_dtype = extension_array.data_type();
 

@@ -31,6 +31,15 @@ impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
+    fn get_list_builder(
+        &self,
+        _name: &str,
+        _values_capacity: usize,
+        _list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait> {
+        ObjectChunked::<T>::get_list_builder(_name, _values_capacity, _list_capacity)
+    }
+
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }

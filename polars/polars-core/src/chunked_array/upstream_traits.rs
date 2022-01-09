@@ -283,6 +283,12 @@ where
                     s.dtype().clone(),
                 ),
             ),
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                let mut builder =
+                    s.get_list_builder("collected", capacity * estimated_s_size, capacity);
+                primitive_series_collect(nulls_so_far, it, s, &mut builder)
+            }
             _ => {
                 let mut builder = get_list_builder(
                     s.dtype(),

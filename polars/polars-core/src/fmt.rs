@@ -601,7 +601,7 @@ impl Display for AnyValue<'_> {
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
-            AnyValue::Object(_) => write!(f, "object"),
+            AnyValue::Object(v) => write!(f, "{}", v),
         }
     }
 }

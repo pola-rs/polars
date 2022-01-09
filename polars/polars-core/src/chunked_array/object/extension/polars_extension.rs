@@ -49,16 +49,16 @@ impl PolarsExtension {
 
     /// Calls the heap allocated function in the `[ExtensionSentinel]` that knows
     /// how to convert the `[FixedSizeBinaryArray]` to a `Series` of type `[ObjectChunked<T>]`
-    pub(crate) unsafe fn get_series(&self) -> Series {
+    pub(crate) unsafe fn get_series(&self, name: &str) -> Series {
         self.with_sentinel(|sent| {
-            (sent.to_series_fn.as_ref().unwrap())(self.array.as_ref().unwrap())
+            (sent.to_series_fn.as_ref().unwrap())(self.array.as_ref().unwrap(), name)
         })
     }
 
     // heap allocates a function that converts the binary array to a Series of `[ObjectChunked<T>]`
-    pub(crate) unsafe fn set_to_series_fn<T: PolarsObject>(&mut self, name: &str) {
-        let name = name.to_string();
-        let f = Box::new(move |arr: &FixedSizeBinaryArray| {
+    // the `name` will be the `name` of the output `Series` when this function is called (later).
+    pub(crate) unsafe fn set_to_series_fn<T: PolarsObject>(&mut self) {
+        let f = Box::new(move |arr: &FixedSizeBinaryArray, name: &str| {
             let iter = arr.iter().map(|opt| {
                 opt.map(|bytes| {
                     let t = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const T) };
@@ -69,7 +69,7 @@ impl PolarsExtension {
                 })
             });
 
-            let ca = ObjectChunked::<T>::new_from_opt_iter(&name, iter);
+            let ca = ObjectChunked::<T>::new_from_opt_iter(name, iter);
             ca.into_series()
         });
         self.with_sentinel(move |sent| {
