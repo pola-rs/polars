@@ -36,7 +36,7 @@ def test_apply_none() -> None:
 
     out = (
         df.groupby("g", maintain_order=True).agg(
-            pl.apply(exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], f=func).alias(  # type: ignore
+            pl.apply(exprs=["a", pl.col("b") ** 4, pl.col("a") / 4], f=func).alias(
                 "multiple"
             )
         )
@@ -50,3 +50,18 @@ def test_apply_return_py_object() -> None:
     out = df.select([pl.all().map(lambda s: reduce(lambda a, b: a + b, s))])
 
     assert out.shape == (1, 2)
+
+
+def test_agg_objects() -> None:
+    df = pl.DataFrame(
+        {
+            "names": ["foo", "ham", "spam", "cheese", "egg", "foo"],
+            "dates": ["1", "1", "2", "3", "3", "4"],
+            "groups": ["A", "A", "B", "B", "B", "C"],
+        }
+    )
+
+    out = df.groupby("groups").agg(
+        [pl.apply([pl.col("dates"), pl.col("names")], lambda s: dict(zip(s[0], s[1])))]
+    )
+    assert out.dtypes == [pl.Utf8, pl.Object]

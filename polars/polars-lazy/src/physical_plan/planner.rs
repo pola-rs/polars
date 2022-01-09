@@ -639,6 +639,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -660,6 +661,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -681,6 +683,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -702,6 +705,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -723,6 +727,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -746,6 +751,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -767,6 +773,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -788,6 +795,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -809,6 +817,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -830,6 +839,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -855,6 +865,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -881,6 +892,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -914,6 +926,7 @@ impl DefaultPlanner {
                                     function,
                                     expr: node_to_exp(expression, expr_arena),
                                     collect_groups: ApplyOptions::ApplyFlat,
+                                    auto_explode: false,
                                 }))
                             }
                         }
@@ -961,6 +974,7 @@ impl DefaultPlanner {
                     function,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: options.collect_groups,
+                    auto_explode: options.auto_explode,
                 }))
             }
             BinaryFunction {
@@ -1011,6 +1025,7 @@ impl DefaultPlanner {
                     function,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
+                    auto_explode: false,
                 }))
             }
             Duplicated(expr) => {
@@ -1024,6 +1039,7 @@ impl DefaultPlanner {
                     function,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
+                    auto_explode: false,
                 }))
             }
             IsUnique(expr) => {
@@ -1037,6 +1053,7 @@ impl DefaultPlanner {
                     function,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyGroups,
+                    auto_explode: false,
                 }))
             }
             Explode(expr) => {
@@ -1050,6 +1067,7 @@ impl DefaultPlanner {
                     function,
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: ApplyOptions::ApplyFlat,
+                    auto_explode: false,
                 }))
             }
             Wildcard => panic!("should be no wildcard at this point"),

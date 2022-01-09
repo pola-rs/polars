@@ -77,9 +77,18 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupTuples still have all
     /// their original values. Not the case when filtered
     original_len: bool,
+    all_unit_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
+    pub(crate) fn with_all_unit_len(&mut self, toggle: bool) {
+        self.all_unit_len = toggle
+    }
+
+    pub(crate) fn is_all_unit_len(&self) -> bool {
+        self.all_unit_len
+    }
+
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
         match self.update_groups {
             UpdateGroups::No => {}
@@ -202,6 +211,7 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            all_unit_len: false,
         }
     }
 
@@ -228,6 +238,7 @@ impl<'a> AggregationContext<'a> {
                 assert_eq!(series.len(), self.groups.len());
                 AggState::AggregatedList(series)
             }
+            (true, _) => AggState::AggregatedFlat(series),
             _ => {
                 // already aggregated to sum, min even this series was flattened it never could
                 // retrieve the length before grouping, so it stays  in this state.
