@@ -79,7 +79,7 @@ where
 
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let fields = df.schema().to_arrow().fields().clone();
+        let fields = df.schema().to_arrow().fields;
         let rb_iter = df.iter_chunks();
 
         let options = write::WriteOptions {
@@ -87,10 +87,10 @@ where
             compression: self.compression,
             version: write::Version::V2,
         };
-        let schema = ArrowSchema::new(fields);
+        let schema = ArrowSchema::from(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;
         let encodings = schema
-            .fields()
+            .fields
             .iter()
             .map(|field| match field.data_type().to_physical_type() {
                 // delta encoding

@@ -204,7 +204,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
                         if let Some(projection) = &projection {
                             i = projection[i]
                         }
-                        Series::try_from((schema.field(i).name().as_str(), arr)).unwrap()
+                        Series::try_from((schema.fields[i].name.as_str(), arr)).unwrap()
                     })
                     .collect(),
             )

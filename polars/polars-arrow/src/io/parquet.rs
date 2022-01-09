@@ -19,7 +19,7 @@ pub fn read_parquet<R: Read + Seek>(
 
     let projection = projection
         .map(Cow::Borrowed)
-        .unwrap_or_else(|| Cow::Owned((0usize..schema.fields().len()).collect::<Vec<_>>()));
+        .unwrap_or_else(|| Cow::Owned((0usize..schema.fields.len()).collect::<Vec<_>>()));
 
     let mut rb = Vec::with_capacity(row_group_len);
 
@@ -42,7 +42,7 @@ pub fn read_parquet<R: Read + Seek>(
                 // inner `Vec` is whatever number of pages the chunk contains.
                 let column_iter =
                     read::get_column_iterator(&mut reader, &metadata, rg, *column_i, None, b1);
-                let fld = schema.field(*column_i);
+                let fld = &schema.fields[*column_i];
                 let (mut array, b1, b2) = read::column_iter_to_array(column_iter, fld, b2)?;
 
                 if array.len() > remaining_rows {

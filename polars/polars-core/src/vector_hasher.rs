@@ -72,9 +72,7 @@ where
                     .map(|i| unsafe { get_bit_unchecked(slice, i) })
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
-                        if !valid {
-                            *h = null_h;
-                        }
+                        *h = [null_h, *h][valid as usize];
                     })
             }
             offset += arr.len();
@@ -98,18 +96,33 @@ where
                         let l = T::Native::get_hash(v, &random_state);
                         *h = boost_hash_combine(l, *h)
                     }),
-                _ => arr
-                    .iter()
-                    .zip(&mut hashes[offset..])
-                    .for_each(|(opt_v, h)| match opt_v {
-                        Some(v) => {
-                            let l = T::Native::get_hash(v, &random_state);
-                            *h = boost_hash_combine(l, *h)
-                        }
-                        None => {
-                            *h = boost_hash_combine(null_h, *h);
-                        }
-                    }),
+                _ => {
+                    let validity = arr.validity().unwrap();
+                    let slice = validity.as_slice().0;
+                    (0..validity.len())
+                        .map(|i| unsafe { get_bit_unchecked(slice, i) })
+                        .zip(&mut hashes[offset..])
+                        .zip(arr.values().as_slice())
+                        .for_each(|((valid, h), l)| {
+                            *h = boost_hash_combine(
+                                [null_h, T::Native::get_hash(l, &random_state)][valid as usize],
+                                *h,
+                            )
+                        });
+
+                    // arr
+                    //     .iter()
+                    //     .zip(&mut hashes[offset..])
+                    //     .for_each(|(opt_v, h)| match opt_v {
+                    //         Some(v) => {
+                    //             let l = T::Native::get_hash(v, &random_state);
+                    //             *h = boost_hash_combine(l, *h)
+                    //         }
+                    //         None => {
+                    //             *h = boost_hash_combine(null_h, *h);
+                    //         }
+                    //     })
+                }
             }
             offset += arr.len();
         });

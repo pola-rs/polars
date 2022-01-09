@@ -18,6 +18,7 @@ use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
+use arrow::error::ArrowError;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -771,6 +772,27 @@ impl Field {
     }
 }
 
+#[cfg(feature = "private")]
+pub trait IndexOfSchema {
+    fn index_of(&self, name: &str) -> arrow::error::Result<usize>;
+}
+
+impl IndexOfSchema for ArrowSchema {
+    fn index_of(&self, name: &str) -> arrow::error::Result<usize> {
+        self.fields
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| {
+                let valid_fields: Vec<String> =
+                    self.fields.iter().map(|f| f.name.clone()).collect();
+                ArrowError::InvalidArgumentError(format!(
+                    "Unable to get field named \"{}\". Valid fields: {:?}",
+                    name, valid_fields
+                ))
+            })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Hash, Default)]
 pub struct Schema {
     fields: Vec<Field>,
@@ -832,20 +854,21 @@ impl Schema {
 
     /// Find the index of the column with the given name
     pub fn index_of(&self, name: &str) -> Result<usize> {
-        for i in 0..self.fields.len() {
-            if self.fields[i].name == name {
-                return Ok(i);
-            }
-        }
-        let valid_fields: Vec<String> = self.fields.iter().map(|f| f.name().clone()).collect();
-        Err(PolarsError::NotFound(format!(
-            "Unable to get field named \"{}\". Valid fields: {:?}",
-            name, valid_fields
-        )))
+        self.fields
+            .iter()
+            .position(|f| f.name == name)
+            .ok_or_else(|| {
+                let valid_fields: Vec<String> =
+                    self.fields.iter().map(|f| f.name.clone()).collect();
+                PolarsError::NotFound(format!(
+                    "Unable to get field named \"{}\". Valid fields: {:?}",
+                    name, valid_fields
+                ))
+            })
     }
 
     pub fn to_arrow(&self) -> ArrowSchema {
-        let fields = self
+        let fields: Vec<ArrowField> = self
             .fields
             .iter()
             .map(|f| {
@@ -874,7 +897,7 @@ impl Schema {
                 }
             })
             .collect();
-        ArrowSchema::new(fields)
+        ArrowSchema::from(fields)
     }
 
     pub fn try_merge(schemas: &[Self]) -> Result<Self> {
@@ -952,14 +975,14 @@ impl From<&ArrowDataType> for DataType {
 
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(f.name(), f.data_type().into())
+        Field::new(&f.name, f.data_type().into())
     }
 }
 impl From<&ArrowSchema> for Schema {
     fn from(a_schema: &ArrowSchema) -> Self {
         Schema::new(
             a_schema
-                .fields()
+                .fields
                 .iter()
                 .map(|arrow_f| arrow_f.into())
                 .collect(),

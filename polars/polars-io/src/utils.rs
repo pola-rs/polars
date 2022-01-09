@@ -17,9 +17,12 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
-    let fields = schema.fields();
-    let fields = projection.iter().map(|idx| fields[*idx].clone()).collect();
-    ArrowSchema::new(fields)
+    let fields = &schema.fields;
+    let fields = projection
+        .iter()
+        .map(|idx| fields[*idx].clone())
+        .collect::<Vec<_>>();
+    ArrowSchema::from(fields)
 }
 
 #[cfg(test)]
