@@ -80,7 +80,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     while let Some(batch) = reader.next_record_batch()? {
         num_rows += batch.len();
 
-        let mut df = DataFrame::try_from((batch, arrow_schema.fields().as_slice()))?;
+        let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate(&df)?;

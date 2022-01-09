@@ -171,7 +171,7 @@ where
                     .map(|name| {
                         fields
                             .iter()
-                            .position(|fld| fld.name() == name)
+                            .position(|fld| &fld.name == name)
                             .ok_or_else(|| PolarsError::NotFound(name.into()))
                     })
                     .collect::<Result<Vec<_>>>()

@@ -161,24 +161,27 @@ where
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
 
+        let err = |column: &str| {
+            let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
+            PolarsError::NotFound(format!(
+                "Unable to get field named \"{}\". Valid fields: {:?}",
+                column, valid_fields
+            ))
+        };
+
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
             if cols.len() > 100 {
-                let mut column_names = AHashMap::with_capacity(schema.fields().len());
-                schema.fields().iter().enumerate().for_each(|(i, c)| {
-                    column_names.insert(c.name(), i);
+                let mut column_names = AHashMap::with_capacity(schema.fields.len());
+                schema.fields.iter().enumerate().for_each(|(i, c)| {
+                    column_names.insert(c.name.as_str(), i);
                 });
 
                 for column in cols.iter() {
-                    if let Some(i) = column_names.get(&column) {
+                    if let Some(i) = column_names.get(column.as_str()) {
                         prj.push(*i);
                     } else {
-                        let valid_fields: Vec<String> =
-                            schema.fields().iter().map(|f| f.name().clone()).collect();
-                        return Err(PolarsError::NotFound(format!(
-                            "Unable to get field named \"{}\". Valid fields: {:?}",
-                            column, valid_fields
-                        )));
+                        return Err(err(column));
                     }
                 }
             } else {
