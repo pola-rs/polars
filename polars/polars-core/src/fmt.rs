@@ -373,7 +373,7 @@ impl Display for DataFrame {
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
         #[cfg(feature = "pretty_fmt")]
-        let tbl_lb = |l: usize| {
+        let tbl_lower_bounds = |l: usize| {
             comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
         };
 
@@ -387,20 +387,20 @@ impl Display for DataFrame {
             names.push(s);
 
             #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lb(l));
+            constraints.push(tbl_lower_bounds(l));
         }
         if reduce_columns {
             names.push("...".into());
 
             #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lb(5));
+            constraints.push(tbl_lower_bounds(5));
         }
         for field in fields[self.width() - n_last..].iter() {
             let (s, l) = field_to_str(field);
             names.push(s);
 
             #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lb(l));
+            constraints.push(tbl_lower_bounds(l));
         }
         #[cfg(feature = "pretty_fmt")]
         {
@@ -440,6 +440,9 @@ impl Display for DataFrame {
                     }
                 }
             }
+
+            table.set_header(names).set_constraints(constraints);
+
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
                     Some(
@@ -448,18 +451,16 @@ impl Display for DataFrame {
                     )
                 })
                 .unwrap_or(None);
-
             // if tbl_width is explicitly set, use it
             if let Some(w) = tbl_width {
                 table.set_table_width(w);
-            };
-
-            // if no tbl_width (its not-tty && it is not explicitly set), then set default
-            if let None = table.get_table_width() {
-                table.set_table_width(100);
             }
 
-            table.set_header(names).set_constraints(constraints);
+            // if no tbl_width (its not-tty && it is not explicitly set), then set default
+            // this is needed to support non-tty applications
+            if !table.is_tty() && table.get_table_width().is_none() {
+                table.set_table_width(100);
+            }
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
