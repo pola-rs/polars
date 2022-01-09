@@ -54,11 +54,13 @@ def test_tables(environ: None) -> None:
 
 
 def test_tbl_width_chars(environ: None) -> None:
-    df = pl.DataFrame({
-        "a really long col": [1, 2, 3],
-        "b": ["", "this is a string value that will be truncated", None],
-        "this is 10": [4, 5, 6],
-    })
+    df = pl.DataFrame(
+        {
+            "a really long col": [1, 2, 3],
+            "b": ["", "this is a string value that will be truncated", None],
+            "this is 10": [4, 5, 6],
+        }
+    )
 
     assert max(len(line) for line in str(df).split("\n")) == 72
 
