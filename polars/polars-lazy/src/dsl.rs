@@ -1990,11 +1990,10 @@ impl Expr {
         self.apply(
             move |s| {
                 let boolean = s.bool()?;
-                // TODO! Optimize this in arrow2/ polars-arrow
-                if boolean.all_false() {
-                    Ok(Series::new(s.name(), [false]))
-                } else {
+                if boolean.any() {
                     Ok(Series::new(s.name(), [true]))
+                } else {
+                    Ok(Series::new(s.name(), [false]))
                 }
             },
             GetOutput::from_type(DataType::Boolean),
@@ -2006,8 +2005,7 @@ impl Expr {
         self.apply(
             move |s| {
                 let boolean = s.bool()?;
-                // TODO! Optimize this in arrow2/ polars-arrow
-                if boolean.all_true() {
+                if boolean.all() {
                     Ok(Series::new(s.name(), [true]))
                 } else {
                     Ok(Series::new(s.name(), [false]))
