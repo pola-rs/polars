@@ -346,6 +346,7 @@ impl Display for DataFrame {
             .unwrap_or_else(|_| "8".to_string())
             .parse()
             .unwrap_or(8);
+
         #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
         let max_n_rows = {
             let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
@@ -372,38 +373,50 @@ impl Display for DataFrame {
         };
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
-        #[cfg(feature = "pretty_fmt")]
-        let tbl_lower_bounds = |l: usize| {
-            comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
-        };
-
-        #[cfg(feature = "pretty_fmt")]
-        let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
-
-        let schema = self.schema();
-        let fields = schema.fields();
-        for field in fields[0..n_first].iter() {
-            let (s, l) = field_to_str(field);
-            names.push(s);
-
-            #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lower_bounds(l));
+        #[cfg(not(feature = "pretty_fmt"))]
+        {
+            let schema = self.schema();
+            let fields = schema.fields();
+            for field in fields[0..n_first].iter() {
+                let (s, _) = field_to_str(field);
+                names.push(s);
+            }
+            if reduce_columns {
+                names.push("...".into());
+            }
+            for field in fields[self.width() - n_last..].iter() {
+                let (s, _) = field_to_str(field);
+                names.push(s);
+            }
         }
-        if reduce_columns {
-            names.push("...".into());
 
-            #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lower_bounds(5));
-        }
-        for field in fields[self.width() - n_last..].iter() {
-            let (s, l) = field_to_str(field);
-            names.push(s);
-
-            #[cfg(feature = "pretty_fmt")]
-            constraints.push(tbl_lower_bounds(l));
-        }
         #[cfg(feature = "pretty_fmt")]
         {
+            let tbl_lower_bounds = |l: usize| {
+                comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
+            };
+            let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+            let schema = self.schema();
+            let fields = schema.fields();
+            for field in fields[0..n_first].iter() {
+                let (s, l) = field_to_str(field);
+                names.push(s);
+    
+                #[cfg(feature = "pretty_fmt")]
+                constraints.push(tbl_lower_bounds(l));
+            }
+            if reduce_columns {
+                names.push("...".into());
+    
+                #[cfg(feature = "pretty_fmt")]
+                constraints.push(tbl_lower_bounds(5));
+            }
+            for field in fields[self.width() - n_last..].iter() {
+                let (s, l) = field_to_str(field);
+                names.push(s);
+    
+                constraints.push(tbl_lower_bounds(l));
+            }
             let mut table = Table::new();
             let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
                 ASCII_FULL
