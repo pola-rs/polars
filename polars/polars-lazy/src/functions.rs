@@ -95,6 +95,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: false,
+            auto_explode: true,
         },
     }
 }
@@ -114,6 +115,7 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
+            auto_explode: false,
         },
     }
 }
@@ -142,6 +144,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
+            auto_explode: true,
         },
     }
 }
@@ -304,6 +307,7 @@ pub fn datetime(
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
+            auto_explode: false,
         },
     }
     .alias("datetime")

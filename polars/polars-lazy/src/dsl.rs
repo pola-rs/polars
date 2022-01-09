@@ -218,6 +218,9 @@ pub struct FunctionOptions {
     ///
     /// this also accounts for regex expansion
     pub(crate) input_wildcard_expansion: bool,
+
+    /// automatically explode on unit length it ran as final aggregation.
+    pub(crate) auto_explode: bool,
 }
 
 #[derive(PartialEq, Clone)]
@@ -841,9 +844,16 @@ impl Expr {
             !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
             "wildcard not supported in unique expr"
         );
-        self.apply(
+        let options = FunctionOptions {
+            collect_groups: ApplyOptions::ApplyGroups,
+            input_wildcard_expansion: false,
+            auto_explode: false,
+        };
+
+        self.function_with_options(
             move |s: Series| Ok(s.argsort(reverse).into_series()),
             GetOutput::from_type(DataType::UInt32),
+            options,
         )
     }
 
@@ -920,6 +930,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
+                auto_explode: false,
             },
         }
     }
@@ -941,6 +952,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
+                auto_explode: false,
             },
         }
     }
@@ -965,7 +977,28 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyList,
                 input_wildcard_expansion: false,
+                auto_explode: false,
             },
+        }
+    }
+
+    /// A function that cannot be expressed with `map` or `apply` and requires extra settings.
+    pub fn function_with_options<F>(
+        self,
+        function: F,
+        output_type: GetOutput,
+        options: FunctionOptions,
+    ) -> Self
+    where
+        F: Fn(Series) -> Result<Series> + 'static + Send + Sync,
+    {
+        let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
+
+        Expr::Function {
+            input: vec![self],
+            function: NoEq::new(Arc::new(f)),
+            output_type,
+            options,
         }
     }
 
@@ -991,6 +1024,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
+                auto_explode: true,
             },
         }
     }
@@ -1012,6 +1046,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
+                auto_explode: true,
             },
         }
     }
@@ -2165,6 +2200,7 @@ where
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: true,
+                auto_explode: true,
             },
         }
     } else {
@@ -2336,6 +2372,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: false,
+            auto_explode: false,
         },
     }
 }
@@ -2361,6 +2398,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyList,
             input_wildcard_expansion: false,
+            auto_explode: true,
         },
     }
 }
@@ -2388,6 +2426,7 @@ where
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: false,
+            auto_explode: true,
         },
     }
 }

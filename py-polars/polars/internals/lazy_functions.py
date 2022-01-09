@@ -667,7 +667,7 @@ def map(
 
 def apply(
     exprs: List[Union[str, "pli.Expr"]],
-    f: Callable[[List["pli.Series"]], "pli.Series"],
+    f: Callable[[List["pli.Series"]], Union["pli.Series", Any]],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
