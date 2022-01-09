@@ -2,7 +2,12 @@ use super::*;
 use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
 
 pub trait ListBuilderTrait {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>);
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => self.append_null(),
+        }
+    }
     fn append_series(&mut self, s: &Series);
     fn append_null(&mut self);
     fn finish(&mut self) -> ListChunked;

@@ -54,6 +54,16 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        #[cfg(feature = "object")]
+        fn get_list_builder(
+            &self,
+            _name: &str,
+            _values_capacity: usize,
+            _list_capacity: usize,
+        ) -> Box<dyn ListBuilderTrait> {
+            invalid_operation_panic!(self)
+        }
+
         /// Get field (used in schema)
         fn _field(&self) -> Cow<Field> {
             invalid_operation_panic!(self)

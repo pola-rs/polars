@@ -307,7 +307,7 @@ impl Series {
                 // (the pid is checked before dereference)
                 let s = {
                     let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series();
+                    let s = pe.get_series(name);
                     pe.take_and_forget();
                     s
                 };
