@@ -8,6 +8,27 @@ pub trait ListBuilderTrait {
     fn finish(&mut self) -> ListChunked;
 }
 
+impl<S: ?Sized> ListBuilderTrait for Box<S>
+where
+    S: ListBuilderTrait,
+{
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        (**self).append_opt_series(opt_s)
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        (**self).append_series(s)
+    }
+
+    fn append_null(&mut self) {
+        (**self).append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        (**self).finish()
+    }
+}
+
 pub struct ListPrimitiveChunkedBuilder<T>
 where
     T: NumericNative,
@@ -139,7 +160,8 @@ where
                 unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
             }
         });
-        self.builder.try_push_valid().unwrap();
+        // overflow of i64 is far beyond polars capable lengths.
+        unsafe { self.builder.try_push_valid().unwrap_unchecked() };
     }
 
     fn finish(&mut self) -> ListChunked {
