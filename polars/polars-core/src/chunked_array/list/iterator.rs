@@ -4,13 +4,12 @@ use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
 use std::convert::TryFrom;
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::ptr::NonNull;
 
 #[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     len: usize,
-    series_container: Pin<Box<Series>>,
+    series_container: Box<Series>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
@@ -68,7 +67,7 @@ impl ListChunked {
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
         let inner_values = arr.values();
-        let series_container = Box::pin(Series::try_from(("", inner_values.clone())).unwrap());
+        let series_container = Box::new(Series::try_from(("", inner_values.clone())).unwrap());
 
         let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
 
