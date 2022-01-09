@@ -793,22 +793,14 @@ impl Not for BooleanChunked {
 }
 
 impl BooleanChunked {
-    /// Check if all values are true
-    pub fn all_true(&self) -> bool {
-        match self.sum() {
-            None => false,
-            Some(n) => (n as usize) == self.len(),
-        }
+    /// Check if all values are `true`
+    pub fn all(&self) -> bool {
+        self.downcast_iter().all(compute::boolean::all)
     }
-}
 
-impl BooleanChunked {
-    /// Check if all values are false
-    pub fn all_false(&self) -> bool {
-        match self.sum() {
-            None => false,
-            Some(n) => (n as usize) == 0,
-        }
+    /// Check if any value is `true`
+    pub fn any(&self) -> bool {
+        self.downcast_iter().any(compute::boolean::any)
     }
 }
 

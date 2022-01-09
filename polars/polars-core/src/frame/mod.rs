@@ -2611,7 +2611,7 @@ impl DataFrame {
     ///                         "ISIN" => &["US0378331005", "US5949181045"])?;
     /// let ca: ChunkedArray<BooleanType> = df.is_unique()?;
     ///
-    /// assert!(ca.all_true());
+    /// assert!(ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> Result<BooleanChunked> {
@@ -2630,7 +2630,7 @@ impl DataFrame {
     ///                         "ISIN" => &["US02079K3059", "US02079K1079"])?;
     /// let ca: ChunkedArray<BooleanType> = df.is_duplicated()?;
     ///
-    /// assert!(ca.all_false());
+    /// assert!(!ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {

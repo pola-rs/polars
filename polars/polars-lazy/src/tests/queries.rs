@@ -55,7 +55,7 @@ fn test_lazy_exec() {
         .unwrap();
 
     let check = new.column("sepal.width").unwrap().f64().unwrap().gt(3.4);
-    assert!(check.all_true())
+    assert!(check.all())
 }
 
 #[test]
