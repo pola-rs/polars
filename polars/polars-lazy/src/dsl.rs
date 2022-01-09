@@ -838,6 +838,22 @@ impl Expr {
         )
     }
 
+    /// Get the index value that has the minumum value
+    pub fn arg_min(self) -> Self {
+        self.apply(
+            |s| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
+            GetOutput::from_type(DataType::UInt32),
+        )
+    }
+
+    /// Get the index value that has the maximum value
+    pub fn arg_max(self) -> Self {
+        self.apply(
+            |s| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
+            GetOutput::from_type(DataType::UInt32),
+        )
+    }
+
     /// Get the index values that would sort this expression.
     pub fn arg_sort(self, reverse: bool) -> Self {
         assert!(
