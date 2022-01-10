@@ -47,6 +47,7 @@ export const range = (start: number, end: number) => {
 export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  isExternal(ty[0]?._df);
 export const isSeriesArray = <T>(ty: any): ty is Series<T>[] => Array.isArray(ty) &&  isExternal(ty[0]?._series);
 export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && isExternal(ty[0]?._expr);
+export const isIterator = <T>(ty: any): ty is Iterable<T> => ty !== null && typeof ty[Symbol.iterator] === "function";
 export const regexToString = (r: string | RegExp): string => {
   if(isRegExp(r)) {
     return r.source;
