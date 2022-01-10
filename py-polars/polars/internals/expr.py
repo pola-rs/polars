@@ -2436,6 +2436,7 @@ class ExprStringNameSpace:
         self,
         datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
+        strict: bool = True,
     ) -> Expr:
         """
         Parse utf8 expression as a Date/Datetimetype.
@@ -2445,16 +2446,21 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime.
         fmt
-            "yyyy-mm-dd".
+            format to use, see the following link for examples:
+            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+            example: "%y-%m-%d".
+        strict
+            raise an error if any conversion fails
         """
         if not issubclass(datatype, DataType):
             raise ValueError(
                 f"expected: {DataType} got: {datatype}"
             )  # pragma: no cover
         if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt))
+            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict))
         elif datatype == Datetime:
-            return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
+            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict))
         else:
             raise ValueError(
                 "dtype should be of type {Date, Datetime}"
