@@ -1416,3 +1416,13 @@ def test_product() -> None:
     a = pl.Series("a", [None, 2, 3])
     out = a.product()
     assert out is None
+
+
+def test_strip() -> None:
+    a = pl.Series("a", ["trailing  ", "  leading", "  both  "])
+    expected = pl.Series("a", ["trailing", "  leading", "  both"])
+    verify_series_and_expr_api(a, expected, "str.rstrip")
+    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
+    verify_series_and_expr_api(a, expected, "str.lstrip")
+    expected = pl.Series("a", ["trailing", "leading", "both"])
+    verify_series_and_expr_api(a, expected, "str.strip")

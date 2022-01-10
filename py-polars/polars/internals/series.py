@@ -3633,6 +3633,27 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
+    def strip(self) -> Series:
+        """
+        Remove leading and trailing whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.strip()).to_series()
+
+    def lstrip(self) -> Series:
+        """
+        Remove leading whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.lstrip()).to_series()
+
+    def rstrip(self) -> Series:
+        """
+        Remove leading whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
+
     def to_lowercase(self) -> Series:
         """
         Modify the strings to their lowercase equivalent.
@@ -3644,18 +3665,6 @@ class StringNameSpace:
         Modify the strings to their uppercase equivalent.
         """
         return wrap_s(self._s.str_to_uppercase())
-
-    def rstrip(self) -> Series:
-        """
-        Remove trailing whitespace.
-        """
-        return self.replace(r"[ \t]+$", "")
-
-    def lstrip(self) -> Series:
-        """
-        Remove leading whitespace.
-        """
-        return self.replace(r"^\s*", "")
 
     def slice(self, start: int, length: Optional[int] = None) -> Series:
         """

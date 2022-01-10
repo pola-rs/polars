@@ -2478,6 +2478,24 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
 
+    def strip(self) -> Expr:
+        """
+        Remove leading and trailing whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_strip())
+
+    def lstrip(self) -> Expr:
+        """
+        Remove leading whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_lstrip())
+
+    def rstrip(self) -> Expr:
+        """
+        Remove leading whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_rstrip())
+
     def contains(self, pattern: str) -> Expr:
         """
         Check if string contains regex.
