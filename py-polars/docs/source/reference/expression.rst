@@ -276,6 +276,9 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lengths
     ExprStringNameSpace.to_uppercase
     ExprStringNameSpace.to_lowercase
+    ExprStringNameSpace.strip
+    ExprStringNameSpace.lstrip
+    ExprStringNameSpace.rstrip
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract

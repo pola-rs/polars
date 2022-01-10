@@ -3649,7 +3649,7 @@ class StringNameSpace:
 
     def rstrip(self) -> Series:
         """
-        Remove leading whitespace.
+        Remove trailing whitespace.
         """
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()

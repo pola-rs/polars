@@ -2492,7 +2492,7 @@ class ExprStringNameSpace:
 
     def rstrip(self) -> Expr:
         """
-        Remove leading whitespace.
+        Remove trailing whitespace.
         """
         return wrap_expr(self._pyexpr.str_rstrip())
 
