@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pyarrow as pa
 import pytest
+from test_series import verify_series_and_expr_api
 
 import polars as pl
 
@@ -343,3 +344,24 @@ def test_to_arrow() -> None:
     )
     arr = date_series.to_arrow()
     assert arr.type == pa.date32()
+
+
+def test_non_exact_strptime() -> None:
+    a = pl.Series("a", ["2022-01-16", "2022-01-17", "foo2022-01-18", "b2022-01-19ar"])
+    fmt = "%Y-%m-%d"
+
+    expected = pl.Series("a", [date(2022, 1, 16), date(2022, 1, 17), None, None])
+    verify_series_and_expr_api(
+        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=True
+    )
+
+    expected = pl.Series(
+        "a",
+        [date(2022, 1, 16), date(2022, 1, 17), date(2022, 1, 18), date(2022, 1, 19)],
+    )
+    verify_series_and_expr_api(
+        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=False
+    )
+
+    with pytest.raises(Exception):
+        a.str.strptime(pl.Date, fmt, strict=True, exact=True)
