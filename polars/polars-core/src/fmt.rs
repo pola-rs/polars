@@ -498,8 +498,32 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
         if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
             write!(f, "{:>width$.4e}", v, width = width)
         } else {
-            write!(f, "{:>width$.6}", v, width = width)
+            // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
+            // instead we write 12.0
+            let s = format!("{:>width$.6}", v, width = width);
+
+            if s.ends_with('0') {
+                let mut s = s.as_str();
+                let mut len = s.len() - 1;
+
+                while s.ends_with('0') {
+                    len -= 1;
+                    s = &s[..len];
+                }
+                if s.ends_with('.') {
+                    write!(f, "{}0...", s)
+                } else {
+                    write!(f, "{}...", s)
+                }
+            } else {
+                // 12.0934509341243124
+                // written as
+                // 12.09345...
+                write!(f, "{:>width$.6}...", v, width = width)
+            }
         }
+    } else if v.fract() == 0.0 {
+        write!(f, "{:>width$e}", v, width = width)
     } else {
         write!(f, "{:>width$}", v, width = width)
     }
