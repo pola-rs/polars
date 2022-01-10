@@ -369,9 +369,8 @@ impl Display for DataFrame {
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
         #[cfg(not(feature = "pretty_fmt"))]
-        let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
-
         {
+            let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
             let schema = self.schema();
             let fields = schema.fields();
             for field in fields[0..n_first].iter() {
