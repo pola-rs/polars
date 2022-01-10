@@ -2437,6 +2437,7 @@ class ExprStringNameSpace:
         datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
         strict: bool = True,
+        exact: bool = True,
     ) -> Expr:
         """
         Parse utf8 expression as a Date/Datetimetype.
@@ -2452,15 +2453,18 @@ class ExprStringNameSpace:
             example: "%y-%m-%d".
         strict
             raise an error if any conversion fails
+        exact
+            - If True, require an exact format match.
+            - If False, allow the format to match anywhere in the target string.
         """
         if not issubclass(datatype, DataType):
             raise ValueError(
                 f"expected: {DataType} got: {datatype}"
             )  # pragma: no cover
         if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict))
+            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
-            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict))
+            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
         else:
             raise ValueError(
                 "dtype should be of type {Date, Datetime}"

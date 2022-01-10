@@ -3420,6 +3420,7 @@ class StringNameSpace:
         datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
         strict: bool = True,
+        exact: bool = True,
     ) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
@@ -3435,6 +3436,9 @@ class StringNameSpace:
             example: "%y-%m-%d".
         strict
             raise an error if any conversion fails
+        exact
+            - If True, require an exact format match.
+            - If False, allow the format to match anywhere in the target string.
 
         Returns
         -------
@@ -3443,7 +3447,7 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return (
             s.to_frame()
-            .select(pli.col(s.name).str.strptime(datatype, fmt, strict))
+            .select(pli.col(s.name).str.strptime(datatype, fmt, strict, exact))
             .to_series()
         )
 
