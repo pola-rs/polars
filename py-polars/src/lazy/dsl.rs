@@ -12,6 +12,7 @@ use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
 use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
+use std::borrow::Cow;
 
 #[pyclass]
 #[repr(transparent)]
@@ -358,6 +359,42 @@ impl PyExpr {
                 function,
                 GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
             )
+            .into()
+    }
+
+    pub fn str_strip(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .into()
+    }
+
+    pub fn str_rstrip(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .into()
+    }
+
+    pub fn str_lstrip(&self) -> PyExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
             .into()
     }
 
