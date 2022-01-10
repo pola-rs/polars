@@ -244,6 +244,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase
     StringNameSpace.to_uppercase
+    StringNameSpace.strip
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.slice
