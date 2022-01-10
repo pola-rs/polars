@@ -365,33 +365,34 @@ impl Display for DataFrame {
             (self.width(), 0)
         };
         let reduce_columns = n_first + n_last < self.width();
-        let field_to_str = |f: &Field| {
-            let name = make_str_val(f.name());
-            let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
-            let s = format!("{}\n---\n{}", name, f.data_type());
-            (s, lower_bounds)
-        };
+
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
         #[cfg(not(feature = "pretty_fmt"))]
+        let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
+
         {
             let schema = self.schema();
             let fields = schema.fields();
             for field in fields[0..n_first].iter() {
-                let (s, _) = field_to_str(field);
-                names.push(s);
+                names.push(field_to_str(field));
             }
             if reduce_columns {
                 names.push("...".into());
             }
             for field in fields[self.width() - n_last..].iter() {
-                let (s, _) = field_to_str(field);
-                names.push(s);
+                names.push(field_to_str(field));
             }
         }
 
         #[cfg(feature = "pretty_fmt")]
         {
+            let field_to_str = |f: &Field| {
+                let name = make_str_val(f.name());
+                let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
+                let s = format!("{}\n---\n{}", name, f.data_type());
+                (s, lower_bounds)
+            };
             let tbl_lower_bounds = |l: usize| {
                 comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
             };
