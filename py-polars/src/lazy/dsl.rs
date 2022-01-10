@@ -336,10 +336,21 @@ impl PyExpr {
         self.clone().inner.product().into()
     }
 
-    pub fn str_parse_date(&self, fmt: Option<String>) -> PyExpr {
+    pub fn str_parse_date(&self, fmt: Option<String>, strict: bool) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
+            let out = ca.as_date(fmt.as_deref())?;
+            if strict {
+                if out.null_count() != ca.null_count() {
+                    Err(PolarsError::ComputeError(
+                        "strict conversion to dates failed, maybe set strict=False".into(),
+                    ))
+                } else {
+                    Ok(out.into_series())
+                }
+            } else {
+                Ok(out.into_series())
+            }
         };
         self.clone()
             .inner
@@ -347,11 +358,22 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_parse_datetime(&self, fmt: Option<String>) -> PyExpr {
+    pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)
-                .map(|ca| ca.into_series())
+            let out = ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)?;
+
+            if strict {
+                if out.null_count() != ca.null_count() {
+                    Err(PolarsError::ComputeError(
+                        "strict conversion to dates failed, maybe set strict=False".into(),
+                    ))
+                } else {
+                    Ok(out.into_series())
+                }
+            } else {
+                Ok(out.into_series())
+            }
         };
         self.clone()
             .inner

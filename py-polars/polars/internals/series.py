@@ -3415,7 +3415,12 @@ class StringNameSpace:
     def __init__(self, series: "Series"):
         self._s = series._s
 
-    def strptime(self, datatype: Type[DataType], fmt: Optional[str] = None) -> Series:
+    def strptime(
+        self,
+        datatype: Union[Type[Date], Type[Datetime]],
+        fmt: Optional[str] = None,
+        strict: bool = True,
+    ) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
 
@@ -3424,17 +3429,23 @@ class StringNameSpace:
         datatype
             Date or Datetime.
         fmt
-            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+            format to use, see the following link for examples:
+            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+            example: "%y-%m-%d".
+        strict
+            raise an error if any conversion fails
 
         Returns
         -------
         A Date/ Datetime Series
         """
-        if datatype == Date:
-            return wrap_s(self._s.str_parse_date(fmt))
-        if datatype == Datetime:
-            return wrap_s(self._s.str_parse_datetime(fmt))
-        raise NotImplementedError  # pragma: no cover
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.strptime(datatype, fmt, strict))
+            .to_series()
+        )
 
     def lengths(self) -> Series:
         """
