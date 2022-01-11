@@ -5,6 +5,30 @@ use crate::window::Window;
 use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
 
+#[test]
+fn test_date_range() {
+    // Test month as interval in date range
+    let start = NaiveDate::from_ymd(2022, 1, 1).and_hms(0, 0, 0);
+    let end = NaiveDate::from_ymd(2022, 4, 1).and_hms(0, 0, 0);
+    let dates = date_range(
+        start.timestamp_nanos(),
+        end.timestamp_nanos(),
+        Duration::parse("1mo"),
+        ClosedWindow::Both,
+        TimeUnit::Nanoseconds,
+    );
+    let expected = [
+        NaiveDate::from_ymd(2022, 1, 1),
+        NaiveDate::from_ymd(2022, 2, 1),
+        NaiveDate::from_ymd(2022, 3, 1),
+        NaiveDate::from_ymd(2022, 4, 1),
+    ]
+    .iter()
+    .map(|d| d.and_hms(0, 0, 0).timestamp_nanos())
+    .collect::<Vec<_>>();
+    assert_eq!(dates, expected);
+}
+
 fn print_ns(ts: &[i64]) {
     for ts in ts {
         println!("{}", timestamp_ns_to_datetime(*ts));
