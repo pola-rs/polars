@@ -267,12 +267,6 @@ impl AsRef<Expr> for AggExpr {
     }
 }
 
-impl From<AggExpr> for Expr {
-    fn from(agg: AggExpr) -> Self {
-        Expr::Agg(agg)
-    }
-}
-
 /// Queries consists of multiple expressions.
 #[derive(Clone, PartialEq)]
 #[must_use]

@@ -703,7 +703,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let name = f.name();
             if !right_names.contains(name.as_str()) {
                 if names.contains(name.as_str()) {
-                    let new_name = format!("{}_right", name);
+                    let new_name = format!("{}{}", name, options.suffix.as_ref());
                     let field = Field::new(&new_name, f.data_type().clone());
                     fields.push(field)
                 } else {

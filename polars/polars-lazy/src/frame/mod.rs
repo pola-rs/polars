@@ -12,6 +12,7 @@ pub use csv::*;
 pub use ipc::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+use std::borrow::Cow;
 
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
@@ -46,7 +47,7 @@ pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
     pub how: JoinType,
-    pub suffix: Option<String>,
+    pub suffix: Cow<'static, str>,
     pub asof_by_left: Vec<String>,
     pub asof_by_right: Vec<String>,
 }
@@ -57,7 +58,7 @@ impl Default for JoinOptions {
             allow_parallel: true,
             force_parallel: false,
             how: JoinType::Left,
-            suffix: None,
+            suffix: "_right".into(),
             asof_by_left: vec![],
             asof_by_right: vec![],
         }
@@ -250,7 +251,8 @@ impl LazyFrame {
     ///         .sort_by_exprs(vec![col("sepal.width")], vec![false])
     /// }
     /// ```
-    pub fn sort_by_exprs(self, by_exprs: Vec<Expr>, reverse: Vec<bool>) -> Self {
+    pub fn sort_by_exprs<E: AsRef<[Expr]>>(self, by_exprs: E, reverse: Vec<bool>) -> Self {
+        let by_exprs = by_exprs.as_ref().to_vec();
         if by_exprs.is_empty() {
             self
         } else {
@@ -351,21 +353,21 @@ impl LazyFrame {
     /// with the result of the `fill_value` expression.
     ///
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
-    pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
-        self.select_local(vec![col("*").shift_and_fill(periods, fill_value)])
+    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
+        self.select_local(vec![col("*").shift_and_fill(periods, fill_value.into())])
     }
 
     /// Fill none values in the DataFrame
-    pub fn fill_null(self, fill_value: Expr) -> LazyFrame {
+    pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().fill_null(fill_value).build();
+        let lp = self.get_plan_builder().fill_null(fill_value.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Fill NaN values in the DataFrame
-    pub fn fill_nan(self, fill_value: Expr) -> LazyFrame {
+    pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self.get_plan_builder().fill_nan(fill_value).build();
+        let lp = self.get_plan_builder().fill_nan(fill_value.into()).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
@@ -670,8 +672,8 @@ impl LazyFrame {
     ///         .left_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn left_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], JoinType::Left)
+    pub fn left_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(other, [left_on.into()], [right_on.into()], JoinType::Left)
     }
 
     /// Join query with other lazy query.
@@ -686,8 +688,8 @@ impl LazyFrame {
     ///         .outer_join(other, col("foo"), col("bar"))
     /// }
     /// ```
-    pub fn outer_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], JoinType::Outer)
+    pub fn outer_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(other, [left_on.into()], [right_on.into()], JoinType::Outer)
     }
 
     /// Join query with other lazy query.
@@ -702,8 +704,8 @@ impl LazyFrame {
     ///         .inner_join(other, col("foo"), col("bar").cast(DataType::Utf8))
     /// }
     /// ```
-    pub fn inner_join(self, other: LazyFrame, left_on: Expr, right_on: Expr) -> LazyFrame {
-        self.join(other, vec![left_on], vec![right_on], JoinType::Inner)
+    pub fn inner_join<E: Into<Expr>>(self, other: LazyFrame, left_on: E, right_on: E) -> LazyFrame {
+        self.join(other, [left_on.into()], [right_on.into()], JoinType::Inner)
     }
 
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
@@ -1050,7 +1052,7 @@ pub struct JoinBuilder {
     asof_by_right: Vec<String>,
 }
 impl JoinBuilder {
-    fn new(lf: LazyFrame) -> Self {
+    pub fn new(lf: LazyFrame) -> Self {
         Self {
             lf,
             other: None,
@@ -1078,14 +1080,14 @@ impl JoinBuilder {
     }
 
     /// The columns you want to join the left table on.
-    pub fn left_on(mut self, on: Vec<Expr>) -> Self {
-        self.left_on = on;
+    pub fn left_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
+        self.left_on = on.as_ref().to_vec();
         self
     }
 
     /// The columns you want to join the right table on.
-    pub fn right_on(mut self, on: Vec<Expr>) -> Self {
-        self.right_on = on;
+    pub fn right_on<E: AsRef<[Expr]>>(mut self, on: E) -> Self {
+        self.right_on = on.as_ref().to_vec();
         self
     }
     /// Allow parallel table evaluation.
@@ -1102,8 +1104,8 @@ impl JoinBuilder {
 
     /// Suffix to add duplicate column names in join.
     /// Defaults to `"_right"`.
-    pub fn suffix(mut self, suffix: String) -> Self {
-        self.suffix = Some(suffix);
+    pub fn suffix<S: AsRef<str>>(mut self, suffix: S) -> Self {
+        self.suffix = Some(suffix.as_ref().to_string());
         self
     }
 
@@ -1118,6 +1120,11 @@ impl JoinBuilder {
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
 
+        let suffix = match self.suffix {
+            None => Cow::Borrowed("_right"),
+            Some(suffix) => Cow::Owned(suffix),
+        };
+
         let lp = self
             .lf
             .get_plan_builder()
@@ -1129,7 +1136,7 @@ impl JoinBuilder {
                     allow_parallel: self.allow_parallel,
                     force_parallel: self.force_parallel,
                     how: self.how,
-                    suffix: self.suffix,
+                    suffix,
                     asof_by_left: self.asof_by_left,
                     asof_by_right: self.asof_by_right,
                 },

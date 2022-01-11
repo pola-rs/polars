@@ -396,7 +396,7 @@ impl LogicalPlanBuilder {
 
             if !right_names.iter().any(|s| s.as_ref() == name) {
                 if names.contains(name) {
-                    let new_name = format!("{}_right", name);
+                    let new_name = format!("{}{}", name, options.suffix.as_ref());
                     let field = Field::new(&new_name, f.data_type().clone());
                     fields.push(field)
                 } else {

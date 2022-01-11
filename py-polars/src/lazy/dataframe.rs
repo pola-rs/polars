@@ -350,8 +350,14 @@ impl PyLazyFrame {
 
         let ldf = self.ldf.clone();
         let other = other.ldf;
-        let left_on = left_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
-        let right_on = right_on.into_iter().map(|pyexpr| pyexpr.inner).collect();
+        let left_on = left_on
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
+        let right_on = right_on
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
 
         ldf.join_builder()
             .with(other)
