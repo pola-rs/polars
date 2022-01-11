@@ -170,12 +170,12 @@ impl Duration {
     /// Estimated duration of the window duration. Not a very good one if months != 0.
     #[inline]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
+        self.months * 28 * 24 * 3600 * NS_SECOND + self.nsecs
     }
 
     #[inline]
     pub const fn duration_ms(&self) -> i64 {
-        self.months * 30 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
+        self.months * 28 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
     }
 
     #[inline]
