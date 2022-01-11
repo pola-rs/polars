@@ -76,7 +76,7 @@ impl SlicePushDown {
                 options,
                 predicate,
                 aggregate,
-            }, Some(state)) if state.offset > 0 => {
+            }, Some(state)) if state.offset >= 0 => {
                 let mut options = options;
                 options.skip_rows = state.offset as usize;
                 options.n_rows = Some(state.len as usize);
@@ -204,9 +204,17 @@ impl SlicePushDown {
                 Ok(lp.from_exprs_and_input(exprs, new_inputs))
             }
             (catch_all, state) => {
-                assert!(state.is_none());
-                Ok(catch_all)
-
+                match state {
+                    Some(state) => {
+                        let input = lp_arena.add(catch_all);
+                        Ok(Slice {
+                            input,
+                            offset: state.offset,
+                            len: state.len
+                        })
+                    }
+                    None => Ok(catch_all)
+                }
             }
 
         }
