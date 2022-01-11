@@ -2356,7 +2356,7 @@ class DataFrame:
 
     def groupby_dynamic(
         self,
-        time_column: str,
+        index_column: str,
         every: str,
         period: Optional[str] = None,
         offset: Optional[str] = None,
@@ -2366,9 +2366,9 @@ class DataFrame:
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
         """
-        Groups based on a time value. Time windows are calculated and rows are assigned to windows.
-        Different from a normal groupby is that a row can be member of multiple groups. The time window could
-        be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
+        Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
+        Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
+        be seen as a rolling window, with a window size determined by dates/times/values instead of slots in the DataFrame.
 
         A window is defined by:
 
@@ -2389,19 +2389,28 @@ class DataFrame:
         - 1w    (1 week)
         - 1mo   (1 calendar month)
         - 1y    (1 calendar year)
+        - 1i    (1 index count)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        In case of a groupby_dynamic on an integer column, the windows are defined by:
+
+        - "1i"      # length 1
+        - "10i"     # length 2
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
-        time_column
+        index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
             This column must be sorted in ascending order. If not the output will not make sense.
+
+            In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
+            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
         every
             interval of the window
         period
@@ -2600,11 +2609,41 @@ class DataFrame:
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
+        Dynamic groupby on an index column
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "idx": np.arange(6),
+        ...         "A": ["A", "A", "B", "B", "B", "C"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby_dynamic(
+        ...         "idx",
+        ...         every="2i",
+        ...         period="3i",
+        ...         include_boundaries=True,
+        ...     ).agg(pl.col("A").list())
+        ... )
+
+        shape: (3, 4)
+        ┌─────────────────┬─────────────────┬─────┬─────────────────┐
+        │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
+        │ ---             ┆ ---             ┆ --- ┆ ---             │
+        │ i64             ┆ i64             ┆ i64 ┆ list [str]      │
+        ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
+        └─────────────────┴─────────────────┴─────┴─────────────────┘
+
         """
 
         return DynamicGroupBy(
             self,
-            time_column,
+            index_column,
             every,
             period,
             offset,
@@ -4058,7 +4097,7 @@ class DynamicGroupBy:
     def __init__(
         self,
         df: "DataFrame",
-        time_column: str,
+        index_column: str,
         every: str,
         period: Optional[str],
         offset: Optional[str],
@@ -4068,7 +4107,7 @@ class DynamicGroupBy:
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ):
         self.df = df
-        self.time_column = time_column
+        self.time_column = index_column
         self.every = every
         self.period = period
         self.offset = offset
