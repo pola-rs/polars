@@ -1853,7 +1853,7 @@ describe("meta", () => {
 │ --- │
 │ f64 │
 ╞═════╡
-│ 1   │
+│ 1.0 │
 └─────┘`;
     const actualInspect = df[Symbol.for("nodejs.util.inspect.custom")]();
     const dfString = df.toString();

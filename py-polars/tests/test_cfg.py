@@ -54,16 +54,25 @@ def test_tables(environ: None) -> None:
 
 
 def test_tbl_width_chars(environ: None) -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
-    pl.Config.set_tbl_width_chars(100)
-    assert max(len(line) for line in str(df).split("\n")) == 19
+    df = pl.DataFrame(
+        {
+            "a really long col": [1, 2, 3],
+            "b": ["", "this is a string value that will be truncated", None],
+            "this is 10": [4, 5, 6],
+        }
+    )
 
-    pl.Config.set_tbl_width_chars(15)
-    assert max(len(line) for line in str(df).split("\n")) == 15
+    assert max(len(line) for line in str(df).split("\n")) == 72
 
-    # this will not squeezed below 13 characters, so 10 yields 13
-    pl.Config.set_tbl_width_chars(10)
-    assert max(len(line) for line in str(df).split("\n")) == 13
+    pl.Config.set_tbl_width_chars(60)
+    assert max(len(line) for line in str(df).split("\n")) == 60
+
+    # formula for determining min width is
+    # sum(max(min(header.len, 12), 5)) + header.len + 1
+    # so we end up with 12+5+10+4 = 31
+
+    pl.Config.set_tbl_width_chars(0)
+    assert max(len(line) for line in str(df).split("\n")) == 31
 
 
 def test_set_tbl_cols(environ: None) -> None:
