@@ -4199,6 +4199,9 @@ class GroupBy:
         columns
             One or multiple columns.
         """
+        print(
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+        )
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -4290,18 +4293,6 @@ class GroupBy:
         column_to_agg
             map column to aggregation functions.
 
-        Use lazy API syntax (recommended)
-
-        >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
-
-        >>> [
-        ...     ("foo", ["sum", "n_unique", "min"]),
-        ...     ("bar", ["max"]),
-        ... ]  # doctest: +SKIP
-
-        Column name to aggregation with dict:
-        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
-
         Returns
         -------
         Result of groupby split apply operations.
@@ -4310,34 +4301,12 @@ class GroupBy:
         Examples
         --------
 
-        Use lazy API:
-
         >>> df.groupby(["foo", "bar"]).agg(
         ...     [
         ...         pl.sum("ham"),
         ...         pl.col("spam").tail(4).sum(),
         ...     ]
         ... )  # doctest: +SKIP
-
-        Use a dict:
-
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     {
-        ...         "spam": ["sum", "min"],
-        ...     }
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 3   │
-        └─────┴─────┘
 
         """
 
