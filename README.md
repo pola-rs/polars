@@ -118,7 +118,7 @@ polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>"
 
 #### Rust version
 
-Required Rust version `>=1.52`
+Required Rust version `>=1.58`
 
 
 ## Documentation
