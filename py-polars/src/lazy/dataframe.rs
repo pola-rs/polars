@@ -295,7 +295,7 @@ impl PyLazyFrame {
     #[allow(clippy::too_many_arguments)]
     pub fn groupby_dynamic(
         &mut self,
-        time_column: String,
+        index_column: String,
         every: &str,
         period: &str,
         offset: &str,
@@ -313,7 +313,7 @@ impl PyLazyFrame {
         let lazy_gb = ldf.groupby_dynamic(
             by,
             DynamicGroupOptions {
-                time_column,
+                index_column,
                 every: Duration::parse(every),
                 period: Duration::parse(period),
                 offset: Duration::parse(offset),

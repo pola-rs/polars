@@ -28,7 +28,7 @@ pub(crate) mod pivot;
 #[cfg(not(feature = "dynamic_groupby"))]
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
-    pub time_column: String,
+    pub index_column: String,
 }
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;

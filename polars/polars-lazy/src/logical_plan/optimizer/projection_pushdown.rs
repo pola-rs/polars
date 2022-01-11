@@ -602,7 +602,7 @@ impl ProjectionPushDown {
                     // make sure that the dynamic key is projected
                     if let Some(options) = &dynamic_options {
                         let node =
-                            expr_arena.add(AExpr::Column(Arc::from(options.time_column.as_str())));
+                            expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
                         add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
                     }
 

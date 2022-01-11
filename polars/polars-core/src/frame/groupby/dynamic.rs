@@ -7,7 +7,8 @@ use rayon::prelude::*;
 
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
-    pub time_column: String,
+    /// Time or index column
+    pub index_column: String,
     /// start a window at this interval
     pub every: Duration,
     /// window duration
@@ -21,27 +22,78 @@ pub struct DynamicGroupOptions {
     pub closed_window: ClosedWindow,
 }
 
+const LB_NAME: &str = "_lower_boundary";
+const UP_NAME: &str = "_upper_boundary";
+
 impl DataFrame {
     /// Returns: time_keys, keys, grouptuples
     pub fn groupby_dynamic(
         &self,
-        mut by: Vec<Series>,
+        by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> Result<(Series, Vec<Series>, GroupTuples)> {
-        let w = Window::new(options.every, options.period, options.offset);
-        let time = self.column(&options.time_column)?;
+        let time = self.column(&options.index_column)?;
         let time_type = time.dtype();
+
         if time.null_count() > 0 {
             panic!("null values in dynamic groupby not yet supported, fill nulls.")
         }
-        let (dt, tu) = match time.dtype() {
-            DataType::Datetime(tu, _) => (time.clone(), *tu),
-            DataType::Date => (
-                time.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+
+        use DataType::*;
+        let (dt, tu) = match time_type {
+            Datetime(tu, _) => (time.clone(), *tu),
+            Date => (
+                time.cast(&Datetime(TimeUnit::Milliseconds, None))?,
                 TimeUnit::Milliseconds,
             ),
-            _ => unreachable!(),
+            Int32 => {
+                let time_type = Datetime(TimeUnit::Nanoseconds, None);
+                let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
+                let (out, mut keys, gt) =
+                    self.impl_groupby(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
+                for k in &mut keys {
+                    if k.name() == UP_NAME || k.name() == LB_NAME {
+                        *k = k.cast(&Int64).unwrap().cast(&Int32).unwrap()
+                    }
+                }
+                return Ok((out, keys, gt));
+            }
+            Int64 => {
+                let time_type = Datetime(TimeUnit::Nanoseconds, None);
+                let dt = time.cast(&time_type).unwrap();
+                let (out, mut keys, gt) =
+                    self.impl_groupby(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
+                let out = out.cast(&Int64).unwrap();
+                for k in &mut keys {
+                    if k.name() == UP_NAME || k.name() == LB_NAME {
+                        *k = k.cast(&Int64).unwrap()
+                    }
+                }
+                return Ok((out, keys, gt));
+            }
+            dt => {
+                return Err(PolarsError::ValueError(
+                    format!(
+                    "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
+                    dt
+                )
+                    .into(),
+                ))
+            }
         };
+        self.impl_groupby(dt, by, options, tu, time_type)
+    }
+
+    fn impl_groupby(
+        &self,
+        dt: Series,
+        mut by: Vec<Series>,
+        options: &DynamicGroupOptions,
+        tu: TimeUnit,
+        time_type: &DataType,
+    ) -> Result<(Series, Vec<Series>, GroupTuples)> {
+        let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
 
         let mut lower_bound = None;
@@ -170,11 +222,11 @@ impl DataFrame {
         if let (true, Some(lower), Some(higher)) =
             (options.include_boundaries, lower_bound, upper_bound)
         {
-            let s = Int64Chunked::new_vec("_lower_boundary", lower)
+            let s = Int64Chunked::new_vec(LB_NAME, lower)
                 .into_datetime(tu, None)
                 .into_series();
             by.push(s);
-            let s = Int64Chunked::new_vec("_upper_boundary", higher)
+            let s = Int64Chunked::new_vec(UP_NAME, higher)
                 .into_datetime(tu, None)
                 .into_series();
             by.push(s);
@@ -218,7 +270,7 @@ mod test {
             .groupby_dynamic(
                 vec![groups],
                 &DynamicGroupOptions {
-                    time_column: "date".into(),
+                    index_column: "date".into(),
                     every: Duration::parse("1h"),
                     period: Duration::parse("1h"),
                     offset: Duration::parse("0h"),

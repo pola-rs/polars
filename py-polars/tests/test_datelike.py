@@ -295,7 +295,7 @@ def test_truncate_negative_offset() -> None:
         }
     )
     out = df.groupby_dynamic(
-        time_column="event_date",
+        index_column="event_date",
         every="1mo",
         period="2mo",
         offset="-1mo",
@@ -327,7 +327,7 @@ def test_truncate_negative_offset() -> None:
     )
 
     out = df.groupby_dynamic(
-        time_column="event_date",
+        index_column="event_date",
         every="1mo",
         by=["admin", "five_type", "actor"],
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
@@ -336,6 +336,19 @@ def test_truncate_negative_offset() -> None:
         datetime(2021, 5, 1),
         datetime(2021, 4, 1),
     ]
+
+    for dt in [pl.Int32, pl.Int64]:
+        df = pl.DataFrame(
+            {
+                "idx": np.arange(6),
+                "A": ["A", "A", "B", "B", "B", "C"],
+            }
+        ).with_columns(pl.col("idx").cast(dt))
+
+        out = df.groupby_dynamic(
+            "idx", every="2i", period="3i", include_boundaries=True
+        ).agg(pl.col("A").list())
+        assert out.shape == (3, 4)
 
 
 def test_to_arrow() -> None:
