@@ -50,9 +50,19 @@ fn test_pred_pd_1() -> Result<()> {
 
     // check if we understand that we can unwrap the alias
     let lp = df
+        .clone()
         .lazy()
         .select([col("A").alias("C"), col("B")])
         .filter(col("C").gt(lit(1)))
+        .optimize(&mut lp_arena, &mut expr_arena)?;
+
+    assert!(projection_at_scan(&lp_arena, lp));
+
+    // check if we pass hstack
+    let lp = df
+        .lazy()
+        .with_columns([col("A").alias("C"), col("B")])
+        .filter(col("B").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
     assert!(projection_at_scan(&lp_arena, lp));
