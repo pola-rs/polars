@@ -143,7 +143,7 @@ pub trait ChunkRollApply {
         &self,
         _f: &dyn Fn(&Series) -> Series,
         _options: RollingOptions,
-    ) -> Result<Self>
+    ) -> Result<Series>
     where
         Self: Sized,
     {

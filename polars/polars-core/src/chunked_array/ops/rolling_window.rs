@@ -273,6 +273,20 @@ mod inner_mod {
         }
     }
 
+    /// utility
+    fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
+        let (start, end) = if center {
+            (
+                idx.saturating_sub(window_size / 2),
+                std::cmp::min(len, idx + window_size / 2),
+            )
+        } else {
+            (idx.saturating_sub(window_size - 1), idx + 1)
+        };
+
+        (start, end - start)
+    }
+
     impl<T> ChunkRollApply for ChunkedArray<T>
     where
         T: PolarsNumericType,
@@ -283,53 +297,101 @@ mod inner_mod {
             &self,
             f: &dyn Fn(&Series) -> Series,
             options: RollingOptions,
-        ) -> Result<Self> {
+        ) -> Result<Series> {
+            check_input(options.window_size, options.min_periods)?;
+
+            let ca = self.rechunk();
+            if options.weights.is_some()
+                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
+            {
+                let s = self.cast(&DataType::Float64)?;
+                return s.rolling_apply(f, options);
+            }
+
             if options.window_size >= self.len() {
-                return Ok(Self::full_null(self.name(), self.len()));
+                return Ok(Self::full_null(self.name(), self.len()).into_series());
             }
 
             let len = self.len();
-            let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
-
             let series_container =
                 ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]).into_series();
             let array_ptr = &series_container.chunks()[0];
             let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 
-            for idx in 0..len {
-                let (start, end) = if options.center {
-                    (
-                        idx.saturating_sub(options.window_size / 2),
-                        std::cmp::min(len, idx + options.window_size / 2),
-                    )
-                } else {
-                    (idx.saturating_sub(options.window_size - 1), idx + 1)
-                };
+            if let Some(weights) = options.weights {
+                let weights_series = Float64Chunked::new("weights", &weights).into_series();
 
-                let size = end - start;
+                let weights_series = weights_series.cast(self.dtype()).unwrap();
 
-                if size < options.min_periods {
-                    builder.append_null();
-                } else {
-                    let arr_window = arr.slice(start, size);
+                for idx in 0..len {
+                    let (start, size) = window_edges(idx, len, options.window_size, options.center);
 
-                    // Safety.
-                    // ptr is not dropped as we are in scope
-                    // We are also the only owner of the contents of the Arc
-                    // we do this to reduce heap allocs.
-                    unsafe {
-                        *ptr = arr_window;
+                    if size < options.min_periods {
+                        builder.append_null();
+                    } else {
+                        let arr_window = arr.slice(start, size);
+
+                        // Safety.
+                        // ptr is not dropped as we are in scope
+                        // We are also the only owner of the contents of the Arc
+                        // we do this to reduce heap allocs.
+                        unsafe {
+                            *ptr = arr_window;
+                        }
+
+                        let s = if size == options.window_size {
+                            f(&series_container.multiply(&weights_series).unwrap())
+                        } else {
+                            let weights_cutoff: Series = match self.dtype() {
+                                DataType::Float64 => weights_series
+                                    .f64()
+                                    .unwrap()
+                                    .into_iter()
+                                    .take(series_container.len())
+                                    .collect(),
+                                _ => weights_series // Float32 case
+                                    .f32()
+                                    .unwrap()
+                                    .into_iter()
+                                    .take(series_container.len())
+                                    .collect(),
+                            };
+                            f(&series_container.multiply(&weights_cutoff).unwrap())
+                        };
+
+                        let out = self.unpack_series_matching_type(&s)?;
+                        builder.append_option(out.get(0));
                     }
-
-                    let s = f(&series_container);
-                    let out = self.unpack_series_matching_type(&s)?;
-                    builder.append_option(out.get(0));
                 }
-            }
 
-            Ok(builder.finish())
+                Ok(builder.finish().into_series())
+            } else {
+                for idx in 0..len {
+                    let (start, size) = window_edges(idx, len, options.window_size, options.center);
+
+                    if size < options.min_periods {
+                        builder.append_null();
+                    } else {
+                        let arr_window = arr.slice(start, size);
+
+                        // Safety.
+                        // ptr is not dropped as we are in scope
+                        // We are also the only owner of the contents of the Arc
+                        // we do this to reduce heap allocs.
+                        unsafe {
+                            *ptr = arr_window;
+                        }
+
+                        let s = f(&series_container);
+                        let out = self.unpack_series_matching_type(&s)?;
+                        builder.append_option(out.get(0));
+                    }
+                }
+
+                Ok(builder.finish().into_series())
+            }
         }
     }
 
@@ -430,8 +492,7 @@ mod inner_mod {
             // We are still guarded by the type system.
             let out = match self.dtype() {
                 DataType::Float32 => s.f32().unwrap().pow_f32(0.5).into_series(),
-                DataType::Float64 => s.f64().unwrap().pow_f64(0.5).into_series(),
-                _ => unreachable!(),
+                _ => s.f64().unwrap().pow_f64(0.5).into_series(), //Float64 case
             };
             Ok(out)
         }
@@ -605,8 +666,11 @@ mod test {
                 },
             )
             .unwrap();
+
+        let out = out.f64().unwrap();
+
         assert_eq!(
-            Vec::from(&out),
+            Vec::from(out),
             &[
                 None,
                 None,

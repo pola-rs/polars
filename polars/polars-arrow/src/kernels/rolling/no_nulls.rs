@@ -163,6 +163,10 @@ pub(crate) fn compute_var<T>(vals: &[T]) -> T
 where
     T: Float + std::iter::Sum,
 {
+    dbg!(vals
+        .iter()
+        .map(|&t| NumCast::from(t).unwrap())
+        .collect::<Vec<f64>>());
     let len = T::from(vals.len()).unwrap();
     let mean = vals.iter().copied().sum::<T>() / len;
 
