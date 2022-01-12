@@ -2185,10 +2185,11 @@ where
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static>(mut acc: Expr, f: F, mut exprs: Vec<Expr>) -> Expr
+pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(mut acc: Expr, f: F, exprs: E) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
 {
+    let mut exprs = exprs.as_ref().to_vec();
     if exprs.iter().any(has_wildcard) {
         exprs.push(acc);
 
@@ -2232,13 +2233,15 @@ where
 }
 
 /// Get the the sum of the values per row
-pub fn sum_exprs(exprs: Vec<Expr>) -> Expr {
+pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
     let func = |s1, s2| Ok(&s1 + &s2);
     fold_exprs(lit(0), func, exprs)
 }
 
-/// Get the the minimum value per row
-pub fn max_exprs(exprs: Vec<Expr>) -> Expr {
+/// Get the the maximum value per row
+pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| {
         let mask = s1.gt(&s2);
         s1.zip_with(&mask, &s2)
@@ -2247,7 +2250,8 @@ pub fn max_exprs(exprs: Vec<Expr>) -> Expr {
 }
 
 /// Get the the minimum value per row
-pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
+pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| {
         let mask = s1.lt(&s2);
         s1.zip_with(&mask, &s2)
@@ -2256,13 +2260,15 @@ pub fn min_exprs(exprs: Vec<Expr>) -> Expr {
 }
 
 /// Evaluate all the expressions with a bitwise or
-pub fn any_exprs(exprs: Vec<Expr>) -> Expr {
+pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
     fold_exprs(lit(false), func, exprs)
 }
 
 /// Evaluate all the expressions with a bitwise and
-pub fn all_exprs(exprs: Vec<Expr>) -> Expr {
+pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
+    let exprs = exprs.as_ref().to_vec();
     let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
     fold_exprs(lit(true), func, exprs)
 }
