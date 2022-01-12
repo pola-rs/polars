@@ -149,6 +149,18 @@ class LazyFrame:
         """
         return func(self, *args, **kwargs)
 
+    def _repr_html_(self) -> str:
+        insert = self.describe_plan().replace("\n", "<p></p>")
+
+        return f"""<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+<p></p>
+<div>{insert}</div>"""
+
+    def __str__(self) -> str:
+        return f"""naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+
+{self.describe_plan()}"""
+
     def describe_plan(self) -> str:
         """
         A string representation of the unoptimized query plan.
@@ -584,6 +596,7 @@ class LazyFrame:
             truncate the time value to the window lower bound
         include_boundaries
             add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+            this will impact performance because it's harder to parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
