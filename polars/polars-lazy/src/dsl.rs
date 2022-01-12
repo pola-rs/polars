@@ -539,8 +539,8 @@ pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
 }
 
 impl Expr {
-    #[cfg(feature = "private")]
     /// overwrite the function name used for formatting
+    /// this is not intended to be used
     pub fn with_fmt(self, name: &'static str) -> Expr {
         if let Self::Function {
             input,

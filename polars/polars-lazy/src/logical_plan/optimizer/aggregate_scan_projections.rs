@@ -104,10 +104,12 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
+                    let with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
+                        columns
+                    });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::IpcScan {
@@ -148,10 +150,12 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let mut with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
+                    let mut with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
+                        columns
+                    });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::ParquetScan {
@@ -192,10 +196,12 @@ impl OptimizationRule for AggScanProjection {
                     aggregate,
                 } = lp
                 {
-                    let with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
+                    let with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
+                        columns
+                    });
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,

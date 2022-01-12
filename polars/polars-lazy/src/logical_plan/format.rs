@@ -21,6 +21,7 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
+                dbg!(options);
                 write!(
                     f,
                     "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
@@ -53,10 +54,10 @@ impl fmt::Debug for LogicalPlan {
                 )
             }
             Selection { predicate, input } => {
-                write!(f, "FILTER\n\t{:?}\nFROM\n\t{:?}", predicate, input)
+                write!(f, "FILTER {:?}\nFROM\n{:?}", predicate, input)
             }
             Melt { input, .. } => {
-                write!(f, "MELT\n\t{:?}", input)
+                write!(f, "MELT {:?}", input)
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -111,9 +112,9 @@ impl fmt::Debug for LogicalPlan {
             Projection { expr, input, .. } => {
                 write!(
                     f,
-                    "SELECT {:?} COLUMNS\n\
-                 {:?}
-                 \nFROM\n{:?}",
+                    "SELECT {:?} COLUMNS: {:?}
+FROM
+{:?}",
                     expr.len(),
                     expr,
                     input
@@ -154,7 +155,7 @@ impl fmt::Debug for LogicalPlan {
             Slice { input, offset, len } => {
                 write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
             }
-            Udf { input, .. } => write!(f, "UDF {:?}", input),
+            Udf { input, .. } => write!(f, "UDF \n{:?}", input),
         }
     }
 }
@@ -209,20 +210,20 @@ impl fmt::Debug for Expr {
             Agg(agg) => {
                 use AggExpr::*;
                 match agg {
-                    Min(expr) => write!(f, "AGG MIN {:?}", expr),
-                    Max(expr) => write!(f, "AGG MAX {:?}", expr),
-                    Median(expr) => write!(f, "AGG MEDIAN {:?}", expr),
-                    Mean(expr) => write!(f, "AGG MEAN {:?}", expr),
-                    First(expr) => write!(f, "AGG FIRST {:?}", expr),
-                    Last(expr) => write!(f, "AGG LAST {:?}", expr),
-                    List(expr) => write!(f, "AGG LIST {:?}", expr),
-                    NUnique(expr) => write!(f, "AGG N UNIQUE {:?}", expr),
-                    Sum(expr) => write!(f, "AGG SUM {:?}", expr),
-                    AggGroups(expr) => write!(f, "AGG GROUPS {:?}", expr),
-                    Count(expr) => write!(f, "AGG COUNT {:?}", expr),
-                    Var(expr) => write!(f, "AGG VAR {:?}", expr),
-                    Std(expr) => write!(f, "AGG STD {:?}", expr),
-                    Quantile { expr, .. } => write!(f, "AGG QUANTILE {:?}", expr),
+                    Min(expr) => write!(f, "{:?}.min()", expr),
+                    Max(expr) => write!(f, "{:?}.max()", expr),
+                    Median(expr) => write!(f, "{:?}.median()", expr),
+                    Mean(expr) => write!(f, "{:?}.mean()", expr),
+                    First(expr) => write!(f, "{:?}.first()", expr),
+                    Last(expr) => write!(f, "{:?}.last()", expr),
+                    List(expr) => write!(f, "{:?}.list()", expr),
+                    NUnique(expr) => write!(f, "{:?}.n_unique()", expr),
+                    Sum(expr) => write!(f, "{:?}.sum()", expr),
+                    AggGroups(expr) => write!(f, "{:?}.groups()", expr),
+                    Count(expr) => write!(f, "{:?}.count()", expr),
+                    Var(expr) => write!(f, "{:?}.var()", expr),
+                    Std(expr) => write!(f, "{:?}.var()", expr),
+                    Quantile { expr, .. } => write!(f, "{:?}.quantile()", expr),
                 }
             }
             Cast {
