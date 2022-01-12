@@ -1,6 +1,6 @@
 use super::*;
 
-fn projection_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
+pub(crate) fn predicate_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
@@ -46,7 +46,7 @@ fn test_pred_pd_1() -> Result<()> {
         .filter(col("A").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
-    assert!(projection_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(&lp_arena, lp));
 
     // check if we understand that we can unwrap the alias
     let lp = df
@@ -56,7 +56,7 @@ fn test_pred_pd_1() -> Result<()> {
         .filter(col("C").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
-    assert!(projection_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(&lp_arena, lp));
 
     // check if we pass hstack
     let lp = df
@@ -66,7 +66,7 @@ fn test_pred_pd_1() -> Result<()> {
         .filter(col("B").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
-    assert!(projection_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(&lp_arena, lp));
 
     // check if we do not pass slice
     let lp = df
@@ -75,7 +75,7 @@ fn test_pred_pd_1() -> Result<()> {
         .filter(col("B").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
-    assert!(!projection_at_scan(&lp_arena, lp));
+    assert!(!predicate_at_scan(&lp_arena, lp));
 
     Ok(())
 }

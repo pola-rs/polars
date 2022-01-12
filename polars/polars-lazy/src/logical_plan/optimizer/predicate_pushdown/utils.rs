@@ -3,7 +3,7 @@ use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_to_root_column_name, aexpr_to_root_names, check_input_node, has_aexpr,
-    rename_aexpr_root_name,
+    rename_aexpr_root_names,
 };
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
@@ -161,8 +161,7 @@ where
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
                         Ok(new_name) => {
-                            rename_aexpr_root_name(predicate, expr_arena, new_name.clone())
-                                .unwrap();
+                            rename_aexpr_root_names(predicate, expr_arena, new_name.clone());
 
                             insert_and_combine_predicate(
                                 acc_predicates,

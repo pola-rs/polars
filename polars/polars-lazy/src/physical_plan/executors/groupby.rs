@@ -1,7 +1,7 @@
 use super::*;
 use crate::logical_plan::Context;
 use crate::prelude::utils::as_aggregated;
-use crate::utils::rename_aexpr_root_name;
+use crate::utils::rename_aexpr_root_names;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -190,7 +190,7 @@ fn get_outer_agg_exprs(
             let out_field = e.to_field(&schema, Context::Aggregation)?;
             let out_name: Arc<str> = Arc::from(out_field.name().as_str());
             let node = to_aexpr(e.clone(), &mut expr_arena);
-            rename_aexpr_root_name(node, &mut expr_arena, out_name.clone())?;
+            rename_aexpr_root_names(node, &mut expr_arena, out_name.clone());
             Ok((node, out_name))
         })
         .collect::<Result<Vec<_>>>()?;
