@@ -21,7 +21,7 @@ describe("from lists", () => {
     expect(actual).toEqual(expected);
   });
   test("string", () => {
-    const expected = [[], ["a"], [null], ["b", "c"]];
+    const expected = [[], [null], ["a"], [null], ["b", "c"]];
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
   });
@@ -800,11 +800,6 @@ describe("series proxy & metadata", () => {
     const [two,, nine] = s;
     expect(two).toStrictEqual(2);
     expect(nine).toStrictEqual(9);
-  });
-  test("set", () => {
-    const s = pl.Series([1, 2, 3]);
-    s[0] = s[2];
-    expect(s[0]).toStrictEqual(s[2]);
   });
 });
 describe("StringFunctions", () => {

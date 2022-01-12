@@ -32,7 +32,83 @@ import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
+/**
+ *
+  A DataFrame is a two-dimensional data structure that represents data as a table
+  with rows and columns.
 
+  Parameters
+  ----------
+  @param data -  Object, Array, or Series
+      Two-dimensional data in various forms. object must contain Arrays.
+      Array may contain Series or other Arrays.
+  @param columns - Array of str, default undefined
+      Column labels to use for resulting DataFrame. If specified, overrides any
+      labels already present in the data. Must match data dimensions.
+  @param orient - 'col' | 'row' default undefined
+      Whether to interpret two-dimensional data as columns or as rows. If None,
+      the orientation is inferred by matching the columns and data dimensions. If
+      this does not yield conclusive results, column orientation is used.
+
+  Examples
+  --------
+  Constructing a DataFrame from an object :
+  ```
+  data = {'a': [1n, 2n], 'b': [3, 4]}
+  df = pl.DataFrame(data)
+  df
+  shape: (2, 2)
+  ╭─────┬─────╮
+  │ a   ┆ b   │
+  │ --- ┆ --- │
+  │ u64 ┆ i64 │
+  ╞═════╪═════╡
+  │ 1   ┆ 3   │
+  ├╌╌╌╌╌┼╌╌╌╌╌┤
+  │ 2   ┆ 4   │
+  ╰─────┴─────╯
+  ```
+  Notice that the dtype is automatically inferred as a polars Int64:
+  ```
+  df.dtypes
+  ['UInt64', `Int64']
+  ```
+  In order to specify dtypes for your columns, initialize the DataFrame with a list
+  of Series instead:
+  ```
+  data = [pl.Series('col1', [1, 2], pl.Float32),
+  ...         pl.Series('col2', [3, 4], pl.Int64)]
+  df2 = pl.DataFrame(series)
+  df2
+  shape: (2, 2)
+  ╭──────┬──────╮
+  │ col1 ┆ col2 │
+  │ ---  ┆ ---  │
+  │ f32  ┆ i64  │
+  ╞══════╪══════╡
+  │ 1    ┆ 3    │
+  ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+  │ 2    ┆ 4    │
+  ╰──────┴──────╯
+  ```
+
+  Constructing a DataFrame from a list of lists, row orientation inferred:
+  ```
+  data = [[1, 2, 3], [4, 5, 6]]
+  df4 = pl.DataFrame(data, ['a', 'b', 'c'])
+  df4
+  shape: (2, 3)
+  ╭─────┬─────┬─────╮
+  │ a   ┆ b   ┆ c   │
+  │ --- ┆ --- ┆ --- │
+  │ i64 ┆ i64 ┆ i64 │
+  ╞═════╪═════╪═════╡
+  │ 1   ┆ 2   ┆ 3   │
+  ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+  │ 4   ┆ 5   ┆ 6   │
+  ╰─────┴─────┴─────╯
+  ```
+ */
 export interface DataFrame extends Arithmetic<DataFrame> {
   /** @ignore */
   _df: JsDataFrame
@@ -1715,91 +1791,16 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
 };
 
-
-/**
- *
-  A DataFrame is a two-dimensional data structure that represents data as a table
-  with rows and columns.
-
-  Parameters
-  ----------
-  @param data -  Object, Array, or Series
-      Two-dimensional data in various forms. object must contain Arrays.
-      Array may contain Series or other Arrays.
-  @param columns - Array of str, default undefined
-      Column labels to use for resulting DataFrame. If specified, overrides any
-      labels already present in the data. Must match data dimensions.
-  @param orient - 'col' | 'row' default undefined
-      Whether to interpret two-dimensional data as columns or as rows. If None,
-      the orientation is inferred by matching the columns and data dimensions. If
-      this does not yield conclusive results, column orientation is used.
-
-  Examples
-  --------
-  Constructing a DataFrame from an object :
-  ```
-  data = {'a': [1n, 2n], 'b': [3, 4]}
-  df = pl.DataFrame(data)
-  df
-  shape: (2, 2)
-  ╭─────┬─────╮
-  │ a   ┆ b   │
-  │ --- ┆ --- │
-  │ u64 ┆ i64 │
-  ╞═════╪═════╡
-  │ 1   ┆ 3   │
-  ├╌╌╌╌╌┼╌╌╌╌╌┤
-  │ 2   ┆ 4   │
-  ╰─────┴─────╯
-  ```
-  Notice that the dtype is automatically inferred as a polars Int64:
-  ```
-  df.dtypes
-  ['UInt64', `Int64']
-  ```
-  In order to specify dtypes for your columns, initialize the DataFrame with a list
-  of Series instead:
-  ```
-  data = [pl.Series('col1', [1, 2], pl.Float32),
-  ...         pl.Series('col2', [3, 4], pl.Int64)]
-  df2 = pl.DataFrame(series)
-  df2
-  shape: (2, 2)
-  ╭──────┬──────╮
-  │ col1 ┆ col2 │
-  │ ---  ┆ ---  │
-  │ f32  ┆ i64  │
-  ╞══════╪══════╡
-  │ 1    ┆ 3    │
-  ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-  │ 2    ┆ 4    │
-  ╰──────┴──────╯
-  ```
-
-  Constructing a DataFrame from a list of lists, row orientation inferred:
-  ```
-  data = [[1, 2, 3], [4, 5, 6]]
-  df4 = pl.DataFrame(data, ['a', 'b', 'c'])
-  df4
-  shape: (2, 3)
-  ╭─────┬─────┬─────╮
-  │ a   ┆ b   ┆ c   │
-  │ --- ┆ --- ┆ --- │
-  │ i64 ┆ i64 ┆ i64 │
-  ╞═════╪═════╪═════╡
-  │ 1   ┆ 2   ┆ 3   │
-  ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-  │ 4   ┆ 5   ┆ 6   │
-  ╰─────┴─────┴─────╯
-  ```
- */
-function _DataFrame(): DataFrame
-function _DataFrame(data: Record<string, any>): DataFrame
-function _DataFrame(data: Record<string, any>[]): DataFrame
-function _DataFrame(data: Series<any>[]): DataFrame
-function _DataFrame(data: any[][]): DataFrame
-function _DataFrame(data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
-function _DataFrame(data?: Record<string, any[]> | Record<string, any>[] | any[][] | Series<any>[], options?: {columns?: any[], orient?: "row" | "col"}): DataFrame {
+export interface DataFrameConstructor {
+  (): DataFrame
+  (data: Record<string, any>): DataFrame
+  (data: Record<string, any>[]): DataFrame
+  (data: Series<any>[]): DataFrame
+  (data: any[][]): DataFrame
+  (data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
+  isDataFrame(arg: any): arg is DataFrame;
+}
+function DataFrameConstructor(data?, options?): DataFrame {
 
   if(!data) {
     return dfWrapper(objToDF({}));
@@ -1825,4 +1826,8 @@ function objToDF(obj: Record<string, Array<any>>): any {
 }
 
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
-export const DataFrame = Object.assign(_DataFrame, {isDataFrame});
+export namespace pl {
+  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+}
+
+export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});

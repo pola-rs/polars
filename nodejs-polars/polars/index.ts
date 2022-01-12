@@ -24,6 +24,7 @@ namespace pl {
   export type WhenThenThen = _when.WhenThenThen;
   export type FillNullStrategy = _FillNullStrategy;
   export import Config = cfg.Config;
+  export import Int8 = DataType.Int8
   export import Int16 = DataType.Int16
   export import Int32 =  DataType.Int32;
   export import Int64 =  DataType.Int64;

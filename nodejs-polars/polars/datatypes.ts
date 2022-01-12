@@ -130,6 +130,33 @@ export const DTYPE_TO_FFINAME: Record<DataType, string> = {
   [DataType.Categorical]: "categorical",
 };
 
+export const iterToTypedArray = (dtype: DataType, iterator: any): Iterable<any>  => {
+  switch (dtype) {
+  case DataType.Int8:
+    return Int8Array.from(iterator);
+  case DataType.Int16:
+    return Int16Array.from(iterator);
+  case DataType.Int32:
+    return Int32Array.from(iterator);
+  case DataType.Int64:
+    return BigInt64Array.from(iterator);
+  case DataType.UInt8:
+    return Uint8Array.from(iterator);
+  case DataType.UInt16:
+    return Uint16Array.from(iterator);
+  case DataType.UInt32:
+    return Uint32Array.from(iterator);
+  case DataType.UInt64:
+    return BigUint64Array.from(iterator);
+  case DataType.Float32:
+    return Float32Array.from(iterator);
+  case DataType.Float64:
+    return Float64Array.from(iterator);
+  default:
+    return iterator;
+  }
+};
+
 const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
   Float32: "new_opt_f32",
   Float64: "new_opt_f64",

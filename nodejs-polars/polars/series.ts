@@ -1,12 +1,12 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsSeries } from "./internals/construction";
-import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional } from "./datatypes";
+import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, iterToTypedArray, Optional } from "./datatypes";
 import {DataFrame, dfWrapper} from "./dataframe";
 import {StringFunctions} from "./series/string";
 import {ListFunctions} from "./series/list";
 import {DateTimeFunctions} from "./series/datetime";
 import {InvalidOperationError, todo} from "./error";
-import {RankMethod, RollingOptions} from "./utils";
+import {RankMethod} from "./utils";
 import {col} from "./lazy/functions";
 import {isExternal} from "util/types";
 import {Arithmetic, Comparison, Cumulative, Rolling} from "./shared_traits";
@@ -28,17 +28,15 @@ export interface Series<T> extends
   Arithmetic<Series<T>>,
   Comparison<Series<boolean>>,
   Cumulative<Series<T>> {
-  [n: number]: T
   /** @ignore */
   _series: JsSeries;
   name: string
   dtype: DataType
-  length: number
   str: StringFunctions
   lst: ListFunctions<T>
   date: DateTimeFunctions
   [inspect](): string;
-  [Symbol.iterator](): Generator<T, void, any>;
+  [Symbol.iterator](): IterableIterator<T>;
   inner(): JsSeries
   bitand(other: Series<any>): Series<T>
   bitor(other: Series<any>): Series<T>
@@ -1553,20 +1551,32 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   });
 };
 
-function _Series<V extends ArrayLike<any>>(values: V): ValueOrNever<V>
-function _Series<V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
-function _Series<T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
-function _Series<T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
-function _Series(arg0: any, arg1?: any, dtype?: any, strict?: any) {
+export interface SeriesConstructor {
+  <V extends ArrayLike<any>>(values: V): ValueOrNever<V>
+  <V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
+  <T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
+  <T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
+  isSeries(arg: any): arg is Series<any>;
+}
+
+const SeriesConstructor = (arg0: any, arg1?: any, dtype?: any, strict?: any)  => {
   if(typeof arg0 === "string") {
     const _s = arrayToJsSeries(arg0, arg1, dtype, strict);
 
     return seriesWrapper(_s);
   }
 
-  return _Series("", arg0);
+  return SeriesConstructor("", arg0);
 
-}
+};
+
 const isSeries = <T>(anyVal: any): anyVal is Series<T> => isExternal(anyVal?._series);
 
-export const Series = Object.assign(_Series, {isSeries});
+const fromNonNull = <T>(name: string, iterable: Iterable<T>, dtype: DataType): Series<T> => {
+  const typedarray = iterToTypedArray(dtype, iterable);
+
+  return pli.series.new_from_typed_array({ name, values:typedarray});
+
+};
+
+export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {isSeries, fromNonNull});
