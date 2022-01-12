@@ -5,6 +5,8 @@ DataFrame
 
 Constructor
 -----------
+.. autosummary::
+   :toctree: api/
 
    DataFrame
 
@@ -19,6 +21,7 @@ Attributes
     DataFrame.width
     DataFrame.columns
     DataFrame.dtypes
+    DataFrame.schema
 
 Conversion
 ----------
@@ -47,6 +50,7 @@ Aggregation
     DataFrame.var
     DataFrame.median
     DataFrame.quantile
+    DataFrame.product
 
 Descriptive stats
 -----------------

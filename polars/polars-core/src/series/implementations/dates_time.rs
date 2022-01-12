@@ -60,11 +60,6 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            #[cfg(feature = "cum_agg")]
-            fn _cumsum(&self, _reverse: bool) -> Series {
-                panic!("cannot sum logical")
-            }
-
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
                 let other = other.to_physical_repr();
@@ -741,6 +736,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-datetime")]
     fn test_arithmetic_dispatch() {
         let s = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)

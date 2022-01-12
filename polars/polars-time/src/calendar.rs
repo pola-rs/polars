@@ -48,34 +48,34 @@ pub fn date_range(
 
     let mut t = start;
     let f = match tu {
-        TimeUnit::Nanoseconds => <Duration>::duration_ns,
-        TimeUnit::Milliseconds => <Duration>::duration_ms,
+        TimeUnit::Nanoseconds => <Duration>::add_ns,
+        TimeUnit::Milliseconds => <Duration>::add_ms,
     };
     match closed {
         ClosedWindow::Both => {
             while t <= stop {
                 ts.push(t);
-                t += f(&every)
+                t = f(&every, t)
             }
         }
         ClosedWindow::Left => {
             while t < stop {
                 ts.push(t);
-                t += f(&every)
+                t = f(&every, t)
             }
         }
         ClosedWindow::Right => {
-            t += f(&every);
+            t = f(&every, t);
             while t <= stop {
                 ts.push(t);
-                t += f(&every)
+                t = f(&every, t)
             }
         }
         ClosedWindow::None => {
-            t += f(&every);
+            t = f(&every, t);
             while t < stop {
                 ts.push(t);
-                t += f(&every)
+                t = f(&every, t)
             }
         }
     }

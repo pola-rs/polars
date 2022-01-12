@@ -1833,7 +1833,7 @@ impl DataFrame {
     ///
     /// let idx = vec![0, 1, 4];
     ///
-    /// df.may_apply("foo", |s| {
+    /// df.try_apply("foo", |s| {
     ///     s.utf8()?
     ///     .set_at_idx_with(idx, |opt_val| opt_val.map(|string| format!("{}-is-modified", string)))
     /// });
@@ -1858,7 +1858,7 @@ impl DataFrame {
     /// | "quack-is-modified" | 5      |
     /// +---------------------+--------+
     /// ```
-    pub fn may_apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
+    pub fn try_apply_at_idx<F, S>(&mut self, idx: usize, f: F) -> Result<&mut Self>
     where
         F: FnOnce(&Series) -> Result<S>,
         S: IntoSeries,
@@ -1902,7 +1902,7 @@ impl DataFrame {
     /// let values = df.column("values")?;
     /// let mask = values.lt_eq(1) | values.gt_eq(5_i32);
     ///
-    /// df.may_apply("foo", |s| {
+    /// df.try_apply("foo", |s| {
     ///     s.utf8()?
     ///     .set(&mask, Some("not_within_bounds"))
     /// });
@@ -1927,7 +1927,7 @@ impl DataFrame {
     /// | "not_within_bounds" | 5      |
     /// +---------------------+--------+
     /// ```
-    pub fn may_apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
+    pub fn try_apply<F, S>(&mut self, column: &str, f: F) -> Result<&mut Self>
     where
         F: FnOnce(&Series) -> Result<S>,
         S: IntoSeries,
@@ -1935,7 +1935,7 @@ impl DataFrame {
         let idx = self
             .find_idx_by_name(column)
             .ok_or_else(|| PolarsError::NotFound(column.to_string()))?;
-        self.may_apply_at_idx(idx, f)
+        self.try_apply_at_idx(idx, f)
     }
 
     /// Slice the `DataFrame` along the rows.
@@ -2611,7 +2611,7 @@ impl DataFrame {
     ///                         "ISIN" => &["US0378331005", "US5949181045"])?;
     /// let ca: ChunkedArray<BooleanType> = df.is_unique()?;
     ///
-    /// assert!(ca.all_true());
+    /// assert!(ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> Result<BooleanChunked> {
@@ -2630,7 +2630,7 @@ impl DataFrame {
     ///                         "ISIN" => &["US02079K3059", "US02079K1079"])?;
     /// let ca: ChunkedArray<BooleanType> = df.is_duplicated()?;
     ///
-    /// assert!(ca.all_false());
+    /// assert!(!ca.all());
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {

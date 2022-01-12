@@ -149,6 +149,18 @@ class LazyFrame:
         """
         return func(self, *args, **kwargs)
 
+    def _repr_html_(self) -> str:
+        insert = self.describe_plan().replace("\n", "<p></p>")
+
+        return f"""<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+<p></p>
+<div>{insert}</div>"""
+
+    def __str__(self) -> str:
+        return f"""naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
+
+{self.describe_plan()}"""
+
     def describe_plan(self) -> str:
         """
         A string representation of the unoptimized query plan.
@@ -519,7 +531,7 @@ class LazyFrame:
 
     def groupby_dynamic(
         self,
-        time_column: str,
+        index_column: str,
         every: str,
         period: Optional[str] = None,
         offset: Optional[str] = None,
@@ -529,9 +541,9 @@ class LazyFrame:
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy":
         """
-        Groups based on a time value. Time windows are calculated and rows are assigned to windows.
-        Different from a normal groupby is that a row can be member of multiple groups. The time window could
-        be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
+        Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
+        Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
+        be seen as a rolling window, with a window size determined by dates/times/values instead of slots in the DataFrame.
 
         A window is defined by:
 
@@ -552,19 +564,28 @@ class LazyFrame:
         - 1w    (1 week)
         - 1mo   (1 calendar month)
         - 1y    (1 calendar year)
+        - 1i    (1 index count)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        In case of a groupby_dynamic on an integer column, the windows are defined by:
+
+        - "1i"      # length 1
+        - "10i"     # length 2
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
-        time_column
+        index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
             This column must be sorted in ascending order. If not the output will not make sense.
+
+            In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
+            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
         every
             interval of the window
         period
@@ -575,6 +596,7 @@ class LazyFrame:
             truncate the time value to the window lower bound
         include_boundaries
             add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+            this will impact performance because it's harder to parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
@@ -589,7 +611,14 @@ class LazyFrame:
             offset = "0ns"
         by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby_dynamic(
-            time_column, every, period, offset, truncate, include_boundaries, closed, by
+            index_column,
+            every,
+            period,
+            offset,
+            truncate,
+            include_boundaries,
+            closed,
+            by,
         )
         return LazyGroupBy(lgb)
 

@@ -364,7 +364,7 @@ class DataFrame:
         )
 
     @staticmethod
-    def read_csv(
+    def _read_csv(
         file: Union[str, BinaryIO, bytes],
         has_header: bool = True,
         columns: Optional[Union[List[int], List[str]]] = None,
@@ -548,7 +548,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_parquet(
+    def _read_parquet(
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
@@ -588,7 +588,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_ipc(
+    def _read_ipc(
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
@@ -629,7 +629,7 @@ class DataFrame:
         return self
 
     @staticmethod
-    def read_json(file: Union[str, BytesIO]) -> "DataFrame":
+    def _read_json(file: Union[str, BytesIO]) -> "DataFrame":
         """
         Read into a DataFrame from JSON format.
 
@@ -1068,6 +1068,7 @@ class DataFrame:
                 str,
             ]
         ] = "snappy",
+        statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -1087,6 +1088,8 @@ class DataFrame:
                 - "brotli"
                 - "lz4"
                 - "zstd"
+        statistics
+            Write statistics to the parquet headers. This requires extra compute.
         use_pyarrow
             Use C++ parquet implementation vs rust parquet implementation.
             At the moment C++ supports more features.
@@ -1119,10 +1122,14 @@ class DataFrame:
             tbl = pa.table(data)
 
             pa.parquet.write_table(
-                table=tbl, where=file, compression=compression, **kwargs
+                table=tbl,
+                where=file,
+                compression=compression,
+                write_statistics=statistics,
+                **kwargs,
             )
         else:
-            self._df.to_parquet(file, compression)
+            self._df.to_parquet(file, compression, statistics)
 
     def to_numpy(self) -> np.ndarray:
         """
@@ -2349,7 +2356,7 @@ class DataFrame:
 
     def groupby_dynamic(
         self,
-        time_column: str,
+        index_column: str,
         every: str,
         period: Optional[str] = None,
         offset: Optional[str] = None,
@@ -2359,9 +2366,9 @@ class DataFrame:
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "DynamicGroupBy":
         """
-        Groups based on a time value. Time windows are calculated and rows are assigned to windows.
-        Different from a normal groupby is that a row can be member of multiple groups. The time window could
-        be seen as a rolling window, with a window size determined by dates/times instead of slots in the DataFrame.
+        Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
+        Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
+        be seen as a rolling window, with a window size determined by dates/times/values instead of slots in the DataFrame.
 
         A window is defined by:
 
@@ -2382,19 +2389,28 @@ class DataFrame:
         - 1w    (1 week)
         - 1mo   (1 calendar month)
         - 1y    (1 calendar year)
+        - 1i    (1 index count)
 
         Or combine them:
         "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        In case of a groupby_dynamic on an integer column, the windows are defined by:
+
+        - "1i"      # length 1
+        - "10i"     # length 2
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
-        time_column
+        index_column
             Column used to group based on the time window.
             Often to type Date/Datetime
             This column must be sorted in ascending order. If not the output will not make sense.
+
+            In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
+            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
         every
             interval of the window
         period
@@ -2404,7 +2420,8 @@ class DataFrame:
         truncate
             truncate the time value to the window lower bound
         include_boundaries
-            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns.
+            this will impact performance because it's harder to parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
@@ -2593,11 +2610,41 @@ class DataFrame:
         │ b      ┆ 2021-12-16 02:00:00 ┆ 2021-12-16 03:00:00 ┆ 2021-12-16 02:00:00 ┆ 1          │
         └────────┴─────────────────────┴─────────────────────┴─────────────────────┴────────────┘
 
+        Dynamic groupby on an index column
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "idx": np.arange(6),
+        ...         "A": ["A", "A", "B", "B", "B", "C"],
+        ...     }
+        ... )
+        >>> (
+        ...     df.groupby_dynamic(
+        ...         "idx",
+        ...         every="2i",
+        ...         period="3i",
+        ...         include_boundaries=True,
+        ...     ).agg(pl.col("A").list())
+        ... )
+
+        shape: (3, 4)
+        ┌─────────────────┬─────────────────┬─────┬─────────────────┐
+        │ _lower_boundary ┆ _upper_boundary ┆ idx ┆ A_agg_list      │
+        │ ---             ┆ ---             ┆ --- ┆ ---             │
+        │ i64             ┆ i64             ┆ i64 ┆ list [str]      │
+        ╞═════════════════╪═════════════════╪═════╪═════════════════╡
+        │ 0               ┆ 3               ┆ 0   ┆ ["A", "B", "B"] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2               ┆ 5               ┆ 2   ┆ ["B", "B", "C"] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4               ┆ 7               ┆ 4   ┆ ["C"]           │
+        └─────────────────┴─────────────────┴─────┴─────────────────┘
+
         """
 
         return DynamicGroupBy(
             self,
-            time_column,
+            index_column,
             every,
             period,
             offset,
@@ -3696,6 +3743,12 @@ class DataFrame:
         """
         return wrap_df(self._df.median())
 
+    def product(self) -> "DataFrame":
+        """
+        Aggregate the columns of this DataFrame to their product values
+        """
+        return self.select(pli.all().product())
+
     def quantile(self, quantile: float, interpolation: str = "nearest") -> "DataFrame":
         """
         Aggregate the columns of this DataFrame to their quantile value.
@@ -4045,7 +4098,7 @@ class DynamicGroupBy:
     def __init__(
         self,
         df: "DataFrame",
-        time_column: str,
+        index_column: str,
         every: str,
         period: Optional[str],
         offset: Optional[str],
@@ -4055,7 +4108,7 @@ class DynamicGroupBy:
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ):
         self.df = df
-        self.time_column = time_column
+        self.time_column = index_column
         self.every = every
         self.period = period
         self.offset = offset
@@ -4147,6 +4200,9 @@ class GroupBy:
         columns
             One or multiple columns.
         """
+        print(
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+        )
         if isinstance(columns, str):
             columns = [columns]
         return GBSelection(self._df, self.by, columns)
@@ -4238,18 +4294,6 @@ class GroupBy:
         column_to_agg
             map column to aggregation functions.
 
-        Use lazy API syntax (recommended)
-
-        >>> [pl.col("foo").sum(), pl.col("bar").min()]  # doctest: +SKIP
-
-        >>> [
-        ...     ("foo", ["sum", "n_unique", "min"]),
-        ...     ("bar", ["max"]),
-        ... ]  # doctest: +SKIP
-
-        Column name to aggregation with dict:
-        >>> {"foo": ["sum", "n_unique", "min"], "bar": "max"}  # doctest: +SKIP
-
         Returns
         -------
         Result of groupby split apply operations.
@@ -4258,34 +4302,12 @@ class GroupBy:
         Examples
         --------
 
-        Use lazy API:
-
         >>> df.groupby(["foo", "bar"]).agg(
         ...     [
         ...         pl.sum("ham"),
         ...         pl.col("spam").tail(4).sum(),
         ...     ]
         ... )  # doctest: +SKIP
-
-        Use a dict:
-
-        >>> df.groupby(["foo", "bar"]).agg(
-        ...     {
-        ...         "spam": ["sum", "min"],
-        ...     }
-        ... )  # doctest: +SKIP
-        shape: (3, 2)
-        ┌─────┬─────┐
-        │ foo ┆ bar │
-        │ --- ┆ --- │
-        │ str ┆ i64 │
-        ╞═════╪═════╡
-        │ a   ┆ 1   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 2   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ b   ┆ 3   │
-        └─────┴─────┘
 
         """
 

@@ -1,4 +1,5 @@
 pub(crate) mod drop;
+mod list;
 pub(crate) mod polars_extension;
 
 use crate::{prelude::*, PROCESS_ID};
@@ -10,7 +11,7 @@ use std::mem;
 
 /// Invariants
 /// `ptr` must point to start a `T` allocation
-/// `n_t_vals` must reprecent the correct number of `T` values in that allocation
+/// `n_t_vals` must represent the correct number of `T` values in that allocation
 unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn FnMut()> {
     Box::new(move || {
         let t_size = std::mem::size_of::<T>() as isize;
@@ -23,7 +24,9 @@ unsafe fn create_drop<T: Sized>(mut ptr: *const u8, n_t_vals: usize) -> Box<dyn 
 
 struct ExtensionSentinel {
     drop_fn: Option<Box<dyn FnMut()>>,
-    pub(crate) to_series_fn: Option<Box<dyn Fn(&FixedSizeBinaryArray) -> Series>>,
+    // A function on the heap that take a `array: FixedSizeBinary` and a `name: &str`
+    // and returns a `Series` of `ObjectChunked<T>`
+    pub(crate) to_series_fn: Option<Box<dyn Fn(&FixedSizeBinaryArray, &str) -> Series>>,
 }
 
 impl Drop for ExtensionSentinel {

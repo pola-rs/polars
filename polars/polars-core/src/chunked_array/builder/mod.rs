@@ -1,6 +1,6 @@
 mod boolean;
 mod from;
-mod list;
+pub mod list;
 mod primitive;
 mod utf8;
 

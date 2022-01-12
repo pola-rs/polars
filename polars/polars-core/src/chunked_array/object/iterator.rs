@@ -1,5 +1,6 @@
 use crate::chunked_array::object::{ObjectArray, PolarsObject};
 use arrow::array::Array;
+use polars_arrow::trusted_len::TrustedLen;
 
 /// An iterator that returns Some(T) or None, that can be used on any ObjectArray
 // Note: This implementation is based on std's [Vec]s' [IntoIter].
@@ -101,6 +102,8 @@ impl<T: PolarsObject> OwnedObjectIter<T> {
         }
     }
 }
+
+unsafe impl<T: PolarsObject> TrustedLen for OwnedObjectIter<T> {}
 
 impl<T: PolarsObject> ObjectArray<T> {
     pub(crate) fn into_iter_cloned(self) -> OwnedObjectIter<T> {

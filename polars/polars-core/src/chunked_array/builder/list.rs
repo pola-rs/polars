@@ -1,11 +1,37 @@
 use super::*;
-use polars_arrow::prelude::PolarsArray;
+use polars_arrow::{array::list::AnonymousBuilder, prelude::*};
 
 pub trait ListBuilderTrait {
-    fn append_opt_series(&mut self, opt_s: Option<&Series>);
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => self.append_null(),
+        }
+    }
     fn append_series(&mut self, s: &Series);
     fn append_null(&mut self);
     fn finish(&mut self) -> ListChunked;
+}
+
+impl<S: ?Sized> ListBuilderTrait for Box<S>
+where
+    S: ListBuilderTrait,
+{
+    fn append_opt_series(&mut self, opt_s: Option<&Series>) {
+        (**self).append_opt_series(opt_s)
+    }
+
+    fn append_series(&mut self, s: &Series) {
+        (**self).append_series(s)
+    }
+
+    fn append_null(&mut self) {
+        (**self).append_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        (**self).finish()
+    }
 }
 
 pub struct ListPrimitiveChunkedBuilder<T>
@@ -139,7 +165,8 @@ where
                 unsafe { values.extend_trusted_len_unchecked(arr.into_iter()) }
             }
         });
-        self.builder.try_push_valid().unwrap();
+        // overflow of i64 is far beyond polars capable lengths.
+        unsafe { self.builder.try_push_valid().unwrap_unchecked() };
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -318,4 +345,41 @@ pub fn get_list_builder(
         get_utf8_builder,
         get_bool_builder
     )
+}
+
+pub struct AnonymousListBuilder<'a> {
+    name: String,
+    builder: AnonymousBuilder<'a>,
+}
+
+impl<'a> AnonymousListBuilder<'a> {
+    pub fn new(name: &str, capacity: usize) -> Self {
+        Self {
+            name: name.into(),
+            builder: AnonymousBuilder::new(capacity),
+        }
+    }
+
+    pub fn append_opt_series(&mut self, opt_s: Option<&'a Series>) {
+        match opt_s {
+            Some(s) => self.append_series(s),
+            None => {
+                self.append_null();
+            }
+        }
+    }
+
+    pub fn append_null(&mut self) {
+        self.builder.push_null();
+    }
+
+    pub fn append_series(&mut self, s: &'a Series) {
+        assert_eq!(s.chunks().len(), 1);
+        self.builder.push(s.chunks()[0].as_ref())
+    }
+
+    pub fn finish(self) -> ListChunked {
+        let arr = self.builder.finish().unwrap();
+        ListChunked::new_from_chunks(&self.name, vec![Arc::new(arr)])
+    }
 }

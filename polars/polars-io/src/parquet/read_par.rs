@@ -89,13 +89,13 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
 
                     // <CPU bounded>
                     let columns = read::ReadColumnIterator::new(field.clone(), column_chunks);
-                    let field = &arrow_schema.fields()[field_i];
+                    let field = &arrow_schema.fields[field_i];
 
                     let b2 = cont_pool.get();
                     let (arr, b1, b2) = read::column_iter_to_array(columns, field, b2)?;
                     cont_pool.set(b1);
                     cont_pool.set(b2);
-                    Series::try_from((field.name().as_str(), Arc::from(arr) as ArrayRef))
+                    Series::try_from((field.name.as_str(), Arc::from(arr) as ArrayRef))
                 })
                 .collect::<Result<Vec<_>>>()
         })?;

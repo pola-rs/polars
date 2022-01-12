@@ -761,7 +761,8 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
-        arrow_interop::to_py::to_py_array(self.series.chunks()[0].clone(), py, pyarrow)
+
+        arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
     }
 
     #[cfg(feature = "is_in")]
@@ -1035,26 +1036,6 @@ impl PySeries {
         let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
         let s = ca.to_lowercase().into_series();
         Ok(s.into())
-    }
-
-    pub fn str_parse_date(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_date(fmt).map_err(PyPolarsEr::from)?;
-            Ok(PySeries::new(ca.into_series()))
-        } else {
-            Err(PyPolarsEr::Other("cannot parse Date expected utf8 type".into()).into())
-        }
-    }
-
-    pub fn str_parse_datetime(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Ok(ca) = &self.series.utf8() {
-            let ca = ca
-                .as_datetime(fmt, TimeUnit::Milliseconds)
-                .map_err(PyPolarsEr::from)?;
-            Ok(ca.into_series().into())
-        } else {
-            Err(PyPolarsEr::Other("cannot parse datetime expected utf8 type".into()).into())
-        }
     }
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyResult<Self> {

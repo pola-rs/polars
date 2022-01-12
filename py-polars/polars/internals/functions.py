@@ -71,11 +71,11 @@ def concat(
     how
         Only used if the items are DataFrames.
 
-        One of {"vertical", "diagonal", "horiztonal"}.
+        One of {"vertical", "diagonal", "horizontal"}.
 
         - Vertical: Applies multiple `vstack` operations.
         - Diagonal: Finds a union between the column schemas and fills missing column values with null.
-        - Horizontal: Stacks Series horizontall and fills with nulls if the lengths don't match.
+        - Horizontal: Stacks Series horizontally and fills with nulls if the lengths don't match.
 
     Examples
     --------
@@ -230,6 +230,8 @@ def date_range(
 
     if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
         tu = "ns"
+    elif time_unit is not None:
+        tu = time_unit
     else:
         tu = "ms"
 

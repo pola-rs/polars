@@ -533,14 +533,42 @@ impl Series {
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cumsum(&self, _reverse: bool) -> Series {
+    #[allow(unused_variables)]
+    pub fn cumsum(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
             use DataType::*;
             match self.dtype() {
-                Boolean => self.cast(&DataType::UInt32).unwrap()._cumsum(_reverse),
-                Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap()._cumsum(_reverse),
-                _ => self._cumsum(_reverse),
+                Boolean => self.cast(&DataType::UInt32).unwrap().cumsum(reverse),
+                Int8 | UInt8 | Int16 | UInt16 => {
+                    let s = self.cast(&Int64).unwrap();
+                    s.cumsum(reverse)
+                }
+                Int32 => {
+                    let ca = self.i32().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                UInt32 => {
+                    let ca = self.u32().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                UInt64 => {
+                    let ca = self.u64().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                Int64 => {
+                    let ca = self.i64().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                Float32 => {
+                    let ca = self.f32().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                Float64 => {
+                    let ca = self.f64().unwrap();
+                    ca.cumsum(reverse).into_series()
+                }
+                dt => panic!("cumsum not supported for dtype: {:?}", dt),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
@@ -551,22 +579,78 @@ impl Series {
 
     /// Get an array with the cumulative product computed at every element
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16, Int32, UInt32}` the `Series` is
     /// first cast to `Int64` to prevent overflow issues.
     #[cfg_attr(docsrs, doc(cfg(feature = "cum_agg")))]
-    pub fn cumprod(&self, _reverse: bool) -> Series {
+    #[allow(unused_variables)]
+    pub fn cumprod(&self, reverse: bool) -> Series {
         #[cfg(feature = "cum_agg")]
         {
             use DataType::*;
             match self.dtype() {
-                Boolean => self.cast(&UInt32).unwrap()._cumprod(_reverse),
-                Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap()._cumprod(_reverse),
-                _ => self._cumprod(_reverse),
+                Boolean => self.cast(&DataType::Int64).unwrap().cumprod(reverse),
+                Int8 | UInt8 | Int16 | UInt16 | Int32 | UInt32 => {
+                    let s = self.cast(&Int64).unwrap();
+                    s.cumprod(reverse)
+                }
+                Int64 => {
+                    let ca = self.i64().unwrap();
+                    ca.cumprod(reverse).into_series()
+                }
+                UInt64 => {
+                    let ca = self.u64().unwrap();
+                    ca.cumprod(reverse).into_series()
+                }
+                Float32 => {
+                    let ca = self.f32().unwrap();
+                    ca.cumprod(reverse).into_series()
+                }
+                Float64 => {
+                    let ca = self.f64().unwrap();
+                    ca.cumprod(reverse).into_series()
+                }
+                dt => panic!("cumprod not supported for dtype: {:?}", dt),
             }
         }
         #[cfg(not(feature = "cum_agg"))]
         {
             panic!("activate 'cum_agg' feature")
+        }
+    }
+
+    /// Get the product of an array.
+    ///
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
+    /// first cast to `Int64` to prevent overflow issues.
+    #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
+    pub fn product(&self) -> Series {
+        #[cfg(feature = "product")]
+        {
+            use DataType::*;
+            match self.dtype() {
+                Boolean => self.cast(&DataType::Int64).unwrap().product(),
+                Int8 | UInt8 | Int16 | UInt16 => {
+                    let s = self.cast(&Int64).unwrap();
+                    s.product()
+                }
+                Int64 => {
+                    let ca = self.i64().unwrap();
+                    ca.prod_as_series()
+                }
+                Float32 => {
+                    let ca = self.f32().unwrap();
+                    ca.prod_as_series()
+                }
+                Float64 => {
+                    let ca = self.f64().unwrap();
+                    ca.prod_as_series()
+                }
+                dt => panic!("cumprod not supported for dtype: {:?}", dt),
+            }
+        }
+        #[cfg(not(feature = "product"))]
+        {
+            panic!("activate 'product' feature")
         }
     }
 

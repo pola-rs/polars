@@ -567,7 +567,10 @@ def lit(
     if isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        return pli.wrap_expr(pylit(value)).alias(name)
+        e = pli.wrap_expr(pylit(value))
+        if name == "":
+            return e
+        return e.alias(name)
 
     if isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
@@ -667,7 +670,7 @@ def map(
 
 def apply(
     exprs: List[Union[str, "pli.Expr"]],
-    f: Callable[[List["pli.Series"]], "pli.Series"],
+    f: Callable[[List["pli.Series"]], Union["pli.Series", Any]],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -1091,7 +1094,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: Sequence[Union[str, "pli.Expr"]]) -> "pli.Expr":
+def concat_list(exprs: Sequence[Union[str, "pli.Expr", "pli.Series"]]) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 

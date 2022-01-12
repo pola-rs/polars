@@ -556,7 +556,7 @@ describe("series", () => {
   ${"concat"}        | ${pl.Series([1]).concat(pl.Series([2, 3]))}          | ${pl.Series([1, 2, 3])}
   ${"cumMax"}        | ${pl.Series([3, 2, 4]).cumMax()}                     | ${pl.Series([3, 3, 4])}
   ${"cumMin"}        | ${pl.Series([3, 2, 4]).cumMin()}                     | ${pl.Series([3, 2, 2])}
-  ${"cumProd"}       | ${pl.Series("", [1, 2, 3], pl.Int32).cumProd()}      | ${pl.Series("", [1, 2, 6], pl.Int32)}
+  ${"cumProd"}       | ${pl.Series("", [1, 2, 3], pl.Int32).cumProd()}      | ${pl.Series("", [1n, 2n, 6n], pl.Int64)}
   ${"cumSum"}        | ${pl.Series("", [1, 2, 3], pl.Int32).cumSum()}       | ${pl.Series("", [1, 3, 6], pl.Int32)}
   ${"diff"}          | ${pl.Series([1, 2, 12]).diff(1, "drop").toJS()}      | ${pl.Series([1, 10]).toJS()}
   ${"diff"}          | ${pl.Series([1, 11]).diff(1, "ignore")}              | ${pl.Series("", [null, 10], pl.Float64, false)}
@@ -631,7 +631,7 @@ describe("series", () => {
   ${"toFrame"}       | ${pl.Series("foo", [1, 2, 3]).toFrame().toJSON()}    | ${pl.DataFrame([pl.Series("foo", [1, 2, 3])]).toJSON()}
   ${"shiftAndFill"}  | ${pl.Series("foo", [1, 2, 3]).shiftAndFill(1, 99)}   | ${pl.Series("foo", [99, 1, 2])}
   `("$# $name: expected matches actual ", ({expected, actual}) => {
-    expect(expected).toStrictEqual(actual);
+    expect(actual).toStrictEqual(expected);
   });
   it("set: expected matches actual", () => {
     const expected = pl.Series([99, 2, 3]);
@@ -783,10 +783,10 @@ describe("comparators & math", () => {
 });
 describe("series proxy & metadata", () => {
   test("toString & inspect", () => {
-    const s = pl.Series("foo", [1, 2, 3]);
+    const s = pl.Series("foo", [1, 2, 3], pl.Int16);
     const sString = s.toString();
     const inspectString = s[Symbol.for("nodejs.util.inspect.custom")]();
-    const expected = "shape: (3,)\nSeries: 'foo' [f64]\n[\n\t1\n\t2\n\t3\n]";
+    const expected = "shape: (3,)\nSeries: 'foo' [i16]\n[\n\t1\n\t2\n\t3\n]";
     expect(sString).toStrictEqual(expected);
     expect(inspectString).toStrictEqual(expected);
   });

@@ -45,6 +45,7 @@ impl FallibleStreamingIterator for Bla {
 pub struct ParquetWriter<W> {
     writer: W,
     compression: write::Compression,
+    statistics: bool,
 }
 
 pub use write::Compression as ParquetCompression;
@@ -61,6 +62,7 @@ where
         ParquetWriter {
             writer,
             compression: write::Compression::Snappy,
+            statistics: false,
         }
     }
 
@@ -70,20 +72,25 @@ where
         self
     }
 
+    pub fn with_statistics(mut self, statistics: bool) -> Self {
+        self.statistics = statistics;
+        self
+    }
+
     /// Write the given DataFrame in the the writer `W`.
     pub fn finish(mut self, df: &DataFrame) -> Result<()> {
-        let fields = df.schema().to_arrow().fields().clone();
+        let fields = df.schema().to_arrow().fields;
         let rb_iter = df.iter_chunks();
 
         let options = write::WriteOptions {
-            write_statistics: false,
+            write_statistics: self.statistics,
             compression: self.compression,
             version: write::Version::V2,
         };
-        let schema = ArrowSchema::new(fields);
+        let schema = ArrowSchema::from(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;
         let encodings = schema
-            .fields()
+            .fields
             .iter()
             .map(|field| match field.data_type().to_physical_type() {
                 // delta encoding

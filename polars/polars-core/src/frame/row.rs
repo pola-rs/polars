@@ -297,8 +297,10 @@ impl Buffer {
             (Datetime(builder, _, _), AnyValue::Datetime(v, _, _)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
+            (Float32(builder), AnyValue::Float32(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
             (Float64(builder), AnyValue::Float64(v)) => builder.append_value(v),
+            (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             (buf, val) => return Err(PolarsError::ValueError(format!("Could not append {:?} to builder {:?}; make sure that all rows have the same schema.", val, std::mem::discriminant(buf)).into()))

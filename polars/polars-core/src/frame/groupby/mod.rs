@@ -28,7 +28,7 @@ pub(crate) mod pivot;
 #[cfg(not(feature = "dynamic_groupby"))]
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
-    pub time_column: String,
+    pub index_column: String,
 }
 
 pub type GroupTuples = Vec<(u32, Vec<u32>)>;
@@ -1594,7 +1594,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.may_apply("g", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
 
         let out = df.groupby("g")?.sum()?;
         dbg!(out);

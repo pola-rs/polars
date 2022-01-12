@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pyarrow as pa
 import pytest
+from test_series import verify_series_and_expr_api
 
 import polars as pl
 
@@ -236,6 +237,15 @@ def test_date_range() -> None:
     assert result.dt[2] == datetime(1985, 1, 4, 0, 0)
     assert result.dt[-1] == datetime(2015, 6, 30, 12, 0)
 
+    for tu in ["ns", "ms"]:
+        rng = pl.date_range(
+            datetime(2020, 1, 1), datetime(2020, 1, 2), "2h", time_unit=tu
+        )
+        assert rng.time_unit == tu
+        assert rng.shape == (13,)
+        assert rng.dt[0] == datetime(2020, 1, 1)
+        assert rng.dt[-1] == datetime(2020, 1, 2)
+
 
 def test_date_comp() -> None:
     one = datetime(2001, 1, 1)
@@ -285,7 +295,7 @@ def test_truncate_negative_offset() -> None:
         }
     )
     out = df.groupby_dynamic(
-        time_column="event_date",
+        index_column="event_date",
         every="1mo",
         period="2mo",
         offset="-1mo",
@@ -317,7 +327,7 @@ def test_truncate_negative_offset() -> None:
     )
 
     out = df.groupby_dynamic(
-        time_column="event_date",
+        index_column="event_date",
         every="1mo",
         by=["admin", "five_type", "actor"],
     ).agg([pl.col("adm1_code").unique(), (pl.col("fatalities") > 0).sum()])
@@ -326,3 +336,45 @@ def test_truncate_negative_offset() -> None:
         datetime(2021, 5, 1),
         datetime(2021, 4, 1),
     ]
+
+    for dt in [pl.Int32, pl.Int64]:
+        df = pl.DataFrame(
+            {
+                "idx": np.arange(6),
+                "A": ["A", "A", "B", "B", "B", "C"],
+            }
+        ).with_columns(pl.col("idx").cast(dt))
+
+        out = df.groupby_dynamic(
+            "idx", every="2i", period="3i", include_boundaries=True
+        ).agg(pl.col("A").list())
+        assert out.shape == (3, 4)
+
+
+def test_to_arrow() -> None:
+    date_series = pl.Series("dates", ["2022-01-16", "2022-01-17"]).str.strptime(
+        pl.Date, "%Y-%m-%d"
+    )
+    arr = date_series.to_arrow()
+    assert arr.type == pa.date32()
+
+
+def test_non_exact_strptime() -> None:
+    a = pl.Series("a", ["2022-01-16", "2022-01-17", "foo2022-01-18", "b2022-01-19ar"])
+    fmt = "%Y-%m-%d"
+
+    expected = pl.Series("a", [date(2022, 1, 16), date(2022, 1, 17), None, None])
+    verify_series_and_expr_api(
+        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=True
+    )
+
+    expected = pl.Series(
+        "a",
+        [date(2022, 1, 16), date(2022, 1, 17), date(2022, 1, 18), date(2022, 1, 19)],
+    )
+    verify_series_and_expr_api(
+        a, expected, "str.strptime", pl.Date, fmt, strict=False, exact=False
+    )
+
+    with pytest.raises(Exception):
+        a.str.strptime(pl.Date, fmt, strict=True, exact=True)

@@ -78,9 +78,11 @@ Aggregation
     Expr.min
     Expr.sum
     Expr.mean
+    Expr.mean
     Expr.median
     Expr.first
     Expr.last
+    Expr.product
     Expr.list
     Expr.agg_groups
     Expr.count
@@ -106,6 +108,8 @@ Boolean
     Expr.is_duplicated
     Expr.is_between
     Expr.is_in
+    Expr.any
+    Expr.all
 
 
 Computations
@@ -272,6 +276,9 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lengths
     ExprStringNameSpace.to_uppercase
     ExprStringNameSpace.to_lowercase
+    ExprStringNameSpace.strip
+    ExprStringNameSpace.lstrip
+    ExprStringNameSpace.rstrip
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract

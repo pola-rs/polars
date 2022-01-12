@@ -99,11 +99,6 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).into_series()
             }
 
-            #[cfg(feature = "cum_agg")]
-            fn _cumsum(&self, reverse: bool) -> Series {
-                self.0.cumsum(reverse).into_series()
-            }
-
             #[cfg(feature = "asof_join")]
             fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
                 self.0.join_asof(other)

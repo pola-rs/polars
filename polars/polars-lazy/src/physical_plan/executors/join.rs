@@ -3,6 +3,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_core::POOL;
+use std::borrow::Cow;
 
 pub struct JoinExec {
     input_left: Option<Box<dyn Executor>>,
@@ -11,7 +12,7 @@ pub struct JoinExec {
     left_on: Vec<Arc<dyn PhysicalExpr>>,
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
-    suffix: Option<String>,
+    suffix: Cow<'static, str>,
     // not used if asof not activated
     #[allow(dead_code)]
     asof_by_left: Vec<String>,
@@ -29,7 +30,7 @@ impl JoinExec {
         left_on: Vec<Arc<dyn PhysicalExpr>>,
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
-        suffix: Option<String>,
+        suffix: Cow<'static, str>,
         asof_by_left: Vec<String>,
         asof_by_right: Vec<String>,
     ) -> Self {
@@ -111,7 +112,7 @@ impl Executor for JoinExec {
                 &left_names,
                 &right_names,
                 self.how,
-                self.suffix.clone(),
+                Some(self.suffix.clone().into_owned()),
             )
         };
 
@@ -121,7 +122,7 @@ impl Executor for JoinExec {
             &left_names,
             &right_names,
             self.how,
-            self.suffix.clone(),
+            Some(self.suffix.clone().into_owned()),
         );
 
         if state.verbose {

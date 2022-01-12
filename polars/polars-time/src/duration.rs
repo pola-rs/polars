@@ -29,6 +29,7 @@ impl Duration {
     /// 1w  // 1 week
     /// 1mo // 1 calendar month
     /// 1y  // 1 calendar year
+    /// 1i  // 1 index value (only for {Int32, Int64} dtypes
     ///
     /// 3d12h4m25s // 3 days, 12 hours, 4 minutes, and 25 seconds
     ///
@@ -81,6 +82,8 @@ impl Duration {
                     "w" => nsecs += n * NS_WEEK,
                     "mo" => months += n,
                     "y" => months += n * 12,
+                    // we will read indexes as nanoseconds
+                    "i" => nsecs += n,
                     unit => panic!("unit: '{}' not supported", unit),
                 }
                 unit.clear();
@@ -170,12 +173,12 @@ impl Duration {
     /// Estimated duration of the window duration. Not a very good one if months != 0.
     #[inline]
     pub const fn duration_ns(&self) -> i64 {
-        self.months * 30 * 24 * 3600 * NS_SECOND + self.nsecs
+        self.months * 28 * 24 * 3600 * NS_SECOND + self.nsecs
     }
 
     #[inline]
     pub const fn duration_ms(&self) -> i64 {
-        self.months * 30 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
+        self.months * 28 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
     }
 
     #[inline]

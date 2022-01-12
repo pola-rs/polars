@@ -54,6 +54,16 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        #[cfg(feature = "object")]
+        fn get_list_builder(
+            &self,
+            _name: &str,
+            _values_capacity: usize,
+            _list_capacity: usize,
+        ) -> Box<dyn ListBuilderTrait> {
+            invalid_operation_panic!(self)
+        }
+
         /// Get field (used in schema)
         fn _field(&self) -> Cow<Field> {
             invalid_operation_panic!(self)
@@ -127,18 +137,6 @@ pub(crate) mod private {
         #[cfg(feature = "cum_agg")]
         fn _cummin(&self, _reverse: bool) -> Series {
             panic!("operation cummin not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumsum(&self, _reverse: bool) -> Series {
-            panic!("operation cumsum not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumprod(&self, _reverse: bool) -> Series {
-            panic!("operation cumprod not supported for this dtype")
         }
 
         #[cfg(feature = "asof_join")]

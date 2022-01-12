@@ -307,7 +307,7 @@ impl Series {
                 // (the pid is checked before dereference)
                 let s = {
                     let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series();
+                    let s = pe.get_series(name);
                     pe.take_and_forget();
                     s
                 };
@@ -332,7 +332,7 @@ fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
 
             Arc::new(LargeListArray::from_data(
                 ArrowDataType::LargeList(
-                    ArrowField::new(fld.name(), ArrowDataType::LargeUtf8, true).into(),
+                    ArrowField::new(&fld.name, ArrowDataType::LargeUtf8, true).into(),
                 ),
                 offsets,
                 Arc::new(values),

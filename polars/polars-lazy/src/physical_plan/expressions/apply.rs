@@ -11,6 +11,7 @@ pub struct ApplyExpr {
     pub function: NoEq<Arc<dyn SeriesUdf>>,
     pub expr: Expr,
     pub collect_groups: ApplyOptions,
+    pub auto_explode: bool,
 }
 
 impl ApplyExpr {
@@ -64,6 +65,8 @@ impl PhysicalExpr for ApplyExpr {
                     let mut container = [Default::default()];
                     let name = ac.series().name().to_string();
 
+                    let mut all_unit_len = true;
+
                     let mut ca: ListChunked = ac
                         .aggregated()
                         .list()
@@ -74,9 +77,14 @@ impl PhysicalExpr for ApplyExpr {
                                 let in_len = s.len();
                                 container[0] = s;
                                 self.function.call_udf(&mut container).ok().map(|s| {
-                                    if s.len() != in_len {
+                                    let len = s.len();
+                                    if len != in_len {
                                         update_group_tuples = true;
+                                    };
+                                    if len != 1 {
+                                        all_unit_len = false;
                                     }
+
                                     s
                                 })
                             })
@@ -85,6 +93,7 @@ impl PhysicalExpr for ApplyExpr {
 
                     ca.rename(&name);
                     ac.with_series(ca.into_series(), true);
+                    ac.with_all_unit_len(all_unit_len);
                     ac.with_update_groups(UpdateGroups::WithSeriesLen);
                     Ok(ac)
                 }
@@ -127,6 +136,7 @@ impl PhysicalExpr for ApplyExpr {
 
                     // length of the items to iterate over
                     let len = lists[0].len();
+                    let mut all_unit_len = true;
 
                     let mut ca: ListChunked = (0..len)
                         .map(|_| {
@@ -137,12 +147,18 @@ impl PhysicalExpr for ApplyExpr {
                                     Some(s) => container.push(s),
                                 }
                             }
-                            self.function.call_udf(&mut container).ok()
+                            self.function.call_udf(&mut container).ok().map(|s| {
+                                if s.len() != 1 {
+                                    all_unit_len = false;
+                                }
+                                s
+                            })
                         })
                         .collect();
                     ca.rename(&name);
                     let mut ac = acs.pop().unwrap();
                     ac.with_series(ca.into_series(), true);
+                    ac.with_all_unit_len(all_unit_len);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -154,7 +170,7 @@ impl PhysicalExpr for ApplyExpr {
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    ac.with_series(s, true);
+                    ac.with_series(s, false);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
@@ -187,129 +203,11 @@ impl PhysicalAggregation for ApplyExpr {
         groups: &GroupTuples,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        if self.inputs.len() == 1 {
-            let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
-
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
-                    let mut container = [Default::default()];
-                    let name = ac.series().name().to_string();
-
-                    let mut ca: ListChunked = ac
-                        .aggregated()
-                        .list()
-                        .unwrap()
-                        .into_iter()
-                        .map(|opt_s| {
-                            opt_s.and_then(|s| {
-                                container[0] = s;
-                                self.function.call_udf(&mut container).ok()
-                            })
-                        })
-                        .collect();
-                    ca.rename(&name);
-                    Ok(Some(ca.into_series()))
-                }
-                ApplyOptions::ApplyFlat => {
-                    // the function needs to be called on a flat series
-                    // but the series may be flat or aggregated
-                    // if its flat, we just apply and return
-                    // if not flat, the flattening sorts by group, so we must create new group tuples
-                    // and again aggregate.
-                    let out = self.function.call_udf(&mut [ac.flat_naive().into_owned()]);
-
-                    if ac.is_not_aggregated() || !matches!(ac.series().dtype(), DataType::List(_)) {
-                        out.map(Some)
-                    } else {
-                        // TODO! maybe just apply over list?
-                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                        Ok(out?.agg_list(ac.groups()))
-                    }
-                }
-                ApplyOptions::ApplyList => self
-                    .function
-                    .call_udf(&mut [ac.aggregated().into_owned()])
-                    .map(Some),
-            }
-        } else {
-            let mut acs = self.prepare_multiple_inputs(df, groups, state)?;
-
-            match self.collect_groups {
-                ApplyOptions::ApplyGroups => {
-                    let mut container = vec![Default::default(); acs.len()];
-                    let name = acs[0].series().name().to_string();
-
-                    // Don't ever try to be smart here.
-                    // Every argument needs to be aggregated; period.
-                    // We only work on groups in the groupby context.
-                    // If the argument is a literal use `map`
-                    let owned_series = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
-
-                    // now we make the iterators
-                    let mut iters = owned_series
-                        .iter()
-                        .map(|s| {
-                            let ca = s.list().unwrap();
-                            ca.into_iter()
-                        })
-                        .collect::<Vec<_>>();
-
-                    // length of the items to iterate over
-                    let len = groups.len();
-
-                    let mut ca: ListChunked = (0..len)
-                        .map(|_| {
-                            container.clear();
-                            for iter in &mut iters {
-                                match iter.next().unwrap() {
-                                    None => return None,
-                                    Some(s) => container.push(s),
-                                }
-                            }
-                            self.function.call_udf(&mut container).ok()
-                        })
-                        .collect();
-                    ca.rename(&name);
-                    Ok(Some(ca.into_series()))
-                }
-                ApplyOptions::ApplyFlat => {
-                    // the function needs to be called on a flat series
-                    // but the series may be flat or aggregated
-                    // if its flat, we just apply and return
-                    // if not flat, the flattening sorts by group, so we must create new group tuples
-                    // and again aggregate.
-                    let name = acs[0].series().name().to_string();
-
-                    // get the flat representation of the aggregation contexts
-                    let mut container = acs
-                        .iter_mut()
-                        .map(|ac| {
-                            // this is hard because the flattening sorts by group
-                            assert!(
-                                ac.is_not_aggregated(),
-                                "flat apply on any expression that is already \
-                            in aggregated state is not yet suported"
-                            );
-                            ac.flat_naive().into_owned()
-                        })
-                        .collect::<Vec<_>>();
-
-                    let out = self.function.call_udf(&mut container)?;
-                    let out = out.agg_list(acs[0].groups().as_ref()).map(|mut out| {
-                        out.rename(&name);
-                        out
-                    });
-
-                    Ok(out)
-                }
-                ApplyOptions::ApplyList => {
-                    let mut s = acs
-                        .iter_mut()
-                        .map(|ac| ac.aggregated().into_owned())
-                        .collect::<Vec<_>>();
-                    self.function.call_udf(&mut s).map(Some)
-                }
-            }
+        let mut ac = self.evaluate_on_groups(df, groups, state)?;
+        let mut s = ac.aggregated().into_owned();
+        if ac.is_all_unit_len() && self.auto_explode {
+            s = s.explode().unwrap();
         }
+        Ok(Some(s))
     }
 }

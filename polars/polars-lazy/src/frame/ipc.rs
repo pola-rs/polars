@@ -39,10 +39,8 @@ impl LazyFrame {
                 .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
-                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{e}").into()))?;
+                    let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
-                    let mut args = args;
-                    args.n_rows = None;
                     Self::scan_ipc_impl(path_string, args)
                 })
                 .collect::<Result<Vec<_>>>()?;

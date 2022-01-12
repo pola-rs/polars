@@ -50,6 +50,7 @@ Aggregation
     Series.var
     Series.median
     Series.quantile
+    Series.product
     Series.mode
     Series.arg_min
     Series.arg_max
@@ -83,6 +84,13 @@ Descriptive stats
     Series.n_unique
     Series.has_validity
 
+Boolean
+-------
+.. autosummary::
+   :toctree: api/
+
+    Series.any
+    Series.all
 
 Computations
 ------------
@@ -236,6 +244,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase
     StringNameSpace.to_uppercase
+    StringNameSpace.strip
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.slice

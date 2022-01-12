@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.12.8"
+version = "0.12.10"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -89,6 +89,7 @@ features = [
   "dataframe_arithmetic",
   "json",
   "string_encoding",
+  "product",
 ]
 
 # [patch.crates-io]

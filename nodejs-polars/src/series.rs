@@ -867,6 +867,7 @@ pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
     let obj: JsUnknown = cx.env.to_js_value(series)?;
     Ok(obj)
 }
+
 #[js_function(1)]
 pub fn rechunk(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
     let params = get_params(&cx)?;

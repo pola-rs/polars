@@ -200,6 +200,26 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.to_physical())
 
+    def any(self) -> "Expr":
+        """
+        Check if any boolean value in the column is `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.any())
+
+    def all(self) -> "Expr":
+        """
+        Check if all boolean values in the column are `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.all())
+
     def sqrt(self) -> "Expr":
         """
         Compute the square root of the elements
@@ -979,6 +999,12 @@ class Expr:
         Get median value.
         """
         return wrap_expr(self._pyexpr.median())
+
+    def product(self) -> "Expr":
+        """
+        Compute the product of an expression
+        """
+        return wrap_expr(self._pyexpr.product())
 
     def n_unique(self) -> "Expr":
         """Count unique values."""
@@ -2351,7 +2377,9 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(self, other: Union[List[Union[Expr, str]], Expr, str]) -> "Expr":
+    def concat(
+        self, other: Union[List[Union[Expr, str]], Expr, str, "pli.Series", List[Any]]
+    ) -> "Expr":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -2360,11 +2388,17 @@ class ExprListNameSpace:
         other
             Columns to concat into a List Series
         """
-        other_list: List[Union[Expr, str]]
+        if isinstance(other, list) and (
+            not isinstance(other[0], (Expr, str, pli.Series))
+        ):
+            return self.concat(pli.Series([other]))
+
+        other_list: List[Union[Expr, str, "pli.Series"]]
         if not isinstance(other, list):
             other_list = [other]
         else:
-            other_list = copy.copy(other)
+            other_list = copy.copy(other)  # type: ignore
+
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
 
@@ -2422,6 +2456,8 @@ class ExprStringNameSpace:
         self,
         datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
+        strict: bool = True,
+        exact: bool = True,
     ) -> Expr:
         """
         Parse utf8 expression as a Date/Datetimetype.
@@ -2431,16 +2467,24 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime.
         fmt
-            "yyyy-mm-dd".
+            format to use, see the following link for examples:
+            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+            example: "%y-%m-%d".
+        strict
+            raise an error if any conversion fails
+        exact
+            - If True, require an exact format match.
+            - If False, allow the format to match anywhere in the target string.
         """
         if not issubclass(datatype, DataType):
             raise ValueError(
                 f"expected: {DataType} got: {datatype}"
             )  # pragma: no cover
         if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt))
+            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
-            return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
+            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
         else:
             raise ValueError(
                 "dtype should be of type {Date, Datetime}"
@@ -2463,6 +2507,24 @@ class ExprStringNameSpace:
         Transform to lowercase variant.
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
+
+    def strip(self) -> Expr:
+        """
+        Remove leading and trailing whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_strip())
+
+    def lstrip(self) -> Expr:
+        """
+        Remove leading whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_lstrip())
+
+    def rstrip(self) -> Expr:
+        """
+        Remove trailing whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_rstrip())
 
     def contains(self, pattern: str) -> Expr:
         """

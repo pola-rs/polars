@@ -66,8 +66,10 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
     assert df.frame_equal(truth)
 
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="row")
-    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    df = pl.DataFrame([[1, 2.0, "a"], [None, None, None]], orient="row")
+    truth = pl.DataFrame(
+        {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
+    )
     assert df.frame_equal(truth)
 
     # TODO: Uncomment tests below when removing deprecation warning
@@ -631,13 +633,15 @@ def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_header=False)
+    df = pl.read_csv(f, has_header=False)
     assert df.shape == (2, 6)
-    f.seek(0)
 
+    f = BytesIO()
+    f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
+    f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
     with pytest.raises(RuntimeError) as e:
-        df.read_parquet(f)
+        pl.read_parquet(f)
     assert "Invalid Parquet file" in str(e.value)
 
 
@@ -870,7 +874,7 @@ def test_read_csv_categorical() -> None:
     f = BytesIO()
     f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_header=True, dtypes={"col1": pl.Categorical})
+    df = pl.read_csv(f, has_header=True, dtypes={"col1": pl.Categorical})
     assert df["col1"].dtype == pl.Categorical
 
 
@@ -1762,3 +1766,23 @@ def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
     for v in s.values():
         assert isinstance(v, inner_dtype)
         assert len(v) == len(df)
+
+
+def test_df_broadcast() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    out = df.with_column(pl.Series([[1, 2]]))
+    assert out.shape == (3, 2)
+
+
+def test_product() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "flt": [-1.0, 12.0, 9.0],
+            "bool_0": [True, False, True],
+            "bool_1": [True, True, True],
+        }
+    )
+    out = df.product()
+    expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
+    assert out.frame_equal(expected)

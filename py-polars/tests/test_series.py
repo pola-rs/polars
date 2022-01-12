@@ -182,6 +182,28 @@ def test_arithmetic(s: pl.Series) -> None:
     assert ((1.0 + a) == [2, 3]).sum() == 2
     assert ((1.0 % a) == [0, 1]).sum() == 2
 
+    a = pl.Series("a", [datetime(2021, 1, 1)])
+    with pytest.raises(ValueError):
+        a // 2
+    with pytest.raises(ValueError):
+        a / 2
+    with pytest.raises(ValueError):
+        a * 2
+    with pytest.raises(ValueError):
+        a % 2
+    with pytest.raises(ValueError):
+        a ** 2
+    with pytest.raises(ValueError):
+        2 / a
+    with pytest.raises(ValueError):
+        2 // a
+    with pytest.raises(ValueError):
+        2 * a
+    with pytest.raises(ValueError):
+        2 % a
+    with pytest.raises(ValueError):
+        2 ** a
+
 
 def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
@@ -318,6 +340,14 @@ def test_ufunc() -> None:
     a = pl.Series("a", [1.0, None, 3.0])
     b = np.exp(a)
     assert b.null_count() == 1
+
+    # test if it works with chunked series.
+    a = pl.Series("a", [1.0, None, 3.0])
+    b = pl.Series("b", [4.0, 5.0, None])
+    a.append(b)
+    assert a.n_chunks() == 2
+    c = np.multiply(a, 3)
+    testing.assert_series_equal(c, pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]))
 
 
 def test_get() -> None:
@@ -1354,3 +1384,45 @@ def test_extend() -> None:
 
     expected = pl.Series("a", [1, 2, 3, None, None, None])
     verify_series_and_expr_api(a, expected, "extend", None, 3)
+
+
+def test_any_all() -> None:
+    a = pl.Series("a", [True, False, True])
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "all")
+
+    a = pl.Series("a", [True, True, True])
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [True])
+    verify_series_and_expr_api(a, expected, "all")
+
+    a = pl.Series("a", [False, False, False])
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "any")
+    expected = pl.Series("a", [False])
+    verify_series_and_expr_api(a, expected, "all")
+
+
+def test_product() -> None:
+    a = pl.Series("a", [1, 2, 3])
+    out = a.product()
+    assert out == 6
+    a = pl.Series("a", [1, 2, None])
+    out = a.product()
+    assert out is None
+    a = pl.Series("a", [None, 2, 3])
+    out = a.product()
+    assert out is None
+
+
+def test_strip() -> None:
+    a = pl.Series("a", ["trailing  ", "  leading", "  both  "])
+    expected = pl.Series("a", ["trailing", "  leading", "  both"])
+    verify_series_and_expr_api(a, expected, "str.rstrip")
+    expected = pl.Series("a", ["trailing  ", "leading", "both  "])
+    verify_series_and_expr_api(a, expected, "str.lstrip")
+    expected = pl.Series("a", ["trailing", "leading", "both"])
+    verify_series_and_expr_api(a, expected, "str.strip")

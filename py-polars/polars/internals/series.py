@@ -55,6 +55,7 @@ from polars.datatypes import (
 from polars.datatypes import List as PlList
 from polars.datatypes import (
     Object,
+    Time,
     UInt8,
     UInt16,
     UInt32,
@@ -356,6 +357,9 @@ class Series:
         return self._arithmetic(other, "sub", "sub_<>")
 
     def __truediv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
+
         # this branch is exactly the floordiv function without rounding the floats
         if self.is_float():
             return self._arithmetic(other, "div", "div_<>")
@@ -363,18 +367,30 @@ class Series:
         return self.cast(Float64) / other
 
     def __floordiv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         result = self._arithmetic(other, "div", "div_<>")
         if self.is_float():
             result = result.floor()
         return result
 
     def __mul__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __mod__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before applying modulo on datelike dtypes"
+            )
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before applying modulo on datelike dtypes"
+            )
         return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> "Series":
@@ -389,6 +405,8 @@ class Series:
         return NotImplemented
 
     def __rtruediv__(self, other: Any) -> np.ndarray:
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
             self.__rfloordiv__(other)
 
@@ -398,13 +416,28 @@ class Series:
         return self.cast(Float64).__rfloordiv__(other)  # type: ignore
 
     def __rfloordiv__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before dividing datelike dtypes")
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError("first cast to integer before multiplying datelike dtypes")
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, power: float, modulo: None = None) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
         return np.power(self, power)  # type: ignore
+
+    def __rpow__(self, other: Any) -> "Series":
+        if self.is_datelike():
+            raise ValueError(
+                "first cast to integer before raising datelike dtypes to a power"
+            )
+        return np.power(other, self)  # type: ignore
 
     def __neg__(self) -> "Series":
         return 0 - self
@@ -413,7 +446,7 @@ class Series:
         if isinstance(item, int):
             if item < 0:
                 item = self.len() + item
-            if self.dtype in (PlList, Date, Datetime, Duration, Object):
+            if self.dtype in (PlList, Object):
                 f = get_ffi_func("get_<>", self.dtype, self._s)
                 if f is None:
                     return NotImplemented
@@ -483,6 +516,26 @@ class Series:
 
         """
         return self ** 0.5
+
+    def any(self) -> "Series":
+        """
+        Check if any boolean value in the column is `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return self.to_frame().select(pli.col(self.name).any()).to_series()
+
+    def all(self) -> "Series":
+        """
+        Check if all boolean values in the column are `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return self.to_frame().select(pli.col(self.name).all()).to_series()
 
     def log(self) -> "Series":
         """
@@ -683,6 +736,12 @@ class Series:
 
         """
         return self._s.mean()
+
+    def product(self) -> Union[int, float]:
+        """
+        Reduce this Series to the product value.
+        """
+        return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
     def min(self) -> Union[int, float]:
         """
@@ -1827,7 +1886,7 @@ class Series:
         True
 
         """
-        return self.dtype in (Date, Datetime, Duration)
+        return self.dtype in (Date, Datetime, Duration, Time)
 
     def is_float(self) -> bool:
         """
@@ -1904,7 +1963,7 @@ class Series:
         """
         Numpy universal functions.
         """
-        if self._s.n_chunks() > 0:
+        if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
         if method == "__call__":
@@ -3375,7 +3434,13 @@ class StringNameSpace:
     def __init__(self, series: "Series"):
         self._s = series._s
 
-    def strptime(self, datatype: Type[DataType], fmt: Optional[str] = None) -> Series:
+    def strptime(
+        self,
+        datatype: Union[Type[Date], Type[Datetime]],
+        fmt: Optional[str] = None,
+        strict: bool = True,
+        exact: bool = True,
+    ) -> Series:
         """
         Parse a Series of dtype Utf8 to a Date/Datetime Series.
 
@@ -3384,17 +3449,26 @@ class StringNameSpace:
         datatype
             Date or Datetime.
         fmt
-            formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+            format to use, see the following link for examples:
+            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+            example: "%y-%m-%d".
+        strict
+            raise an error if any conversion fails
+        exact
+            - If True, require an exact format match.
+            - If False, allow the format to match anywhere in the target string.
 
         Returns
         -------
         A Date/ Datetime Series
         """
-        if datatype == Date:
-            return wrap_s(self._s.str_parse_date(fmt))
-        if datatype == Datetime:
-            return wrap_s(self._s.str_parse_datetime(fmt))
-        raise NotImplementedError  # pragma: no cover
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.strptime(datatype, fmt, strict, exact))
+            .to_series()
+        )
 
     def lengths(self) -> Series:
         """
@@ -3593,6 +3667,27 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
+    def strip(self) -> Series:
+        """
+        Remove leading and trailing whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.strip()).to_series()
+
+    def lstrip(self) -> Series:
+        """
+        Remove leading whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.lstrip()).to_series()
+
+    def rstrip(self) -> Series:
+        """
+        Remove trailing whitespace.
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
+
     def to_lowercase(self) -> Series:
         """
         Modify the strings to their lowercase equivalent.
@@ -3604,18 +3699,6 @@ class StringNameSpace:
         Modify the strings to their uppercase equivalent.
         """
         return wrap_s(self._s.str_to_uppercase())
-
-    def rstrip(self) -> Series:
-        """
-        Remove trailing whitespace.
-        """
-        return self.replace(r"[ \t]+$", "")
-
-    def lstrip(self) -> Series:
-        """
-        Remove leading whitespace.
-        """
-        return self.replace(r"^\s*", "")
 
     def slice(self, start: int, length: Optional[int] = None) -> Series:
         """
@@ -3691,7 +3774,7 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.unique()).to_series()
 
-    def concat(self, other: Union[List[Series], Series]) -> "Series":
+    def concat(self, other: Union[List[Series], Series, List[Any]]) -> "Series":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -3700,14 +3783,8 @@ class ListNameSpace:
         other
             Columns to concat into a List Series
         """
-        if not isinstance(other, list):
-            other = [other]
         s = wrap_s(self._s)
-        names = [s.name for s in other]
-        names.insert(0, s.name)
-        df = pli.DataFrame(other)
-        df.insert_at_idx(0, s)
-        return df.select(pli.concat_list(names))[s.name]
+        return s.to_frame().select(pli.col(s.name).arr.concat(other)).to_series()
 
     def get(self, index: int) -> "Series":
         """
@@ -3877,8 +3954,7 @@ class DateTimeNameSpace:
 
     def __getitem__(self, item: int) -> Union[date, datetime]:
         s = wrap_s(self._s)
-        out = s[item]
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return s[item]
 
     def strftime(self, fmt: str) -> Series:
         """

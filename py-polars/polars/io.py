@@ -384,7 +384,7 @@ def read_csv(
             }
 
     with _prepare_file_arg(file, **storage_options) as data:
-        df = DataFrame.read_csv(
+        df = DataFrame._read_csv(
             file=data,
             has_header=has_header,
             columns=columns if columns else projection,
@@ -697,7 +697,7 @@ def read_ipc(
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
             return DataFrame._from_arrow(tbl)
 
-        return DataFrame.read_ipc(
+        return DataFrame._read_ipc(
             data,
             columns=columns,
             n_rows=n_rows,
@@ -772,7 +772,7 @@ def read_parquet(
                 )
             )
 
-        return DataFrame.read_parquet(
+        return DataFrame._read_parquet(
             source_prep, columns=columns, n_rows=n_rows, parallel=parallel
         )
 
@@ -786,7 +786,7 @@ def read_json(source: Union[str, BytesIO]) -> DataFrame:
     source
         Path to a file or a file like object.
     """
-    return DataFrame.read_json(source)
+    return DataFrame._read_json(source)
 
 
 def read_sql(

@@ -602,7 +602,7 @@ impl ProjectionPushDown {
                     // make sure that the dynamic key is projected
                     if let Some(options) = &dynamic_options {
                         let node =
-                            expr_arena.add(AExpr::Column(Arc::from(options.time_column.as_str())));
+                            expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
                         add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
                     }
 
@@ -706,7 +706,7 @@ impl ProjectionPushDown {
                             let root_column_name =
                                 aexpr_to_root_names(proj, expr_arena).pop().unwrap();
 
-                            let suffix = options.suffix.as_deref().unwrap_or("_right");
+                            let suffix = options.suffix.as_ref();
                             // If _right suffix exists we need to push a projection down without this
                             // suffix.
                             if root_column_name.ends_with(suffix) {
