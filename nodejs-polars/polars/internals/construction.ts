@@ -2,7 +2,6 @@ import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series} from "../series";
-import {isIterator} from "../utils";
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if(value === null) {
@@ -41,7 +40,6 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   if (value instanceof Date) {
     return DataType.Datetime;
   }
-
   if(typeof value === "object" && (value as any).constructor === Object) {
 
     return DataType.Object;
@@ -57,13 +55,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   case "boolean":
     return DataType.Bool;
   default:
-    break;
-  }
-
-  if (isIterator(value)) {
-    return jsTypeToPolarsType(value[0]);
-  } else {
-    return DataType.Object;
+    return DataType.Float64;
   }
 };
 
@@ -83,55 +75,29 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
  * 1
  * ```
  */
-const firstNonNull = (iter: Iterable<any>, isIterable = false): {firstValue: any, isIterable: boolean} => {
-  let nullCount = 0;
-  let firstValue: any = null;
-  const iterator = iter[Symbol.iterator]();
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const result = iterator.next();
-    if (result.done) break;
-    if(result.value === null || result.value === undefined) {
-      nullCount++;
-    } else {
-      firstValue = result.value;
-      break;
-    }
+const firstNonNull = (arr: any[]): any => {
+  const first = arr.find(x => x !== null && x !== undefined);
+  if(Array.isArray(first)) {
+    return [firstNonNull(arr.flat())];
   }
 
-  if(isTypedArray(firstValue) ) {
-    return {firstValue, isIterable: true};
-  }
-
-  if(isIterator(firstValue)) {
-    const f = firstNonNull(firstValue, true);
-
-    return {
-      ...firstNonNull(firstValue, true),
-      isIterable: true
-    };
-  }
-
-  return {firstValue, isIterable};
-
+  return first;
 };
 
 /**
  * Construct an internal `JsSeries` from an array
  */
-export function arrayToJsSeries(name: string, values: Iterable<any>, dtype?: any, strict = false): any {
+export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = false): any {
   if (isTypedArray(values)) {
     return pli.series.new_from_typed_array({ name, values, strict });
   }
 
   //Empty sequence defaults to Float64 type
-  if (!values[0] && !dtype) {
+  if (!values.length && !dtype) {
     dtype = DataType.Float64;
   }
-
-  const {firstValue, isIterable} = firstNonNull(values);
-
-  if(isIterable) {
+  const firstValue = firstNonNull(values);
+  if(Array.isArray(firstValue) || isTypedArray(firstValue)) {
     const listDtype = jsTypeToPolarsType(firstValue);
     const constructor = polarsTypeToConstructor(DataType.List);
 
