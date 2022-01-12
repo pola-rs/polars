@@ -60,12 +60,22 @@ fn test_pred_pd_1() -> Result<()> {
 
     // check if we pass hstack
     let lp = df
+        .clone()
         .lazy()
         .with_columns([col("A").alias("C"), col("B")])
         .filter(col("B").gt(lit(1)))
         .optimize(&mut lp_arena, &mut expr_arena)?;
 
     assert!(projection_at_scan(&lp_arena, lp));
+
+    // check if we do not pass slice
+    let lp = df
+        .lazy()
+        .limit(10)
+        .filter(col("B").gt(lit(1)))
+        .optimize(&mut lp_arena, &mut expr_arena)?;
+
+    assert!(!projection_at_scan(&lp_arena, lp));
 
     Ok(())
 }
