@@ -834,7 +834,8 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode(self, columns: Vec<Expr>) -> LazyFrame {
+    pub fn explode<E: AsRef<[Expr]>>(self, columns: E) -> LazyFrame {
+        let columns = columns.as_ref().to_vec();
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1004,7 +1005,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).head(n).list().keep_name()])
-            .explode(vec![col("*").exclude(&keys)])
+            .explode([col("*").exclude(&keys)])
     }
 
     /// Return last n rows of each group
@@ -1016,7 +1017,7 @@ impl LazyGroupBy {
             .collect::<Vec<_>>();
 
         self.agg([col("*").exclude(&keys).tail(n).list().keep_name()])
-            .explode(vec![col("*").exclude(&keys)])
+            .explode([col("*").exclude(&keys)])
     }
 
     /// Apply a function over the groups as a new `DataFrame`. It is not recommended that you use

@@ -31,7 +31,7 @@ fn test_lazy_with_column() {
     let df = get_df()
         .lazy()
         .with_column(lit(10).alias("foo"))
-        .select(&[col("foo"), col("sepal.width")])
+        .select([col("foo"), col("sepal.width")])
         .collect()
         .unwrap();
     println!("{:?}", df);
@@ -43,7 +43,7 @@ fn test_lazy_exec() {
     let new = df
         .clone()
         .lazy()
-        .select(&[col("sepal.width"), col("variety")])
+        .select([col("sepal.width"), col("variety")])
         .sort("sepal.width", false)
         .collect();
     println!("{:?}", new);
@@ -63,7 +63,7 @@ fn test_lazy_alias() {
     let df = get_df();
     let new = df
         .lazy()
-        .select(&[col("sepal.width").alias("petals"), col("sepal.width")])
+        .select([col("sepal.width").alias("petals"), col("sepal.width")])
         .collect()
         .unwrap();
     assert_eq!(new.get_column_names(), &["petals", "sepal.width"]);
@@ -108,7 +108,7 @@ fn test_lazy_udf() {
     let df = get_df();
     let new = df
         .lazy()
-        .select(&[col("sepal.width").map(|s| Ok(s * 200.0), GetOutput::same_type())])
+        .select([col("sepal.width").map(|s| Ok(s * 200.0), GetOutput::same_type())])
         .collect()
         .unwrap();
     assert_eq!(
@@ -159,9 +159,9 @@ fn test_lazy_pushdown_through_agg() {
             col("sepal.length").min(),
             col("petal.length").min().alias("foo"),
         ])
-        .select(&[col("foo")])
+        .select([col("foo")])
         // second selection is to test if optimizer can handle that
-        .select(&[col("foo").alias("bar")])
+        .select([col("foo").alias("bar")])
         .collect()
         .unwrap();
 
@@ -210,7 +210,7 @@ fn test_lazy_shift() {
     let df = get_df();
     let new = df
         .lazy()
-        .select(&[col("sepal.width").alias("foo").shift(2)])
+        .select([col("sepal.width").alias("foo").shift(2)])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().f64().unwrap().get(0), None);
@@ -263,7 +263,7 @@ fn test_lazy_binary_ops() {
     let df = df!("a" => &[1, 2, 3, 4, 5, ]).unwrap();
     let new = df
         .lazy()
-        .select(&[col("a").eq(lit(2)).alias("foo")])
+        .select([col("a").eq(lit(2)).alias("foo")])
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
@@ -288,7 +288,7 @@ fn test_lazy_query_1() {
         .filter(col("a").lt(lit(2)))
         .groupby([col("b")])
         .agg([col("b").first(), col("c").first()])
-        .select(&[col("b"), col("c_first")])
+        .select([col("b"), col("c_first")])
         .collect()
         .unwrap();
 }
@@ -304,7 +304,7 @@ fn test_lazy_query_2() {
                 .alias("foo"),
         )
         .filter(col("a").lt(lit(2)))
-        .select(&[col("b"), col("a")]);
+        .select([col("b"), col("a")]);
 
     let new = ldf.collect().unwrap();
     assert_eq!(new.shape(), (1, 2));
@@ -340,11 +340,11 @@ fn test_lazy_query_4() {
                 .apply(|s: Series| Ok(&s - &(s.shift(1))), GetOutput::same_type())
                 .alias("diff_cases"),
         ])
-        .explode(vec![col("day"), col("diff_cases")])
+        .explode([col("day"), col("diff_cases")])
         .join(
             base_df,
-            vec![col("uid"), col("day")],
-            vec![col("uid"), col("day")],
+            [col("uid"), col("day")],
+            [col("uid"), col("day")],
             JoinType::Inner,
         )
         .collect()
@@ -467,8 +467,8 @@ fn test_lazy_query_9() -> Result<()> {
         .lazy()
         .join(
             cities.lazy(),
-            vec![col("Sales.City")],
-            vec![col("Cities.City")],
+            [col("Sales.City")],
+            [col("Cities.City")],
             JoinType::Inner,
         )
         .groupby([col("Cities.Country")])
@@ -643,7 +643,7 @@ fn test_simplify_expr() {
 #[test]
 fn test_lazy_wildcard() {
     let df = load_df();
-    let new = df.clone().lazy().select(&[col("*")]).collect().unwrap();
+    let new = df.clone().lazy().select([col("*")]).collect().unwrap();
     assert_eq!(new.shape(), (5, 3));
 
     let new = df
@@ -678,7 +678,7 @@ fn test_lazy_filter_and_rename() {
             |s: Series| Ok(s.gt(3).into_series()),
             GetOutput::from_type(DataType::Boolean),
         ))
-        .select(&[col("x")]);
+        .select([col("x")]);
 
     let correct = df! {
         "x" => &[4, 5]
@@ -742,7 +742,7 @@ fn test_lazy_predicate_pushdown_binary_expr() {
     let df = load_df();
     df.lazy()
         .filter(col("a").eq(col("b")))
-        .select(&[col("c")])
+        .select([col("c")])
         .collect()
         .unwrap();
 }
@@ -798,7 +798,7 @@ fn test_lazy_window_functions() {
     // test if partition aggregation is correct
     let out = df
         .lazy()
-        .select(&[col("groups"), sum("values").over([col("groups")])])
+        .select([col("groups"), sum("values").over([col("groups")])])
         .collect()
         .unwrap();
     assert_eq!(
@@ -814,8 +814,8 @@ fn test_lazy_double_projection() {
     }
     .unwrap();
     df.lazy()
-        .select(&[col("foo").alias("bar")])
-        .select(&[col("bar")])
+        .select([col("foo").alias("bar")])
+        .select([col("bar")])
         .collect()
         .unwrap();
 }
@@ -828,7 +828,7 @@ fn test_type_coercion() {
     }
     .unwrap();
 
-    let lp = df.lazy().select(&[col("foo") * col("bar")]).logical_plan;
+    let lp = df.lazy().select([col("foo") * col("bar")]).logical_plan;
 
     let mut expr_arena = Arena::new();
     let mut lp_arena = Arena::new();
@@ -1257,7 +1257,7 @@ fn test_multiple_explode() -> Result<()> {
             col("b").list().alias("b_list"),
             col("c").list().alias("c_list"),
         ])
-        .explode(vec![col("c_list"), col("b_list")])
+        .explode([col("c_list"), col("b_list")])
         .collect()?;
     assert_eq!(out.shape(), (5, 3));
 
@@ -1368,7 +1368,7 @@ fn test_fold_wildcard() -> Result<()> {
     let out = df1
         .clone()
         .lazy()
-        .select([fold_exprs(lit(0), |a, b| Ok(&a + &b), vec![col("*")]).alias("foo")])
+        .select([fold_exprs(lit(0), |a, b| Ok(&a + &b), [col("*")]).alias("foo")])
         .collect()?;
 
     assert_eq!(
@@ -1379,7 +1379,7 @@ fn test_fold_wildcard() -> Result<()> {
     // test if we don't panic due to wildcard
     let _out = df1
         .lazy()
-        .select([all_exprs(vec![col("*").is_not_null()])])
+        .select([all_exprs([col("*").is_not_null()])])
         .collect()?;
     Ok(())
 }
