@@ -42,7 +42,7 @@
 //!     let mut df = CsvReader::from_path(path)?
 //!                 .finish()?;
 //!
-//!     df.may_apply("utf8-column", |s| s.cast::<CategoricalType>())?;
+//!     df.try_apply("utf8-column", |s| s.cast::<CategoricalType>())?;
 //!     Ok(df)
 //! }
 //!
@@ -62,8 +62,8 @@
 //!     // Set a global string cache
 //!     toggle_string_cache(true);
 //!
-//!     df_a.may_apply("a", |s| s.cast::<CategoricalType>())?;
-//!     df_b.may_apply("b", |s| s.cast::<CategoricalType>())?;
+//!     df_a.try_apply("a", |s| s.cast::<CategoricalType>())?;
+//!     df_b.try_apply("b", |s| s.cast::<CategoricalType>())?;
 //!     df_a.join(&df_b, "a", "b", JoinType::Inner)
 //! }
 //! ```

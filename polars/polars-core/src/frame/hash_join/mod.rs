@@ -1637,9 +1637,9 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
 
         let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None).unwrap();
@@ -1659,13 +1659,13 @@ mod test {
 
         // Test an error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
         let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
         assert!(out.is_err())
