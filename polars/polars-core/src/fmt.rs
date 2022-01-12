@@ -555,15 +555,15 @@ fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt
                     s = &s[..len];
                 }
                 if s.ends_with('.') {
-                    write!(f, "{}0...", s)
+                    write!(f, "{}0", s)
                 } else {
-                    write!(f, "{}...", s)
+                    write!(f, "{}", s)
                 }
             } else {
                 // 12.0934509341243124
                 // written as
-                // 12.09345...
-                write!(f, "{:>width$.6}...", v, width = width)
+                // 12.09345
+                write!(f, "{:>width$.6}", v, width = width)
             }
         }
     } else if v.fract() == 0.0 {
