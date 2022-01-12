@@ -92,5 +92,12 @@ pub fn test_simple_slice() -> Result<()> {
     let out = q.collect()?;
     assert_eq!(out.height(), 3);
 
+    let q = scan_foods_parquet(false)
+        .select([col("category"), col("calories").alias("bar")])
+        .limit(3);
+    assert!(slice_at_scan(&lp_arena, root));
+    let out = q.collect()?;
+    assert_eq!(out.height(), 3);
+
     Ok(())
 }

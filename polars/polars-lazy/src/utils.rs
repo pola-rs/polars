@@ -57,6 +57,13 @@ impl PushNode for &mut [Option<Node>] {
     }
 }
 
+/// A projection that only takes a column or a column + alias.
+pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    arena
+        .iter(current_node)
+        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+}
+
 pub(crate) fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,
