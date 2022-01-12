@@ -124,11 +124,3 @@ fn test_csv_globbing() -> Result<()> {
 
     Ok(())
 }
-
-#[test]
-pub fn test_simple_slice() -> Result<()> {
-    let out = scan_foods_parquet(false).limit(3).collect()?;
-    assert_eq!(out.height(), 3);
-
-    Ok(())
-}

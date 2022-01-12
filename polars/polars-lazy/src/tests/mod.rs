@@ -1,7 +1,7 @@
 #[cfg(feature = "parquet")]
 mod io;
-mod predicate_pushdown;
-mod projection_pushdown;
+mod optimization_checks;
+mod projection_queries;
 mod queries;
 
 use polars_core::prelude::*;
