@@ -139,7 +139,11 @@ pub trait ChunkBytes {
 /// This likely is a bit slower than ChunkWindow
 #[cfg(feature = "rolling_window")]
 pub trait ChunkRollApply {
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Self>
+    fn rolling_apply(
+        &self,
+        _f: &dyn Fn(&Series) -> Series,
+        _options: RollingOptions,
+    ) -> Result<Series>
     where
         Self: Sized,
     {

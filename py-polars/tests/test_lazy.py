@@ -656,11 +656,85 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_rolling_apply() -> None:
-    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-    out = s.rolling_apply(window_size=3, function=lambda s: s.std())
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
+    out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358898943540674
+    assert out.dtype is pl.Float64
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
+    out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 4.358899116516113
+    assert out.dtype is pl.Float32
+
+    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
+    out = s.rolling_apply(function=lambda s: s.sum(), window_size=3)
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 12
+    assert out.dtype is pl.Int32
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
+    out = s.rolling_apply(
+        function=lambda s: s.std(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 14.224392195567912
+    assert out.dtype is pl.Float64
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
+    out = s.rolling_apply(
+        function=lambda s: s.std(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 14.22439193725586
+    assert out.dtype is pl.Float32
+
+    s = pl.Series("A", [1, 2, 9, None, 13], dtype=pl.Int32)
+    out = s.rolling_apply(
+        function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 32.0
+    assert out.dtype is pl.Float64
+    s = pl.Series("A", [1, 2, 9, 2, 10])
+
+    # compare rolling_apply to specific rolling functions
+    s = pl.Series("A", list(range(5)), dtype=pl.Float64)
+    roll_app_sum = s.rolling_apply(
+        function=lambda s: s.sum(),
+        window_size=3,
+        weights=[1.0, 2.1, 3.2],
+        min_periods=2,
+        center=True,
+    )
+
+    roll_sum = s.rolling_sum(
+        window_size=3, weights=[1.0, 2.1, 3.2], min_periods=2, center=True
+    )
+
+    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
+
+    s = pl.Series("A", list(range(6)), dtype=pl.Float64)
+    roll_app_sum = s.rolling_apply(
+        function=lambda s: s.sum(),
+        window_size=4,
+        weights=[1.0, 2.0, 3.0, 0.1],
+        min_periods=3,
+        center=False,
+    )
+
+    roll_sum = s.rolling_sum(
+        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
+    )
+
+    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:

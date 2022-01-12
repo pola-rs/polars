@@ -1732,12 +1732,12 @@ impl Expr {
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
     pub fn rolling_apply(
         self,
-        window_size: usize,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
         output_type: GetOutput,
+        options: RollingOptions,
     ) -> Expr {
         self.apply(
-            move |s| s.rolling_apply(window_size, f.as_ref()),
+            move |s| s.rolling_apply(f.as_ref(), options.clone()),
             output_type,
         )
         .with_fmt("rolling_apply")

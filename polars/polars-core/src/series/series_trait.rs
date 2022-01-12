@@ -1116,7 +1116,11 @@ pub trait SeriesTrait:
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
+    fn rolling_apply(
+        &self,
+        _f: &dyn Fn(&Series) -> Series,
+        _options: RollingOptions,
+    ) -> Result<Series> {
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }
     #[cfg(feature = "concat_str")]

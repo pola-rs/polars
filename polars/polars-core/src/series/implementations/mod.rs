@@ -302,10 +302,10 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "rolling_window")]
             fn rolling_apply(
                 &self,
-                _window_size: usize,
                 _f: &dyn Fn(&Series) -> Series,
+                _options: RollingOptions,
             ) -> Result<Series> {
-                ChunkRollApply::rolling_apply(&self.0, _window_size, _f).map(|ca| ca.into_series())
+                ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
             }
 
             #[cfg(feature = "interpolate")]

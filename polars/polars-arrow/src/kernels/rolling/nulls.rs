@@ -428,56 +428,6 @@ where
     }
 }
 
-pub fn rolling_median<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType
-        + std::iter::Sum
-        + Zero
-        + AddAssign
-        + Copy
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
-        + NumCast
-        + Default
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply_quantile(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_quantile,
-        )
-    } else {
-        rolling_apply_quantile(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile,
-        )
-    }
-}
-
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
     quantile: f64,
@@ -682,27 +632,27 @@ mod test {
             Some(Bitmap::from(&[true, false, true, true])),
         );
 
-        let out = rolling_median(arr, 2, 2, false, None);
+        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 2, 2, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(3.5)]);
 
-        let out = rolling_median(arr, 2, 1, false, None);
+        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 2, 1, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_median(arr, 4, 1, false, None);
+        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 1, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(2.0), Some(3.0)]);
 
-        let out = rolling_median(arr, 4, 1, true, None);
+        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 1, true, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(2.0), Some(3.0), Some(3.5)]);
 
-        let out = rolling_median(arr, 4, 4, true, None);
+        let out = rolling_quantile(arr, 0.5, QuantileInterpolOptions::Linear, 4, 4, true, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
@@ -767,21 +717,5 @@ mod test {
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
         }
-
-        let out1 = rolling_median(values, 2, 1, false, None);
-        let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        let out2 = rolling_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            2,
-            1,
-            false,
-            None,
-        );
-        let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out1, out2);
     }
 }

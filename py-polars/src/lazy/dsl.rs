@@ -669,7 +669,21 @@ impl PyExpr {
             .into()
     }
 
-    pub fn rolling_apply(&self, py: Python, window_size: usize, lambda: PyObject) -> PyExpr {
+    pub fn rolling_apply(
+        &self,
+        py: Python,
+        lambda: PyObject,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyExpr {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
         // get the pypolars module
         // do the import outside of the function.
         let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
@@ -784,7 +798,7 @@ impl PyExpr {
         };
         self.clone()
             .inner
-            .rolling_apply(window_size, Arc::new(function), GetOutput::same_type())
+            .rolling_apply(Arc::new(function), GetOutput::same_type(), options)
             .with_fmt("rolling_apply")
             .into()
     }

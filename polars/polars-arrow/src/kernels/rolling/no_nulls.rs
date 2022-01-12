@@ -181,67 +181,6 @@ where
     values.iter().copied().sum::<T>() / T::from(values.len()).unwrap()
 }
 
-pub fn rolling_median<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType
-        + std::iter::Sum<T>
-        + std::cmp::PartialOrd
-        + num::ToPrimitive
-        + NumCast
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Div<Output = T>
-        + Mul<Output = T>
-        + Zero,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_quantile,
-        ),
-        (false, None) => rolling_apply_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile,
-        ),
-        (true, Some(weights)) => rolling_apply_convolve_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_quantile,
-            weights,
-        ),
-        (false, Some(weights)) => rolling_apply_convolve_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_quantile,
-            weights,
-        ),
-    }
-}
-
 pub fn rolling_quantile<T>(
     values: &[T],
     quantile: f64,
@@ -668,27 +607,67 @@ mod test {
     fn test_rolling_median() {
         let values = &[1.0, 2.0, 3.0, 4.0];
 
-        let out = rolling_median(values, 2, 2, false, None);
+        let out = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            2,
+            2,
+            false,
+            None,
+        );
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_median(values, 2, 1, false, None);
+        let out = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            2,
+            1,
+            false,
+            None,
+        );
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.5), Some(3.5)]);
 
-        let out = rolling_median(values, 4, 1, false, None);
+        let out = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            4,
+            1,
+            false,
+            None,
+        );
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.5), Some(2.0), Some(2.5)]);
 
-        let out = rolling_median(values, 4, 1, true, None);
+        let out = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            4,
+            1,
+            true,
+            None,
+        );
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.5), Some(2.0), Some(2.5), Some(3.0)]);
 
-        let out = rolling_median(values, 4, 4, true, None);
+        let out = rolling_quantile(
+            values,
+            0.5,
+            QuantileInterpolOptions::Linear,
+            4,
+            4,
+            true,
+            None,
+        );
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, Some(2.5), None]);
@@ -723,21 +702,5 @@ mod test {
             let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
             assert_eq!(out1, out2);
         }
-
-        let out1 = rolling_median(values, 2, 2, false, None);
-        let out1 = out1.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out1 = out1.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        let out2 = rolling_quantile(
-            values,
-            0.5,
-            QuantileInterpolOptions::Linear,
-            2,
-            2,
-            false,
-            None,
-        );
-        let out2 = out2.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out2 = out2.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out1, out2);
     }
 }
