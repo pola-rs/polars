@@ -20,7 +20,7 @@ describe("from lists", () => {
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
   });
-  test.only("string", () => {
+  test("string", () => {
     const expected = [[], [null], ["a"], [null], ["b", "c"]];
     const actual = pl.Series(expected).toArray();
     expect(actual).toEqual(expected);
