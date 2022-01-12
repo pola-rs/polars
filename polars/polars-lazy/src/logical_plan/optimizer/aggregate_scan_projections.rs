@@ -8,20 +8,20 @@ use std::sync::Arc;
 fn process_with_columns(
     path: &Path,
     with_columns: &Option<Vec<String>>,
-    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
 ) {
     if let Some(with_columns) = &with_columns {
         let cols = columns
             .entry(path.to_owned())
             .or_insert_with(PlHashSet::new);
-        cols.extend(with_columns.iter().cloned());
+        cols.extend(with_columns.iter().enumerate().map(|t| (t.0, t.1.clone())));
     }
 }
 
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
-    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -51,7 +51,7 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    pub columns: PlHashMap<PathBuf, PlHashSet<String>>,
+    pub columns: PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
 }
 
 impl AggScanProjection {
@@ -107,8 +107,8 @@ impl OptimizationRule for AggScanProjection {
                     let with_columns = self.columns.get(&path).map(|agg| {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
-                        columns
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
                     });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
@@ -153,8 +153,8 @@ impl OptimizationRule for AggScanProjection {
                     let mut with_columns = self.columns.get(&path).map(|agg| {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
-                        columns
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
                     });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
@@ -199,8 +199,8 @@ impl OptimizationRule for AggScanProjection {
                     let with_columns = self.columns.get(&path).map(|agg| {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
-                        columns.sort_unstable_by_key(|name| schema.index_of(name).ok());
-                        columns
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
                     });
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {

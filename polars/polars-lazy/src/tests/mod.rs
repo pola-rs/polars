@@ -1,8 +1,11 @@
 #[cfg(feature = "parquet")]
 mod io;
 mod optimization_checks;
+mod predicate_queries;
 mod projection_queries;
 mod queries;
+
+use optimization_checks::*;
 
 use polars_core::prelude::*;
 use polars_io::prelude::*;
@@ -18,6 +21,10 @@ use polars_core::df;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use std::iter::FromIterator;
+
+static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
+static GLOB_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
+static GLOB_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
 
 fn scan_foods_csv() -> LazyFrame {
     let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";

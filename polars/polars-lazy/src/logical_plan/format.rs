@@ -21,7 +21,6 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
                 }
-                dbg!(options);
                 write!(
                     f,
                     "PARQUET SCAN {}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
