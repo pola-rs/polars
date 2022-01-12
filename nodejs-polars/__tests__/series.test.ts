@@ -801,11 +801,6 @@ describe("series proxy & metadata", () => {
     expect(two).toStrictEqual(2);
     expect(nine).toStrictEqual(9);
   });
-  test("set", () => {
-    const s = pl.Series([1, 2, 3]);
-    s[0] = s[2];
-    expect(s[0]).toStrictEqual(s[2]);
-  });
 });
 describe("StringFunctions", () => {
   it.each`
