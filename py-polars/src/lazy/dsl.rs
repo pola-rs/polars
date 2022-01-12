@@ -221,6 +221,7 @@ impl PyExpr {
         self.clone()
             .inner
             .apply(move |s| s.fill_null(strat), GetOutput::same_type())
+            .with_fmt("fill_null")
             .into()
     }
 
@@ -256,6 +257,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(move |s: Series| Ok(s.take_every(n)), GetOutput::same_type())
+            .with_fmt("take_every")
             .into()
     }
     pub fn tail(&self, n: Option<usize>) -> PyExpr {
@@ -359,6 +361,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Date))
+            .with_fmt("strptime")
             .into()
     }
 
@@ -389,6 +392,7 @@ impl PyExpr {
                 function,
                 GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
             )
+            .with_fmt("strptime")
             .into()
     }
 
@@ -401,6 +405,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::same_type())
+            .with_fmt("str.strip")
             .into()
     }
 
@@ -413,6 +418,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::same_type())
+            .with_fmt("str.rstrip")
             .into()
     }
 
@@ -425,6 +431,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::same_type())
+            .with_fmt("str.lstrip")
             .into()
     }
 
@@ -436,6 +443,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.to_uppercase")
             .into()
     }
 
@@ -447,6 +455,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.slice")
             .into()
     }
 
@@ -458,6 +467,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.to_lowercase")
             .into()
     }
 
@@ -469,6 +479,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.len")
             .into()
     }
 
@@ -483,6 +494,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::same_type())
+            .with_fmt("str.replace")
             .into()
     }
 
@@ -497,6 +509,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::same_type())
+            .with_fmt("str.replace_all")
             .into()
     }
 
@@ -511,6 +524,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Boolean))
+            .with_fmt("str.contains")
             .into()
     }
     pub fn str_hex_encode(&self) -> PyExpr {
@@ -520,6 +534,7 @@ impl PyExpr {
                 move |s| s.utf8().map(|s| s.hex_encode().into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("str.hex_encode")
             .into()
     }
     pub fn str_hex_decode(&self, strict: Option<bool>) -> PyExpr {
@@ -529,6 +544,7 @@ impl PyExpr {
                 move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("str.hex_decode")
             .into()
     }
     pub fn str_base64_encode(&self) -> PyExpr {
@@ -538,6 +554,7 @@ impl PyExpr {
                 move |s| s.utf8().map(|s| s.base64_encode().into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("str.base64_encode")
             .into()
     }
 
@@ -548,6 +565,7 @@ impl PyExpr {
                 move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("str.base64_decode")
             .into()
     }
     pub fn str_json_path_match(&self, pat: String) -> PyExpr {
@@ -561,6 +579,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Boolean))
+            .with_fmt("str.json_path_match")
             .into()
     }
 
@@ -575,6 +594,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.exact")
             .into()
     }
 
@@ -583,6 +603,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("strftime")
             .into()
     }
 
@@ -594,6 +615,7 @@ impl PyExpr {
         self.clone()
             .inner
             .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("arr.len")
             .into()
     }
 
@@ -634,6 +656,7 @@ impl PyExpr {
                 |s| s.timestamp().map(|ca| ca.into_series()),
                 GetOutput::from_type(DataType::Int64),
             )
+            .with_fmt("timestamp")
             .into()
     }
     pub fn dt_epoch_seconds(&self) -> PyExpr {
@@ -762,6 +785,7 @@ impl PyExpr {
         self.clone()
             .inner
             .rolling_apply(window_size, Arc::new(function), GetOutput::same_type())
+            .with_fmt("rolling_apply")
             .into()
     }
 
@@ -994,6 +1018,7 @@ impl PyExpr {
                     }
                 }),
             )
+            .with_fmt("arr.max")
             .into()
     }
 
@@ -1011,6 +1036,7 @@ impl PyExpr {
                     }
                 }),
             )
+            .with_fmt("arr.min")
             .into()
     }
 
@@ -1028,6 +1054,7 @@ impl PyExpr {
                     }
                 }),
             )
+            .with_fmt("arr.sum")
             .into()
     }
 
@@ -1038,6 +1065,7 @@ impl PyExpr {
                 |s| Ok(s.list()?.lst_mean().into_series()),
                 GetOutput::from_type(DataType::Float64),
             )
+            .with_fmt("arr.mean")
             .into()
     }
 
@@ -1048,6 +1076,7 @@ impl PyExpr {
                 move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("arr.sort")
             .into()
     }
 
@@ -1058,6 +1087,7 @@ impl PyExpr {
                 move |s| Ok(s.list()?.lst_reverse().into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("arr.reverse")
             .into()
     }
 
@@ -1068,6 +1098,7 @@ impl PyExpr {
                 move |s| Ok(s.list()?.lst_unique()?.into_series()),
                 GetOutput::same_type(),
             )
+            .with_fmt("arr.unique")
             .into()
     }
 
@@ -1129,6 +1160,7 @@ impl PyExpr {
                 },
                 GetOutput::same_type(),
             )
+            .with_fmt("dt.truncate")
             .into()
     }
 
@@ -1147,6 +1179,7 @@ impl PyExpr {
                 |s| Ok(s.to_physical_repr().into_owned()),
                 GetOutput::map_dtype(|dt| dt.to_physical()),
             )
+            .with_fmt("to_physical")
             .into()
     }
 
@@ -1191,6 +1224,7 @@ impl PyExpr {
                 },
                 GetOutput::same_type(),
             )
+            .with_fmt("extend")
             .into()
     }
     pub fn any(&self) -> Self {

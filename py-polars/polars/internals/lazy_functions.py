@@ -567,7 +567,10 @@ def lit(
     if isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        return pli.wrap_expr(pylit(value)).alias(name)
+        e = pli.wrap_expr(pylit(value))
+        if name == "":
+            return e
+        return e.alias(name)
 
     if isinstance(value, np.ndarray):
         return lit(pli.Series("", value))

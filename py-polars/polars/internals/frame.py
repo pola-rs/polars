@@ -2420,7 +2420,8 @@ class DataFrame:
         truncate
             truncate the time value to the window lower bound
         include_boundaries
-            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns
+            add the lower and upper bound of the window to the "_lower_bound" and "_upper_bound" columns.
+            this will impact performance because it's harder to parallelize
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}

@@ -96,6 +96,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: false,
             auto_explode: true,
+            fmt_str: "argsort_by",
         },
     }
 }
@@ -116,6 +117,7 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
             auto_explode: false,
+            fmt_str: "concat_by",
         },
     }
 }
@@ -145,6 +147,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
             auto_explode: true,
+            fmt_str: "concat_list",
         },
     }
 }
@@ -155,7 +158,10 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
 #[cfg(feature = "arange")]
 #[cfg_attr(docsrs, doc(cfg(feature = "arange")))]
 pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
-    if matches!(low, Expr::Literal(_)) || matches!(high, Expr::Literal(_)) {
+    if (matches!(low, Expr::Literal(_)) && !matches!(low, Expr::Literal(LiteralValue::Series(_))))
+        || matches!(high, Expr::Literal(_))
+            && !matches!(high, Expr::Literal(LiteralValue::Series(_)))
+    {
         let f = move |sa: Series, sb: Series| {
             let sa = sa.cast(&DataType::Int64)?;
             let sb = sb.cast(&DataType::Int64)?;
@@ -308,6 +314,7 @@ pub fn datetime(
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
             auto_explode: false,
+            fmt_str: "datetime",
         },
     }
     .alias("datetime")

@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "dtype-datetime")]
 use polars_core::time::in_nanoseconds_window;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum LiteralValue {
     Null,
     /// A binary true or false.
