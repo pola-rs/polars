@@ -125,15 +125,19 @@ mod inner_mod {
 
                     let arr = ca.downcast_iter().next().unwrap();
                     let arr = match self.has_validity() {
-                        false => rolling::no_nulls::rolling_median(
+                        false => rolling::no_nulls::rolling_quantile(
                             arr.values(),
+                            0.5,
+                            QuantileInterpolOptions::Linear,
                             options.window_size,
                             options.min_periods,
                             options.center,
                             options.weights.as_deref(),
                         ),
-                        _ => rolling::nulls::rolling_median(
+                        _ => rolling::nulls::rolling_quantile(
                             arr,
+                            0.5,
+                            QuantileInterpolOptions::Linear,
                             options.window_size,
                             options.min_periods,
                             options.center,
