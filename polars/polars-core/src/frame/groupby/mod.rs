@@ -1594,7 +1594,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.may_apply("g", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
 
         let out = df.groupby("g")?.sum()?;
         dbg!(out);

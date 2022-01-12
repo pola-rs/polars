@@ -45,7 +45,7 @@ pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field], parallel: boo
     } else {
         // cast to the original dtypes in the schema
         for fld in to_cast {
-            df.may_apply(fld.name(), |s| cast_fn(s, fld))?;
+            df.try_apply(fld.name(), |s| cast_fn(s, fld))?;
         }
     }
     Ok(())

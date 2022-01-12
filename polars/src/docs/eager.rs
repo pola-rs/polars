@@ -269,10 +269,10 @@
 //!
 //!
 //! // coerce numbers to floats
-//! df.may_apply("number", |s: &Series| s.cast::<Float64Type>())?;
+//! df.try_apply("number", |s: &Series| s.cast::<Float64Type>())?;
 //!
 //! // transform letters to uppercase letters
-//! df.may_apply("letters", |s: &Series| {
+//! df.try_apply("letters", |s: &Series| {
 //!     Ok(s.utf8()?.to_uppercase())
 //! });
 //!
@@ -632,7 +632,7 @@
 //!     .unwrap();
 //!
 //!     for idx in 0..df.width() {
-//!         df.may_apply_at_idx(idx, |series| {
+//!         df.try_apply_at_idx(idx, |series| {
 //!             let mask = series.is_nan()?;
 //!             let ca = series.f64()?;
 //!             ca.set(&mask, None)
