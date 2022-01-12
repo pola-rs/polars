@@ -73,14 +73,12 @@ impl<T> Arena<T> {
 
     #[inline]
     pub fn get(&self, idx: Node) -> &T {
-        debug_assert!(idx.0 < self.items.len());
-        unsafe { self.items.get_unchecked(idx.0) }
+        self.items.get(idx.0).unwrap()
     }
 
     #[inline]
     pub fn get_mut(&mut self, idx: Node) -> &mut T {
-        debug_assert!(idx.0 < self.items.len());
-        unsafe { self.items.get_unchecked_mut(idx.0) }
+        self.items.get_mut(idx.0).unwrap()
     }
 
     #[inline]
