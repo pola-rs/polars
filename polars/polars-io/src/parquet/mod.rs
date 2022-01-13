@@ -14,8 +14,9 @@
 //! }
 //! ```
 //!
+pub mod predicates;
 mod read;
-mod read_par;
+mod read_impl;
 mod write;
 
 use super::*;

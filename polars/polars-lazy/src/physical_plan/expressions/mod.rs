@@ -24,7 +24,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupTuples;
 use polars_core::prelude::*;
-use polars_io::PhysicalIoExpr;
+use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -379,6 +379,14 @@ pub trait PhysicalExpr: Send + Sync {
             format!("{:?} is not an agg expression", e).into(),
         ))
     }
+
+    /// Can take &dyn Statistics and determine of a file should be
+    /// read -> `true`
+    /// or not -> `false`
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        None
+    }
 }
 
 /// Wrapper struct that allow us to use a PhysicalExpr in polars-io.
@@ -391,6 +399,11 @@ pub struct PhysicalIoHelper {
 impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         self.expr.evaluate(df, &Default::default())
+    }
+
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        self.expr.as_stats_evaluator()
     }
 }
 

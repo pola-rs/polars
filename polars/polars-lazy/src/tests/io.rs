@@ -1,7 +1,14 @@
 use super::*;
+use polars_core::export::lazy_static::lazy_static;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref PARQUET_IO_LOCK: Mutex<()> = Mutex::new(());
+}
 
 #[test]
 fn test_parquet_exec() -> Result<()> {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
     // filter
     for par in [true, false] {
         let out = scan_foods_parquet(par)
@@ -31,10 +38,72 @@ fn test_parquet_exec() -> Result<()> {
 }
 
 #[test]
+fn test_parquet_statistics_no_skip() {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    init_files();
+    let par = true;
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").gt(lit(0i32)))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(1000i32)))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(0i32).lt(col("calories")))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(1000i32).gt(col("calories")))
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
+}
+
+#[test]
+fn test_parquet_statistics() -> Result<()> {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    init_files();
+    std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
+    let par = true;
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(0i32)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").gt(lit(1000)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(0i32).gt(col("calories")))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(lit(1000i32).lt(col("calories")))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+    std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
+
+    Ok(())
+}
+
+#[test]
 #[cfg(not(target_os = "windows"))]
 fn test_parquet_globbing() -> Result<()> {
     // for side effects
     init_files();
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
     let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
         glob.into(),
@@ -127,8 +196,32 @@ fn test_csv_globbing() -> Result<()> {
 
 #[test]
 pub fn test_simple_slice() -> Result<()> {
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
     let out = scan_foods_parquet(false).limit(3).collect()?;
     assert_eq!(out.height(), 3);
+
+    Ok(())
+}
+#[test]
+fn test_union_and_agg_projections() -> Result<()> {
+    init_files();
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    // a union vstacks columns and aggscan optimization determines columns to aggregate in a
+    // hashmap, if that doesn't set them sorted the vstack will panic.
+    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
+    let lf2 = LazyFrame::scan_ipc(GLOB_IPC.into(), Default::default())?;
+    let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
+
+    for lf in [lf1, lf2, lf3] {
+        let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
+            col("fats_g").sum().alias("sum"),
+            col("fats_g").cast(DataType::Float64).mean().alias("mean"),
+            col("fats_g").min().alias("min"),
+        ]);
+
+        let out = lf.collect()?;
+        assert_eq!(out.shape(), (1, 3));
+    }
 
     Ok(())
 }

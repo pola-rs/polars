@@ -1,11 +1,17 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+#[cfg(feature = "private")]
+pub mod aggregations;
+#[cfg(not(feature = "private"))]
+pub(crate) mod aggregations;
+
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv_core;
+pub mod export;
 #[cfg(feature = "ipc")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
 pub mod ipc;
@@ -17,6 +23,10 @@ pub mod mmap;
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
+#[cfg(feature = "private")]
+pub mod predicates;
+#[cfg(not(feature = "private"))]
+pub(crate) mod predicates;
 pub mod prelude;
 #[cfg(all(test, feature = "csv-file"))]
 mod tests;
@@ -24,13 +34,13 @@ pub(crate) mod utils;
 
 use arrow::error::Result as ArrowResult;
 
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+use crate::aggregations::{apply_aggregations, ScanAggregation};
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+use crate::predicates::PhysicalIoExpr;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
-
-pub trait PhysicalIoExpr: Send + Sync {
-    fn evaluate(&self, df: &DataFrame) -> Result<Series>;
-}
 
 pub trait SerReader<R>
 where
@@ -88,17 +98,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             df = df.filter(mask)?;
         }
 
-        if let Some(aggregate) = aggregate {
-            let cols = aggregate
-                .iter()
-                .map(|scan_agg| scan_agg.evaluate_batch(&df))
-                .collect::<Result<_>>()?;
-            if cfg!(debug_assertions) {
-                df = DataFrame::new(cols).unwrap();
-            } else {
-                df = DataFrame::new_no_checks(cols)
-            }
-        }
+        apply_aggregations(&mut df, aggregate)?;
 
         parsed_dfs.push(df);
         if let Some(n) = n_rows {
@@ -109,97 +109,11 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     }
     let mut df = accumulate_dataframes_vertical(parsed_dfs)?;
 
-    if let Some(aggregate) = aggregate {
-        let cols = aggregate
-            .iter()
-            .map(|scan_agg| scan_agg.finish(&df))
-            .collect::<Result<_>>()?;
-        df = DataFrame::new_no_checks(cols)
-    }
+    // Aggregations must be applied a final time to aggregate the partitions
+    apply_aggregations(&mut df, aggregate)?;
 
     match rechunk {
         true => Ok(df.agg_chunks()),
         false => Ok(df),
-    }
-}
-
-pub enum ScanAggregation {
-    Sum {
-        column: String,
-        alias: Option<String>,
-    },
-    Min {
-        column: String,
-        alias: Option<String>,
-    },
-    Max {
-        column: String,
-        alias: Option<String>,
-    },
-    First {
-        column: String,
-        alias: Option<String>,
-    },
-    Last {
-        column: String,
-        alias: Option<String>,
-    },
-}
-
-impl ScanAggregation {
-    /// Evaluate the aggregations per batch.
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
-    pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> Result<Series> {
-        use ScanAggregation::*;
-        let s = match self {
-            Sum { column, .. } => df.column(column)?.sum_as_series(),
-            Min { column, .. } => df.column(column)?.min_as_series(),
-            Max { column, .. } => df.column(column)?.max_as_series(),
-            First { column, .. } => df.column(column)?.head(Some(1)),
-            Last { column, .. } => df.column(column)?.tail(Some(1)),
-        };
-        Ok(s)
-    }
-
-    /// After all batches are concatenated the aggregation is determined for the whole set.
-    pub(crate) fn finish(&self, df: &DataFrame) -> Result<Series> {
-        use ScanAggregation::*;
-        match self {
-            Sum { column, alias } => {
-                let mut s = df.column(column)?.sum_as_series();
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-            Min { column, alias } => {
-                let mut s = df.column(column)?.min_as_series();
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-            Max { column, alias } => {
-                let mut s = df.column(column)?.max_as_series();
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-            First { column, alias } => {
-                let mut s = df.column(column)?.head(Some(1));
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-            Last { column, alias } => {
-                let mut s = df.column(column)?.tail(Some(1));
-                if let Some(alias) = alias {
-                    s.rename(alias);
-                }
-                Ok(s)
-            }
-        }
     }
 }

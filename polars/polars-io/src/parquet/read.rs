@@ -1,14 +1,12 @@
-use super::{finish_reader, ArrowReader, ArrowResult};
+use super::{ArrowReader, ArrowResult};
+use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
-use crate::parquet::read_par::parallel_read;
+use crate::parquet::read_impl::{parallel_read, read_parquet};
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::{PhysicalIoExpr, ScanAggregation};
 use arrow::io::parquet::read;
-use polars_arrow::io::read_parquet;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
-use polars_core::utils::accumulate_dataframes_vertical;
-use std::convert::TryFrom;
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
@@ -32,71 +30,31 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         aggregate: Option<&[ScanAggregation]>,
         projection: Option<&[usize]>,
     ) -> Result<DataFrame> {
-        match (aggregate.is_some(), predicate.is_some(), self.parallel) {
-            (true, true, _) | (true, false, _) | (false, true, false) => {
-                // this path take aggregations, predicates and projections into account
-                let metadata = read::read_metadata(&mut self.reader)?;
-                let mut schema = read::schema::get_schema(&metadata)?;
+        // this path takes predicates and parallelism into account
+        let metadata = read::read_metadata(&mut self.reader)?;
+        let schema = read::schema::get_schema(&metadata)?;
 
-                let rechunk = self.rechunk;
-                let projection = projection.map(|x| {
-                    let mut x = x.to_vec();
-                    x.sort_unstable();
-                    x
-                });
+        let f = match self.parallel {
+            true => parallel_read,
+            false => read_parquet,
+        };
 
-                if let Some(projection) = &projection {
-                    schema = apply_projection(&schema, projection);
-                };
-
-                let reader = read::RecordReader::try_new(
-                    &mut self.reader,
-                    projection,
-                    self.n_rows,
-                    None,
-                    None,
-                )?;
-
-                finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
-            }
-            (false, false, _) => {
-                // this path takes optional parallelism and projection into account
-                self.projection = projection.map(|s| s.to_vec());
-                self.finish()
-            }
-
-            (false, true, true) => {
-                // this path takes parallelism and projection into account
-                let metadata = read::read_metadata(&mut self.reader)?;
-                let schema = read::schema::get_schema(&metadata)?;
-
-                if let Some(cols) = self.columns {
-                    let mut prj = Vec::with_capacity(cols.len());
-                    for col in cols.iter() {
-                        let i = schema.index_of(col)?;
-                        prj.push(i);
-                    }
-
-                    self.projection = Some(prj);
-                }
-
-                let rechunk = self.rechunk;
-                return parallel_read(
-                    self.reader,
-                    self.n_rows.unwrap_or(usize::MAX),
-                    self.projection.as_deref(),
-                    &schema,
-                    Some(metadata),
-                    predicate,
-                )
-                .map(|mut df| {
-                    if rechunk {
-                        df.rechunk();
-                    };
-                    df
-                });
-            }
-        }
+        let rechunk = self.rechunk;
+        f(
+            self.reader,
+            self.n_rows.unwrap_or(usize::MAX),
+            projection,
+            &schema,
+            Some(metadata),
+            predicate,
+            aggregate,
+        )
+        .map(|mut df| {
+            if rechunk {
+                df.rechunk();
+            };
+            df
+        })
     }
 
     /// Read the parquet file in parallel (default). The single threaded reader consumes less memory.
@@ -179,6 +137,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
                 &schema,
                 Some(metadata),
                 None,
+                None,
             )
             .map(|mut df| {
                 if rechunk {
@@ -188,27 +147,15 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             });
         }
 
-        let chunks = read_parquet(
-            &mut self.reader,
+        let mut df = read_parquet(
+            self.reader,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection.as_deref(),
             &schema,
             Some(metadata),
+            None,
+            None,
         )?;
-        let projection = self.projection.take();
-        let mut df = accumulate_dataframes_vertical(chunks.into_iter().map(|cols| {
-            DataFrame::new_no_checks(
-                cols.into_iter()
-                    .enumerate()
-                    .map(|(mut i, arr)| {
-                        if let Some(projection) = &projection {
-                            i = projection[i]
-                        }
-                        Series::try_from((schema.fields[i].name.as_str(), arr)).unwrap()
-                    })
-                    .collect(),
-            )
-        }))?;
         if self.rechunk {
             df.rechunk();
         }

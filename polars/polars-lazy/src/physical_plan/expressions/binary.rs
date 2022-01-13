@@ -206,6 +206,10 @@ impl PhysicalExpr for BinaryExpr {
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        Some(self)
+    }
 }
 
 impl PhysicalAggregation for BinaryExpr {
@@ -237,6 +241,103 @@ impl PhysicalAggregation for BinaryExpr {
                 )
                 .into(),
             )),
+        }
+    }
+}
+
+#[cfg(feature = "parquet")]
+mod stats {
+    use super::*;
+    use polars_io::parquet::predicates::BatchStats;
+    use polars_io::predicates::StatsEvaluator;
+
+    impl Operator {
+        fn invert_arguments(&self) -> Option<Self> {
+            use Operator::*;
+            let op = match self {
+                Eq => Eq,
+                NotEq => NotEq,
+                Lt => Gt,
+                Gt => Lt,
+                LtEq => GtEq,
+                GtEq => LtEq,
+                _ => return None,
+            };
+            Some(op)
+        }
+    }
+
+    pub fn apply_operator_stats(literal: &Series, min_max: &Series, op: Operator) -> bool {
+        match op {
+            Operator::Eq => {
+                // if literal equal min and max all are equal
+                !ChunkCompare::<&Series>::equal(literal, min_max).all()
+            }
+            Operator::Gt => {
+                // literal is bigger than max value
+                // selection needs all rows
+                !ChunkCompare::<&Series>::gt(literal, min_max).all()
+            }
+            Operator::Lt => {
+                // literal is smaller than min value
+                // selection needs all rows
+                !ChunkCompare::<&Series>::lt(literal, min_max).all()
+            }
+            // default: read the file
+            _ => true,
+        }
+    }
+
+    impl StatsEvaluator for BinaryExpr {
+        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+                return Ok(true);
+            }
+            let schema = stats.schema();
+            let fld_l = self.left.to_field(schema)?;
+            let fld_r = self.right.to_field(schema)?;
+
+            assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
+
+            let dummy = DataFrame::new_no_checks(vec![]);
+            let state = ExecutionState::new();
+
+            let out = match (fld_l.name().as_str(), fld_r.name().as_str()) {
+                (_, "literal") => {
+                    let l = stats.get_stats(fld_l.name())?;
+                    match l.to_min_max() {
+                        None => Ok(true),
+                        Some(min_max_s) => {
+                            let lit_s = self.right.evaluate(&dummy, &state).unwrap();
+                            Ok(apply_operator_stats(&lit_s, &min_max_s, self.op))
+                        }
+                    }
+                }
+                ("literal", _) => {
+                    let r = stats.get_stats(fld_r.name())?;
+                    match r.to_min_max() {
+                        None => Ok(true),
+                        Some(min_max_s) => {
+                            let lit_s = self.left.evaluate(&dummy, &state).unwrap();
+                            if let Some(op) = self.op.invert_arguments() {
+                                Ok(apply_operator_stats(&lit_s, &min_max_s, op))
+                            } else {
+                                Ok(true)
+                            }
+                        }
+                    }
+                }
+                // default: read the file
+                _ => Ok(true),
+            };
+            out.map(|read| {
+                if state.verbose && read {
+                    eprintln!("parquet file must be read, statistics not sufficient to for predicate.")
+                } else if state.verbose && !read {
+                    eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
+                };
+                read
+            })
         }
     }
 }

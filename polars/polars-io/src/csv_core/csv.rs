@@ -1,9 +1,9 @@
+use crate::aggregations::ScanAggregation;
 use crate::csv::{CsvEncoding, NullValues};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
-use crate::PhysicalIoExpr;
-use crate::ScanAggregation;
+use crate::predicates::PhysicalIoExpr;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
@@ -174,6 +174,7 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 
+        let mut add_skip_rows = 0;
         let mut schema = match schema {
             Some(schema) => Cow::Borrowed(schema),
             None => {
@@ -192,7 +193,7 @@ impl<'a> CoreReader<'a> {
                         max_records,
                         has_header,
                         schema_overwrite,
-                        &mut skip_rows,
+                        &mut add_skip_rows,
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
@@ -207,7 +208,7 @@ impl<'a> CoreReader<'a> {
                         max_records,
                         has_header,
                         schema_overwrite,
-                        &mut skip_rows,
+                        &mut add_skip_rows,
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
@@ -216,6 +217,7 @@ impl<'a> CoreReader<'a> {
                 }
             }
         };
+        skip_rows += add_skip_rows;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
             let fields = s.fields_mut();

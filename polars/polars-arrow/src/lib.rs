@@ -5,7 +5,6 @@ pub mod compute;
 pub mod error;
 pub mod export;
 pub mod index;
-pub mod io;
 pub mod is_valid;
 pub mod kernels;
 pub mod prelude;
