@@ -33,26 +33,3 @@ fn test_join_suffix_and_drop() -> Result<()> {
 
     Ok(())
 }
-
-#[test]
-fn test_union_and_agg_projections() -> Result<()> {
-    init_files();
-    // a union vstacks columns and aggscan optimization determines columns to aggregate in a
-    // hashmap, if that doesn't set them sorted the vstack will panic.
-    let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
-    let lf2 = LazyFrame::scan_ipc(GLOB_IPC.into(), Default::default())?;
-    let lf3 = LazyCsvReader::new(GLOB_CSV.into()).finish()?;
-
-    for lf in [lf1, lf2, lf3] {
-        let lf = lf.filter(col("category").eq(lit("vegetables"))).select([
-            col("fats_g").sum().alias("sum"),
-            col("fats_g").cast(DataType::Float64).mean().alias("mean"),
-            col("fats_g").min().alias("min"),
-        ]);
-
-        let out = lf.collect()?;
-        assert_eq!(out.shape(), (1, 3));
-    }
-
-    Ok(())
-}

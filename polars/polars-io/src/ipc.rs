@@ -35,7 +35,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::ScanAggregation;
 use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
@@ -232,6 +231,7 @@ pub struct IpcWriter<W> {
     compression: Option<write::Compression>,
 }
 
+use crate::aggregations::ScanAggregation;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 

@@ -15,7 +15,7 @@ use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
-use polars_io::ScanAggregation;
+use polars_io::aggregations::ScanAggregation;
 use std::collections::HashSet;
 use std::sync::Arc;
 

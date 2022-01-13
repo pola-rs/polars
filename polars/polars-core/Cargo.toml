@@ -91,7 +91,7 @@ dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
 
-parquet = ["arrow/io_parquet", "polars-arrow/parquet"]
+parquet = ["arrow/io_parquet"]
 
 docs-selection = [
   "ndarray",
