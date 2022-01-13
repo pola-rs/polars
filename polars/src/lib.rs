@@ -220,6 +220,7 @@
 //!                                          defaults to `0.005`, any higher cardinality will run default groupby.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
+//! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //!
 //!
 //! ## Compile for WASM

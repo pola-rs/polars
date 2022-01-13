@@ -290,6 +290,9 @@ mod stats {
 
     impl StatsEvaluator for BinaryExpr {
         fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+                return Ok(true);
+            }
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
