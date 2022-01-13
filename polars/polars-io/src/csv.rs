@@ -1407,4 +1407,19 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
         Ok(())
     }
+
+    #[test]
+    fn test_quoted_projection() -> Result<()> {
+        let csv = r#"c1,c2,c3,c4,c5
+a,"b",c,d,1
+a,"b",c,d,1
+a,b,c,d,1"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_projection(Some(vec![1, 4]))
+            .finish()?;
+        assert_eq!(df.shape(), (3, 2));
+
+        Ok(())
+    }
 }
