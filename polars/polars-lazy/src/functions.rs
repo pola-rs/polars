@@ -4,6 +4,7 @@
 //!
 use crate::prelude::*;
 use polars_core::prelude::*;
+use rayon::prelude::*;
 
 /// Compute the covariance between two columns.
 pub fn cov(a: Expr, b: Expr) -> Expr {
@@ -356,4 +357,14 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
     } else {
         Ok(lf)
     }
+}
+
+/// Collect all `LazyFrame` computations.
+pub fn collect_all<I>(lfs: I) -> Result<Vec<DataFrame>>
+where
+    I: IntoParallelIterator<Item = LazyFrame>,
+{
+    let iter = lfs.into_par_iter();
+
+    polars_core::POOL.install(|| iter.map(|lf| lf.collect()).collect())
 }
