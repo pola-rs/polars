@@ -65,6 +65,17 @@ fn test_parquet_statistics_no_skip() {
         .collect()
         .unwrap();
     assert_eq!(out.shape(), (27, 4));
+
+    // Or operation
+    let out = scan_foods_parquet(par)
+        .filter(
+            col("sugars_g")
+                .lt(lit(0i32))
+                .or(col("fats_g").lt(lit(1000.0))),
+        )
+        .collect()
+        .unwrap();
+    assert_eq!(out.shape(), (27, 4));
 }
 
 #[test]
@@ -74,6 +85,7 @@ fn test_parquet_statistics() -> Result<()> {
     std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
     let par = true;
 
+    // Test single predicates
     let out = scan_foods_parquet(par)
         .filter(col("calories").lt(lit(0i32)))
         .collect()?;
@@ -93,6 +105,42 @@ fn test_parquet_statistics() -> Result<()> {
         .filter(lit(1000i32).lt(col("calories")))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
+
+    // Test multiple predicates
+
+    // And operation
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(0i32)))
+        .filter(col("calories").gt(lit(1000)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(col("calories").lt(lit(0i32)))
+        .filter(col("calories").gt(lit(1000)))
+        .filter(col("calories").lt(lit(50i32)))
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    let out = scan_foods_parquet(par)
+        .filter(
+            col("calories")
+                .lt(lit(0i32))
+                .and(col("fats_g").lt(lit(0.0))),
+        )
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
+    // Or operation
+    let out = scan_foods_parquet(par)
+        .filter(
+            col("sugars_g")
+                .lt(lit(0i32))
+                .or(col("fats_g").gt(lit(1000.0))),
+        )
+        .collect()?;
+    assert_eq!(out.shape(), (0, 4));
+
     std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
 
     Ok(())
