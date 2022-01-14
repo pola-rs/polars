@@ -237,6 +237,7 @@ impl<'a, R> CsvReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
+    /// Start schema parsing of the header and dtypes at this offset.
     pub fn with_offset_schema_inference(mut self, offset: usize) -> Self {
         self.offset_schema_inference = offset;
         self
