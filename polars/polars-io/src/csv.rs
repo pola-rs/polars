@@ -228,6 +228,7 @@ where
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
     quote_char: Option<u8>,
+    offset_schema_inference: usize,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
 }
@@ -236,6 +237,11 @@ impl<'a, R> CsvReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
+    pub fn with_offset_schema_inference(mut self, offset: usize) -> Self {
+        self.offset_schema_inference = offset;
+        self
+    }
+
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
         self.chunk_size = chunk_size;
@@ -441,6 +447,7 @@ where
             predicate: None,
             aggregate: None,
             quote_char: Some(b'"'),
+            offset_schema_inference: 0,
             #[cfg(feature = "temporal")]
             parse_dates: false,
         }
@@ -518,6 +525,7 @@ where
                 self.predicate,
                 self.aggregate,
                 &to_cast,
+                self.offset_schema_inference,
             )?;
             csv_reader.as_df()?
         } else {
@@ -546,6 +554,7 @@ where
                 self.predicate,
                 self.aggregate,
                 &[],
+                self.offset_schema_inference,
             )?;
             csv_reader.as_df()?
         };

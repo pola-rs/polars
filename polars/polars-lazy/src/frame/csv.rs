@@ -23,6 +23,7 @@ pub struct LazyCsvReader<'a> {
     null_values: Option<NullValues>,
     infer_schema_length: Option<usize>,
     rechunk: bool,
+    offset_schema_inference: usize,
 }
 
 #[cfg(feature = "csv-file")]
@@ -45,7 +46,15 @@ impl<'a> LazyCsvReader<'a> {
             null_values: None,
             infer_schema_length: Some(100),
             rechunk: true,
+            offset_schema_inference: 0,
         }
+    }
+
+    /// Start schema parsing of the header at this offset
+    #[must_use]
+    pub fn with_offset_schema_inference(mut self, offset: usize) -> Self {
+        self.offset_schema_inference = offset;
+        self
     }
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
@@ -170,6 +179,7 @@ impl<'a> LazyCsvReader<'a> {
             self.comment_char,
             self.quote_char,
             None,
+            self.offset_schema_inference,
         )?;
         let schema = f(schema)?;
         Ok(self.with_schema(Arc::new(schema)))
@@ -192,6 +202,7 @@ impl<'a> LazyCsvReader<'a> {
             self.null_values,
             self.infer_schema_length,
             self.rechunk,
+            self.offset_schema_inference,
         )?
         .build()
         .into();

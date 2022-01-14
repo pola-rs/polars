@@ -96,6 +96,7 @@ impl PyDataFrame {
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
+        offset_schema_inference: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -163,6 +164,7 @@ impl PyDataFrame {
             .with_null_values(null_values)
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
+            .with_offset_schema_inference(offset_schema_inference)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())

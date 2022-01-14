@@ -162,6 +162,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
         to_cast: &'a [&'a Field],
+        schema_inference_offset: usize,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -197,6 +198,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        schema_inference_offset,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -212,6 +214,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        schema_inference_offset,
                     )?;
                     Cow::Owned(inferred_schema)
                 }

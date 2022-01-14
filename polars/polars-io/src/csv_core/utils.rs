@@ -131,13 +131,15 @@ pub fn infer_file_schema(
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     null_values: Option<&NullValues>,
+    // start schema and header inference after `offset` lines
+    offset: usize,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes)).0;
-    let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
+    let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows + offset);
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -323,6 +325,7 @@ pub fn infer_file_schema(
             comment_char,
             quote_char,
             null_values,
+            offset,
         );
     }
 

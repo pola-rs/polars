@@ -105,6 +105,7 @@ impl PyLazyFrame {
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<PyObject>,
         rechunk: bool,
+        offset_schema_inference: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -135,6 +136,7 @@ impl PyLazyFrame {
             .with_comment_char(comment_char)
             .with_quote_char(quote_char)
             .with_rechunk(rechunk)
+            .with_offset_schema_inference(offset_schema_inference)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
