@@ -1432,3 +1432,24 @@ def test_ceil() -> None:
     a = pl.Series("a", [1.8, 1.2, 3.0])
     expected = pl.Series("a", [2.0, 2.0, 3.0])
     verify_series_and_expr_api(a, expected, "ceil")
+
+
+def test_duration_extract_times() -> None:
+    a = pl.Series("a", [datetime(2021, 1, 1)])
+    b = pl.Series("b", [datetime(2021, 1, 2)])
+
+    duration = b - a
+    expected = pl.Series("b", [1])
+    verify_series_and_expr_api(duration, expected, "dt.days")
+
+    expected = pl.Series("b", [24])
+    verify_series_and_expr_api(duration, expected, "dt.hours")
+
+    expected = pl.Series("b", [3600 * 24])
+    verify_series_and_expr_api(duration, expected, "dt.seconds")
+
+    expected = pl.Series("b", [3600 * 24 * 1000])
+    verify_series_and_expr_api(duration, expected, "dt.milliseconds")
+
+    expected = pl.Series("b", [3600 * 24 * int(1e9)])
+    verify_series_and_expr_api(duration, expected, "dt.nanoseconds")

@@ -3123,6 +3123,56 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
         )
 
+    def days(self) -> Expr:
+        """
+        Extract the days from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_days())
+
+    def hours(self) -> Expr:
+        """
+        Extract the hours from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_hours())
+
+    def seconds(self) -> Expr:
+        """
+        Extract the seconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_seconds())
+
+    def milliseconds(self) -> Expr:
+        """
+        Extract the milliseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_milliseconds())
+
+    def nanoseconds(self) -> Expr:
+        """
+        Extract the nanoseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_nanoseconds())
+
 
 def expr_to_lit_or_expr(
     expr: Union[Expr, bool, int, float, str, "pli.Series"],

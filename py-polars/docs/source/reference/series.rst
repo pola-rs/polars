@@ -224,6 +224,11 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.epoch_seconds
     DateTimeNameSpace.and_time_unit
     DateTimeNameSpace.and_time_zone
+    DateTimeNameSpace.days
+    DateTimeNameSpace.hours
+    DateTimeNameSpace.seconds
+    DateTimeNameSpace.milliseconds
+    DateTimeNameSpace.nanoseconds
 
 
 Strings

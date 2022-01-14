@@ -4216,6 +4216,56 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.and_time_zone(tz))
 
+    def days(self) -> Series:
+        """
+        Extract the days from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.days()).to_series()
+
+    def hours(self) -> Series:
+        """
+        Extract the hours from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.hours()).to_series()
+
+    def seconds(self) -> Series:
+        """
+        Extract the seconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.seconds()).to_series()
+
+    def milliseconds(self) -> Series:
+        """
+        Extract the milliseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.milliseconds()).to_series()
+
+    def nanoseconds(self) -> Series:
+        """
+        Extract the nanoseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.nanoseconds()).to_series()
+
 
 class SeriesIter:
     """
