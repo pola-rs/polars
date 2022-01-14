@@ -436,47 +436,6 @@ impl Series {
         }
     }
 
-    /// Round underlying floating point array to given decimal.
-    #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    pub fn round(&self, decimals: u32) -> Result<Self> {
-        use num::traits::Pow;
-        if let Ok(ca) = self.f32() {
-            let multiplier = 10.0.pow(decimals as f32) as f32;
-            let s = ca
-                .apply(|val| (val * multiplier).round() / multiplier)
-                .into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = self.f64() {
-            let multiplier = 10.0.pow(decimals as f32) as f64;
-            let s = ca
-                .apply(|val| (val * multiplier).round() / multiplier)
-                .into_series();
-            return Ok(s);
-        }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not a floating point datatype", self.dtype()).into(),
-        ))
-    }
-
-    #[cfg(feature = "round_series")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    /// Floor underlying floating point array to the lowest integers smaller or equal to the float value.
-    pub fn floor(&self) -> Result<Self> {
-        if let Ok(ca) = self.f32() {
-            let s = ca.apply(|val| val.floor()).into_series();
-            return Ok(s);
-        }
-        if let Ok(ca) = self.f64() {
-            let s = ca.apply(|val| val.floor()).into_series();
-            return Ok(s);
-        }
-        Err(PolarsError::SchemaMisMatch(
-            format!("{:?} is not a floating point datatype", self.dtype()).into(),
-        ))
-    }
-
     #[cfg(feature = "dot_product")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
     pub fn dot(&self, other: &Series) -> Option<f64> {

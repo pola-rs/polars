@@ -1183,6 +1183,22 @@ impl Expr {
             .with_fmt("floor")
     }
 
+    /// Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn ceil(self) -> Self {
+        self.map(move |s: Series| s.ceil(), GetOutput::same_type())
+            .with_fmt("ceil")
+    }
+
+    /// Clip underlying values to a set boundary.
+    #[cfg(feature = "round_series")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
+    pub fn clip(self, min: f64, max: f64) -> Self {
+        self.map(move |s: Series| s.clip(min, max), GetOutput::same_type())
+            .with_fmt("clip")
+    }
+
     /// Convert all values to their absolute/positive value.
     #[cfg(feature = "abs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]

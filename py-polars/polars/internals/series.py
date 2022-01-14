@@ -2195,6 +2195,14 @@ class Series:
         """
         return wrap_s(self._s.floor())
 
+    def ceil(self) -> "Series":
+        """
+        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+
+        Only works on floating point Series
+        """
+        return self.to_frame().select(pli.col(self.name).ceil()).to_series()
+
     def round(self, decimals: int) -> "Series":
         """
         Round underlying floating point data by `decimals` digits.
@@ -3200,7 +3208,11 @@ class Series:
 
     def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Series":
         """
-        Clip (limit) the values in an array.
+        Clip (limit) the values in an array to any value that fits in 64 floating poitns range.
+
+        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+
+        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
 
         Parameters
         ----------

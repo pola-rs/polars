@@ -280,6 +280,14 @@ impl PyExpr {
         self.clone().inner.floor().into()
     }
 
+    pub fn ceil(&self) -> PyExpr {
+        self.clone().inner.ceil().into()
+    }
+
+    pub fn clip(&self, min: f64, max: f64) -> PyExpr {
+        self.clone().inner.clip(min, max).into()
+    }
+
     pub fn abs(&self) -> PyExpr {
         self.clone().inner.abs().into()
     }
