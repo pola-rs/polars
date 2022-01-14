@@ -1052,6 +1052,24 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"].series_equal(  # type: ignore
         pl.Series("is_between", [False, False, True, False, False])
     )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, False))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, False, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, False]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, False, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, True))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, True]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, True]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, False]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, False, False])
+    )
 
 
 def test_drop_duplicates() -> None:

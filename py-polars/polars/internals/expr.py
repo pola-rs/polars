@@ -1352,10 +1352,31 @@ class Expr:
         return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: Union["Expr", datetime], end: Union["Expr", datetime]
+        self,
+        start: Union["Expr", datetime],
+        end: Union["Expr", datetime],
+        include_bounds: Union[bool, Sequence[bool]] = False,
     ) -> "Expr":
         """
         Check if this expression is between start and end.
+
+        Parameters
+        ----------
+        start
+            Lower bound as primitive type or datetime.
+        end
+            Upper bound as primitive type or datetime.
+        include_bounds
+           False:           Exclude both start and end (default).
+           True:            Include both start and end.
+           [False, False]:  Exclude start and exclude end.
+           [True, True]:    Include start and include end.
+           [False, True]:   Exclude start and include end.
+           [True, False]:   Include start and exclude end.
+
+        Returns
+        -------
+        Expr that evaluates to a Boolean Series.
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
@@ -1368,7 +1389,18 @@ class Expr:
             expr = self.cast(Datetime)
         else:
             expr = self
-        return ((expr > start) & (expr < end)).alias("is_between")
+        if include_bounds is False or include_bounds == [False, False]:
+            return ((expr > start) & (expr < end)).alias("is_between")
+        elif include_bounds is True or include_bounds == [True, True]:
+            return ((expr >= start) & (expr <= end)).alias("is_between")
+        elif include_bounds == [False, True]:
+            return ((expr > start) & (expr <= end)).alias("is_between")
+        elif include_bounds == [True, False]:
+            return ((expr >= start) & (expr < end)).alias("is_between")
+        else:
+            raise ValueError(
+                "include_bounds should be a boolean or [boolean, boolean]."
+            )
 
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
