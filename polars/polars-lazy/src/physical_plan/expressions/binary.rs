@@ -251,48 +251,62 @@ mod stats {
     use polars_io::parquet::predicates::BatchStats;
     use polars_io::predicates::StatsEvaluator;
 
-    impl Operator {
-        fn invert_arguments(&self) -> Option<Self> {
-            use Operator::*;
-            let op = match self {
-                Eq => Eq,
-                NotEq => NotEq,
-                Lt => Gt,
-                Gt => Lt,
-                LtEq => GtEq,
-                GtEq => LtEq,
-                _ => return None,
-            };
-            Some(op)
-        }
-    }
-
-    pub fn apply_operator_stats(literal: &Series, min_max: &Series, op: Operator) -> bool {
+    fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         match op {
-            Operator::Eq => {
-                // if literal equal min and max all are equal
-                !ChunkCompare::<&Series>::equal(literal, min_max).all()
-            }
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
-                !ChunkCompare::<&Series>::gt(literal, min_max).all()
+                ChunkCompare::<&Series>::gt(min_max, literal).all()
+            }
+            Operator::GtEq => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt_eq(min_max, literal).all()
             }
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
-                !ChunkCompare::<&Series>::lt(literal, min_max).all()
+                ChunkCompare::<&Series>::lt(min_max, literal).all()
+            }
+            Operator::LtEq => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt_eq(min_max, literal).all()
             }
             // default: read the file
             _ => true,
         }
     }
 
-    impl StatsEvaluator for BinaryExpr {
-        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
-            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
-                return Ok(true);
+    fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
+        match op {
+            Operator::Gt => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt(literal, min_max).all()
             }
+            Operator::GtEq => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt_eq(literal, min_max).all()
+            }
+            Operator::Lt => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt(literal, min_max).all()
+            }
+            Operator::LtEq => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt_eq(literal, min_max).all()
+            }
+            // default: read the file
+            _ => true,
+        }
+    }
+
+    impl BinaryExpr {
+        fn impl_should_read(&self, stats: &BatchStats) -> Result<bool> {
             let schema = stats.schema();
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
@@ -309,7 +323,7 @@ mod stats {
                         None => Ok(true),
                         Some(min_max_s) => {
                             let lit_s = self.right.evaluate(&dummy, &state).unwrap();
-                            Ok(apply_operator_stats(&lit_s, &min_max_s, self.op))
+                            Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
                         }
                     }
                 }
@@ -319,11 +333,7 @@ mod stats {
                         None => Ok(true),
                         Some(min_max_s) => {
                             let lit_s = self.left.evaluate(&dummy, &state).unwrap();
-                            if let Some(op) = self.op.invert_arguments() {
-                                Ok(apply_operator_stats(&lit_s, &min_max_s, op))
-                            } else {
-                                Ok(true)
-                            }
+                            Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
                         }
                     }
                 }
@@ -338,6 +348,32 @@ mod stats {
                 };
                 read
             })
+        }
+    }
+
+    impl StatsEvaluator for BinaryExpr {
+        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+                return Ok(true);
+            }
+
+            match (
+                self.left.as_stats_evaluator(),
+                self.right.as_stats_evaluator(),
+            ) {
+                (Some(l), Some(r)) => match self.op {
+                    Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
+                    Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
+                    _ => Ok(true),
+                },
+                // This branch is probably never hit
+                (Some(other), None) | (None, Some(other)) => match self.op {
+                    Operator::And => Ok(self.should_read(stats)? && other.should_read(stats)?),
+                    Operator::Or => Ok(self.should_read(stats)? || other.should_read(stats)?),
+                    _ => Ok(true),
+                },
+                _ => self.impl_should_read(stats),
+            }
         }
     }
 }
