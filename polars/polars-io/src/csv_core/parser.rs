@@ -281,6 +281,7 @@ impl<'a> SplitFields<'a> {
     }
 }
 
+#[inline]
 fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
     let mut in_field = false;
 
@@ -370,6 +371,7 @@ impl<'a> Iterator for SplitFields<'a> {
     }
 }
 
+#[inline]
 fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usize) {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, b'\n'),
@@ -378,6 +380,16 @@ fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usi
     match pos {
         None => (&[], bytes.len() + offset),
         Some(pos) => (&bytes[pos + 1..], pos + 1 + offset),
+    }
+}
+
+#[inline]
+fn update_bytes_ptr(bytes: &mut &[u8], read_sol: usize, quote_char: Option<u8>) {
+    if let Some(b'\n') = bytes.get(read_sol - 1) {
+        *bytes = &bytes[read_sol..];
+    } else {
+        let (bytes_rem, _) = skip_this_line(&bytes[read_sol - 1..], quote_char, 0);
+        *bytes = bytes_rem;
     }
 }
 
@@ -407,15 +419,6 @@ pub(crate) fn parse_lines(
     let start = bytes.as_ptr() as usize;
     let original_bytes_len = bytes.len();
     let n_lines = n_lines as u32;
-
-    let update_bytes_ptr = |bytes: &mut &[u8], read_sol: usize| {
-        if let Some(b'\n') = bytes.get(0) {
-            *bytes = &bytes[read_sol..];
-        } else {
-            let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
-            *bytes = bytes_rem;
-        }
-    };
 
     let mut line_count = 0u32;
     loop {
@@ -451,13 +454,12 @@ pub(crate) fn parse_lines(
 
         let mut iter = SplitFields::new(bytes, delimiter, quote_char);
         let mut idx = 0u32;
+        let mut read_sol = 0;
         loop {
-            let mut read_sol = 0;
-
             match iter.next() {
                 // end of line
                 None => {
-                    update_bytes_ptr(&mut bytes, read_sol);
+                    bytes = &bytes[read_sol..];
                     break;
                 }
                 Some((mut field, needs_escaping)) => {
@@ -520,9 +522,21 @@ pub(crate) fn parse_lines(
 
                         // if we have all projected columns we are done with this line
                         match next_projection {
-                            Some(p) => next_projected = p,
+                            Some(p) => {
+                                // benchmarking showed it is 6% faster to take the min of these two
+                                // not needed for correctness.
+                                // bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
+                                next_projected = p
+                            }
                             None => {
-                                update_bytes_ptr(&mut bytes, read_sol);
+                                // if let Some(b'\n') = bytes.get(0) {
+                                //     bytes = &bytes[read_sol..];
+                                // } else {
+                                //     let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
+                                //     bytes = bytes_rem;
+                                // }
+
+                                update_bytes_ptr(&mut bytes, read_sol, quote_char);
                                 break;
                             }
                         }
