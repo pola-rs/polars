@@ -1,6 +1,10 @@
 use crate::export::chrono::Duration as ChronoDuration;
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;
+use arrow::temporal_conversions::{MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS};
+
+const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
+const SECONDS_IN_HOUR: i64 = 3600;
 
 impl DurationChunked {
     pub fn time_unit(&self) -> TimeUnit {
@@ -21,5 +25,45 @@ impl DurationChunked {
         };
         let vals = v.iter().map(func).collect_trusted::<Vec<_>>();
         Int64Chunked::new_from_aligned_vec(name, vals).into_duration(tu)
+    }
+
+    /// Extract the hours from a `Duration`
+    pub fn hours(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 / (MILLISECONDS * SECONDS_IN_HOUR),
+            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_HOUR),
+        }
+    }
+
+    /// Extract the days from a `Duration`
+    pub fn days(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 / MILLISECONDS_IN_DAY,
+            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_DAY),
+        }
+    }
+
+    /// Extract the milliseconds from a `Duration`
+    pub fn milliseconds(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => self.0.clone(),
+            TimeUnit::Nanoseconds => &self.0 / 1_000_000,
+        }
+    }
+
+    /// Extract the nanoseconds from a `Duration`
+    pub fn nanoseconds(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 * NANOSECONDS_IN_MILLISECOND,
+            TimeUnit::Nanoseconds => self.0.clone(),
+        }
+    }
+
+    /// Extract the seconds from a `Duration`
+    pub fn seconds(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 / MILLISECONDS,
+            TimeUnit::Nanoseconds => &self.0 / NANOSECONDS,
+        }
     }
 }

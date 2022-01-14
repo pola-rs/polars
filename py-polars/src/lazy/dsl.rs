@@ -657,6 +657,51 @@ impl PyExpr {
     pub fn nanosecond(&self) -> PyExpr {
         self.clone().inner.nanosecond().into()
     }
+    pub fn duration_days(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.days().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    pub fn duration_hours(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.hours().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    pub fn duration_seconds(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.seconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    pub fn duration_nanoseconds(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.nanoseconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    pub fn duration_milliseconds(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.milliseconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
     pub fn timestamp(&self) -> PyExpr {
         self.clone()
             .inner
