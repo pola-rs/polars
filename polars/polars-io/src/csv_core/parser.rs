@@ -372,24 +372,14 @@ impl<'a> Iterator for SplitFields<'a> {
 }
 
 #[inline]
-fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usize) {
+fn skip_this_line(bytes: &[u8], quote: Option<u8>) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, b'\n'),
         None => bytes.iter().position(|x| *x == b'\n'),
     };
     match pos {
-        None => (&[], bytes.len() + offset),
-        Some(pos) => (&bytes[pos + 1..], pos + 1 + offset),
-    }
-}
-
-#[inline]
-fn update_bytes_ptr(bytes: &mut &[u8], read_sol: usize, quote_char: Option<u8>) {
-    if let Some(b'\n') = bytes.get(read_sol - 1) {
-        *bytes = &bytes[read_sol..];
-    } else {
-        let (bytes_rem, _) = skip_this_line(&bytes[read_sol - 1..], quote_char, 0);
-        *bytes = bytes_rem;
+        None => &[],
+        Some(pos) => &bytes[pos + 1..],
     }
 }
 
@@ -415,6 +405,11 @@ pub(crate) fn parse_lines(
     ignore_parser_errors: bool,
     n_lines: usize,
 ) -> Result<usize> {
+    assert!(
+        !projection.is_empty(),
+        "at least one column should be projected"
+    );
+
     // we use the pointers to track the no of bytes read.
     let start = bytes.as_ptr() as usize;
     let original_bytes_len = bytes.len();
@@ -437,7 +432,7 @@ pub(crate) fn parse_lines(
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if bytes[0] == c {
-                let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
+                let bytes_rem = skip_this_line(bytes, quote_char);
                 bytes = bytes_rem;
                 continue;
             }
@@ -447,9 +442,7 @@ pub(crate) fn parse_lines(
         // Therefore we check if the idx of the field is in our projected columns.
         // If it is not, we skip the field.
         let mut projection_iter = projection.iter().copied();
-        let mut next_projected = projection_iter
-            .next()
-            .expect("at least one column should be projected");
+        let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
         let mut iter = SplitFields::new(bytes, delimiter, quote_char);
@@ -518,25 +511,17 @@ pub(crate) fn parse_lines(
 
                         processed_fields += 1;
 
-                        let next_projection = projection_iter.next();
-
                         // if we have all projected columns we are done with this line
-                        match next_projection {
-                            Some(p) => {
-                                // benchmarking showed it is 6% faster to take the min of these two
-                                // not needed for correctness.
-                                // bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
-                                next_projected = p
-                            }
+                        match projection_iter.next() {
+                            Some(p) => next_projected = p,
                             None => {
-                                // if let Some(b'\n') = bytes.get(0) {
-                                //     bytes = &bytes[read_sol..];
-                                // } else {
-                                //     let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
-                                //     bytes = bytes_rem;
-                                // }
-
-                                update_bytes_ptr(&mut bytes, read_sol, quote_char);
+                                if bytes.get(read_sol - 1) == Some(&b'\n') {
+                                    bytes = &bytes[read_sol..];
+                                } else {
+                                    let bytes_rem =
+                                        skip_this_line(&bytes[read_sol - 1..], quote_char);
+                                    bytes = bytes_rem;
+                                }
                                 break;
                             }
                         }
