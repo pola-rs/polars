@@ -552,3 +552,17 @@ def test_csv_globbing() -> None:
 
     df = pl.read_csv(path, dtypes=dtypes)
     assert df.dtypes == list(dtypes.values())
+
+
+def test_csv_schema_offset() -> None:
+    csv = r"""
+c,d,3
+a,b,c
+--
+-
+a,b,c
+1,2,3
+1,2,3
+    """.encode()
+    df = pl.read_csv(csv, offset_schema_inference=4, skip_rows=4)
+    assert df.columns == ["a", "b", "c"]
