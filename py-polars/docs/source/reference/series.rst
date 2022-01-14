@@ -168,6 +168,7 @@ Manipulation/ selection
     Series.cast
     Series.round
     Series.floor
+    Series.ceil
     Series.set_at_idx
     Series.fill_null
     Series.zip_with

@@ -172,6 +172,7 @@ Manipulation/ selection
     Expr.repeat_by
     Expr.round
     Expr.floor
+    Expr.ceil
     Expr.cast
     Expr.sort
     Expr.arg_sort

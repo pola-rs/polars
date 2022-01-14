@@ -1426,3 +1426,9 @@ def test_strip() -> None:
     verify_series_and_expr_api(a, expected, "str.lstrip")
     expected = pl.Series("a", ["trailing", "leading", "both"])
     verify_series_and_expr_api(a, expected, "str.strip")
+
+
+def test_ceil() -> None:
+    a = pl.Series("a", [1.8, 1.2, 3.0])
+    expected = pl.Series("a", [2.0, 2.0, 3.0])
+    verify_series_and_expr_api(a, expected, "ceil")

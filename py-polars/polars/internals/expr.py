@@ -737,6 +737,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.floor())
 
+    def ceil(self) -> "Expr":
+        """
+        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+
+        Only works on floating point Series
+        """
+        return wrap_expr(self._pyexpr.ceil())
+
     def round(self, decimals: int) -> "Expr":
         """
         Round underlying floating point data by `decimals` digits.
@@ -1979,7 +1987,11 @@ class Expr:
 
     def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Expr":
         """
-        Clip (limit) the values in an array.
+        Clip (limit) the values in an array to any value that fits in 64 floating poitns range.
+
+        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+
+        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
 
         Parameters
         ----------
@@ -1988,16 +2000,7 @@ class Expr:
         max_val
             Maximum value.
         """
-        min_val_lit = pli.lit(min_val)
-        max_val_lit = pli.lit(max_val)
-
-        return (
-            pli.when(self < min_val_lit)
-            .then(min_val_lit)
-            .when(self > max_val_lit)
-            .then(max_val_lit)
-            .otherwise(self)
-        ).keep_name()
+        return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
     def lower_bound(self) -> "Expr":
         """
