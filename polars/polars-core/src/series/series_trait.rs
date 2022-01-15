@@ -43,7 +43,7 @@ pub(crate) mod private {
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
-            unimplemented!()
+            false
         }
         fn bit_repr_large(&self) -> UInt64Chunked {
             unimplemented!()
