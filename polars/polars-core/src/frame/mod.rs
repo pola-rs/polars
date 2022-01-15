@@ -1493,7 +1493,7 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    #[cfg(feature = "pivot")]
+    #[cfg(feature = "rows")]
     pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[u32]) -> Self {
         self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
     }

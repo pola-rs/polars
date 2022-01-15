@@ -6,7 +6,7 @@ use crate::chunked_array::{
     comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "pivot")]
+#[cfg(feature = "rows")]
 use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
@@ -176,7 +176,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.agg_valid_count(groups)
     }
 
-    #[cfg(feature = "pivot")]
+    #[cfg(feature = "rows")]
     fn pivot<'a>(
         &self,
         pivot_series: &'a Series,
@@ -187,7 +187,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.pivot(pivot_series, keys, groups, agg_type)
     }
 
-    #[cfg(feature = "pivot")]
+    #[cfg(feature = "rows")]
     fn pivot_count<'a>(
         &self,
         pivot_series: &'a Series,

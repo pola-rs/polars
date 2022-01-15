@@ -34,7 +34,7 @@ macro_rules! invalid_operation_panic {
 
 pub(crate) mod private {
     use super::*;
-    #[cfg(feature = "pivot")]
+    #[cfg(feature = "rows")]
     use crate::frame::groupby::pivot::PivotAgg;
     use crate::frame::groupby::GroupTuples;
 
@@ -217,7 +217,7 @@ pub(crate) mod private {
         fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
         }
-        #[cfg(feature = "pivot")]
+        #[cfg(feature = "rows")]
         fn pivot<'a>(
             &self,
             _pivot_series: &'a Series,
@@ -228,7 +228,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
 
-        #[cfg(feature = "pivot")]
+        #[cfg(feature = "rows")]
         fn pivot_count<'a>(
             &self,
             _pivot_series: &'a Series,

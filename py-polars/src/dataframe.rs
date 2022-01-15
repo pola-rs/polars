@@ -790,7 +790,6 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    #[cfg(feature = "pivot")]
     pub fn pivot(
         &self,
         by: Vec<String>,
