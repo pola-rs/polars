@@ -452,7 +452,7 @@ pub(crate) fn parse_lines(
             match iter.next() {
                 // end of line
                 None => {
-                    bytes = &bytes[read_sol..];
+                    bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
                     break;
                 }
                 Some((mut field, needs_escaping)) => {
