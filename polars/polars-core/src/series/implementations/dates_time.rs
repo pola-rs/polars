@@ -797,6 +797,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-duration")]
     fn test_duration() -> Result<()> {
         let a = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)
@@ -821,7 +822,6 @@ mod test {
                 .into_duration(TimeUnit::Nanoseconds)
                 .into_series()
         );
-        // assert_eq!(a.add_to(&c)?, b);
         Ok(())
     }
 }
