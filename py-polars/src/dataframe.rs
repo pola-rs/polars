@@ -20,6 +20,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars_core::frame::groupby::PivotAgg;
 use polars_core::prelude::QuantileInterpolOptions;
 
 #[pyclass]
@@ -824,6 +825,22 @@ impl PyDataFrame {
             .df
             .melt(id_vars, value_vars)
             .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    pub fn pivot2(
+        &self,
+        values: Vec<String>,
+        index: Vec<String>,
+        columns: Vec<String>,
+        aggregate_fn: Wrap<PivotAgg>,
+        maintain_order: bool,
+    ) -> PyResult<Self> {
+        let fun = match maintain_order {
+            true => DataFrame::pivot,
+            false => DataFrame::pivot_stable,
+        };
+        let df = fun(&self.df, values, index, columns, aggregate_fn.0).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

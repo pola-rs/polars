@@ -3,15 +3,258 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use hashbrown::HashMap;
 use num::{Num, NumCast, Zero};
+use rayon::prelude::*;
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Deref};
 
+use crate::utils::accumulate_dataframes_vertical;
+use crate::POOL;
 #[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::date32_to_date;
 #[cfg(feature = "dtype-datetime")]
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
+
+pub enum PivotAgg {
+    First,
+    Sum,
+    Min,
+    Max,
+    Mean,
+    Median,
+    Count,
+    Last,
+}
+
+impl DataFrame {
+    pub fn pivot<I0, S0, I1, S1, I2, S2>(
+        &self,
+        values: I0,
+        index: I1,
+        columns: I2,
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame>
+    where
+        I0: IntoIterator<Item = S0>,
+        S0: AsRef<str>,
+        I1: IntoIterator<Item = S1>,
+        S1: AsRef<str>,
+        I2: IntoIterator<Item = S2>,
+        S2: AsRef<str>,
+    {
+        let values = values
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let index = index
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let columns = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        self.pivot_impl(values, index, columns, false, agg_fn)
+    }
+
+    pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
+        &self,
+        values: I0,
+        index: I1,
+        columns: I2,
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame>
+    where
+        I0: IntoIterator<Item = S0>,
+        S0: AsRef<str>,
+        I1: IntoIterator<Item = S1>,
+        S1: AsRef<str>,
+        I2: IntoIterator<Item = S2>,
+        S2: AsRef<str>,
+    {
+        let values = values
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let index = index
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let columns = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        self.pivot_impl(values, index, columns, true, agg_fn)
+    }
+
+    fn pivot_impl(
+        &self,
+        // these columns will be aggregated in the nested groupby
+        mut values: Vec<String>,
+        // keys of the first groupby operation
+        index: Vec<String>,
+        // these columns will be used for a nested groupby
+        // the rows of this nested groupby will be pivoted as header column values
+        columns: Vec<String>,
+        // sort the group tuples
+        maintain_order: bool,
+        // aggregation function
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame> {
+        let groups = match maintain_order {
+            true => self.groupby_stable(&index)?.groups,
+            false => self.groupby(&index)?.groups,
+        };
+        // broadcast values argument
+        if values.len() != columns.len() && values.len() == 1 {
+            for _ in 0..columns.len() - 1 {
+                values.push(values[0].clone())
+            }
+        }
+        assert_eq!(
+            values.len(),
+            columns.len(),
+            "given values should match the given columns in length"
+        );
+
+        let values_and_columns = (0..values.len())
+            .map(|i| {
+                let cols = vec![values[i].as_str(), columns[i].as_str()];
+                // take only the columns we will use in a smaller dataframe
+                self.select(cols)
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // make sure that we make smaller dataframes then the take operations are cheaper
+        let index_df = self.select(&index)?;
+
+        let mut im_result = POOL.install(|| {
+            groups
+                .par_iter()
+                .map(|g| {
+                    // Here we do a nested group by.
+                    // Everything we do here produces a single row in the final dataframe
+
+                    // nested group by keys
+
+                    // safety:
+                    // group tuples are in bounds
+                    // shape (1, len(keys)
+                    let sub_index_df = unsafe { index_df.take_unchecked_slice(&g.1[..1]) };
+
+                    // in `im_result` we store the intermediate results
+                    // The first dataframe in the vec is the index dataframe (a single row)
+                    // The rest of the dataframes in `im_result` are the aggregation results (they still have to be pivoted)
+                    let mut im_result = Vec::with_capacity(columns.len());
+                    im_result.push(sub_index_df);
+
+                    // for every column we compute aggregates we do this branch
+                    for (i, column) in columns.iter().enumerate() {
+                        // Here we do another groupby where
+                        // - `columns` are the keys
+                        // - `values` are the aggregation results
+
+                        // this yields:
+                        // keys  | values
+                        // key_1  | agg_result_1
+                        // key_2  | agg_result_2
+                        // key_n  | agg_result_n
+
+                        // which later must be transposed to
+                        //
+                        // header: key_1, key_2, key_n
+                        //        agg_1, agg_2, agg_3
+
+                        // safety:
+                        // group tuples are in bounds
+                        let sub_vals_and_cols =
+                            unsafe { values_and_columns[i].take_unchecked_slice(&g.1) };
+
+                        let s = sub_vals_and_cols.column(column).unwrap().clone();
+                        let gb = sub_vals_and_cols
+                            .groupby_with_series(vec![s], false)
+                            .unwrap();
+
+                        use PivotAgg::*;
+                        let mut df_result = match agg_fn {
+                            Sum => gb.sum().unwrap(),
+                            Min => gb.min().unwrap(),
+                            Max => gb.max().unwrap(),
+                            Mean => gb.mean().unwrap(),
+                            Median => gb.median().unwrap(),
+                            First => gb.first().unwrap(),
+                            Count => gb.count().unwrap(),
+                            Last => gb.last().unwrap(),
+                        };
+
+                        // make sure we keep the original names
+                        df_result.columns[1].rename(&values[i]);
+
+                        // store the results and transpose them later
+                        im_result.push(df_result);
+                    }
+                    im_result
+                })
+                .collect::<Vec<_>>()
+        });
+        // Now we have a lot of small DataFrames with aggregation results
+        // we first join them together.
+        // This will lead to a long dataframe that finally is transposed
+
+        // for every column where the values are aggregated
+        let mut all_values = (0..columns.len())
+            .map(|i| {
+                let to_join = im_result
+                    .iter_mut()
+                    .map(|v| std::mem::take(&mut v[i + 1]))
+                    .collect::<Vec<_>>();
+                let mut name_count = 0;
+
+                let mut joined = to_join
+                    .iter()
+                    .map(Cow::Borrowed)
+                    .reduce(|df_l, df_r| {
+                        let mut out = df_l
+                            .outer_join(&df_r, columns[i].as_str(), columns[i].as_str())
+                            .unwrap();
+                        let last_idx = out.width() - 1;
+                        out.columns[last_idx].rename(&format!("{}_{}", values[i], name_count));
+                        name_count += 1;
+                        Cow::Owned(out)
+                    })
+                    .unwrap()
+                    .into_owned();
+                let header = joined
+                    .drop_in_place(&columns[i])
+                    .unwrap()
+                    .cast(&DataType::Utf8)
+                    .unwrap();
+                let header = header.utf8().unwrap();
+                let mut values = joined.transpose().unwrap();
+
+                for (opt_name, s) in header.into_iter().zip(values.columns.iter_mut()) {
+                    match opt_name {
+                        None => s.rename("null"),
+                        Some(v) => s.rename(v),
+                    };
+                }
+                values
+            })
+            .collect::<Vec<_>>();
+
+        let indices = im_result.iter_mut().map(|v| std::mem::take(&mut v[0]));
+        let mut index = accumulate_dataframes_vertical(indices).unwrap();
+
+        for values in &mut all_values {
+            let mut cols = std::mem::take(&mut values.columns);
+            sort_cols(&mut cols, 0);
+            index = index.hstack(&cols)?
+        }
+        Ok(index)
+    }
+}
 
 /// Utility enum used for grouping on multiple columns
 #[derive(Copy, Clone, Hash, Eq, PartialEq)]
@@ -156,6 +399,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// +-----+------+------+------+------+------+
     /// ```
     #[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
+    #[deprecated(note = "use DataFrame::pivot")]
+    #[allow(deprecated)]
     pub fn pivot(
         &mut self,
         pivot_column: &'selection_str str,
@@ -175,6 +420,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 /// Intermediate structure when a `pivot` operation is applied.
 /// See [the pivot method for more information.](../group_by/struct.GroupBy.html#method.pivot)
 #[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
+#[deprecated(note = "use DataFrame::pivot")]
+#[allow(deprecated)]
 pub struct Pivot<'df, 'selection_str> {
     gb: &'df GroupBy<'df, 'selection_str>,
     pivot_column: &'selection_str str,
@@ -238,8 +485,8 @@ where
     columns_agg_map_main
 }
 
-fn sort_cols(cols: &mut [Series]) {
-    (&mut cols[1..]).sort_unstable_by(|s1, s2| {
+fn sort_cols(cols: &mut [Series], offset: usize) {
+    (&mut cols[offset..]).sort_unstable_by(|s1, s2| {
         if s1.name() > s2.name() {
             Ordering::Greater
         } else {
@@ -309,6 +556,7 @@ where
                         PivotAgg::Max => pivot_agg_max(main_builder, v),
                         PivotAgg::Mean => pivot_agg_mean(main_builder, v),
                         PivotAgg::Median => pivot_agg_median(main_builder, v),
+                        _ => unimplemented!(),
                     },
                 }
             }
@@ -321,7 +569,7 @@ where
             let ca = builder.finish();
             cols.push(ca.into_series());
         }
-        sort_cols(&mut cols);
+        sort_cols(&mut cols, 1);
 
         DataFrame::new(cols)
     }
@@ -386,7 +634,7 @@ fn pivot_count_impl<'a, CA: TakeRandom>(
         let ca = builder.finish();
         cols.push(ca.into_series());
     }
-    sort_cols(&mut cols);
+    sort_cols(&mut cols, 1);
 
     DataFrame::new(cols)
 }
@@ -503,7 +751,7 @@ impl ChunkPivot for ListChunked {
             let ca = builder.finish();
             cols.push(ca.into_series());
         }
-        sort_cols(&mut cols);
+        sort_cols(&mut cols, 1);
 
         DataFrame::new(cols)
     }
@@ -511,15 +759,6 @@ impl ChunkPivot for ListChunked {
 
 #[cfg(feature = "object")]
 impl<T> ChunkPivot for ObjectChunked<T> {}
-
-pub enum PivotAgg {
-    First,
-    Sum,
-    Min,
-    Max,
-    Mean,
-    Median,
-}
 
 fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
 where
@@ -640,8 +879,10 @@ fn finish_logical_types(mut out: DataFrame, pivot_series: &Series) -> Result<Dat
     }
 }
 
+#[allow(deprecated)]
 impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     /// Aggregate the pivot results by taking the count values.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn count(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -654,6 +895,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     }
 
     /// Aggregate the pivot results by taking the first occurring value.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn first(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -667,6 +909,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     }
 
     /// Aggregate the pivot results by taking the sum of all duplicates.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn sum(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -680,6 +923,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     }
 
     /// Aggregate the pivot results by taking the minimal value of all duplicates.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn min(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -693,6 +937,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     }
 
     /// Aggregate the pivot results by taking the maximum value of all duplicates.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn max(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -706,6 +951,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
     }
 
     /// Aggregate the pivot results by taking the mean value of all duplicates.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn mean(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -718,6 +964,7 @@ impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
         finish_logical_types(out, pivot_series)
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
+    #[deprecated(note = "use DataFrame::pivot")]
     pub fn median(&self) -> Result<DataFrame> {
         let pivot_series = self.gb.df.column(self.pivot_column)?;
         let values_series = self.gb.df.column(self.values_column)?;
@@ -802,6 +1049,44 @@ mod test {
 
         let out = df.groupby("B")?.pivot("C", "A").count()?;
         assert_eq!(out.get_column_names(), &["B", "1972-09-27"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pivot_new() -> Result<()> {
+        let df = df!["A"=> ["foo", "foo", "foo", "foo", "foo",
+            "bar", "bar", "bar", "bar"],
+            "B"=> ["one", "one", "one", "two", "two",
+            "one", "one", "two", "two"],
+            "C"=> ["small", "large", "large", "small",
+            "small", "large", "small", "small", "large"],
+            "breaky"=> ["jam", "egg", "egg", "egg",
+             "jam", "jam", "potato", "jam", "jam"],
+            "D"=> [1, 2, 2, 3, 3, 4, 5, 6, 7],
+            "E"=> [2, 4, 5, 5, 6, 6, 8, 9, 9]
+        ]?;
+
+        let out = (df.pivot_stable(["D"], ["A", "B"], ["C"], PivotAgg::Sum))?;
+        let expected = df![
+            "A" => ["foo", "foo", "bar", "bar"],
+            "B" => ["one", "two", "one", "two"],
+            "large" => [Some(4), None, Some(4), Some(7)],
+            "small" => [1, 6, 5, 6],
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
+
+        let out = df.pivot_stable(["D"], ["A", "B"], ["C", "breaky"], PivotAgg::Sum)?;
+        let expected = df![
+            "A" => ["foo", "foo", "bar", "bar"],
+            "B" => ["one", "two", "one", "two"],
+            "large" => [Some(4), None, Some(4), Some(7)],
+            "small" => [1, 6, 5, 6],
+            "egg" => [Some(4), Some(3), None, None],
+            "jam" => [1, 3, 4, 13],
+            "potato" => [None, None, Some(5), None]
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
 
         Ok(())
     }

@@ -5,7 +5,7 @@ use crate::prelude::*;
 use crate::series::PySeries;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
-use polars::frame::NullStrategy;
+use polars::frame::{groupby::PivotAgg, NullStrategy};
 use polars::prelude::AnyValue;
 use polars::series::ops::NullBehavior;
 use polars_core::prelude::QuantileInterpolOptions;
@@ -56,6 +56,22 @@ pub(crate) fn get_lf(obj: &PyAny) -> PyResult<LazyFrame> {
 pub(crate) fn get_series(obj: &PyAny) -> PyResult<Series> {
     let pydf = obj.getattr("_s")?;
     Ok(pydf.extract::<PySeries>()?.series)
+}
+
+impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        match ob.extract::<&str>()? {
+            "sum" => Ok(Wrap(PivotAgg::Sum)),
+            "min" => Ok(Wrap(PivotAgg::Min)),
+            "max" => Ok(Wrap(PivotAgg::Max)),
+            "first" => Ok(Wrap(PivotAgg::First)),
+            "mean" => Ok(Wrap(PivotAgg::Mean)),
+            "median" => Ok(Wrap(PivotAgg::Median)),
+            "count" => Ok(Wrap(PivotAgg::Count)),
+            "last" => Ok(Wrap(PivotAgg::Last)),
+            s => panic!("aggregation {} is not supported", s),
+        }
+    }
 }
 
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>

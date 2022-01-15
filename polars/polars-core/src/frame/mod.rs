@@ -1493,6 +1493,11 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
+    #[cfg(feature = "pivot")]
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[u32]) -> Self {
+        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
+    }
+
     pub(crate) unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {
         let cols = POOL.install(|| {
             self.columns
@@ -2593,7 +2598,7 @@ impl DataFrame {
         let df = if maintain_order {
             let mut groups = groups.collect::<Vec<_>>();
             groups.sort_unstable();
-            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
+            unsafe { self.take_iter_unchecked(groups.iter().map(|i| *i as usize)) }
         } else {
             unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
         };
