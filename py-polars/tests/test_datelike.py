@@ -378,3 +378,32 @@ def test_non_exact_strptime() -> None:
 
     with pytest.raises(Exception):
         a.str.strptime(pl.Date, fmt, strict=True, exact=True)
+
+
+def test_explode_date() -> None:
+    datetimes = [
+        datetime(2021, 12, 1, 0, 0),
+        datetime(2021, 12, 1, 0, 0),
+        datetime(2021, 12, 1, 0, 0),
+        datetime(2021, 12, 1, 0, 0),
+    ]
+    dates = [
+        date(2021, 12, 1),
+        date(2021, 12, 1),
+        date(2021, 12, 1),
+        date(2021, 12, 1),
+    ]
+    for d in [dates, datetimes]:
+        df = pl.DataFrame(
+            {
+                "a": d,
+                "b": ["a", "b", "a", "b"],
+                "c": [1.0, 2.0, 1.1, 2.2],
+            }
+        )
+        out = (
+            df.groupby("b")
+            .agg([pl.col("a"), pl.col("c").pct_change()])
+            .explode(["a", "c"])
+        )
+        assert out.shape == (4, 3)

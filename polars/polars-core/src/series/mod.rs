@@ -746,20 +746,35 @@ impl Series {
             Ok(s)
         }
     }
+
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
-        self.i64()
-            .expect("impl error")
-            .clone()
-            .into_time()
-            .into_series()
+        match self.dtype() {
+            DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
+            DataType::Time => self
+                .time()
+                .unwrap()
+                .as_ref()
+                .clone()
+                .into_time()
+                .into_series(),
+            dt => panic!("date not implemented for {:?}", dt),
+        }
     }
 
     pub(crate) fn into_date(self) -> Series {
         match self.dtype() {
             #[cfg(feature = "dtype-date")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-date")]
+            DataType::Date => self
+                .date()
+                .unwrap()
+                .as_ref()
+                .clone()
+                .into_date()
+                .into_series(),
+            dt => panic!("date not implemented for {:?}", dt),
         }
     }
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
@@ -771,7 +786,15 @@ impl Series {
                 .clone()
                 .into_datetime(timeunit, tz)
                 .into_series(),
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-datetime")]
+            DataType::Datetime(_, _) => self
+                .datetime()
+                .unwrap()
+                .as_ref()
+                .clone()
+                .into_datetime(timeunit, tz)
+                .into_series(),
+            dt => panic!("into_datetime not implemented for {:?}", dt),
         }
     }
 
@@ -784,7 +807,15 @@ impl Series {
                 .clone()
                 .into_duration(timeunit)
                 .into_series(),
-            _ => unimplemented!(),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => self
+                .duration()
+                .unwrap()
+                .as_ref()
+                .clone()
+                .into_duration(timeunit)
+                .into_series(),
+            dt => panic!("into_duration not implemented for {:?}", dt),
         }
     }
 
