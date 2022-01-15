@@ -1432,4 +1432,15 @@ a,b,c,d,1"#;
 
         Ok(())
     }
+
+    #[test]
+    fn test_last_line_incomplete() -> Result<()> {
+        // test a last line that is incomplete and not finishes with a new line char
+        let csv = "b5bbf310dffe3372fd5d37a18339fea5,6a2752ffad059badb5f1f3c7b9e4905d,-2,0.033191,811.619 0.487341,16,GGTGTGAAATTTCACACC,TTTAATTATAATTAAG,+
+b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,821.465 0.490834,1";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(false).finish()?;
+        assert_eq!(df.shape(), (2, 9));
+        Ok(())
+    }
 }
