@@ -25,6 +25,8 @@ mod dynamic;
 pub(crate) mod hashing;
 #[cfg(feature = "pivot")]
 pub(crate) mod pivot;
+#[cfg(feature = "pivot")]
+pub use pivot::PivotAgg;
 #[cfg(not(feature = "dynamic_groupby"))]
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {

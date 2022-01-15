@@ -3258,6 +3258,54 @@ class DataFrame:
         """
         return self.lazy().explode(columns).collect(no_optimization=True)
 
+    def pivot(
+        self,
+        values: Union[List[str], str],
+        index: Union[List[str], str],
+        columns: Union[List[str], str],
+        aggregate_fn: str = "first",
+        maintain_order: bool = False,
+    ) -> "DataFrame":
+        """
+        Create a spreadsheet-style pivot table as a DataFrame.
+
+        Parameters
+        ----------
+        values
+            Column values to aggregate. Can be multiple columns if the *columns* arguments contains multiple columns as well
+        index
+            One or multiple keys to group by
+        columns
+            Columns whose values will be used as the header of the output DataFrame
+        aggregate_fn
+            Any of:
+
+            - "sum"
+            - "max"
+            - "min"
+            - "mean"
+            - "median"
+            - "first"
+            - "last"
+            - "count"
+
+        maintain_order
+            Sort the grouped keys so that the output order is predictable.
+
+        Returns
+        -------
+
+        """
+        if isinstance(values, str):
+            values = [values]
+        if isinstance(index, str):
+            index = [index]
+        if isinstance(columns, str):
+            columns = [columns]
+        return wrap_df(
+            self._df.pivot2(values, index, columns, aggregate_fn, maintain_order)
+        )
+
     def melt(
         self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
     ) -> "DataFrame":
@@ -4493,6 +4541,9 @@ class GroupBy:
     def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+
+        .. deprecated::
+            Use DataFrame.pivot directly
 
         Parameters
         ----------

@@ -100,6 +100,7 @@ Manipulation/ selection
     DataFrame.fill_null
     DataFrame.fill_nan
     DataFrame.explode
+    DataFrame.pivot
     DataFrame.melt
     DataFrame.shift
     DataFrame.shift_and_fill

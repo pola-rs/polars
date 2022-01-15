@@ -489,6 +489,10 @@ def test_pivot() -> None:
     assert gb.count().shape == (2, 6)
     assert gb.median().shape == (2, 6)
 
+    for agg_fn in ["sum", "min", "max", "mean", "count", "median", "mean"]:
+        out = df.pivot(values="c", index="b", columns="a", aggregate_fn=agg_fn)
+        assert out.shape == (2, 6)
+
 
 def test_join() -> None:
     df_left = pl.DataFrame(
