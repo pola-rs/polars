@@ -10,7 +10,7 @@ def test_sort_by_bools() -> None:
             "ham": ["a", "b", "c"],
         }
     )
-    out = df.with_column((pl.col("foo") % 2 == 1).alias("foo_uneven")).sort(
-        by=["foo", "foo_uneven"]
+    out = df.with_column((pl.col("foo") % 2 == 1).alias("foo_odd")).sort(
+        by=["foo", "foo_odd"]
     )
     assert out.shape == (3, 4)
