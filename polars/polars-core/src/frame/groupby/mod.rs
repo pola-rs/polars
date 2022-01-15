@@ -23,9 +23,9 @@ pub mod aggregations;
 #[cfg(feature = "dynamic_groupby")]
 mod dynamic;
 pub(crate) mod hashing;
-#[cfg(feature = "pivot")]
+#[cfg(feature = "rows")]
 pub(crate) mod pivot;
-#[cfg(feature = "pivot")]
+#[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
 #[cfg(not(feature = "dynamic_groupby"))]
 #[derive(Clone, Debug)]

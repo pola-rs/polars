@@ -32,11 +32,10 @@ pretty_fmt = ["comfy-table"]
 plain_fmt = ["prettytable-rs"]
 
 # opt-in features
-# pivot operation on DataFrame
-pivot = []
 # sort by multiple columns
 sort_multiple = []
 # create from row values
+# and include pivot operation
 rows = []
 # dont use this
 private = []
@@ -95,7 +94,6 @@ parquet = ["arrow/io_parquet"]
 
 docs-selection = [
   "ndarray",
-  "pivot",
   "is_in",
   "sort_multiple",
   "rows",

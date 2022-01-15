@@ -398,7 +398,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// | "C" | 2    | null | null | null | null |
     /// +-----+------+------+------+------+------+
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     #[deprecated(note = "use DataFrame::pivot")]
     #[allow(deprecated)]
     pub fn pivot(
@@ -419,7 +419,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 
 /// Intermediate structure when a `pivot` operation is applied.
 /// See [the pivot method for more information.](../group_by/struct.GroupBy.html#method.pivot)
-#[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
 #[deprecated(note = "use DataFrame::pivot")]
 #[allow(deprecated)]
 pub struct Pivot<'df, 'selection_str> {

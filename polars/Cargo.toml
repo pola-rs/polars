@@ -57,9 +57,6 @@ performant = ["polars-core/performant"]
 plain_fmt = ["polars-core/plain_fmt"]
 pretty_fmt = ["polars-core/pretty_fmt"]
 
-# features
-# resample operation on DataFrame
-pivot = ["polars-core/pivot"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
 
@@ -144,7 +141,6 @@ docs-selection = [
   "parquet",
   "ipc",
   "dtype-full",
-  "pivot",
   "is_in",
   "sort_multiple",
   "rows",
