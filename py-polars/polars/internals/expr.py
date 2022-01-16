@@ -938,7 +938,7 @@ class Expr:
 
     def fill_nan(self, fill_value: Union[str, int, float, bool, "Expr"]) -> "Expr":
         """
-        Fill none value with a fill value
+        Fill floating point NaN value with a fill value
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
