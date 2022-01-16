@@ -49,7 +49,6 @@ const inspect = Symbol.for("nodejs.util.inspect.custom");
       Whether to interpret two-dimensional data as columns or as rows. If None,
       the orientation is inferred by matching the columns and data dimensions. If
       this does not yield conclusive results, column orientation is used.
-
   Examples
   --------
   Constructing a DataFrame from an object :
@@ -1117,7 +1116,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * >>> })
    *
    * // defaults to 'dataframe' orientation
-   * >>> df.toJS()
+   * >>> df.toObject()
    * {
    *   "columns":[
    *     {
@@ -1134,7 +1133,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * }
    *
    * // row oriented
-   * >>> df.toJS({orient:"row"})
+   * >>> df.toObject({orient:"row"})
    * [
    *   {"foo":1.0,"bar":"a"},
    *   {"foo":2.0,"bar":"b"},
@@ -1142,15 +1141,15 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ]
    *
    * // column oriented
-   * >>> df.toJS({orient: "col"})
+   * >>> df.toObject({orient: "col"})
    * {
    *   "foo":[1,2,3],
    *   "bar":["a","b","c"]
    * }
    * ```
    */
-  toJS(): object
-  toJS(options: {orient: "row" | "col" | "dataframe"}): object
+  toObject(): object
+  toObject(options: {orient: "row" | "col" | "dataframe"}): object
   /**
    * Write Dataframe to JSON string, file, or write stream
    * @param destination file or write stream
@@ -1647,23 +1646,19 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(dest, "csv", options);
       }
     },
-    toJS(options?) {
+    toObject(options?) {
       if(options?.orient === "row") {
         return unwrap("to_row_objects");
 
       }
-      if(options?.orient === "dataframe") {
-        return unwrap("to_js");
+      if(options?.orient === "col") {
+        return this.getColumns().reduce((acc, curr: Series<any>) => ({
+          ...acc,
+          [curr.name]: curr.toArray()
+        }), {});
       }
 
-      return unwrap<any[]>("get_columns").reduce((acc, curr) => {
-        const s = seriesWrapper(curr);
-
-        return {
-          ...acc,
-          [s.name]: s.toArray()
-        };
-      }, {});
+      return unwrap("to_js");
     },
     toJSON(arg0?, options?): any {
       // JSON.stringify(df)
@@ -1686,7 +1681,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       } else if(arg0?.orient === "col") {
         // TODO!
         // do this on the rust side for better performance
-        return JSON.stringify(this.toJS({orient: "col"}));
+        return JSON.stringify(this.toObject({orient: "col"}));
       }
       else {
         // toJSON("path/to/some/file", options)
@@ -1793,10 +1788,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
 export interface DataFrameConstructor {
   (): DataFrame
-  (data: Record<string, any>): DataFrame
   (data: Record<string, any>[]): DataFrame
   (data: Series<any>[]): DataFrame
-  (data: any[][]): DataFrame
+  (data: any): DataFrame
   (data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
 }
@@ -1824,7 +1818,6 @@ function objToDF(obj: Record<string, Array<any>>): any {
 
   return pli.df.read_columns({columns});
 }
-
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 export namespace pl {
   export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});

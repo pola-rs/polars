@@ -550,7 +550,6 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("int16", [1, 2, 3], pl.Int16),
       pl.Series("int32", [1, 2, 3], pl.Int32),
-      pl.Series("int64", [1n, 2n, 3n], pl.Int64),
       pl.Series("uint16", [1, 2, 3], pl.UInt16),
       pl.Series("uint32", [1, 2, 3], pl.UInt32),
       pl.Series("uint64", [1n, 2n, 3n], pl.UInt64),
@@ -559,7 +558,6 @@ describe("expr", () => {
     const expected = pl.DataFrame([
       pl.Series("int16", [-32768], pl.Int16),
       pl.Series("int32", [-2147483648], pl.Int32),
-      pl.Series("int64", [-9223372036854775808n], pl.Int64),
       pl.Series("uint16", [0], pl.UInt16),
       pl.Series("uint32", [0], pl.UInt32),
       pl.Series("uint64", [0n], pl.UInt64),
@@ -772,7 +770,7 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("a", [1n, 2n, 3n], pl.UInt64)
     ]);
-    const expected = pl.Series("a", [1n, 2n, 3n], pl.Int64);
+    const expected = pl.Series("a", [1, 2, 3], pl.Int64);
     const actual = df.select(col("a").reinterpret()).getColumn("a");
     expect(actual).toSeriesStrictEqual(expected);
   });
@@ -1015,7 +1013,6 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("int16", [1, 2, 3], pl.Int16),
       pl.Series("int32", [1, 2, 3], pl.Int32),
-      pl.Series("int64", [1n, 2n, 3n], pl.Int64),
       pl.Series("uint16", [1, 2, 3], pl.UInt16),
       pl.Series("uint32", [1, 2, 3], pl.UInt32),
       pl.Series("uint64", [1n, 2n, 3n], pl.UInt64),
@@ -1023,7 +1020,6 @@ describe("expr", () => {
     const expected = pl.DataFrame([
       pl.Series("int16", [32767],  pl.Int16),
       pl.Series("int32", [2147483647],  pl.Int32),
-      pl.Series("int64", [9223372036854775807n],  pl.Int64),
       pl.Series("uint16", [65535],  pl.UInt16),
       pl.Series("uint32", [4294967295],  pl.UInt32),
       pl.Series("uint64", [18446744073709551615n], pl.UInt64),

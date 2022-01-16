@@ -866,17 +866,11 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => {
-                    cx.env.create_date(v as f64).map(|v| v.into_unknown())
-                }
-                None => {
-                    cx.env.get_null().map(|v| v.into_unknown())
-                }
+                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
+                None => cx.env.get_null().map(|v| v.into_unknown()),
             }
         }
-        Err(_) => {
-            cx.env.get_null().map(|v| v.into_unknown())
-        }
+        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
     }
 }
 
@@ -886,6 +880,17 @@ pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let obj: JsUnknown = cx.env.to_js_value(series)?;
     Ok(obj)
+}
+
+#[js_function(1)]
+pub fn to_json(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let buf = serde_json::to_vec(series).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
 }
 
 #[js_function(1)]

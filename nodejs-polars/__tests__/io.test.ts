@@ -106,8 +106,8 @@ describe("stream", () => {
     readStream.push(`4,2\n`);
     readStream.push(null);
     const expected = pl.DataFrame({
-      a: pl.Series("a", [1n, 2n, 3n, 4n], pl.Int64),
-      b: pl.Series("b", [2n, 2n, 2n, 2n], pl.Int64)
+      a: pl.Series("a", [1, 2, 3, 4], pl.Int64),
+      b: pl.Series("b", [2, 2, 2, 2], pl.Int64)
     });
     const df = await pl.readCSVStream(readStream, {batchSize: 2});
     expect(df).toFrameEqual(expected);
@@ -136,8 +136,8 @@ describe("stream", () => {
     readStream.push(null);
 
     const expected = pl.DataFrame({
-      a: pl.Series("a", [1n, 2n, 3n, 4n], pl.Int64),
-      b: pl.Series("b", [2n, 2n, 2n, 2n], pl.Int64)
+      a: pl.Series("a", [1, 2, 3, 4], pl.Int64),
+      b: pl.Series("b", [2, 2, 2, 2], pl.Int64)
     });
     const df = await pl.readJSONStream(readStream);
     expect(df).toFrameEqual(expected);

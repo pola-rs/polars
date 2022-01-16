@@ -391,6 +391,7 @@ impl JsSeries {
             napi::Property::new(env, "year")?.with_method(year),
             napi::Property::new(env, "zip_with")?.with_method(zip_with),
             napi::Property::new(env, "to_array")?.with_method(to_array),
+            napi::Property::new(env, "to_json")?.with_method(to_json),
         ])?;
 
         Ok(series)
