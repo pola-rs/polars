@@ -842,19 +842,14 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
             };
             match ca.get(index) {
                 Some(v) => {
-                    println!("value={:#?}", v);
                     cx.env.create_date(v as f64).map(|v| v.into_unknown())
                 }
                 None => {
-                    println!("none at idx={:#?}", index);
-
                     cx.env.get_null().map(|v| v.into_unknown())
                 }
             }
         }
         Err(_) => {
-            println!("err at idx={:#?}", index);
-
             cx.env.get_null().map(|v| v.into_unknown())
         }
     }
