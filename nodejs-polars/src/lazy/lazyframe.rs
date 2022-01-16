@@ -19,9 +19,8 @@ impl IntoJs<JsExternal> for LazyGroupBy {
 }
 
 #[js_function(1)]
-pub fn new_from_csv(cx: CallContext) -> JsResult<JsExternal> {
+pub fn scan_csv(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-
     let cache: bool = params.get_or("cache", true)?;
     let comment_char: Option<&str> = params.get_as("commentChar")?;
     let has_header: bool = params.get_or("hasHeader", true)?;
@@ -56,6 +55,48 @@ pub fn new_from_csv(cx: CallContext) -> JsResult<JsExternal> {
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn scan_parquet(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+
+    let path: String = params.get_as("path")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+    let parallel: bool = params.get_or("parallel", true)?;
+    let cache: bool = params.get_or("cache", true)?;
+    let rechunk: bool = params.get_or("rechunk", true)?;
+
+    let args = ScanArgsParquet {
+        n_rows,
+        cache,
+        parallel,
+        rechunk,
+    };
+
+    LazyFrame::scan_parquet(path, args)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+
+    let path: String = params.get_as("path")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+    let cache: bool = params.get_or("cache", true)?;
+    let rechunk: bool = params.get_or("rechunk", true)?;
+
+    let args = ScanArgsIpc {
+        n_rows,
+        cache,
+        rechunk,
+    };
+
+    LazyFrame::scan_ipc(path, args)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
 
 #[js_function(1)]
 pub fn describe_plan(cx: CallContext) -> JsResult<JsString> {

@@ -86,6 +86,12 @@ export type ReadParquetOptions = {
   parallel?: boolean;
   rechunk?: boolean;
 }
+export type ReadIPCOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+}
+
 export type JoinBaseOptions = {
   how?: "left" | "inner" | "outer" | "cross";
   suffix?: string;

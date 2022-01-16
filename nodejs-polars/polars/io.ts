@@ -1,4 +1,4 @@
-import { ReadCsvOptions, ReadJsonOptions, ReadParquetOptions } from "./datatypes";
+import { ReadCsvOptions, ReadIPCOptions, ReadJsonOptions, ReadParquetOptions } from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
@@ -35,6 +35,18 @@ function readJSONBuffer(buff, options) {
 }
 function readJSONPath(path, options) {
   return  dfWrapper(pli.df.readJSONPath({...readJsonDefaultOptions, ...options, path}));
+}
+function readParquetBuffer(buff, options) {
+  return  dfWrapper(pli.df.readParquetBuffer({...options, buff}));
+}
+function readParquetPath(path, options) {
+  return  dfWrapper(pli.df.readParquetPath({...options, path}));
+}
+function readIPCBuffer(buff, options) {
+  return  dfWrapper(pli.df.readIPCBuffer({...options, buff}));
+}
+function readIPCPath(path, options) {
+  return  dfWrapper(pli.df.readIPCPath({...options, path}));
 }
 /**
  * __Read a CSV file or string into a Dataframe.__
@@ -155,13 +167,43 @@ export function scanCSV(arg: Partial<ReadCsvOptions> | string, options?: any): L
   return LazyDataFrame(pli.ldf.scanCSV(options));
 }
 
-export function readParquet(path: string, options?: ReadParquetOptions): DataFrame {
-  return dfWrapper(pli.df.readParquet({path, ...options}));
+
+export function readParquet(pathOrBody: string | Buffer, options?: ReadParquetOptions): DataFrame {
+  if(Buffer.isBuffer(pathOrBody)) {
+    return readParquetBuffer(pathOrBody, options);
+  }
+
+  if(typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".parquet"]);
+    if(inline) {
+      return readParquetBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readParquetPath(pathOrBody, options);
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
 }
 
+export function readIPC(pathOrBody: string | Buffer, options?: ReadIPCOptions): DataFrame {
+  if(Buffer.isBuffer(pathOrBody)) {
+    return readIPCBuffer(pathOrBody, options);
+  }
+
+  if(typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".ipc"]);
+    if(inline) {
+      return readIPCBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readIPCPath(pathOrBody, options);
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}export function scanIPC() {}
+
+
 export function scanParquet() {}
-export function readIPC() {}
-export function scanIPC() {}
 export function scanJSON() {}
 
 // utility to read streams as lines.
@@ -181,20 +223,24 @@ class LineBatcher extends Stream.Transform {
   _transform(chunk, _encoding, done) {
 
     var begin = 0;
-    for (var i = 0; i < chunk.length; i++) {
+    var position = 0;
+
+    let i = 0;
+    while(i < chunk.length) {
       if (chunk[i] === 10) { // '\n'
         this.#accumulatedLines++;
         if (this.#accumulatedLines == this.#batchSize) {
-          this.#lines.push(chunk.slice(begin, i + 1));
+          this.#lines.push(chunk.subarray(begin, i + 1));
           this.push(Buffer.concat(this.#lines));
           this.#lines = [];
           this.#accumulatedLines = 0;
           begin = i + 1;
         }
       }
+      i++;
     }
 
-    this.#lines.push(chunk.slice(begin));
+    this.#lines.push(chunk.subarray(begin));
 
     done();
   }
@@ -361,3 +407,4 @@ export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Pro
 
   });
 }
+
