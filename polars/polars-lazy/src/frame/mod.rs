@@ -280,25 +280,12 @@ impl LazyFrame {
     }
 
     /// Rename a column in the DataFrame
+    #[deprecated(note = "use rename")]
     pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
-        let schema = self.logical_plan.schema();
-        let schema = schema
-            .rename(&[existing_name], &[new_name])
-            .expect("cannot rename non existing column");
-
-        // first make sure that the column is projected, then we
-        let init = self.with_column(col(existing_name));
-
-        let existing_name = existing_name.to_string();
-        let new_name = new_name.to_string();
-        let f = move |mut df: DataFrame| {
-            df.rename(&existing_name, &new_name)?;
-            Ok(df)
-        };
-        init.map(f, Some(AllowedOptimizations::default()), Some(schema))
+        self.rename([existing_name], [new_name])
     }
 
-    /// Rename columns in the DataFrame. This does not preserve ordering.
+    /// Rename columns in the DataFrame.
     pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
     where
         I: IntoIterator<Item = T> + Clone,
@@ -311,14 +298,35 @@ impl LazyFrame {
             .map(|name| name.as_ref().to_string())
             .collect();
 
+        let new: Vec<String> = new
+            .into_iter()
+            .map(|name| name.as_ref().to_string())
+            .collect();
+
         self.with_columns(
             existing
                 .iter()
-                .zip(new)
+                .zip(&new)
                 .map(|(old, new)| col(old).alias(new.as_ref()))
                 .collect::<Vec<_>>(),
         )
-        .drop_columns_impl(&existing)
+        .map(
+            move |mut df: DataFrame| {
+                let cols = df.get_columns_mut();
+                for (existing, new) in existing.iter().zip(new.iter()) {
+                    let idx_a = cols
+                        .iter()
+                        .position(|s| s.name() == existing.as_str())
+                        .unwrap();
+                    let idx_b = cols.iter().position(|s| s.name() == new.as_str()).unwrap();
+                    cols.swap(idx_a, idx_b);
+                }
+                cols.truncate(cols.len() - existing.len());
+                Ok(df)
+            },
+            None,
+            None,
+        )
     }
 
     /// Removes columns from the DataFrame.

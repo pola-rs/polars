@@ -1,6 +1,5 @@
 mod utils;
 
-use crate::logical_plan::optimizer::ALogicalPlanBuilder;
 use crate::logical_plan::{optimizer, Context};
 use crate::prelude::*;
 use crate::utils::{aexpr_to_root_names, aexprs_to_schema, check_input_node, has_aexpr};
@@ -46,7 +45,7 @@ impl PredicatePushDown {
     fn pushdown_and_continue(
         &self,
         lp: ALogicalPlan,
-        acc_predicates: PlHashMap<Arc<str>, Node>,
+        mut acc_predicates: PlHashMap<Arc<str>, Node>,
         lp_arena: &mut Arena<ALogicalPlan>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
@@ -54,51 +53,65 @@ impl PredicatePushDown {
         let inputs = lp.get_inputs();
         let exprs = lp.get_exprs();
 
-        // we should get pass these projections
-        if has_projections
-            && exprs
+        if has_projections {
+            // we should not pass these projections
+            if exprs
                 .iter()
                 .any(|e_n| is_pushdown_boundary(*e_n, expr_arena))
-        {
-            return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+            {
+                return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+            }
+
+            // projections should only have a single input.
+            assert_eq!(inputs.len(), 1);
+            let input = inputs[0];
+            let (local_predicates, projections) =
+                rewrite_projection_node(expr_arena, lp_arena, &mut acc_predicates, exprs, input);
+
+            let alp = lp_arena.take(input);
+            let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+            lp_arena.replace(input, alp);
+
+            let lp = lp.from_exprs_and_input(projections, inputs);
+            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+        } else {
+            let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+
+            // determine new inputs by pushing down predicates
+            let new_inputs = inputs
+                .iter()
+                .map(|&node| {
+                    // first we check if we are able to push down the predicate pass this node
+                    // it could be that this node just added the column where we base the predicate on
+                    let input_schema = lp_arena.get(node).schema(lp_arena);
+                    let mut pushdown_predicates = optimizer::init_hashmap();
+                    for &predicate in acc_predicates.values() {
+                        // we can pushdown the predicate
+                        if check_input_node(predicate, input_schema, expr_arena) {
+                            let name = get_insertion_name(expr_arena, predicate, input_schema);
+                            insert_and_combine_predicate(
+                                &mut pushdown_predicates,
+                                name,
+                                predicate,
+                                expr_arena,
+                            )
+                        }
+                        // we cannot pushdown the predicate we do it here
+                        else {
+                            local_predicates.push(predicate);
+                        }
+                    }
+
+                    let alp = lp_arena.take(node);
+                    let alp = self.push_down(alp, pushdown_predicates, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, alp);
+                    Ok(node)
+                })
+                .collect::<Result<Vec<_>>>()?;
+
+            let lp = lp.from_exprs_and_input(exprs, new_inputs);
+            Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         }
-
-        let mut local_predicates = Vec::with_capacity(acc_predicates.len());
-
-        // determine new inputs by pushing down predicates
-        let new_inputs = inputs
-            .iter()
-            .map(|&node| {
-                // first we check if we are able to push down the predicate pass this node
-                // it could be that this node just added the column where we base the predicate on
-                let input_schema = lp_arena.get(node).schema(lp_arena);
-                let mut pushdown_predicates = optimizer::init_hashmap();
-                for &predicate in acc_predicates.values() {
-                    // we can pushdown the predicate
-                    if check_input_node(predicate, input_schema, expr_arena) {
-                        let name = get_insertion_name(expr_arena, predicate, input_schema);
-                        insert_and_combine_predicate(
-                            &mut pushdown_predicates,
-                            name,
-                            predicate,
-                            expr_arena,
-                        )
-                    }
-                    // we cannot pushdown the predicate we do it here
-                    else {
-                        local_predicates.push(predicate);
-                    }
-                }
-
-                let alp = lp_arena.take(node);
-                let alp = self.push_down(alp, pushdown_predicates, lp_arena, expr_arena)?;
-                lp_arena.replace(node, alp);
-                Ok(node)
-            })
-            .collect::<Result<Vec<_>>>()?;
-
-        let lp = lp.from_exprs_and_input(exprs, new_inputs);
-        Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
     }
 
     /// Filter will be done at this node, but we continue optimization
@@ -154,39 +167,6 @@ impl PredicatePushDown {
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
                 let alp = lp_arena.take(input);
                 self.push_down(alp, acc_predicates, lp_arena, expr_arena)
-            }
-
-            Projection {
-                expr,
-                input,
-                schema,
-            } => {
-                for node in &expr {
-                    if is_pushdown_boundary(*node, expr_arena) {
-                        let lp = ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
-                            .project(expr)
-                            .build();
-                        // do all predicates here
-                        let local_predicates = acc_predicates.into_iter().map(|(_, v)| v).collect();
-                        return Ok(self.optional_apply_predicate(
-                            lp,
-                            local_predicates,
-                            lp_arena,
-                            expr_arena,
-                        ));
-                    }
-                }
-
-                let (local_predicates, expr) =
-                    rewrite_projection_node(expr_arena, lp_arena, &mut acc_predicates, expr, input);
-                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-
-                let lp = ALogicalPlan::Projection {
-                    expr,
-                    input,
-                    schema,
-                };
-                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             DataFrameScan {
                 df,
@@ -444,7 +424,7 @@ impl PredicatePushDown {
                     predicate_pd: true, ..
                 } = lp
                 {
-                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
+                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {
                     Ok(lp)
                 }
@@ -453,7 +433,7 @@ impl PredicatePushDown {
             lp @ Cache { .. } | lp @ Union { .. } | lp @ Sort { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             }
-            lp @ HStack {..} => {
+            lp @ HStack {..} | lp @ Projection {..} => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             }
             // NOT Pushed down passed these nodes

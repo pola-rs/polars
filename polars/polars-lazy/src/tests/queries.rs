@@ -269,7 +269,7 @@ fn test_lazy_binary_ops() {
     assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
 }
 
-fn load_df() -> DataFrame {
+pub(crate) fn load_df() -> DataFrame {
     df!("a" => &[1, 2, 3, 4, 5],
                  "b" => &["a", "a", "b", "c", "c"],
                  "c" => &[1, 2, 3, 4, 5]
@@ -665,34 +665,6 @@ fn test_lazy_reverse() {
         .collect()
         .unwrap()
         .frame_equal_missing(&df.reverse()))
-}
-
-#[test]
-fn test_lazy_filter_and_rename() {
-    let df = load_df();
-    let lf = df
-        .clone()
-        .lazy()
-        .with_column_renamed("a", "x")
-        .filter(col("x").map(
-            |s: Series| Ok(s.gt(3).into_series()),
-            GetOutput::from_type(DataType::Boolean),
-        ))
-        .select([col("x")]);
-
-    let correct = df! {
-        "x" => &[4, 5]
-    }
-    .unwrap();
-    assert!(lf.collect().unwrap().frame_equal(&correct));
-
-    // now we check if the column is rename or added when we don't select
-    let lf = df.lazy().with_column_renamed("a", "x").filter(col("x").map(
-        |s: Series| Ok(s.gt(3).into_series()),
-        GetOutput::from_type(DataType::Boolean),
-    ));
-
-    assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
 }
 
 #[test]
@@ -1614,7 +1586,7 @@ fn test_exploded_window_function() -> Result<()> {
         .select([
             col("fruits"),
             col("B")
-                .shift_and_fill(1, lit(-1.0))
+                .shift_and_fill(1, lit(-1.0f32))
                 .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
@@ -1622,8 +1594,8 @@ fn test_exploded_window_function() -> Result<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("shifted")?.i32()?),
-        &[Some(-1), Some(3), Some(-1), Some(5), Some(4)]
+        Vec::from(out.column("shifted")?.f32()?),
+        &[Some(-1.0), Some(3.0), Some(-1.0), Some(5.0), Some(4.0)]
     );
     Ok(())
 }

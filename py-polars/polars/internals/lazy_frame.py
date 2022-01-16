@@ -814,13 +814,16 @@ class LazyFrame:
 
     def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
         """
+        .. deprecated:: 0.12.13
+            Use :func:rename instead
+
         Rename a column in the DataFrame
         """
         return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
 
     def rename(self, mapping: Dict[str, str]) -> "LazyFrame":
         """
-        Rename column names. This does not preserve column order.
+        Rename column names.
 
         Parameters
         ----------

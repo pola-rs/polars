@@ -390,7 +390,7 @@ impl LogicalPlanBuilder {
 
         let right_names: HashSet<_, RandomState> = right_on
             .iter()
-            .map(|e| utils::output_name(e).expect("could not find name"))
+            .map(|e| utils::expr_output_name(e).expect("could not find name"))
             .collect();
 
         for f in schema_right.fields() {

@@ -95,11 +95,11 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
 }
 
 /// output name of expr
-pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {
             // don't follow the partition by branch
-            Expr::Window { function, .. } => return output_name(function),
+            Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
             _ => {}
@@ -107,7 +107,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
     }
     Err(PolarsError::ComputeError(
         format!(
-            "No root column name could be found for expr {:?} in output name utillity",
+            "No root column name could be found for expr {:?} in output name utility",
             expr
         )
         .into(),

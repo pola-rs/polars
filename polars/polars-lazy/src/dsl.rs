@@ -866,7 +866,7 @@ impl Expr {
                 collect_groups: ApplyOptions::ApplyFlat,
                 input_wildcard_expansion: false,
                 auto_explode: false,
-                fmt_str: "",
+                fmt_str: "map",
             },
         }
     }
