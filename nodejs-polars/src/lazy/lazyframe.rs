@@ -97,7 +97,6 @@ pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-
 #[js_function(1)]
 pub fn describe_plan(cx: CallContext) -> JsResult<JsString> {
     get_params(&cx)?

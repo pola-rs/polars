@@ -1,10 +1,63 @@
-import { ReadCsvOptions, ReadIPCOptions, ReadJsonOptions, ReadParquetOptions } from "./datatypes";
+import { NullValues } from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
 import { isPath } from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {Readable, Stream} from "stream";
 import {concat} from "./functions";
+
+
+type ScanIPCOptions = {
+  numRows?: number;
+  cache?: boolean;
+  rechunk?: boolean;
+}
+
+type ScanParquetOptions = {
+  numRows?: number;
+  parallel?: boolean;
+  cache?: boolean;
+  rechunk?: boolean;
+}
+
+type ReadCsvOptions = {
+  batchSize?: number;
+  columns?: Array<string>;
+  commentChar?: string;
+  encoding?: "utf8" | "utf8-lossy";
+  endRows?: number;
+  hasHeader?: boolean;
+  ignoreErrors?: boolean;
+  inferSchemaLength?: number;
+  lowMemory?: boolean;
+  nullValues?: NullValues;
+  numThreads?: number;
+  parseDates?: boolean;
+  projection?: Array<number>;
+  quoteChar?: string;
+  rechunk?: boolean;
+  sep?: string;
+  startRows?: number;
+};
+type ReadJsonOptions = {
+  inferSchemaLength?: number;
+  batchSize?: number;
+};
+
+type ReadParquetOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+  parallel?: boolean;
+  rechunk?: boolean;
+}
+
+type ReadIPCOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+}
+
 
 const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
   inferSchemaLength: 50,
@@ -200,10 +253,18 @@ export function readIPC(pathOrBody: string | Buffer, options?: ReadIPCOptions): 
   } else {
     throw new Error("must supply either a path or body");
   }
-}export function scanIPC() {}
+}
 
 
-export function scanParquet() {}
+export function scanIPC(path: string, options?: ScanIPCOptions): LazyDataFrame {
+  return LazyDataFrame(pli.ldf.scanIPC({path, ...options}));
+}
+
+
+export function scanParquet(path: string, options?: ScanParquetOptions): LazyDataFrame {
+  return LazyDataFrame(pli.ldf.scanParquet({path, ...options}));
+}
+
 export function scanJSON() {}
 
 // utility to read streams as lines.
@@ -407,4 +468,3 @@ export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Pro
 
   });
 }
-

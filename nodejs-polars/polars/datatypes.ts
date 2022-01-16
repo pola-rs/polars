@@ -55,42 +55,6 @@ export enum DataType {
 
 export type JsDataFrame = any;
 export type NullValues = string | Array<string> | Record<string, string>;
-export type ReadCsvOptions = {
-  batchSize?: number;
-  columns?: Array<string>;
-  commentChar?: string;
-  encoding?: "utf8" | "utf8-lossy";
-  endRows?: number;
-  hasHeader?: boolean;
-  ignoreErrors?: boolean;
-  inferSchemaLength?: number;
-  lowMemory?: boolean;
-  nullValues?: NullValues;
-  numThreads?: number;
-  parseDates?: boolean;
-  projection?: Array<number>;
-  quoteChar?: string;
-  rechunk?: boolean;
-  sep?: string;
-  startRows?: number;
-};
-export type ReadJsonOptions = {
-  inferSchemaLength?: number;
-  batchSize?: number;
-};
-
-export type ReadParquetOptions = {
-  columns?: string[];
-  projection?: number[];
-  numRows?: number;
-  parallel?: boolean;
-  rechunk?: boolean;
-}
-export type ReadIPCOptions = {
-  columns?: string[];
-  projection?: number[];
-  numRows?: number;
-}
 
 export type JoinBaseOptions = {
   how?: "left" | "inner" | "outer" | "cross";
@@ -102,14 +66,6 @@ export type JoinOptions = {
   on?: string | Array<string>;
   how?: "left" | "inner" | "outer" | "cross";
   suffix?: string;
-};
-export type WriteCsvOptions = {
-  hasHeader?: boolean;
-  sep?: string;
-};
-export type WriteJsonOptions = {
-  orient?: "row" | "col" | "dataframe";
-  multiline?: boolean;
 };
 
 

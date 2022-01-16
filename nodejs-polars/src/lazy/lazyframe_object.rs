@@ -9,7 +9,7 @@ impl JsLazyFrame {
         let mut ldf = env.create_object()?;
         ldf.define_properties(&[
             napi::Property::new(env, "scanCSV")?.with_method(lazyframe::scan_csv),
-            napi::Property::new(env, "scanParquet")?.with_method(lazyframe::scan_csv),
+            napi::Property::new(env, "scanParquet")?.with_method(lazyframe::scan_parquet),
             napi::Property::new(env, "scanIPC")?.with_method(lazyframe::scan_ipc),
             napi::Property::new(env, "describePlan")?.with_method(lazyframe::describe_plan),
             napi::Property::new(env, "describeOptimizedPlan")?

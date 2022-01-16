@@ -355,7 +355,6 @@ pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
     cx.env.get_undefined()
 }
 
-
 // ------
 // JSON
 // ------
