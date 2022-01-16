@@ -1268,7 +1268,7 @@ describe("io", () => {
         },
       ]
     };
-    const actual = df.toJS({orient:"dataframe"});
+    const actual = df.toObject({orient:"dataframe"});
     expect(actual).toEqual(expected);
   });
   test("toJS:row", () => {
@@ -1279,19 +1279,29 @@ describe("io", () => {
     const expected = [
       {foo: 1.0, bar: "a"}
     ];
-    const actual = df.toJS({orient:"row"});
+    const actual = df.toObject({orient:"row"});
     expect(actual).toEqual(expected);
   });
-  test("toJS", () => {
+  test("toObject", () => {
     const df = pl.DataFrame({
       foo: [1],
       bar: ["a"]
     });
     const expected = {
-      foo: [1],
-      bar: ["a"]
+      columns: [
+        {
+          name: "foo",
+          datatype: "Float64",
+          values: [1]
+        },
+        {
+          name: "bar",
+          datatype: "Utf8",
+          values: ["a"]
+        }
+      ]
     };
-    const actual = df.toJS();
+    const actual = df.toObject();
     expect(actual).toEqual(expected);
   });
   test("toJSON:multiline", () => {
@@ -1355,7 +1365,7 @@ describe("io", () => {
     const actual = pl.DataFrame(rows).toJSON({orient:"row"});
     expect(actual).toEqual(expected);
   });
-  test("toJSON:cols", () => {
+  test("toJSON:col", () => {
     const cols = {
       foo: [1, 2, 3],
       bar: ["a", "b", "c"]
@@ -1543,7 +1553,7 @@ describe("create", () => {
     expected.int8_list = int8List.map(i => [...i]);
     const df = pl.DataFrame(expected);
 
-    expect(df.toJS()).toEqual(expected);
+    expect(df.toObject({orient: "col"})).toEqual(expected);
   });
 });
 describe("arithmetic", () => {

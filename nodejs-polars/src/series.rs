@@ -636,6 +636,31 @@ pub fn shrink_to_fit(_: CallContext) -> JsResult<JsUnknown> {
 }
 
 #[js_function(1)]
+pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
+    let params = get_params(&cx)?;
+    let series: &Series = params.get_external::<Series>(&cx, "_series")?;
+
+    match *series.dtype() {
+        DataType::UInt8 => cx.env.to_js_value(series.u8().unwrap()),
+        DataType::UInt16 => cx.env.to_js_value(series.u16().unwrap()),
+        DataType::UInt32 => cx.env.to_js_value(series.u32().unwrap()),
+        DataType::UInt64 => cx.env.to_js_value(series.u64().unwrap()),
+        DataType::Int8 => cx.env.to_js_value(series.i8().unwrap()),
+        DataType::Int16 => cx.env.to_js_value(series.i16().unwrap()),
+        DataType::Int32 => cx.env.to_js_value(series.i32().unwrap()),
+        DataType::Int64 => cx.env.to_js_value(series.i64().unwrap()),
+        DataType::Float32 => cx.env.to_js_value(series.f32().unwrap()),
+        DataType::Float64 => cx.env.to_js_value(series.f64().unwrap()),
+        DataType::Utf8 => cx.env.to_js_value(series.utf8().unwrap()),
+        DataType::Date => cx.env.to_js_value(series.date().unwrap()),
+        DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
+        DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
+        DataType::Categorical => cx.env.to_js_value(series.categorical().unwrap()),
+        _ => todo!(),
+    }
+}
+
+#[js_function(1)]
 pub fn is_in(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
@@ -841,17 +866,11 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
                 index as usize
             };
             match ca.get(index) {
-                Some(v) => {
-                    cx.env.create_date(v as f64).map(|v| v.into_unknown())
-                }
-                None => {
-                    cx.env.get_null().map(|v| v.into_unknown())
-                }
+                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
+                None => cx.env.get_null().map(|v| v.into_unknown()),
             }
         }
-        Err(_) => {
-            cx.env.get_null().map(|v| v.into_unknown())
-        }
+        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
     }
 }
 
@@ -861,6 +880,17 @@ pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let obj: JsUnknown = cx.env.to_js_value(series)?;
     Ok(obj)
+}
+
+#[js_function(1)]
+pub fn to_json(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let buf = serde_json::to_vec(series).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
 }
 
 #[js_function(1)]

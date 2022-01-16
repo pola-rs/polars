@@ -1,13 +1,11 @@
 import pli from "./internals/polars_internal";
-import {Stream} from "stream";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
  T extends DataType.Utf8 ? string :
  T extends DataType.Categorical ? string :
  T extends DataType.Datetime ? number | Date :
  T extends DataType.Date ? Date :
- T extends DataType.UInt64 ? bigint :
- T extends DataType.Int64 ? bigint : number
+ T extends DataType.UInt64 ? bigint : number
 
 export type PrimitiveToDtype<T> = T extends boolean ? DataType.Bool :
  T extends string ? DataType.Utf8 :
@@ -128,33 +126,6 @@ export const DTYPE_TO_FFINAME: Record<DataType, string> = {
   [DataType.Time]: "time",
   [DataType.Object]: "object",
   [DataType.Categorical]: "categorical",
-};
-
-export const iterToTypedArray = (dtype: DataType, iterator: any): Iterable<any>  => {
-  switch (dtype) {
-  case DataType.Int8:
-    return Int8Array.from(iterator);
-  case DataType.Int16:
-    return Int16Array.from(iterator);
-  case DataType.Int32:
-    return Int32Array.from(iterator);
-  case DataType.Int64:
-    return BigInt64Array.from(iterator);
-  case DataType.UInt8:
-    return Uint8Array.from(iterator);
-  case DataType.UInt16:
-    return Uint16Array.from(iterator);
-  case DataType.UInt32:
-    return Uint32Array.from(iterator);
-  case DataType.UInt64:
-    return BigUint64Array.from(iterator);
-  case DataType.Float32:
-    return Float32Array.from(iterator);
-  case DataType.Float64:
-    return Float64Array.from(iterator);
-  default:
-    return iterator;
-  }
 };
 
 const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {

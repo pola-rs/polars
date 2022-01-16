@@ -71,19 +71,28 @@ describe("typedArrays", () => {
     const expected = int32Arrays.map(i => [...i]);
     expect(actual).toEqual(expected);
   });
+
+  // serde downcasts int64 to 'number'
   test("int64", () => {
     const int64Array = new BigInt64Array([1n, 2n, 3n]);
     const actual = pl.Series(int64Array).toArray();
-    const expected = [...int64Array];
+
+    const expected = Array.from(int64Array).map((v: any) => parseInt(v));
+
     expect(actual).toEqual(expected);
   });
+  // serde downcasts int64 to 'number'
   test("int64:list", () => {
     const int64Arrays = [
       new BigInt64Array([1n, 2n, 3n]),
       new BigInt64Array([33n, 44n, 55n]),
-    ];
+    ] as any;
+
     const actual = pl.Series(int64Arrays).toArray();
-    const expected = int64Arrays.map(i => [...i]);
+    const expected = [
+      [1, 2, 3],
+      [33, 44, 55]
+    ];
     expect(actual).toEqual(expected);
   });
   test("uint8", () => {
@@ -340,6 +349,7 @@ describe("series", () => {
   const fltSeries = () => pl.Series("float", [1, 2, 3], pl.Float64);
   const boolSeries = () =>  pl.Series("bool", [true, false, false]);
   const other = () => pl.Series("bar", [3, 4, 5], pl.Int32);
+
   const chance = new Chance();
 
   it.each`
@@ -546,7 +556,7 @@ describe("series", () => {
   ${"argUnique"}     | ${pl.Series([1, 1, 2]).argUnique()}                  | ${pl.Series([0, 2])}
   ${"cast-Int16"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int16)}           | ${pl.Series("", [1, 1, 2], pl.Int16)}
   ${"cast-Int32"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int32)}           | ${pl.Series("", [1, 1, 2], pl.Int32)}
-  ${"cast-Int64"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int64)}           | ${pl.Series("", [1n, 1n, 2n], pl.Int64)}
+  ${"cast-Int64"}    | ${pl.Series("", [1, 1, 2]).cast(pl.Int64)}           | ${pl.Series("", [1, 1, 2], pl.Int64)}
   ${"cast-UInt16"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt16)}          | ${pl.Series("", [1, 1, 2], pl.UInt16)}
   ${"cast-UInt32"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt32)}          | ${pl.Series("", [1, 1, 2], pl.UInt32)}
   ${"cast-UInt64"}   | ${pl.Series("", [1, 1, 2]).cast(pl.UInt64)}          | ${pl.Series("", [1n, 1n, 2n])}
@@ -556,9 +566,9 @@ describe("series", () => {
   ${"concat"}        | ${pl.Series([1]).concat(pl.Series([2, 3]))}          | ${pl.Series([1, 2, 3])}
   ${"cumMax"}        | ${pl.Series([3, 2, 4]).cumMax()}                     | ${pl.Series([3, 3, 4])}
   ${"cumMin"}        | ${pl.Series([3, 2, 4]).cumMin()}                     | ${pl.Series([3, 2, 2])}
-  ${"cumProd"}       | ${pl.Series("", [1, 2, 3], pl.Int32).cumProd()}      | ${pl.Series("", [1n, 2n, 6n], pl.Int64)}
+  ${"cumProd"}       | ${pl.Series("", [1, 2, 3], pl.Int32).cumProd()}      | ${pl.Series("", [1, 2, 6], pl.Int64)}
   ${"cumSum"}        | ${pl.Series("", [1, 2, 3], pl.Int32).cumSum()}       | ${pl.Series("", [1, 3, 6], pl.Int32)}
-  ${"diff"}          | ${pl.Series([1, 2, 12]).diff(1, "drop").toJS()}      | ${pl.Series([1, 10]).toJS()}
+  ${"diff"}          | ${pl.Series([1, 2, 12]).diff(1, "drop").toObject()}  | ${pl.Series([1, 10]).toObject()}
   ${"diff"}          | ${pl.Series([1, 11]).diff(1, "ignore")}              | ${pl.Series("", [null, 10], pl.Float64, false)}
   ${"dropNulls"}     | ${pl.Series([1, null, 2]).dropNulls()}               | ${pl.Series([1, 2])}
   ${"dropNulls"}     | ${pl.Series([1, undefined, 2]).dropNulls()}          | ${pl.Series([1, 2])}
@@ -631,7 +641,11 @@ describe("series", () => {
   ${"toFrame"}       | ${pl.Series("foo", [1, 2, 3]).toFrame().toJSON()}    | ${pl.DataFrame([pl.Series("foo", [1, 2, 3])]).toJSON()}
   ${"shiftAndFill"}  | ${pl.Series("foo", [1, 2, 3]).shiftAndFill(1, 99)}   | ${pl.Series("foo", [99, 1, 2])}
   `("$# $name: expected matches actual ", ({expected, actual}) => {
-    expect(actual).toStrictEqual(expected);
+    if(pl.Series.isSeries(expected) && pl.Series.isSeries(actual)) {
+      expect(actual).toSeriesEqual(expected);
+    } else {
+      expect(actual).toEqual(expected);
+    }
   });
   it("set: expected matches actual", () => {
     const expected = pl.Series([99, 2, 3]);
@@ -669,9 +683,9 @@ describe("series", () => {
     expect(fn).toThrow(errorType);
   });
   test("reinterpret", () => {
-    const s = pl.Series("reinterpret", [1n, 2n], pl.Int64);
+    const s = pl.Series("reinterpret", [1, 2], pl.Int64);
     const unsignedExpected = pl.Series("reinterpret", [1n, 2n], pl.UInt64);
-    const signedExpected = pl.Series("reinterpret", [1n, 2n], pl.Int64);
+    const signedExpected = pl.Series("reinterpret", [1, 2], pl.Int64);
     const unsigned = s.reinterpret(false);
     const signed = unsigned.reinterpret(true);
 
@@ -782,6 +796,7 @@ describe("comparators & math", () => {
   });
 });
 describe("series proxy & metadata", () => {
+  const {Series} = pl;
   test("toString & inspect", () => {
     const s = pl.Series("foo", [1, 2, 3], pl.Int16);
     const sString = s.toString();
@@ -800,6 +815,16 @@ describe("series proxy & metadata", () => {
     const [two,, nine] = s;
     expect(two).toStrictEqual(2);
     expect(nine).toStrictEqual(9);
+  });
+  test("from", () => {
+    const expected = Series("", [1, 2, 3]);
+    const actual = Series.from([1, 2, 3]);
+    expect(actual).toSeriesEqual(expected);
+  });
+  test("of", () => {
+    const expected = Series("", [1, 2, 3]);
+    const actual = Series.of(1, 2, 3);
+    expect(actual).toSeriesEqual(expected);
   });
 });
 describe("StringFunctions", () => {

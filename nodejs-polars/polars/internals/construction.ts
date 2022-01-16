@@ -3,6 +3,7 @@ import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series} from "../series";
 
+
 export const jsTypeToPolarsType = (value: unknown): DataType => {
   if(value === null) {
     return DataType.Float64;
@@ -123,7 +124,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   return series;
 }
 
-export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "col"| "row"): any {
+export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "col"| "row", typedArrays?: boolean): any {
   let dataSeries;
 
   if(!data.length) {
@@ -159,7 +160,17 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
 
       return df;
     } else {
-      dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
+      if(typedArrays) {
+
+        dataSeries = data.map((s, idx) => Series.from(s)
+          .as(`column_${idx}`)
+          .inner()
+        );
+
+      } else {
+
+        dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
+      }
     }
 
   }

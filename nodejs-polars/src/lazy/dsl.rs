@@ -29,7 +29,6 @@ pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
     let other = params.get_external::<Expr>(&cx, "other")?.clone();
     dsl::binary_expr(expr, Operator::Plus, other).try_into_js(&cx)
-
 }
 
 #[js_function(1)]

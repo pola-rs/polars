@@ -187,10 +187,7 @@ pub fn fetch(cx: CallContext) -> JsResult<JsObject> {
     let ldf: LazyFrame = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let n_rows: usize = params.get_or("numRows", 500 as usize)?;
 
-    let fetch_task = Fetch {
-        ldf,
-        n_rows
-    };
+    let fetch_task = Fetch { ldf, n_rows };
     cx.env.spawn(fetch_task).map(|task| task.promise_object())
 }
 
