@@ -390,6 +390,7 @@ impl JsSeries {
             napi::Property::new(env, "weekday")?.with_method(weekday),
             napi::Property::new(env, "year")?.with_method(year),
             napi::Property::new(env, "zip_with")?.with_method(zip_with),
+            napi::Property::new(env, "to_array")?.with_method(to_array),
         ])?;
 
         Ok(series)

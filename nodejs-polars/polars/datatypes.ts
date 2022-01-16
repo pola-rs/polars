@@ -1,5 +1,4 @@
 import pli from "./internals/polars_internal";
-import {Stream} from "stream";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
  T extends DataType.Utf8 ? string :

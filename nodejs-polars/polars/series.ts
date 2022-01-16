@@ -1,6 +1,6 @@
 import pli from "./internals/polars_internal";
-import { arrayToJsSeries } from "./internals/construction";
-import { DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, iterToTypedArray, Optional } from "./datatypes";
+import {arrayToJsSeries} from "./internals/construction";
+import {DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, iterToTypedArray, Optional, TypedArray} from "./datatypes";
 import {DataFrame, dfWrapper} from "./dataframe";
 import {StringFunctions} from "./series/string";
 import {ListFunctions} from "./series/list";
@@ -8,7 +8,7 @@ import {DateTimeFunctions} from "./series/datetime";
 import {InvalidOperationError, todo} from "./error";
 import {RankMethod} from "./utils";
 import {col} from "./lazy/functions";
-import {isExternal} from "util/types";
+import {isExternal, isTypedArray} from "util/types";
 import {Arithmetic, Comparison, Cumulative, Rolling} from "./shared_traits";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -100,9 +100,9 @@ export interface Series<T> extends
    * Get the index of the maximal value.
    */
   argMax(): Optional<number>
-    /**
-   * Get the index of the minimal value.
-   */
+  /**
+ * Get the index of the minimal value.
+ */
   argMin(): Optional<number>
   /**
    * Get index values where Boolean Series evaluate True.
@@ -200,17 +200,17 @@ export interface Series<T> extends
    */
   diff(n: number, nullBehavior: "ignore" | "drop"): Series<T>
   diff({n, nullBehavior}: {n: number, nullBehavior: "ignore" | "drop"}): Series<T>
-   /**
-   * Compute the dot/inner product between two Series
-   * ___
-   * @example
-   * ```
-   * > const s = pl.Series("a", [1, 2, 3])
-   * > const s2 = pl.Series("b", [4.0, 5.0, 6.0])
-   * > s.dot(s2)
-   * 32.0
-   * ```
-   */
+  /**
+  * Compute the dot/inner product between two Series
+  * ___
+  * @example
+  * ```
+  * > const s = pl.Series("a", [1, 2, 3])
+  * > const s2 = pl.Series("b", [4.0, 5.0, 6.0])
+  * > s.dot(s2)
+  * 32.0
+  * ```
+  */
   dot(other: Series<any>): Optional<number>
   /**
    * Create a new Series that copies data from this Series without null values.
@@ -238,11 +238,11 @@ export interface Series<T> extends
    * ```
    */
   explode(): any
-    /**
-   * Extend the Series with given number of values.
-   * @param value The value to extend the Series with. This value may be null to fill with nulls.
-   * @param n The number of values to extend.
-   */
+  /**
+ * Extend the Series with given number of values.
+ * @param value The value to extend the Series with. This value may be null to fill with nulls.
+ * @param n The number of values to extend.
+ */
   extend(value: any, n: number): Series<T>
   extend(opt: {value: any, n: number}): Series<T>
   /**
@@ -757,7 +757,7 @@ export interface Series<T> extends
    * @param value value to replace masked values with
    */
   set(filter: Series<boolean>, value: T): Series<T>
-  setAtIdx(indices: number[] | Series<number>,  value: T): Series<T>
+  setAtIdx(indices: number[] | Series<number>, value: T): Series<T>
   /**
    * __Shift the values by a given period__
    *
@@ -995,6 +995,7 @@ export interface Series<T> extends
    * ```
    */
   toJS(): {name: string, datatype: string, values: any[]}
+  toBinary(): Buffer
   toFrame(): DataFrame
 }
 
@@ -1002,7 +1003,7 @@ export interface Series<T> extends
 export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const unwrap = <U>(method: string, args?: object, _series = _s): U => {
 
-    return pli.series[method]({_series, ...args });
+    return pli.series[method]({_series, ...args});
   };
   const wrap = <U>(method, args?, _series = _s): Series<U> => {
     return seriesWrapper(unwrap(method, args, _series));
@@ -1012,35 +1013,35 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   const dtypeAccessor = (fn) => (method, args: {field, key}, _series = _s) => {
     const dtype = unwrap<string>("dtype");
     if (args.field?._series) {
-      return fn(method, { [args.key]: args.field._series }, _series);
+      return fn(method, {[args.key]: args.field._series}, _series);
     } else {
       const dt = (DTYPE_TO_FFINAME as any)[DataType[dtype]];
       const internalMethod = `${method}_${dt}`;
-      if(DataType[dtype] === DataType.List) {
-        return seriesWrapper(fn(internalMethod, { [args.key]: args.field }, _series));
+      if (DataType[dtype] === DataType.List) {
+        return seriesWrapper(fn(internalMethod, {[args.key]: args.field}, _series));
       }
 
-      return fn(internalMethod, { [args.key]: args.field }, _series);
+      return fn(internalMethod, {[args.key]: args.field}, _series);
     }
   };
-  const inPlaceOptional = (method: string) =>  (obj?: {inPlace: boolean} | boolean): any  => {
-    if(obj === true || obj?.["inPlace"] === true) {
+  const inPlaceOptional = (method: string) => (obj?: {inPlace: boolean} | boolean): any => {
+    if (obj === true || obj?.["inPlace"] === true) {
       unwrap(method, {inPlace: true});
     } else {
       return wrap(method);
     }
   };
 
-  const rolling = (method: string) =>  (opts, weights?, minPeriods?, center?): Series<T> => {
+  const rolling = (method: string) => (opts, weights?, minPeriods?, center?): Series<T> => {
     const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
-    if(windowSize === null) {
+    if (windowSize === null) {
       throw new Error("window size is required");
     }
     const callOpts = {
-      window_size: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
+      window_size: opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null),
       weights: opts?.["weights"] ?? weights,
       min_periods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
-      center : opts?.["center"] ?? center ?? false,
+      center: opts?.["center"] ?? center ?? false,
     };
 
     return wrap(method, callOpts);
@@ -1075,7 +1076,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     get length() {
       return unwrap("len");
     },
-    get str(){
+    get str() {
       return StringFunctions(_s);
     },
     get lst() {
@@ -1090,12 +1091,12 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     alias(name) {
       const s = this.clone();
-      unwrap("rename", { name }, s._series);
+      unwrap("rename", {name}, s._series);
 
       return s;
     },
     append(other) {
-      return wrap("append", { other: other._series });
+      return wrap("append", {other: other._series});
     },
     argMax: noArgUnwrap("arg_max"),
     argMin: noArgUnwrap("arg_min"),
@@ -1110,13 +1111,13 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       return this.alias(name);
     },
     bitand(other) {
-      return wrap("bitand", { other: other._series });
+      return wrap("bitand", {other: other._series});
     },
     bitor(other) {
-      return wrap("bitor", { other: other._series });
+      return wrap("bitor", {other: other._series});
     },
     bitxor(other) {
-      return wrap("bitxor", { other: other._series });
+      return wrap("bitxor", {other: other._series});
     },
     cast(dtype, strict: any = false) {
       return typeof strict === "boolean" ?
@@ -1129,7 +1130,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     concat(other) {
       const s = this.clone();
-      unwrap("append", { other: other._series }, s._series);
+      unwrap("append", {other: other._series}, s._series);
 
       return s;
     },
@@ -1162,10 +1163,10 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     describe() {
       let s = seriesWrapper(_s);
       let stats = {};
-      if(!this.length) {
+      if (!this.length) {
         throw new RangeError("Series must contain at least one value");
       }
-      if(this.isNumeric()) {
+      if (this.isNumeric()) {
         s = s.cast(DataType.Float64);
         stats = {
           "min": s.min(),
@@ -1198,7 +1199,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         "value": Object.values(stats)
       });
     },
-    diff(n: any = 1, null_behavior="ignore") {
+    diff(n: any = 1, null_behavior = "ignore") {
       return typeof n === "number" ?
         wrap("diff", {n, null_behavior}) :
         wrap("diff", {
@@ -1213,7 +1214,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       return this.div(field);
     },
     dot(other) {
-      return unwrap("dot", { other: other._series });
+      return unwrap("dot", {other: other._series});
     },
     dropNulls: noArgWrap("drop_nulls"),
     eq(field) {
@@ -1224,7 +1225,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     explode: noArgWrap("explode"),
     extend(o, n?) {
-      if(n !== null && typeof n === "number") {
+      if (n !== null && typeof n === "number") {
         return wrap("extend", {value: o, n});
       }
 
@@ -1259,15 +1260,15 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     greaterThanEquals(field) {
       return this.gtEq(field);
     },
-    hash(obj: any = 0, k1=1, k2=2, k3=3) {
-      if(typeof obj === "number" || typeof obj === "bigint") {
-        return wrap<bigint>("hash", { k0: obj, k1: k1, k2: k2, k3: k3 });
+    hash(obj: any = 0, k1 = 1, k2 = 2, k3 = 3) {
+      if (typeof obj === "number" || typeof obj === "bigint") {
+        return wrap<bigint>("hash", {k0: obj, k1: k1, k2: k2, k3: k3});
       }
 
-      return wrap("hash", { k0: 0, k1, k2, k3, ...obj });
+      return wrap("hash", {k0: 0, k1, k2, k3, ...obj});
     },
     hasValidity: noArgUnwrap("has_validity"),
-    head(length=5) {
+    head(length = 5) {
       return wrap("head", {length});
     },
     inner() {
@@ -1336,13 +1337,13 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
 
     },
     isUnique: noArgWrap("is_unique"),
-    isUtf8()  {
+    isUtf8() {
       const dtype = unwrap<keyof DataType>("dtype");
 
       return DataType[dtype] === DataType.Utf8;
     },
-    kurtosis(fisher: any = true, bias=true) {
-      if(typeof fisher === "boolean") {
+    kurtosis(fisher: any = true, bias = true) {
+      if (typeof fisher === "boolean") {
         return unwrap("kurtosis", {fisher, bias});
       }
 
@@ -1355,7 +1356,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     len: noArgUnwrap("len"),
     lessThan: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
     lessThanEquals: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
-    limit: (n=10) => wrap("limit", { num_elements: n }),
+    limit: (n = 10) => wrap("limit", {num_elements: n}),
     ltEq: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
     lt: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
     max: noArgUnwrap("max"),
@@ -1374,12 +1375,12 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     peakMin: noArgWrap("peak_min"),
     plus: (field) => dtypeAccessor(wrap)("add", {field, key: "other"}),
     quantile: (quantile) => unwrap<number>("quantile", {quantile}),
-    rank: (method="average") => wrap("rank", { method}),
+    rank: (method = "average") => wrap("rank", {method}),
     rechunk: inPlaceOptional("rechunk"),
-    reinterpret(signed=true)  {
+    reinterpret(signed = true) {
       const dtype = unwrap<string>("dtype");
       if ([DataType.UInt64, DataType.Int64].includes(DataType[dtype])) {
-        return wrap("reinterpret", { signed }) as any;
+        return wrap("reinterpret", {signed}) as any;
       } else {
         throw new InvalidOperationError("reinterpret", dtype);
       }
@@ -1388,7 +1389,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     modulo: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
     rename(obj: any, inPlace = false) {
       if (obj?.inPlace ?? inPlace) {
-        unwrap("rename", { name: obj?.name ?? obj });
+        unwrap("rename", {name: obj?.name ?? obj});
       } else {
         return this.alias(obj?.name ?? obj);
       }
@@ -1413,8 +1414,8 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         .getColumn(this.name);
     },
     round(opt): any {
-      if(this.isNumeric()) {
-        if(typeof opt === "number") {
+      if (this.isNumeric()) {
+        if (typeof opt === "number") {
           return wrap("round", {decimals: opt});
         } else {
           return wrap("round", opt);
@@ -1425,7 +1426,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       }
     },
     sample(opts?, frac?, withReplacement = false) {
-      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+      if (opts?.n !== undefined || opts?.frac !== undefined) {
         return this.sample(opts.n, opts.frac, opts.withReplacement);
       }
       if (typeof opts === "number") {
@@ -1434,7 +1435,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
           withReplacement
         });
       }
-      if(typeof frac === "number") {
+      if (typeof frac === "number") {
         return wrap("sample_frac", {
           frac,
           withReplacement,
@@ -1468,7 +1469,7 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
 
     },
     shift(opt: any = 1) {
-      if(typeof opt === "number") {
+      if (typeof opt === "number") {
         return wrap<T>("shift", {periods: opt});
       }
 
@@ -1484,21 +1485,21 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     shrinkToFit: inPlaceOptional("shrink_to_fit"),
     skew(opt: any = true) {
-      if(typeof opt === "boolean") {
+      if (typeof opt === "boolean") {
         return unwrap("skew", {bias: opt});
       }
 
       return unwrap("skew", opt);
     },
     slice(opts, length?) {
-      if(typeof opts === "number") {
+      if (typeof opts === "number") {
         return wrap("slice", {offset: opts, length});
       }
 
       return wrap("slice", opts);
     },
-    sort(opt: any = false)  {
-      if(typeof opt === "boolean") {
+    sort(opt: any = false) {
+      if (typeof opt === "boolean") {
         return wrap("sort", {reverse: opt});
       }
 
@@ -1506,24 +1507,24 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     sub: (field) => dtypeAccessor(wrap)("sub", {field, key: "other"}),
     sum: noArgUnwrap("sum"),
-    tail: (length=5) => wrap("tail", {length}),
+    tail: (length = 5) => wrap("tail", {length}),
     take: (indices) => wrap("take", {indices}),
     takeEvery: (n) => wrap("take_every", {n}),
     multiplyBy: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
     toArray() {
-      const series = seriesWrapper<any>(_s);
+      const arr = unwrap<any>("to_array").values as any[];
+      const dtype = this.dtype as any as string;
+      if (DataType[dtype] === DataType.List) {
+        console.log(arr);
 
-      const dtype = series.dtype as any as string;
-      if(DataType[dtype] === DataType.List) {
-        return [...series].map(s => s.toArray());
+        return arr.map(s => s.values);
       }
-
-      return Array.from(series);
     },
-    toFrame()  {
+    toFrame() {
       return dfWrapper(pli.df.read_columns({columns: [_s]}));
     },
     toJS: noArgUnwrap("to_js"),
+    toBinary: noArgUnwrap("to_binary"),
     unique: noArgWrap("unique"),
     valueCounts() {
       return dfWrapper(unwrap("value_counts"));
@@ -1534,15 +1535,15 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
   } as Series<T>;
 
   return new Proxy(seriesObject, {
-    get: function(target, prop, receiver) {
-      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+    get: function (target, prop, receiver) {
+      if (typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         return target.get(Number(prop));
       } else {
         return Reflect.get(target, prop, receiver);
       }
     },
-    set: function(series, prop, input): any {
-      if(typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
+    set: function (series, prop, input): any {
+      if (typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         series.setAtIdx([Number(prop)], input);
 
         return true;
@@ -1556,11 +1557,19 @@ export interface SeriesConstructor {
   <V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
   <T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
   <T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
+  /**
+   * Creates a series from a `TypedArray` type.
+   * This is **MUCH** faster than using `pl.Series`.
+   * If working with non null numeric data, this is the preferred method for creating `Series`.
+   */
+  from(values: TypedArray): Series<number | bigint>
+  /** converts any iterable into a series */
+  from<T>(values: Iterable<T>): Series<T>
   isSeries(arg: any): arg is Series<any>;
 }
 
-const SeriesConstructor = (arg0: any, arg1?: any, dtype?: any, strict?: any)  => {
-  if(typeof arg0 === "string") {
+const SeriesConstructor = (arg0: any, arg1?: any, dtype?: any, strict?: any) => {
+  if (typeof arg0 === "string") {
     const _s = arrayToJsSeries(arg0, arg1, dtype, strict);
 
     return seriesWrapper(_s);
@@ -1572,11 +1581,11 @@ const SeriesConstructor = (arg0: any, arg1?: any, dtype?: any, strict?: any)  =>
 
 const isSeries = <T>(anyVal: any): anyVal is Series<T> => isExternal(anyVal?._series);
 
-const fromNonNull = <T>(name: string, iterable: Iterable<T>, dtype: DataType): Series<T> => {
-  const typedarray = iterToTypedArray(dtype, iterable);
-
-  return pli.series.new_from_typed_array({ name, values:typedarray});
-
+const from = <T>(values: Iterable<T>): Series<T> => {
+  if(isTypedArray(values)) {
+    return seriesWrapper(pli.series.new_from_typed_array({name: "", values}));
+  } else {
+    return SeriesConstructor("", Array.from(values));
+  }
 };
-
-export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {isSeries, fromNonNull});
+export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {isSeries, from});

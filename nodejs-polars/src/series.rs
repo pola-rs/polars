@@ -636,6 +636,31 @@ pub fn shrink_to_fit(_: CallContext) -> JsResult<JsUnknown> {
 }
 
 #[js_function(1)]
+pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
+    let params = get_params(&cx)?;
+    let series: &Series = params.get_external::<Series>(&cx, "_series")?;
+
+    match *series.dtype() {
+        DataType::UInt8 => cx.env.to_js_value(series.u8().unwrap()),
+        DataType::UInt16 => cx.env.to_js_value(series.u16().unwrap()),
+        DataType::UInt32 => cx.env.to_js_value(series.u32().unwrap()),
+        DataType::UInt64 => cx.env.to_js_value(series.u64().unwrap()),
+        DataType::Int8 => cx.env.to_js_value(series.i8().unwrap()),
+        DataType::Int16 => cx.env.to_js_value(series.i16().unwrap()),
+        DataType::Int32 => cx.env.to_js_value(series.i32().unwrap()),
+        DataType::Int64 => cx.env.to_js_value(series.i64().unwrap()),
+        DataType::Float32 => cx.env.to_js_value(series.f32().unwrap()),
+        DataType::Float64 => cx.env.to_js_value(series.f64().unwrap()),
+        DataType::Utf8 => cx.env.to_js_value(series.utf8().unwrap()),
+        DataType::Date => cx.env.to_js_value(series.date().unwrap()),
+        DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
+        DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
+        DataType::Categorical => cx.env.to_js_value(series.categorical().unwrap()),
+        _ => todo!(),
+    }
+}
+
+#[js_function(1)]
 pub fn is_in(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
