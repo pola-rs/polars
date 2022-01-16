@@ -30,20 +30,21 @@ describe("lazyframe", () => {
       "foo": [1, 2],
       "bar": ["a", "b"]
     }).lazy();
-    const actual = df.describePlan();
-    expect(actual).toEqual(
-      `TABLE: ["foo", "bar"]; PROJECT */2 COLUMNS; SELECTION: None\\n
-                    PROJECTION: None`);
+    const actual = df.describePlan().replace(/\s+/g, " ");
+    expect(actual).toEqual(`MEMTABLE: ["foo", "bar"];
+project */2 columns	|	details: None;
+selection: "None" `.replace(/\s+/g, " "));
   });
   test("describeOptimiziedPlan", () => {
     const df = pl.DataFrame({
       "foo": [1, 2],
       "bar": ["a", "b"]
     }).lazy();
-    const actual = df.describeOptimizedPlan();
+    const actual = df.describeOptimizedPlan().replace(/\s+/g, " ");
     expect(actual).toEqual(
-      `TABLE: ["foo", "bar"]; PROJECT */2 COLUMNS; SELECTION: None\\n
-                    PROJECTION: None`);
+      `MEMTABLE: ["foo", "bar"];
+      project */2 columns	|	details: None;
+      selection: "None" `.replace(/\s+/g, " "));
   });
   test("drop", () => {
     const df = pl.DataFrame({
