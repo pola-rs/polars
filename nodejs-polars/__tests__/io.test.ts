@@ -60,6 +60,7 @@ describe("read:csv", () => {
   });
   it.todo("can read from a stream");
 });
+
 describe("read:json", () => {
   it("can read from a json file", () => {
     const df = pl.readJSON(jsonpath);
@@ -79,6 +80,7 @@ describe("read:json", () => {
     expect(df.toJSON({multiline:true})).toEqual(json.toString());
   });
 });
+
 describe("scan", () => {
   it("can lazy load (scan) from a csv file", () => {
     const df = pl.scanCSV(csvpath).collectSync();

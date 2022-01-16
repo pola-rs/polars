@@ -47,13 +47,13 @@ namespace pl {
 
   // IO
   export import scanCSV = io.scanCSV;
-  export import scanJSON = io.scanJSON;
-  export import scanParquet = io.scanParquet;
-  export import readCSV = io.readCSV;
   export import scanIPC = io.scanIPC;
+  export import scanParquet = io.scanParquet;
+
+  export import readCSV = io.readCSV;
   export import readIPC = io.readIPC;
-  export import readParquet = io.readParquet;
   export import readJSON = io.readJSON;
+  export import readParquet = io.readParquet;
 
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;

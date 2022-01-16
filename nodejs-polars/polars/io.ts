@@ -1,7 +1,7 @@
-import { NullValues } from "./datatypes";
+import {NullValues} from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, dfWrapper} from "./dataframe";
-import { isPath } from "./utils";
+import {isPath} from "./utils";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {Readable, Stream} from "stream";
 import {concat} from "./functions";
@@ -39,6 +39,7 @@ type ReadCsvOptions = {
   sep?: string;
   startRows?: number;
 };
+
 type ReadJsonOptions = {
   inferSchemaLength?: number;
   batchSize?: number;
@@ -77,30 +78,6 @@ const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
   inferSchemaLength: 50
 };
 
-function readCSVBuffer(buff, options) {
-  return  dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
-}
-function readCSVPath(path, options) {
-  return  dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
-}
-function readJSONBuffer(buff, options) {
-  return  dfWrapper(pli.df.readJSONBuffer({...readJsonDefaultOptions, ...options, buff}));
-}
-function readJSONPath(path, options) {
-  return  dfWrapper(pli.df.readJSONPath({...readJsonDefaultOptions, ...options, path}));
-}
-function readParquetBuffer(buff, options) {
-  return  dfWrapper(pli.df.readParquetBuffer({...options, buff}));
-}
-function readParquetPath(path, options) {
-  return  dfWrapper(pli.df.readParquetPath({...options, path}));
-}
-function readIPCBuffer(buff, options) {
-  return  dfWrapper(pli.df.readIPCBuffer({...options, buff}));
-}
-function readIPCPath(path, options) {
-  return  dfWrapper(pli.df.readIPCPath({...options, path}));
-}
 /**
  * __Read a CSV file or string into a Dataframe.__
  * ___
@@ -138,13 +115,13 @@ function readIPCPath(path, options) {
 export function readCSV(pathOrBody: string | Buffer, options?: Partial<ReadCsvOptions>): DataFrame {
   const extensions = [".tsv", ".csv"];
 
-  if(Buffer.isBuffer(pathOrBody)) {
+  if (Buffer.isBuffer(pathOrBody)) {
     return readCSVBuffer(pathOrBody, options);
   }
 
-  if(typeof pathOrBody === "string") {
+  if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, extensions);
-    if(inline) {
+    if (inline) {
       return readCSVBuffer(Buffer.from(pathOrBody, "utf-8"), options);
     } else {
       return readCSVPath(pathOrBody, options);
@@ -154,6 +131,42 @@ export function readCSV(pathOrBody: string | Buffer, options?: Partial<ReadCsvOp
   }
 }
 
+/**
+ * __Lazily read from a CSV file or multiple files via glob patterns.__
+ *
+ * This allows the query optimizer to push down predicates and
+ * projections to the scan level, thereby potentially reducing
+ * memory overhead.
+ * ___
+ * @param path path to a file
+ * @param options.hasHeader - Indicate if first row of dataset is header or not. If set to False first row will be set to `column_x`,
+ *     `x` being an enumeration over every column in the dataset.
+ * @param options.sep -Character to use as delimiter in the file.
+ * @param options.commentChar - character that indicates the start of a comment line, for instance '#'.
+ * @param options.quotChar -character that is used for csv quoting, default = ''. Set to null to turn special handling and escaping of quotes off.
+ * @param options.startRows -Start reading after `startRows` position.
+ * @param options.nullValues - Values to interpret as null values. You can provide a
+ *     - `string` -> all values encountered equal to this string will be null
+ *     - `Array<string>` -> A null value per column.
+ *     - `Record<string,string>` -> An object or map that maps column name to a null value string.Ex. {"column_1": 0}
+ * @param options.ignoreErrors -Try to keep reading lines if some lines yield errors.
+ * @param options.cache Cache the result after reading.
+ * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
+ *     If set to `null`, a full table scan will be done (slow).
+ * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
+ * @param options.endRows -After n rows are read from the CSV, it stops reading.
+ *     During multi-threaded parsing, an upper bound of `n` rows
+ *     cannot be guaranteed.
+ * @param options.rechunk -Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
+ * @param options.lowMemory - Reduce memory usage in expense of performance.
+ * ___
+ *
+ */
+export function scanCSV(path: string, options?: Partial<ReadCsvOptions>): LazyDataFrame {
+  options = {...readCsvDefaultOptions, ...options};
+
+  return LazyDataFrame(pli.ldf.scanCSV({path, ...options}));
+}
 
 /**
  * __Read a JSON file or string into a DataFrame.__
@@ -189,13 +202,13 @@ export function readCSV(pathOrBody: string | Buffer, options?: Partial<ReadCsvOp
  */
 export function readJSON(pathOrBody: string | Buffer, options?: Partial<ReadJsonOptions>): DataFrame {
   const extensions = [".ndjson", ".json", ".jsonl"];
-  if(Buffer.isBuffer(pathOrBody)) {
+  if (Buffer.isBuffer(pathOrBody)) {
     return readJSONBuffer(pathOrBody, options);
   }
 
-  if(typeof pathOrBody === "string") {
+  if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, extensions);
-    if(inline) {
+    if (inline) {
       return readJSONBuffer(Buffer.from(pathOrBody, "utf-8"), options);
     } else {
       return readJSONPath(pathOrBody, options);
@@ -205,30 +218,24 @@ export function readJSON(pathOrBody: string | Buffer, options?: Partial<ReadJson
   }
 }
 
+
 /**
- * Read into a DataFrame from a csv file.
+ * Read into a DataFrame from a parquet file.
+ * @param pathOrBuffer
+ * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
+ * as partition aware scan.
+ * @param options.columns Columns to select. Accepts a list of column names.
+ * @param options.numRows  Stop reading from parquet file after reading ``n_rows``.
+ * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
  */
-export function scanCSV(options: Partial<ReadCsvOptions>): LazyDataFrame
-export function scanCSV(path: string): LazyDataFrame
-export function scanCSV(path: string, options: Partial<ReadCsvOptions>): LazyDataFrame
-export function scanCSV(arg: Partial<ReadCsvOptions> | string, options?: any): LazyDataFrame {
-  if(typeof arg === "string") {
-    return scanCSV({...options, path: arg});
-  }
-  options = {...readCsvDefaultOptions, ...arg};
-
-  return LazyDataFrame(pli.ldf.scanCSV(options));
-}
-
-
 export function readParquet(pathOrBody: string | Buffer, options?: ReadParquetOptions): DataFrame {
-  if(Buffer.isBuffer(pathOrBody)) {
+  if (Buffer.isBuffer(pathOrBody)) {
     return readParquetBuffer(pathOrBody, options);
   }
 
-  if(typeof pathOrBody === "string") {
+  if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, [".parquet"]);
-    if(inline) {
+    if (inline) {
       return readParquetBuffer(Buffer.from(pathOrBody, "utf-8"), options);
     } else {
       return readParquetPath(pathOrBody, options);
@@ -237,15 +244,39 @@ export function readParquet(pathOrBody: string | Buffer, options?: ReadParquetOp
     throw new Error("must supply either a path or body");
   }
 }
+/**
+ * __Lazily read from a parquet file or multiple files via glob patterns.__
+ * ___
+ * This allows the query optimizer to push down predicates and projections to the scan level,
+ * thereby potentially reducing memory overhead.
+ * @param path Path to a file or or glob pattern
+ * @param options.numRows Stop reading from parquet file after reading ``n_rows``.
+ * @param options.cache Cache the result after reading.
+ * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
+ * @param options.rechunk In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
+ */
+export function scanParquet(path: string, options?: ScanParquetOptions): LazyDataFrame {
+  return LazyDataFrame(pli.ldf.scanParquet({path, ...options}));
+}
 
+
+/**
+ * __Read into a DataFrame from Arrow IPC (Feather v2) file.__
+ * ___
+ * @param pathOrBody - path or buffer or string
+ *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `file.ipc`.
+ *   - body: String or buffer to be read as Arrow IPC
+ * @param options.columns Columns to select. Accepts a list of column names.
+ * @param options.numRows Stop reading from parquet file after reading ``n_rows``.
+ */
 export function readIPC(pathOrBody: string | Buffer, options?: ReadIPCOptions): DataFrame {
-  if(Buffer.isBuffer(pathOrBody)) {
+  if (Buffer.isBuffer(pathOrBody)) {
     return readIPCBuffer(pathOrBody, options);
   }
 
-  if(typeof pathOrBody === "string") {
+  if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, [".ipc"]);
-    if(inline) {
+    if (inline) {
       return readIPCBuffer(Buffer.from(pathOrBody, "utf-8"), options);
     } else {
       return readIPCPath(pathOrBody, options);
@@ -255,17 +286,18 @@ export function readIPC(pathOrBody: string | Buffer, options?: ReadIPCOptions): 
   }
 }
 
-
+/**
+ * __Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.__
+ * ___
+ * @param path Path to a IPC file.
+ * @param options.numRows Stop reading from IPC file after reading ``numRows``
+ * @param options.cache Cache the result after reading.
+ * @param options.rechunk Reallocate to contiguous memory when all chunks/ files are parsed.
+ */
 export function scanIPC(path: string, options?: ScanIPCOptions): LazyDataFrame {
   return LazyDataFrame(pli.ldf.scanIPC({path, ...options}));
 }
 
-
-export function scanParquet(path: string, options?: ScanParquetOptions): LazyDataFrame {
-  return LazyDataFrame(pli.ldf.scanParquet({path, ...options}));
-}
-
-export function scanJSON() {}
 
 // utility to read streams as lines.
 class LineBatcher extends Stream.Transform {
@@ -287,7 +319,7 @@ class LineBatcher extends Stream.Transform {
     var position = 0;
 
     let i = 0;
-    while(i < chunk.length) {
+    while (i < chunk.length) {
       if (chunk[i] === 10) { // '\n'
         this.#accumulatedLines++;
         if (this.#accumulatedLines == this.#batchSize) {
@@ -377,7 +409,7 @@ class LineBatcher extends Stream.Transform {
  * └─────┴─────┘
  * ```
  */
-export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promise<DataFrame>  {
+export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promise<DataFrame> {
   let batchSize = options?.batchSize ?? 10000;
   let count = 0;
   let end = options?.endRows ?? Number.POSITIVE_INFINITY;
@@ -441,7 +473,7 @@ export function readCSVStream(stream: Readable, options?: ReadCsvOptions): Promi
  * └─────┴─────┘
  * ```
  */
-export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Promise<DataFrame>  {
+export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Promise<DataFrame> {
   let batchSize = options?.batchSize ?? 10000;
 
   return new Promise((resolve, reject) => {
@@ -453,7 +485,7 @@ export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Pro
         try {
           const df = readJSONBuffer(chunk, options);
           chunks.push(df);
-        } catch(err) {
+        } catch (err) {
           reject(err);
         }
       })
@@ -467,4 +499,32 @@ export function readJSONStream(stream: Readable, options?: ReadJsonOptions): Pro
       });
 
   });
+}
+
+
+// helper functions
+
+function readCSVBuffer(buff, options) {
+  return dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
+}
+function readCSVPath(path, options) {
+  return dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
+}
+function readJSONBuffer(buff, options) {
+  return dfWrapper(pli.df.readJSONBuffer({...readJsonDefaultOptions, ...options, buff}));
+}
+function readJSONPath(path, options) {
+  return dfWrapper(pli.df.readJSONPath({...readJsonDefaultOptions, ...options, path}));
+}
+function readParquetBuffer(buff, options) {
+  return dfWrapper(pli.df.readParquetBuffer({...options, buff}));
+}
+function readParquetPath(path, options) {
+  return dfWrapper(pli.df.readParquetPath({...options, path}));
+}
+function readIPCBuffer(buff, options) {
+  return dfWrapper(pli.df.readIPCBuffer({...options, buff}));
+}
+function readIPCPath(path, options) {
+  return dfWrapper(pli.df.readIPCPath({...options, path}));
 }

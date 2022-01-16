@@ -1208,12 +1208,19 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
 
-  /** write to IPC */
+  /**
+   * Write to Arrow IPC binary stream, or a feather file.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
   toIPC(path: string, options?: WriteIPCOptions): void
 
-  /** write to Parquet */
+  /**
+   * Write the DataFrame disk in parquet format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
   toParquet(path: string, options?: WriteParquetOptions): void
-
   toSeries(index: number): Series<any>
   toString(): string
   /**
