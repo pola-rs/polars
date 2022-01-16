@@ -8,6 +8,38 @@ use crate::utils::is_scan;
 
 pub struct TypeCoercionRule {}
 
+/// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
+/// it would be wasteful to cast the column instead of the unsigned integer literal.
+fn use_supertype(
+    mut st: DataType,
+    left: &AExpr,
+    right: &AExpr,
+    type_left: &DataType,
+    type_right: &DataType,
+) -> DataType {
+    match (left, right) {
+        // do nothing and use supertype
+        (AExpr::Literal(_), AExpr::Literal(_))
+        // always make sure that we cast to floats if one of the operands is float
+        |(AExpr::Literal(LiteralValue::Float32(_)), _)
+        |(AExpr::Literal(LiteralValue::Float64(_)), _)
+        |(_, AExpr::Literal(LiteralValue::Float32(_)))
+        |(_, AExpr::Literal(LiteralValue::Float64(_)))
+        => {}
+        // cast literal to right type
+        (AExpr::Literal(_), _) => {
+            st = type_right.clone();
+        }
+        // cast literal to left type
+        (_, AExpr::Literal(_)) => {
+            st = type_left.clone();
+        }
+        // do nothing
+        _ => {}
+    }
+    st
+}
+
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,
@@ -47,22 +79,8 @@ impl OptimizationRule for TypeCoercionRule {
                     if type_true == type_false {
                         None
                     } else {
-                        let mut st = get_supertype(&type_true, &type_false).expect("supertype");
-
-                        match (truthy, falsy) {
-                            // do nothing and use supertype
-                            (AExpr::Literal(_), AExpr::Literal(_)) => {}
-                            // cast literal to right type
-                            (AExpr::Literal(_), _) => {
-                                st = type_false.clone();
-                            }
-                            // cast literal to left type
-                            (_, AExpr::Literal(_)) => {
-                                st = type_true.clone();
-                            }
-                            // do nothing
-                            _ => {}
-                        }
+                        let st = get_supertype(&type_true, &type_false).expect("supertype");
+                        let st = use_supertype(st, truthy, falsy, &type_true, &type_false);
 
                         // only cast if the type is not already the super type.
                         // this can prevent an expensive flattening and subsequent aggregation
@@ -149,23 +167,10 @@ impl OptimizationRule for TypeCoercionRule {
                     if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
                         None
                     } else {
-                        let mut st = get_supertype(&type_left, &type_right)
+                        let st = get_supertype(&type_left, &type_right)
                             .expect("could not find supertype of binary expr");
 
-                        match (left, right) {
-                            // do nothing and use supertype
-                            (AExpr::Literal(_), AExpr::Literal(_)) => {}
-                            // cast literal to right type
-                            (AExpr::Literal(_), _) => {
-                                st = type_right.clone();
-                            }
-                            // cast literal to left type
-                            (_, AExpr::Literal(_)) => {
-                                st = type_left.clone();
-                            }
-                            // do nothing
-                            _ => {}
-                        }
+                        let mut st = use_supertype(st, left, right, &type_left, &type_right);
 
                         let cat_str_arithmetic = (type_left == DataType::Categorical
                             && type_right == DataType::Utf8)

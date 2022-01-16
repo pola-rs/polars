@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use std::borrow::Cow;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
@@ -91,11 +92,15 @@ impl fmt::Debug for LogicalPlan {
                 if let Some(columns) = projection {
                     n_columns = format!("{}", columns.len());
                 }
+                let selection = match selection {
+                    Some(s) => Cow::Owned(format!("{:?}", s)),
+                    None => Cow::Borrowed("None"),
+                };
 
                 write!(
                     f,
-                    "TABLE: {:?}; PROJECT {}/{} COLUMNS; SELECTION: {:?}\\n
-                    PROJECTION: {:?}",
+                    "MEMTABLE: {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
+                    \tselection: {:?}\n\n",
                     schema
                         .fields()
                         .iter()
@@ -104,8 +109,8 @@ impl fmt::Debug for LogicalPlan {
                         .collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
+                    projection,
                     selection,
-                    projection
                 )
             }
             Projection { expr, input, .. } => {

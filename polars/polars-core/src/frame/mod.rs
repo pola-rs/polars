@@ -428,6 +428,11 @@ impl DataFrame {
         &self.columns
     }
 
+    #[cfg(feature = "private")]
+    pub fn get_columns_mut(&mut self) -> &mut Vec<Series> {
+        &mut self.columns
+    }
+
     /// Iterator over the columns as `Series`.
     ///
     /// # Example
