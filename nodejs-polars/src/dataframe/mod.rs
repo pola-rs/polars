@@ -81,25 +81,36 @@ impl JsDataFrame {
             napi::Property::new(env, "width")?.with_method(df::width),
             napi::Property::new(env, "with_column")?.with_method(df::with_column),
             napi::Property::new(env, "with_row_count")?.with_method(df::with_row_count),
+            // IO
             napi::Property::new(env, "to_js")?.with_method(io::to_js),
-            napi::Property::new(env, "to_json")?.with_method(io::to_json),
+            // row
             napi::Property::new(env, "to_row")?.with_method(io::to_row),
-            napi::Property::new(env, "to_rows")?.with_method(io::to_rows),
             napi::Property::new(env, "to_row_object")?.with_method(io::to_row_object),
-            napi::Property::new(env, "to_row_objects")?.with_method(io::to_row_objects),
-            napi::Property::new(env, "write_csv_path")?.with_method(io::write_csv_path),
-            napi::Property::new(env, "write_csv_stream")?.with_method(io::write_csv_stream),
-            napi::Property::new(env, "write_json_path")?.with_method(io::write_json_path),
-            napi::Property::new(env, "write_json_stream")?.with_method(io::write_json_stream),
+            // rows
+            napi::Property::new(env, "to_rows")?.with_method(io::to_rows),
+            napi::Property::new(env, "read_rows")?.with_method(io::read_rows),
             napi::Property::new(env, "read_array_rows")?.with_method(io::read_array_rows),
+            napi::Property::new(env, "to_row_objects")?.with_method(io::to_row_objects),
             napi::Property::new(env, "read_columns")?.with_method(io::read_columns),
+            //csv
             napi::Property::new(env, "readCSVBuffer")?.with_method(io::read_csv_buffer),
             napi::Property::new(env, "readCSVPath")?.with_method(io::read_csv_path),
+            napi::Property::new(env, "write_csv_path")?.with_method(io::write_csv_path),
+            napi::Property::new(env, "write_csv_stream")?.with_method(io::write_csv_stream),
+            // json
+            napi::Property::new(env, "to_json")?.with_method(io::to_json),
             napi::Property::new(env, "readJSONBuffer")?.with_method(io::read_json_buffer),
             napi::Property::new(env, "readJSONPath")?.with_method(io::read_json_path),
-            napi::Property::new(env, "readParquet")?.with_method(io::read_parquet),
+            napi::Property::new(env, "write_json_path")?.with_method(io::write_json_path),
+            napi::Property::new(env, "write_json_stream")?.with_method(io::write_json_stream),
+            // parquet
+            napi::Property::new(env, "readParquetPath")?.with_method(io::read_parquet_path),
+            napi::Property::new(env, "readParquetBuffer")?.with_method(io::read_parquet_buffer),
             napi::Property::new(env, "writeParquet")?.with_method(io::write_parquet_path),
-            napi::Property::new(env, "read_rows")?.with_method(io::read_rows),
+            // ipc
+            napi::Property::new(env, "readIPCPath")?.with_method(io::read_ipc_path),
+            napi::Property::new(env, "readIPCBuffer")?.with_method(io::read_ipc_buffer),
+            napi::Property::new(env, "writeIPC")?.with_method(io::write_ipc_path),
         ])?;
         Ok(df_obj)
     }
