@@ -3169,7 +3169,7 @@ class DataFrame:
 
     def fill_nan(self, fill_value: Union["pli.Expr", int, float]) -> "DataFrame":
         """
-        Fill None/missing values by a an Expression evaluation.
+        Fill floating point NaN values by an Expression evaluation.
 
         Warnings
         --------
