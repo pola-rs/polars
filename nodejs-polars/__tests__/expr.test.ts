@@ -8,7 +8,6 @@ describe("expr", () => {
       .as("abs")).getColumn("abs");
     expect(actual).toSeriesEqual(expected);
   });
-  test.todo("aggGroups");
   test("alias", () => {
     const name = "alias";
     const actual = pl.select(lit("a").alias(name));
@@ -1990,5 +1989,88 @@ describe("arithmetic", () => {
     expect(actual).toEqual(expected);
     const actual1 = df.select(col("a").modulo(2));
     expect(actual1).toEqual(expected);
+  });
+});
+
+describe("Round<T>", () => {
+
+  test("ceil", () => {
+    const df = pl.Series
+      .from([1.1, 2.2])
+      .as("ceil")
+      .toFrame();
+
+    const expected = pl.DataFrame({
+      "ceil": [2, 3]
+    });
+
+    const seriesActual = df
+      .getColumn("ceil")
+      .ceil()
+      .toFrame();
+
+    const actual = df.select(
+      col("ceil")
+        .ceil()
+        .as("ceil")
+    );
+
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+
+  test("clip", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3, 4, 5]});
+    const expected = [2, 2, 3, 4, 4];
+    const exprActual = df
+      .select(pl.col("a").clip(2, 4))
+      .getColumn("a")
+      .toArray();
+
+    const seriesActual = pl.Series([1, 2, 3, 4, 5])
+      .clip(2, 4)
+      .toArray();
+
+    expect(exprActual).toEqual(expected);
+    expect(seriesActual).toEqual(expected);
+  });
+  test("floor", () => {
+    const df = pl.Series
+      .from([1.1, 2.2])
+      .as("floor")
+      .toFrame();
+
+    const expected = pl.DataFrame({
+      "floor": [1, 2]
+    });
+
+    const seriesActual = df
+      .getColumn("floor")
+      .floor()
+      .toFrame();
+
+    const actual = df.select(
+      col("floor")
+        .floor()
+        .as("floor")
+    );
+
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("round", () => {});
+  test("round invalid dtype", () => {
+    const df = pl.DataFrame({a: ["1", "2"]});
+    const seriesFn = ()  => df["a"].round({decimals: 1});
+    const exprFn = () => df.select(col("a").round({decimals: 1}));
+    expect(seriesFn).toThrow();
+    expect(exprFn).toThrow();
+  });
+  test("clip invalid dtype", () => {
+    const df = pl.DataFrame({a: ["1", "2"]});
+    const seriesFn = ()  => df["a"].clip({min:1, max:2});
+    const exprFn = () => df.select(col("a").clip(1, 2));
+    expect(seriesFn).toThrow();
+    expect(exprFn).toThrow();
   });
 });

@@ -1,5 +1,5 @@
 import pli from "../internals/polars_internal";
-import {JsSeries, Series, seriesWrapper} from "../series";
+import {JsSeries, Series, seriesWrapper} from "./series";
 
 export interface DateTimeFunctions  {
   /**

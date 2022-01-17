@@ -1,15 +1,15 @@
-import pli from "./internals/polars_internal";
-import {arrayToJsSeries} from "./internals/construction";
-import {DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional} from "./datatypes";
-import {DataFrame, dfWrapper} from "./dataframe";
-import {StringFunctions} from "./series/string";
-import {ListFunctions} from "./series/list";
-import {DateTimeFunctions} from "./series/datetime";
-import {InvalidOperationError, todo} from "./error";
-import {RankMethod} from "./utils";
-import {col} from "./lazy/functions";
+import pli from "../internals/polars_internal";
+import {arrayToJsSeries} from "../internals/construction";
+import {DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional} from "../datatypes";
+import {DataFrame, dfWrapper} from "../dataframe";
+import {StringFunctions} from "./string";
+import {ListFunctions} from "./list";
+import {DateTimeFunctions} from "./datetime";
+import {InvalidOperationError, todo} from "../error";
+import {RankMethod} from "../utils";
+import {col} from "../lazy/functions";
 import {isExternal, isTypedArray} from "util/types";
-import {Arithmetic, Comparison, Cumulative, Rolling} from "./shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -21,13 +21,13 @@ type ArrayLikeOrDataType<T, U> = ArrayLike<DataTypeOrValue<T, U>>
 /** @ignore */
 export type JsSeries = any;
 
-
 export interface Series<T> extends
   ArrayLike<T>,
   Rolling<Series<T>>,
   Arithmetic<Series<T>>,
   Comparison<Series<boolean>>,
-  Cumulative<Series<T>> {
+  Cumulative<Series<T>>,
+  Round<Series<T>> {
   /** @ignore */
   _series: JsSeries;
   name: string
@@ -281,7 +281,6 @@ export interface Series<T> extends
    */
   filter(predicate: Series<boolean>): Series<T>
   filter({predicate}: {predicate: Series<boolean>}): Series<T>
-  floor(): Series<T>
   get(index: number): T
   getIndex(n: number): T
   /**
@@ -721,15 +720,7 @@ export interface Series<T> extends
   rename(name: string, inPlace: boolean): void
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
   rename({name, inPlace}: {name: string, inPlace: true}): void
-  /**
-   * Round underlying floating point data by `decimals` digits.
-   *
-   * Similar functionality to javascript `toFixed`
-   * @param decimals number of decimals to round by.
-   *
-   * */
-  round<T>(decimals: number): T extends number ? Series<number> : never
-  round(opt: {decimals: number}): T extends number ? Series<number> : never
+
 
   sample(opts: {n: number, withReplacement?: boolean}): Series<T>
   sample(opts: {frac: number, withReplacement?: boolean}): Series<T>
@@ -1249,7 +1240,6 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         wrap("filter", {filter: predicate._series}) :
         wrap("filter", {filter: predicate.predicate._series});
     },
-    floor: noArgWrap("floor"),
     get(field) {
       return dtypeAccessor(unwrap)("get", {field, key: "index"});
     },
@@ -1421,6 +1411,9 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         .select(col(this.name).rollingSkew(windowSize, bias))
         .getColumn(this.name);
     },
+
+    floor: noArgWrap("floor"),
+    ceil: noArgWrap("ceil"),
     round(opt): any {
       if (this.isNumeric()) {
         if (typeof opt === "number") {
@@ -1431,6 +1424,23 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
 
       } else {
         throw new InvalidOperationError("round", this.dtype);
+      }
+    },
+    clip(arg, max?) {
+      const dtypes = [
+        DataType.Int32,
+        DataType.Int64,
+        DataType.Float32,
+        DataType.Float64,
+        DataType.UInt32
+      ];
+      if(dtypes.includes(this.dtype)) {
+        throw new InvalidOperationError("clip", this.dtype);
+      }
+      if(typeof arg === "number") {
+        return wrap("clip", {min: arg, max});
+      } else {
+        return wrap("clip", arg);
       }
     },
     sample(opts?, frac?, withReplacement = false) {

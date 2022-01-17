@@ -4,7 +4,7 @@ import {GroupBy} from "./groupby";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
-import {Series, seriesWrapper} from "./series";
+import {Series, seriesWrapper} from "./series/series";
 import {Stream, Writable} from "stream";
 import {isExternal} from "util/types";
 
@@ -47,6 +47,7 @@ type WriteParquetOptions = {
 type WriteIPCOptions = {
   compression?: "uncompressed" | "lz4" | "zstd"
 };
+
 
 /**
  *
