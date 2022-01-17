@@ -104,6 +104,8 @@ impl dsl::JsExpr {
             napi::Property::new(env, "argMin")?.with_method(dsl::arg_min),
             napi::Property::new(env, "backwardFill")?.with_method(dsl::backward_fill),
             napi::Property::new(env, "cast")?.with_method(dsl::cast),
+            napi::Property::new(env, "ceil")?.with_method(dsl::ceil),
+            napi::Property::new(env, "clip")?.with_method(dsl::clip),
             napi::Property::new(env, "count")?.with_method(dsl::count),
             napi::Property::new(env, "cumCount")?.with_method(dsl::cumcount),
             napi::Property::new(env, "cumMax")?.with_method(dsl::cummax),

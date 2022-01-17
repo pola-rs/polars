@@ -1,4 +1,4 @@
-import * as series from "./series";
+import * as series from "./series/series";
 import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";

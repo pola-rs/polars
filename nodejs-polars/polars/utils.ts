@@ -1,5 +1,5 @@
 import {Expr, exprToLitOrExpr} from "./lazy/expr";
-import type {Series} from "./series";
+import type {Series} from "./series/series";
 import type {DataFrame} from "./dataframe";
 import path from "path";
 import {isExternal, isRegExp} from "util/types";

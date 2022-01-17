@@ -1130,12 +1130,25 @@ macro_rules! impl_method_with_err {
 impl_method_with_err!(unique);
 impl_method_with_err!(explode);
 impl_method_with_err!(floor);
+impl_method_with_err!(ceil);
 impl_method_with_err!(mode);
 
 impl_method_with_err!(n_unique, JsNumber);
-
 impl_method_with_err!(round, u32, "decimals");
 impl_method_with_err!(strftime, &str, "fmt");
+
+#[js_function(1)]
+pub(crate) fn clip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let min = params.get_as::<f64>("min")?;
+    let max = params.get_as::<f64>("max")?;
+    
+    series
+        .clip(min, max)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {

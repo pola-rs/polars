@@ -759,6 +759,7 @@ impl_no_arg_expr!(is_unique);
 impl_no_arg_expr!(is_first);
 impl_no_arg_expr!(explode);
 impl_no_arg_expr!(floor);
+impl_no_arg_expr!(ceil);
 impl_no_arg_expr!(abs);
 impl_no_arg_expr!(is_duplicated);
 impl_no_arg_expr!(year);
@@ -986,7 +987,15 @@ pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn clip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let min = params.get_as::<f64>("min")?;
+    let max = params.get_as::<f64>("max")?;
 
+    expr.clone().clip(min, max).try_into_js(&cx)
+}
 #[js_function(1)]
 pub fn diff(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
