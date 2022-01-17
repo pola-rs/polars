@@ -1066,7 +1066,7 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -1254,7 +1254,7 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
-    ///     left.inner_join(right, "join_column_left", "join_column_right")
+    ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
     pub fn inner_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
@@ -1297,7 +1297,7 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
     ///
-    /// let df3: DataFrame = df1.left_join(&df2, "Wavelength (nm)", "Wavelength nm")?;
+    /// let df3: DataFrame = df1.left_join(&df2, ["Wavelength (nm)"], ["Wavelength nm"])?;
     /// println!("{:?}", df3);
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -1360,7 +1360,7 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
-    ///     left.outer_join(right, "join_column_left", "join_column_right")
+    ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
     pub fn outer_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>

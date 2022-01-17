@@ -590,7 +590,7 @@ impl LazyFrame {
     /// /// This function selects all columns except "foo"
     /// fn exclude_a_column(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .select(&[col("*").exclude("foo")])
+    ///         .select(&[col("*").exclude(["foo"])])
     /// }
     /// ```
     pub fn select<E: AsRef<[Expr]>>(self, exprs: E) -> Self {

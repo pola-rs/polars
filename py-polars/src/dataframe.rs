@@ -636,7 +636,10 @@ impl PyDataFrame {
     }
 
     pub fn sort(&self, by_column: &str, reverse: bool) -> PyResult<Self> {
-        let df = self.df.sort(by_column, reverse).map_err(PyPolarsEr::from)?;
+        let df = self
+            .df
+            .sort([by_column], reverse)
+            .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -793,8 +796,8 @@ impl PyDataFrame {
     pub fn pivot(
         &self,
         by: Vec<String>,
-        pivot_column: &str,
-        values_column: &str,
+        pivot_column: Vec<String>,
+        values_column: Vec<String>,
         agg: &str,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
@@ -807,6 +810,7 @@ impl PyDataFrame {
             "median" => pivot.median(),
             "sum" => pivot.sum(),
             "count" => pivot.count(),
+            "last" => pivot.last(),
             a => Err(PolarsError::ComputeError(
                 format!("agg fn {} does not exists", a).into(),
             )),

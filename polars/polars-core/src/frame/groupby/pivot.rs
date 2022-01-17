@@ -117,9 +117,15 @@ impl DataFrame {
 
         let values_and_columns = (0..values.len())
             .map(|i| {
-                let cols = vec![values[i].as_str(), columns[i].as_str()];
                 // take only the columns we will use in a smaller dataframe
-                self.select(cols)
+                // make sure that we take the physical types for the column
+                let column = self
+                    .column(columns[i].as_str())?
+                    .to_physical_repr()
+                    .into_owned();
+                let values = self.column(values[i].as_str())?;
+
+                Ok(DataFrame::new_no_checks(vec![values.clone(), column]))
             })
             .collect::<Result<Vec<_>>>()?;
 
@@ -262,6 +268,7 @@ impl<'df> GroupBy<'df> {
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
     ///
     /// * first
+    /// * last
     /// * sum
     /// * min
     /// * max
@@ -281,13 +288,13 @@ impl<'df> GroupBy<'df> {
     /// use polars_core::df;
     ///
     /// fn example() -> Result<DataFrame> {
-    ///     let df = df!("foo" => &["A", "A", "B", "B", "C"],
-    ///         "N" => &[1, 2, 2, 4, 2],
-    ///         "bar" => &["k", "l", "m", "n", "0"]
-    ///         )?;
+    ///     let df = df!["foo" => ["A", "A", "B", "B", "C"],
+    ///         "N" => [1, 2, 2, 4, 2],
+    ///         "bar" => ["k", "l", "m", "n", "0"]
+    ///         ]?;
     ///
-    ///     df.groupby("foo")?
-    ///     .pivot("bar", "N")
+    ///     df.groupby(["foo"])?
+    ///     .pivot(["bar"], ["N"])
     ///     .first()
     /// }
     /// ```
@@ -390,7 +397,7 @@ fn finish_logical_types(mut out: DataFrame, columns: &Series) -> Result<DataFram
         DataType::Categorical => {
             let piv = columns.categorical().unwrap();
             let rev_map = piv.categorical_map.as_ref().unwrap().clone();
-            for s in out.columns[1..].iter_mut() {
+            for s in out.columns.iter_mut() {
                 let category = s.name().parse::<u32>().unwrap();
                 let name = rev_map.get(category);
                 s.rename(name);
@@ -403,7 +410,7 @@ fn finish_logical_types(mut out: DataFrame, columns: &Series) -> Result<DataFram
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime,
             };
 
-            for s in out.columns[1..].iter_mut() {
+            for s in out.columns.iter_mut() {
                 let ts = s.name().parse::<i64>().unwrap();
                 let nd = fun(ts);
                 s.rename(&format!("{}", nd));
@@ -411,7 +418,7 @@ fn finish_logical_types(mut out: DataFrame, columns: &Series) -> Result<DataFram
         }
         #[cfg(feature = "dtype-date")]
         DataType::Date => {
-            for s in out.columns[1..].iter_mut() {
+            for s in out.columns.iter_mut() {
                 let days = s.name().parse::<i32>().unwrap();
                 let nd = date32_to_date(days);
                 s.rename(&format!("{}", nd));
