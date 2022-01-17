@@ -2057,7 +2057,7 @@ fn test_exclude_regex() -> Result<()> {
     let df = fruits_cars();
     let out = df
         .lazy()
-        .select([col("*").exclude("^(fruits|cars)$")])
+        .select([col("*").exclude(["^(fruits|cars)$"])])
         .collect()?;
 
     assert_eq!(out.get_column_names(), &["A", "B"]);

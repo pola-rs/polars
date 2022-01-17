@@ -178,6 +178,7 @@ This namespace comes available by calling `DataFrame.groupby(..).pivot`
    :toctree: api/
 
     PivotOps.first
+    PivotOps.last
     PivotOps.sum
     PivotOps.min
     PivotOps.max
