@@ -1,11 +1,15 @@
 import pl from "@polars";
 import path from "path";
 import {Stream} from "stream";
+import fs from "fs";
 // eslint-disable-next-line no-undef
 const csvpath = path.resolve(__dirname, "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
+const parquetpath = path.resolve(__dirname, "./examples/foods.parquet");
+// eslint-disable-next-line no-undef
+const ipcpath = path.resolve(__dirname, "./examples/foods.ipc");
+// eslint-disable-next-line no-undef
 const jsonpath = path.resolve(__dirname, "./examples/foods.json");
-
 describe("read:csv", () => {
   it("can read from a csv file", () => {
     const df = pl.readCSV(csvpath);
@@ -13,7 +17,7 @@ describe("read:csv", () => {
   });
 
   it("can read from a relative file", () => {
-    const df = pl.readCSV("../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
+    const df = pl.readCSV(csvpath);
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
   it("can read from a csv file with options", () => {
@@ -56,6 +60,7 @@ describe("read:csv", () => {
   });
   it.todo("can read from a stream");
 });
+
 describe("read:json", () => {
   it("can read from a json file", () => {
     const df = pl.readJSON(jsonpath);
@@ -75,25 +80,141 @@ describe("read:json", () => {
     expect(df.toJSON({multiline:true})).toEqual(json.toString());
   });
 });
-describe("scan", () => {
-  describe("csv", () => {
-    it("can lazy load (scan) from a csv file", () => {
-      const df = pl.scanCSV(csvpath).collectSync();
-      expect(df.shape).toStrictEqual({height: 27, width: 4});
-    });
-    it("can lazy load (scan) from a csv file with options", () => {
-      const df = pl
-        .scanCSV(csvpath, {
-          hasHeader: false,
-          startRows: 1,
-          endRows: 4
-        })
-        .collectSync();
 
-      expect(df.shape).toStrictEqual({height: 4, width: 4});
-    });
-    it.todo("can read from a stream");
+describe("scan", () => {
+  it("can lazy load (scan) from a csv file", () => {
+    const df = pl.scanCSV(csvpath).collectSync();
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
+  it("can lazy load (scan) from a csv file with options", () => {
+    const df = pl
+      .scanCSV(csvpath, {
+        hasHeader: false,
+        startRows: 1,
+        endRows: 4
+      })
+      .collectSync();
+
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+  it("can lazy load (scan) from a ipc file", () => {
+    const df = pl.scanCSV(csvpath).collectSync();
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+  it("can lazy load (scan) from a csv file with options", () => {
+    const df = pl
+      .scanCSV(csvpath, {
+        hasHeader: false,
+        startRows: 1,
+        endRows: 4
+      })
+      .collectSync();
+
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+
+  it("can lazy load (scan) from a parquet file with options", () => {
+    pl
+      .readCSV(csvpath, {
+        hasHeader: false,
+        startRows: 1,
+        endRows: 4
+      }).toParquet(parquetpath);
+
+    const df = pl.readParquet(parquetpath);
+
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+});
+
+describe("parquet", () => {
+  beforeEach(() => {
+    pl.readCSV(csvpath).toParquet(parquetpath);
+  });
+  afterEach(() => {
+    fs.rmSync(parquetpath);
+  });
+
+  test("read", () => {
+    const df = pl.readParquet(parquetpath);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+  test("read:buffer", () => {
+    const buff = fs.readFileSync(parquetpath);
+    const df = pl.readParquet(buff);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+
+  test("read:compressed", () => {
+    const csvDF = pl.readCSV(csvpath);
+    csvDF.toParquet(parquetpath, {compression: "lz4"});
+    const df = pl.readParquet(parquetpath);
+    expect(df).toFrameEqual(csvDF);
+  });
+
+  test("read:options", () => {
+    const df = pl.readParquet(parquetpath, {numRows: 4});
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+
+  test("scan", () => {
+    const df = pl.scanParquet(parquetpath).collectSync();
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+
+  test("scan:options", () => {
+    const df = pl.scanParquet(parquetpath, {numRows: 4}).collectSync();
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+});
+describe("ipc", () => {
+  beforeEach(() => {
+    pl.readCSV(csvpath).toIPC(ipcpath);
+  });
+  afterEach(() => {
+    fs.rmSync(ipcpath);
+  });
+
+  test("read", () => {
+    const df = pl.readIPC(ipcpath);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+  test("read:buffer", () => {
+    const buff = fs.readFileSync(ipcpath);
+    const df = pl.readIPC(buff);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+  test("read:compressed", () => {
+    const csvDF = pl.readCSV(csvpath);
+    csvDF.toIPC(ipcpath, {compression: "lz4"});
+    const ipcDF = pl.readIPC(ipcpath);
+    expect(ipcDF).toFrameEqual(csvDF);
+  });
+
+  // // https://github.com/pola-rs/polars/issues/2403
+  test.skip("read:options", () => {
+    const df = pl.readIPC(ipcpath, {numRows: 4});
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+
+  test("scan", () => {
+    const df = pl.scanIPC(ipcpath).collectSync();
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+
+  // https://github.com/pola-rs/polars/issues/2403
+  test.skip("scan:options", () => {
+    const df = pl.scanIPC(ipcpath, {numRows: 4}).collectSync();
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
+
+  test("toIPC", () => {
+    const csvDF = pl.readCSV(csvpath);
+    csvDF.toIPC(ipcpath);
+    const ipcDF = pl.readIPC(ipcpath);
+    expect(ipcDF).toFrameEqual(csvDF);
+  });
+
 });
 
 describe("stream", () => {

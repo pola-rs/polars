@@ -2,7 +2,7 @@ import * as series from "./series";
 import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
-import * as io from "./io";
+import io from "./io";
 import * as cfg from "./cfg";
 import {version as _version} from "../package.json";
 
@@ -13,6 +13,7 @@ import  {
   GroupBy as lazyGroupBy,
   when as _when
 } from "./lazy";
+
 
 namespace pl {
   export import Expr = lazyExpr.Expr
@@ -47,13 +48,13 @@ namespace pl {
 
   // IO
   export import scanCSV = io.scanCSV;
-  export import scanJSON = io.scanJSON;
-  export import scanParquet = io.scanParquet;
-  export import readCSV = io.readCSV;
   export import scanIPC = io.scanIPC;
+  export import scanParquet = io.scanParquet;
+
+  export import readCSV = io.readCSV;
   export import readIPC = io.readIPC;
-  export import readParquet = io.readParquet;
   export import readJSON = io.readJSON;
+  export import readParquet = io.readParquet;
 
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;

@@ -74,6 +74,7 @@ features = [
   "dataframe_arithmetic",
   "string_encoding",
   "parquet",
+  "ipc",
 ]
 path = "../polars"
 

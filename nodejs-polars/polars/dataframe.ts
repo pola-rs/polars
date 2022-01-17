@@ -11,9 +11,7 @@ import {isExternal} from "util/types";
 import {
   DataType,
   JoinBaseOptions,
-  JsDataFrame,
-  WriteCsvOptions,
-  WriteJsonOptions
+  JsDataFrame
 } from "./datatypes";
 
 import {
@@ -31,6 +29,24 @@ import {Arithmetic} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
+
+type WriteCsvOptions = {
+  hasHeader?: boolean;
+  sep?: string;
+};
+
+type WriteJsonOptions = {
+  orient?: "row" | "col" | "dataframe";
+  multiline?: boolean;
+};
+
+type WriteParquetOptions = {
+  compression?: "uncompressed" | "snappy" | "gzip" | "lzo" | "brotli" | "lz4" | "zstd"
+};
+
+type WriteIPCOptions = {
+  compression?: "uncompressed" | "lz4" | "zstd"
+};
 
 /**
  *
@@ -1191,7 +1207,20 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
-  toParquet(destination: string, compression: "uncompressed" | "snappy" | "gzip" | "lzo" | "brotli" | "lz4" | "zstd"): void
+
+  /**
+   * Write to Arrow IPC binary stream, or a feather file.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  toIPC(path: string, options?: WriteIPCOptions): void
+
+  /**
+   * Write the DataFrame disk in parquet format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  toParquet(path: string, options?: WriteParquetOptions): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1689,8 +1718,11 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(arg0, "json", options);
       }
     },
-    toParquet(path, compression) {
+    toParquet(path, {compression} = {compression: "uncompressed"}) {
       return unwrap("writeParquet", {path, compression});
+    },
+    toIPC(path, {compression} = {compression: "uncompressed"}) {
+      return unwrap("writeIPC", {path, compression});
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),

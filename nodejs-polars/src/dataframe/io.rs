@@ -211,9 +211,8 @@ pub(crate) fn write_csv_path(cx: CallContext) -> JsResult<JsUndefined> {
 // ------
 // PARQUET
 // ------
-
 #[js_function(1)]
-pub(crate) fn read_parquet(cx: CallContext) -> JsResult<JsExternal> {
+pub(crate) fn read_parquet_path(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let path = params.get_as::<String>("path")?;
     let columns: Option<Vec<String>> = params.get_as("columns")?;
@@ -225,6 +224,30 @@ pub(crate) fn read_parquet(cx: CallContext) -> JsResult<JsExternal> {
     let f = File::open(&path)?;
 
     ParquetReader::new(f)
+        .with_projection(projection)
+        .with_columns(columns)
+        .read_parallel(parallel)
+        .with_n_rows(n_rows)
+        .set_rechunk(rechunk)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn read_parquet_buffer(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+    let parallel: bool = params.get_or("parallel", true)?;
+    let rechunk: bool = params.get_or("rechunk", true)?;
+    let buff = params.get::<napi::JsBuffer>("buff")?;
+    let buffer_value = buff.into_value()?;
+
+    let cursor = Cursor::new(buffer_value.as_ref());
+
+    ParquetReader::new(cursor)
         .with_projection(projection)
         .with_columns(columns)
         .read_parallel(parallel)
@@ -271,9 +294,65 @@ pub(crate) fn write_parquet_stream(_cx: CallContext) -> JsResult<JsUndefined> {
 // ------
 
 #[js_function(1)]
-#[cfg(feature = "ipc")]
-pub(crate) fn read_ipc(_cx: CallContext) -> JsResult<JsExternal> {
-    todo!()
+pub(crate) fn read_ipc_path(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let path = params.get_as::<String>("path")?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+
+    let f = File::open(&path)?;
+
+    IpcReader::new(f)
+        .with_projection(projection)
+        .with_columns(columns)
+        .with_n_rows(n_rows)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn read_ipc_buffer(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+    let buff = params.get::<napi::JsBuffer>("buff")?;
+    let buffer_value = buff.into_value()?;
+
+    let cursor = Cursor::new(buffer_value.as_ref());
+
+    IpcReader::new(cursor)
+        .with_projection(projection)
+        .with_columns(columns)
+        .with_n_rows(n_rows)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let compression = params.get_as::<String>("compression")?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let path = params.get_as::<String>("path")?;
+
+    let compression = match compression.as_str() {
+        "uncompressed" => None,
+        "lz4" => Some(IpcCompression::LZ4),
+        "zstd" => Some(IpcCompression::ZSTD),
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+    let f = File::create(&path)?;
+
+    IpcWriter::new(f)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
+    cx.env.get_undefined()
 }
 
 // ------
