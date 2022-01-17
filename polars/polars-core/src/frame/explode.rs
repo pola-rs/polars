@@ -1,5 +1,4 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use arrow::buffer::Buffer;
 use std::collections::VecDeque;
@@ -189,7 +188,7 @@ impl DataFrame {
         let ids = self.select(id_vars)?;
         let len = self.height();
 
-        let mut value_vars = value_vars.into_iter();
+        let value_vars = value_vars.into_iter();
 
         let mut dataframe_chunks = VecDeque::with_capacity(value_vars.size_hint().0);
 

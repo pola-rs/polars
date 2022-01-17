@@ -1,6 +1,5 @@
 use self::hashing::*;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;

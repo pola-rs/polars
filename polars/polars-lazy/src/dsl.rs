@@ -17,7 +17,6 @@ use std::{
 pub use crate::frame::IntoLazy;
 pub use crate::logical_plan::lit;
 use polars_arrow::array::default_arrays::FromData;
-use polars_core::frame::select::Selection;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{get_supertype, NoNull};
@@ -1590,14 +1589,11 @@ impl Expr {
     ///                 ])
     /// }
     /// ```
-    pub fn exclude<'a, S, J>(self, columns: S) -> Expr
-    where
-        S: Selection<'a, J>,
-    {
+    pub fn exclude(self, columns: impl IntoVec<String>) -> Expr {
         let v = columns
-            .to_selection_vec()
-            .iter()
-            .map(|s| Excluded::Name(Arc::from(*s)))
+            .into_vec()
+            .into_iter()
+            .map(|s| Excluded::Name(Arc::from(s)))
             .collect();
         Expr::Exclude(Box::new(self), v)
     }

@@ -10,7 +10,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_horizontal, split_ca, split_df, NoNull};
 
@@ -26,7 +25,6 @@ pub mod groupby;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
-pub mod select;
 mod upstream_traits;
 
 #[cfg(feature = "sort_multiple")]
@@ -1219,7 +1217,7 @@ impl DataFrame {
                 }
             }
         }
-        let selected = self.select_series_impl(&cols)?;
+        let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
 
