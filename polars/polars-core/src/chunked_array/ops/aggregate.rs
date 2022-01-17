@@ -5,6 +5,7 @@ use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use arrow::types::simd::Simd;
+use num::Float;
 use num::ToPrimitive;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::ops::Add;
@@ -88,6 +89,44 @@ where
     }
 }
 
+/// helper
+fn quantile_idx(
+    quantile: f64,
+    length: usize,
+    null_count: usize,
+    interpol: QuantileInterpolOptions,
+) -> (i64, f64, i64) {
+    let mut base_idx = match interpol {
+        QuantileInterpolOptions::Nearest => {
+            (((length - null_count) as f64) * quantile + null_count as f64) as i64
+        }
+        QuantileInterpolOptions::Lower
+        | QuantileInterpolOptions::Midpoint
+        | QuantileInterpolOptions::Linear => {
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
+        }
+        QuantileInterpolOptions::Higher => {
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
+        }
+    };
+
+    base_idx = std::cmp::min(std::cmp::max(base_idx, 0), (length - 1) as i64);
+    let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
+    let top_idx = f64::ceil(float_idx) as i64;
+
+    (base_idx, float_idx, top_idx)
+}
+
+/// helper
+fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> Option<T> {
+    if bounds[0] == bounds[1] {
+        Some(bounds[0].unwrap())
+    } else {
+        let proportion: T = T::from(float_idx).unwrap() - T::from(idx).unwrap();
+        Some(proportion * (bounds[1].unwrap() - bounds[0].unwrap()) + bounds[0].unwrap())
+    }
+}
+
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -109,30 +148,10 @@ where
             return Ok(None);
         }
 
-        let mut idx = match interpol {
-            QuantileInterpolOptions::Nearest => {
-                (((length - null_count) as f64) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Lower
-            | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Higher => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
-            }
-        };
-
-        if idx >= length as i64 {
-            idx = (length - 1) as i64;
-        } else if idx <= 0i64 {
-            idx = 0;
-        }
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
 
         let opt = match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let top_idx = (((length - null_count) as f64 - 1.0) * quantile + null_count as f64)
-                    .ceil() as i64;
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -151,9 +170,6 @@ where
                 }
             }
             QuantileInterpolOptions::Linear => {
-                let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
-                let top_idx = f64::ceil(float_idx) as i64;
-
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -168,15 +184,7 @@ where
                         .into_iter()
                         .collect();
 
-                    if bounds[0] == bounds[1] {
-                        Some(bounds[0].unwrap())
-                    } else {
-                        let proportion = float_idx - idx as f64;
-                        Some(
-                            proportion * (bounds[1].unwrap() - bounds[0].unwrap())
-                                + bounds[0].unwrap(),
-                        )
-                    }
+                    linear_interpol(&bounds, idx, float_idx)
                 }
             }
             _ => ChunkSort::sort(self, false)
@@ -210,30 +218,10 @@ impl ChunkQuantile<f32> for Float32Chunked {
             return Ok(None);
         }
 
-        let mut idx = match interpol {
-            QuantileInterpolOptions::Nearest => {
-                (((length - null_count) as f64) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Lower
-            | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Higher => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
-            }
-        };
-
-        if idx >= length as i64 {
-            idx = (length - 1) as i64;
-        } else if idx <= 0i64 {
-            idx = 0;
-        }
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
 
         let opt = match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let top_idx = (((length - null_count) as f64 - 1.0) * quantile + null_count as f64)
-                    .ceil() as i64;
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -252,10 +240,6 @@ impl ChunkQuantile<f32> for Float32Chunked {
                 }
             }
             QuantileInterpolOptions::Linear => {
-                let float_idx =
-                    ((length - null_count) as f32 - 1.0) * quantile as f32 + null_count as f32;
-                let top_idx = f32::ceil(float_idx) as i64;
-
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -270,15 +254,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
                         .into_iter()
                         .collect();
 
-                    if bounds[0] == bounds[1] {
-                        Some(bounds[0].unwrap())
-                    } else {
-                        let proportion = float_idx - idx as f32;
-                        Some(
-                            proportion * (bounds[1].unwrap() - bounds[0].unwrap())
-                                + bounds[0].unwrap(),
-                        )
-                    }
+                    linear_interpol(&bounds, idx, float_idx)
                 }
             }
             _ => ChunkSort::sort(self, false)
@@ -312,30 +288,10 @@ impl ChunkQuantile<f64> for Float64Chunked {
             return Ok(None);
         }
 
-        let mut idx = match interpol {
-            QuantileInterpolOptions::Nearest => {
-                (((length - null_count) as f64) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Lower
-            | QuantileInterpolOptions::Midpoint
-            | QuantileInterpolOptions::Linear => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
-            }
-            QuantileInterpolOptions::Higher => {
-                (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
-            }
-        };
-
-        if idx >= length as i64 {
-            idx = (length - 1) as i64;
-        } else if idx <= 0i64 {
-            idx = 0;
-        }
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
 
         let opt = match interpol {
             QuantileInterpolOptions::Midpoint => {
-                let top_idx = (((length - null_count) as f64 - 1.0) * quantile + null_count as f64)
-                    .ceil() as i64;
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -354,9 +310,6 @@ impl ChunkQuantile<f64> for Float64Chunked {
                 }
             }
             QuantileInterpolOptions::Linear => {
-                let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
-                let top_idx = f64::ceil(float_idx) as i64;
-
                 if top_idx == idx {
                     ChunkSort::sort(self, false)
                         .slice(idx, 1)
@@ -371,15 +324,7 @@ impl ChunkQuantile<f64> for Float64Chunked {
                         .into_iter()
                         .collect();
 
-                    if bounds[0] == bounds[1] {
-                        Some(bounds[0].unwrap())
-                    } else {
-                        let proportion = float_idx - idx as f64;
-                        Some(
-                            proportion * (bounds[1].unwrap() - bounds[0].unwrap())
-                                + bounds[0].unwrap(),
-                        )
-                    }
+                    linear_interpol(&bounds, idx, float_idx)
                 }
             }
             _ => ChunkSort::sort(self, false)

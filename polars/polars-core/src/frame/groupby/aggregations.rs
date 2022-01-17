@@ -620,6 +620,7 @@ impl AggList for CategoricalChunked {
         }
     }
 }
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AggList for ObjectChunked<T> {
     fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -679,46 +680,6 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
     }
 }
 
-//pub(crate) trait AggQuantile {
-//    fn agg_quantile(
-//        &self,
-//        _groups: &[(u32, Vec<u32>)],
-//        _quantile: f64,
-//        _interpol: QuantileInterpolOptions,
-//    ) -> Option<Series> {
-//        None
-//    }
-//
-//    fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-//        None
-//    }
-//} TODO: remove this
-//    pub(crate) fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-//        let ca = &self.0;
-//        agg_helper::<T, _>(groups, |(_first, idx)| {
-//            debug_assert!(idx.len() <= ca.len());
-//            if idx.is_empty() {
-//                return None;
-//            }
-//            let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-//            take.into_series()
-//                .var_as_series()
-//                .unpack::<T>()
-//                .unwrap()
-//                .get(0)
-//        })
-//    }
-//impl<T> AggQuantile for ChunkedArray<T>
-//
-//    T: PolarsIntegerType,
-//    ChunkedArray<T>: IntoSeries,
-//    T::Native:
-//        NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native>,
-//    <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
-//        + arrow::compute::aggregate::Sum<T::Native>
-//        + arrow::compute::aggregate::SimdOrd<T::Native>,
-//
-//
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType + Sync,
