@@ -52,10 +52,11 @@ jobs:
               export CARGO_PROFILE_RELEASE_LTO=false
               npm run build -- --target i686-pc-windows-msvc
 
-          - host: windows-latest
-            architecture: x64
-            target: "aarch64-pc-windows-msvc"
-            build: yarn build --target aarch64-pc-windows-msvc
+          # py & rust versions dont support this, so dropping it 
+          # - host: windows-latest
+          #   architecture: x64
+          #   target: "aarch64-pc-windows-msvc"
+          #   build: yarn build --target aarch64-pc-windows-msvc
 
             # Linux
             ########
