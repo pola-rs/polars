@@ -4,6 +4,35 @@
 //! Apache arrow provides very cache efficient columnar data structures and is becoming the defacto
 //! standard for columnar data.
 //!
+//! ## Quickstart
+//! We recommend to build your queries directly with polars-lazy. This allows you to combine
+//! expression into powerful aggregations and column selections. All expressions are evaluated
+//! in parallel and your queries are optimized just in time.
+//!
+//! ```rust no_run
+//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
+//!     .groupby([col("ham")])
+//!     .agg([
+//!         // expressions can be combined into powerful aggregations
+//!         col("foo")
+//!             .sort_by([col("ham").rank(Default::default())], [false])
+//!             .last()
+//!             .alias("last_foo_ranked_by_ham"),
+//!         // every expression runs in parallel
+//!         col("foo").cummin(false).alias("cumulative_min_per_group"),
+//!         // every expression runs in parallel
+//!         col("foo").reverse().list().alias("reverse_group"),
+//!     ]);
+//!
+//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet".into(), Default::default())?
+//!     .select([col("ham"), col("spam")]);
+//!
+//! let df = lf1
+//!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
+//!     // now we finally materialize the result.
+//!     .collect()?;
+//! ```
+//!
 //! This means that Polars data structures can be shared zero copy with processes in many different
 //! languages.
 //!
@@ -58,10 +87,9 @@
 //! `feature = "simd"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
 //!
 //! ## API
-//! Polars supports an eager and a lazy API, and strives to make them both equally capable.
-//! The eager API is similar to [pandas](https://pandas.pydata.org/) and is easy to get started.
-//! The lazy API is similar to [Spark](https://spark.apache.org/) and builds a query plan that will
-//! be optimized. This may be less intuitive but could improve performance.
+//! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
+//! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
+//! whenever you can.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
