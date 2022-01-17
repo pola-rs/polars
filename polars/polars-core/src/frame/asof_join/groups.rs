@@ -1,5 +1,4 @@
 use super::*;
-use crate::frame::select::Selection;
 use crate::utils::split_df;
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;

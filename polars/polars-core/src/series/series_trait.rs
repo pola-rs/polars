@@ -35,7 +35,6 @@ macro_rules! invalid_operation_panic {
 pub(crate) mod private {
     use super::*;
     #[cfg(feature = "rows")]
-    use crate::frame::groupby::pivot::PivotAgg;
     use crate::frame::groupby::GroupTuples;
 
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
@@ -217,27 +216,6 @@ pub(crate) mod private {
         fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
             None
         }
-        #[cfg(feature = "rows")]
-        fn pivot<'a>(
-            &self,
-            _pivot_series: &'a Series,
-            _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
-            _agg_type: PivotAgg,
-        ) -> Result<DataFrame> {
-            invalid_operation_panic!(self)
-        }
-
-        #[cfg(feature = "rows")]
-        fn pivot_count<'a>(
-            &self,
-            _pivot_series: &'a Series,
-            _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
-        ) -> Result<DataFrame> {
-            invalid_operation_panic!(self)
-        }
-
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
             invalid_operation_panic!(self)
         }

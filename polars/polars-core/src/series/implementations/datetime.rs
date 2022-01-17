@@ -6,8 +6,6 @@ use crate::chunked_array::{
     comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
@@ -172,27 +170,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     #[cfg(feature = "lazy")]
     fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
         self.0.agg_valid_count(groups)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        self.0.pivot(pivot_series, keys, groups, agg_type)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.0.pivot_count(pivot_series, keys, groups)
     }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         let other = other.to_physical_repr().into_owned();

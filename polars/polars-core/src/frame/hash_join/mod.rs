@@ -5,7 +5,6 @@ use polars_arrow::utils::CustomIterTools;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{set_partition_size, split_ca};
 use crate::vector_hasher::{

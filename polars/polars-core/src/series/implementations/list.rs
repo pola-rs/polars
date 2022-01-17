@@ -10,8 +10,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
@@ -85,26 +83,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.agg_valid_count(groups)
     }
 
-    #[cfg(feature = "rows")]
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        self.0.pivot(pivot_series, keys, groups, agg_type)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.0.pivot_count(pivot_series, keys, groups)
-    }
     fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
         IntoGroupTuples::group_tuples(&self.0, multithreaded)
     }

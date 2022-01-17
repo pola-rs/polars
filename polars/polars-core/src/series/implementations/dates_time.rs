@@ -16,8 +16,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
@@ -166,26 +164,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_valid_count(groups)
             }
 
-            #[cfg(feature = "rows")]
-            fn pivot<'a>(
-                &self,
-                pivot_series: &'a Series,
-                keys: Vec<Series>,
-                groups: &[(u32, Vec<u32>)],
-                agg_type: PivotAgg,
-            ) -> Result<DataFrame> {
-                self.0.pivot(pivot_series, keys, groups, agg_type)
-            }
-
-            #[cfg(feature = "rows")]
-            fn pivot_count<'a>(
-                &self,
-                pivot_series: &'a Series,
-                keys: Vec<Series>,
-                groups: &[(u32, Vec<u32>)],
-            ) -> Result<DataFrame> {
-                self.0.pivot_count(pivot_series, keys, groups)
-            }
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
                 let other = other.to_physical_repr().into_owned();
                 self.0.hash_join_inner(&other.as_ref().as_ref())
