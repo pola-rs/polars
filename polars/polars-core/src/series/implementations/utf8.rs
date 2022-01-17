@@ -365,7 +365,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkAggSeries::mean_as_series(&self.0)
     }
     fn median_as_series(&self) -> Series {
-        ChunkAggSeries::median_as_series(&self.0)
+        QuantileAggSeries::median_as_series(&self.0)
     }
     fn var_as_series(&self) -> Series {
         VarAggSeries::var_as_series(&self.0)
@@ -378,7 +378,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Result<Series> {
-        ChunkAggSeries::quantile_as_series(&self.0, quantile, interpol)
+        QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
     }
 
     fn fmt_list(&self) -> String {

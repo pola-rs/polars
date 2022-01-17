@@ -1004,7 +1004,7 @@ class Expr:
 
     def median(self) -> "Expr":
         """
-        Get median value.
+        Get median value using linear interpolation.
         """
         return wrap_expr(self._pyexpr.median())
 

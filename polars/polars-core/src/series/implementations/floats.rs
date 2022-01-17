@@ -10,7 +10,7 @@ use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 use crate::chunked_array::{
     ops::{
-        aggregate::{ChunkAggSeries, VarAggSeries},
+        aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries},
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
@@ -183,11 +183,11 @@ macro_rules! impl_dyn_series {
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
             ) -> Option<Series> {
-                self.0.agg_quantile(groups, quantile, interpol)
+                self.agg_quantile(groups, quantile, interpol)
             }
 
             fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                self.0.agg_median(groups)
+                self.agg_median(groups)
             }
             #[cfg(feature = "lazy")]
             fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -376,10 +376,6 @@ macro_rules! impl_dyn_series {
                 self.0.mean()
             }
 
-            fn median(&self) -> Option<f64> {
-                self.0.median()
-            }
-
             fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
@@ -533,7 +529,7 @@ macro_rules! impl_dyn_series {
                 ChunkAggSeries::mean_as_series(&self.0)
             }
             fn median_as_series(&self) -> Series {
-                ChunkAggSeries::median_as_series(&self.0)
+                QuantileAggSeries::median_as_series(&self.0)
             }
             fn var_as_series(&self) -> Series {
                 VarAggSeries::var_as_series(&self.0)
@@ -546,7 +542,7 @@ macro_rules! impl_dyn_series {
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
             ) -> Result<Series> {
-                ChunkAggSeries::quantile_as_series(&self.0, quantile, interpol)
+                QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
             }
 
             fn fmt_list(&self) -> String {
