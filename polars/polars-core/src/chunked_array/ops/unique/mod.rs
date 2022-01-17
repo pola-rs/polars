@@ -178,7 +178,7 @@ macro_rules! impl_value_counts {
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
         let df = DataFrame::new_no_checks(cols);
-        df.sort("counts", true)
+        df.sort(&["counts"], true)
     }};
 }
 

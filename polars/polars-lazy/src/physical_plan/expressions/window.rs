@@ -70,7 +70,11 @@ impl PhysicalExpr for WindowExpr {
         }
 
         // 2. create GroupBy object and apply aggregation
-        let apply_columns = self.apply_columns.iter().map(|s| s.as_ref()).collect();
+        let apply_columns = self
+            .apply_columns
+            .iter()
+            .map(|s| s.as_ref().to_string())
+            .collect();
         let mut gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
         let out = match self.phys_function.as_agg_expr() {

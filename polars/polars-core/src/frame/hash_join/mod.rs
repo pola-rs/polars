@@ -1089,14 +1089,18 @@ impl DataFrame {
     /// | Pear   | 12                   | 115                 |
     /// +--------+----------------------+---------------------+
     /// ```
-    pub fn join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+    pub fn join<I, S>(
         &self,
         other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
+        left_on: I,
+        right_on: I,
         how: JoinType,
         suffix: Option<String>,
-    ) -> Result<DataFrame> {
+    ) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
             return self.cross_join(other);
@@ -1254,12 +1258,11 @@ impl DataFrame {
     ///     left.inner_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn inner_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn inner_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Inner, None)
     }
 
@@ -1320,12 +1323,11 @@ impl DataFrame {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
@@ -1362,12 +1364,11 @@ impl DataFrame {
     ///     left.outer_join(right, "join_column_left", "join_column_right")
     /// }
     /// ```
-    pub fn outer_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn outer_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Outer, None)
     }
     pub(crate) fn outer_join_from_series(
@@ -1448,7 +1449,7 @@ mod test {
 
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
-            let joined = temp.inner_join(&rain, "days", "days").unwrap();
+            let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
             let join_col_days = Series::new("days", &[1, 2, 1]);
             let join_col_temp = Series::new("temp", &[19.9, 7., 19.9]);
@@ -1480,7 +1481,7 @@ mod test {
             let s0 = Series::new("days", &[1, 2]);
             let s1 = Series::new("rain", &[0.1, 0.2]);
             let rain = DataFrame::new(vec![s0, s1]).unwrap();
-            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
             println!("{}", &joined);
             assert_eq!(
                 (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
@@ -1496,7 +1497,7 @@ mod test {
             let s0 = Series::new("days", &["tue", "wed"]);
             let s1 = Series::new("rain", &[0.1, 0.2]);
             let rain = DataFrame::new(vec![s0, s1]).unwrap();
-            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
             println!("{}", &joined);
             assert_eq!(
                 (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
@@ -1510,7 +1511,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_outer_join() -> Result<()> {
         let (temp, rain) = create_frames();
-        let joined = temp.outer_join(&rain, "days", "days")?;
+        let joined = temp.outer_join(&rain, ["days"], ["days"])?;
         println!("{:?}", &joined);
         assert_eq!(joined.height(), 5);
         assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
@@ -1526,7 +1527,7 @@ mod test {
                 "c"=> [1, 0, 2, 1]
         )?;
 
-        let out = df_left.outer_join(&df_right, "a", "a")?;
+        let out = df_left.outer_join(&df_right, ["a"], ["a"])?;
         assert_eq!(out.column("c_right")?.null_count(), 1);
 
         Ok(())
@@ -1546,7 +1547,7 @@ mod test {
         ])
         .unwrap();
 
-        let joined = df.left_join(&df2, "date", "date").unwrap();
+        let joined = df.left_join(&df2, ["date"], ["date"]).unwrap();
         assert_eq!(
             joined
                 .column("val2")
@@ -1603,7 +1604,7 @@ mod test {
         s.rename("dummy");
         df_b.with_column(s).unwrap();
 
-        let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();
+        let joined = df_a.left_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let ham_col = joined.column("ham").unwrap();
         let ca = ham_col.utf8().unwrap();
 
@@ -1620,14 +1621,14 @@ mod test {
 
         // now check the join with multiple columns
         let joined = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left, None)
             .unwrap();
         let ca = joined.column("ham").unwrap().utf8().unwrap();
         dbg!(&df_a, &df_b);
         assert_eq!(Vec::from(ca), correct_ham);
-        let joined_inner_hack = df_a.inner_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let joined_inner = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner, None)
             .unwrap();
 
         dbg!(&joined_inner_hack, &joined_inner);
@@ -1636,9 +1637,9 @@ mod test {
             .unwrap()
             .series_equal_missing(joined_inner.column("ham").unwrap()));
 
-        let joined_outer_hack = df_a.outer_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let joined_outer = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Outer, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Outer, None)
             .unwrap();
         assert!(joined_outer_hack
             .column("ham")
@@ -1661,7 +1662,9 @@ mod test {
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
 
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None).unwrap();
+        let out = df_a
+            .join(&df_b, ["b"], ["bar"], JoinType::Left, None)
+            .unwrap();
         assert_eq!(out.shape(), (6, 5));
         let correct_ham = &[
             Some("let"),
@@ -1678,7 +1681,7 @@ mod test {
 
         // test dispatch
         for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
-            let out = df_a.join(&df_b, "b", "bar", jt, None).unwrap();
+            let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
             let out = out.column("b").unwrap();
             assert_eq!(out.dtype(), &DataType::Categorical);
         }
@@ -1693,7 +1696,7 @@ mod test {
 
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
+        let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
         assert!(out.is_err());
     }
 
@@ -1713,15 +1716,15 @@ mod test {
         ])
         .unwrap();
 
-        let out = empty_df.inner_join(&df, "key", "key").unwrap();
+        let out = empty_df.inner_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 0);
-        let out = empty_df.left_join(&df, "key", "key").unwrap();
+        let out = empty_df.left_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 0);
-        let out = empty_df.outer_join(&df, "key", "key").unwrap();
+        let out = empty_df.outer_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 1);
-        df.left_join(&empty_df, "key", "key")?;
-        df.inner_join(&empty_df, "key", "key")?;
-        df.outer_join(&empty_df, "key", "key")?;
+        df.left_join(&empty_df, ["key"], ["key"])?;
+        df.inner_join(&empty_df, ["key"], ["key"])?;
+        df.outer_join(&empty_df, ["key"], ["key"])?;
 
         let empty: Vec<String> = vec![];
         let _empty_df = DataFrame::new(vec![
@@ -1743,7 +1746,7 @@ mod test {
             Series::new("2val", &empty),
         ])?;
 
-        let out = df.left_join(&empty_df, "key", "key")?;
+        let out = df.left_join(&empty_df, ["key"], ["key"])?;
         assert_eq!(out.shape(), (2, 4));
 
         Ok(())
@@ -1762,7 +1765,7 @@ mod test {
             "b" => [Some(1), None, Some(3), Some(4)]
         ]?;
 
-        let out = df1.left_join(&df2, "a", "a")?;
+        let out = df1.left_join(&df2, ["a"], ["a"])?;
         let expected = df![
             "a" => [1],
             "b" => [2],
@@ -1813,21 +1816,27 @@ mod test {
         ]
         .unwrap();
 
-        let df_inner_join = df_left.inner_join(&df_right, "col1", "join_col1").unwrap();
+        let df_inner_join = df_left
+            .inner_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
         assert_eq!(df_inner_join.height(), 10);
         assert_eq!(df_inner_join.column("col1")?.null_count(), 0);
         assert_eq!(df_inner_join.column("int_col")?.null_count(), 0);
         assert_eq!(df_inner_join.column("dbl_col")?.null_count(), 0);
 
-        let df_left_join = df_left.left_join(&df_right, "col1", "join_col1").unwrap();
+        let df_left_join = df_left
+            .left_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
         assert_eq!(df_left_join.height(), 11);
         assert_eq!(df_left_join.column("col1")?.null_count(), 0);
         assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
         assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
 
-        let df_outer_join = df_left.outer_join(&df_right, "col1", "join_col1").unwrap();
+        let df_outer_join = df_left
+            .outer_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
         assert_eq!(df_outer_join.height(), 12);
         assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
@@ -1964,7 +1973,7 @@ mod test {
             "a" => [Some(1), None, None, None, None]
         ]?;
 
-        let out = a.inner_join(&b, "a", "a")?;
+        let out = a.inner_join(&b, ["a"], ["a"])?;
 
         assert_eq!(out.shape(), (9, 1));
         Ok(())

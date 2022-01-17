@@ -814,15 +814,28 @@ pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
 }
 
+pub trait Arg {}
+impl Arg for bool {}
+
 impl IntoVec<bool> for bool {
     fn into_vec(self) -> Vec<bool> {
         vec![self]
     }
 }
 
-impl<T> IntoVec<T> for Vec<T> {
+impl<T: Arg> IntoVec<T> for Vec<T> {
     fn into_vec(self) -> Self {
         self
+    }
+}
+
+impl<I, S> IntoVec<String> for I
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    fn into_vec(self) -> Vec<String> {
+        self.into_iter().map(|s| s.as_ref().to_string()).collect()
     }
 }
 

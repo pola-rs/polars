@@ -962,7 +962,7 @@ fn test_lazy_groupby_sort() {
         .agg([col("b").sort(false).first()])
         .collect()
         .unwrap()
-        .sort("a", false)
+        .sort(["a"], false)
         .unwrap();
 
     assert_eq!(
@@ -976,7 +976,7 @@ fn test_lazy_groupby_sort() {
         .agg([col("b").sort(false).last()])
         .collect()
         .unwrap()
-        .sort("a", false)
+        .sort(["a"], false)
         .unwrap();
 
     assert_eq!(
@@ -1000,7 +1000,7 @@ fn test_lazy_groupby_sort_by() {
         .agg([col("b").sort_by([col("c")], [true]).first()])
         .collect()
         .unwrap()
-        .sort("a", false)
+        .sort(["a"], false)
         .unwrap();
 
     assert_eq!(
