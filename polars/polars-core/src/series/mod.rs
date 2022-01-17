@@ -334,12 +334,14 @@ impl Series {
     /// * Date -> Int32
     /// * Datetime-> Int64
     /// * Time -> Int64
+    /// * Categorical -> UInt32
     ///
     pub fn to_physical_repr(&self) -> Cow<Series> {
         use DataType::*;
         match self.dtype() {
             Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
+            Categorical => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
