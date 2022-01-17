@@ -110,16 +110,17 @@ impl DataFrame {
     /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
     /// that searches for the nearest keys within a subgroup set by `by`.
     #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
-    pub fn join_asof_by<'a, S, J>(
+    pub fn join_asof_by<I, S>(
         &self,
         other: &DataFrame,
         left_on: &str,
         right_on: &str,
-        left_by: S,
-        right_by: S,
+        left_by: I,
+        right_by: I,
     ) -> Result<DataFrame>
     where
-        S: Selection<'a, J>,
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
     {
         let left_asof = self.column(left_on)?;
         let right_asof = other.column(right_on)?;
@@ -190,7 +191,7 @@ mod test {
             "right_vals" => [1, 2, 3, 4]
         ]?;
 
-        let out = a.join_asof_by(&b, "a", "a", "b", "b")?;
+        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"])?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
         let out = out.i32().unwrap();
@@ -223,7 +224,7 @@ mod test {
 
                ]?;
 
-        let out = trades.join_asof_by(&quotes, "time", "time", "ticker", "ticker")?;
+        let out = trades.join_asof_by(&quotes, "time", "time", ["ticker"], ["ticker"])?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
 

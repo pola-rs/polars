@@ -13,6 +13,49 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
 }
 
 impl DataFrame {
+    pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+        columns.sort_by(|sa, sb| {
+            self.check_name_to_idx(sa.name())
+                .expect("checked above")
+                .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
+                .expect("cmp usize -> Ordering")
+        });
+
+        // first remove all the exploded columns
+        let mut df = self.clone();
+        for s in &columns {
+            df = df.drop(s.name())?;
+        }
+
+        for (i, s) in columns.iter().enumerate() {
+            // Safety:
+            // offsets are not take longer than the Series.
+            if let Ok((exploded, offsets)) = get_exploded(s) {
+                let col_idx = self.check_name_to_idx(s.name())?;
+
+                // expand all the other columns based the exploded first column
+                if i == 0 {
+                    let row_idx = offsets_to_indexes(&offsets, exploded.len());
+                    let row_idx = UInt32Chunked::new_from_aligned_vec("", row_idx);
+                    // Safety
+                    // We just created indices that are in bounds.
+                    df = unsafe { df.take_unchecked(&row_idx) };
+                }
+                if exploded.len() == df.height() || df.width() == 0 {
+                    df.columns.insert(col_idx, exploded);
+                } else {
+                    return Err(PolarsError::ShapeMisMatch(
+                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
+                    ));
+                }
+            } else {
+                return Err(PolarsError::InvalidOperation(
+                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
+                ));
+            }
+        }
+        Ok(df)
+    }
     /// Explode `DataFrame` to long format by exploding a column with Lists.
     ///
     /// # Example
@@ -27,7 +70,7 @@ impl DataFrame {
     /// let s0 = Series::new("B", [1, 2, 3]);
     /// let s1 = Series::new("C", [1, 1, 1]);
     /// let df = DataFrame::new(vec![list, s0, s1])?;
-    /// let exploded = df.explode("foo")?;
+    /// let exploded = df.explode(["foo"])?;
     ///
     /// println!("{:?}", df);
     /// println!("{:?}", exploded);
@@ -72,51 +115,15 @@ impl DataFrame {
     ///  | 2   | 3   | 1   |
     ///  +-----+-----+-----+
     /// ```
-    pub fn explode<'a, J, S: Selection<'a, J>>(&self, columns: S) -> Result<DataFrame> {
+    pub fn explode<I, S>(&self, columns: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
-        let mut columns = self.select_series(columns)?;
-        columns.sort_by(|sa, sb| {
-            self.check_name_to_idx(sa.name())
-                .expect("checked above")
-                .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
-                .expect("cmp usize -> Ordering")
-        });
-
-        // first remove all the exploded columns
-        let mut df = self.clone();
-        for s in &columns {
-            df = df.drop(s.name())?;
-        }
-
-        for (i, s) in columns.iter().enumerate() {
-            // Safety:
-            // offsets are not take longer than the Series.
-            if let Ok((exploded, offsets)) = get_exploded(s) {
-                let col_idx = self.check_name_to_idx(s.name())?;
-
-                // expand all the other columns based the exploded first column
-                if i == 0 {
-                    let row_idx = offsets_to_indexes(&offsets, exploded.len());
-                    let row_idx = UInt32Chunked::new_from_aligned_vec("", row_idx);
-                    // Safety
-                    // We just created indices that are in bounds.
-                    df = unsafe { df.take_unchecked(&row_idx) };
-                }
-                if exploded.len() == df.height() || df.width() == 0 {
-                    df.columns.insert(col_idx, exploded);
-                } else {
-                    return Err(PolarsError::ShapeMisMatch(
-                        format!("The exploded column(s) don't have the same length. Length DataFrame: {}. Length exploded column {}: {}", df.height(), exploded.name(), exploded.len()).into(),
-                    ));
-                }
-            } else {
-                return Err(PolarsError::InvalidOperation(
-                    format!("cannot explode dtype: {:?}", s.dtype()).into(),
-                ));
-            }
-        }
-        Ok(df)
+        let columns = self.select_series(columns)?;
+        self.explode_impl(columns)
     }
 
     ///
@@ -174,18 +181,20 @@ impl DataFrame {
     ///  | "a" | 5   | "D"      | 6     |
     ///  +-----+-----+----------+-------+
     /// ```
-    pub fn melt<'a, 'b, J, K, SelId: Selection<'a, J>, SelValue: Selection<'b, K>>(
-        &self,
-        id_vars: SelId,
-        value_vars: SelValue,
-    ) -> Result<Self> {
+    pub fn melt<I, S>(&self, id_vars: I, value_vars: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let ids = self.select(id_vars)?;
-        let value_vars = value_vars.to_selection_vec();
         let len = self.height();
 
-        let mut dataframe_chunks = VecDeque::with_capacity(value_vars.len());
+        let mut value_vars = value_vars.into_iter();
+
+        let mut dataframe_chunks = VecDeque::with_capacity(value_vars.size_hint().0);
 
         for value_column_name in value_vars {
+            let value_column_name = value_column_name.as_ref();
             let variable_col = Utf8Chunked::full("variable", value_column_name, len).into_series();
             let mut value_col = self.column(value_column_name)?.clone();
             value_col.rename("value");
@@ -222,7 +231,7 @@ mod test {
         let s0 = Series::new("B", [1, 2, 3]);
         let s1 = Series::new("C", [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
-        let exploded = df.explode("foo").unwrap();
+        let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
         assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(8), Some(1));
         assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(8), Some(3));
@@ -233,7 +242,7 @@ mod test {
 
         let str = Series::new("foo", &["abc", "de", "fg"]);
         let df = DataFrame::new(vec![str, s0, s1]).unwrap();
-        let exploded = df.explode("foo").unwrap();
+        let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(6), Some(1));
         assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(6), Some(3));
         assert_eq!(

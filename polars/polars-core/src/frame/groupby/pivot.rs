@@ -10,6 +10,7 @@ use std::collections::hash_map::RandomState;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Deref};
 
+use crate::frame::groupby::GroupTuples;
 use crate::utils::accumulate_dataframes_vertical;
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
@@ -56,7 +57,8 @@ impl DataFrame {
             .into_iter()
             .map(|s| s.as_ref().to_string())
             .collect::<Vec<_>>();
-        self.pivot_impl(values, index, columns, false, agg_fn)
+        let groups = self.groupby(&index)?.groups;
+        self.pivot_impl(&values, &index, &columns, &groups, agg_fn)
     }
 
     pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
@@ -86,28 +88,28 @@ impl DataFrame {
             .into_iter()
             .map(|s| s.as_ref().to_string())
             .collect::<Vec<_>>();
-        self.pivot_impl(values, index, columns, true, agg_fn)
+
+        let groups = self.groupby_stable(&index)?.groups;
+
+        self.pivot_impl(&values, &index, &columns, &groups, agg_fn)
     }
 
     fn pivot_impl(
         &self,
         // these columns will be aggregated in the nested groupby
-        mut values: Vec<String>,
+        values: &[String],
         // keys of the first groupby operation
-        index: Vec<String>,
+        index: &[String],
         // these columns will be used for a nested groupby
         // the rows of this nested groupby will be pivoted as header column values
-        columns: Vec<String>,
-        // sort the group tuples
-        maintain_order: bool,
+        columns: &[String],
+        // matching a groupby on index
+        groups: &GroupTuples,
         // aggregation function
         agg_fn: PivotAgg,
     ) -> Result<DataFrame> {
-        let groups = match maintain_order {
-            true => self.groupby_stable(&index)?.groups,
-            false => self.groupby(&index)?.groups,
-        };
         // broadcast values argument
+        let mut values = values.to_vec();
         if values.len() != columns.len() && values.len() == 1 {
             for _ in 0..columns.len() - 1 {
                 values.push(values[0].clone())
@@ -128,7 +130,7 @@ impl DataFrame {
             .collect::<Result<Vec<_>>>()?;
 
         // make sure that we make smaller dataframes then the take operations are cheaper
-        let index_df = self.select(&index)?;
+        let index_df = self.select(index)?;
 
         let mut im_result = POOL.install(|| {
             groups
@@ -217,7 +219,7 @@ impl DataFrame {
                     .map(Cow::Borrowed)
                     .reduce(|df_l, df_r| {
                         let mut out = df_l
-                            .outer_join(&df_r, columns[i].as_str(), columns[i].as_str())
+                            .outer_join(&df_r, [columns[i].as_str()], [columns[i].as_str()])
                             .unwrap();
                         let last_idx = out.width() - 1;
                         out.columns[last_idx].rename(&format!("{}_{}", values[i], name_count));
@@ -245,14 +247,20 @@ impl DataFrame {
             .collect::<Vec<_>>();
 
         let indices = im_result.iter_mut().map(|v| std::mem::take(&mut v[0]));
-        let mut index = accumulate_dataframes_vertical(indices).unwrap();
+        let mut out = accumulate_dataframes_vertical(indices).unwrap();
 
-        for values in &mut all_values {
+        // values is the dataframe to stack
+        // columns is the original series that is pivoted
+        for (values, columns) in all_values.iter_mut().zip(columns) {
             let mut cols = std::mem::take(&mut values.columns);
             sort_cols(&mut cols, 0);
-            index = index.hstack(&cols)?
+
+            let df = DataFrame::new_no_checks(cols);
+            let df = finish_logical_types(df, self.column(columns).unwrap()).unwrap();
+
+            out = out.hstack(&df.columns)?
         }
-        Ok(index)
+        Ok(out)
     }
 }
 
@@ -330,7 +338,7 @@ impl Series {
     }
 }
 
-impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
+impl<'df, 'selection_str> GroupBy<'df> {
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
     ///
     /// * first
@@ -401,18 +409,15 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
     #[deprecated(note = "use DataFrame::pivot")]
     #[allow(deprecated)]
-    pub fn pivot(
-        &mut self,
-        pivot_column: &'selection_str str,
-        values_column: &'selection_str str,
-    ) -> Pivot {
+    pub fn pivot(&mut self, columns: impl IntoVec<String>, values: impl IntoVec<String>) -> Pivot {
         // same as select method
-        self.selected_agg = Some(vec![pivot_column, values_column]);
+        let columns = columns.into_vec();
+        let values = values.into_vec();
 
         Pivot {
             gb: self,
-            pivot_column,
-            values_column,
+            columns,
+            values,
         }
     }
 }
@@ -422,10 +427,10 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
 #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
 #[deprecated(note = "use DataFrame::pivot")]
 #[allow(deprecated)]
-pub struct Pivot<'df, 'selection_str> {
-    gb: &'df GroupBy<'df, 'selection_str>,
-    pivot_column: &'selection_str str,
-    values_column: &'selection_str str,
+pub struct Pivot<'df> {
+    gb: &'df GroupBy<'df>,
+    columns: Vec<String>,
+    values: Vec<String>,
 }
 
 pub(crate) trait ChunkPivot {
@@ -839,18 +844,17 @@ where
     builder.append_option(max);
 }
 
-fn finish_logical_types(mut out: DataFrame, pivot_series: &Series) -> Result<DataFrame> {
-    match pivot_series.dtype() {
+fn finish_logical_types(mut out: DataFrame, columns: &Series) -> Result<DataFrame> {
+    match columns.dtype() {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical => {
-            let piv = pivot_series.categorical().unwrap();
-            let rev_map = piv.categorical_map.as_ref().unwrap();
+            let piv = columns.categorical().unwrap();
+            let rev_map = piv.categorical_map.as_ref().unwrap().clone();
             for s in out.columns[1..].iter_mut() {
                 let category = s.name().parse::<u32>().unwrap();
                 let name = rev_map.get(category);
                 s.rename(name);
             }
-            Ok(out)
         }
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(tu, _) => {
@@ -864,7 +868,6 @@ fn finish_logical_types(mut out: DataFrame, pivot_series: &Series) -> Result<Dat
                 let nd = fun(ts);
                 s.rename(&format!("{}", nd));
             }
-            Ok(out)
         }
         #[cfg(feature = "dtype-date")]
         DataType::Date => {
@@ -873,108 +876,62 @@ fn finish_logical_types(mut out: DataFrame, pivot_series: &Series) -> Result<Dat
                 let nd = date32_to_date(days);
                 s.rename(&format!("{}", nd));
             }
-            Ok(out)
         }
-        _ => Ok(out),
+        _ => {}
     }
+    Ok(out)
 }
 
-#[allow(deprecated)]
-impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
+impl<'df> Pivot<'df> {
+    fn execute(&self, agg: PivotAgg) -> Result<DataFrame> {
+        let index = self
+            .gb
+            .selected_keys
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect::<Vec<_>>();
+        self.gb
+            .df
+            .pivot_impl(&self.values, &index, &self.columns, &self.gb.groups, agg)
+    }
+
     /// Aggregate the pivot results by taking the count values.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn count(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot_count(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Count)
     }
 
     /// Aggregate the pivot results by taking the first occurring value.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn first(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::First,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::First)
     }
 
     /// Aggregate the pivot results by taking the sum of all duplicates.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn sum(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Sum,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Sum)
     }
 
     /// Aggregate the pivot results by taking the minimal value of all duplicates.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn min(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Min,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Min)
     }
 
     /// Aggregate the pivot results by taking the maximum value of all duplicates.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn max(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Max,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Max)
     }
 
     /// Aggregate the pivot results by taking the mean value of all duplicates.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn mean(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Mean,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Mean)
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
-    #[deprecated(note = "use DataFrame::pivot")]
     pub fn median(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        let out = values_series.pivot(
-            &pivot_series.to_physical_repr(),
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Median,
-        )?;
-        finish_logical_types(out, pivot_series)
+        self.execute(PivotAgg::Median)
+    }
+
+    /// Aggregate the pivot results by taking the last value of all duplicates.
+    pub fn last(&self) -> Result<DataFrame> {
+        self.execute(PivotAgg::Last)
     }
 }
 
@@ -988,36 +945,56 @@ mod test {
         let s2 = Series::new("bar", ["k", "l", "m", "m", "l"].as_ref());
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").sum().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .sum()
+            .unwrap();
         assert_eq!(pvt.get_column_names(), &["foo", "k", "l", "m"]);
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(6)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").min().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .min()
+            .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(2)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").max().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .max()
+            .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(4)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").mean().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .mean()
+            .unwrap();
         assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
-            &[None, None, Some(3)]
+            Vec::from(&pvt.column("m").unwrap().f64().unwrap().sort(false)),
+            &[None, None, Some(3.0)]
         );
         let pvt = df
-            .groupby("foo")
+            .groupby(["foo"])
             .unwrap()
-            .pivot("bar", "N")
+            .pivot(["bar"], ["N"])
             .count()
             .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().u32().unwrap().sort(false)),
-            &[Some(0), Some(0), Some(2)]
+            &[None, None, Some(2)]
         );
     }
 
@@ -1031,7 +1008,7 @@ mod test {
         ]?;
         df.try_apply("C", |s| s.cast(&DataType::Categorical))?;
 
-        let out = df.groupby("B")?.pivot("C", "A").count()?;
+        let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
         assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);
 
         Ok(())
@@ -1047,7 +1024,7 @@ mod test {
         ]?;
         df.try_apply("C", |s| s.cast(&DataType::Date))?;
 
-        let out = df.groupby("B")?.pivot("C", "A").count()?;
+        let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
         assert_eq!(out.get_column_names(), &["B", "1972-09-27"]);
 
         Ok(())

@@ -689,19 +689,19 @@ mod test {
 
         let df = DataFrame::new(vec![s, s1])?;
 
-        let out = df.left_join(&df.clone(), "bar", "bar")?;
+        let out = df.left_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)
         ));
 
-        let out = df.inner_join(&df.clone(), "bar", "bar")?;
+        let out = df.inner_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)
         ));
 
-        let out = df.outer_join(&df.clone(), "bar", "bar")?;
+        let out = df.outer_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)

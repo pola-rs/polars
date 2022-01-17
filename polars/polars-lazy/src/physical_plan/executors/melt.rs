@@ -11,6 +11,6 @@ pub struct MeltExec {
 impl Executor for MeltExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
-        df.melt(&self.id_vars.as_slice(), &self.value_vars.as_slice())
+        df.melt(self.id_vars.as_slice(), self.value_vars.as_slice())
     }
 }
