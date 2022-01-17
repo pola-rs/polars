@@ -18,8 +18,6 @@ use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 
 impl IntoSeries for ListChunked {
@@ -294,10 +292,5 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
-    }
-
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
     }
 }

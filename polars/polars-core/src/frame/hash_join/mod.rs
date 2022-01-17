@@ -1,4 +1,5 @@
 pub(crate) mod multiple_keys;
+
 use polars_arrow::utils::CustomIterTools;
 
 use crate::frame::hash_join::multiple_keys::{
@@ -1398,8 +1399,26 @@ impl DataFrame {
                 )
             },
         );
-        let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+        let mut s = s_left
+            .to_physical_repr()
+            .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
         s.rename(s_left.name());
+        let s = match s_left.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical => {
+                let ca_or = s_left.categorical().unwrap();
+                let ca_new = s.cast(&DataType::Categorical).unwrap();
+                let mut ca_new = ca_new.categorical().unwrap().clone();
+                ca_new.categorical_map = ca_or.categorical_map.clone();
+                ca_new.into_series()
+            }
+            dt @ DataType::Datetime(_, _)
+            | dt @ DataType::Time
+            | dt @ DataType::Date
+            | dt @ DataType::Duration(_) => s.cast(dt).unwrap(),
+            _ => s,
+        };
+
         df_left.hstack_mut(&[s])?;
         self.finish_join(df_left, df_right, suffix)
     }
@@ -1657,7 +1676,14 @@ mod test {
 
         assert_eq!(Vec::from(ca), correct_ham);
 
-        // Test an error when joining on different string cache
+        // test dispatch
+        for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
+            let out = df_a.join(&df_b, "b", "bar", jt, None).unwrap();
+            let out = out.column("b").unwrap();
+            assert_eq!(out.dtype(), &DataType::Categorical);
+        }
+
+        // Test error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
         df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
@@ -1668,7 +1694,7 @@ mod test {
         df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
         let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
-        assert!(out.is_err())
+        assert!(out.is_err());
     }
 
     #[test]

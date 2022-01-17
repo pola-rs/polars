@@ -22,8 +22,6 @@ use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -389,10 +387,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.is_first()
     }
 
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         Ok(self.0.mode()?.into_series())

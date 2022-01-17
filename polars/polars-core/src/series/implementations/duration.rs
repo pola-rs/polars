@@ -11,8 +11,6 @@ use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
@@ -602,11 +600,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     #[cfg(feature = "is_first")]
     fn is_first(&self) -> Result<BooleanChunked> {
         self.0.is_first()
-    }
-
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
     }
 
     #[cfg(feature = "mode")]
