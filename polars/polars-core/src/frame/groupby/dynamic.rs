@@ -99,6 +99,19 @@ impl DataFrame {
         let mut lower_bound = None;
         let mut upper_bound = None;
 
+        let mut update_bounds =
+            |lower: Vec<i64>, upper: Vec<i64>| match (&mut lower_bound, &mut upper_bound) {
+                (None, None) => {
+                    lower_bound = Some(lower);
+                    upper_bound = Some(upper);
+                }
+                (Some(lower_bound), Some(upper_bound)) => {
+                    lower_bound.extend_from_slice(&lower);
+                    upper_bound.extend_from_slice(&upper);
+                }
+                _ => unreachable!(),
+            };
+
         let groups = if by.is_empty() {
             dt.downcast_iter()
                 .flat_map(|vals| {
@@ -110,17 +123,7 @@ impl DataFrame {
                         options.closed_window,
                         tu.to_polars_time(),
                     );
-                    match (&mut lower_bound, &mut upper_bound) {
-                        (None, None) => {
-                            lower_bound = Some(lower);
-                            upper_bound = Some(upper);
-                        }
-                        (Some(lower_bound), Some(upper_bound)) => {
-                            lower_bound.extend_from_slice(&lower);
-                            upper_bound.extend_from_slice(&upper);
-                        }
-                        _ => unreachable!(),
-                    }
+                    update_bounds(lower, upper);
                     groups
                 })
                 .collect::<Vec<_>>()
@@ -153,17 +156,7 @@ impl DataFrame {
                             .into_datetime(tu, None)
                             .into_series();
 
-                        match (&mut lower_bound, &mut upper_bound) {
-                            (None, None) => {
-                                lower_bound = Some(lower);
-                                upper_bound = Some(upper);
-                            }
-                            (Some(lower_bound), Some(upper_bound)) => {
-                                lower_bound.extend_from_slice(&lower);
-                                upper_bound.extend_from_slice(&upper);
-                            }
-                            _ => unreachable!(),
-                        }
+                        update_bounds(lower, upper);
 
                         sub_groups.iter_mut().for_each(|g| {
                             g.0 = unsafe { *base_g.1.get_unchecked(g.0 as usize) };
@@ -216,7 +209,11 @@ impl DataFrame {
 
         if options.truncate {
             let w = Window::new(options.every, options.period, options.offset);
-            dt = dt.apply(|v| w.truncate_no_offset_ns(v));
+            let truncate_fn = match tu {
+                TimeUnit::Nanoseconds => Window::truncate_no_offset_ns,
+                TimeUnit::Milliseconds => Window::truncate_no_offset_ms,
+            };
+            dt = dt.apply(|v| truncate_fn(&w, v));
         }
 
         if let (true, Some(lower), Some(higher)) =
@@ -280,6 +277,10 @@ mod test {
                 },
             )
             .unwrap();
+
+        let ca = time_key.datetime().unwrap();
+        let years = ca.year();
+        assert_eq!(years.get(0), Some(2021i32));
 
         keys.push(time_key);
         let out = DataFrame::new(keys).unwrap();
