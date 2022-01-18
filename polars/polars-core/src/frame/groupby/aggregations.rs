@@ -778,11 +778,3 @@ where
         })
     }
 }
-// TODO: remove this
-//impl AggQuantile for Utf8Chunked {}
-//impl AggQuantile for BooleanChunked {}
-//impl AggQuantile for ListChunked {}
-//#[cfg(feature = "dtype-categorical")]
-//impl AggQuantile for CategoricalChunked {}
-//#[cfg(feature = "object")]
-//impl<T> AggQuantile for ObjectChunked<T> {}
