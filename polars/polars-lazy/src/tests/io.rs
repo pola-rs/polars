@@ -273,3 +273,52 @@ fn test_union_and_agg_projections() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "ipc", feature = "csv-file"))]
+fn test_slice_filter() -> Result<()> {
+    init_files();
+    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+
+    // make sure that the slices are not applied before the predicates.
+    let len = 5;
+    let offset = 3;
+
+    let df1 = scan_foods_csv()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+    let df2 = scan_foods_parquet(false)
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+    let df3 = scan_foods_ipc()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+
+    let df1_ = scan_foods_csv()
+        .collect()?
+        .lazy()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+    let df2_ = scan_foods_parquet(false)
+        .collect()?
+        .lazy()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+    let df3_ = scan_foods_ipc()
+        .collect()?
+        .lazy()
+        .filter(col("category").eq(lit("fruit")))
+        .slice(offset, len)
+        .collect()?;
+
+    assert_eq!(df1.shape(), df1_.shape());
+    assert_eq!(df2.shape(), df2_.shape());
+    assert_eq!(df3.shape(), df3_.shape());
+
+    Ok(())
+}

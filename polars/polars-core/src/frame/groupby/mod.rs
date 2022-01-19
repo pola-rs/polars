@@ -1273,7 +1273,6 @@ mod test {
     use crate::prelude::*;
     use crate::utils::split_ca;
     use num::traits::FloatConst;
-    use polars_arrow::prelude::QuantileInterpolOptions;
 
     #[test]
     #[cfg(feature = "dtype-date")]
@@ -1553,7 +1552,7 @@ mod test {
 
         df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
 
-        let out = df.groupby(["g"])?.sum()?;
+        let _ = df.groupby(["g"])?.sum()?;
         Ok(())
     }
 }
