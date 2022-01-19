@@ -83,7 +83,7 @@ test = [
 ahash = "0.7"
 glob = "0.3"
 rayon = "1.5"
-regex = { version = "1.4", optional = true }
+regex = { version = "1.5", optional = true }
 
 polars-arrow = { version = "0.19.0", path = "../polars-arrow" }
 polars-core = { version = "0.19.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
