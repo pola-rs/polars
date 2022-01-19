@@ -1,6 +1,6 @@
 [package]
 name = "polars-lazy"
-version = "0.18.0"
+version = "0.19.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -85,9 +85,9 @@ glob = "0.3"
 rayon = "1.5"
 regex = { version = "1.4", optional = true }
 
-polars-arrow = { version = "0.18.0", path = "../polars-arrow" }
-polars-core = { version = "0.18.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
-polars-io = { version = "0.18.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-arrow = { version = "0.19.0", path = "../polars-arrow" }
+polars-core = { version = "0.19.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
+polars-io = { version = "0.19.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
 polars-utils = { version = "0.1.0", path = "../polars-utils" }
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
