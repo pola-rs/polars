@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use num::Float;
 use polars_arrow::kernels::float::*;
+use polars_arrow::kernels::set::set_at_nulls;
 
 impl<T> ChunkedArray<T>
 where
@@ -18,5 +19,15 @@ where
     }
     pub fn is_infinite(&self) -> BooleanChunked {
         self.apply_kernel_cast(is_infinite)
+    }
+
+    #[must_use]
+    /// Convert missing values to `NaN` values.
+    pub fn none_to_nan(&self) -> Self {
+        let chunks = self
+            .downcast_iter()
+            .map(|arr| Arc::new(set_at_nulls(arr, T::Native::nan())) as ArrayRef)
+            .collect();
+        ChunkedArray::new_from_chunks(self.name(), chunks)
     }
 }
