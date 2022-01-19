@@ -331,11 +331,7 @@ where
                 return None;
             }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .var_as_series()
-                .unpack::<Float64Type>()
-                .unwrap()
-                .get(0)
+            take.var_as_series().unpack::<Float64Type>().unwrap().get(0)
         })
     }
     pub(crate) fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -345,11 +341,7 @@ where
                 return None;
             }
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .std_as_series()
-                .unpack::<Float64Type>()
-                .unwrap()
-                .get(0)
+            take.std_as_series().unpack::<Float64Type>().unwrap().get(0)
         })
     }
 }
@@ -754,8 +746,7 @@ where
             }
 
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .quantile_as_series(quantile, interpol)
+            take.quantile_as_series(quantile, interpol)
                 .unwrap() // Validity of quantile checked
                 .unpack::<Float64Type>()
                 .unwrap()
@@ -770,8 +761,7 @@ where
             }
 
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .median_as_series()
+            take.median_as_series()
                 .unpack::<Float64Type>()
                 .unwrap()
                 .get(0)
