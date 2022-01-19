@@ -1236,15 +1236,8 @@ impl DataFrame {
     /// assert_eq!(df["Hydrogen"], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_series<I, S>(&self, selection: I) -> Result<Vec<Series>>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        let cols = selection
-            .into_iter()
-            .map(|s| s.as_ref().to_string())
-            .collect::<Vec<_>>();
+    pub fn select_series(&self, selection: impl IntoVec<String>) -> Result<Vec<Series>> {
+        let cols = selection.into_vec();
         self.select_series_impl(&cols)
     }
 
@@ -1580,21 +1573,25 @@ impl DataFrame {
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    fn sort_impl(&self, by_column: Vec<String>, reverse: Vec<bool>) -> Result<Self> {
+    #[cfg(feature = "private")]
+    pub fn sort_impl(&self, by_column: Vec<Series>, reverse: Vec<bool>) -> Result<Self> {
+        // note that the by_column argument also contains evaluated expression from polars-lazy
+        // that may not even be present in this dataframe.
+
+        // therefore when we try to set the first columns as sorted, we ignore the error
+        // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_reverse = reverse[0];
-        let first_by_column = &by_column[0];
+        let first_by_column = by_column[0].name().to_string();
         let take = match by_column.len() {
             1 => {
-                let s = self.column(&by_column[0])?;
+                let s = &by_column[0];
                 s.argsort(reverse[0])
             }
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let columns = self.select_series(&by_column)?;
-
-                    let (first, columns, reverse) = prepare_argsort(columns, reverse)?;
-                    first.argsort_multiple(&columns, &reverse)?
+                    let (first, by_column, reverse) = prepare_argsort(by_column, reverse)?;
+                    first.argsort_multiple(&by_column, &reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {
@@ -1610,13 +1607,14 @@ impl DataFrame {
             unsafe { self.take_unchecked(&take) }
         };
         // Mark the first sort column as sorted
-        df.apply(first_by_column, |s| {
+        // if the column did not exists it is ok, because we sorted by an expression
+        // not present in the dataframe
+        let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
             let inner = s.get_inner_mut();
             inner.set_sorted(first_reverse);
             s
-        })
-        .expect("column is present");
+        });
         Ok(df)
     }
 
@@ -1640,7 +1638,7 @@ impl DataFrame {
         reverse: impl IntoVec<bool>,
     ) -> Result<Self> {
         // we do this heap allocation and dispatch to reduce monomorphization bloat
-        let by_column = by_column.into_vec();
+        let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.sort_impl(by_column, reverse)
     }
