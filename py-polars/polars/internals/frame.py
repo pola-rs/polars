@@ -1152,7 +1152,13 @@ class DataFrame:
         <class 'numpy.ndarray'>
 
         """
-        return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
+        out = self._df.to_numpy()
+        if out is None:
+            return np.vstack(
+                [self.to_series(i).to_numpy() for i in range(self.width)]
+            ).T
+        else:
+            return out
 
     def __getstate__(self):  # type: ignore
         return self.get_columns()

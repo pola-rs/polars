@@ -1,3 +1,4 @@
+use numpy::IntoPyArray;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
@@ -22,6 +23,7 @@ use crate::{
 use polars::frame::row::{rows_to_schema, Row};
 use polars_core::frame::groupby::PivotAgg;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::utils::get_supertype;
 
 #[pyclass]
 #[repr(transparent)]
@@ -350,6 +352,48 @@ impl PyDataFrame {
             }),
         )
         .into_py(py)
+    }
+
+    pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
+        let mut st = DataType::Int8;
+        for s in self.df.iter() {
+            let dt_i = s.dtype();
+            st = get_supertype(&st, dt_i).ok()?;
+        }
+
+        match st {
+            DataType::UInt32 => self
+                .df
+                .to_ndarray::<UInt32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::UInt64 => self
+                .df
+                .to_ndarray::<UInt64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int32 => self
+                .df
+                .to_ndarray::<Int32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int64 => self
+                .df
+                .to_ndarray::<Int64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float32 => self
+                .df
+                .to_ndarray::<Float32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float64 => self
+                .df
+                .to_ndarray::<Float64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            _ => None,
+        }
     }
 
     #[cfg(feature = "parquet")]

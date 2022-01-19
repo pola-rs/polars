@@ -89,6 +89,7 @@ features = [
   "json",
   "string_encoding",
   "product",
+  "ndarray",
 ]
 
 # [patch.crates-io]

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use ndarray::prelude::*;
+use rayon::prelude::*;
 
 impl<T> ChunkedArray<T>
 where
@@ -77,6 +78,8 @@ impl DataFrame {
     /// `DataFrame` to be non-null and numeric. They will be casted to the same data type
     /// (if they aren't already).
     ///
+    /// For floating point data we implicitly convert `None` to `NaN` without failure.
+    ///
     /// ```rust
     /// use polars_core::prelude::*;
     /// let a = UInt32Chunked::new("a", &[1, 2, 3]).into_series();
@@ -97,24 +100,65 @@ impl DataFrame {
     where
         N: PolarsNumericType,
     {
-        let mut ndarr = Array2::zeros(self.shape());
-        for (col_idx, series) in self.get_columns().iter().enumerate() {
-            if series.null_count() != 0 {
+        let columns = self
+            .get_columns()
+            .par_iter()
+            .map(|s| {
+                let s = s.cast(&N::get_dtype())?;
+                let s = match s.dtype() {
+                    DataType::Float32 => {
+                        let ca = s.f32().unwrap();
+                        ca.none_to_nan().into_series()
+                    }
+                    DataType::Float64 => {
+                        let ca = s.f64().unwrap();
+                        ca.none_to_nan().into_series()
+                    }
+                    _ => s,
+                };
+                Ok(s.rechunk())
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let shape = self.shape();
+        let height = self.height();
+        let mut membuf = Vec::with_capacity(shape.0 * shape.1);
+        let ptr = membuf.as_ptr() as usize;
+
+        columns.par_iter().enumerate().map(|(col_idx, s)| {
+            if s.null_count() != 0 {
                 return Err(PolarsError::HasNullValues(
-                    "Creation of ndarray with null values is not supported.".into(),
+                    "Creation of ndarray with null values is not supported. Consider using floats and NaNs".into(),
                 ));
             }
-            // this is an Arc clone if already of type N
-            let series = series.cast(&N::get_dtype())?;
-            let ca = series.unpack::<N>()?;
 
-            ca.into_no_null_iter()
-                .enumerate()
-                .for_each(|(row_idx, val)| {
-                    ndarr[[row_idx, col_idx]] = val;
-                })
+            // this is an Arc clone if already of type N
+            let s = s.cast(&N::get_dtype())?;
+            let ca = s.unpack::<N>()?;
+            let vals = ca.cont_slice().unwrap();
+
+            // Safety:
+            // we get parallel access to the vector
+            // but we make sure that we don't get aliased access by offsetting the column indices + length
+            unsafe {
+                let offset_ptr = (ptr as *mut N::Native).add(col_idx * height) ;
+                // Safety:
+                // this is uninitialized memory, so we must never read from this data
+                // copy_from_slice does not read
+                let buf = std::slice::from_raw_parts_mut(offset_ptr, height);
+                buf.copy_from_slice(vals)
+            }
+
+            Ok(())
+        }).collect::<Result<Vec<_>>>()?;
+
+        // Safety:
+        // we have written all data, so we can now safely set length
+        unsafe {
+            membuf.set_len(shape.0 * shape.1);
         }
-        Ok(ndarr)
+        let ndarr = Array2::from_shape_vec((shape.1, shape.0), membuf).unwrap();
+        Ok(ndarr.reversed_axes())
     }
 }
 
