@@ -62,3 +62,11 @@ def test_sort_in_place() -> None:
     expected = [1, 2, 3, 4, 5]
     assert result == expected
     assert ret is None
+
+
+def test_sort_by_exprs() -> None:
+    # make sure that the expression does not overwrite columns in the dataframe
+    df = pl.DataFrame({"a": [1, 2, -1, -2]})
+    out = df.sort(pl.col("a").abs()).to_series()
+
+    assert out.to_list() == [1, -1, 2, -2]
