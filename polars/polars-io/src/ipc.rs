@@ -237,7 +237,7 @@ pub use write::Compression as IpcCompression;
 
 impl<W> IpcWriter<W>
 where
-    W: Write + Seek,
+    W: Write,
 {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
