@@ -179,7 +179,7 @@ where
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + VarAggSeries,
     T::Native: NativeType + PartialOrd + Num + NumCast + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
@@ -242,11 +242,7 @@ where
                 return None;
             }
             let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .var_as_series()
-                .unpack::<T>()
-                .unwrap()
-                .get(0)
+            take.var_as_series().unpack::<T>().unwrap().get(0)
         })
     }
     pub(crate) fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
@@ -257,11 +253,7 @@ where
                 return None;
             }
             let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .std_as_series()
-                .unpack::<T>()
-                .unwrap()
-                .get(0)
+            take.std_as_series().unpack::<T>().unwrap().get(0)
         })
     }
 }
@@ -675,7 +667,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
 impl<T> SeriesWrap<ChunkedArray<T>>
 where
     T: PolarsFloatType + Sync,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoSeries + QuantileAggSeries,
     T::Native: PartialOrd + Num + NumCast + Zero + Simd + std::iter::Sum<T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
@@ -696,8 +688,7 @@ where
             }
 
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .quantile_as_series(quantile, interpol)
+            take.quantile_as_series(quantile, interpol)
                 .unwrap() // Validity of quantile checked
                 .unpack::<T>()
                 .unwrap()
@@ -714,11 +705,7 @@ where
             }
 
             let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            take.into_series()
-                .median_as_series()
-                .unpack::<T>()
-                .unwrap()
-                .get(0)
+            take.median_as_series().unpack::<T>().unwrap().get(0)
         })
     }
 }
