@@ -361,7 +361,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a Series,
         _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
+        _groups: &GroupsProxy,
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
@@ -373,7 +373,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a Series,
         _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
+        _groups: &GroupsProxy,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "Pivot count operation not implemented for this type".into(),

@@ -169,51 +169,51 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        fn agg_first(&self, _groups: &GroupsProxy) -> Series {
             invalid_operation_panic!(self)
         }
-        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
+        fn agg_last(&self, _groups: &GroupsProxy) -> Series {
             invalid_operation_panic!(self)
         }
-        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
+        fn agg_n_unique(&self, _groups: &GroupsProxy) -> Option<UInt32Chunked> {
             None
         }
-        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         fn agg_quantile(
             &self,
-            _groups: &[(u32, Vec<u32>)],
+            _groups: &GroupsProxy,
             _quantile: f64,
             _interpol: QuantileInterpolOptions,
         ) -> Option<Series> {
             None
         }
-        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         #[cfg(feature = "lazy")]
-        fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_valid_count(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {

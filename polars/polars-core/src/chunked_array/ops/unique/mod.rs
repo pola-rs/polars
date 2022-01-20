@@ -57,6 +57,7 @@ pub(crate) fn is_unique_helper(
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
     let idx = groups
+        .into_idx()
         .into_iter()
         .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
         .collect::<Vec<_>>();
@@ -168,7 +169,7 @@ macro_rules! arg_unique_ca {
 
 macro_rules! impl_value_counts {
     ($self:expr) => {{
-        let group_tuples = $self.group_tuples(true);
+        let group_tuples = $self.group_tuples(true).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
@@ -208,6 +209,7 @@ where
         is_unique_duplicated!(self, true)
     }
 
+    // TODO! implement on series. Not worth the compile times here.
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
     }
@@ -350,7 +352,7 @@ fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
@@ -376,7 +378,7 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 

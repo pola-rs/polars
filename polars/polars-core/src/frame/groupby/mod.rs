@@ -24,6 +24,8 @@ mod dynamic;
 pub(crate) mod hashing;
 #[cfg(feature = "rows")]
 pub(crate) mod pivot;
+mod proxy;
+
 #[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
 #[cfg(not(feature = "dynamic_groupby"))]
@@ -32,7 +34,8 @@ pub struct DynamicGroupOptions {
     pub index_column: String,
 }
 
-pub type GroupsProxy = Vec<(u32, Vec<u32>)>;
+pub use proxy::*;
+
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 #[cfg(feature = "dynamic_groupby")]
@@ -53,7 +56,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupsProxy
+fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -109,27 +112,27 @@ where
                 let ca: &UInt64Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt32Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded)
             }
             DataType::Int32 | DataType::Float32 => {
                 let ca = self.bit_repr_small();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded)
             }
             _ => {
                 let ca = self.cast(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
         }
     }
@@ -454,7 +457,7 @@ impl DataFrame {
         S: AsRef<str>,
     {
         let mut gb = self.groupby(by)?;
-        gb.groups.sort_unstable_by_key(|t| t.0);
+        &mut gb.groups.idx_mut().sort_unstable_by_key(|t| t.0);
         Ok(gb)
     }
 }
@@ -573,7 +576,9 @@ impl<'df> GroupBy<'df> {
                     // Safety
                     // groupby indexes are in bound.
                     unsafe {
-                        s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize))
+                        s.take_iter_unchecked(
+                            &mut self.groups.idx_ref().iter().map(|(idx, _)| *idx as usize),
+                        )
                     }
                 })
                 .collect()
@@ -629,7 +634,7 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
-            let opt_agg = agg_col.agg_mean(&self.groups);
+            let opt_agg = agg_col.agg_mean(&self.groups.idx_ref());
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -668,7 +673,7 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
-            let opt_agg = agg_col.agg_sum(&self.groups);
+            let opt_agg = agg_col.agg_sum(&self.groups.idx_ref());
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -706,7 +711,7 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
-            let opt_agg = agg_col.agg_min(&self.groups);
+            let opt_agg = agg_col.agg_min(&self.groups.idx_ref());
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -744,7 +749,7 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
-            let opt_agg = agg_col.agg_max(&self.groups);
+            let opt_agg = agg_col.agg_max(&self.groups.idx_ref());
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg);
@@ -854,7 +859,7 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
-            let opt_agg = agg_col.agg_n_unique(&self.groups);
+            let opt_agg = agg_col.agg_n_unique(&self.groups.idx_ref());
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());

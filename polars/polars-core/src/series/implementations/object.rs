@@ -43,15 +43,15 @@ where
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+    fn agg_first(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_first(groups)
     }
 
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
+    fn agg_last(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_last(groups)
     }
 
-    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
 
