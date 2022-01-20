@@ -16,14 +16,10 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
 use ahash::RandomState;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
@@ -168,26 +164,6 @@ macro_rules! impl_dyn_series {
                 self.0.agg_valid_count(groups)
             }
 
-            #[cfg(feature = "rows")]
-            fn pivot<'a>(
-                &self,
-                pivot_series: &'a Series,
-                keys: Vec<Series>,
-                groups: &[(u32, Vec<u32>)],
-                agg_type: PivotAgg,
-            ) -> Result<DataFrame> {
-                self.0.pivot(pivot_series, keys, groups, agg_type)
-            }
-
-            #[cfg(feature = "rows")]
-            fn pivot_count<'a>(
-                &self,
-                pivot_series: &'a Series,
-                keys: Vec<Series>,
-                groups: &[(u32, Vec<u32>)],
-            ) -> Result<DataFrame> {
-                self.0.pivot_count(pivot_series, keys, groups)
-            }
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
                 let other = other.to_physical_repr().into_owned();
                 self.0.hash_join_inner(&other.as_ref().as_ref())
@@ -618,11 +594,6 @@ macro_rules! impl_dyn_series {
                 self.0.is_first()
             }
 
-            #[cfg(feature = "object")]
-            fn as_any(&self) -> &dyn Any {
-                &self.0
-            }
-
             #[cfg(feature = "mode")]
             fn mode(&self) -> Result<Series> {
                 self.0.mode().map(|ca| ca.$into_logical().into_series())
@@ -696,19 +667,19 @@ mod test {
 
         let df = DataFrame::new(vec![s, s1])?;
 
-        let out = df.left_join(&df.clone(), "bar", "bar")?;
+        let out = df.left_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)
         ));
 
-        let out = df.inner_join(&df.clone(), "bar", "bar")?;
+        let out = df.inner_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)
         ));
 
-        let out = df.outer_join(&df.clone(), "bar", "bar")?;
+        let out = df.outer_join(&df.clone(), ["bar"], ["bar"])?;
         assert!(matches!(
             out.column("bar")?.dtype(),
             DataType::Datetime(TimeUnit::Nanoseconds, None)

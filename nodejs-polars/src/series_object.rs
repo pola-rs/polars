@@ -77,7 +77,9 @@ impl JsSeries {
             napi::Property::new(env, "bitor")?.with_method(bitor),
             napi::Property::new(env, "bitxor")?.with_method(bitxor),
             napi::Property::new(env, "cast")?.with_method(crate::series::cast),
+            napi::Property::new(env, "ceil")?.with_method(ceil),
             napi::Property::new(env, "chunk_lengths")?.with_method(chunk_lengths),
+            napi::Property::new(env, "clip")?.with_method(clip),
             napi::Property::new(env, "clone")?.with_method(clone),
             napi::Property::new(env, "cummax")?.with_method(cummax),
             napi::Property::new(env, "cummin")?.with_method(cummin),
@@ -390,6 +392,8 @@ impl JsSeries {
             napi::Property::new(env, "weekday")?.with_method(weekday),
             napi::Property::new(env, "year")?.with_method(year),
             napi::Property::new(env, "zip_with")?.with_method(zip_with),
+            napi::Property::new(env, "to_array")?.with_method(to_array),
+            napi::Property::new(env, "to_json")?.with_method(to_json),
         ])?;
 
         Ok(series)

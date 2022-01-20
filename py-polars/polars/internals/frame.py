@@ -1152,7 +1152,13 @@ class DataFrame:
         <class 'numpy.ndarray'>
 
         """
-        return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
+        out = self._df.to_numpy()
+        if out is None:
+            return np.vstack(
+                [self.to_series(i).to_numpy() for i in range(self.width)]
+            ).T
+        else:
+            return out
 
     def __getstate__(self):  # type: ignore
         return self.get_columns()
@@ -3169,7 +3175,7 @@ class DataFrame:
 
     def fill_nan(self, fill_value: Union["pli.Expr", int, float]) -> "DataFrame":
         """
-        Fill None/missing values by a an Expression evaluation.
+        Fill floating point NaN values by an Expression evaluation.
 
         Warnings
         --------
@@ -4538,12 +4544,11 @@ class GroupBy:
         """
         return GBSelection(self._df, self.by, None)
 
-    def pivot(self, pivot_column: str, values_column: str) -> "PivotOps":
+    def pivot(
+        self, pivot_column: Union[str, List[str]], values_column: Union[str, List[str]]
+    ) -> "PivotOps":
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
-
-        .. deprecated::
-            Use DataFrame.pivot directly
 
         Parameters
         ----------
@@ -4639,8 +4644,8 @@ class PivotOps:
         self,
         df: DataFrame,
         by: Union[str, List[str]],
-        pivot_column: str,
-        values_column: str,
+        pivot_column: Union[str, List[str]],
+        values_column: Union[str, List[str]],
     ):
         self._df = df
         self.by = by
@@ -4701,6 +4706,14 @@ class PivotOps:
         """
         return wrap_df(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
+        )
+
+    def last(self) -> DataFrame:
+        """
+        Get the last value per group.
+        """
+        return wrap_df(
+            self._df.pivot(self.by, self.pivot_column, self.values_column, "last")
         )
 
 

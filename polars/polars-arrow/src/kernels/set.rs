@@ -1,7 +1,6 @@
 use crate::array::default_arrays::FromData;
 use crate::error::{PolarsError, Result};
 use crate::kernels::BinaryMaskedSliceIterator;
-use crate::prelude::PolarsArray;
 use crate::trusted_len::PushUnchecked;
 use arrow::array::*;
 use arrow::{datatypes::DataType, types::NativeType};
@@ -14,7 +13,7 @@ where
     T: NativeType,
 {
     let values = array.values();
-    if !array.has_validity() {
+    if array.null_count() == 0 {
         return array.clone();
     }
 

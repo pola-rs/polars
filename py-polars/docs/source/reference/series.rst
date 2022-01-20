@@ -171,6 +171,7 @@ Manipulation/ selection
     Series.ceil
     Series.set_at_idx
     Series.fill_null
+    Series.fill_nan
     Series.zip_with
     Series.interpolate
     Series.clip

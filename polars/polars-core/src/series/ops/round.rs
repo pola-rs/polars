@@ -6,14 +6,16 @@ impl Series {
     pub fn round(&self, decimals: u32) -> Result<Self> {
         use num::traits::Pow;
         if let Ok(ca) = self.f32() {
-            let multiplier = 10.0.pow(decimals as f32) as f32;
+            // Note we do the computation on f64 floats to not loose precision
+            // when the computation is done, we cast to f32
+            let multiplier = 10.0.pow(decimals as f64);
             let s = ca
-                .apply(|val| (val * multiplier).round() / multiplier)
+                .apply(|val| ((val as f64 * multiplier).round() / multiplier) as f32)
                 .into_series();
             return Ok(s);
         }
         if let Ok(ca) = self.f64() {
-            let multiplier = 10.0.pow(decimals as f32) as f64;
+            let multiplier = 10.0.pow(decimals as f64);
             let s = ca
                 .apply(|val| (val * multiplier).round() / multiplier)
                 .into_series();

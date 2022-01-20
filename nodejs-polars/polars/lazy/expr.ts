@@ -9,16 +9,17 @@ import {
   INSPECT_SYMBOL
 } from "../utils";
 import {isExternal} from "util/types";
-import {Series} from "../series";
+import {Series} from "../series/series";
 
 import * as expr from "./expr/";
-import {Arithmetic, Comparison, Cumulative, Rolling} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
 
 export interface Expr extends
   Rolling<Expr>,
   Arithmetic<Expr>,
   Comparison<Expr>,
-  Cumulative<Expr> {
+  Cumulative<Expr>,
+  Round<Expr> {
   /** @ignore */
   _expr: any;
   get date(): expr.Datetime;
@@ -180,12 +181,6 @@ export interface Expr extends
   first(): Expr
   /** @see {@link Expr.explode} */
   flatten(): Expr
-  /**
-   * Floor underlying floating point array to the lowest integers smaller or equal to the float value.
-   *
-   * Only works on floating point Series
-   */
-  floor(): Expr
   /** Fill missing values with the latest seen values */
   forwardFill(): Expr
   /** Hash the Series. */
@@ -432,12 +427,6 @@ export interface Expr extends
   /** Reverse the arrays in the list */
   reverse(): Expr
   /**
-   * Round underlying floating point data by `decimals` digits.
-   * @param decimals Number of decimals to round by.
-   */
-  round(decimals?: number): Expr
-  round({decimals}: {decimals: number}): Expr
-  /**
    * Shift the values by a given period and fill the parts that will be empty due to this operation
    * @param periods number of places to shift (may be negative).
    */
@@ -590,6 +579,14 @@ const _Expr = (_expr: any): Expr => {
     backwardFill: wrapNullArgs("backwardFill"),
     cast(dtype, strict=false) {
       return wrap("cast", {dtype, strict});
+    },
+    ceil: wrapNullArgs("ceil"),
+    clip(arg, max?){
+      if(typeof arg === "number") {
+        return wrap("clip", {min: arg, max});
+      } else {
+        return wrap("clip", arg);
+      }
     },
     count: wrapNullArgs("count"),
     cumCount: wrapUnaryWithDefault("cumCount", "reverse", false),

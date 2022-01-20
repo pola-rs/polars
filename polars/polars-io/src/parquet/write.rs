@@ -6,7 +6,7 @@ use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, E
 use polars_core::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
-use std::io::{Seek, Write};
+use std::io::Write;
 
 struct Bla {
     columns: VecDeque<CompressedPage>,
@@ -52,12 +52,12 @@ pub use write::Compression as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
-    W: Write + Seek,
+    W: Write,
 {
     /// Create a new writer
     pub fn new(writer: W) -> Self
     where
-        W: Write + Seek,
+        W: Write,
     {
         ParquetWriter {
             writer,

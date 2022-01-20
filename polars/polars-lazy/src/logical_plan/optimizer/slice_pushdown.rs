@@ -105,7 +105,10 @@ impl SlicePushDown {
                 aggregate,
                 options,
 
-            }, Some(state)) if state.offset == 0 => {
+            },
+                // TODO! we currently skip slice pushdown if there is a predicate.
+                // we can modify the readers to only limit after predicates have been applied
+                Some(state)) if state.offset == 0 && predicate.is_none() => {
                 let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = ParquetScan {
@@ -126,7 +129,7 @@ impl SlicePushDown {
                 predicate,
                 aggregate,
                 options
-            }, Some(state)) if state.offset == 0 => {
+            }, Some(state)) if state.offset == 0 && predicate.is_none() => {
                 let mut options = options;
                 options.n_rows = Some(state.len as usize);
                 let lp = IpcScan {
@@ -150,7 +153,7 @@ impl SlicePushDown {
                 options,
                 predicate,
                 aggregate,
-            }, Some(state)) if state.offset >= 0 => {
+            }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
                 let mut options = options;
                 options.skip_rows = state.offset as usize;
                 options.n_rows = Some(state.len as usize);

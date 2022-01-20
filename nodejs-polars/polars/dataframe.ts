@@ -4,16 +4,14 @@ import {GroupBy} from "./groupby";
 import {LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
-import {Series, seriesWrapper} from "./series";
+import {Series, seriesWrapper} from "./series/series";
 import {Stream, Writable} from "stream";
 import {isExternal} from "util/types";
 
 import {
   DataType,
   JoinBaseOptions,
-  JsDataFrame,
-  WriteCsvOptions,
-  WriteJsonOptions
+  JsDataFrame
 } from "./datatypes";
 
 import {
@@ -32,6 +30,25 @@ import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
+type WriteCsvOptions = {
+  hasHeader?: boolean;
+  sep?: string;
+};
+
+type WriteJsonOptions = {
+  orient?: "row" | "col" | "dataframe";
+  multiline?: boolean;
+};
+
+type WriteParquetOptions = {
+  compression?: "uncompressed" | "snappy" | "gzip" | "lzo" | "brotli" | "lz4" | "zstd"
+};
+
+type WriteIPCOptions = {
+  compression?: "uncompressed" | "lz4" | "zstd"
+};
+
+
 /**
  *
   A DataFrame is a two-dimensional data structure that represents data as a table
@@ -49,7 +66,6 @@ const inspect = Symbol.for("nodejs.util.inspect.custom");
       Whether to interpret two-dimensional data as columns or as rows. If None,
       the orientation is inferred by matching the columns and data dimensions. If
       this does not yield conclusive results, column orientation is used.
-
   Examples
   --------
   Constructing a DataFrame from an object :
@@ -1117,7 +1133,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * >>> })
    *
    * // defaults to 'dataframe' orientation
-   * >>> df.toJS()
+   * >>> df.toObject()
    * {
    *   "columns":[
    *     {
@@ -1134,7 +1150,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * }
    *
    * // row oriented
-   * >>> df.toJS({orient:"row"})
+   * >>> df.toObject({orient:"row"})
    * [
    *   {"foo":1.0,"bar":"a"},
    *   {"foo":2.0,"bar":"b"},
@@ -1142,15 +1158,15 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ]
    *
    * // column oriented
-   * >>> df.toJS({orient: "col"})
+   * >>> df.toObject({orient: "col"})
    * {
    *   "foo":[1,2,3],
    *   "bar":["a","b","c"]
    * }
    * ```
    */
-  toJS(): object
-  toJS(options: {orient: "row" | "col" | "dataframe"}): object
+  toObject(): object
+  toObject(options: {orient: "row" | "col" | "dataframe"}): object
   /**
    * Write Dataframe to JSON string, file, or write stream
    * @param destination file or write stream
@@ -1192,7 +1208,20 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
-  toParquet(destination: string, compression: "uncompressed" | "snappy" | "gzip" | "lzo" | "brotli" | "lz4" | "zstd"): void
+
+  /**
+   * Write to Arrow IPC binary stream, or a feather file.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  toIPC(path: string, options?: WriteIPCOptions): void
+
+  /**
+   * Write the DataFrame disk in parquet format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  toParquet(path: string, options?: WriteParquetOptions): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1647,23 +1676,19 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(dest, "csv", options);
       }
     },
-    toJS(options?) {
+    toObject(options?) {
       if(options?.orient === "row") {
         return unwrap("to_row_objects");
 
       }
-      if(options?.orient === "dataframe") {
-        return unwrap("to_js");
+      if(options?.orient === "col") {
+        return this.getColumns().reduce((acc, curr: Series<any>) => ({
+          ...acc,
+          [curr.name]: curr.toArray()
+        }), {});
       }
 
-      return unwrap<any[]>("get_columns").reduce((acc, curr) => {
-        const s = seriesWrapper(curr);
-
-        return {
-          ...acc,
-          [s.name]: s.toArray()
-        };
-      }, {});
+      return unwrap("to_js");
     },
     toJSON(arg0?, options?): any {
       // JSON.stringify(df)
@@ -1686,7 +1711,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       } else if(arg0?.orient === "col") {
         // TODO!
         // do this on the rust side for better performance
-        return JSON.stringify(this.toJS({orient: "col"}));
+        return JSON.stringify(this.toObject({orient: "col"}));
       }
       else {
         // toJSON("path/to/some/file", options)
@@ -1694,8 +1719,11 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(arg0, "json", options);
       }
     },
-    toParquet(path, compression) {
+    toParquet(path, {compression} = {compression: "uncompressed"}) {
       return unwrap("writeParquet", {path, compression});
+    },
+    toIPC(path, {compression} = {compression: "uncompressed"}) {
+      return unwrap("writeIPC", {path, compression});
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),
@@ -1793,10 +1821,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
 export interface DataFrameConstructor {
   (): DataFrame
-  (data: Record<string, any>): DataFrame
   (data: Record<string, any>[]): DataFrame
   (data: Series<any>[]): DataFrame
-  (data: any[][]): DataFrame
+  (data: any): DataFrame
   (data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
 }
@@ -1824,7 +1851,6 @@ function objToDF(obj: Record<string, Array<any>>): any {
 
   return pli.df.read_columns({columns});
 }
-
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 export namespace pl {
   export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});

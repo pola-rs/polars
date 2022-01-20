@@ -10,8 +10,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
@@ -19,8 +17,6 @@ use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
 
@@ -102,26 +98,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.agg_valid_count(groups)
     }
 
-    #[cfg(feature = "rows")]
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        self.0.pivot(pivot_series, keys, groups, agg_type)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.0.pivot_count(pivot_series, keys, groups)
-    }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
     }
@@ -401,10 +377,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         RepeatBy::repeat_by(&self.0, by)
     }
 
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         Ok(self.0.mode()?.into_series())

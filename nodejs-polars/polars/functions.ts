@@ -1,6 +1,6 @@
 /* eslint-disable no-redeclare */
 import {jsTypeToPolarsType} from "./internals/construction";
-import {Series, seriesWrapper} from "./series";
+import {Series, seriesWrapper} from "./series/series";
 import {DataFrame, dfWrapper} from "./dataframe";
 import pli from "./internals/polars_internal";
 import {isDataFrameArray, isSeriesArray} from "./utils";

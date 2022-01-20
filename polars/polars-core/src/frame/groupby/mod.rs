@@ -1,6 +1,5 @@
 use self::hashing::*;
 use crate::chunked_array::builder::PrimitiveChunkedBuilder;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
@@ -433,19 +432,27 @@ impl DataFrame {
     /// ```
     /// use polars_core::prelude::*;
     /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("column_name")?
-    ///     .select("agg_column_name")
+    ///     df.groupby(["column_name"])?
+    ///     .select(["agg_column_name"])
     ///     .sum()
     /// }
     /// ```
-    pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+    pub fn groupby<I, S>(&self, by: I) -> Result<GroupBy>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let selected_keys = self.select_series(by)?;
         self.groupby_with_series(selected_keys, true)
     }
 
     /// Group DataFrame using a Series column.
     /// The groups are ordered by their smallest row index.
-    pub fn groupby_stable<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+    pub fn groupby_stable<I, S>(&self, by: I) -> Result<GroupBy>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let mut gb = self.groupby(by)?;
         gb.groups.sort_unstable_by_key(|t| t.0);
         Ok(gb)
@@ -473,9 +480,9 @@ impl DataFrame {
 /// let s0 = DateChunked::parse_from_str_slice("date", dates, fmt)
 ///         .into_series();
 /// // create temperature series
-/// let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
+/// let s1 = Series::new("temp", [20, 10, 7, 9, 1]);
 /// // create rain series
-/// let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+/// let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01]);
 /// // create a new DataFrame
 /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 /// println!("{:?}", df);
@@ -502,21 +509,21 @@ impl DataFrame {
 /// ```
 ///
 #[derive(Debug, Clone)]
-pub struct GroupBy<'df, 'selection_str> {
+pub struct GroupBy<'df> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
     pub(crate) groups: GroupTuples,
     // columns selected for aggregation
-    pub(crate) selected_agg: Option<Vec<&'selection_str str>>,
+    pub(crate) selected_agg: Option<Vec<String>>,
 }
 
-impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
+impl<'df> GroupBy<'df> {
     pub fn new(
         df: &'df DataFrame,
         by: Vec<Series>,
         groups: GroupTuples,
-        selected_agg: Option<Vec<&'selection_str str>>,
+        selected_agg: Option<Vec<String>>,
     ) -> Self {
         GroupBy {
             df,
@@ -532,11 +539,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// Note that making a selection with this method is not required. If you
     /// skip it all columns (except for the keys) will be selected for aggregation.
     #[must_use]
-    pub fn select<S, J>(mut self, selection: S) -> Self
-    where
-        S: Selection<'selection_str, J>,
-    {
-        self.selected_agg = Some(selection.to_selection_vec());
+    pub fn select<I: IntoIterator<Item = S>, S: AsRef<str>>(mut self, selection: I) -> Self {
+        self.selected_agg = Some(
+            selection
+                .into_iter()
+                .map(|s| s.as_ref().to_string())
+                .collect(),
+        );
         self
     }
 
@@ -580,6 +589,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     .get_column_names()
                     .into_iter()
                     .filter(|a| !by.contains(a))
+                    .map(|s| s.to_string())
                     .collect()
             }
         };
@@ -596,7 +606,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select(&["temp", "rain"]).mean()
+    ///     df.groupby(["date"])?.select(&["temp", "rain"]).mean()
     /// }
     /// ```
     /// Returns:
@@ -635,7 +645,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").sum()
+    ///     df.groupby(["date"])?.select(["temp"]).sum()
     /// }
     /// ```
     /// Returns:
@@ -674,7 +684,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").min()
+    ///     df.groupby(["date"])?.select(["temp"]).min()
     /// }
     /// ```
     /// Returns:
@@ -712,7 +722,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").max()
+    ///     df.groupby(["date"])?.select(["temp"]).max()
     /// }
     /// ```
     /// Returns:
@@ -750,7 +760,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").first()
+    ///     df.groupby(["date"])?.select(["temp"]).first()
     /// }
     /// ```
     /// Returns:
@@ -786,7 +796,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").last()
+    ///     df.groupby(["date"])?.select(["temp"]).last()
     /// }
     /// ```
     /// Returns:
@@ -822,7 +832,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").n_unique()
+    ///     df.groupby(["date"])?.select(["temp"]).n_unique()
     /// }
     /// ```
     /// Returns:
@@ -862,7 +872,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// # use polars_arrow::prelude::QuantileInterpolOptions;
     ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").quantile(0.2, QuantileInterpolOptions::default())
+    ///     df.groupby(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
     /// }
     /// ```
     pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<DataFrame> {
@@ -891,7 +901,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").median()
+    ///     df.groupby(["date"])?.select(["temp"]).median()
     /// }
     /// ```
     pub fn median(&self) -> Result<DataFrame> {
@@ -942,7 +952,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").count()
+    ///     df.groupby(["date"])?.select(["temp"]).count()
     /// }
     /// ```
     /// Returns:
@@ -982,7 +992,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.groups()
+    ///     df.groupby(["date"])?.groups()
     /// }
     /// ```
     /// Returns:
@@ -1035,7 +1045,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///  ```rust
     ///  # use polars_core::prelude::*;
     ///  fn example(df: DataFrame) -> Result<DataFrame> {
-    ///      df.groupby("date")?.agg(&[("temp", &["n_unique", "sum", "min"])])
+    ///      df.groupby(["date"])?.agg(&[("temp", &["n_unique", "sum", "min"])])
     ///  }
     ///  ```
     ///  Returns:
@@ -1131,7 +1141,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///     // GroupBy and aggregate to Lists
-    ///     df.groupby("date")?.select("temp").agg_list()
+    ///     df.groupby(["date"])?.select(["temp"]).agg_list()
     /// }
     /// ```
     /// Returns:
@@ -1263,12 +1273,11 @@ mod test {
     use crate::prelude::*;
     use crate::utils::split_ca;
     use num::traits::FloatConst;
-    use polars_arrow::prelude::QuantileInterpolOptions;
 
     #[test]
     #[cfg(feature = "dtype-date")]
     #[cfg_attr(miri, ignore)]
-    fn test_group_by() {
+    fn test_group_by() -> Result<()> {
         let s0 = DateChunked::parse_from_str_slice(
             "date",
             &[
@@ -1281,94 +1290,44 @@ mod test {
             "%Y-%m-%d",
         )
         .into_series();
-        let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
-        let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+        let s1 = Series::new("temp", [20, 10, 7, 9, 1]);
+        let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01]);
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-        println!("{:?}", df);
 
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").count().unwrap()
+        let out = df.groupby_stable(["date"])?.select(["temp"]).count()?;
+        assert_eq!(
+            out.column("temp_count")?,
+            &Series::new("temp_count", [2u32, 2, 1])
         );
+
         // Select multiple
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select(&["temp", "rain"])
-                .mean()
-                .unwrap()
+        let out = df
+            .groupby_stable(["date"])?
+            .select(&["temp", "rain"])
+            .mean()?;
+        assert_eq!(
+            out.column("temp_mean")?,
+            &Series::new("temp_mean", [15.0f64, 4.0, 9.0])
         );
+
         // Group by multiple
-        println!(
-            "multiple keys {:?}",
-            df.groupby(&["date", "temp"])
-                .unwrap()
-                .select("rain")
-                .mean()
-                .unwrap()
+        let out = df
+            .groupby_stable(&["date", "temp"])?
+            .select(["rain"])
+            .mean()?;
+        assert!(out.column("rain_mean").is_ok());
+
+        let out = df.groupby_stable(["date"])?.select(["temp"]).sum()?;
+        assert_eq!(
+            out.column("temp_sum")?,
+            &Series::new("temp_sum", [30, 8, 9])
         );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").sum().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").min().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").max().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .agg_list()
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").first().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").last().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .n_unique()
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .quantile(0.2, QuantileInterpolOptions::default())
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").median().unwrap()
-        );
+
         // implicit select all and only aggregate on methods that support that aggregation
-        let gb = df.groupby("date").unwrap().n_unique().unwrap();
-        println!("{:?}", df.groupby("date").unwrap().n_unique().unwrap());
+        let gb = df.groupby(["date"]).unwrap().n_unique().unwrap();
         // check the group by column is filtered out.
         assert_eq!(gb.width(), 3);
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .agg(&[("temp", &["n_unique", "sum", "min"])])
-                .unwrap()
-        );
-        println!("{:?}", df.groupby("date").unwrap().groups().unwrap());
+        Ok(())
     }
 
     #[test]
@@ -1391,18 +1350,15 @@ mod test {
 
         let df =
             DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]).unwrap();
-        println!("{:?}", df);
 
         let adf = df
             .groupby(&[
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
             ])
             .unwrap()
-            .select("N")
+            .select(["N"])
             .sum()
             .unwrap();
-
-        println!("{:?}", adf);
 
         assert_eq!(
             Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
@@ -1436,16 +1392,14 @@ mod test {
 
         // Creat the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
-        println!("{:?}", df);
 
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
             .groupby(&series_names)
             .unwrap()
-            .select("N")
+            .select(["N"])
             .sum()
             .unwrap();
-        println!("{:?}", adf);
 
         // Check that the results of the group-by are correct. The content of every column
         // is equal, then, the grouped columns shall be equal and in the same order.
@@ -1470,8 +1424,8 @@ mod test {
                     "val" => [1, 1, 1, 1, 1]
         }
         .unwrap();
-        let res = df.groupby("flt").unwrap().sum().unwrap();
-        let res = res.sort("flt", false).unwrap();
+        let res = df.groupby(["flt"]).unwrap().sum().unwrap();
+        let res = res.sort(["flt"], false).unwrap();
         assert_eq!(
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
@@ -1493,9 +1447,9 @@ mod test {
 
         // check multiple keys and categorical
         let res = df
-            .groupby_stable(&["foo", "ham"])
+            .groupby_stable(["foo", "ham"])
             .unwrap()
-            .select("bar")
+            .select(["bar"])
             .sum()
             .unwrap();
 
@@ -1514,8 +1468,8 @@ mod test {
         }
         .unwrap();
 
-        let out = df.groupby("a").unwrap().apply(Ok).unwrap();
-        assert!(out.sort("b", false).unwrap().frame_equal(&df));
+        let out = df.groupby(["a"]).unwrap().apply(Ok).unwrap();
+        assert!(out.sort(["b"], false).unwrap().frame_equal(&df));
     }
 
     #[test]
@@ -1549,7 +1503,7 @@ mod test {
             "a" => ["a", "a", "a", "b", "b"],
             "b" => [Some(1), Some(2), None, None, Some(1)]
         )?;
-        let out = df.groupby_stable("a")?.mean()?;
+        let out = df.groupby_stable(["a"])?.mean()?;
 
         assert_eq!(
             Vec::from(out.column("b_mean")?.f64()?),
@@ -1568,12 +1522,12 @@ mod test {
             "int" => [1, 2, 3]
         ]?;
 
-        let out = df.groupby("g")?.select("int").var()?;
+        let out = df.groupby(["g"])?.select(["int"]).var()?;
         assert_eq!(
             out.column("int_agg_var")?.f64()?.sort(false).get(0),
             Some(0.5)
         );
-        let out = df.groupby("g")?.select("int").std()?;
+        let out = df.groupby(["g"])?.select(["int"]).std()?;
         let val = out
             .column("int_agg_std")?
             .f64()?
@@ -1598,8 +1552,7 @@ mod test {
 
         df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
 
-        let out = df.groupby("g")?.sum()?;
-        dbg!(out);
+        let _ = df.groupby(["g"])?.sum()?;
         Ok(())
     }
 }

@@ -1,5 +1,5 @@
 import {DataFrame} from "@polars/dataframe";
-import {Series} from "@polars/series";
+import {Series} from "@polars/series/series";
 
 declare global {
   namespace jest {

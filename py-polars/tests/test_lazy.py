@@ -865,8 +865,7 @@ def test_is_in() -> None:
 def test_rename() -> None:
     lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     out = lf.rename({"a": "foo", "b": "bar"}).collect()
-    # todo: preserve column order
-    assert out.columns == ["c", "foo", "bar"]
+    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_drop_columns() -> None:
