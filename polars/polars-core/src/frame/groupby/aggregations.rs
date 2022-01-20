@@ -676,10 +676,9 @@ where
                         );
                         for (_first, idx) in groups {
                             let s = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                    .into_series()
+                                self.take_unchecked(idx.iter().map(|i| *i as usize).into()).into_series()
                             };
-                            builder.append_opt_series(Some(&s));
+                            builder.append_series(&s);
                         }
                         return Some(builder.finish().into_series());
                     }
@@ -691,7 +690,60 @@ where
                 Some(ca.into())
             }
             GroupsProxy::Slice(groups) => {
-                todo!()
+                let mut can_fast_explode = true;
+                let arr = match self.cont_slice() {
+                    Ok(values) => {
+                        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
+                        let mut length_so_far = 0i64;
+                        offsets.push(length_so_far);
+
+                        let mut list_values = Vec::<T::Native>::with_capacity(self.len());
+                        groups.iter().for_each(|&[first, len]| {
+                            if len == 0 {
+                                can_fast_explode = false;
+                            }
+
+                            length_so_far += len as i64;
+                            list_values.extend_from_slice(&values[first as usize..(first + len) as usize]);
+                            unsafe {
+                                // Safety:
+                                // we know that offsets has allocated enough slots
+                                offsets.push_unchecked(length_so_far);
+                            }
+                        });
+                        let array = PrimitiveArray::from_data(
+                            T::get_dtype().to_arrow(),
+                            list_values.into(),
+                            None,
+                        );
+                        let data_type =
+                            ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                        ListArray::<i64>::from_data(
+                            data_type,
+                            offsets.into(),
+                            Arc::new(array),
+                            None,
+                        )
+                    }
+                    _ => {
+                        let mut builder = ListPrimitiveChunkedBuilder::<T::Native>::new(
+                            self.name(),
+                            groups.len(),
+                            self.len(),
+                            self.dtype().clone(),
+                        );
+                        for &[first, len] in groups {
+                            let s = self.slice(first as i64, len as usize).into_series();
+                            builder.append_series(&s);
+                        }
+                        return Some(builder.finish().into_series());
+                    }
+                };
+                let mut ca = ListChunked::new_from_chunks(self.name(), vec![Arc::new(arr)]);
+                if can_fast_explode {
+                    ca.set_fast_explode()
+                }
+                Some(ca.into())
             }
         }
     }
@@ -958,25 +1010,53 @@ where
         quantile: f64,
         interpol: QuantileInterpolOptions,
     ) -> Option<Series> {
-        agg_helper_idx::<T, _>(groups, |(_first, idx)| {
-            if idx.is_empty() {
-                return None;
-            }
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                agg_helper_idx::<T, _>(groups, |(_first, idx)| {
+                    if idx.is_empty() {
+                        return None;
+                    }
 
-            let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            group_vals.quantile(quantile, interpol).unwrap()
-        })
+                    let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    group_vals.quantile(quantile, interpol).unwrap()
+                })
+            }
+            GroupsProxy::Slice(groups) => {
+                agg_helper_slice::<T, _>(groups, |[first, len]| {
+                    if len == 0 {
+                        return None;
+                    }
+                    let group_vals = slice_from_offsets(self, first, len);
+                    group_vals.quantile(quantile, interpol).unwrap()
+                })
+            }
+        }
     }
 
     fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
-        agg_helper_idx::<Float64Type, _>(groups, |(_first, idx)| {
-            if idx.is_empty() {
-                return None;
-            }
+        match groups {
+            GroupsProxy::Idx(groups) => {
+                agg_helper_idx::<Float64Type, _>(groups, |(_first, idx)| {
+                    if idx.is_empty() {
+                        return None;
+                    }
 
-            let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-            group_vals.median()
-        })
+                    let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    group_vals.median()
+                })
+            }
+            GroupsProxy::Slice(groups) => {
+                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
+                    if len == 0 {
+                        return None;
+                    }
+
+                    let group_vals = slice_from_offsets(self, first, len);
+                    group_vals.median()
+                })
+
+            }
+        }
     }
 }
 
