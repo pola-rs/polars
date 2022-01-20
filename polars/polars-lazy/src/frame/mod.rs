@@ -16,7 +16,7 @@ use std::borrow::Cow;
 
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
-use polars_core::frame::groupby::DynamicGroupOptions;
+use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
@@ -638,6 +638,19 @@ impl LazyFrame {
             keys: by.as_ref().to_vec(),
             maintain_order: false,
             dynamic_options: None,
+            rolling_options: None,
+        }
+    }
+
+    pub fn groupby_rolling(self, options: RollingGroupOptions) -> LazyGroupBy {
+        let opt_state = self.get_opt_state();
+        LazyGroupBy {
+            logical_plan: self.logical_plan,
+            opt_state,
+            keys: vec![],
+            maintain_order: true,
+            dynamic_options: None,
+            rolling_options: Some(options),
         }
     }
 
@@ -653,6 +666,7 @@ impl LazyFrame {
             keys: by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: Some(options),
+            rolling_options: None,
         }
     }
 
@@ -665,6 +679,7 @@ impl LazyFrame {
             keys: by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
+            rolling_options: None,
         }
     }
 
@@ -965,6 +980,7 @@ pub struct LazyGroupBy {
     keys: Vec<Expr>,
     maintain_order: bool,
     dynamic_options: Option<DynamicGroupOptions>,
+    rolling_options: Option<RollingGroupOptions>,
 }
 
 impl LazyGroupBy {
@@ -999,6 +1015,7 @@ impl LazyGroupBy {
                 None,
                 self.maintain_order,
                 self.dynamic_options,
+                self.rolling_options,
             )
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
@@ -1040,6 +1057,7 @@ impl LazyGroupBy {
                 vec![],
                 Some(Arc::new(f)),
                 self.maintain_order,
+                None,
                 None,
             )
             .build();

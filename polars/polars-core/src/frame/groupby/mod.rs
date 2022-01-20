@@ -32,6 +32,11 @@ pub use pivot::PivotAgg;
 pub struct DynamicGroupOptions {
     pub index_column: String,
 }
+#[cfg(not(feature = "dynamic_groupby"))]
+#[derive(Clone, Debug)]
+pub struct RollingGroupOptions {
+    pub index_column: String,
+}
 
 pub use proxy::*;
 

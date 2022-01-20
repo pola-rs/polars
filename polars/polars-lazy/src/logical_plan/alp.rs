@@ -6,7 +6,6 @@ use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
-use polars_core::frame::groupby::DynamicGroupOptions;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use std::collections::HashSet;
@@ -99,7 +98,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>,
+        options: GroupbyOptions,
     },
     Join {
         input_left: Node,
@@ -234,7 +233,7 @@ impl ALogicalPlan {
                 schema,
                 apply,
                 maintain_order,
-                dynamic_options,
+                options: dynamic_options,
                 ..
             } => Aggregate {
                 input: inputs[0],
@@ -243,7 +242,7 @@ impl ALogicalPlan {
                 schema: schema.clone(),
                 apply: apply.clone(),
                 maintain_order: *maintain_order,
-                dynamic_options: dynamic_options.clone(),
+                options: dynamic_options.clone(),
             },
             Join {
                 schema,
@@ -641,9 +640,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>,
+        options: GroupbyOptions,
     ) -> Self {
-        debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
+        debug_assert!(!(keys.is_empty() && options.dynamic.is_none()));
         let current_schema = self.schema();
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
@@ -661,7 +660,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            dynamic_options,
+            options,
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)

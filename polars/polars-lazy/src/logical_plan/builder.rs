@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use ahash::RandomState;
-use polars_core::frame::groupby::DynamicGroupOptions;
+use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
@@ -274,8 +274,8 @@ impl LogicalPlanBuilder {
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         dynamic_options: Option<DynamicGroupOptions>,
+        rolling_options: Option<RollingGroupOptions>,
     ) -> Self {
-        debug_assert!(!(keys.is_empty() && dynamic_options.is_none()));
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
@@ -290,7 +290,10 @@ impl LogicalPlanBuilder {
             schema: Arc::new(schema),
             apply,
             maintain_order,
-            dynamic_options,
+            options: GroupbyOptions {
+                dynamic: dynamic_options,
+                rolling: rolling_options,
+            },
         }
         .into()
     }
