@@ -6,7 +6,7 @@ use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use rayon::prelude::*;
@@ -50,7 +50,7 @@ pub(crate) fn is_unique_helper2(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupTuples,
+    groups: GroupsProxy,
     len: u32,
     unique_val: bool,
     duplicated_val: bool,
@@ -128,7 +128,7 @@ where
 #[allow(clippy::needless_collect)]
 fn mode<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
-    ChunkedArray<T>: IntoGroupTuples + ChunkTake,
+    ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
 {
     if ca.is_empty() {
         return ca.clone();

@@ -3,7 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupsProxy};
 use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
 use std::borrow::Cow;
@@ -32,7 +32,7 @@ impl PhysicalExpr for AggregationExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
@@ -63,7 +63,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
@@ -149,7 +149,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         match self.agg_type {
@@ -190,7 +190,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match self.agg_type {
@@ -259,7 +259,7 @@ impl PhysicalAggregation for AggQuantileExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
@@ -281,7 +281,7 @@ impl PhysicalAggregation for CastExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let agg_expr = self.input.as_agg_expr()?;
@@ -322,7 +322,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupTuples,
+        _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         unimplemented!()

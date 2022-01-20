@@ -2,7 +2,7 @@ use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::{prelude::*, POOL};
 use std::sync::Arc;
 
@@ -50,7 +50,7 @@ impl PhysicalExpr for BinaryFunctionExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let (series_a, series_b) = POOL.install(|| {
@@ -120,7 +120,7 @@ impl PhysicalAggregation for BinaryFunctionExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let (agg_a, agg_b): (Result<Series>, Result<Series>) = POOL.install(|| {

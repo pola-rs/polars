@@ -1,4 +1,4 @@
-use super::GroupTuples;
+use super::GroupsProxy;
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
@@ -16,7 +16,7 @@ use std::hash::{BuildHasher, Hash};
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
 pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
 
-pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
+pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupsProxy
 where
     T: Hash + Eq,
 {
@@ -50,7 +50,7 @@ pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     keys: Vec<IntoSlice>,
     group_size_hint: usize,
     n_partitions: u64,
-) -> GroupTuples
+) -> GroupsProxy
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64 + CallHasher,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -235,7 +235,7 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
 pub(crate) fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
     n_partitions: usize,
-) -> GroupTuples {
+) -> GroupsProxy {
     let dfs = split_df(&keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let n_partitions = n_partitions as u64;

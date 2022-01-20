@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
-use crate::frame::groupby::GroupTuples;
+use crate::frame::groupby::GroupsProxy;
 use crate::utils::accumulate_dataframes_vertical;
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
@@ -98,7 +98,7 @@ impl DataFrame {
         // the rows of this nested groupby will be pivoted as header column values
         columns: &[String],
         // matching a groupby on index
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         // aggregation function
         agg_fn: PivotAgg,
     ) -> Result<DataFrame> {

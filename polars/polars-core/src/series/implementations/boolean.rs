@@ -126,8 +126,8 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
     }
 
     #[cfg(feature = "sort_multiple")]

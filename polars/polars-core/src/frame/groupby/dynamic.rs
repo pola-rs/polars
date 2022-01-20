@@ -1,4 +1,4 @@
-use crate::frame::groupby::GroupTuples;
+use crate::frame::groupby::GroupsProxy;
 use crate::prelude::*;
 use crate::POOL;
 use polars_time::groupby::ClosedWindow;
@@ -31,7 +31,7 @@ impl DataFrame {
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupTuples)> {
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.column(&options.index_column)?;
         let time_type = time.dtype();
 
@@ -92,7 +92,7 @@ impl DataFrame {
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> Result<(Series, Vec<Series>, GroupTuples)> {
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
 

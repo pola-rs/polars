@@ -22,7 +22,7 @@ pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
@@ -65,7 +65,7 @@ pub struct AggregationContext<'a> {
     /// 2. flat (still needs the grouptuples to aggregate)
     series: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupTuples>,
+    groups: Cow<'a, GroupsProxy>,
     /// if the group tuples are already used in a level above
     /// and the series is exploded, the group tuples are sorted
     /// e.g. the exploded Series is grouped per group.
@@ -74,7 +74,7 @@ pub struct AggregationContext<'a> {
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
     update_groups: UpdateGroups,
-    /// This is true when the Series and GroupTuples still have all
+    /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
     all_unit_len: bool,
@@ -89,7 +89,7 @@ impl<'a> AggregationContext<'a> {
         self.all_unit_len
     }
 
-    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
+    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
             UpdateGroups::No => {}
             UpdateGroups::WithGroupsLen => {
@@ -98,7 +98,7 @@ impl<'a> AggregationContext<'a> {
                 // so we need to recreate new grouptuples that
                 // match the exploded Series
                 let mut count = 0u32;
-                let groups: GroupTuples = self
+                let groups: GroupsProxy = self
                     .groups
                     .iter()
                     .map(|g| {
@@ -114,7 +114,7 @@ impl<'a> AggregationContext<'a> {
             }
             UpdateGroups::WithSeriesLen => {
                 let mut count = 0u32;
-                let groups: GroupTuples = self
+                let groups: GroupsProxy = self
                     .series()
                     .list()
                     .expect("impl error, should be a list at this point")
@@ -190,7 +190,7 @@ impl<'a> AggregationContext<'a> {
     /// the columns dtype)
     pub(crate) fn new(
         series: Series,
-        groups: Cow<'a, GroupTuples>,
+        groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
         let series = match (aggregated, series.dtype()) {
@@ -253,7 +253,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Update the group tuples
-    pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
+    pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
         self.with_series(self.flat_naive().into_owned(), false);
         self.groups = Cow::Owned(groups);
@@ -361,7 +361,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>>;
 
@@ -414,7 +414,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>>;
 
@@ -429,7 +429,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
@@ -442,7 +442,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         self.aggregate(final_df, groups, state)

@@ -32,18 +32,18 @@ pub struct DynamicGroupOptions {
     pub index_column: String,
 }
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupsProxy = Vec<(u32, Vec<u32>)>;
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 #[cfg(feature = "dynamic_groupby")]
 pub use dynamic::*;
 
 /// Used to create the tuples for a groupby operation.
-pub trait IntoGroupTuples {
+pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         unimplemented!()
     }
 }
@@ -53,7 +53,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
+fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -97,12 +97,12 @@ where
     }
 }
 
-impl<T> IntoGroupTuples for ChunkedArray<T>
+impl<T> IntoGroupsProxy for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
@@ -134,16 +134,16 @@ where
         }
     }
 }
-impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for BooleanChunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
         ca.group_tuples(multithreaded)
     }
 }
 
-impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for Utf8Chunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
@@ -186,25 +186,25 @@ impl IntoGroupTuples for Utf8Chunked {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         self.deref().group_tuples(multithreaded)
     }
 }
 
-impl IntoGroupTuples for ListChunked {
+impl IntoGroupsProxy for ListChunked {
     #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)))
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> IntoGroupTuples for ObjectChunked<T>
+impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         groupby(self.into_iter())
     }
 }
@@ -513,7 +513,7 @@ pub struct GroupBy<'df> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    pub(crate) groups: GroupTuples,
+    pub(crate) groups: GroupsProxy,
     // columns selected for aggregation
     pub(crate) selected_agg: Option<Vec<String>>,
 }
@@ -522,7 +522,7 @@ impl<'df> GroupBy<'df> {
     pub fn new(
         df: &'df DataFrame,
         by: Vec<Series>,
-        groups: GroupTuples,
+        groups: GroupsProxy,
         selected_agg: Option<Vec<String>>,
     ) -> Self {
         GroupBy {
@@ -553,7 +553,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &GroupTuples {
+    pub fn get_groups(&self) -> &GroupsProxy {
         &self.groups
     }
 
@@ -561,7 +561,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups_mut(&mut self) -> &mut GroupTuples {
+    pub fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
     }
 

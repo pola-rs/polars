@@ -1,7 +1,7 @@
 use crate::bounds::Bounds;
 use crate::window::Window;
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupsProxy = Vec<(u32, Vec<u32>)>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ClosedWindow {
@@ -22,7 +22,7 @@ pub fn groupby(
     include_boundaries: bool,
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> (GroupTuples, Vec<i64>, Vec<i64>) {
+) -> (GroupsProxy, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary

@@ -248,7 +248,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             "cannot do remainder operation on logical".into(),
         ))
     }
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         self.0.group_tuples(multithreaded)
     }
     #[cfg(feature = "sort_multiple")]

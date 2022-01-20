@@ -2,7 +2,7 @@ use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqI
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -67,8 +67,8 @@ where
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
     }
 }
 #[cfg(feature = "object")]

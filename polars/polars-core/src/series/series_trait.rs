@@ -35,7 +35,7 @@ macro_rules! invalid_operation_panic {
 pub(crate) mod private {
     use super::*;
     #[cfg(feature = "rows")]
-    use crate::frame::groupby::GroupTuples;
+    use crate::frame::groupby::GroupsProxy;
 
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use ahash::RandomState;
@@ -248,7 +248,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
             invalid_operation_panic!(self)
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
