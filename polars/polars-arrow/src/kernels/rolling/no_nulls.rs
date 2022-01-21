@@ -24,41 +24,6 @@ impl Default for QuantileInterpolOptions {
     }
 }
 
-fn rolling_apply_convolve<Fo, Fa>(
-    values: &[f64],
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-    aggregator: Fa,
-    weights: &[f64],
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[f64]) -> f64,
-{
-    assert_eq!(weights.len(), window_size);
-    let mut buf = vec![0.0; window_size];
-    let len = values.len();
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            let vals = unsafe { values.get_unchecked(start..end) };
-            buf.iter_mut()
-                .zip(vals.iter().zip(weights))
-                .for_each(|(b, (v, w))| *b = *v * *w);
-
-            aggregator(&buf)
-        })
-        .collect_trusted::<Vec<f64>>();
-
-    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
-        DataType::Float64,
-        out.into(),
-        validity.map(|b| b.into()),
-    ))
-}
-
 fn rolling_apply_weights<Fo, Fa>(
     values: &[f64],
     window_size: usize,

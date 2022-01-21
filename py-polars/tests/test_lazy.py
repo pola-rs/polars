@@ -730,19 +730,19 @@ def test_rolling_apply() -> None:
     assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
 
     s = pl.Series("A", list(range(6)), dtype=pl.Float64)
-    roll_app_sum = s.rolling_apply(
-        function=lambda s: s.sum(),
+    roll_app_std = s.rolling_apply(
+        function=lambda s: s.std(),
         window_size=4,
         weights=[1.0, 2.0, 3.0, 0.1],
         min_periods=3,
         center=False,
     )
 
-    roll_sum = s.rolling_sum(
+    roll_std = s.rolling_std(
         window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
     )
 
-    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
+    assert (roll_app_std - roll_std).abs().sum() < 0.0001
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
