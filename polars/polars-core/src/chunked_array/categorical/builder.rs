@@ -133,7 +133,7 @@ impl CategoricalChunkedBuilder {
 }
 impl CategoricalChunkedBuilder {
     /// Appends all the values in a single lock of the global string cache.
-    pub fn from_iter<'a, I>(&mut self, i: I)
+    pub fn drain_iter<'a, I>(&mut self, i: I)
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -260,8 +260,8 @@ mod test {
             // does not interfere with the index mapping
             let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
             let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
-            builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
-            builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
+            builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
+            builder2.drain_iter(vec![Some("hello"), None, Some("world")].into_iter());
 
             let s = builder1.finish().into_series();
             assert_eq!(s.str_value(0), "null");

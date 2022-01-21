@@ -565,6 +565,12 @@ name = "hashbrown"
 version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab5ef0d4909ef3724cc8cce6ccc8572c5c817592e9285f5464f8e86f8bd3726e"
+
+[[package]]
+name = "hashbrown"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c21d40587b92fa6a6c6e3c1bdbf87d75511db5672f9c93175574b3a00df1758"
 dependencies = [
  "ahash",
  "rayon",
@@ -601,7 +607,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc633605454125dec4b66843673f01c7df2b89479b32e0ed634e43a91cff62a5"
 dependencies = [
  "autocfg",
- "hashbrown",
+ "hashbrown 0.11.2",
 ]
 
 [[package]]
@@ -873,9 +879,9 @@ checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
 
 [[package]]
 name = "memmap2"
-version = "0.5.0"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4647a11b578fead29cdbb34d4adef8dd3dc35b876c9c6d5240d83f205abfe96e"
+checksum = "fe3179b85e1fd8b14447cbebadb75e45a1002f541b925f0bfec366d56a81c56d"
 dependencies = [
  "libc",
 ]
@@ -1091,10 +1097,9 @@ dependencies = [
 [[package]]
 name = "packed_simd_2"
 version = "0.3.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71c0c06716cfc81616fa8e22b721ce92fecd594508bc0eb3d04ae3ef35ac10c5"
+source = "git+https://github.com/hkratz/packed_simd?branch=remove_llvm_asm#27e2c89704fc2d1d8dcc506bad210c703187d74e"
 dependencies = [
- "cfg-if 0.1.10",
+ "cfg-if 1.0.0",
  "libm 0.1.4",
 ]
 
@@ -1214,7 +1219,7 @@ name = "polars-arrow"
 version = "0.19.0"
 dependencies = [
  "arrow2",
- "hashbrown",
+ "hashbrown 0.12.0",
  "num",
  "thiserror",
 ]
@@ -1228,7 +1233,7 @@ dependencies = [
  "arrow2",
  "base64",
  "comfy-table",
- "hashbrown",
+ "hashbrown 0.12.0",
  "hex",
  "jsonpath_lib",
  "lazy_static",

@@ -72,7 +72,7 @@ impl PredicatePushDown {
             let alp = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
             lp_arena.replace(input, alp);
 
-            let lp = lp.from_exprs_and_input(projections, inputs);
+            let lp = lp.with_exprs_and_input(projections, inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         } else {
             let mut local_predicates = Vec::with_capacity(acc_predicates.len());
@@ -109,7 +109,7 @@ impl PredicatePushDown {
                 })
                 .collect::<Result<Vec<_>>>()?;
 
-            let lp = lp.from_exprs_and_input(exprs, new_inputs);
+            let lp = lp.with_exprs_and_input(exprs, new_inputs);
             Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
         }
     }
@@ -134,7 +134,7 @@ impl PredicatePushDown {
                 Ok(node)
             })
             .collect::<Result<Vec<_>>>()?;
-        let lp = lp.from_exprs_and_input(exprs, new_inputs);
+        let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         // all predicates are done locally
         let local_predicates = acc_predicates.values().copied().collect::<Vec<_>>();

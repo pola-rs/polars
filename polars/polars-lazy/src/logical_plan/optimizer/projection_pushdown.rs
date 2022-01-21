@@ -848,7 +848,7 @@ impl ProjectionPushDown {
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                Ok(lp.from_exprs_and_input(exprs, new_inputs))
+                Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
         }
     }
