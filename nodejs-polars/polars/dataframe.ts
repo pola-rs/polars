@@ -1167,6 +1167,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   toObject(): object
   toObject(options: {orient: "row" | "col" | "dataframe"}): object
+
   /**
    * Write Dataframe to JSON string, file, or write stream
    * @param destination file or write stream
@@ -1214,7 +1215,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * @param file File path to which the file should be written.
    * @param options.compression Compression method *defaults to "uncompressed"*
    * */
-  toIPC(path: string, options?: WriteIPCOptions): void
+  //  toIPC(): Buffer
+   toIPC(path: string, options?: WriteIPCOptions): void
 
   /**
    * Write the DataFrame disk in parquet format.
@@ -1669,7 +1671,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(null, "csv", {...options, ...dest});
 
       } else {
-
         // toCSV()
         // toCSV("path/to/some/file", options)
         // toCSV(writeStream, options)

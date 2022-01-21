@@ -283,10 +283,35 @@ pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
 
     cx.env.get_undefined()
 }
+
 #[js_function(1)]
-pub(crate) fn write_parquet_stream(_cx: CallContext) -> JsResult<JsUndefined> {
-    // JSWriteStream needs to implement 'Seek'
-    todo!()
+pub(crate) fn write_parquet_stream(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let compression = params.get_as::<String>("compression")?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let stream = params.get::<JsObject>("writeStream")?;
+    let writeable = JsWriteStream {
+        inner: stream,
+        env: cx.env,
+    };
+    let compression = params.get_as::<String>("compression")?;
+    let compression = match compression.as_str() {
+        "uncompressed" => ParquetCompression::Uncompressed,
+        "snappy" => ParquetCompression::Snappy,
+        "gzip" => ParquetCompression::Gzip,
+        "lzo" => ParquetCompression::Lzo,
+        "brotli" => ParquetCompression::Brotli,
+        "lz4" => ParquetCompression::Lz4,
+        "zstd" => ParquetCompression::Zstd,
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+
+    ParquetWriter::new(writeable)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
+    cx.env.get_undefined()
 }
 
 // ------
@@ -335,10 +360,9 @@ pub(crate) fn read_ipc_buffer(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let compression = params.get_as::<String>("compression")?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let path = params.get_as::<String>("path")?;
-
+    let compression = params.get_as::<String>("compression")?;
     let compression = match compression.as_str() {
         "uncompressed" => None,
         "lz4" => Some(IpcCompression::LZ4),
@@ -348,6 +372,31 @@ pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
     let f = File::create(&path)?;
 
     IpcWriter::new(f)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
+    cx.env.get_undefined()
+}
+#[js_function(1)]
+pub(crate) fn write_ipc_stream(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let stream = params.get::<JsObject>("writeStream")?;
+    let writeable = JsWriteStream {
+        inner: stream,
+        env: cx.env,
+    };
+    let compression = params.get_as::<String>("compression")?;
+
+    let compression = match compression.as_str() {
+        "uncompressed" => None,
+        "lz4" => Some(IpcCompression::LZ4),
+        "zstd" => Some(IpcCompression::ZSTD),
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+
+    IpcWriter::new(writeable)
         .with_compression(compression)
         .finish(df)
         .map_err(JsPolarsEr::from)?;
