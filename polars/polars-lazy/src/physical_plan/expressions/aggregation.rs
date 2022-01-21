@@ -4,7 +4,6 @@ use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupsProxy};
-use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -93,7 +92,7 @@ impl PhysicalAggregation for AggregationExpr {
             GroupByMethod::Count => {
                 let mut ca = ac.groups.group_count();
                 ca.rename(&new_name);
-                Ok(Some(ca.into_inner().into_series()))
+                Ok(Some(ca.into_series()))
             }
             GroupByMethod::First => {
                 let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
@@ -210,7 +209,7 @@ impl PhysicalAggregation for AggregationExpr {
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                for (_, idx) in groups {
+                for (_, idx) in groups.idx_ref() {
                     let ca = unsafe {
                         // Safety
                         // The indexes of the groupby operation are never out of bounds

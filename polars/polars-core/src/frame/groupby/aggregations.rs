@@ -1,22 +1,19 @@
 use crate::POOL;
-use ahash::RandomState;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
-use std::collections::HashSet;
-use std::hash::Hash;
 
 use arrow::types::{simd::Simd, NativeType};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
+#[cfg(feature = "object")]
+use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use crate::utils::NoNull;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::ops::Deref;
-use crate::frame::groupby::GroupsIndicator;
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: u32, len: u32) -> ChunkedArray<T>
 where
@@ -63,8 +60,8 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
-    #[cfg(feature = "lazy")]
-    pub(crate) fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
+    #[cfg(feature = "private")]
+    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<UInt32Type, _>(groups, |(_first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -681,7 +678,8 @@ where
                         );
                         for (_first, idx) in groups {
                             let s = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into()).into_series()
+                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                                    .into_series()
                             };
                             builder.append_series(&s);
                         }
@@ -709,7 +707,8 @@ where
                             }
 
                             length_so_far += len as i64;
-                            list_values.extend_from_slice(&values[first as usize..(first + len) as usize]);
+                            list_values
+                                .extend_from_slice(&values[first as usize..(first + len) as usize]);
                             unsafe {
                                 // Safety:
                                 // we know that offsets has allocated enough slots
@@ -809,7 +808,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
     groups_len: usize,
     func: F,
 ) -> Option<Series> {
-    let mut can_fast_explode = true;
+    let can_fast_explode = true;
     let mut offsets = Vec::<i64>::with_capacity(groups_len + 1);
     let mut length_so_far = 0i64;
     offsets.push(length_so_far);
@@ -1026,25 +1025,22 @@ where
         interpol: QuantileInterpolOptions,
     ) -> Option<Series> {
         match groups {
-            GroupsProxy::Idx(groups) => {
-                agg_helper_idx::<T, _>(groups, |(_first, idx)| {
-                    if idx.is_empty() {
-                        return None;
-                    }
+            GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(_first, idx)| {
+                if idx.is_empty() {
+                    return None;
+                }
 
-                    let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
-                    group_vals.quantile(quantile, interpol).unwrap()
-                })
-            }
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<T, _>(groups, |[first, len]| {
-                    if len == 0 {
-                        return None;
-                    }
-                    let group_vals = slice_from_offsets(self, first, len);
-                    group_vals.quantile(quantile, interpol).unwrap()
-                })
-            }
+                let group_vals =
+                    unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                group_vals.quantile(quantile, interpol).unwrap()
+            }),
+            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
+                if len == 0 {
+                    return None;
+                }
+                let group_vals = slice_from_offsets(self, first, len);
+                group_vals.quantile(quantile, interpol).unwrap()
+            }),
         }
     }
 
@@ -1056,7 +1052,8 @@ where
                         return None;
                     }
 
-                    let group_vals = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    let group_vals =
+                        unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
                     group_vals.median()
                 })
             }
@@ -1069,7 +1066,6 @@ where
                     let group_vals = slice_from_offsets(self, first, len);
                     group_vals.median()
                 })
-
             }
         }
     }

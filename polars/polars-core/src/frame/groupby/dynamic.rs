@@ -128,8 +128,9 @@ impl DataFrame {
                 })
                 .collect::<Vec<_>>()
         } else {
-            let mut groups = self.groupby_with_series(by.clone(), true)?.groups.into_idx();
-            groups.sort_unstable_by_key(|g| g.0);
+            let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
+            groups.sort();
+            let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)
             if options.include_boundaries {

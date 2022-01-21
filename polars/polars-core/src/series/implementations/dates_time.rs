@@ -626,7 +626,9 @@ mod test {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-        let l = s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])])).unwrap();
+        let l = s
+            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])]))
+            .unwrap();
 
         match l.dtype() {
             DataType::List(inner) => {

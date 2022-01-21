@@ -31,17 +31,30 @@ impl PhysicalExpr for SliceExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         let groups = ac.groups();
 
-        let groups = groups
-            .iter()
-            .map(|(first, idx)| {
-                let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
-                (*first, idx[offset..offset + len].to_vec())
-            })
-            .collect_trusted();
+        let groups = match groups.as_ref() {
+            GroupsProxy::Idx(groups) => {
+                let groups = groups
+                    .iter()
+                    .map(|(_, idx)| {
+                        let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
+                        (offset as u32, idx[offset..offset + len].to_vec())
+                    })
+                    .collect_trusted();
+                GroupsProxy::Idx(groups)
+            }
+            GroupsProxy::Slice(groups) => {
+                let groups = groups
+                    .iter()
+                    .map(|&[_first, len]| {
+                        let (offset, len) = slice_offsets(self.offset, self.len, len as usize);
+                        [offset as u32, len as u32]
+                    })
+                    .collect_trusted();
+                GroupsProxy::Slice(groups)
+            }
+        };
 
         ac.with_groups(groups);
-        // let ac = AggregationContext::new(s, Cow::Owned(groups))
-        //     .set_original_len(ac.original_len);
 
         Ok(ac)
     }

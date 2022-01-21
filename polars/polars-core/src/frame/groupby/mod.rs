@@ -1,10 +1,9 @@
 use self::hashing::*;
-use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca, NoNull,
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
@@ -17,7 +16,6 @@ use std::fmt::Debug;
 use std::hash::Hash;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
-use std::ptr::NonNull;
 
 pub mod aggregations;
 #[cfg(feature = "dynamic_groupby")]
@@ -458,7 +456,7 @@ impl DataFrame {
         S: AsRef<str>,
     {
         let mut gb = self.groupby(by)?;
-        &mut gb.groups.idx_mut().sort_unstable_by_key(|t| t.0);
+        gb.groups.idx_mut().sort_unstable_by_key(|t| t.0);
         Ok(gb)
     }
 }
@@ -1478,8 +1476,7 @@ mod test {
             a.sort();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let mut b = groupby_threaded_num(keys, 0, split.len() as u64)
-                .into_idx();
+            let mut b = groupby_threaded_num(keys, 0, split.len() as u64).into_idx();
             b.sort();
 
             assert_eq!(a, b);

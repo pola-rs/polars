@@ -145,8 +145,8 @@ impl DataFrame {
                     // group tuples are in bounds
                     // shape (1, len(keys)
                     let sub_index_df = match indicator {
-                        GroupsIndicator::Idx(g) => {
-                            unsafe { index_df.take_unchecked_slice(&g.1[..1]) }
+                        GroupsIndicator::Idx(g) => unsafe {
+                            index_df.take_unchecked_slice(&g.1[..1])
                         },
                         GroupsIndicator::Slice([first, len]) => {
                             index_df.slice(first as i64, len as usize)
@@ -179,10 +179,9 @@ impl DataFrame {
                         // safety:
                         // group tuples are in bounds
                         let sub_vals_and_cols = match indicator {
-                            GroupsIndicator::Idx(g) => {
-                                unsafe { values_and_columns[i].take_unchecked_slice(&g.1) }
-
-                            }
+                            GroupsIndicator::Idx(g) => unsafe {
+                                values_and_columns[i].take_unchecked_slice(&g.1)
+                            },
                             GroupsIndicator::Slice([first, len]) => {
                                 values_and_columns[i].slice(first as i64, len as usize)
                             }

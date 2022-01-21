@@ -66,7 +66,7 @@ impl PhysicalExpr for WindowExpr {
 
         // if we flatten this column we need to make sure the groups are sorted.
         if !cached && self.options.explode {
-            groups.sort_unstable_by_key(|t| t.0);
+            groups.sort()
         }
 
         // 2. create GroupBy object and apply aggregation
