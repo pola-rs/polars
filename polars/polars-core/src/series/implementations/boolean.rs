@@ -77,18 +77,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.agg_sum(groups)
     }
 
-    fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_first(groups)
-    }
-
-    fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
-    }
-
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
@@ -104,10 +92,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_median(groups)
-    }
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
-        self.0.agg_valid_count(groups)
     }
 
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {

@@ -128,7 +128,7 @@ impl DataFrame {
                 })
                 .collect::<Vec<_>>()
         } else {
-            let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
+            let mut groups = self.groupby_with_series(by.clone(), true)?.groups.into_idx();
             groups.sort_unstable_by_key(|g| g.0);
 
             // include boundaries cannot be parallel (easily)
@@ -232,7 +232,7 @@ impl DataFrame {
         dt.into_datetime(tu, None)
             .into_series()
             .cast(time_type)
-            .map(|s| (s, by, groups))
+            .map(|s| (s, by, GroupsProxy::Idx(groups)))
     }
 }
 
@@ -325,14 +325,14 @@ mod test {
         .into_series();
         assert_eq!(&upper, &range);
 
-        let expected = vec![
+        let expected = GroupsProxy::Idx(vec![
             (0u32, vec![0u32, 1, 2]),
             (2u32, vec![2]),
             (5u32, vec![5, 6]),
             (6u32, vec![6]),
             (3u32, vec![3, 4]),
             (4u32, vec![4]),
-        ];
+        ]);
         assert_eq!(expected, groups);
     }
 }

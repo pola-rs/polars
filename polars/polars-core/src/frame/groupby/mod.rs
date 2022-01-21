@@ -17,6 +17,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
+use std::ptr::NonNull;
 
 pub mod aggregations;
 #[cfg(feature = "dynamic_groupby")]
@@ -977,15 +978,12 @@ impl<'df> GroupBy<'df> {
     /// ```
     pub fn count(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
+
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Count);
-            let mut builder =
-                PrimitiveChunkedBuilder::<UInt32Type>::new(&new_name, self.groups.len());
-            for (_first, idx) in &self.groups {
-                builder.append_value(idx.len() as u32);
-            }
-            let ca = builder.finish();
-            cols.push(ca.into_series())
+            let mut ca = self.groups.group_count();
+            ca.rename(&new_name);
+            cols.push(ca.into_series());
         }
         DataFrame::new(cols)
     }
@@ -1017,15 +1015,7 @@ impl<'df> GroupBy<'df> {
     /// ```
     pub fn groups(&self) -> Result<DataFrame> {
         let mut cols = self.keys();
-
-        let mut column: ListChunked = self
-            .groups
-            .iter()
-            .map(|(_first, idx)| {
-                let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                ca.into_inner().into_series()
-            })
-            .collect();
+        let mut column = self.groups.as_list_chunked();
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
         column.rename(&new_name);
         cols.push(column.into_series());
@@ -1120,14 +1110,8 @@ impl<'df> GroupBy<'df> {
                         "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {
                             let new_name = format!("{}_count", agg_col.name());
-                            let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
-                                &new_name,
-                                self.groups.len(),
-                            );
-                            for (_first, idx) in &self.groups {
-                                builder.append_value(idx.len() as u32);
-                            }
-                            let ca = builder.finish();
+                            let mut ca = self.groups.group_count();
+                            ca.rename(&new_name);
                             cols.push(ca.into_series());
                         }
                         a => panic!("aggregation: {:?} is not supported", a),
@@ -1200,6 +1184,7 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .par_iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1220,6 +1205,7 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1488,13 +1474,12 @@ mod test {
             let ca = UInt32Chunked::new("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
-            let mut a = groupby(ca.into_iter()).into_iter().collect::<Vec<_>>();
+            let mut a = groupby(ca.into_iter()).into_idx();
             a.sort();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
             let mut b = groupby_threaded_num(keys, 0, split.len() as u64)
-                .into_iter()
-                .collect::<Vec<_>>();
+                .into_idx();
             b.sort();
 
             assert_eq!(a, b);

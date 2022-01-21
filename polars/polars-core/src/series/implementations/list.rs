@@ -62,25 +62,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_first(groups)
-    }
-
-    fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
-    }
-
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
-    }
-
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
-        self.0.agg_valid_count(groups)
     }
 
     fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {

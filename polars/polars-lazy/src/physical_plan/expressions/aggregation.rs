@@ -91,8 +91,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
-                let mut ca: NoNull<UInt32Chunked> =
-                    ac.groups().iter().map(|(_, g)| g.len() as u32).collect();
+                let mut ca = ac.groups.group_count();
                 ca.rename(&new_name);
                 Ok(Some(ca.into_inner().into_series()))
             }
@@ -119,15 +118,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {
-                let mut column: ListChunked = ac
-                    .groups()
-                    .iter()
-                    .map(|(_first, idx)| {
-                        let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                        ca.into_inner().into_series()
-                    })
-                    .collect();
-
+                let mut column: ListChunked = ac.groups().as_list_chunked();
                 column.rename(&new_name);
                 Ok(Some(column.into_series()))
             }

@@ -189,15 +189,6 @@ pub(crate) mod private {
         fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_first(&self, _groups: &GroupsProxy) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_last(&self, _groups: &GroupsProxy) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_n_unique(&self, _groups: &GroupsProxy) -> Option<UInt32Chunked> {
-            None
-        }
         fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
@@ -212,10 +203,7 @@ pub(crate) mod private {
         fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        #[cfg(feature = "lazy")]
-        fn agg_valid_count(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
-        }
+
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
             invalid_operation_panic!(self)
         }

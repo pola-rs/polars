@@ -113,20 +113,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         None
     }
 
-    fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_first(groups)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
-    fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_last(groups)
-            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
-            .into_series()
-    }
-
     fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
         // does not make sense on logical
         None
@@ -135,10 +121,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
         // does not make sense on logical
         None
-    }
-
-    fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
     }
 
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
@@ -166,10 +148,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             s.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
-    }
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
-        self.0.agg_valid_count(groups)
     }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         let other = other.to_physical_repr().into_owned();

@@ -134,7 +134,7 @@ where
     if ca.is_empty() {
         return ca.clone();
     }
-    let mut groups = ca.group_tuples(true);
+    let mut groups = ca.group_tuples(true).into_idx();
     groups.sort_unstable_by_key(|k| k.1.len());
     let first = &groups[0];
 

@@ -113,14 +113,6 @@ macro_rules! impl_dyn_series {
                 None
             }
 
-            fn agg_first(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_first(groups).$into_logical().into_series()
-            }
-
-            fn agg_last(&self, groups: &GroupsProxy) -> Series {
-                self.0.agg_last(groups).$into_logical().into_series()
-            }
-
             fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
@@ -129,10 +121,6 @@ macro_rules! impl_dyn_series {
             fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
-            }
-
-            fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<UInt32Chunked> {
-                self.0.agg_n_unique(groups)
             }
 
             fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
@@ -158,10 +146,6 @@ macro_rules! impl_dyn_series {
                 self.0
                     .agg_median(groups)
                     .map(|s| s.$into_logical().into_series())
-            }
-            #[cfg(feature = "lazy")]
-            fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0.agg_valid_count(groups)
             }
 
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
@@ -642,7 +626,7 @@ mod test {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-        let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
+        let l = s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])])).unwrap();
 
         match l.dtype() {
             DataType::List(inner) => {

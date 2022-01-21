@@ -110,20 +110,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         None
     }
 
-    fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_first(groups)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
-    fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        self.0
-            .agg_last(groups)
-            .into_duration(self.0.time_unit())
-            .into_series()
-    }
-
     fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
         // does not make sense on logical
         None
@@ -132,10 +118,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
         // does not make sense on logical
         None
-    }
-
-    fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
     }
 
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
@@ -161,10 +143,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0
             .agg_median(groups)
             .map(|s| s.into_duration(self.0.time_unit()).into_series())
-    }
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
-        self.0.agg_valid_count(groups)
     }
 
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {

@@ -16,6 +16,7 @@ use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
 use std::ops::Deref;
+use crate::frame::groupby::GroupsIndicator;
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: u32, len: u32) -> ChunkedArray<T>
 where
@@ -56,12 +57,13 @@ impl BooleanChunked {
     }
 }
 
+// implemented on the series because we don't need types
 impl Series {
     fn slice_from_offsets(&self, first: u32, len: u32) -> Self {
         self.slice(first as i64, len as usize)
     }
 
-    // implemented on the series because we don't need types
+    #[cfg(feature = "lazy")]
     pub(crate) fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<UInt32Type, _>(groups, |(_first, idx)| {
@@ -92,7 +94,8 @@ impl Series {
         }
     }
 
-    pub(crate) fn agg_first(&self, groups: &GroupsProxy) -> Series {
+    #[cfg(feature = "private")]
+    pub fn agg_first(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(first, idx)| {
@@ -124,7 +127,8 @@ impl Series {
         }
     }
 
-    fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<Series> {
+    #[cfg(feature = "private")]
+    pub fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<UInt32Type, _>(groups, |(_first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -150,7 +154,8 @@ impl Series {
         }
     }
 
-    pub(crate) fn agg_last(&self, groups: &GroupsProxy) -> Series {
+    #[cfg(feature = "private")]
+    pub fn agg_last(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(_, idx)| {
@@ -933,17 +938,27 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
         let iter = unsafe {
             groups
                 .iter()
-                .flat_map(|(_, idx)| {
-                    // Safety:
-                    // group tuples always in bounds
-                    let group_vals =
-                        self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
+                .flat_map(|indicator| {
+                    let (group_vals, len) = match indicator {
+                        GroupsIndicator::Idx((_first, idx)) => {
+                            // Safety:
+                            // group tuples always in bounds
+                            let group_vals =
+                                self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
 
-                    let idx_len = idx.len();
-                    if idx_len == 0 {
+                            (group_vals, idx.len() as u32)
+                        }
+                        GroupsIndicator::Slice([first, len]) => {
+                            let group_vals = slice_from_offsets(self, first, len);
+
+                            (group_vals, len)
+                        }
+                    };
+
+                    if len == 0 {
                         can_fast_explode = false;
                     }
-                    length_so_far += idx_len as i64;
+                    length_so_far += len as i64;
                     // Safety:
                     // we know that offsets has allocated enough slots
                     offsets.push_unchecked(length_so_far);
