@@ -1,7 +1,7 @@
 use crate::bounds::Bounds;
 use crate::window::Window;
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ClosedWindow {
@@ -22,7 +22,7 @@ pub fn groupby(
     include_boundaries: bool,
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> (GroupTuples, Vec<i64>, Vec<i64>) {
+) -> (GroupsIdx, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
@@ -44,7 +44,7 @@ pub fn groupby(
     let mut lower_bound = Vec::with_capacity(size);
     let mut upper_bound = Vec::with_capacity(size);
 
-    let mut group_tuples = match tu {
+    let mut groups = match tu {
         TimeUnit::Nanoseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
         }
@@ -99,8 +99,8 @@ pub fn groupby(
                 lower_bound.push(bi.start);
                 upper_bound.push(bi.stop);
             }
-            group_tuples.push((group[0], group))
+            groups.push((group[0], group))
         }
     }
-    (group_tuples, lower_bound, upper_bound)
+    (groups, lower_bound, upper_bound)
 }

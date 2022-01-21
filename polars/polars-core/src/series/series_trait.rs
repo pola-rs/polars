@@ -35,7 +35,7 @@ macro_rules! invalid_operation_panic {
 pub(crate) mod private {
     use super::*;
     #[cfg(feature = "rows")]
-    use crate::frame::groupby::GroupTuples;
+    use crate::frame::groupby::GroupsProxy;
 
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use ahash::RandomState;
@@ -169,53 +169,41 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-            None
-        }
-        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         fn agg_quantile(
             &self,
-            _groups: &[(u32, Vec<u32>)],
+            _groups: &GroupsProxy,
             _quantile: f64,
             _interpol: QuantileInterpolOptions,
         ) -> Option<Series> {
             None
         }
-        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        #[cfg(feature = "lazy")]
-        fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            None
-        }
+
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
             invalid_operation_panic!(self)
         }
@@ -248,7 +236,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
             invalid_operation_panic!(self)
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {

@@ -1,6 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
+use crate::prelude::sort::{map_sorted_indices_to_group_idx, map_sorted_indices_to_group_slice};
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -78,7 +79,7 @@ impl PhysicalExpr for SortByExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
@@ -89,29 +90,32 @@ impl PhysicalExpr for SortByExpr {
             let sort_by_s = ac_sort_by.flat_naive().into_owned();
             let groups = ac_sort_by.groups();
 
-            groups
+            let groups = groups
                 .par_iter()
-                .map(|(_first, idx)| {
-                    // Safety:
-                    // Group tuples are always in bounds
-                    let group = unsafe {
-                        sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                .map(|indicator| {
+                    let new_idx = match indicator {
+                        GroupsIndicator::Idx((_, idx)) => {
+                            // Safety:
+                            // Group tuples are always in bounds
+                            let group = unsafe {
+                                sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                            };
+
+                            let sorted_idx = group.argsort(reverse[0]);
+                            map_sorted_indices_to_group_idx(&sorted_idx, idx)
+                        }
+                        GroupsIndicator::Slice([first, len]) => {
+                            let group = sort_by_s.slice(first as i64, len as usize);
+                            let sorted_idx = group.argsort(reverse[0]);
+                            map_sorted_indices_to_group_slice(&sorted_idx, first)
+                        }
                     };
 
-                    let sorted_idx = group.argsort(reverse[0]);
-
-                    let new_idx: Vec<_> = sorted_idx
-                        .cont_slice()
-                        .unwrap()
-                        .iter()
-                        .map(|&i| {
-                            debug_assert!(idx.get(i as usize).is_some());
-                            unsafe { *idx.get_unchecked(i as usize) }
-                        })
-                        .collect();
                     (new_idx[0], new_idx)
                 })
-                .collect()
+                .collect();
+
+            GroupsProxy::Idx(groups)
         } else {
             let mut ac_sort_by = self
                 .by
@@ -124,32 +128,40 @@ impl PhysicalExpr for SortByExpr {
                 .collect::<Vec<_>>();
             let groups = ac_sort_by[0].groups();
 
-            groups
+            let groups = groups
                 .par_iter()
-                .map(|(_first, idx)| {
-                    // Safety:
-                    // Group tuples are always in bounds
-                    let groups = sort_by_s
-                        .iter()
-                        .map(|s| unsafe {
-                            s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
-                        })
-                        .collect::<Vec<_>>();
+                .map(|indicator| {
+                    let new_idx = match indicator {
+                        GroupsIndicator::Idx((_first, idx)) => {
+                            // Safety:
+                            // Group tuples are always in bounds
+                            let groups = sort_by_s
+                                .iter()
+                                .map(|s| unsafe {
+                                    s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                                })
+                                .collect::<Vec<_>>();
 
-                    let sorted_idx = groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+                            let sorted_idx =
+                                groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+                            map_sorted_indices_to_group_idx(&sorted_idx, idx)
+                        }
+                        GroupsIndicator::Slice([first, len]) => {
+                            let groups = sort_by_s
+                                .iter()
+                                .map(|s| s.slice(first as i64, len as usize))
+                                .collect::<Vec<_>>();
+                            let sorted_idx =
+                                groups[0].argsort_multiple(&groups[1..], &reverse).unwrap();
+                            map_sorted_indices_to_group_slice(&sorted_idx, first)
+                        }
+                    };
 
-                    let new_idx: Vec<_> = sorted_idx
-                        .cont_slice()
-                        .unwrap()
-                        .iter()
-                        .map(|&i| {
-                            debug_assert!(idx.get(i as usize).is_some());
-                            unsafe { *idx.get_unchecked(i as usize) }
-                        })
-                        .collect();
                     (new_idx[0], new_idx)
                 })
-                .collect()
+                .collect();
+
+            GroupsProxy::Idx(groups)
         };
 
         ac_in.with_groups(groups);
@@ -169,7 +181,7 @@ impl PhysicalAggregation for SortByExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;

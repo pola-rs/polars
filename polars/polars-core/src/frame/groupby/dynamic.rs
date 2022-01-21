@@ -1,4 +1,4 @@
-use crate::frame::groupby::GroupTuples;
+use crate::frame::groupby::GroupsProxy;
 use crate::prelude::*;
 use crate::POOL;
 use polars_time::groupby::ClosedWindow;
@@ -31,7 +31,7 @@ impl DataFrame {
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
-    ) -> Result<(Series, Vec<Series>, GroupTuples)> {
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.column(&options.index_column)?;
         let time_type = time.dtype();
 
@@ -92,7 +92,7 @@ impl DataFrame {
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> Result<(Series, Vec<Series>, GroupTuples)> {
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
         let w = Window::new(options.every, options.period, options.offset);
         let dt = dt.datetime().unwrap();
 
@@ -129,7 +129,8 @@ impl DataFrame {
                 .collect::<Vec<_>>()
         } else {
             let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
-            groups.sort_unstable_by_key(|g| g.0);
+            groups.sort();
+            let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)
             if options.include_boundaries {
@@ -232,7 +233,7 @@ impl DataFrame {
         dt.into_datetime(tu, None)
             .into_series()
             .cast(time_type)
-            .map(|s| (s, by, groups))
+            .map(|s| (s, by, GroupsProxy::Idx(groups)))
     }
 }
 
@@ -325,14 +326,14 @@ mod test {
         .into_series();
         assert_eq!(&upper, &range);
 
-        let expected = vec![
+        let expected = GroupsProxy::Idx(vec![
             (0u32, vec![0u32, 1, 2]),
             (2u32, vec![2]),
             (5u32, vec![5, 6]),
             (6u32, vec![6]),
             (3u32, vec![3, 4]),
             (4u32, vec![4]),
-        ];
+        ]);
         assert_eq!(expected, groups);
     }
 }

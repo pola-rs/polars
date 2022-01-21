@@ -2,6 +2,14 @@ use super::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::series::ops::NullBehavior;
 
+pub(crate) fn load_df() -> DataFrame {
+    df!("a" => &[1, 2, 3, 4, 5],
+                 "b" => &["a", "a", "b", "c", "c"],
+                 "c" => &[1, 2, 3, 4, 5]
+    )
+    .unwrap()
+}
+
 #[test]
 fn test_lazy_ternary() {
     let df = get_df()
@@ -267,14 +275,6 @@ fn test_lazy_binary_ops() {
         .collect()
         .unwrap();
     assert_eq!(new.column("foo").unwrap().sum::<i32>(), Some(1));
-}
-
-pub(crate) fn load_df() -> DataFrame {
-    df!("a" => &[1, 2, 3, 4, 5],
-                 "b" => &["a", "a", "b", "c", "c"],
-                 "c" => &[1, 2, 3, 4, 5]
-    )
-    .unwrap()
 }
 
 #[test]
@@ -1965,7 +1965,7 @@ fn test_round_after_agg() -> Result<()> {
 }
 
 #[test]
-fn test_power_in_agg_list() -> Result<()> {
+fn test_power_in_agg_list1() -> Result<()> {
     let df = fruits_cars();
 
     // this test if the group tuples are correctly updated after

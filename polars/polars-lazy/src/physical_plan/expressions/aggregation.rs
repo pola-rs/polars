@@ -3,8 +3,7 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
-use polars_core::utils::NoNull;
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupsProxy};
 use polars_core::{prelude::*, POOL};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -32,7 +31,7 @@ impl PhysicalExpr for AggregationExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
@@ -63,7 +62,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
@@ -91,10 +90,9 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
-                let mut ca: NoNull<UInt32Chunked> =
-                    ac.groups().iter().map(|(_, g)| g.len() as u32).collect();
+                let mut ca = ac.groups.group_count();
                 ca.rename(&new_name);
-                Ok(Some(ca.into_inner().into_series()))
+                Ok(Some(ca.into_series()))
             }
             GroupByMethod::First => {
                 let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
@@ -119,15 +117,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {
-                let mut column: ListChunked = ac
-                    .groups()
-                    .iter()
-                    .map(|(_first, idx)| {
-                        let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                        ca.into_inner().into_series()
-                    })
-                    .collect();
-
+                let mut column: ListChunked = ac.groups().as_list_chunked();
                 column.rename(&new_name);
                 Ok(Some(column.into_series()))
             }
@@ -149,7 +139,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         match self.agg_type {
@@ -190,7 +180,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match self.agg_type {
@@ -219,7 +209,7 @@ impl PhysicalAggregation for AggregationExpr {
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                for (_, idx) in groups {
+                for (_, idx) in groups.idx_ref() {
                     let ca = unsafe {
                         // Safety
                         // The indexes of the groupby operation are never out of bounds
@@ -259,7 +249,7 @@ impl PhysicalAggregation for AggQuantileExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
@@ -281,7 +271,7 @@ impl PhysicalAggregation for CastExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let agg_expr = self.input.as_agg_expr()?;
@@ -322,7 +312,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupTuples,
+        _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         unimplemented!()

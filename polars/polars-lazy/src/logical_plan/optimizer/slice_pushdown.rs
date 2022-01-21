@@ -56,7 +56,7 @@ impl SlicePushDown {
                 Ok(node)
             })
             .collect::<Result<Vec<_>>>()?;
-        let lp = lp.from_exprs_and_input(exprs, new_inputs);
+        let lp = lp.with_exprs_and_input(exprs, new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
     }
@@ -81,7 +81,7 @@ impl SlicePushDown {
                 Ok(node)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(lp.from_exprs_and_input(exprs, new_inputs))
+        Ok(lp.with_exprs_and_input(exprs, new_inputs))
     }
 
     fn pushdown(

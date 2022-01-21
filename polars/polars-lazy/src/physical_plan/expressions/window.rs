@@ -1,7 +1,7 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::{GroupBy, GroupTuples};
+use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
 use std::sync::Arc;
@@ -40,7 +40,7 @@ impl PhysicalExpr for WindowExpr {
 
         let create_groups = || {
             let mut gb = df.groupby_with_series(groupby_columns.clone(), true)?;
-            let out: Result<GroupTuples> = Ok(std::mem::take(gb.get_groups_mut()));
+            let out: Result<GroupsProxy> = Ok(std::mem::take(gb.get_groups_mut()));
             out
         };
 
@@ -66,7 +66,7 @@ impl PhysicalExpr for WindowExpr {
 
         // if we flatten this column we need to make sure the groups are sorted.
         if !cached && self.options.explode {
-            groups.sort_unstable_by_key(|t| t.0);
+            groups.sort()
         }
 
         // 2. create GroupBy object and apply aggregation
@@ -175,7 +175,7 @@ impl PhysicalExpr for WindowExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupTuples,
+        _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         Err(PolarsError::InvalidOperation(

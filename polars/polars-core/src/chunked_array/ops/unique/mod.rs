@@ -6,7 +6,7 @@ use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::utils::NoNull;
 use rayon::prelude::*;
@@ -50,13 +50,14 @@ pub(crate) fn is_unique_helper2(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupTuples,
+    groups: GroupsProxy,
     len: u32,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
     let idx = groups
+        .into_idx()
         .into_iter()
         .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
         .collect::<Vec<_>>();
@@ -128,12 +129,12 @@ where
 #[allow(clippy::needless_collect)]
 fn mode<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
-    ChunkedArray<T>: IntoGroupTuples + ChunkTake,
+    ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
 {
     if ca.is_empty() {
         return ca.clone();
     }
-    let mut groups = ca.group_tuples(true);
+    let mut groups = ca.group_tuples(true).into_idx();
     groups.sort_unstable_by_key(|k| k.1.len());
     let first = &groups[0];
 
@@ -168,7 +169,7 @@ macro_rules! arg_unique_ca {
 
 macro_rules! impl_value_counts {
     ($self:expr) => {{
-        let group_tuples = $self.group_tuples(true);
+        let group_tuples = $self.group_tuples(true).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
@@ -208,6 +209,7 @@ where
         is_unique_duplicated!(self, true)
     }
 
+    // TODO! implement on series. Not worth the compile times here.
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
     }
@@ -350,7 +352,7 @@ fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
@@ -376,7 +378,7 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 

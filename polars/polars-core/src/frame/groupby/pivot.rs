@@ -4,7 +4,7 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::cmp::Ordering;
 
-use crate::frame::groupby::GroupTuples;
+use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
 use crate::utils::accumulate_dataframes_vertical;
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
@@ -98,7 +98,7 @@ impl DataFrame {
         // the rows of this nested groupby will be pivoted as header column values
         columns: &[String],
         // matching a groupby on index
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         // aggregation function
         agg_fn: PivotAgg,
     ) -> Result<DataFrame> {
@@ -135,7 +135,7 @@ impl DataFrame {
         let mut im_result = POOL.install(|| {
             groups
                 .par_iter()
-                .map(|g| {
+                .map(|indicator| {
                     // Here we do a nested group by.
                     // Everything we do here produces a single row in the final dataframe
 
@@ -144,7 +144,14 @@ impl DataFrame {
                     // safety:
                     // group tuples are in bounds
                     // shape (1, len(keys)
-                    let sub_index_df = unsafe { index_df.take_unchecked_slice(&g.1[..1]) };
+                    let sub_index_df = match indicator {
+                        GroupsIndicator::Idx(g) => unsafe {
+                            index_df.take_unchecked_slice(&g.1[..1])
+                        },
+                        GroupsIndicator::Slice([first, len]) => {
+                            index_df.slice(first as i64, len as usize)
+                        }
+                    };
 
                     // in `im_result` we store the intermediate results
                     // The first dataframe in the vec is the index dataframe (a single row)
@@ -171,8 +178,14 @@ impl DataFrame {
 
                         // safety:
                         // group tuples are in bounds
-                        let sub_vals_and_cols =
-                            unsafe { values_and_columns[i].take_unchecked_slice(&g.1) };
+                        let sub_vals_and_cols = match indicator {
+                            GroupsIndicator::Idx(g) => unsafe {
+                                values_and_columns[i].take_unchecked_slice(&g.1)
+                            },
+                            GroupsIndicator::Slice([first, len]) => {
+                                values_and_columns[i].slice(first as i64, len as usize)
+                            }
+                        };
 
                         let s = sub_vals_and_cols.column(column).unwrap().clone();
                         let gb = sub_vals_and_cols
@@ -361,7 +374,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a Series,
         _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
+        _groups: &GroupsProxy,
         _agg_type: PivotAgg,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
@@ -373,7 +386,7 @@ pub(crate) trait ChunkPivot {
         &self,
         _pivot_series: &'a Series,
         _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
+        _groups: &GroupsProxy,
     ) -> Result<DataFrame> {
         Err(PolarsError::InvalidOperation(
             "Pivot count operation not implemented for this type".into(),

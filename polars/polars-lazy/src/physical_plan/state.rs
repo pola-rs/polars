@@ -1,18 +1,18 @@
 use ahash::RandomState;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 pub type JoinTuplesCache = Arc<Mutex<HashMap<String, Vec<(u32, Option<u32>)>, RandomState>>>;
-pub type GroupTuplesCache = Arc<Mutex<HashMap<String, GroupTuples, RandomState>>>;
+pub type GroupsProxyCache = Arc<Mutex<HashMap<String, GroupsProxy, RandomState>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
     df_cache: Arc<Mutex<HashMap<String, DataFrame, RandomState>>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub(crate) group_tuples: GroupTuplesCache,
+    pub(crate) group_tuples: GroupsProxyCache,
     /// Used by Window Expression to prevent redundant joins
     pub(crate) join_tuples: JoinTuplesCache,
     pub(crate) verbose: bool,

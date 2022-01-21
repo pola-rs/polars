@@ -191,7 +191,7 @@ impl ALogicalPlan {
 
 impl ALogicalPlan {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn from_exprs_and_input(&self, mut exprs: Vec<Node>, inputs: Vec<Node>) -> ALogicalPlan {
+    pub fn with_exprs_and_input(&self, mut exprs: Vec<Node>, inputs: Vec<Node>) -> ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {

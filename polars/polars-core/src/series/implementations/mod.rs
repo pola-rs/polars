@@ -174,19 +174,19 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_mean(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_mean(groups)
             }
 
-            fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_min(groups)
             }
 
-            fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_max(groups)
             }
 
-            fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_sum(&self, groups: &GroupsProxy) -> Option<Series> {
                 use DataType::*;
                 match self.dtype() {
                     Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().agg_sum(groups),
@@ -194,47 +194,30 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                self.0.agg_first(groups)
-            }
-
-            fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                self.0.agg_last(groups)
-            }
-
-            fn agg_std(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_std(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_std(groups)
             }
 
-            fn agg_var(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_var(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_var(groups)
             }
 
-            fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-                self.0.agg_n_unique(groups)
-            }
-
-            fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_list(groups)
             }
 
             fn agg_quantile(
                 &self,
-                groups: &[(u32, Vec<u32>)],
+                groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
             ) -> Option<Series> {
                 self.0.agg_quantile(groups, quantile, interpol)
             }
 
-            fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_median(groups)
             }
-            #[cfg(feature = "lazy")]
-            fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                self.0.agg_valid_count(groups)
-            }
-
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
                 HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
             }
@@ -266,8 +249,8 @@ macro_rules! impl_dyn_series {
             fn remainder(&self, rhs: &Series) -> Result<Series> {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
-            fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-                IntoGroupTuples::group_tuples(&self.0, multithreaded)
+            fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+                IntoGroupsProxy::group_tuples(&self.0, multithreaded)
             }
 
             #[cfg(feature = "sort_multiple")]

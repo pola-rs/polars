@@ -1,6 +1,6 @@
 use crate::calendar::date_range;
 use crate::duration::Duration;
-use crate::groupby::{groupby, ClosedWindow, GroupTuples, TimeUnit};
+use crate::groupby::{groupby, ClosedWindow, GroupsIdx, TimeUnit};
 use crate::window::Window;
 use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
@@ -56,7 +56,7 @@ fn print_ns(ts: &[i64]) {
     }
 }
 
-fn take_groups(groups: &GroupTuples, idx: usize, ts: &[i64]) -> Vec<i64> {
+fn take_groups(groups: &GroupsIdx, idx: usize, ts: &[i64]) -> Vec<i64> {
     let group = &groups[idx].1;
     group.iter().map(|idx| ts[*idx as usize]).collect()
 }

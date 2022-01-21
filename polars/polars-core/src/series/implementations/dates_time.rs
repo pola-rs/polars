@@ -91,51 +91,39 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
             }
 
-            fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0
                     .agg_min(groups)
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0
                     .agg_max(groups)
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
             }
 
-            fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                self.0.agg_first(groups).$into_logical().into_series()
-            }
-
-            fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-                self.0.agg_last(groups).$into_logical().into_series()
-            }
-
-            fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
             }
 
-            fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
                 // does not make sense on logical
                 None
             }
 
-            fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-                self.0.agg_n_unique(groups)
-            }
-
-            fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
                 self.0.agg_list(groups).map(|s| {
                     s.cast(&DataType::List(Box::new(self.dtype().clone())))
@@ -145,7 +133,7 @@ macro_rules! impl_dyn_series {
 
             fn agg_quantile(
                 &self,
-                groups: &[(u32, Vec<u32>)],
+                groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
             ) -> Option<Series> {
@@ -154,14 +142,10 @@ macro_rules! impl_dyn_series {
                     .map(|s| s.$into_logical().into_series())
             }
 
-            fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0
                     .agg_median(groups)
                     .map(|s| s.$into_logical().into_series())
-            }
-            #[cfg(feature = "lazy")]
-            fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-                self.0.agg_valid_count(groups)
             }
 
             fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
@@ -230,7 +214,7 @@ macro_rules! impl_dyn_series {
                     "cannot do remainder operation on logical".into(),
                 ))
             }
-            fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+            fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
                 self.0.group_tuples(multithreaded)
             }
             #[cfg(feature = "sort_multiple")]
@@ -642,7 +626,9 @@ mod test {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-        let l = s.agg_list(&[(0, vec![0, 1, 2])]).unwrap();
+        let l = s
+            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])]))
+            .unwrap();
 
         match l.dtype() {
             DataType::List(inner) => {

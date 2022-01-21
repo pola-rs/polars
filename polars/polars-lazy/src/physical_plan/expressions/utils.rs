@@ -1,13 +1,13 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 
 #[allow(clippy::ptr_arg)]
 pub(crate) fn as_aggregated(
     expr: &dyn PhysicalExpr,
     df: &DataFrame,
-    groups: &GroupTuples,
+    groups: &GroupsProxy,
     state: &ExecutionState,
 ) -> Result<Option<Series>> {
     match expr.as_agg_expr() {

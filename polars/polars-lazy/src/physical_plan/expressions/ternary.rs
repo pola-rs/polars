@@ -1,6 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
@@ -33,7 +33,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let required_height = df.height();

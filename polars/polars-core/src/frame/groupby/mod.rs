@@ -1,10 +1,9 @@
 use self::hashing::*;
-use crate::chunked_array::builder::PrimitiveChunkedBuilder;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca, NoNull,
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
@@ -24,6 +23,8 @@ mod dynamic;
 pub(crate) mod hashing;
 #[cfg(feature = "rows")]
 pub(crate) mod pivot;
+mod proxy;
+
 #[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
 #[cfg(not(feature = "dynamic_groupby"))]
@@ -32,18 +33,19 @@ pub struct DynamicGroupOptions {
     pub index_column: String,
 }
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub use proxy::*;
+
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 #[cfg(feature = "dynamic_groupby")]
 pub use dynamic::*;
 
 /// Used to create the tuples for a groupby operation.
-pub trait IntoGroupTuples {
+pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         unimplemented!()
     }
 }
@@ -53,7 +55,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
+fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -97,53 +99,53 @@ where
     }
 }
 
-impl<T> IntoGroupTuples for ChunkedArray<T>
+impl<T> IntoGroupsProxy for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt64Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt32Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded)
             }
             DataType::Int32 | DataType::Float32 => {
                 let ca = self.bit_repr_small();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded)
             }
             _ => {
                 let ca = self.cast(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded)
             }
         }
     }
 }
-impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for BooleanChunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
         ca.group_tuples(multithreaded)
     }
 }
 
-impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for Utf8Chunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
@@ -186,25 +188,25 @@ impl IntoGroupTuples for Utf8Chunked {
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
         self.deref().group_tuples(multithreaded)
     }
 }
 
-impl IntoGroupTuples for ListChunked {
+impl IntoGroupsProxy for ListChunked {
     #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)))
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> IntoGroupTuples for ObjectChunked<T>
+impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
         groupby(self.into_iter())
     }
 }
@@ -454,7 +456,7 @@ impl DataFrame {
         S: AsRef<str>,
     {
         let mut gb = self.groupby(by)?;
-        gb.groups.sort_unstable_by_key(|t| t.0);
+        gb.groups.idx_mut().sort_unstable_by_key(|t| t.0);
         Ok(gb)
     }
 }
@@ -513,7 +515,7 @@ pub struct GroupBy<'df> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    pub(crate) groups: GroupTuples,
+    pub(crate) groups: GroupsProxy,
     // columns selected for aggregation
     pub(crate) selected_agg: Option<Vec<String>>,
 }
@@ -522,7 +524,7 @@ impl<'df> GroupBy<'df> {
     pub fn new(
         df: &'df DataFrame,
         by: Vec<Series>,
-        groups: GroupTuples,
+        groups: GroupsProxy,
         selected_agg: Option<Vec<String>>,
     ) -> Self {
         GroupBy {
@@ -553,7 +555,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &GroupTuples {
+    pub fn get_groups(&self) -> &GroupsProxy {
         &self.groups
     }
 
@@ -561,7 +563,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups_mut(&mut self) -> &mut GroupTuples {
+    pub fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
     }
 
@@ -573,7 +575,9 @@ impl<'df> GroupBy<'df> {
                     // Safety
                     // groupby indexes are in bound.
                     unsafe {
-                        s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize))
+                        s.take_iter_unchecked(
+                            &mut self.groups.idx_ref().iter().map(|(idx, _)| *idx as usize),
+                        )
                     }
                 })
                 .collect()
@@ -972,15 +976,12 @@ impl<'df> GroupBy<'df> {
     /// ```
     pub fn count(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
+
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Count);
-            let mut builder =
-                PrimitiveChunkedBuilder::<UInt32Type>::new(&new_name, self.groups.len());
-            for (_first, idx) in &self.groups {
-                builder.append_value(idx.len() as u32);
-            }
-            let ca = builder.finish();
-            cols.push(ca.into_series())
+            let mut ca = self.groups.group_count();
+            ca.rename(&new_name);
+            cols.push(ca.into_series());
         }
         DataFrame::new(cols)
     }
@@ -1012,15 +1013,7 @@ impl<'df> GroupBy<'df> {
     /// ```
     pub fn groups(&self) -> Result<DataFrame> {
         let mut cols = self.keys();
-
-        let mut column: ListChunked = self
-            .groups
-            .iter()
-            .map(|(_first, idx)| {
-                let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                ca.into_inner().into_series()
-            })
-            .collect();
+        let mut column = self.groups.as_list_chunked();
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
         column.rename(&new_name);
         cols.push(column.into_series());
@@ -1115,14 +1108,8 @@ impl<'df> GroupBy<'df> {
                         "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {
                             let new_name = format!("{}_count", agg_col.name());
-                            let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
-                                &new_name,
-                                self.groups.len(),
-                            );
-                            for (_first, idx) in &self.groups {
-                                builder.append_value(idx.len() as u32);
-                            }
-                            let ca = builder.finish();
+                            let mut ca = self.groups.group_count();
+                            ca.rename(&new_name);
                             cols.push(ca.into_series());
                         }
                         a => panic!("aggregation: {:?} is not supported", a),
@@ -1195,6 +1182,7 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .par_iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1215,6 +1203,7 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1483,13 +1472,11 @@ mod test {
             let ca = UInt32Chunked::new("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
-            let mut a = groupby(ca.into_iter()).into_iter().collect::<Vec<_>>();
+            let mut a = groupby(ca.into_iter()).into_idx();
             a.sort();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let mut b = groupby_threaded_num(keys, 0, split.len() as u64)
-                .into_iter()
-                .collect::<Vec<_>>();
+            let mut b = groupby_threaded_num(keys, 0, split.len() as u64).into_idx();
             b.sort();
 
             assert_eq!(a, b);

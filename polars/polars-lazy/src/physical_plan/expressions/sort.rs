@@ -1,6 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use std::sync::Arc;
 
@@ -20,6 +21,31 @@ impl SortExpr {
     }
 }
 
+/// Map argsort result back to the indices on the `GroupIdx`
+pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &UInt32Chunked, idx: &[u32]) -> Vec<u32> {
+    sorted_idx
+        .cont_slice()
+        .unwrap()
+        .iter()
+        .map(|&i| {
+            debug_assert!(idx.get(i as usize).is_some());
+            unsafe { *idx.get_unchecked(i as usize) }
+        })
+        .collect_trusted()
+}
+
+pub(crate) fn map_sorted_indices_to_group_slice(
+    sorted_idx: &UInt32Chunked,
+    first: u32,
+) -> Vec<u32> {
+    sorted_idx
+        .cont_slice()
+        .unwrap()
+        .iter()
+        .map(|&i| i + first)
+        .collect_trusted()
+}
+
 impl PhysicalExpr for SortExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
@@ -34,35 +60,40 @@ impl PhysicalExpr for SortExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
         let series = ac.flat_naive().into_owned();
 
-        let groups = ac
-            .groups()
-            .iter()
-            .map(|(_first, idx)| {
-                // Safety:
-                // Group tuples are always in bounds
-                let group =
-                    unsafe { series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
-
-                let sorted_idx = group.argsort(self.options.descending);
-
-                let new_idx: Vec<_> = sorted_idx
-                    .cont_slice()
-                    .unwrap()
+        let groups = match ac.groups().as_ref() {
+            GroupsProxy::Idx(groups) => {
+                groups
                     .iter()
-                    .map(|&i| {
-                        debug_assert!(idx.get(i as usize).is_some());
-                        unsafe { *idx.get_unchecked(i as usize) }
+                    .map(|(_first, idx)| {
+                        // Safety:
+                        // Group tuples are always in bounds
+                        let group = unsafe {
+                            series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
+                        };
+
+                        let sorted_idx = group.argsort(self.options.descending);
+                        let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
+                        (new_idx[0], new_idx)
                     })
-                    .collect();
-                (new_idx[0], new_idx)
-            })
-            .collect();
+                    .collect_trusted()
+            }
+            GroupsProxy::Slice(groups) => groups
+                .iter()
+                .map(|&[first, len]| {
+                    let group = series.slice(first as i64, len as usize);
+                    let sorted_idx = group.argsort(self.options.descending);
+                    let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
+                    (new_idx[0], new_idx)
+                })
+                .collect_trusted(),
+        };
+        let groups = GroupsProxy::Idx(groups);
 
         ac.with_groups(groups);
 
@@ -82,7 +113,7 @@ impl PhysicalAggregation for SortExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;

@@ -2,7 +2,7 @@ use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqI
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -43,15 +43,8 @@ where
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_first(groups)
-    }
 
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
 
@@ -67,8 +60,8 @@ where
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
     }
 }
 #[cfg(feature = "object")]

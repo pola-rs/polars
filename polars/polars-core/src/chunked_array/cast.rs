@@ -89,7 +89,7 @@ impl ChunkCast for Utf8Chunked {
             DataType::Categorical => {
                 let iter = self.into_iter();
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
-                builder.from_iter(iter);
+                builder.drain_iter(iter);
                 let ca = builder.finish();
                 Ok(ca.into_series())
             }
