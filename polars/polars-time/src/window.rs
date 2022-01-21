@@ -53,14 +53,14 @@ impl Window {
         let start = self.truncate_ns(t);
         let stop = self.period.add_ns(start);
 
-        Bounds::new(start, stop)
+        Bounds::new_checked(start, stop)
     }
 
     pub fn get_earliest_bounds_ms(&self, t: i64) -> Bounds {
         let start = self.truncate_ms(t);
         let stop = self.period.add_ms(start);
 
-        Bounds::new(start, stop)
+        Bounds::new_checked(start, stop)
     }
 
     pub(crate) fn estimate_overlapping_bounds_ns(&self, boundary: Bounds) -> usize {

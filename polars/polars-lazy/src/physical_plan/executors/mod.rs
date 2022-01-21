@@ -4,6 +4,7 @@ pub(crate) mod explode;
 pub(crate) mod filter;
 pub(crate) mod groupby;
 pub(crate) mod groupby_dynamic;
+pub(crate) mod groupby_rolling;
 pub(crate) mod join;
 pub(crate) mod melt;
 pub(crate) mod projection;

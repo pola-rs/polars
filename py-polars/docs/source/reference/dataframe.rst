@@ -109,6 +109,7 @@ Manipulation/ selection
     DataFrame.vstack
     DataFrame.groupby
     DataFrame.groupby_dynamic
+    DataFrame.groupby_rolling
     DataFrame.select
     DataFrame.with_columns
     DataFrame.with_column_renamed

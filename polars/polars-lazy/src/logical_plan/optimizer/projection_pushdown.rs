@@ -563,7 +563,7 @@ impl ProjectionPushDown {
                 apply,
                 schema,
                 maintain_order,
-                dynamic_options,
+                options,
             } => {
                 // the custom function may need all columns so we do the projections here.
                 if let Some(f) = apply {
@@ -574,7 +574,7 @@ impl ProjectionPushDown {
                         schema,
                         apply: Some(f),
                         maintain_order,
-                        dynamic_options,
+                        options,
                     };
                     let input = lp_arena.add(lp);
 
@@ -600,7 +600,13 @@ impl ProjectionPushDown {
                     }
 
                     // make sure that the dynamic key is projected
-                    if let Some(options) = &dynamic_options {
+                    if let Some(options) = &options.dynamic {
+                        let node =
+                            expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+                        add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                    }
+                    // make sure that the rolling key is projected
+                    if let Some(options) = &options.rolling {
                         let node =
                             expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
                         add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
@@ -620,7 +626,7 @@ impl ProjectionPushDown {
                         aggs,
                         apply,
                         maintain_order,
-                        dynamic_options,
+                        options,
                     );
                     Ok(builder.build())
                 }
