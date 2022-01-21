@@ -19,7 +19,7 @@ pub(crate) fn next_line_position_naive(input: &[u8]) -> Option<usize> {
     if input.len() - pos == 0 {
         return None;
     }
-    input.get(pos + 1).and_then(|&b| {
+    input.get(pos).and_then(|&b| {
         Option::from({
             if b == b'\r' {
                 pos + 1
@@ -53,7 +53,7 @@ pub(crate) fn next_line_position(
                 .count()
                 == expected_fields
             {
-                return input.get(pos + 1).and_then(|&b| {
+                return input.get(pos).and_then(|&b| {
                     Option::from({
                         if b == b'\r' {
                             total_pos + pos + 1
