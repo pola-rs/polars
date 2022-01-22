@@ -1,6 +1,6 @@
 use crate::calendar::date_range;
 use crate::duration::Duration;
-use crate::groupby::{groupby_windows, ClosedWindow, GroupsIdx, GroupsSlice, TimeUnit};
+use crate::groupby::{groupby_values, groupby_windows, ClosedWindow, GroupsSlice, TimeUnit};
 use crate::window::Window;
 use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
@@ -383,4 +383,36 @@ fn test_boundaries_ms() {
     assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
     assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
     assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
+}
+
+#[test]
+fn test_rolling_lookback() {
+    // Test month as interval in date range
+    let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
+    let end = NaiveDate::from_ymd(2021, 12, 16).and_hms(4, 0, 0);
+    let dates = date_range(
+        start.timestamp_nanos(),
+        end.timestamp_nanos(),
+        Duration::parse("30m"),
+        ClosedWindow::Both,
+        TimeUnit::Nanoseconds,
+    );
+
+    let groups = groupby_values(
+        Duration::parse("2h"),
+        Duration::parse("-2h"),
+        &dates,
+        ClosedWindow::Right,
+        TimeUnit::Nanoseconds,
+    );
+    assert_eq!(dates.len(), groups.len());
+    assert_eq!(groups[0], [0, 1]); // bound: 22:00 -> 24:00     time: 24:00
+    assert_eq!(groups[1], [0, 2]); // bound: 22:30 -> 00:30     time: 00:30
+    assert_eq!(groups[2], [0, 3]); // bound: 23:00 -> 01:00     time: 01:00
+    assert_eq!(groups[3], [0, 4]); // bound: 23:30 -> 01:30     time: 01:30
+    assert_eq!(groups[4], [1, 4]); // bound: 24:00 -> 02:00     time: 02:00
+    assert_eq!(groups[5], [2, 4]); // bound: 00:30 -> 02:30     time: 02:30
+    assert_eq!(groups[6], [3, 4]); // bound: 01:00 -> 03:00     time: 03:00
+    assert_eq!(groups[7], [4, 4]); // bound: 01:30 -> 03:30     time: 03:30
+    assert_eq!(groups[8], [5, 4]); // bound: 02:00 -> 04:00     time: 04:00
 }
