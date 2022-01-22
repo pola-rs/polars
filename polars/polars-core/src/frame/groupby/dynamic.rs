@@ -302,9 +302,9 @@ impl DataFrame {
     ) -> Result<(Series, GroupsProxy)> {
         let dt = dt.datetime().unwrap().clone();
 
-        let groups = dt
+        let mut groups = dt
             .downcast_iter()
-            .flat_map(|vals| {
+            .map(|vals| {
                 let ts = vals.values().as_slice();
                 polars_time::groupby::groupby_values(
                     options.period,
@@ -315,8 +315,14 @@ impl DataFrame {
                 )
             })
             .collect::<Vec<_>>();
-        let groups = GroupsProxy::Slice(groups);
 
+        // we don't flatmap because in case of a single chunk we don't need to reallocate the inner vec,
+        // just pop it.
+        let groups = if groups.len() == 1 {
+            GroupsProxy::Slice(groups.pop().unwrap())
+        } else {
+            GroupsProxy::Slice(groups.into_iter().flatten().collect())
+        };
         dt.cast(time_type).map(|s| (s, groups))
     }
 }
