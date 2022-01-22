@@ -19,15 +19,7 @@ pub(crate) fn next_line_position_naive(input: &[u8]) -> Option<usize> {
     if input.len() - pos == 0 {
         return None;
     }
-    input.get(pos).and_then(|&b| {
-        Option::from({
-            if b == b'\r' {
-                pos + 1
-            } else {
-                pos
-            }
-        })
-    })
+    Some(pos)
 }
 
 /// Find the nearest next line position that is not embedded in a String field.
@@ -53,15 +45,7 @@ pub(crate) fn next_line_position(
                 .count()
                 == expected_fields
             {
-                return input.get(pos).and_then(|&b| {
-                    Option::from({
-                        if b == b'\r' {
-                            total_pos + pos + 1
-                        } else {
-                            total_pos + pos
-                        }
-                    })
-                });
+                return Some(total_pos + pos);
             } else {
                 input = &input[pos + 1..];
                 total_pos += pos + 1;
