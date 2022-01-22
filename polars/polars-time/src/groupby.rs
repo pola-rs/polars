@@ -35,7 +35,7 @@ pub fn groupby_windows(
     include_boundaries: bool,
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> (GroupsIdx, Vec<i64>, Vec<i64>) {
+) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
@@ -68,8 +68,6 @@ pub fn groupby_windows(
     let mut latest_start = 0;
 
     for bi in window.get_overlapping_bounds_iter(boundary, tu) {
-        let mut group = vec![];
-
         let mut skip_window = false;
         // find starting point of window
         while latest_start < time.len() {
@@ -88,32 +86,28 @@ pub fn groupby_windows(
             continue;
         }
 
-        // subtract 1 because the next window could also start from the same point
-        latest_start = latest_start.saturating_sub(1);
-
         // find members of this window
         let mut i = latest_start;
         if i >= time.len() {
             break;
         }
 
+        let first = latest_start as u32;
+
         while i < time.len() {
             let t = time[i];
-            if bi.is_member(t, closed_window) {
-                group.push(i as u32);
-            } else if bi.is_future(t) {
+            if !bi.is_member(t, closed_window) {
                 break;
             }
             i += 1
         }
+        let len = (i as u32) - first;
 
-        if !group.is_empty() {
-            if include_boundaries {
-                lower_bound.push(bi.start);
-                upper_bound.push(bi.stop);
-            }
-            groups.push((group[0], group))
+        if include_boundaries {
+            lower_bound.push(bi.start);
+            upper_bound.push(bi.stop);
         }
+        groups.push([first, len])
     }
     (groups, lower_bound, upper_bound)
 }

@@ -1,6 +1,6 @@
 use crate::calendar::date_range;
 use crate::duration::Duration;
-use crate::groupby::{groupby_windows, ClosedWindow, GroupsIdx, TimeUnit};
+use crate::groupby::{groupby_windows, ClosedWindow, GroupsIdx, GroupsSlice, TimeUnit};
 use crate::window::Window;
 use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
@@ -56,9 +56,11 @@ fn print_ns(ts: &[i64]) {
     }
 }
 
-fn take_groups(groups: &GroupsIdx, idx: usize, ts: &[i64]) -> Vec<i64> {
-    let group = &groups[idx].1;
-    group.iter().map(|idx| ts[*idx as usize]).collect()
+fn take_groups_slice<'a>(groups: &'a GroupsSlice, idx: usize, ts: &'a [i64]) -> &'a [i64] {
+    let [first, len] = groups[idx];
+    let first = first as usize;
+    let len = len as usize;
+    &ts[first..first + len]
 }
 
 #[test]
@@ -78,16 +80,16 @@ fn test_groups_large_interval() {
     let w = Window::new(Duration::parse("2d"), dur.clone(), Duration::from_nsecs(0));
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Both, TimeUnit::Nanoseconds);
     assert_eq!(groups.len(), 4);
-    assert_eq!(groups[0], (0, vec![0]));
-    assert_eq!(groups[1], (1, vec![1]));
-    assert_eq!(groups[2], (1, vec![1, 2, 3]));
-    assert_eq!(groups[3], (3, vec![3]));
+    assert_eq!(groups[0], [0, 1]);
+    assert_eq!(groups[1], [1, 1]);
+    assert_eq!(groups[2], [1, 3]);
+    assert_eq!(groups[3], [3, 1]);
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Nanoseconds);
     assert_eq!(groups.len(), 3);
-    assert_eq!(groups[2], (3, vec![3]));
+    assert_eq!(groups[2], [3, 1]);
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Nanoseconds);
     assert_eq!(groups.len(), 2);
-    assert_eq!(groups[1], (2, vec![2, 3]));
+    assert_eq!(groups[1], [2, 2]);
 }
 
 #[test]
@@ -121,7 +123,6 @@ fn test_boundaries() {
         TimeUnit::Nanoseconds,
     );
 
-    print_ns(&ts);
     // window:
     // every 2h
     // period 1h
@@ -146,7 +147,7 @@ fn test_boundaries() {
     // 2021-12-16 00:00:00
     // 2021-12-16 00:30:00
     // 2021-12-16 01:00:00
-    let g = take_groups(&groups, 0, &ts);
+    let g = take_groups_slice(&groups, 0, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
     let t2 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
@@ -172,7 +173,7 @@ fn test_boundaries() {
     // 2021-12-16 01:00:00
     // 2021-12-16 01:30:00
     // 2021-12-16 02:00:00
-    let g = take_groups(&groups, 1, &ts);
+    let g = take_groups_slice(&groups, 1, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 30, 0);
     let t2 = NaiveDate::from_ymd(2021, 12, 16).and_hms(2, 0, 0);
@@ -191,25 +192,25 @@ fn test_boundaries() {
         &[b_start.timestamp_nanos(), b_end.timestamp_nanos()]
     );
 
-    assert_eq!(groups[2].1, &[4, 5, 6]);
+    assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Nanoseconds);
-    assert_eq!(groups[0].1, &[0, 1]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[2, 3]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[4, 5]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Nanoseconds);
-    assert_eq!(groups[0].1, &[1, 2]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[3, 4]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[5, 6]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::None, TimeUnit::Nanoseconds);
-    assert_eq!(groups[0].1, &[1]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[3]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[5]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
 }
 
 #[test]
@@ -250,7 +251,7 @@ fn test_boundaries_2() {
     // 2021-12-16 01:00:00
     // (note that we don't expect 01:30:00 because we close left (and thus open interval right))
     // see: https://pandas.pydata.org/docs/reference/api/pandas.Interval.html
-    let g = take_groups(&groups, 0, &ts);
+    let g = take_groups_slice(&groups, 0, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
     assert_eq!(g, &[t0.timestamp_nanos(), t1.timestamp_nanos()]);
@@ -268,7 +269,7 @@ fn test_boundaries_2() {
     // 2021-12-16 02:30:00
     // 2021-12-16 03:00:00
     // (note that we don't expect 03:30:00 because we close left)
-    let g = take_groups(&groups, 1, &ts);
+    let g = take_groups_slice(&groups, 1, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(2, 30, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
     assert_eq!(g, &[t0.timestamp_nanos(), t1.timestamp_nanos()]);
@@ -317,7 +318,7 @@ fn test_boundaries_ms() {
     // 2021-12-16 00:00:00
     // 2021-12-16 00:30:00
     // 2021-12-16 01:00:00
-    let g = take_groups(&groups, 0, &ts);
+    let g = take_groups_slice(&groups, 0, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 30, 0);
     let t2 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
@@ -343,7 +344,7 @@ fn test_boundaries_ms() {
     // 2021-12-16 01:00:00
     // 2021-12-16 01:30:00
     // 2021-12-16 02:00:00
-    let g = take_groups(&groups, 1, &ts);
+    let g = take_groups_slice(&groups, 1, &ts);
     let t0 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 0, 0);
     let t1 = NaiveDate::from_ymd(2021, 12, 16).and_hms(1, 30, 0);
     let t2 = NaiveDate::from_ymd(2021, 12, 16).and_hms(2, 0, 0);
@@ -362,24 +363,24 @@ fn test_boundaries_ms() {
         &[b_start.timestamp_millis(), b_end.timestamp_millis()]
     );
 
-    assert_eq!(groups[2].1, &[4, 5, 6]);
+    assert_eq!(groups[2], [4, 3]);
 
     // test closed: "left" (should not include right end of interval)
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::Left, TimeUnit::Milliseconds);
-    assert_eq!(groups[0].1, &[0, 1]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[2, 3]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[4, 5]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [0, 2]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [2, 2]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [4, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "right" (should not include left end of interval)
     let (groups, _, _) =
         groupby_windows(w, &ts, false, ClosedWindow::Right, TimeUnit::Milliseconds);
-    assert_eq!(groups[0].1, &[1, 2]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[3, 4]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[5, 6]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [1, 2]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [3, 2]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [5, 2]); // 02:00:00 -> 02:30:00
 
     // test closed: "none" (should not include left or right end of interval)
     let (groups, _, _) = groupby_windows(w, &ts, false, ClosedWindow::None, TimeUnit::Milliseconds);
-    assert_eq!(groups[0].1, &[1]); // 00:00:00 -> 00:30:00
-    assert_eq!(groups[1].1, &[3]); // 01:00:00 -> 01:30:00
-    assert_eq!(groups[2].1, &[5]); // 02:00:00 -> 02:30:00
+    assert_eq!(groups[0], [1, 1]); // 00:00:00 -> 00:30:00
+    assert_eq!(groups[1], [3, 1]); // 01:00:00 -> 01:30:00
+    assert_eq!(groups[2], [5, 1]); // 02:00:00 -> 02:30:00
 }

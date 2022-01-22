@@ -1,7 +1,7 @@
 use crate::frame::groupby::GroupsProxy;
 use crate::prelude::*;
 use crate::POOL;
-use polars_time::groupby::ClosedWindow;
+use polars_time::groupby::{ClosedWindow, GroupsIdx};
 use polars_time::{Duration, Window};
 use rayon::prelude::*;
 
@@ -86,6 +86,15 @@ impl DataFrame {
         by: Vec<Series>,
         options: &DynamicGroupOptions,
     ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+        if options.offset.parsed_int || options.every.parsed_int || options.period.parsed_int {
+            assert!(
+                (options.offset.parsed_int || options.offset.is_zero())
+                    && (options.every.parsed_int || options.every.is_zero())
+                    && (options.period.parsed_int || options.period.is_zero()),
+                "you cannot combine time durations like '2h' with integer durations like '3i'"
+            )
+        }
+
         let time = self.column(&options.index_column)?;
         let time_type = time.dtype();
 
@@ -167,8 +176,9 @@ impl DataFrame {
             };
 
         let groups = if by.is_empty() {
-            dt.downcast_iter()
-                .flat_map(|vals| {
+            let mut groups_slice = dt
+                .downcast_iter()
+                .map(|vals| {
                     let ts = vals.values().as_slice();
                     let (groups, lower, upper) = polars_time::groupby::groupby_windows(
                         w,
@@ -180,7 +190,14 @@ impl DataFrame {
                     update_bounds(lower, upper);
                     groups
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            // we don't flatmap because in case of a single chunk we don't need to reallocate the inner vec,
+            // just pop it.
+            if groups_slice.len() == 1 {
+                GroupsProxy::Slice(groups_slice.pop().unwrap())
+            } else {
+                GroupsProxy::Slice(groups_slice.into_iter().flatten().collect())
+            }
         } else {
             let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
             groups.sort();
@@ -188,8 +205,9 @@ impl DataFrame {
 
             // include boundaries cannot be parallel (easily)
             if options.include_boundaries {
-                groups
+                let groupsidx = groups
                     .iter()
+                    // we just flat map, because iterate over groups so we almost always need to reallocate
                     .flat_map(|base_g| {
                         let dt = unsafe {
                             dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
@@ -197,7 +215,7 @@ impl DataFrame {
 
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
-                        let (mut sub_groups, lower, upper) = polars_time::groupby::groupby_windows(
+                        let (sub_groups, lower, upper) = polars_time::groupby::groupby_windows(
                             w,
                             ts,
                             options.include_boundaries,
@@ -212,19 +230,12 @@ impl DataFrame {
                             .into_series();
 
                         update_bounds(lower, upper);
-
-                        sub_groups.iter_mut().for_each(|g| {
-                            g.0 = unsafe { *base_g.1.get_unchecked(g.0 as usize) };
-                            for x in g.1.iter_mut() {
-                                debug_assert!((*x as usize) < base_g.1.len());
-                                unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
-                            }
-                        });
-                        sub_groups
+                        update_subgroups(&sub_groups, base_g)
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                GroupsProxy::Idx(groupsidx)
             } else {
-                POOL.install(|| {
+                let groupsidx = POOL.install(|| {
                     groups
                         .par_iter()
                         .flat_map(|base_g| {
@@ -233,33 +244,25 @@ impl DataFrame {
                             };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
-                            let (mut sub_groups, _, _) = polars_time::groupby::groupby_windows(
+                            let (sub_groups, _, _) = polars_time::groupby::groupby_windows(
                                 w,
                                 ts,
                                 options.include_boundaries,
                                 options.closed_window,
                                 tu.to_polars_time(),
                             );
-
-                            sub_groups.iter_mut().for_each(|g| {
-                                g.0 = unsafe { *base_g.1.get_unchecked(g.0 as usize) };
-                                for x in g.1.iter_mut() {
-                                    debug_assert!((*x as usize) < base_g.1.len());
-                                    unsafe { *x = *base_g.1.get_unchecked(*x as usize) }
-                                }
-                            });
-                            sub_groups
+                            update_subgroups(&sub_groups, base_g)
                         })
                         .collect::<Vec<_>>()
-                })
+                });
+                GroupsProxy::Idx(groupsidx)
             }
         };
 
-        // Safety:
-        // within bounds
-        let mut dt = unsafe { dt.take_unchecked(groups.iter().map(|g| g.0 as usize).into()) };
+        let dt = dt.clone().into_series().agg_first(&groups);
+        let mut dt = dt.datetime().unwrap().as_ref().clone();
         for key in by.iter_mut() {
-            *key = unsafe { key.take_iter_unchecked(&mut groups.iter().map(|g| g.0 as usize)) };
+            *key = key.agg_first(&groups)
         }
 
         if options.truncate {
@@ -287,7 +290,7 @@ impl DataFrame {
         dt.into_datetime(tu, None)
             .into_series()
             .cast(time_type)
-            .map(|s| (s, by, GroupsProxy::Idx(groups)))
+            .map(|s| (s, by, groups))
     }
 
     fn impl_groupby_rolling(
@@ -316,6 +319,25 @@ impl DataFrame {
 
         dt.cast(time_type).map(|s| (s, groups))
     }
+}
+
+fn update_subgroups(sub_groups: &[[u32; 2]], base_g: &(u32, Vec<u32>)) -> GroupsIdx {
+    sub_groups
+        .iter()
+        .map(|&[first, len]| {
+            let new_first = unsafe { *base_g.1.get_unchecked(first as usize) };
+
+            let first = first as usize;
+            let len = len as usize;
+            let idx = (first..first + len)
+                .map(|i| {
+                    debug_assert!(i < base_g.1.len());
+                    unsafe { *base_g.1.get_unchecked(i) }
+                })
+                .collect_trusted::<Vec<_>>();
+            (new_first, idx)
+        })
+        .collect_trusted::<Vec<_>>()
 }
 
 #[cfg(test)]
@@ -449,5 +471,23 @@ mod test {
             (4u32, vec![4]),
         ]);
         assert_eq!(expected, groups);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_panic_integer_temporal_combine() {
+        let df = DataFrame::new_no_checks(vec![]);
+        let _ = df.groupby_dynamic(
+            vec![],
+            &DynamicGroupOptions {
+                index_column: "date".into(),
+                every: Duration::parse("1h"),
+                period: Duration::parse("1i"),
+                offset: Duration::parse("0h"),
+                truncate: true,
+                include_boundaries: true,
+                closed_window: ClosedWindow::Both,
+            },
+        );
     }
 }
