@@ -78,12 +78,6 @@ macro_rules! push_expr {
                 }
             }
             Slice { input, .. } => $push(input),
-            BinaryFunction {
-                input_a, input_b, ..
-            } => {
-                $push(input_a);
-                $push(input_b)
-            }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             SufPreFix { expr, .. } => $push(expr),
@@ -235,12 +229,6 @@ impl AExpr {
                 }
             }
             Slice { input, .. } => push(input),
-            BinaryFunction {
-                input_a, input_b, ..
-            } => {
-                push(input_a);
-                push(input_b)
-            }
         }
     }
 }

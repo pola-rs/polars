@@ -391,29 +391,6 @@ fn test_lazy_query_5() {
 }
 
 #[test]
-fn test_lazy_query_6() -> Result<()> {
-    let df = df! {
-        "uid" => [0, 0, 0, 1, 1, 1],
-        "day" => [1, 2, 4, 1, 2, 3],
-        "cumcases" => [10, 12, 15, 25, 30, 41]
-    }
-    .unwrap();
-
-    let out = df
-        .lazy()
-        .groupby([col("uid")])
-        // a double aggregation expression.
-        .agg([pearson_corr(col("day"), col("cumcases")).pow(2.0)])
-        .sort("uid", false)
-        .collect()
-        .unwrap();
-    let s = out.column("pearson_corr")?.f64()?;
-    assert!((s.get(0).unwrap() - 0.994360902255639).abs() < 0.000001);
-    assert!((s.get(1).unwrap() - 0.9552238805970149).abs() < 0.000001);
-    Ok(())
-}
-
-#[test]
 #[cfg(feature = "is_in")]
 fn test_lazy_query_8() -> Result<()> {
     // https://github.com/pola-rs/polars/issues/842

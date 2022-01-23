@@ -140,25 +140,26 @@ pub fn groupby_values(
     };
 
     // the offset can be lagging if we have a negative offset duration
-    let mut trailing_offset = 0;
+    let mut lagging_offset = 0;
     time.iter()
         .enumerate()
         .map(|(i, lower)| {
             let lower = add(&offset, *lower);
             let upper = add(&period, lower);
+
             let b = Bounds::new(lower, upper);
 
-            for &t in time.iter() {
-                if b.is_member(t, closed_window) || trailing_offset == i {
+            for &t in &time[lagging_offset..] {
+                if b.is_member(t, closed_window) || lagging_offset == i {
                     break;
                 }
-                trailing_offset += 1;
+                lagging_offset += 1;
             }
 
-            let slice = &time[trailing_offset..];
+            let slice = &time[lagging_offset..];
             let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
 
-            [trailing_offset as u32, len as u32]
+            [lagging_offset as u32, len as u32]
         })
         .collect_trusted()
 }

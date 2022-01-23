@@ -98,13 +98,6 @@ pub enum AExpr {
         offset: i64,
         length: usize,
     },
-    BinaryFunction {
-        input_a: Node,
-        input_b: Node,
-        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
-        /// Delays output type evaluation until input schema is known.
-        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
-    },
 }
 
 impl Default for AExpr {
@@ -354,18 +347,6 @@ impl AExpr {
                     .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
-            }
-            BinaryFunction {
-                input_a,
-                input_b,
-                output_field,
-                ..
-            } => {
-                let field_a = arena.get(*input_a).to_field(schema, ctxt, arena)?;
-                let field_b = arena.get(*input_b).to_field(schema, ctxt, arena)?;
-                let out = output_field.get_field(schema, ctxt, &field_a, &field_b);
-                // TODO: remove Option?
-                Ok(out.expect("field should be set"))
             }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),

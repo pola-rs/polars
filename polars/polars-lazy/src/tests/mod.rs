@@ -1,3 +1,4 @@
+mod arity;
 #[cfg(feature = "parquet")]
 mod io;
 mod optimization_checks;
