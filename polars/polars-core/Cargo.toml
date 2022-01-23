@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.19.0"
+version = "0.19.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -145,8 +145,8 @@ lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
 num_cpus = "1"
-polars-arrow = { version = "0.19.0", path = "../polars-arrow", features = ["compute"] }
-polars-time = { version = "0.1.0", path = "../polars-time", optional = true }
+polars-arrow = { version = "0.19.1", path = "../polars-arrow", features = ["compute"] }
+polars-time = { version = "0.1.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.1.0", path = "../polars-utils", optional = true }
 prettytable-rs = { version = "0.8.0", optional = true }
 rand = { version = "0.8", optional = true }
