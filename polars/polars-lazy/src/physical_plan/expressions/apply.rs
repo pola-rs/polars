@@ -1,6 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use rayon::prelude::*;
@@ -26,6 +27,22 @@ impl ApplyExpr {
             .par_iter()
             .map(|e| e.evaluate_on_groups(df, groups, state))
             .collect()
+    }
+
+    fn finish_apply_groups<'a>(
+        &self,
+        mut ac: AggregationContext<'a>,
+        ca: ListChunked,
+        all_unit_len: bool,
+    ) -> AggregationContext<'a> {
+        if all_unit_len && self.auto_explode {
+            ac.with_series(ca.explode().unwrap().into_series(), true);
+        } else {
+            ac.with_series(ca.into_series(), true);
+        }
+        ac.with_all_unit_len(all_unit_len);
+        ac.with_update_groups(UpdateGroups::WithSeriesLen);
+        ac
     }
 }
 
@@ -92,9 +109,7 @@ impl PhysicalExpr for ApplyExpr {
                         .collect();
 
                     ca.rename(&name);
-                    ac.with_series(ca.into_series(), true);
-                    ac.with_all_unit_len(all_unit_len);
-                    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -154,11 +169,10 @@ impl PhysicalExpr for ApplyExpr {
                                 s
                             })
                         })
-                        .collect();
+                        .collect_trusted();
                     ca.rename(&name);
-                    let mut ac = acs.pop().unwrap();
-                    ac.with_series(ca.into_series(), true);
-                    ac.with_all_unit_len(all_unit_len);
+                    let ac = acs.pop().unwrap();
+                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -204,10 +218,7 @@ impl PhysicalAggregation for ApplyExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let mut s = ac.aggregated().into_owned();
-        if ac.is_all_unit_len() && self.auto_explode {
-            s = s.explode().unwrap();
-        }
+        let s = ac.aggregated().into_owned();
         Ok(Some(s))
     }
 }

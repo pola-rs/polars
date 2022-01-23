@@ -130,7 +130,13 @@ pub fn binary_function(
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
 
-    polars::lazy::dsl::map_binary(input_a, input_b, func, Some(output_field)).into()
+    polars::lazy::dsl::map_binary(
+        input_a,
+        input_b,
+        func,
+        GetOutput::map_field(move |_| output_field.clone()),
+    )
+    .into()
 }
 
 pub fn map_single(

@@ -106,17 +106,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             output_type,
             options,
         },
-        Expr::BinaryFunction {
-            input_a,
-            input_b,
-            function,
-            output_field,
-        } => AExpr::BinaryFunction {
-            input_a: to_aexpr(*input_a, arena),
-            input_b: to_aexpr(*input_b, arena),
-            function,
-            output_field,
-        },
         Expr::Shift { input, periods } => AExpr::Shift {
             input: to_aexpr(*input, arena),
             periods,
@@ -588,17 +577,6 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             function,
             output_type,
             options,
-        },
-        AExpr::BinaryFunction {
-            input_a,
-            input_b,
-            function,
-            output_field,
-        } => Expr::BinaryFunction {
-            input_a: Box::new(node_to_exp(input_a, expr_arena)),
-            input_b: Box::new(node_to_exp(input_b, expr_arena)),
-            function,
-            output_field,
         },
         AExpr::Window {
             function,

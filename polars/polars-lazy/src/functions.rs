@@ -31,7 +31,23 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
         };
         Ok(s)
     };
-    map_binary(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
+    apply_binary(
+        a,
+        b,
+        function,
+        GetOutput::map_dtype(|dt| {
+            if matches!(dt, DataType::Float32) {
+                DataType::Float32
+            } else {
+                DataType::Float64
+            }
+        }),
+    )
+    .with_function_options(|mut options| {
+        options.auto_explode = true;
+        options.fmt_str = "cov";
+        options
+    })
 }
 
 /// Compute the pearson correlation between two columns.
@@ -59,7 +75,23 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
         };
         Ok(s)
     };
-    map_binary(a, b, function, Some(Field::new(name, DataType::Float32))).alias(name)
+    apply_binary(
+        a,
+        b,
+        function,
+        GetOutput::map_dtype(|dt| {
+            if matches!(dt, DataType::Float32) {
+                DataType::Float32
+            } else {
+                DataType::Float64
+            }
+        }),
+    )
+    .with_function_options(|mut options| {
+        options.auto_explode = true;
+        options.fmt_str = "pearson_corr";
+        options
+    })
 }
 
 /// Compute the spearman rank correlation between two columns.
@@ -76,7 +108,7 @@ pub fn spearman_rank_corr(a: Expr, b: Expr) -> Expr {
             ..Default::default()
         }),
     )
-    .alias("spearman_rank_corr")
+    .with_fmt("spearman_rank_correlation")
 }
 
 /// Find the indexes that would sort these series in order of appearance.
@@ -147,7 +179,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
-            auto_explode: true,
+            auto_explode: false,
             fmt_str: "concat_list",
         },
     }
@@ -181,7 +213,12 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 Ok(Int64Chunked::new_from_iter("arange", low..high).into_series())
             }
         };
-        map_binary(low, high, f, Some(Field::new("arange", DataType::Int64)))
+        map_binary(
+            low,
+            high,
+            f,
+            GetOutput::map_field(|_| Field::new("arange", DataType::Int64)),
+        )
     } else {
         let f = move |sa: Series, sb: Series| {
             let sa = sa.cast(&DataType::Int64)?;
@@ -214,7 +251,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             low,
             high,
             f,
-            Some(Field::new("arange", DataType::List(DataType::Int64.into()))),
+            GetOutput::map_field(|_| Field::new("arange", DataType::List(DataType::Int64.into()))),
         )
     }
 }

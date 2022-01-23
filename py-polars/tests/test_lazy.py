@@ -93,13 +93,21 @@ def test_binary_function() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
-        .with_column(map_binary(col("a"), col("b"), lambda a, b: a + b))
+        .with_column(
+            (map_binary(col("a"), col("b"), lambda a, b: a + b)).alias(
+                "binary_function"
+            )
+        )
         .collect()
     )
     assert out["binary_function"] == (out.a + out.b)
 
     # we can also avoid pl.col and insert column names directly
-    out = df.lazy().with_column(map_binary("a", "b", lambda a, b: a + b)).collect()
+    out = (
+        df.lazy()
+        .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
+        .collect()
+    )
     assert out["binary_function"] == (out.a + out.b)
 
 

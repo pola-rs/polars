@@ -219,6 +219,15 @@ pub struct FunctionOptions {
     pub(crate) input_wildcard_expansion: bool,
 
     /// automatically explode on unit length it ran as final aggregation.
+    ///
+    /// this is the case for aggregations like sum, min, covariance etc.
+    /// We need to know this because we cannot see the difference between
+    /// the following functions based on the output type and number of elements:
+    ///
+    /// x: [1, 2, 3]
+    ///
+    /// head_1(x) -> [1]
+    /// sum(x) -> [4]
     pub(crate) auto_explode: bool,
     pub(crate) fmt_str: &'static str,
 }
@@ -345,13 +354,6 @@ pub enum Expr {
         /// length is not yet known so we accept negative offsets
         offset: i64,
         length: usize,
-    },
-    BinaryFunction {
-        input_a: Box<Expr>,
-        input_b: Box<Expr>,
-        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
-        /// Delays output type evaluation until input schema is known.
-        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
     },
     /// Can be used in a select statement to exclude a column from selection
     Exclude(Box<Expr>, Vec<Excluded>),
@@ -538,9 +540,11 @@ pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
 }
 
 impl Expr {
-    /// overwrite the function name used for formatting
-    /// this is not intended to be used
-    pub fn with_fmt(self, name: &'static str) -> Expr {
+    /// Modify the Options passed to the `Function` node.
+    pub(crate) fn with_function_options<F>(self, func: F) -> Expr
+    where
+        F: Fn(FunctionOptions) -> FunctionOptions,
+    {
         if let Self::Function {
             input,
             function,
@@ -548,7 +552,7 @@ impl Expr {
             mut options,
         } = self
         {
-            options.fmt_str = name;
+            options = func(options);
             Self::Function {
                 input,
                 function,
@@ -558,6 +562,16 @@ impl Expr {
         } else {
             panic!("implementation error")
         }
+    }
+
+    /// Overwrite the function name used for formatting
+    /// this is not intended to be used
+    #[cfg(feature = "private")]
+    pub fn with_fmt(self, name: &'static str) -> Expr {
+        self.with_function_options(|mut options| {
+            options.fmt_str = name;
+            options
+        })
     }
 
     /// Compare `Expr` with other `Expr` on equality
@@ -961,7 +975,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
-                auto_explode: true,
+                auto_explode: false,
                 fmt_str: "",
             },
         }
@@ -2150,38 +2164,32 @@ pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) ->
     col(name).quantile(quantile, interpol)
 }
 
-/// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
-pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
-where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
-{
-    let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| output_field.clone();
+macro_rules! prepare_binary_function {
+    ($f:ident) => {
+        move |s: &mut [Series]| {
+            let s0 = std::mem::take(&mut s[0]);
+            let s1 = std::mem::take(&mut s[1]);
 
-    Expr::BinaryFunction {
-        input_a: Box::new(a),
-        input_b: Box::new(b),
-        function: NoEq::new(Arc::new(f)),
-        output_field: NoEq::new(Arc::new(output_field)),
-    }
+            $f(s0, s1)
+        }
+    };
 }
 
-/// Binary function where the output type is determined at runtime when the schema is known.
-pub fn map_binary_lazy_field<F: 'static, Fld: 'static>(
-    a: Expr,
-    b: Expr,
-    f: F,
-    output_field: Fld,
-) -> Expr
+/// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
+pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
 where
     F: Fn(Series, Series) -> Result<Series> + Send + Sync,
-    Fld: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
 {
-    Expr::BinaryFunction {
-        input_a: Box::new(a),
-        input_b: Box::new(b),
-        function: NoEq::new(Arc::new(f)),
-        output_field: NoEq::new(Arc::new(output_field)),
-    }
+    let function = prepare_binary_function!(f);
+    a.map_many(function, &[b], output_type)
+}
+
+pub fn apply_binary<F: 'static>(a: Expr, b: Expr, f: F, output_type: GetOutput) -> Expr
+where
+    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
+{
+    let function = prepare_binary_function!(f);
+    a.apply_many(function, &[b], output_type)
 }
 
 /// Accumulate over multiple columns horizontally / row wise.
@@ -2217,16 +2225,11 @@ where
         }
     } else {
         for e in exprs {
-            acc = map_binary_lazy_field(
+            acc = map_binary(
                 acc,
                 e,
                 f.clone(),
-                // written inline due to lifetime inference issues.
-                |_schema, _ctxt, f_l: &Field, f_r: &Field| {
-                    get_supertype(f_l.data_type(), f_r.data_type())
-                        .ok()
-                        .map(|dt| Field::new(f_l.name(), dt))
-                },
+                GetOutput::map_dtypes(|dt| get_supertype(dt[0], dt[1]).unwrap()),
             );
         }
         acc
