@@ -36,6 +36,8 @@ Manipulation/ selection
     LazyFrame.filter
     LazyFrame.select
     LazyFrame.groupby
+    LazyFrame.groupby_dynamic
+    LazyFrame.groupby_rolling
     LazyFrame.join
     LazyFrame.with_columns
     LazyFrame.with_column

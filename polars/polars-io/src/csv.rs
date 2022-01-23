@@ -740,6 +740,19 @@ mod test {
 
         assert_eq!("head_1", df.get_columns()[0].name());
         assert_eq!(df.shape(), (3, 2));
+
+        // test windows line ending with 1 byte char column and no line endings for last line.
+        let s = "head_1\r\n1\r\n2\r\n3";
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .finish()
+            .unwrap();
+
+        assert_eq!("head_1", df.get_columns()[0].name());
+        assert_eq!(df.shape(), (3, 1));
     }
 
     #[test]

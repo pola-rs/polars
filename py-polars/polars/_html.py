@@ -69,14 +69,21 @@ class HTMLFormatter:
         """
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
-                for col in self.df.columns:
+                columns = self.df.columns
+                for c in self.col_idx:
                     with Tag(self.elements, "th"):
-                        self.elements.append(col)
+                        if c == -1:
+                            self.elements.append("...")
+                        else:
+                            self.elements.append(columns[c])
             with Tag(self.elements, "tr"):
-                for dtype in self.df.dtypes:
-                    ffi_name = dtype_to_ffiname(dtype)
+                dtypes = self.df.dtypes
+                for c in self.col_idx:
                     with Tag(self.elements, "td"):
-                        self.elements.append(ffi_name)
+                        if c == -1:
+                            self.elements.append("...")
+                        else:
+                            self.elements.append(dtype_to_ffiname(dtypes[c]))
 
     def write_body(self) -> None:
         """

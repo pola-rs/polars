@@ -407,3 +407,30 @@ def test_explode_date() -> None:
             .explode(["a", "c"])
         )
         assert out.shape == (4, 3)
+
+
+def test_rolling() -> None:
+    dates = [
+        "2020-01-01 13:45:48",
+        "2020-01-01 16:42:13",
+        "2020-01-01 16:45:09",
+        "2020-01-02 18:12:48",
+        "2020-01-03 19:45:32",
+        "2020-01-08 23:16:43",
+    ]
+
+    df = pl.DataFrame({"dt": dates, "a": [3, 7, 5, 9, 2, 1]}).with_column(
+        pl.col("dt").str.strptime(pl.Datetime)
+    )
+
+    out = df.groupby_rolling(index_column="dt", period="2d").agg(
+        [
+            pl.sum("a").alias("sum_a"),
+            pl.min("a").alias("min_a"),
+            pl.max("a").alias("max_a"),
+        ]
+    )
+
+    assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
+    assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
+    assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]

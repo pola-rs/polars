@@ -11,8 +11,6 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "rows")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
@@ -22,8 +20,6 @@ use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
-use std::any::Any;
 use std::borrow::Cow;
 use std::ops::Deref;
 
@@ -72,47 +68,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_first(groups)
-    }
-
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
-    }
-
-    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
 
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_valid_count(groups)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        self.0.pivot(pivot_series, keys, groups, agg_type)
-    }
-
-    #[cfg(feature = "rows")]
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.0.pivot_count(pivot_series, keys, groups)
-    }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
     }
@@ -133,8 +92,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .cast(&DataType::Categorical)
             .unwrap()
     }
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -389,10 +348,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.is_first()
     }
 
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         Ok(self.0.mode()?.into_series())

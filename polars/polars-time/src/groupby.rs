@@ -1,7 +1,10 @@
 use crate::bounds::Bounds;
 use crate::window::Window;
+use crate::Duration;
+use polars_arrow::utils::CustomIterTools;
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
+pub type GroupsSlice = Vec<[u32; 2]>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum ClosedWindow {
@@ -16,21 +19,31 @@ pub enum TimeUnit {
     Milliseconds,
 }
 
-pub fn groupby(
+/// Based on the given `Window`, which has an
+/// - every
+/// - period
+/// - offset
+/// window boundaries are created. And every window boundary we search for the values
+/// that fit that window by the given `ClowedWindow`. The groups are return as `GroupTuples`
+/// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
+/// and end (upper) of the window of that group.
+///
+/// If `include_boundaries` is `false` those `lower` and `upper` vectors will be empty.
+pub fn groupby_windows(
     window: Window,
     time: &[i64],
     include_boundaries: bool,
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> (GroupTuples, Vec<i64>, Vec<i64>) {
+) -> (GroupsSlice, Vec<i64>, Vec<i64>) {
     let start = time[0];
     let boundary = if time.len() > 1 {
         // +1 because left or closed boundary could match the next window if it is on the boundary
         let stop = time[time.len() - 1] + 1;
-        Bounds::new(start, stop)
+        Bounds::new_checked(start, stop)
     } else {
         let stop = start + 1;
-        Bounds::new(start, stop)
+        Bounds::new_checked(start, stop)
     };
 
     let size = if include_boundaries {
@@ -44,7 +57,7 @@ pub fn groupby(
     let mut lower_bound = Vec::with_capacity(size);
     let mut upper_bound = Vec::with_capacity(size);
 
-    let mut group_tuples = match tu {
+    let mut groups = match tu {
         TimeUnit::Nanoseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
         }
@@ -55,8 +68,6 @@ pub fn groupby(
     let mut latest_start = 0;
 
     for bi in window.get_overlapping_bounds_iter(boundary, tu) {
-        let mut group = vec![];
-
         let mut skip_window = false;
         // find starting point of window
         while latest_start < time.len() {
@@ -75,32 +86,79 @@ pub fn groupby(
             continue;
         }
 
-        // subtract 1 because the next window could also start from the same point
-        latest_start = latest_start.saturating_sub(1);
-
         // find members of this window
         let mut i = latest_start;
         if i >= time.len() {
             break;
         }
 
+        let first = latest_start as u32;
+
         while i < time.len() {
             let t = time[i];
-            if bi.is_member(t, closed_window) {
-                group.push(i as u32);
-            } else if bi.is_future(t) {
+            if !bi.is_member(t, closed_window) {
                 break;
             }
             i += 1
         }
+        let len = (i as u32) - first;
 
-        if !group.is_empty() {
-            if include_boundaries {
-                lower_bound.push(bi.start);
-                upper_bound.push(bi.stop);
-            }
-            group_tuples.push((group[0], group))
+        if include_boundaries {
+            lower_bound.push(bi.start);
+            upper_bound.push(bi.stop);
         }
+        groups.push([first, len])
     }
-    (group_tuples, lower_bound, upper_bound)
+    (groups, lower_bound, upper_bound)
+}
+
+fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> Option<usize> {
+    time.iter()
+        .enumerate()
+        .find_map(|(i, t)| match b.is_member(*t, closed) {
+            true => None,
+            false => Some(i),
+        })
+}
+
+/// Different from `groupby_windows`, where define window buckets and search which values fit that
+/// pre-defined bucket, this function defines every window based on the:
+///     - timestamp (lower bound)
+///     - timestamp + period (upper bound)
+/// where timestamps are the individual values in the array `time`
+///
+pub fn groupby_values(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+) -> GroupsSlice {
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+
+    // the offset can be lagging if we have a negative offset duration
+    let mut trailing_offset = 0;
+    time.iter()
+        .enumerate()
+        .map(|(i, lower)| {
+            let lower = add(&offset, *lower);
+            let upper = add(&period, lower);
+            let b = Bounds::new(lower, upper);
+
+            for &t in time.iter() {
+                if b.is_member(t, closed_window) || trailing_offset == i {
+                    break;
+                }
+                trailing_offset += 1;
+            }
+
+            let slice = &time[trailing_offset..];
+            let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
+
+            [trailing_offset as u32, len as u32]
+        })
+        .collect_trusted()
 }

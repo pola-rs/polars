@@ -1,6 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ impl PhysicalExpr for NotExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.0.evaluate_on_groups(df, groups, state)?;

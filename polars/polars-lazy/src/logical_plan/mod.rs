@@ -20,7 +20,7 @@ pub(crate) mod optimizer;
 mod options;
 mod projection;
 
-use polars_core::frame::groupby::DynamicGroupOptions;
+use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 
 pub(crate) use apply::*;
 pub(crate) use builder::*;
@@ -36,6 +36,12 @@ pub enum Context {
     Aggregation,
     /// Any operation that is done while projection/ selection of data
     Default,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupbyOptions {
+    pub(crate) dynamic: Option<DynamicGroupOptions>,
+    pub(crate) rolling: Option<RollingGroupOptions>,
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -107,7 +113,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
-        dynamic_options: Option<DynamicGroupOptions>,
+        options: GroupbyOptions,
     },
     /// Join operation
     Join {

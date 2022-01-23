@@ -25,10 +25,17 @@ use std::iter::FromIterator;
 static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
 static GLOB_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
 static GLOB_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
+static FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+static FOODS_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.ipc";
+static FOODS_PARQUET: &str =
+    "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet";
 
 fn scan_foods_csv() -> LazyFrame {
-    let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    LazyCsvReader::new(path.to_string()).finish().unwrap()
+    LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
+}
+
+fn scan_foods_ipc() -> LazyFrame {
+    LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default()).unwrap()
 }
 
 fn init_files() {
@@ -61,8 +68,7 @@ fn init_files() {
 #[cfg(feature = "parquet")]
 fn scan_foods_parquet(parallel: bool) -> LazyFrame {
     init_files();
-    let out_path =
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet".into();
+    let out_path = FOODS_PARQUET.to_string();
 
     let args = ScanArgsParquet {
         n_rows: None,

@@ -261,7 +261,7 @@ impl Series {
                 let iter = keys
                     .into_iter()
                     .map(|opt_key| opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) }));
-                builder.from_iter(iter);
+                builder.drain_iter(iter);
                 Ok(builder.finish().into())
             }
             #[cfg(not(feature = "dtype-u8"))]

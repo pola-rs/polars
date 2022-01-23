@@ -140,7 +140,7 @@ pub(super) fn rewrite_projection_node(
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
-    expr: Vec<Node>,
+    projections: Vec<Node>,
     input: Node,
 ) -> (Vec<Node>, Vec<Node>)
 where
@@ -150,9 +150,9 @@ where
     // maybe update predicate name if a projection is an alias
     // aliases change the column names and because we push the predicates downwards
     // this may be problematic as the aliased column may not yet exist.
-    for node in &expr {
+    for projection_node in &projections {
         {
-            let e = expr_arena.get(*node);
+            let e = expr_arena.get(*projection_node);
             if let AExpr::Alias(e, name) = e {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
@@ -178,14 +178,14 @@ where
             }
         }
 
-        let e = expr_arena.get(*node);
+        let e = expr_arena.get(*projection_node);
         let input_schema = lp_arena.get(input).schema(lp_arena);
 
         // we check if predicates can be done on the input above
         // with the following conditions:
 
         // 1. predicate based on current column may only pushed down if simple projection, e.g. col() / col().alias()
-        let expr_depth = (&*expr_arena).iter(*node).count();
+        let expr_depth = (&*expr_arena).iter(*projection_node).count();
         let is_computation = if let AExpr::Alias(_, _) = e {
             expr_depth > 2
         } else {
@@ -216,14 +216,14 @@ where
 
         // remove predicates that are based on column modifications
         no_pushdown_preds(
-            *node,
+            *projection_node,
             expr_arena,
             |e| matches!(e, AExpr::Explode(_)) || matches!(e, AExpr::Ternary { .. }),
             &mut local_predicates,
             acc_predicates,
         );
     }
-    (local_predicates, expr)
+    (local_predicates, projections)
 }
 
 pub(super) fn no_pushdown_preds<F>(

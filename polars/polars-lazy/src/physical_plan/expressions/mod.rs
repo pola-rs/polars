@@ -22,7 +22,8 @@ pub(crate) mod window;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
@@ -42,6 +43,7 @@ pub(crate) enum AggState {
 }
 
 // lazy update strategy
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -59,13 +61,14 @@ impl Default for AggState {
     }
 }
 
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AggregationContext<'a> {
     /// Can be in one of two states
     /// 1. already aggregated as list
     /// 2. flat (still needs the grouptuples to aggregate)
     series: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupTuples>,
+    groups: Cow<'a, GroupsProxy>,
     /// if the group tuples are already used in a level above
     /// and the series is exploded, the group tuples are sorted
     /// e.g. the exploded Series is grouped per group.
@@ -74,7 +77,7 @@ pub struct AggregationContext<'a> {
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
     update_groups: UpdateGroups,
-    /// This is true when the Series and GroupTuples still have all
+    /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
     all_unit_len: bool,
@@ -89,7 +92,7 @@ impl<'a> AggregationContext<'a> {
         self.all_unit_len
     }
 
-    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
+    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
             UpdateGroups::No => {}
             UpdateGroups::WithGroupsLen => {
@@ -97,37 +100,74 @@ impl<'a> AggregationContext<'a> {
                 // and the series is aggregated with this groups
                 // so we need to recreate new grouptuples that
                 // match the exploded Series
-                let mut count = 0u32;
-                let groups: GroupTuples = self
-                    .groups
-                    .iter()
-                    .map(|g| {
-                        let add = g.1.len() as u32;
-                        let new_count = count + add;
-                        let out = (count, (count..new_count).collect::<Vec<_>>());
-                        count = new_count;
-                        out
-                    })
-                    .collect();
-                self.groups = Cow::Owned(groups);
+                let mut offset = 0u32;
+
+                match self.groups.as_ref() {
+                    GroupsProxy::Idx(groups) => {
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let len = g.1.len() as u32;
+                                let new_offset = offset + len;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            })
+                            .collect();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups))
+                    }
+                    // sliced groups are already in correct order
+                    GroupsProxy::Slice(_) => {}
+                }
                 self.update_groups = UpdateGroups::No;
             }
             UpdateGroups::WithSeriesLen => {
-                let mut count = 0u32;
-                let groups: GroupTuples = self
+                let mut offset = 0u32;
+                let list = self
                     .series()
                     .list()
-                    .expect("impl error, should be a list at this point")
-                    .into_no_null_iter()
-                    .map(|s| {
-                        let add = s.len() as u32;
-                        let new_count = count + add;
-                        let out = (count, (count..new_count).collect::<Vec<_>>());
-                        count = new_count;
-                        out
-                    })
-                    .collect();
-                self.groups = Cow::Owned(groups);
+                    .expect("impl error, should be a list at this point");
+
+                match list.chunks().len() {
+                    1 => {
+                        let arr = list.downcast_iter().next().unwrap();
+                        let offsets = arr.offsets().as_slice();
+
+                        let mut previous = 0i64;
+                        let groups = offsets[1..]
+                            .iter()
+                            .map(|&o| {
+                                let len = (o - previous) as u32;
+                                let new_offset = offset + len;
+                                previous = o;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            })
+                            .collect_trusted();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                    }
+                    _ => {
+                        let groups = self
+                            .series()
+                            .list()
+                            .expect("impl error, should be a list at this point")
+                            .amortized_iter()
+                            .map(|s| {
+                                if let Some(s) = s {
+                                    let len = s.as_ref().len() as u32;
+                                    let new_offset = offset + len;
+                                    let out = [offset, len];
+                                    offset = new_offset;
+                                    out
+                                } else {
+                                    [offset, 0]
+                                }
+                            })
+                            .collect_trusted();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                    }
+                }
                 self.update_groups = UpdateGroups::No;
             }
         }
@@ -190,7 +230,7 @@ impl<'a> AggregationContext<'a> {
     /// the columns dtype)
     pub(crate) fn new(
         series: Series,
-        groups: Cow<'a, GroupTuples>,
+        groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
         let series = match (aggregated, series.dtype()) {
@@ -253,7 +293,7 @@ impl<'a> AggregationContext<'a> {
     }
 
     /// Update the group tuples
-    pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
+    pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
         self.with_series(self.flat_naive().into_owned(), false);
         self.groups = Cow::Owned(groups);
@@ -279,12 +319,12 @@ impl<'a> AggregationContext<'a> {
                 if s.len() == 1
                     // or more then one group
                     && (self.groups.len() > 1
-                    // or single groups with more than on index
+                    // or single groups with more than one index
                     || !self.groups.as_ref().is_empty()
-                    && self.groups[0].1.len() > 1)
+                    && self.groups.get(0).len() > 1)
                 {
                     // todo! optimize this, we don't have to call agg_list, create the list directly.
-                    s = s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum())
+                    s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum())
                 };
 
                 let out = Cow::Owned(
@@ -361,7 +401,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>>;
 
@@ -414,7 +454,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>>;
 
@@ -429,7 +469,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
@@ -442,7 +482,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         self.aggregate(final_df, groups, state)

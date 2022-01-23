@@ -209,6 +209,13 @@ impl ListUtf8ChunkedBuilder {
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
     }
+
+    #[inline]
+    pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
+        let value_builder = self.builder.mut_values();
+        value_builder.try_extend(ca).unwrap();
+        self.builder.try_push_valid().unwrap();
+    }
 }
 
 impl ListBuilderTrait for ListUtf8ChunkedBuilder {
@@ -233,9 +240,7 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
             self.fast_explode = false;
         }
         let ca = s.utf8().unwrap();
-        let value_builder = self.builder.mut_values();
-        value_builder.try_extend(ca).unwrap();
-        self.builder.try_push_valid().unwrap();
+        self.append(ca)
     }
 
     fn finish(&mut self) -> ListChunked {
@@ -274,6 +279,16 @@ impl ListBooleanChunkedBuilder {
         unsafe { values.extend_trusted_len_unchecked(iter) };
         self.builder.try_push_valid().unwrap();
     }
+
+    #[inline]
+    pub(crate) fn append(&mut self, ca: &BooleanChunked) {
+        if ca.is_empty() {
+            self.fast_explode = false;
+        }
+        let value_builder = self.builder.mut_values();
+        value_builder.extend(ca);
+        self.builder.try_push_valid().unwrap();
+    }
 }
 
 impl ListBuilderTrait for ListBooleanChunkedBuilder {
@@ -295,12 +310,7 @@ impl ListBuilderTrait for ListBooleanChunkedBuilder {
     #[inline]
     fn append_series(&mut self, s: &Series) {
         let ca = s.bool().unwrap();
-        if ca.is_empty() {
-            self.fast_explode = false;
-        }
-        let value_builder = self.builder.mut_values();
-        value_builder.extend(ca);
-        self.builder.try_push_valid().unwrap();
+        self.append(ca)
     }
 
     fn finish(&mut self) -> ListChunked {

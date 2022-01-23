@@ -1,5 +1,5 @@
 import {Expr, exprToLitOrExpr} from "./expr";
-import {Series} from "../series";
+import {Series} from "../series/series";
 import { DataFrame } from "../dataframe";
 import { ExprOrString, range, selectionToExprList} from "../utils";
 import pli from "../internals/polars_internal";

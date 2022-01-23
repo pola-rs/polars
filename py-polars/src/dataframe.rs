@@ -1,3 +1,4 @@
+use numpy::IntoPyArray;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
@@ -22,6 +23,7 @@ use crate::{
 use polars::frame::row::{rows_to_schema, Row};
 use polars_core::frame::groupby::PivotAgg;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::utils::get_supertype;
 
 #[pyclass]
 #[repr(transparent)]
@@ -352,6 +354,48 @@ impl PyDataFrame {
         .into_py(py)
     }
 
+    pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
+        let mut st = DataType::Int8;
+        for s in self.df.iter() {
+            let dt_i = s.dtype();
+            st = get_supertype(&st, dt_i).ok()?;
+        }
+
+        match st {
+            DataType::UInt32 => self
+                .df
+                .to_ndarray::<UInt32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::UInt64 => self
+                .df
+                .to_ndarray::<UInt64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int32 => self
+                .df
+                .to_ndarray::<Int32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int64 => self
+                .df
+                .to_ndarray::<Int64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float32 => self
+                .df
+                .to_ndarray::<Float32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float64 => self
+                .df
+                .to_ndarray::<Float64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            _ => None,
+        }
+    }
+
     #[cfg(feature = "parquet")]
     pub fn to_parquet(&self, py_f: PyObject, compression: &str, statistics: bool) -> PyResult<()> {
         let compression = match compression {
@@ -636,7 +680,10 @@ impl PyDataFrame {
     }
 
     pub fn sort(&self, by_column: &str, reverse: bool) -> PyResult<Self> {
-        let df = self.df.sort(by_column, reverse).map_err(PyPolarsEr::from)?;
+        let df = self
+            .df
+            .sort([by_column], reverse)
+            .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -793,8 +840,8 @@ impl PyDataFrame {
     pub fn pivot(
         &self,
         by: Vec<String>,
-        pivot_column: &str,
-        values_column: &str,
+        pivot_column: Vec<String>,
+        values_column: Vec<String>,
         agg: &str,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
@@ -807,6 +854,7 @@ impl PyDataFrame {
             "median" => pivot.median(),
             "sum" => pivot.sum(),
             "count" => pivot.count(),
+            "last" => pivot.last(),
             a => Err(PolarsError::ComputeError(
                 format!("agg fn {} does not exists", a).into(),
             )),

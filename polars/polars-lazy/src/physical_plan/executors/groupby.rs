@@ -44,7 +44,7 @@ fn groupby_helper(
     let mut gb = df.groupby_with_series(keys, true)?;
 
     if maintain_order {
-        gb.get_groups_mut().sort_unstable_by_key(|t| t.0)
+        gb.get_groups_mut().idx_mut().sort_unstable_by_key(|t| t.0)
     }
 
     if let Some(f) = apply {

@@ -77,7 +77,6 @@
         "@typescript-eslint/func-call-spacing": "error",
         "@typescript-eslint/no-duplicate-imports": "error",
         "@typescript-eslint/comma-spacing": "error",
-        "@typescript-eslint/member-ordering": "error",
         "@typescript-eslint/type-annotation-spacing": "error"
     }
 }

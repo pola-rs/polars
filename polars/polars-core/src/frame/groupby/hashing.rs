@@ -1,4 +1,4 @@
-use super::GroupTuples;
+use super::GroupsProxy;
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
@@ -16,7 +16,7 @@ use std::hash::{BuildHasher, Hash};
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
 pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
 
-pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupTuples
+pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupsProxy
 where
     T: Hash + Eq,
 {
@@ -38,7 +38,7 @@ where
         }
     });
 
-    hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect_trusted()
+    GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect_trusted())
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
@@ -50,7 +50,7 @@ pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     keys: Vec<IntoSlice>,
     group_size_hint: usize,
     n_partitions: u64,
-) -> GroupTuples
+) -> GroupsProxy
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64 + CallHasher,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -60,53 +60,55 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|thread_no| {
-            let thread_no = thread_no as u64;
+    let out = POOL
+        .install(|| {
+            (0..n_partitions).into_par_iter().map(|thread_no| {
+                let thread_no = thread_no as u64;
 
-            let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> =
-                PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+                let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> =
+                    PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
-            let mut offset = 0;
-            for keys in &keys {
-                let keys = keys.as_ref();
-                let len = keys.len() as u32;
-                let hasher = hash_tbl.hasher().clone();
+                let mut offset = 0;
+                for keys in &keys {
+                    let keys = keys.as_ref();
+                    let len = keys.len() as u32;
+                    let hasher = hash_tbl.hasher().clone();
 
-                let mut cnt = 0;
-                keys.iter().for_each(|k| {
-                    let idx = cnt + offset;
-                    cnt += 1;
+                    let mut cnt = 0;
+                    keys.iter().for_each(|k| {
+                        let idx = cnt + offset;
+                        cnt += 1;
 
-                    if this_partition(k.as_u64(), thread_no, n_partitions) {
-                        let hash = T::get_hash(k, &hasher);
-                        let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
+                        if this_partition(k.as_u64(), thread_no, n_partitions) {
+                            let hash = T::get_hash(k, &hasher);
+                            let entry = hash_tbl.raw_entry_mut().from_key_hashed_nocheck(hash, k);
 
-                        match entry {
-                            RawEntryMut::Vacant(entry) => {
-                                let mut tuples = Vec::with_capacity(group_size_hint);
-                                tuples.push(idx);
-                                entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
-                                    T::get_hash(k, &hasher)
-                                });
-                            }
-                            RawEntryMut::Occupied(mut entry) => {
-                                let v = entry.get_mut();
-                                v.1.push(idx);
+                            match entry {
+                                RawEntryMut::Vacant(entry) => {
+                                    let mut tuples = Vec::with_capacity(group_size_hint);
+                                    tuples.push(idx);
+                                    entry.insert_with_hasher(hash, *k, (idx, tuples), |k| {
+                                        T::get_hash(k, &hasher)
+                                    });
+                                }
+                                RawEntryMut::Occupied(mut entry) => {
+                                    let v = entry.get_mut();
+                                    v.1.push(idx);
+                                }
                             }
                         }
-                    }
-                });
-                offset += len;
-            }
-            hash_tbl
-                .into_iter()
-                .map(|(_k, v)| v)
-                .collect_trusted::<Vec<_>>()
+                    });
+                    offset += len;
+                }
+                hash_tbl
+                    .into_iter()
+                    .map(|(_k, v)| v)
+                    .collect_trusted::<Vec<_>>()
+            })
         })
-    })
-    .flatten()
-    .collect()
+        .flatten()
+        .collect();
+    GroupsProxy::Idx(out)
 }
 
 /// Utility function used as comparison function in the hashmap.
@@ -235,7 +237,7 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
 pub(crate) fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
     n_partitions: usize,
-) -> GroupTuples {
+) -> GroupsProxy {
     let dfs = split_df(&keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
     let n_partitions = n_partitions as u64;
@@ -249,43 +251,45 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|thread_no| {
-            let hashes = &hashes;
-            let thread_no = thread_no as u64;
+    let groups = POOL
+        .install(|| {
+            (0..n_partitions).into_par_iter().map(|thread_no| {
+                let hashes = &hashes;
+                let thread_no = thread_no as u64;
 
-            let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
-                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+                let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
+                    HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
-            let mut offset = 0;
-            for hashes in hashes {
-                let len = hashes.len() as u32;
+                let mut offset = 0;
+                for hashes in hashes {
+                    let len = hashes.len() as u32;
 
-                let mut idx = 0;
-                for hashes_chunk in hashes.data_views() {
-                    for &h in hashes_chunk {
-                        // partition hashes by thread no.
-                        // So only a part of the hashes go to this hashmap
-                        if this_partition(h, thread_no, n_partitions) {
-                            let idx = idx + offset;
-                            populate_multiple_key_hashmap2(
-                                &mut hash_tbl,
-                                idx,
-                                h,
-                                &keys_cmp,
-                                || (idx, vec![idx]),
-                                |v| v.1.push(idx),
-                            );
+                    let mut idx = 0;
+                    for hashes_chunk in hashes.data_views() {
+                        for &h in hashes_chunk {
+                            // partition hashes by thread no.
+                            // So only a part of the hashes go to this hashmap
+                            if this_partition(h, thread_no, n_partitions) {
+                                let idx = idx + offset;
+                                populate_multiple_key_hashmap2(
+                                    &mut hash_tbl,
+                                    idx,
+                                    h,
+                                    &keys_cmp,
+                                    || (idx, vec![idx]),
+                                    |v| v.1.push(idx),
+                                );
+                            }
+                            idx += 1;
                         }
-                        idx += 1;
                     }
-                }
 
-                offset += len;
-            }
-            hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+                    offset += len;
+                }
+                hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
+            })
         })
-    })
-    .flatten()
-    .collect()
+        .flatten()
+        .collect();
+    GroupsProxy::Idx(groups)
 }

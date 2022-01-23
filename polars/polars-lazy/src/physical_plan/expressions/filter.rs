@@ -1,6 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_arrow::is_valid::IsValid;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::{prelude::*, POOL};
 use rayon::prelude::*;
 use std::sync::Arc;
@@ -35,7 +36,7 @@ impl PhysicalExpr for FilterExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
@@ -46,23 +47,54 @@ impl PhysicalExpr for FilterExpr {
 
         let groups = ac_s.groups();
         let predicate_s = ac_predicate.flat_naive();
-        let predicate = predicate_s.bool()?;
+        let predicate = predicate_s.bool()?.rechunk();
+        let predicate = predicate.downcast_iter().next().unwrap();
 
         let groups = POOL.install(|| {
-            groups
-                .par_iter()
-                .map(|(first, idx)| {
-                    let idx: Vec<u32> = idx
-                        .iter()
-                        .filter_map(|i| match predicate.get(*i as usize) {
-                            Some(true) => Some(*i),
-                            _ => None,
+            match groups.as_ref() {
+                GroupsProxy::Idx(groups) => {
+                    let groups = groups
+                        .par_iter()
+                        .map(|(first, idx)| unsafe {
+                            let idx: Vec<u32> = idx
+                                .iter()
+                                // Safety:
+                                // just checked bounds in short circuited lhs
+                                .filter_map(|i| {
+                                    match predicate.value(*i as usize)
+                                        && predicate.is_valid_unchecked(*i as usize)
+                                    {
+                                        true => Some(*i),
+                                        _ => None,
+                                    }
+                                })
+                                .collect();
+
+                            (*idx.get(0).unwrap_or(first), idx)
                         })
                         .collect();
 
-                    (*idx.get(0).unwrap_or(first), idx)
-                })
-                .collect()
+                    GroupsProxy::Idx(groups)
+                }
+                GroupsProxy::Slice(groups) => {
+                    let groups = groups
+                        .par_iter()
+                        .map(|&[first, len]| unsafe {
+                            let idx: Vec<u32> = (first..first + len)
+                                // Safety:
+                                // just checked bounds in short circuited lhs
+                                .filter(|&i| {
+                                    predicate.value(i as usize)
+                                        && predicate.is_valid_unchecked(i as usize)
+                                })
+                                .collect();
+
+                            (*idx.get(0).unwrap_or(&first), idx)
+                        })
+                        .collect();
+                    GroupsProxy::Idx(groups)
+                }
+            }
         });
 
         ac_s.with_groups(groups).set_original_len(false);

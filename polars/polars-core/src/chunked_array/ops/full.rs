@@ -82,7 +82,7 @@ impl ChunkFullNull for CategoricalChunked {
         use crate::chunked_array::categorical::CategoricalChunkedBuilder;
         let mut builder = CategoricalChunkedBuilder::new(name, length);
         let iter = (0..length).map(|_| None);
-        builder.from_iter(iter);
+        builder.drain_iter(iter);
         builder.finish()
     }
 }

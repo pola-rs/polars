@@ -7,7 +7,7 @@ use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, DataFrame, Field, JoinType, Schema};
-use polars_core::frame::groupby::DynamicGroupOptions;
+use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 use polars_core::prelude::{Duration, QuantileInterpolOptions};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -290,6 +290,25 @@ impl PyLazyFrame {
         } else {
             ldf.groupby(by)
         };
+
+        PyLazyGroupBy { lgb: Some(lazy_gb) }
+    }
+
+    pub fn groupby_rolling(
+        &mut self,
+        index_column: String,
+        period: &str,
+        offset: &str,
+        closed: Wrap<ClosedWindow>,
+    ) -> PyLazyGroupBy {
+        let closed_window = closed.0;
+        let ldf = self.ldf.clone();
+        let lazy_gb = ldf.groupby_rolling(RollingGroupOptions {
+            index_column,
+            period: Duration::parse(period),
+            offset: Duration::parse(offset),
+            closed_window,
+        });
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }

@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use std::borrow::Cow;
@@ -113,7 +113,7 @@ impl PhysicalExpr for LiteralExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
@@ -160,7 +160,7 @@ impl PhysicalAggregation for LiteralExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        _groups: &GroupTuples,
+        _groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         PhysicalExpr::evaluate(self, df, state).map(Some)

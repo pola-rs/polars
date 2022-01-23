@@ -1,3 +1,4 @@
+use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
@@ -213,6 +214,7 @@ impl<'a> From<&AnyValue<'a>> for Field {
             Datetime(_, tu, tz) => Field::new("", DataType::Datetime(*tu, (*tz).clone())),
             #[cfg(feature = "dtype-time")]
             Time(_) => Field::new("", DataType::Time),
+            List(s) => Field::new("", DataType::List(Box::new(s.dtype().clone()))),
             _ => unimplemented!(),
         }
     }
@@ -253,6 +255,7 @@ pub(crate) enum Buffer {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
+    List(Box<dyn ListBuilderTrait>),
 }
 
 impl Debug for Buffer {
@@ -273,6 +276,7 @@ impl Debug for Buffer {
             Float32(_) => f.write_str("f32"),
             Float64(_) => f.write_str("f64"),
             Utf8(_) => f.write_str("utf8"),
+            List(_) => f.write_str("list"),
         }
     }
 }
@@ -303,6 +307,8 @@ impl Buffer {
             (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
+            (List(builder), AnyValue::List(v)) => builder.append_series(&v),
+            (List(builder), AnyValue::Null) => builder.append_null(),
             (buf, val) => return Err(PolarsError::ValueError(format!("Could not append {:?} to builder {:?}; make sure that all rows have the same schema.", val, std::mem::discriminant(buf)).into()))
         };
 
@@ -326,6 +332,7 @@ impl Buffer {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
+            List(mut b) => b.finish().into_series(),
         }
     }
 }
@@ -352,6 +359,7 @@ impl From<(&DataType, usize)> for Buffer {
             Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => Buffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            List(inner) => Buffer::List(get_list_builder(inner, len * 10, len, "")),
             _ => unimplemented!(),
         }
     }

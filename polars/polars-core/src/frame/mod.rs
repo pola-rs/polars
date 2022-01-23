@@ -10,7 +10,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{accumulate_dataframes_horizontal, split_ca, split_df, NoNull};
 
@@ -26,7 +25,6 @@ pub mod groupby;
 pub mod hash_join;
 #[cfg(feature = "rows")]
 pub mod row;
-pub mod select;
 mod upstream_traits;
 
 #[cfg(feature = "sort_multiple")]
@@ -426,6 +424,11 @@ impl DataFrame {
     #[inline]
     pub fn get_columns(&self) -> &Vec<Series> {
         &self.columns
+    }
+
+    #[cfg(feature = "private")]
+    pub fn get_columns_mut(&mut self) -> &mut Vec<Series> {
+        &mut self.columns
     }
 
     /// Iterator over the columns as `Series`.
@@ -876,8 +879,8 @@ impl DataFrame {
     ///
     /// ```no_run
     /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("Country" => &["Malta", "Liechtenstein", "North Korea"],
-    ///                         "Tax revenue (% GDP)" => &[Some(32.7), None, None])?;
+    /// let df1: DataFrame = df!("Country" => ["Malta", "Liechtenstein", "North Korea"],
+    ///                         "Tax revenue (% GDP)" => [Some(32.7), None, None])?;
     /// assert_eq!(df1.shape(), (3, 2));
     ///
     /// let df2: DataFrame = df1.drop_nulls(None)?;
@@ -903,7 +906,7 @@ impl DataFrame {
 
         let mut iter = match subset {
             Some(cols) => {
-                selected_series = self.select_series(&cols)?;
+                selected_series = self.select_series(cols)?;
                 selected_series.iter()
             }
             None => self.columns.iter(),
@@ -1111,10 +1114,10 @@ impl DataFrame {
             ops::Range { start, end }
         }
 
-        let colnames = &self.get_column_names();
+        let colnames = self.get_column_names_owned();
         let range = get_range(range, ..colnames.len());
 
-        self.select(&&colnames[range])
+        self.select_impl(&colnames[range])
     }
 
     /// Get column index of a `Series` by name.
@@ -1189,29 +1192,32 @@ impl DataFrame {
     ///
     /// ```
     /// # use polars_core::prelude::*;
-    /// fn example(df: &DataFrame, possible: &str) -> Result<DataFrame> {
-    ///     match possible {
-    ///         "by_str" => df.select("my-column"),
-    ///         "by_tuple" => df.select(("col_1", "col_2")),
-    ///         "by_vec" => df.select(vec!["col_a", "col_b"]),
-    ///          _ => unimplemented!()
-    ///     }
+    /// fn example(df: &DataFrame) -> Result<DataFrame> {
+    ///     df.select(["foo", "bar"])
     /// }
     /// ```
-    pub fn select<'a, S, J>(&self, selection: S) -> Result<Self>
+    pub fn select<I, S>(&self, selection: I) -> Result<Self>
     where
-        S: Selection<'a, J>,
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
     {
-        let cols = selection.to_selection_vec();
+        let cols = selection
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        self.select_impl(&cols)
+    }
+
+    fn select_impl(&self, cols: &[String]) -> Result<Self> {
         {
             let mut names = PlHashSet::with_capacity(cols.len());
-            for name in &cols {
-                if !names.insert(name) {
+            for name in cols {
+                if !names.insert(name.as_str()) {
                     duplicate_err(name)?
                 }
             }
         }
-        let selected = self.select_series_impl(&cols)?;
+        let selected = self.select_series_impl(cols)?;
         Ok(DataFrame::new_no_checks(selected))
     }
 
@@ -1230,16 +1236,13 @@ impl DataFrame {
     /// assert_eq!(df["Hydrogen"], sv[1]);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn select_series<'a, S, J>(&self, selection: S) -> Result<Vec<Series>>
-    where
-        S: Selection<'a, J>,
-    {
-        let cols = selection.to_selection_vec();
+    pub fn select_series(&self, selection: impl IntoVec<String>) -> Result<Vec<Series>> {
+        let cols = selection.into_vec();
         self.select_series_impl(&cols)
     }
 
     /// A non generic implementation to reduce compiler bloat.
-    fn select_series_impl(&self, cols: &[&str]) -> Result<Vec<Series>> {
+    fn select_series_impl(&self, cols: &[String]) -> Result<Vec<Series>> {
         let selected = if cols.len() > 1 && self.columns.len() > 300 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
@@ -1250,9 +1253,9 @@ impl DataFrame {
                 .map(|(i, s)| (s.name(), i))
                 .collect();
             cols.iter()
-                .map(|&name| {
+                .map(|name| {
                     let idx = *name_to_idx
-                        .get(name)
+                        .get(name.as_str())
                         .ok_or_else(|| PolarsError::NotFound(name.into()))?;
                     Ok(self.select_at_idx(idx).unwrap().clone())
                 })
@@ -1565,26 +1568,30 @@ impl DataFrame {
 
     /// Sort `DataFrame` in place by a column.
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
-        self.columns = self.sort(by_column, reverse)?.columns;
+        self.columns = self.sort(&[by_column], reverse)?.columns;
         Ok(self)
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
-    fn sort_impl(&self, by_column: Vec<&str>, reverse: Vec<bool>) -> Result<Self> {
+    #[cfg(feature = "private")]
+    pub fn sort_impl(&self, by_column: Vec<Series>, reverse: Vec<bool>) -> Result<Self> {
+        // note that the by_column argument also contains evaluated expression from polars-lazy
+        // that may not even be present in this dataframe.
+
+        // therefore when we try to set the first columns as sorted, we ignore the error
+        // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_reverse = reverse[0];
-        let first_by_column = by_column[0];
+        let first_by_column = by_column[0].name().to_string();
         let take = match by_column.len() {
             1 => {
-                let s = self.column(by_column[0])?;
+                let s = &by_column[0];
                 s.argsort(reverse[0])
             }
             _ => {
                 #[cfg(feature = "sort_multiple")]
                 {
-                    let columns = self.select_series(by_column)?;
-
-                    let (first, columns, reverse) = prepare_argsort(columns, reverse)?;
-                    first.argsort_multiple(&columns, &reverse)?
+                    let (first, by_column, reverse) = prepare_argsort(by_column, reverse)?;
+                    first.argsort_multiple(&by_column, &reverse)?
                 }
                 #[cfg(not(feature = "sort_multiple"))]
                 {
@@ -1600,13 +1607,14 @@ impl DataFrame {
             unsafe { self.take_unchecked(&take) }
         };
         // Mark the first sort column as sorted
-        df.apply(first_by_column, |s| {
+        // if the column did not exists it is ok, because we sorted by an expression
+        // not present in the dataframe
+        let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
             let inner = s.get_inner_mut();
             inner.set_sorted(first_reverse);
             s
-        })
-        .expect("column is present");
+        });
         Ok(df)
     }
 
@@ -1617,19 +1625,20 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn sort_example(df: &DataFrame, reverse: bool) -> Result<DataFrame> {
-    ///     df.sort("a", reverse)
+    ///     df.sort(["a"], reverse)
     /// }
     ///
     /// fn sort_by_multiple_columns_example(df: &DataFrame) -> Result<DataFrame> {
     ///     df.sort(&["a", "b"], vec![false, true])
     /// }
     /// ```
-    pub fn sort<'a, S, J>(&self, by_column: S, reverse: impl IntoVec<bool>) -> Result<Self>
-    where
-        S: Selection<'a, J>,
-    {
+    pub fn sort(
+        &self,
+        by_column: impl IntoVec<String>,
+        reverse: impl IntoVec<bool>,
+    ) -> Result<Self> {
         // we do this heap allocation and dispatch to reduce monomorphization bloat
-        let by_column = by_column.to_selection_vec();
+        let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.sort_impl(by_column, reverse)
     }
@@ -2593,7 +2602,7 @@ impl DataFrame {
             None => self.get_column_names(),
         };
         let gb = self.groupby(names)?;
-        let groups = gb.get_groups().iter().map(|v| v.0);
+        let groups = gb.get_groups().idx_ref().iter().map(|v| v.0);
 
         let df = if maintain_order {
             let mut groups = groups.collect::<Vec<_>>();
@@ -2840,7 +2849,7 @@ mod test {
         let df = df
             .drop_duplicates(true, None)
             .unwrap()
-            .sort("flt", false)
+            .sort(["flt"], false)
             .unwrap();
         let valid = df! {
             "flt" => [1., 2., 3.],

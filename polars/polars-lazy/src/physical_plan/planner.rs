@@ -1,6 +1,7 @@
 use super::expressions as phys_expr;
 use crate::logical_plan::Context;
 use crate::physical_plan::executors::groupby_dynamic::GroupByDynamicExec;
+use crate::physical_plan::executors::groupby_rolling::GroupByRollingExec;
 #[cfg(feature = "ipc")]
 use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
@@ -307,7 +308,7 @@ impl DefaultPlanner {
                 apply,
                 schema: _,
                 maintain_order,
-                dynamic_options,
+                options,
             } => {
                 #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
@@ -319,10 +320,18 @@ impl DefaultPlanner {
                 let phys_aggs =
                     self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
-                if let Some(options) = dynamic_options {
+                if let Some(options) = options.dynamic {
                     return Ok(Box::new(GroupByDynamicExec {
                         input,
                         keys: phys_keys,
+                        aggs: phys_aggs,
+                        options,
+                    }));
+                }
+
+                if let Some(options) = options.rolling {
+                    return Ok(Box::new(GroupByRollingExec {
+                        input,
                         aggs: phys_aggs,
                         options,
                     }));

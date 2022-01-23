@@ -1,7 +1,6 @@
 import {DataFrame, dfWrapper} from "./dataframe";
 import * as utils from "./utils";
 import util from "util";
-import {InvalidOperationError} from "./error";
 import {Expr} from "./lazy/expr";
 import {col, exclude} from "./lazy/functions";
 import pli from "./internals/polars_internal";

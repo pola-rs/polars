@@ -109,6 +109,7 @@ Manipulation/ selection
     DataFrame.vstack
     DataFrame.groupby
     DataFrame.groupby_dynamic
+    DataFrame.groupby_rolling
     DataFrame.select
     DataFrame.with_columns
     DataFrame.with_column_renamed
@@ -178,6 +179,7 @@ This namespace comes available by calling `DataFrame.groupby(..).pivot`
    :toctree: api/
 
     PivotOps.first
+    PivotOps.last
     PivotOps.sum
     PivotOps.min
     PivotOps.max

@@ -16,6 +16,8 @@ pub struct Duration {
     nsecs: i64,
     // indicates if the duration is negative
     negative: bool,
+    // indicates if an integer string was passed. e.g. "2i"
+    pub parsed_int: bool,
 }
 
 impl Duration {
@@ -45,6 +47,7 @@ impl Duration {
         }
 
         let mut start = 0;
+        let mut parsed_int = false;
 
         let mut unit = String::with_capacity(2);
         while let Some((i, mut ch)) = iter.next() {
@@ -83,7 +86,10 @@ impl Duration {
                     "mo" => months += n,
                     "y" => months += n * 12,
                     // we will read indexes as nanoseconds
-                    "i" => nsecs += n,
+                    "i" => {
+                        nsecs += n;
+                        parsed_int = true;
+                    }
                     unit => panic!("unit: '{}' not supported", unit),
                 }
                 unit.clear();
@@ -93,6 +99,7 @@ impl Duration {
             nsecs: nsecs.abs(),
             months: months.abs(),
             negative,
+            parsed_int,
         }
     }
 
@@ -140,6 +147,7 @@ impl Duration {
             months: 0,
             nsecs,
             negative,
+            parsed_int: false,
         }
     }
 
@@ -150,6 +158,7 @@ impl Duration {
             months,
             nsecs: 0,
             negative,
+            parsed_int: false,
         }
     }
 

@@ -1,4 +1,4 @@
-import {JsSeries, Series, seriesWrapper} from "../series";
+import {JsSeries, Series, seriesWrapper} from "./series";
 import {col} from "../lazy/functions";
 
 export interface ListFunctions<T> {

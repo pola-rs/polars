@@ -8,7 +8,6 @@ describe("expr", () => {
       .as("abs")).getColumn("abs");
     expect(actual).toSeriesEqual(expected);
   });
-  test.todo("aggGroups");
   test("alias", () => {
     const name = "alias";
     const actual = pl.select(lit("a").alias(name));
@@ -550,7 +549,6 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("int16", [1, 2, 3], pl.Int16),
       pl.Series("int32", [1, 2, 3], pl.Int32),
-      pl.Series("int64", [1n, 2n, 3n], pl.Int64),
       pl.Series("uint16", [1, 2, 3], pl.UInt16),
       pl.Series("uint32", [1, 2, 3], pl.UInt32),
       pl.Series("uint64", [1n, 2n, 3n], pl.UInt64),
@@ -559,7 +557,6 @@ describe("expr", () => {
     const expected = pl.DataFrame([
       pl.Series("int16", [-32768], pl.Int16),
       pl.Series("int32", [-2147483648], pl.Int32),
-      pl.Series("int64", [-9223372036854775808n], pl.Int64),
       pl.Series("uint16", [0], pl.UInt16),
       pl.Series("uint32", [0], pl.UInt32),
       pl.Series("uint64", [0n], pl.UInt64),
@@ -772,7 +769,7 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("a", [1n, 2n, 3n], pl.UInt64)
     ]);
-    const expected = pl.Series("a", [1n, 2n, 3n], pl.Int64);
+    const expected = pl.Series("a", [1, 2, 3], pl.Int64);
     const actual = df.select(col("a").reinterpret()).getColumn("a");
     expect(actual).toSeriesStrictEqual(expected);
   });
@@ -1015,7 +1012,6 @@ describe("expr", () => {
     const df = pl.DataFrame([
       pl.Series("int16", [1, 2, 3], pl.Int16),
       pl.Series("int32", [1, 2, 3], pl.Int32),
-      pl.Series("int64", [1n, 2n, 3n], pl.Int64),
       pl.Series("uint16", [1, 2, 3], pl.UInt16),
       pl.Series("uint32", [1, 2, 3], pl.UInt32),
       pl.Series("uint64", [1n, 2n, 3n], pl.UInt64),
@@ -1023,7 +1019,6 @@ describe("expr", () => {
     const expected = pl.DataFrame([
       pl.Series("int16", [32767],  pl.Int16),
       pl.Series("int32", [2147483647],  pl.Int32),
-      pl.Series("int64", [9223372036854775807n],  pl.Int64),
       pl.Series("uint16", [65535],  pl.UInt16),
       pl.Series("uint32", [4294967295],  pl.UInt32),
       pl.Series("uint64", [18446744073709551615n], pl.UInt64),
@@ -1994,5 +1989,88 @@ describe("arithmetic", () => {
     expect(actual).toEqual(expected);
     const actual1 = df.select(col("a").modulo(2));
     expect(actual1).toEqual(expected);
+  });
+});
+
+describe("Round<T>", () => {
+
+  test("ceil", () => {
+    const df = pl.Series
+      .from([1.1, 2.2])
+      .as("ceil")
+      .toFrame();
+
+    const expected = pl.DataFrame({
+      "ceil": [2, 3]
+    });
+
+    const seriesActual = df
+      .getColumn("ceil")
+      .ceil()
+      .toFrame();
+
+    const actual = df.select(
+      col("ceil")
+        .ceil()
+        .as("ceil")
+    );
+
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+
+  test("clip", () => {
+    const df = pl.DataFrame({"a": [1, 2, 3, 4, 5]});
+    const expected = [2, 2, 3, 4, 4];
+    const exprActual = df
+      .select(pl.col("a").clip(2, 4))
+      .getColumn("a")
+      .toArray();
+
+    const seriesActual = pl.Series([1, 2, 3, 4, 5])
+      .clip(2, 4)
+      .toArray();
+
+    expect(exprActual).toEqual(expected);
+    expect(seriesActual).toEqual(expected);
+  });
+  test("floor", () => {
+    const df = pl.Series
+      .from([1.1, 2.2])
+      .as("floor")
+      .toFrame();
+
+    const expected = pl.DataFrame({
+      "floor": [1, 2]
+    });
+
+    const seriesActual = df
+      .getColumn("floor")
+      .floor()
+      .toFrame();
+
+    const actual = df.select(
+      col("floor")
+        .floor()
+        .as("floor")
+    );
+
+    expect(actual).toFrameEqual(expected);
+    expect(seriesActual).toFrameEqual(expected);
+  });
+  test("round", () => {});
+  test("round invalid dtype", () => {
+    const df = pl.DataFrame({a: ["1", "2"]});
+    const seriesFn = ()  => df["a"].round({decimals: 1});
+    const exprFn = () => df.select(col("a").round({decimals: 1}));
+    expect(seriesFn).toThrow();
+    expect(exprFn).toThrow();
+  });
+  test("clip invalid dtype", () => {
+    const df = pl.DataFrame({a: ["1", "2"]});
+    const seriesFn = ()  => df["a"].clip({min:1, max:2});
+    const exprFn = () => df.select(col("a").clip(1, 2));
+    expect(seriesFn).toThrow();
+    expect(exprFn).toThrow();
   });
 });
