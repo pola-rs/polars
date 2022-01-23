@@ -3,6 +3,7 @@ pub(crate) use polars_utils::arena::{Arena, Node};
 pub use crate::{
     dsl::*,
     frame::*,
+    functions::*,
     logical_plan::{
         optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
         *,

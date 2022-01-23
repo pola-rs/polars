@@ -34,6 +34,7 @@ use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
+use dsl::ToExprs;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars_core::datatypes::TimeUnit;
@@ -323,6 +324,18 @@ fn py_date_range(
         .into()
 }
 
+#[pyfunction]
+fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::functions::min_exprs(exprs).into()
+}
+
+#[pyfunction]
+fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::functions::max_exprs(exprs).into()
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -358,5 +371,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     Ok(())
 }

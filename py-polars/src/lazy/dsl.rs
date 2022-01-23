@@ -21,6 +21,19 @@ pub struct PyExpr {
     pub inner: dsl::Expr,
 }
 
+pub(crate) trait ToExprs {
+    fn to_exprs(self) -> Vec<Expr>;
+}
+
+impl ToExprs for Vec<PyExpr> {
+    fn to_exprs(self) -> Vec<Expr> {
+        // Safety
+        // repr is transparent
+        // and has only got one inner field`
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 #[pyproto]
 impl PyNumberProtocol for PyExpr {
     fn __add__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {

@@ -56,3 +56,14 @@ def test_flatten_explode() -> None:
 
     result: pl.Series = df.to_frame().select(pl.col("a").explode())[:, 0]  # type: ignore
     testing.assert_series_equal(result, expected)
+
+
+def test_min_nulls_consistency() -> None:
+    df = pl.DataFrame({"a": [None, 2, 3], "b": [4, None, 6], "c": [7, 5, 0]})
+    out = df.select([pl.min(["a", "b", "c"])]).to_series()
+    expected = pl.Series("min", [4, 2, 0])
+    testing.assert_series_equal(out, expected)
+
+    out = df.select([pl.max(["a", "b", "c"])]).to_series()
+    expected = pl.Series("max", [7, 5, 6])
+    testing.assert_series_equal(out, expected)
