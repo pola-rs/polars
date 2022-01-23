@@ -546,7 +546,7 @@ class LazyFrame:
 
         .. seealso::
 
-            groupby_rolling
+            groupby_dynamic
 
 
         The `period` and `offset` arguments are created with
@@ -570,7 +570,7 @@ class LazyFrame:
         In case of a groupby_rolling on an integer column, the windows are defined by:
 
         - "1i"      # length 1
-        - "10i"     # length 2
+        - "10i"     # length 10
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
@@ -697,7 +697,7 @@ class LazyFrame:
         In case of a groupby_dynamic on an integer column, the windows are defined by:
 
         - "1i"      # length 1
-        - "10i"     # length 2
+        - "10i"     # length 10
 
         .. warning::
             This API is experimental and may change without it being considered a breaking change.
