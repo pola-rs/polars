@@ -27,6 +27,8 @@ try:
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import map_mul as _map_mul
+    from polars.polars import max_exprs as _max_exprs
+    from polars.polars import min_exprs as _min_exprs
     from polars.polars import pearson_corr as pypearson_corr
     from polars.polars import py_datetime
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
@@ -241,17 +243,8 @@ def max(
     if isinstance(column, pli.Series):
         return column.max()
     elif isinstance(column, list):
-
-        def max_(
-            acc: "pli.Series", val: "pli.Series"
-        ) -> "pli.Series":  # pragma: no cover
-            mask = acc > val
-            return acc.zip_with(mask, val)
-
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, max_, column[1:]).alias("max")
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_max_exprs(exprs))
     else:
         return col(column).max()
 
@@ -281,17 +274,8 @@ def min(
     if isinstance(column, pli.Series):
         return column.min()
     elif isinstance(column, list):
-
-        def min_(
-            acc: "pli.Series", val: "pli.Series"
-        ) -> "pli.Series":  # pragma: no cover
-            mask = acc < val
-            return acc.zip_with(mask, val)
-
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, min_, column[1:]).alias("min")
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_min_exprs(exprs))
     else:
         return col(column).min()
 
