@@ -180,9 +180,10 @@ impl DataFrame {
     ///  | "a" | 5   | "D"      | 6     |
     ///  +-----+-----+----------+-------+
     /// ```
-    pub fn melt<I, S>(&self, id_vars: I, value_vars: I) -> Result<Self>
+    pub fn melt<I, J, S>(&self, id_vars: I, value_vars: J) -> Result<Self>
     where
         I: IntoIterator<Item = S>,
+        J: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
         let ids = self.select(id_vars)?;
