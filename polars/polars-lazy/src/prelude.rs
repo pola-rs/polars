@@ -37,7 +37,6 @@ pub(crate) use crate::{
             aggregation::{AggQuantileExpr, AggregationExpr},
             alias::AliasExpr,
             apply::ApplyExpr,
-            binary_function::BinaryFunctionExpr,
             cast::CastExpr,
             column::ColumnExpr,
             filter::FilterExpr,

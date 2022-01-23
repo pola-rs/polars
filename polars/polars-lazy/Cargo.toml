@@ -64,6 +64,7 @@ dot_diagram = []
 private = []
 
 test = [
+  "private",
   "rolling_window",
   "rank",
   "list",
