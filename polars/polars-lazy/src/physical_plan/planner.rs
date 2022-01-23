@@ -361,7 +361,6 @@ impl DefaultPlanner {
                                 AExpr::SortBy { .. }
                                     | AExpr::Filter { .. }
                                     | AExpr::BinaryExpr { .. }
-                                    | AExpr::BinaryFunction { .. }
                                     | AExpr::Function { .. }
                             )
                         };
@@ -984,22 +983,6 @@ impl DefaultPlanner {
                     expr: node_to_exp(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,
-                }))
-            }
-            BinaryFunction {
-                input_a,
-                input_b,
-                function,
-                output_field,
-            } => {
-                let input_a = self.create_physical_expr(input_a, ctxt, expr_arena)?;
-                let input_b = self.create_physical_expr(input_b, ctxt, expr_arena)?;
-                Ok(Arc::new(BinaryFunctionExpr {
-                    input_a,
-                    input_b,
-                    function,
-                    output_field,
-                    expr: node_to_exp(expression, expr_arena),
                 }))
             }
             Shift { input, periods } => {

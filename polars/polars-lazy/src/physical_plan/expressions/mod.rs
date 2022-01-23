@@ -2,7 +2,6 @@ pub(crate) mod aggregation;
 pub(crate) mod alias;
 pub(crate) mod apply;
 pub(crate) mod binary;
-pub(crate) mod binary_function;
 pub(crate) mod cast;
 pub(crate) mod column;
 pub(crate) mod filter;
@@ -86,10 +85,6 @@ pub struct AggregationContext<'a> {
 impl<'a> AggregationContext<'a> {
     pub(crate) fn with_all_unit_len(&mut self, toggle: bool) {
         self.all_unit_len = toggle
-    }
-
-    pub(crate) fn is_all_unit_len(&self) -> bool {
-        self.all_unit_len
     }
 
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {

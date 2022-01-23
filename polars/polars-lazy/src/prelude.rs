@@ -3,6 +3,7 @@ pub(crate) use polars_utils::arena::{Arena, Node};
 pub use crate::{
     dsl::*,
     frame::*,
+    functions::*,
     logical_plan::{
         optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
         *,
@@ -37,7 +38,6 @@ pub(crate) use crate::{
             aggregation::{AggQuantileExpr, AggregationExpr},
             alias::AliasExpr,
             apply::ApplyExpr,
-            binary_function::BinaryFunctionExpr,
             cast::CastExpr,
             column::ColumnExpr,
             filter::FilterExpr,

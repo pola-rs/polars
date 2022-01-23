@@ -1,13 +1,13 @@
 //! Domain specific language for the Lazy api.
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_root_literal_expr, has_wildcard};
+use crate::utils::{has_expr, has_root_literal_expr};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 use std::fmt::{Debug, Formatter};
-use std::ops::{BitAnd, BitOr, Deref};
+use std::ops::Deref;
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -15,7 +15,9 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
+pub use crate::functions::*;
 pub use crate::logical_plan::lit;
+
 use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -156,6 +158,16 @@ impl GetOutput {
         }))
     }
 
+    pub fn super_type() -> Self {
+        Self::map_dtypes(|dtypes| {
+            let mut st = dtypes[0].clone();
+            for dt in &dtypes[1..] {
+                st = get_supertype(&st, dt).unwrap()
+            }
+            st
+        })
+    }
+
     pub fn map_dtypes<F>(f: F) -> Self
     where
         F: 'static + Fn(&[&DataType]) -> DataType + Send + Sync,
@@ -219,6 +231,15 @@ pub struct FunctionOptions {
     pub(crate) input_wildcard_expansion: bool,
 
     /// automatically explode on unit length it ran as final aggregation.
+    ///
+    /// this is the case for aggregations like sum, min, covariance etc.
+    /// We need to know this because we cannot see the difference between
+    /// the following functions based on the output type and number of elements:
+    ///
+    /// x: [1, 2, 3]
+    ///
+    /// head_1(x) -> [1]
+    /// sum(x) -> [4]
     pub(crate) auto_explode: bool,
     pub(crate) fmt_str: &'static str,
 }
@@ -346,13 +367,6 @@ pub enum Expr {
         offset: i64,
         length: usize,
     },
-    BinaryFunction {
-        input_a: Box<Expr>,
-        input_b: Box<Expr>,
-        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
-        /// Delays output type evaluation until input schema is known.
-        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
-    },
     /// Can be used in a select statement to exclude a column from selection
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
@@ -362,6 +376,12 @@ pub enum Expr {
         value: String,
         expr: Box<Expr>,
     },
+}
+
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::Literal(LiteralValue::Null)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -538,9 +558,11 @@ pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
 }
 
 impl Expr {
-    /// overwrite the function name used for formatting
-    /// this is not intended to be used
-    pub fn with_fmt(self, name: &'static str) -> Expr {
+    /// Modify the Options passed to the `Function` node.
+    pub(crate) fn with_function_options<F>(self, func: F) -> Expr
+    where
+        F: Fn(FunctionOptions) -> FunctionOptions,
+    {
         if let Self::Function {
             input,
             function,
@@ -548,7 +570,7 @@ impl Expr {
             mut options,
         } = self
         {
-            options.fmt_str = name;
+            options = func(options);
             Self::Function {
                 input,
                 function,
@@ -558,6 +580,16 @@ impl Expr {
         } else {
             panic!("implementation error")
         }
+    }
+
+    /// Overwrite the function name used for formatting
+    /// this is not intended to be used
+    #[cfg(feature = "private")]
+    pub fn with_fmt(self, name: &'static str) -> Expr {
+        self.with_function_options(|mut options| {
+            options.fmt_str = name;
+            options
+        })
     }
 
     /// Compare `Expr` with other `Expr` on equality
@@ -961,7 +993,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
-                auto_explode: true,
+                auto_explode: false,
                 fmt_str: "",
             },
         }
@@ -1292,7 +1324,7 @@ impl Expr {
                 }
             },
             &[fill_value],
-            GetOutput::map_dtypes(|dtypes| get_supertype(dtypes[0], dtypes[1]).unwrap()),
+            GetOutput::super_type(),
         )
         .with_fmt("fill_null")
     }
@@ -2059,270 +2091,6 @@ impl Expr {
         )
         .with_fmt("all")
     }
-}
-
-/// Create a Column Expression based on a column name.
-///
-/// # Arguments
-///
-/// * `name` - A string slice that holds the name of the column
-///
-/// # Examples
-///
-/// ```ignore
-/// // select a column name
-/// col("foo")
-/// ```
-///
-/// ```ignore
-/// // select all columns by using a wildcard
-/// col("*")
-/// ```
-///
-/// ```ignore
-/// // select specific column by writing a regular expression that starts with `^` and ends with `$`
-/// // only if regex features is activated
-/// col("^foo.*$")
-/// ```
-pub fn col(name: &str) -> Expr {
-    match name {
-        "*" => Expr::Wildcard,
-        _ => Expr::Column(Arc::from(name)),
-    }
-}
-
-/// Select multiple columns by name
-pub fn cols(names: Vec<String>) -> Expr {
-    Expr::Columns(names)
-}
-
-/// Select multiple columns by dtype.
-pub fn dtype_col(dtype: &DataType) -> Expr {
-    Expr::DtypeColumn(vec![dtype.clone()])
-}
-
-/// Select multiple columns by dtype.
-pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
-    let dtypes = dtype.as_ref().to_vec();
-    Expr::DtypeColumn(dtypes)
-}
-
-/// Count the number of values in this Expression.
-pub fn count(name: &str) -> Expr {
-    match name {
-        "" => col(name).count().alias("count"),
-        _ => col(name).count(),
-    }
-}
-
-/// Sum all the values in this Expression.
-pub fn sum(name: &str) -> Expr {
-    col(name).sum()
-}
-
-/// Find the minimum of all the values in this Expression.
-pub fn min(name: &str) -> Expr {
-    col(name).min()
-}
-
-/// Find the maximum of all the values in this Expression.
-pub fn max(name: &str) -> Expr {
-    col(name).max()
-}
-
-/// Find the mean of all the values in this Expression.
-pub fn mean(name: &str) -> Expr {
-    col(name).mean()
-}
-
-/// Find the mean of all the values in this Expression.
-pub fn avg(name: &str) -> Expr {
-    col(name).mean()
-}
-
-/// Find the median of all the values in this Expression.
-pub fn median(name: &str) -> Expr {
-    col(name).median()
-}
-
-/// Find a specific quantile of all the values in this Expression.
-pub fn quantile(name: &str, quantile: f64, interpol: QuantileInterpolOptions) -> Expr {
-    col(name).quantile(quantile, interpol)
-}
-
-/// Apply a closure on the two columns that are evaluated from `Expr` a and `Expr` b.
-pub fn map_binary<F: 'static>(a: Expr, b: Expr, f: F, output_field: Option<Field>) -> Expr
-where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
-{
-    let output_field = move |_: &Schema, _: Context, _: &Field, _: &Field| output_field.clone();
-
-    Expr::BinaryFunction {
-        input_a: Box::new(a),
-        input_b: Box::new(b),
-        function: NoEq::new(Arc::new(f)),
-        output_field: NoEq::new(Arc::new(output_field)),
-    }
-}
-
-/// Binary function where the output type is determined at runtime when the schema is known.
-pub fn map_binary_lazy_field<F: 'static, Fld: 'static>(
-    a: Expr,
-    b: Expr,
-    f: F,
-    output_field: Fld,
-) -> Expr
-where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync,
-    Fld: Fn(&Schema, Context, &Field, &Field) -> Option<Field> + Send + Sync,
-{
-    Expr::BinaryFunction {
-        input_a: Box::new(a),
-        input_b: Box::new(b),
-        function: NoEq::new(Arc::new(f)),
-        output_field: NoEq::new(Arc::new(output_field)),
-    }
-}
-
-/// Accumulate over multiple columns horizontally / row wise.
-pub fn fold_exprs<F: 'static, E: AsRef<[Expr]>>(mut acc: Expr, f: F, exprs: E) -> Expr
-where
-    F: Fn(Series, Series) -> Result<Series> + Send + Sync + Clone,
-{
-    let mut exprs = exprs.as_ref().to_vec();
-    if exprs.iter().any(has_wildcard) {
-        exprs.push(acc);
-
-        let function = NoEq::new(Arc::new(move |series: &mut [Series]| {
-            let mut series = series.to_vec();
-            let mut acc = series.pop().unwrap();
-
-            for s in series {
-                acc = f(acc, s)?;
-            }
-            Ok(acc)
-        }) as Arc<dyn SeriesUdf>);
-
-        // Todo! make sure that output type is correct
-        Expr::Function {
-            input: exprs,
-            function,
-            output_type: GetOutput::same_type(),
-            options: FunctionOptions {
-                collect_groups: ApplyOptions::ApplyFlat,
-                input_wildcard_expansion: true,
-                auto_explode: true,
-                fmt_str: "",
-            },
-        }
-    } else {
-        for e in exprs {
-            acc = map_binary_lazy_field(
-                acc,
-                e,
-                f.clone(),
-                // written inline due to lifetime inference issues.
-                |_schema, _ctxt, f_l: &Field, f_r: &Field| {
-                    get_supertype(f_l.data_type(), f_r.data_type())
-                        .ok()
-                        .map(|dt| Field::new(f_l.name(), dt))
-                },
-            );
-        }
-        acc
-    }
-}
-
-/// Get the the sum of the values per row
-pub fn sum_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1, s2| Ok(&s1 + &s2);
-    fold_exprs(lit(0), func, exprs)
-}
-
-/// Get the the maximum value per row
-pub fn max_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        let mask = s1.gt(&s2);
-        s1.zip_with(&mask, &s2)
-    };
-    fold_exprs(lit(0), func, exprs)
-}
-
-/// Get the the minimum value per row
-pub fn min_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| {
-        let mask = s1.lt(&s2);
-        s1.zip_with(&mask, &s2)
-    };
-    fold_exprs(lit(0), func, exprs)
-}
-
-/// Evaluate all the expressions with a bitwise or
-pub fn any_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitor(s2.bool()?).into_series());
-    fold_exprs(lit(false), func, exprs)
-}
-
-/// Evaluate all the expressions with a bitwise and
-pub fn all_exprs<E: AsRef<[Expr]>>(exprs: E) -> Expr {
-    let exprs = exprs.as_ref().to_vec();
-    let func = |s1: Series, s2: Series| Ok(s1.bool()?.bitand(s2.bool()?).into_series());
-    fold_exprs(lit(true), func, exprs)
-}
-
-/// [Not](Expr::Not) expression.
-pub fn not(expr: Expr) -> Expr {
-    Expr::Not(Box::new(expr))
-}
-
-/// [IsNull](Expr::IsNotNull) expression
-pub fn is_null(expr: Expr) -> Expr {
-    Expr::IsNull(Box::new(expr))
-}
-
-/// [IsNotNull](Expr::IsNotNull) expression.
-pub fn is_not_null(expr: Expr) -> Expr {
-    Expr::IsNotNull(Box::new(expr))
-}
-
-/// [Cast](Expr::Cast) expression.
-pub fn cast(expr: Expr, data_type: DataType) -> Expr {
-    Expr::Cast {
-        expr: Box::new(expr),
-        data_type,
-        strict: false,
-    }
-}
-
-pub trait Range<T> {
-    fn into_range(self, high: T) -> Expr;
-}
-
-macro_rules! impl_into_range {
-    ($dt: ty) => {
-        impl Range<$dt> for $dt {
-            fn into_range(self, high: $dt) -> Expr {
-                Expr::Literal(LiteralValue::Range {
-                    low: self as i64,
-                    high: high as i64,
-                    data_type: DataType::Int32,
-                })
-            }
-        }
-    };
-}
-
-impl_into_range!(i32);
-impl_into_range!(i64);
-impl_into_range!(u32);
-
-/// Create a range literal.
-pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
-    low.into_range(high)
 }
 
 // Arithmetic ops

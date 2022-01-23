@@ -37,7 +37,7 @@ use std::sync::Arc;
 /// # Series
 /// The columnar data type for a DataFrame.
 ///
-/// Most of the available functions are definedin the [SeriesTrait trait](crate::series::SeriesTrait).
+/// Most of the available functions are defined in the [SeriesTrait trait](crate::series::SeriesTrait).
 ///
 /// The `Series` struct consists
 /// of typed [ChunkedArray](../chunked_array/struct.ChunkedArray.html)'s. To quickly cast
@@ -55,7 +55,7 @@ use std::sync::Arc;
 /// You can do standard arithmetic on series.
 /// ```
 /// # use polars_core::prelude::*;
-/// let s: Series = [1, 2, 3].iter().collect();
+/// let s = Series::new("a", [1 , 2, 3]);
 /// let out_add = &s + &s;
 /// let out_sub = &s - &s;
 /// let out_div = &s / &s;
@@ -119,7 +119,7 @@ use std::sync::Arc;
 /// ```
 /// # use polars_core::prelude::*;
 /// // Series van be created from Vec's, slices and arrays
-/// Series::new("boolean series", &vec![true, false, true]);
+/// Series::new("boolean series", &[true, false, true]);
 /// Series::new("int series", &[1, 2, 3]);
 /// // And can be nullable
 /// Series::new("got nulls", &[Some(1), None, Some(2)]);

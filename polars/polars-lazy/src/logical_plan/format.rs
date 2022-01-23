@@ -249,9 +249,6 @@ impl fmt::Debug for Expr {
                     write!(f, "{:?}.{}()", input[0], options.fmt_str)
                 }
             }
-            BinaryFunction {
-                input_a, input_b, ..
-            } => write!(f, "BinaryFunction({:?}, {:?})", input_a, input_b),
             Shift { input, periods, .. } => write!(f, "SHIFT {:?} by {}", input, periods),
             Slice {
                 input,
