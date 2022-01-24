@@ -13,6 +13,7 @@ pub use crate::chunked_array::logical::*;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::sort::PlIsNan;
 use crate::prelude::*;
+use crate::utils::Wrap;
 use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
@@ -26,6 +27,7 @@ use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
 
 pub struct Utf8Type {}
@@ -260,6 +262,29 @@ pub enum AnyValue<'a> {
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
 }
+
+impl<'a> Hash for AnyValue<'a> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        use AnyValue::*;
+        match self {
+            Null => state.write_u64(u64::MAX / 2 + 135123),
+            Int8(v) => state.write_i8(*v),
+            Int16(v) => state.write_i16(*v),
+            Int32(v) => state.write_i32(*v),
+            Int64(v) => state.write_i64(*v),
+            UInt8(v) => state.write_u8(*v),
+            UInt16(v) => state.write_u16(*v),
+            UInt32(v) => state.write_u32(*v),
+            UInt64(v) => state.write_u64(*v),
+            Utf8(s) => state.write(s.as_bytes()),
+            Boolean(v) => state.write_u8(*v as u8),
+            List(v) => Hash::hash(&Wrap(v.clone()), state),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl<'a> Eq for AnyValue<'a> {}
 
 impl From<f64> for AnyValue<'_> {
     fn from(a: f64) -> Self {

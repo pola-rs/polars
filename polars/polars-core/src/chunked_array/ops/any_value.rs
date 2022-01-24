@@ -7,7 +7,7 @@ use std::convert::TryFrom;
 
 #[inline]
 #[allow(unused_variables)]
-unsafe fn arr_to_any_value<'a>(
+pub(crate) unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
     categorical_map: &'a Option<Arc<RevMapping>>,

@@ -297,10 +297,16 @@ impl Buffer {
             (UInt64(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Null) => builder.append_null(),
+            #[cfg(feature = "dtype-date")]
+            (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-datetime")]
+            (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Datetime(v, _, _)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
+            #[cfg(feature = "dtype-time")]
+            (Time(builder), AnyValue::Null) => builder.append_null(),
             (Float32(builder), AnyValue::Float32(v)) => builder.append_value(v),
             (Float32(builder), AnyValue::Null) => builder.append_null(),
             (Float64(builder), AnyValue::Float64(v)) => builder.append_value(v),
