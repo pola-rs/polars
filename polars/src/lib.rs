@@ -267,6 +267,8 @@
 pub mod docs;
 pub mod prelude;
 
+#[cfg(feature = "temporal")]
+pub use polars_core::time;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::toggle_string_cache;
 pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
