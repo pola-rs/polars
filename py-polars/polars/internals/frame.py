@@ -876,7 +876,9 @@ class DataFrame:
         <class 'pandas.core.frame.DataFrame'>
 
         """
-        return self.to_arrow().to_pandas(*args, date_as_object=date_as_object, **kwargs)
+        record_batches = self._df.to_pandas()
+        tbl = pa.Table.from_batches(record_batches)
+        return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
     def to_csv(
         self,

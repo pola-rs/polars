@@ -184,6 +184,19 @@ impl Series {
                         let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
                         (keys, values.clone())
                     }
+                    (IntegerType::Int64, ArrowDataType::LargeUtf8) => {
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i64>>().unwrap();
+                        let keys = arr.keys();
+                        let keys = cast(keys, &ArrowDataType::UInt32)
+                            .unwrap()
+                            .as_any()
+                            .downcast_ref::<PrimitiveArray<u32>>()
+                            .unwrap()
+                            .clone();
+                        let values = arr.values();
+                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
+                        (keys, values.clone())
+                    }
                     (IntegerType::UInt32, ArrowDataType::LargeUtf8) => {
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<u32>>().unwrap();
                         let keys = arr.keys();
