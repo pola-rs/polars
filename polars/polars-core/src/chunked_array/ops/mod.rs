@@ -15,7 +15,7 @@ use std::ops::Deref;
 #[cfg(feature = "abs")]
 mod abs;
 pub(crate) mod aggregate;
-mod any_value;
+pub(crate) mod any_value;
 mod append;
 mod apply;
 mod bit_repr;

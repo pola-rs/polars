@@ -1,3 +1,5 @@
+#[cfg(feature = "rows")]
+use crate::chunked_array::builder::get_list_builder;
 use crate::chunked_array::cast::cast_chunks;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
@@ -449,6 +451,171 @@ impl IntoSeries for Series {
 
     fn into_series(self) -> Series {
         self
+    }
+}
+
+#[cfg(feature = "rows")]
+impl Series {
+    pub(crate) fn from_any_values(name: &str, vals: &[AnyValue]) -> Series {
+        let first_non_null = vals.iter().find(|av| *av != &AnyValue::Null);
+        match first_non_null {
+            None => Series::full_null(name, vals.len(), &DataType::Boolean),
+            Some(av) => {
+                use AnyValue::*;
+                match av {
+                    #[cfg(feature = "dtype-i8")]
+                    Int8(_) => Int8Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Int8(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    #[cfg(feature = "dtype-i16")]
+                    Int16(_) => Int16Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Int16(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Int32(_) => Int32Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Int32(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Int64(_) => Int64Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Int64(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    #[cfg(feature = "dtype-u8")]
+                    UInt8(_) => UInt8Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::UInt8(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    #[cfg(feature = "dtype-u16")]
+                    UInt16(_) => UInt16Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::UInt16(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    UInt32(_) => UInt32Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::UInt32(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    UInt64(_) => UInt64Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::UInt64(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Float32(_) => Float32Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Float32(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Float64(_) => Float64Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Float64(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Utf8(_) => Utf8Chunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Utf8(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    Boolean(_) => BooleanChunked::new_from_opt_iter(
+                        name,
+                        vals.iter().map(|av| {
+                            if let AnyValue::Boolean(v) = av {
+                                Some(*v)
+                            } else {
+                                None
+                            }
+                        }),
+                    )
+                    .into_series(),
+                    List(s) => {
+                        let inner_type = s.dtype();
+                        let mut builder =
+                            get_list_builder(inner_type, s.len() * vals.len(), vals.len(), name);
+                        for v in vals.iter() {
+                            if let AnyValue::List(s) = v {
+                                builder.append_series(s)
+                            } else {
+                                builder.append_null()
+                            }
+                        }
+                        builder.finish().into_series()
+                    }
+                    dt => panic!("dt {:?} not yet implemented", dt),
+                }
+            }
+        }
     }
 }
 

@@ -18,18 +18,15 @@ pub mod unstable;
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
-#[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
-#[cfg(feature = "groupby_list")]
 use ahash::RandomState;
 pub use from::*;
 use num::NumCast;
 use rayon::prelude::*;
 pub use series_trait::*;
 use std::borrow::Cow;
-#[cfg(feature = "groupby_list")]
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
@@ -134,17 +131,14 @@ use std::sync::Arc;
 #[must_use]
 pub struct Series(pub Arc<dyn SeriesTrait>);
 
-#[cfg(feature = "groupby_list")]
 impl PartialEq for Wrap<Series> {
     fn eq(&self, other: &Self) -> bool {
         self.0.series_equal_missing(other)
     }
 }
 
-#[cfg(feature = "groupby_list")]
 impl Eq for Wrap<Series> {}
 
-#[cfg(feature = "groupby_list")]
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
