@@ -164,7 +164,13 @@ impl ChunkZip<CategoricalType> for CategoricalChunked {
         other: &ChunkedArray<CategoricalType>,
     ) -> Result<ChunkedArray<CategoricalType>> {
         let ca: CategoricalChunked = self.deref().zip_with(mask, other.deref())?.into();
-        Ok(ca.set_state(self))
+        // first set old state
+        let mut ca = ca.set_state(self);
+        // then merge state
+        let state = ca.merge_categorical_map(other);
+        // and set this
+        ca.categorical_map = Some(state);
+        Ok(ca)
     }
 }
 

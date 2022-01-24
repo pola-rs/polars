@@ -34,3 +34,24 @@ fn test_pearson_corr() -> Result<()> {
     assert!((s.get(1).unwrap() - 0.9552238805970149).abs() < 0.000001);
     Ok(())
 }
+
+#[test]
+fn test_when_then_otherwise_categorical() -> Result<()> {
+    let df = df!["col1"=> ["a", "b", "a", "b"],
+        "col2"=> ["a", "a", "b", "b"],
+        "col3"=> ["same", "same", "same", "same"]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_column(col("*").cast(DataType::Categorical))
+        .select([when(col("col1").eq(col("col2")))
+            .then(col("col3"))
+            .otherwise(col("col1"))])
+        .collect()?;
+    let col = out.column("col3")?;
+    assert_eq!(col.dtype(), &DataType::Categorical);
+    let s = format!("{}", col);
+    assert!(s.contains("same"));
+    Ok(())
+}
