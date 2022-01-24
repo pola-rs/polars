@@ -12,7 +12,6 @@ use crate::apply::dataframe::{
 use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
-use crate::prelude::Context::Default;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
 use crate::utils::str_to_polarstype;
 use crate::{
