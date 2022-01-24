@@ -12,6 +12,7 @@ use crate::apply::dataframe::{
 use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
+use crate::prelude::Context::Default;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
 use crate::utils::str_to_polarstype;
 use crate::{
@@ -21,8 +22,11 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::groupby::PivotAgg;
+use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::utils::arrow::compute::cast::CastOptions;
 use polars_core::utils::get_supertype;
 
 #[pyclass]
@@ -428,6 +432,49 @@ impl PyDataFrame {
             .df
             .iter_chunks()
             .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
+            .collect::<PyResult<_>>()?;
+        Ok(rbs)
+    }
+
+    pub fn to_pandas(&self) -> PyResult<Vec<PyObject>> {
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pyarrow = py.import("pyarrow")?;
+        let names = self.df.get_column_names();
+        let cat_columns = self
+            .df
+            .get_columns()
+            .iter()
+            .enumerate()
+            .filter(|(_i, s)| s.dtype() == &DataType::Categorical)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        use polars_core::export::arrow::array::ArrayRef;
+        let rbs = self
+            .df
+            .iter_chunks()
+            .map(|rb| {
+                let mut rb = rb.into_arrays();
+                for i in &cat_columns {
+                    let arr = rb.get_mut(*i).unwrap();
+                    let out = polars_core::export::arrow::compute::cast::cast(
+                        &**arr,
+                        &ArrowDataType::Dictionary(
+                            IntegerType::Int64,
+                            Box::new(ArrowDataType::LargeUtf8),
+                            false,
+                        ),
+                        CastOptions::default(),
+                    )
+                    .unwrap();
+                    let out = Arc::from(out) as ArrayRef;
+                    *arr = out;
+                }
+                let rb = ArrowChunk::new(rb);
+
+                arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
+            })
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }

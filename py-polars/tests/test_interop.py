@@ -165,3 +165,10 @@ def test_no_rechunk() -> None:
     assert pl.from_arrow(table, rechunk=False).n_chunks() == 2
     # chunked array
     assert pl.from_arrow(table["x"], rechunk=False).n_chunks() == 2
+
+
+def test_cat_to_pandas() -> None:
+    df = pl.DataFrame({"a": ["best", "test"]})
+    df = df.with_columns(pl.all().cast(pl.Categorical))
+    out = df.to_pandas()
+    assert "category" in str(out["a"].dtype)
