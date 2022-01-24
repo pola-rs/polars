@@ -70,14 +70,14 @@ impl DataFrame {
             .fields()
             .iter()
             .map(|fld| {
-                let buf: Buffer = (fld.data_type(), capacity).into();
+                let buf: AnyValueBuffer = (fld.data_type(), capacity).into();
                 buf
             })
             .collect();
 
         rows.try_for_each::<_, Result<()>>(|row| {
             for (value, buf) in row.0.iter().zip(&mut buffers) {
-                buf.add(value.clone())?
+                buf.add_falible(value.clone())?
             }
             Ok(())
         })?;
@@ -236,7 +236,7 @@ impl From<&Row<'_>> for Schema {
     }
 }
 
-pub(crate) enum Buffer {
+pub(crate) enum AnyValueBuffer {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -258,9 +258,9 @@ pub(crate) enum Buffer {
     List(Box<dyn ListBuilderTrait>),
 }
 
-impl Debug for Buffer {
+impl Debug for AnyValueBuffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use Buffer::*;
+        use AnyValueBuffer::*;
         match self {
             Boolean(_) => f.write_str("boolean"),
             Int32(_) => f.write_str("i32"),
@@ -281,9 +281,9 @@ impl Debug for Buffer {
     }
 }
 
-impl Buffer {
-    fn add(&mut self, val: AnyValue) -> Result<()> {
-        use Buffer::*;
+impl AnyValueBuffer {
+    pub(crate) fn add(&mut self, val: AnyValue) -> Option<()> {
+        use AnyValueBuffer::*;
         match (self, val) {
             (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
             (Boolean(builder), AnyValue::Null) => builder.append_null(),
@@ -315,14 +315,19 @@ impl Buffer {
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
             (List(builder), AnyValue::List(v)) => builder.append_series(&v),
             (List(builder), AnyValue::Null) => builder.append_null(),
-            (buf, val) => return Err(PolarsError::ValueError(format!("Could not append {:?} to builder {:?}; make sure that all rows have the same schema.", val, std::mem::discriminant(buf)).into()))
+            _ => return None,
         };
-
-        Ok(())
+        Some(())
     }
 
-    fn into_series(self) -> Series {
-        use Buffer::*;
+    pub(crate) fn add_falible(&mut self, val: AnyValue) -> Result<()> {
+        self.add(val.clone()).ok_or_else(|| {
+            PolarsError::ValueError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
+        })
+    }
+
+    pub(crate) fn into_series(self) -> Series {
+        use AnyValueBuffer::*;
         match self {
             Boolean(b) => b.finish().into_series(),
             Int32(b) => b.finish().into_series(),
@@ -344,28 +349,28 @@ impl Buffer {
 }
 
 // datatype and length
-impl From<(&DataType, usize)> for Buffer {
+impl From<(&DataType, usize)> for AnyValueBuffer {
     fn from(a: (&DataType, usize)) -> Self {
         let (dt, len) = a;
         use DataType::*;
         match dt {
-            Boolean => Buffer::Boolean(BooleanChunkedBuilder::new("", len)),
-            Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new("", len)),
-            Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new("", len)),
-            UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new("", len)),
-            UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new("", len)),
+            Boolean => AnyValueBuffer::Boolean(BooleanChunkedBuilder::new("", len)),
+            Int32 => AnyValueBuffer::Int32(PrimitiveChunkedBuilder::new("", len)),
+            Int64 => AnyValueBuffer::Int64(PrimitiveChunkedBuilder::new("", len)),
+            UInt32 => AnyValueBuffer::UInt32(PrimitiveChunkedBuilder::new("", len)),
+            UInt64 => AnyValueBuffer::UInt64(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-date")]
-            Date => Buffer::Date(PrimitiveChunkedBuilder::new("", len)),
+            Date => AnyValueBuffer::Date(PrimitiveChunkedBuilder::new("", len)),
             #[cfg(feature = "dtype-datetime")]
             Datetime(tu, tz) => {
-                Buffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone())
+                AnyValueBuffer::Datetime(PrimitiveChunkedBuilder::new("", len), *tu, tz.clone())
             }
             #[cfg(feature = "dtype-time")]
-            Time => Buffer::Time(PrimitiveChunkedBuilder::new("", len)),
-            Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new("", len)),
-            Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new("", len)),
-            Utf8 => Buffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
-            List(inner) => Buffer::List(get_list_builder(inner, len * 10, len, "")),
+            Time => AnyValueBuffer::Time(PrimitiveChunkedBuilder::new("", len)),
+            Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
+            Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
+            Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
+            List(inner) => AnyValueBuffer::List(get_list_builder(inner, len * 10, len, "")),
             _ => unimplemented!(),
         }
     }

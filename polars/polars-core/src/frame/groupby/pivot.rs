@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 
 use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
+use crate::frame::row::AnyValueBuffer;
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::date32_to_date;
@@ -133,7 +134,7 @@ impl DataFrame {
         // make sure that we make smaller dataframes then the take operations are cheaper
         let mut index_df = self.select(index)?;
 
-        let mut im_result = POOL.install(|| {
+        let im_result = POOL.install(|| {
             groups
                 .par_iter()
                 .map(|indicator| {
@@ -226,71 +227,88 @@ impl DataFrame {
         // for every column where the values are aggregated
         let df_cols = (0..columns.len())
             .zip(columns_unique)
-            .flat_map(|(i, unique_vals)| {
-                let im_results = im_result
-                    .iter_mut()
-                    .map(|v| std::mem::take(&mut v[i + 1]))
-                    .collect::<Vec<_>>();
+            .flat_map(|(column_index, unique_vals)| {
+                // the values that will be the new headers
 
-                let mut result_map = PlHashMap::with_capacity(unique_vals.len());
-                for av in unique_vals.iter() {
-                    let value = Vec::with_capacity(groups.len());
-                    result_map.insert(av, value);
+                // Join every row with the unique column. This join is needed because some rows don't have all values and we want to have
+                // nulls there.
+                let result_columns = POOL.install(|| {
+                    im_result
+                        .par_iter()
+                        .map(|im_r| {
+                            // we offset 1 because the first is the group index (can be removed?)
+                            let current_result = &im_r[column_index + 1];
+                            let key = &current_result.get_columns()[0];
+                            let tuples = unique_vals.hash_join_left(key);
+                            let mut iter = tuples.iter().map(|t| t.1.map(|i| i as usize));
+
+                            let values = &current_result.get_columns()[1];
+                            // Safety
+                            // join tuples are in bounds
+                            unsafe { values.take_opt_iter_unchecked(&mut iter) }
+                        })
+                        .collect::<Vec<_>>()
+                });
+
+                let mut dtype = self
+                    .column(&values[column_index])
+                    .unwrap()
+                    .dtype()
+                    .to_physical();
+                match (dtype.clone(), &agg_fn) {
+                    (DataType::Float32, PivotAgg::Mean | PivotAgg::Median) => {}
+                    (_, PivotAgg::Mean | PivotAgg::Median) => dtype = DataType::Float64,
+                    (_, PivotAgg::Count) => dtype = DataType::UInt32,
+                    _ => {}
                 }
-
-                for df in im_results.iter() {
-                    let keys = &df.columns[0];
-                    let vals = &df.columns[1];
-
-                    // some groups are not available in the intermediate result,
-                    // so we must make sure we keep track of those and insert Null
-                    // in the proper locations.
-                    // because the rows are not guaranteed to be ordered, we must use
-                    // a hash set to keep track the rows we've processed
-                    // in the end, we will take the none processed values and push a null for those.
-                    let not_all = keys.len() != unique_vals.len();
-
-                    let mut remaining = if not_all {
-                        PlHashSet::from_iter(unique_vals.iter())
-                    } else {
-                        PlHashSet::new()
-                    };
-
-                    keys.iter().zip(vals.iter()).for_each(|(k, v)| {
-                        if not_all {
-                            remaining.remove(&k);
-                        };
-
-                        result_map.entry(k).and_modify(|buf| buf.push(v));
-                    });
-
-                    for k in remaining {
-                        result_map
-                            .entry(k)
-                            .and_modify(|buf| buf.push(AnyValue::Null));
-                    }
-                }
-                let mut df_cols = result_map
-                    .into_iter()
-                    .map(|(k, v)| {
-                        let name = k.to_string();
-                        let name_slice = if let AnyValue::Utf8(_) = k {
-                            // slice off the quotation marks;
-                            &name[1..name.len() - 1]
-                        } else {
-                            name.as_str()
-                        };
-                        Series::from_any_values(name_slice, &v)
+                let len = result_columns.len();
+                let mut buffers = (0..unique_vals.len())
+                    .map(|_| {
+                        let buf: AnyValueBuffer = (&dtype, len).into();
+                        buf
                     })
                     .collect::<Vec<_>>();
 
-                sort_cols(&mut df_cols, 0);
-                let df = DataFrame::new_no_checks(df_cols);
-                let column_name = &columns[i];
-                let values_name = &values[i];
+                // this is very expensive. A lot of cache misses here.
+                // This is the part that is performance critical.
+                result_columns.iter().for_each(|s| {
+                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
+                        let _out = buf.add(av);
+                        debug_assert!(_out.is_some());
+                    });
+                });
+                let cols = buffers
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, buf)| {
+                        let mut s = buf.into_series();
+                        s.rename(&format!("{i}"));
+                        s
+                    })
+                    .collect::<Vec<_>>();
+                let mut out = DataFrame::new_no_checks(cols);
+
+                // add the headers based on the unique vals
+                let headers = unique_vals.cast(&DataType::Utf8).unwrap();
+                let headers = headers.utf8().unwrap();
+                out.get_columns_mut()
+                    .iter_mut()
+                    .zip(headers.into_iter())
+                    .for_each(|(s, name)| {
+                        match name {
+                            None => s.rename("null"),
+                            Some(name) => s.rename(name),
+                        };
+                    });
+
+                // make output predictable
+                sort_cols(out.get_columns_mut(), 0);
+
+                let column_name = &columns[column_index];
+                let values_name = &values[column_index];
                 let columns_s = self.column(column_name).unwrap();
                 let values_s = self.column(values_name).unwrap();
-                finish_logical_types(df, columns_s, values_s)
+                finish_logical_types(out, columns_s, values_s)
                     .unwrap()
                     .columns
             })
