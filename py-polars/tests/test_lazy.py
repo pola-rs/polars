@@ -1132,3 +1132,10 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     assert res_expr["A"][0] < -10_000_000
     res_expr = fruits_cars.select(pl.col("A").upper_bound())
     assert res_expr["A"][0] > 10_000_000
+
+
+def test_nested_min_max() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
+    out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
+    assert out.shape == (1, 5)
+    assert out["t"][0] == 3
