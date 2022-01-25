@@ -566,3 +566,18 @@ a,b,c
     """.encode()
     df = pl.read_csv(csv, offset_schema_inference=4, skip_rows=4)
     assert df.columns == ["a", "b", "c"]
+
+
+def test_from_different_chunks() -> None:
+    s0 = pl.Series("a", [1, 2, 3, 4, None])
+    s1 = pl.Series("b", [1, 2])
+    s11 = pl.Series("b", [1, 2, 3])
+    s1.append(s11)
+
+    # check we don't panic
+    df = pl.DataFrame([s0, s1])
+    df.to_arrow()
+    df = pl.DataFrame([s0, s1])
+    out = df.to_pandas()
+    assert list(out.columns) == ["a", "b"]
+    assert out.shape == (5, 2)

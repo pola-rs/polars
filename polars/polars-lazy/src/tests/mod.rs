@@ -49,7 +49,7 @@ fn init_files() {
 
         for out_path in [out_path1, out_path2] {
             if std::fs::metadata(&out_path).is_err() {
-                let df = CsvReader::from_path(path).unwrap().finish().unwrap();
+                let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
 
                 if out_path.ends_with("parquet") {
                     let f = std::fs::File::create(&out_path).unwrap();
@@ -59,7 +59,7 @@ fn init_files() {
                         .unwrap();
                 } else {
                     let f = std::fs::File::create(&out_path).unwrap();
-                    IpcWriter::new(f).finish(&df).unwrap();
+                    IpcWriter::new(f).finish(&mut df).unwrap();
                 }
             }
         }

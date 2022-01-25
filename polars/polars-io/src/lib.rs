@@ -66,7 +66,7 @@ where
     W: Write,
 {
     fn new(writer: W) -> Self;
-    fn finish(self, df: &DataFrame) -> Result<()>;
+    fn finish(self, df: &mut DataFrame) -> Result<()>;
 }
 
 pub trait ArrowReader {

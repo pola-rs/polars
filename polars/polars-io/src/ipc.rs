@@ -257,7 +257,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &DataFrame) -> Result<()> {
+    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
@@ -266,7 +266,7 @@ where
                 compression: self.compression,
             },
         )?;
-
+        df.rechunk();
         let iter = df.iter_chunks();
 
         for batch in iter {
@@ -290,9 +290,11 @@ mod test {
         // Vec<T> : Write + Read
         // Cursor<Vec<_>>: Seek
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = create_df();
+        let mut df = create_df();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
 
         buf.set_position(0);
 
@@ -303,9 +305,11 @@ mod test {
     #[test]
     fn test_read_ipc_with_projection() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
@@ -320,9 +324,11 @@ mod test {
     #[test]
     fn test_read_ipc_with_columns() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
@@ -336,7 +342,7 @@ mod test {
 
     #[test]
     fn test_write_with_compression() {
-        let df = create_df();
+        let mut df = create_df();
 
         let compressions = vec![
             None,
@@ -348,7 +354,7 @@ mod test {
             let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
             IpcWriter::new(&mut buf)
                 .with_compression(compression)
-                .finish(&df)
+                .finish(&mut df)
                 .expect("ipc writer");
             buf.set_position(0);
 
