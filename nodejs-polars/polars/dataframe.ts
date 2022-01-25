@@ -1215,15 +1215,16 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * @param file File path to which the file should be written.
    * @param options.compression Compression method *defaults to "uncompressed"*
    * */
-  //  toIPC(): Buffer
-   toIPC(path: string, options?: WriteIPCOptions): void
+   toIPC(options?: WriteIPCOptions): Buffer
+   toIPC(destination: string | Writable, options?: WriteIPCOptions): void
 
   /**
    * Write the DataFrame disk in parquet format.
    * @param file File path to which the file should be written.
    * @param options.compression Compression method *defaults to "uncompressed"*
    * */
-  toParquet(path: string, options?: WriteParquetOptions): void
+  toParquet(options?: WriteParquetOptions): Buffer
+  toParquet(destination: string | Writable, options?: WriteParquetOptions): void
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1353,6 +1354,32 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       writeStream.end("");
 
       return body;
+    }
+  };
+
+  const writeToBufferOrStream = (dest, format: "ipc" | "parquet", options) => {
+    if(dest instanceof Writable) {
+      unwrap(`write_${format}_stream`, {writeStream: dest, ...options});
+
+      dest.end("");
+
+
+    } else if (typeof dest === "string") {
+      return unwrap(`write_${format}_path`, {path: dest, ...options});
+
+    } else {
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
+
+      unwrap(`write_${format}_stream`, {writeStream, ...options, ...dest});
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
     }
   };
   const df = {
@@ -1642,6 +1669,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("slice", opts);
     },
     sort(arg,  reverse=false)  {
+
       if(arg?.by  !== undefined) {
         return this.sort(arg.by, arg.reverse);
       }
@@ -1652,7 +1680,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       }
 
-      return wrap("sort", {by: arg, reverse});
+      return wrap("sort", {by: [arg].flat(), reverse});
 
     },
     std: noArgWrap("std"),
@@ -1720,11 +1748,19 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(arg0, "json", options);
       }
     },
-    toParquet(path, {compression} = {compression: "uncompressed"}) {
-      return unwrap("writeParquet", {path, compression});
+    toParquet(dest?, options = {compression: "uncompressed"}) {
+      if(dest?.compression !== undefined) {
+        return writeToBufferOrStream(null, "parquet", dest);
+      } else {
+        return writeToBufferOrStream(dest, "parquet", options);
+      }
     },
-    toIPC(path, {compression} = {compression: "uncompressed"}) {
-      return unwrap("writeIPC", {path, compression});
+    toIPC(dest?, options = {compression: "uncompressed"}) {
+      if(dest?.compression !== undefined) {
+        return writeToBufferOrStream(null, "ipc", dest);
+      } else {
+        return writeToBufferOrStream(dest, "ipc", options);
+      }
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),

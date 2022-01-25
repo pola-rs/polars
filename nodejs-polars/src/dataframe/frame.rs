@@ -409,9 +409,9 @@ pub fn take_with_series(cx: CallContext) -> JsResult<JsExternal> {
 pub fn sort(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
-    let by_column = params.get_as::<&str>("by")?;
+    let by_columns = params.get_as::<Vec<String>>("by")?;
     let reverse = params.get_as::<bool>("reverse")?;
-    df.sort(by_column, reverse)
+    df.sort(by_columns, reverse)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
