@@ -388,13 +388,15 @@ pub trait ChunkAgg<T> {
     fn mean(&self) -> Option<f64> {
         None
     }
+}
 
+/// Quantile and median aggregation
+pub trait ChunkQuantile<T> {
     /// Returns the mean value in the array.
     /// Returns `None` if the array is empty or only contains null values.
-    fn median(&self) -> Option<f64> {
+    fn median(&self) -> Option<T> {
         None
     }
-
     /// Aggregate a given quantile of the ChunkedArray.
     /// Returns `None` if the array is empty or only contains null values.
     fn quantile(&self, _quantile: f64, _interpol: QuantileInterpolOptions) -> Result<Option<T>> {

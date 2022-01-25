@@ -1048,11 +1048,11 @@ def test_quantile(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.lazy().quantile(0.26, "higher").collect()["A"][0] == 3
     assert fruits_cars.select(pl.col("A").quantile(0.26, "higher"))["A"][0] == 3
 
-    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1
-    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1
+    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1.5
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1.5
 
-    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1
-    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1
+    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1.96
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
