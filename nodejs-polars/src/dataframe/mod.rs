@@ -106,11 +106,14 @@ impl JsDataFrame {
             // parquet
             napi::Property::new(env, "readParquetPath")?.with_method(io::read_parquet_path),
             napi::Property::new(env, "readParquetBuffer")?.with_method(io::read_parquet_buffer),
-            napi::Property::new(env, "writeParquet")?.with_method(io::write_parquet_path),
+            napi::Property::new(env, "write_parquet_path")?.with_method(io::write_parquet_path),
+            napi::Property::new(env, "write_parquet_stream")?.with_method(io::write_parquet_stream),
             // ipc
             napi::Property::new(env, "readIPCPath")?.with_method(io::read_ipc_path),
             napi::Property::new(env, "readIPCBuffer")?.with_method(io::read_ipc_buffer),
-            napi::Property::new(env, "writeIPC")?.with_method(io::write_ipc_path),
+            napi::Property::new(env, "write_ipc_path")?.with_method(io::write_ipc_path),
+            napi::Property::new(env, "write_ipc_stream")?.with_method(io::write_ipc_stream),
+            
         ])?;
         Ok(df_obj)
     }

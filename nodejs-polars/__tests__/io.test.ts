@@ -179,8 +179,9 @@ describe("ipc", () => {
     const df = pl.readIPC(ipcpath);
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
-  test("read:buffer", () => {
-    const buff = fs.readFileSync(ipcpath);
+  test("read/write:buffer", () => {
+
+    const buff =  pl.readCSV(csvpath).toIPC();
     const df = pl.readIPC(buff);
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
@@ -191,7 +192,6 @@ describe("ipc", () => {
     expect(ipcDF).toFrameEqual(csvDF);
   });
 
-  // // https://github.com/pola-rs/polars/issues/2403
   test.skip("read:options", () => {
     const df = pl.readIPC(ipcpath, {numRows: 4});
     expect(df.shape).toStrictEqual({height: 4, width: 4});
@@ -202,7 +202,6 @@ describe("ipc", () => {
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
 
-  // https://github.com/pola-rs/polars/issues/2403
   test.skip("scan:options", () => {
     const df = pl.scanIPC(ipcpath, {numRows: 4}).collectSync();
     expect(df.shape).toStrictEqual({height: 4, width: 4});
