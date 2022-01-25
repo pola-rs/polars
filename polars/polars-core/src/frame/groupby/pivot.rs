@@ -4,7 +4,6 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 
 use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
-use crate::frame::row::AnyValueBuffer;
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::date32_to_date;
@@ -249,6 +248,7 @@ impl DataFrame {
                         })
                         .collect::<Vec<_>>()
                 });
+                let results = DataFrame::new_no_checks(result_columns);
 
                 let mut dtype = self
                     .column(&values[column_index])
@@ -261,32 +261,7 @@ impl DataFrame {
                     (_, PivotAgg::Count) => dtype = DataType::UInt32,
                     _ => {}
                 }
-                let len = result_columns.len();
-                let mut buffers = (0..unique_vals.len())
-                    .map(|_| {
-                        let buf: AnyValueBuffer = (&dtype, len).into();
-                        buf
-                    })
-                    .collect::<Vec<_>>();
-
-                // this is very expensive. A lot of cache misses here.
-                // This is the part that is performance critical.
-                result_columns.iter().for_each(|s| {
-                    s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
-                        let _out = buf.add(av);
-                        debug_assert!(_out.is_some());
-                    });
-                });
-                let cols = buffers
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, buf)| {
-                        let mut s = buf.into_series();
-                        s.rename(&format!("{i}"));
-                        s
-                    })
-                    .collect::<Vec<_>>();
-                let mut out = DataFrame::new_no_checks(cols);
+                let mut out = results.transpose_from_dtype(&dtype).unwrap();
 
                 // add the headers based on the unique vals
                 let headers = unique_vals.cast(&DataType::Utf8).unwrap();
