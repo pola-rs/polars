@@ -238,7 +238,7 @@ impl PyDataFrame {
 
     #[cfg(feature = "json")]
     pub fn to_json(
-        &self,
+        &mut self,
         py_f: PyObject,
         pretty: bool,
         row_oriented: bool,
@@ -250,10 +250,10 @@ impl PyDataFrame {
             (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
             (_, _, true) => JsonWriter::new(file)
                 .with_json_format(JsonFormat::JsonLines)
-                .finish(&self.df),
+                .finish(&mut self.df),
             (_, true, false) => JsonWriter::new(file)
                 .with_json_format(JsonFormat::Json)
-                .finish(&self.df),
+                .finish(&mut self.df),
             (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
                 .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
             (false, _, _) => serde_json::to_writer(file, &self.df)
@@ -286,18 +286,18 @@ impl PyDataFrame {
         Ok(pydf)
     }
 
-    pub fn to_csv(&self, py_f: PyObject, has_header: bool, sep: u8) -> PyResult<()> {
+    pub fn to_csv(&mut self, py_f: PyObject, has_header: bool, sep: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_header(has_header)
             .with_delimiter(sep)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn to_ipc(&mut self, py_f: PyObject, compression: &str) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
@@ -308,7 +308,7 @@ impl PyDataFrame {
 
         IpcWriter::new(&mut buf)
             .with_compression(compression)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -421,7 +421,8 @@ impl PyDataFrame {
         Ok(())
     }
 
-    pub fn to_arrow(&self) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
+        self.df.rechunk();
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
@@ -435,7 +436,8 @@ impl PyDataFrame {
         Ok(rbs)
     }
 
-    pub fn to_pandas(&self) -> PyResult<Vec<PyObject>> {
+    pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
+        self.df.rechunk();
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;

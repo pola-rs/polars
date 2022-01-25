@@ -2075,6 +2075,14 @@ impl DataFrame {
     }
 
     /// Iterator over the rows in this `DataFrame` as Arrow RecordBatches.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `DataFrame` that is passed is not rechunked.
+    ///
+    /// This responsibility is left to the caller as we don't want to take mutable references here,
+    /// but we also don't want to rechunk here, as this operation is costly and would benefit the caller
+    /// as well.
     pub fn iter_chunks(&self) -> impl Iterator<Item = ArrowChunk> + '_ {
         RecordBatchIter {
             columns: &self.columns,
