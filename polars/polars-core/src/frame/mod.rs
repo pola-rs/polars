@@ -11,7 +11,7 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_horizontal, split_ca, split_df, NoNull};
+use crate::utils::{accumulate_dataframes_horizontal, get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -515,7 +515,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let venus_air: DataFrame = df!("Element" => &["Carbon dioxide", "Nitrogen"],
     ///                                "Fraction" => &[0.965, 0.035])?;
-    ///     
+    ///
     /// assert_eq!(venus_air.dtypes(), &[DataType::Utf8, DataType::Float64]);
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -548,7 +548,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let earth: DataFrame = df!("Surface type" => &["Water", "Land"],
     ///                            "Fraction" => &[0.708, 0.292])?;
-    ///     
+    ///
     /// let f1: Field = Field::new("Surface type", DataType::Utf8);
     /// let f2: Field = Field::new("Fraction", DataType::Float64);
     ///
@@ -2710,6 +2710,14 @@ impl DataFrame {
             acc_ca.append(&ca);
         }
         Ok(acc_ca.rechunk())
+    }
+
+    /// Get the supertype of the columns in this DataFrame
+    pub fn get_supertype(&self) -> Option<Result<DataType>> {
+        self.columns
+            .iter()
+            .map(|s| Ok(s.dtype().clone()))
+            .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 }
 
