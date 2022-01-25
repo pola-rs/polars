@@ -593,7 +593,7 @@ fn max_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
         .map_many(
             |s| {
                 let s = s.to_vec();
-                let df = DataFrame::new(s)?;
+                let df = DataFrame::new_no_checks(s);
                 df.hmax().map(|s| s.unwrap())
             },
             &exprs[1..],
@@ -618,7 +618,7 @@ fn min_exprs_impl(mut exprs: Vec<Expr>) -> Expr {
         .map_many(
             |s| {
                 let s = s.to_vec();
-                let df = DataFrame::new(s)?;
+                let df = DataFrame::new_no_checks(s);
                 df.hmin().map(|s| s.unwrap())
             },
             &exprs[1..],
