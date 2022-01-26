@@ -108,6 +108,14 @@ impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     }
 }
 
+impl NamedFrom<&Series, str> for Series {
+    fn new(name: &str, s: &Series) -> Self {
+        let mut s = s.clone();
+        s.rename(name);
+        s
+    }
+}
+
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
         Utf8Chunked::new_from_slice(name, v.as_ref())

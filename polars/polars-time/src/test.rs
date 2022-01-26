@@ -416,3 +416,38 @@ fn test_rolling_lookback() {
     assert_eq!(groups[7], [4, 4]); // bound: 01:30 -> 03:30     time: 03:30
     assert_eq!(groups[8], [5, 4]); // bound: 02:00 -> 04:00     time: 04:00
 }
+
+#[test]
+fn test_end_membership() {
+    let time = [
+        NaiveDate::from_ymd(2021, 2, 1)
+            .and_hms(0, 0, 0)
+            .timestamp_millis(),
+        NaiveDate::from_ymd(2021, 5, 1)
+            .and_hms(0, 0, 0)
+            .timestamp_millis(),
+    ];
+    let window = Window::new(
+        Duration::parse("1mo"),
+        Duration::parse("2mo"),
+        Duration::parse("-2mo"),
+    );
+    // windows
+    // 2020-12-01 -> 2021-02-01     members: None
+    // 2021-01-01 -> 2021-03-01     members: [0]
+    // 2021-02-01 -> 2021-04-01     members: [0]
+    // 2021-03-01 -> 2021-05-01     members: None
+    // 2021-04-01 -> 2021-06-01     members: [1]
+    // 2021-05-01 -> 2021-07-01     members: [1]
+    let (groups, _, _) = groupby_windows(
+        window,
+        &time,
+        false,
+        ClosedWindow::Left,
+        TimeUnit::Milliseconds,
+    );
+    assert_eq!(groups[0], [0, 1]);
+    assert_eq!(groups[1], [0, 1]);
+    assert_eq!(groups[2], [1, 1]);
+    assert_eq!(groups[3], [1, 1]);
+}

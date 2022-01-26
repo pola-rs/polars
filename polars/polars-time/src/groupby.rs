@@ -24,7 +24,7 @@ pub enum TimeUnit {
 /// - period
 /// - offset
 /// window boundaries are created. And every window boundary we search for the values
-/// that fit that window by the given `ClowedWindow`. The groups are return as `GroupTuples`
+/// that fit that window by the given `ClosedWindow`. The groups are return as `GroupTuples`
 /// together with the lower bound and upper bound timestamps. These timestamps indicate the start (lower)
 /// and end (upper) of the window of that group.
 ///
@@ -65,34 +65,48 @@ pub fn groupby_windows(
             Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
         }
     };
-    let mut latest_start = 0;
+    let mut start_offset = 0;
 
     for bi in window.get_overlapping_bounds_iter(boundary, tu) {
         let mut skip_window = false;
         // find starting point of window
-        while latest_start < time.len() {
-            let t = time[latest_start];
+        while start_offset < time.len() {
+            let t = time[start_offset];
             if bi.is_future(t) {
+                // the window is behind the time values.
                 skip_window = true;
                 break;
             }
             if bi.is_member(t, closed_window) {
                 break;
             }
-            latest_start += 1;
+            start_offset += 1;
         }
         if skip_window {
-            latest_start = latest_start.saturating_sub(1);
+            start_offset = start_offset.saturating_sub(1);
             continue;
+        }
+        if start_offset == time.len() {
+            start_offset = start_offset.saturating_sub(1);
         }
 
         // find members of this window
-        let mut i = latest_start;
-        if i >= time.len() {
-            break;
+        let mut i = start_offset;
+
+        // last value
+        if i == time.len() - 1 {
+            let t = time[i];
+            if bi.is_member(t, closed_window) {
+                if include_boundaries {
+                    lower_bound.push(bi.start);
+                    upper_bound.push(bi.stop);
+                }
+                groups.push([i as u32, 1])
+            }
+            continue;
         }
 
-        let first = latest_start as u32;
+        let first = start_offset as u32;
 
         while i < time.len() {
             let t = time[i];
