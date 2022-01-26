@@ -1124,6 +1124,32 @@ impl PyDataFrame {
         }
         Ok(df.into())
     }
+    pub fn upsample(
+        &self,
+        by: Vec<String>,
+        index_column: &str,
+        every: &str,
+        offset: &str,
+        stable: bool,
+    ) -> PyResult<Self> {
+        let out = if stable {
+            self.df.upsample_stable(
+                by,
+                index_column,
+                Duration::parse(every),
+                Duration::parse(offset),
+            )
+        } else {
+            self.df.upsample(
+                by,
+                index_column,
+                Duration::parse(every),
+                Duration::parse(offset),
+            )
+        };
+        let out = out.map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {

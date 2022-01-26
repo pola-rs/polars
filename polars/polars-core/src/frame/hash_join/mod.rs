@@ -1055,60 +1055,14 @@ impl DataFrame {
         }
     }
 
-    /// Generic join method. Can be used to join on multiple columns.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
-    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
-    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
-    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
-    ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
-    /// assert_eq!(df3.shape(), (3, 3));
-    /// println!("{}", df3);
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    ///
-    /// Output:
-    ///
-    /// ```text
-    /// shape: (3, 3)
-    /// +--------+----------------------+---------------------+
-    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
-    /// | ---    | ---                  | ---                 |
-    /// | str    | i32                  | i32                 |
-    /// +========+======================+=====================+
-    /// | Apple  | 11                   | 107                 |
-    /// +--------+----------------------+---------------------+
-    /// | Banana | 22                   | 358                 |
-    /// +--------+----------------------+---------------------+
-    /// | Pear   | 12                   | 115                 |
-    /// +--------+----------------------+---------------------+
-    /// ```
-    pub fn join<I, S>(
+    fn join_impl(
         &self,
         other: &DataFrame,
-        left_on: I,
-        right_on: I,
+        selected_left: Vec<Series>,
+        selected_right: Vec<Series>,
         how: JoinType,
         suffix: Option<String>,
-    ) -> Result<DataFrame>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        #[cfg(feature = "cross_join")]
-        if let JoinType::Cross = how {
-            return self.cross_join(other);
-        }
-
-        #[allow(unused_mut)]
-        let mut selected_left = self.select_series(left_on)?;
-        #[allow(unused_mut)]
-        let mut selected_right = other.select_series(right_on)?;
+    ) -> Result<DataFrame> {
         if selected_right.len() != selected_left.len() {
             return Err(PolarsError::ValueError(
                 "the number of columns given as join key should be equal".into(),
@@ -1245,6 +1199,63 @@ impl DataFrame {
                 unreachable!()
             }
         }
+    }
+
+    /// Generic join method. Can be used to join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
+    ///
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
+    /// assert_eq!(df3.shape(), (3, 3));
+    /// println!("{}", df3);
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +--------+----------------------+---------------------+
+    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
+    /// | ---    | ---                  | ---                 |
+    /// | str    | i32                  | i32                 |
+    /// +========+======================+=====================+
+    /// | Apple  | 11                   | 107                 |
+    /// +--------+----------------------+---------------------+
+    /// | Banana | 22                   | 358                 |
+    /// +--------+----------------------+---------------------+
+    /// | Pear   | 12                   | 115                 |
+    /// +--------+----------------------+---------------------+
+    /// ```
+    pub fn join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+        how: JoinType,
+        suffix: Option<String>,
+    ) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        #[cfg(feature = "cross_join")]
+        if let JoinType::Cross = how {
+            return self.cross_join(other);
+        }
+
+        #[allow(unused_mut)]
+        let mut selected_left = self.select_series(left_on)?;
+        #[allow(unused_mut)]
+        let mut selected_right = other.select_series(right_on)?;
+        self.join_impl(other, selected_left, selected_right, how, suffix)
     }
 
     /// Perform an inner join on two DataFrames.

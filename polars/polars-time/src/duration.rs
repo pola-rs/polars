@@ -255,7 +255,7 @@ impl Duration {
         }
     }
 
-    pub(crate) fn add_ms(&self, t: i64) -> i64 {
+    pub fn add_ms(&self, t: i64) -> i64 {
         let d = self;
         let mut new_t = t;
 

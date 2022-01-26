@@ -19,7 +19,7 @@ pub mod series;
 pub mod testing;
 #[cfg(test)]
 mod tests;
-#[cfg(feature = "temporal")]
+#[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
 pub mod time;
 pub(crate) mod vector_hasher;
 
