@@ -408,6 +408,18 @@ impl<'s> FromPyObject<'s> for Wrap<Row<'s>> {
     }
 }
 
+pub(crate) trait ToSeries {
+    fn to_series(self) -> Vec<Series>;
+}
+
+impl ToSeries for Vec<PySeries> {
+    fn to_series(self) -> Vec<Series> {
+        // Safety:
+        // transparent repr
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObjectValue {
     pub inner: PyObject,

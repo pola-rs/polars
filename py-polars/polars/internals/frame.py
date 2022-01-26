@@ -3,7 +3,6 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
-from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -58,7 +57,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, Datetime, UInt32, py_type_to_dtype
+from polars.datatypes import Boolean, DataType, UInt32, py_type_to_dtype
 from polars.utils import (
     _process_null_values,
     handle_projection_columns,
@@ -2782,7 +2781,14 @@ class DataFrame:
             by,
         )
 
-    def upsample(self, by: str, interval: Union[str, timedelta]) -> "DataFrame":
+    def upsample(
+        self,
+        time_column: str,
+        every: str,
+        offset: Optional[str] = None,
+        by: Optional[Union[str, Sequence[str]]] = None,
+        maintain_order: bool = False,
+    ) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
 
@@ -2791,23 +2797,47 @@ class DataFrame:
 
         Parameters
         ----------
+        time_column
+            time column will be used to determine a date_range.
+            Note that this column has to be sorted for the output to make sense.
+        every
+            interval will start 'every' duration
+        offset
+            change the start of the date_range by this offset.
         by
-            Column that will be used as key in the upsampling operation.
-            This should be a datetime column.
-        interval
-            Interval periods.
+            First group by these columns and then upsample for every group
+        maintain_order
+            Keep the ordering predictable. This is slower.
+
+        The `period` and `offset` arguments are created with
+        the following string language:
+
+        - 1ns   (1 nanosecond)
+        - 1us   (1 microsecond)
+        - 1ms   (1 millisecond)
+        - 1s    (1 second)
+        - 1m    (1 minute)
+        - 1h    (1 hour)
+        - 1d    (1 day)
+        - 1w    (1 week)
+        - 1mo   (1 calendar month)
+        - 1y    (1 calendar year)
+        - 1i    (1 index count)
+
+        Or combine them:
+        "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
         """
-        if self[by].dtype != Datetime:
-            raise ValueError(
-                f"Column {by} should be of type datetime. Got {self[by].dtype}"
-            )
-        bounds = self.select(
-            [pli.col(by).min().alias("low"), pli.col(by).max().alias("high")]
+        if by is None:
+            by = []
+        if isinstance(by, str):
+            by = [by]
+        if offset is None:
+            offset = "0ns"
+
+        return wrap_df(
+            self._df.upsample(by, time_column, every, offset, maintain_order)
         )
-        low: datetime = bounds["low"].dt[0]  # type: ignore
-        high: datetime = bounds["high"].dt[0]  # type: ignore
-        upsampled = pli.date_range(low, high, interval, name=by)
-        return DataFrame(upsampled).join(self, on=by, how="left")
 
     def join(
         self,

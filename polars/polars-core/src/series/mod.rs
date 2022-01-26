@@ -155,6 +155,10 @@ impl Series {
         Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
+    pub fn into_frame(self) -> DataFrame {
+        DataFrame::new_no_checks(vec![self])
+    }
+
     /// Rename series.
     pub fn rename(&mut self, name: &str) -> &mut Series {
         self.get_inner_mut().rename(name);

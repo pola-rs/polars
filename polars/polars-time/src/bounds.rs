@@ -11,7 +11,8 @@ impl Bounds {
     pub fn new_checked(start: i64, stop: i64) -> Self {
         assert!(
             start <= stop,
-            "boundary start must be smaller than stop; is your time column sorted in ascending order?"
+            "boundary start must be smaller than stop; is your time column sorted in ascending order?\
+            \nIf you did a groupby, note that null values are a separate group."
         );
         Self::new(start, stop)
     }

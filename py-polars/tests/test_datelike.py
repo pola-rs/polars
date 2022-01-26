@@ -434,3 +434,48 @@ def test_rolling() -> None:
     assert out["sum_a"].to_list() == [3, 10, 15, 24, 11, 1]
     assert out["max_a"].to_list() == [3, 7, 7, 9, 9, 1]
     assert out["min_a"].to_list() == [3, 3, 3, 3, 2, 1]
+
+
+def test_upsample() -> None:
+    df = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 2, 1),
+                datetime(2021, 4, 1),
+                datetime(2021, 5, 1),
+                datetime(2021, 6, 1),
+            ],
+            "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
+            "test2": [0, 1, 2, 3],
+        }
+    )
+
+    up = df.upsample(
+        time_column="time", every="1mo", by="admin", maintain_order=True
+    ).select(pl.all().forward_fill())
+
+    expected = pl.DataFrame(
+        {
+            "time": [
+                datetime(2021, 2, 1, 0, 0),
+                datetime(2021, 3, 1, 0, 0),
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+                datetime(2021, 4, 1, 0, 0),
+                datetime(2021, 5, 1, 0, 0),
+                datetime(2021, 6, 1, 0, 0),
+            ],
+            "admin": [
+                "Åland",
+                "Åland",
+                "Åland",
+                "Åland",
+                "Netherlands",
+                "Netherlands",
+                "Netherlands",
+            ],
+            "test2": [0, 0, 0, 2, 1, 1, 3],
+        }
+    )
+
+    assert up.frame_equal(expected)
