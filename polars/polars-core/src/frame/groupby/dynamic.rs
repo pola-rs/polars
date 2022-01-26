@@ -394,11 +394,11 @@ mod test {
             .and_hms(3, 0, 0)
             .timestamp_millis();
         let range = date_range(
+            "date",
             start,
             stop,
             Duration::parse("30m"),
             ClosedWindow::Both,
-            "date",
             TimeUnit::Milliseconds,
         )
         .into_series();
@@ -440,11 +440,11 @@ mod test {
             .and_hms(3, 0, 0)
             .timestamp_millis();
         let range = date_range(
+            "_upper_boundary",
             start,
             stop,
             Duration::parse("1h"),
             ClosedWindow::Both,
-            "_upper_boundary",
             TimeUnit::Milliseconds,
         )
         .into_series();
@@ -458,11 +458,11 @@ mod test {
             .and_hms(2, 0, 0)
             .timestamp_millis();
         let range = date_range(
+            "_lower_boundary",
             start,
             stop,
             Duration::parse("1h"),
             ClosedWindow::Both,
-            "_lower_boundary",
             TimeUnit::Milliseconds,
         )
         .into_series();
