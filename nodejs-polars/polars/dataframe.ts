@@ -1228,6 +1228,79 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   toSeries(index: number): Series<any>
   toString(): string
   /**
+   * Transpose a DataFrame over the diagonal.
+   *
+   * @note This is a very expensive operation. Perhaps you can do it differently.
+   * @param options
+   * @param options.includeHeader If set, the column names will be added as first column.
+   * @param options.headerName If `includeHeader` is set, this determines the name of the column that will be inserted
+   * @param options.columnNames Optional generator/iterator that yields column names. Will be used to replace the columns in the DataFrame.
+   *
+   * @example
+   * >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+   * >>> df.transpose({includeHeader:true})
+   * shape: (2, 4)
+   * ┌────────┬──────────┬──────────┬──────────┐
+   * │ column ┆ column_0 ┆ column_1 ┆ column_2 │
+   * │ ---    ┆ ---      ┆ ---      ┆ ---      │
+   * │ str    ┆ i64      ┆ i64      ┆ i64      │
+   * ╞════════╪══════════╪══════════╪══════════╡
+   * │ a      ┆ 1        ┆ 2        ┆ 3        │
+   * ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+   * │ b      ┆ 1        ┆ 2        ┆ 3        │
+   * └────────┴──────────┴──────────┴──────────┘
+   * // replace the auto generated column names with a list
+   * >>> df.transpose({includeHeader:false, columnNames:["a", "b", "c"]})
+   * shape: (2, 3)
+   * ┌─────┬─────┬─────┐
+   * │ a   ┆ b   ┆ c   │
+   * │ --- ┆ --- ┆ --- │
+   * │ i64 ┆ i64 ┆ i64 │
+   * ╞═════╪═════╪═════╡
+   * │ 1   ┆ 2   ┆ 3   │
+   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+   * │ 1   ┆ 2   ┆ 3   │
+   * └─────┴─────┴─────┘
+   *
+   * // Include the header as a separate column
+   * >>> df.transpose({
+   * ...     includeHeader:true,
+   * ...     headerName:"foo",
+   * ...     columnNames:["a", "b", "c"]
+   * ... })
+   * shape: (2, 4)
+   * ┌─────┬─────┬─────┬─────┐
+   * │ foo ┆ a   ┆ b   ┆ c   │
+   * │ --- ┆ --- ┆ --- ┆ --- │
+   * │ str ┆ i64 ┆ i64 ┆ i64 │
+   * ╞═════╪═════╪═════╪═════╡
+   * │ a   ┆ 1   ┆ 2   ┆ 3   │
+   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+   * │ b   ┆ 1   ┆ 2   ┆ 3   │
+   * └─────┴─────┴─────┴─────┘
+   *
+   * // Replace the auto generated column with column names from a generator function
+   * >>> function *namesGenerator() {
+   * ...     const baseName = "my_column_";
+   * ...     let count = 0;
+   * ...     let name = `${baseName}_${count}`;
+   * ...     count++;
+   * ...     yield name;
+   * ... }
+   * >>> df.transpose({includeHeader:false, columnNames:namesGenerator})
+   * shape: (2, 3)
+   * ┌─────────────┬─────────────┬─────────────┐
+   * │ my_column_0 ┆ my_column_1 ┆ my_column_2 │
+   * │ ---         ┆ ---         ┆ ---         │
+   * │ i64         ┆ i64         ┆ i64         │
+   * ╞═════════════╪═════════════╪═════════════╡
+   * │ 1           ┆ 2           ┆ 3           │
+   * ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+   * │ 1           ┆ 2           ┆ 3           │
+   * └─────────────┴─────────────┴─────────────┘
+   */
+  transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: IterableIterator<string>})
+  /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
    * ```
@@ -1764,6 +1837,32 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
     toString: () => noArgUnwrap<any>("as_str")().toString(),
+    transpose(options?) {
+
+      let df = wrap("transpose", options);
+      if(options?.columnNames) {
+        function *namesIter() {
+          if(options?.includeHeader) {
+            yield options.headerName;
+          }
+          const gen = (options as any).columnNames[Symbol.iterator]();
+          let next;
+          // eslint-disable-next-line no-cond-assign
+          while (next = gen.next()) {
+            yield next.value;
+          }
+        }
+        const newColumns = Array.from(
+          {length: df.width},
+          (i => () => i.next().value)(namesIter())
+        );
+
+        df.columns = newColumns;
+
+      }
+
+      return df;
+    },
     var: noArgWrap("var"),
     map: (fn) => map(dfWrapper(_df), fn as any) as any,
     row: (index) => unwrap("to_row", {idx: index}),
