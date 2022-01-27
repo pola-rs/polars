@@ -1,4 +1,3 @@
-use crate::logical_plan::iterator::ArenaExprIter;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{
@@ -109,15 +108,46 @@ pub(super) fn get_insertion_name(
 /// For instance shifts | sorts results are influenced by a filter so we do all predicates before the shift | sort
 /// The rule of thumb is any operation that changes the order of a column w/r/t other columns should be a
 /// predicate pushdown blocker.
-pub(super) fn is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+///
+/// This checks the boundary of other columns
+pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let matches = |e: &AExpr| {
         matches!(
             e,
             AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
-            // Functions are black boxes for us and we can never pass them
+            // everything that works on groups likely changes to order of elements w/r/t the other columns
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
+            | AExpr::BinaryExpr {..}
+            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
+            // still need to investigate this one
+            | AExpr::Explode {..}
+            // A groupby needs all rows for aggregation
+            | AExpr::Window {..}
+            | AExpr::Literal(LiteralValue::Range {..})
+        ) ||
+            // a series that is not a singleton would also have a different result
+            // if filter is applied earlier
+            matches!(e, AExpr::Literal(LiteralValue::Series(s)) if s.len() > 1
+        )
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
+/// This checks the boundary of same columns. So that means columns that are referred in the predicate
+pub(super) fn predicate_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| {
+        matches!(
+            e,
+            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            | AExpr::Agg(_) // an aggregation needs all rows
+            | AExpr::Reverse(_)
+            // everything that works on groups likely changes to order of elements w/r/t the other columns
             | AExpr::Function {..}
+            | AExpr::BinaryExpr {..}
+            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
@@ -149,12 +179,17 @@ where
     // this may be problematic as the aliased column may not yet exist.
     for projection_node in &projections {
         {
-            let e = expr_arena.get(*projection_node);
-            if let AExpr::Alias(e, name) = e {
+            let projection_aexpr = expr_arena.get(*projection_node);
+            if let AExpr::Alias(projection_node, name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
                 if let Some(predicate) = acc_predicates.remove(&*name) {
-                    match aexpr_to_root_column_name(*e, &*expr_arena) {
+                    if predicate_column_is_pushdown_boundary(*projection_node, expr_arena) {
+                        local_predicates.push(predicate);
+                        continue;
+                    }
+
+                    match aexpr_to_root_column_name(*projection_node, &*expr_arena) {
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
                         Ok(new_name) => {
@@ -175,19 +210,11 @@ where
             }
         }
 
-        let e = expr_arena.get(*projection_node);
         let input_schema = lp_arena.get(input).schema(lp_arena);
 
         // we check if predicates can be done on the input above
-        // with the following conditions:
-
-        // 1. predicate based on current column may only pushed down if simple projection, e.g. col() / col().alias()
-        let expr_depth = (&*expr_arena).iter(*projection_node).count();
-        let is_computation = if let AExpr::Alias(_, _) = e {
-            expr_depth > 2
-        } else {
-            expr_depth > 1
-        };
+        // this can only be done if the current projection is not a projection boundary
+        let is_boundary = other_column_is_pushdown_boundary(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -197,7 +224,7 @@ where
                 if check_input_node(*kv.1, input_schema, expr_arena)
                     // if this predicate not equals a column that is a computation
                     // it is ok
-                    && !is_computation
+                    && !is_boundary
                 {
                     None
                 } else {

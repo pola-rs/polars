@@ -13,8 +13,8 @@ fn test_multiple_roots() -> Result<()> {
     let lf = lf.filter(col("bar").lt(lit(110i32)));
 
     // also check if all predicates are combined and pushed down
-    let root = lf.optimize(&mut lp_arena, &mut expr_arena)?;
-    assert!(predicate_at_scan(&mut lp_arena, root));
+    let root = lf.clone().optimize(&mut lp_arena, &mut expr_arena)?;
+    assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
     assert!(!(&lp_arena)
         .iter(root)
@@ -24,7 +24,7 @@ fn test_multiple_roots() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "is_in")]
+#[cfg(all(feature = "is_in", feature = "strings"))]
 fn test_issue_2472() -> Result<()> {
     let df = df![
         "group" => ["54360-2001-0-20020312-4-1"
@@ -59,6 +59,24 @@ fn test_issue_2472() -> Result<()> {
 
     let out = base.clone().select([extract]).filter(predicate).collect()?;
     assert_eq!(out.shape(), (2, 1));
+
+    Ok(())
+}
+
+#[test]
+fn test_pass_unrelated_apply() -> Result<()> {
+    // maps should not influence a predicate of a different column as maps should not depend on previous values
+    let df = fruits_cars();
+
+    let q = df
+        .lazy()
+        .with_column(col("A").map(
+            |s| Ok(s.is_null().into_series()),
+            GetOutput::from_type(DataType::Boolean),
+        ))
+        .filter(col("B").gt(lit(10i32)));
+
+    assert!(predicate_at_scan(q));
 
     Ok(())
 }

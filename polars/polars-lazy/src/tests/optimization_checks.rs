@@ -7,7 +7,10 @@ fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
     (expr_arena, lp_arena)
 }
 
-pub(crate) fn predicate_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
+pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
@@ -44,44 +47,36 @@ fn slice_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 fn test_pred_pd_1() -> Result<()> {
     let df = fruits_cars();
 
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let lp = df
+    let q = df
         .clone()
         .lazy()
         .select([col("A"), col("B")])
-        .filter(col("A").gt(lit(1)))
-        .optimize(&mut lp_arena, &mut expr_arena)?;
+        .filter(col("A").gt(lit(1)));
 
-    assert!(predicate_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(q));
 
     // check if we understand that we can unwrap the alias
-    let lp = df
+    let q = df
         .clone()
         .lazy()
         .select([col("A").alias("C"), col("B")])
-        .filter(col("C").gt(lit(1)))
-        .optimize(&mut lp_arena, &mut expr_arena)?;
+        .filter(col("C").gt(lit(1)));
 
-    assert!(predicate_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(q));
 
     // check if we pass hstack
-    let lp = df
+    let q = df
         .clone()
         .lazy()
         .with_columns([col("A").alias("C"), col("B")])
-        .filter(col("B").gt(lit(1)))
-        .optimize(&mut lp_arena, &mut expr_arena)?;
+        .filter(col("B").gt(lit(1)));
 
-    assert!(predicate_at_scan(&lp_arena, lp));
+    assert!(predicate_at_scan(q));
 
     // check if we do not pass slice
-    let lp = df
-        .lazy()
-        .limit(10)
-        .filter(col("B").gt(lit(1)))
-        .optimize(&mut lp_arena, &mut expr_arena)?;
+    let q = df.lazy().limit(10).filter(col("B").gt(lit(1)));
 
-    assert!(!predicate_at_scan(&lp_arena, lp));
+    assert!(!predicate_at_scan(q));
 
     Ok(())
 }
@@ -145,10 +140,7 @@ pub fn test_predicate_block_cast() -> Result<()> {
         .filter(col("value").lt(lit(2.5f32)));
 
     for lf in [lf1, lf2] {
-        // make sure that the predicate is not pushed down
-        let (mut expr_arena, mut lp_arena) = get_arenas();
-        let root = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-        assert!(!predicate_at_scan(&mut lp_arena, root));
+        assert!(!predicate_at_scan(lf.clone()));
 
         let out = lf.collect()?;
         let s = out.column("value").unwrap();
@@ -183,9 +175,7 @@ fn test_lazy_filter_and_rename() {
         GetOutput::from_type(DataType::Boolean),
     ));
     // the rename function should not interfere with the predicate pushdown
-    let (mut expr_arena, mut lp_arena) = get_arenas();
-    let root = lf.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!(predicate_at_scan(&mut lp_arena, root));
+    assert!(predicate_at_scan(lf.clone()));
 
     assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
 }
