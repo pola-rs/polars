@@ -439,6 +439,11 @@ pub fn col(name: &str) -> Expr {
     }
 }
 
+/// Selects all columns
+pub fn all() -> Expr {
+    Expr::Wildcard
+}
+
 /// Select multiple columns by name
 pub fn cols(names: Vec<String>) -> Expr {
     Expr::Columns(names)

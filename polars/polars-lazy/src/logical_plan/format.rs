@@ -99,7 +99,7 @@ impl fmt::Debug for LogicalPlan {
 
                 write!(
                     f,
-                    "MEMTABLE: {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
+                    "DATAFRAME(in-memory): {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
                     \tselection: {:?}\n\n",
                     schema
                         .fields()
@@ -153,7 +153,7 @@ FROM
                 input_left, input_right, left_on, right_on
             ),
             HStack { input, exprs, .. } => {
-                write!(f, "{:?}\nWITH COLUMN(S) {:?}", input, exprs)
+                write!(f, "{:?}\nWITH COLUMNS {:?}", input, exprs)
             }
             Distinct { input, .. } => write!(f, "DISTINCT {:?}", input),
             Slice { input, offset, len } => {
@@ -178,7 +178,7 @@ impl fmt::Debug for Expr {
             Duplicated(expr) => write!(f, "{:?}.is_duplicate()", expr),
             Reverse(expr) => write!(f, "{:?}.reverse()", expr),
             Alias(expr, name) => write!(f, "{:?}.alias({})", expr, name),
-            Column(name) => write!(f, "col({})", name),
+            Column(name) => write!(f, "col(\"{}\")", name),
             Literal(v) => {
                 match v {
                     LiteralValue::Utf8(v) => {
@@ -232,7 +232,7 @@ impl fmt::Debug for Expr {
             }
             Cast {
                 expr, data_type, ..
-            } => write!(f, "CAST {:?} TO {:?}", expr, data_type),
+            } => write!(f, "{:?}.cast({:?})", expr, data_type),
             Ternary {
                 predicate,
                 truthy,

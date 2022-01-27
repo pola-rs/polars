@@ -1,4 +1,7 @@
 //! Domain specific language for the Lazy api.
+#[cfg(feature = "strings")]
+pub mod string;
+
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::{has_expr, has_root_literal_expr};
@@ -1885,19 +1888,6 @@ impl Expr {
         )
         .with_fmt("kurtosis")
     }
-    #[cfg(feature = "concat_str")]
-    /// Concat the values into a string array.
-    /// # Arguments
-    ///
-    /// * `delimiter` - A string that will act as delimiter between values.
-    pub fn str_concat(self, delimiter: &str) -> Expr {
-        let delimiter = delimiter.to_owned();
-        self.apply(
-            move |s| Ok(s.str_concat(&delimiter).into_series()),
-            GetOutput::from_type(DataType::Utf8),
-        )
-        .with_fmt("str_concat")
-    }
 
     /// Get maximal value that could be hold by this dtype.
     pub fn upper_bound(self) -> Expr {
@@ -2090,6 +2080,11 @@ impl Expr {
             GetOutput::from_type(DataType::Boolean),
         )
         .with_fmt("all")
+    }
+
+    #[cfg(feature = "strings")]
+    pub fn str(self) -> string::StringNameSpace {
+        string::StringNameSpace(self)
     }
 }
 

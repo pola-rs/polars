@@ -34,7 +34,7 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 # parallel = ["polars-core/parallel"]
 
 # extra utilities for Utf8Chunked
-strings = ["polars-core/strings"]
+strings = ["polars-core/strings", "polars-lazy/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["polars-core/object", "polars-lazy/object"]
