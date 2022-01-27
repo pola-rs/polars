@@ -163,12 +163,22 @@ impl ChunkZip<CategoricalType> for CategoricalChunked {
         mask: &BooleanChunked,
         other: &ChunkedArray<CategoricalType>,
     ) -> Result<ChunkedArray<CategoricalType>> {
-        let ca: CategoricalChunked = self.deref().zip_with(mask, other.deref())?.into();
+        let ca: CategoricalChunked = match self.categorical_map.as_deref() {
+            Some(crate::chunked_array::categorical::RevMapping::Local(_)) => {
+                // the logic for merging the rev maps will concatenate utf8 arrays
+                // to make sure the indexes still make sense we need to offset the right hand side
+                self.deref()
+                    .zip_with(mask, &(other.deref() + self.len() as u32))?
+                    .into()
+            }
+            _ => self.deref().zip_with(mask, other.deref())?.into(),
+        };
+
         // first set old state
         let mut ca = ca.set_state(self);
         // then merge state
         let state = ca.merge_categorical_map(other);
-        // and set this
+        // and set this new state
         ca.categorical_map = Some(state);
         Ok(ca)
     }

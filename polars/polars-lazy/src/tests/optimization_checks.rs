@@ -104,6 +104,7 @@ fn test_no_left_join_pass() -> Result<()> {
 
 #[test]
 pub fn test_simple_slice() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let q = scan_foods_parquet(false).limit(3);
 

@@ -5,8 +5,8 @@ mod optimization_checks;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
-
 use optimization_checks::*;
+use std::sync::Mutex;
 
 use polars_core::prelude::*;
 use polars_io::prelude::*;
@@ -21,6 +21,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars_core::export::lazy_static::lazy_static;
 use std::iter::FromIterator;
 
 static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
@@ -30,6 +31,13 @@ static FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/data
 static FOODS_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.ipc";
 static FOODS_PARQUET: &str =
     "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet";
+
+lazy_static! {
+    // needed prevent race conditions during test execution
+    // for example with env vars set for tests
+    // or global string cache resets.
+    pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
+}
 
 fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
