@@ -17,11 +17,8 @@ impl CategoricalChunked {
                 }
                 let mut new_map = (*l_map).clone();
 
-                let mut offset_buf = vec![];
-                offset_buf.extend_from_slice(l_slots.offsets().as_slice());
-
-                let mut values_buf = vec![];
-                values_buf.extend_from_slice(l_slots.values().as_slice());
+                let offset_buf = l_slots.offsets().as_slice().to_vec();
+                let values_buf = l_slots.values().as_slice().to_vec();
 
                 let validity_buf = if let Some(validity) = l_slots.validity() {
                     let mut validity_buf = MutableBitmap::new();
@@ -57,10 +54,46 @@ impl CategoricalChunked {
                 let new_rev = RevMapping::Global(new_map, new_slots.into(), *l_id);
                 Arc::new(new_rev)
             }
-            _ => {
-                // pass for now. Still need to do some checks for local maps that are equal
-                self.categorical_map.as_ref().unwrap().clone()
+            (Some(RevMapping::Local(arr_l)), Some(RevMapping::Local(arr_r))) => {
+                let arr = arrow::compute::concatenate::concatenate(&[arr_l, arr_r]).unwrap();
+                let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap().clone();
+
+                Arc::new(RevMapping::Local(arr))
             }
+            _ => panic!("cannot combine categorical under a global string cache with a non cached categorical")
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::chunked_array::categorical::CategoricalChunkedBuilder;
+    use crate::{reset_string_cache, toggle_string_cache};
+
+    #[test]
+    #[cfg(feature = "single_thread")]
+    fn test_merge_rev_map() {
+        reset_string_cache();
+        toggle_string_cache(true);
+
+        let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
+        let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
+        builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
+        builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
+        let ca1 = builder1.finish();
+        let ca2 = builder2.finish();
+        let rev_map = ca1.merge_categorical_map(&ca2);
+
+        let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
+        ca.categorical_map = Some(rev_map);
+        let s = ca
+            .cast(&DataType::Categorical)
+            .unwrap()
+            .cast(&DataType::Utf8)
+            .unwrap();
+        let ca = s.utf8().unwrap();
+        let vals = ca.into_no_null_iter().collect::<Vec<_>>();
+        assert_eq!(vals, &["hello", "vietnam", "world", "bar"]);
     }
 }

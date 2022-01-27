@@ -1,14 +1,8 @@
 use super::*;
-use polars_core::export::lazy_static::lazy_static;
-use std::sync::Mutex;
-
-lazy_static! {
-    static ref PARQUET_IO_LOCK: Mutex<()> = Mutex::new(());
-}
 
 #[test]
 fn test_parquet_exec() -> Result<()> {
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     // filter
     for par in [true, false] {
         let out = scan_foods_parquet(par)
@@ -39,7 +33,7 @@ fn test_parquet_exec() -> Result<()> {
 
 #[test]
 fn test_parquet_statistics_no_skip() {
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
     let par = true;
     let out = scan_foods_parquet(par)
@@ -80,7 +74,7 @@ fn test_parquet_statistics_no_skip() {
 
 #[test]
 fn test_parquet_statistics() -> Result<()> {
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
     std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
     let par = true;
@@ -151,7 +145,7 @@ fn test_parquet_statistics() -> Result<()> {
 fn test_parquet_globbing() -> Result<()> {
     // for side effects
     init_files();
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
         glob.into(),
@@ -244,7 +238,7 @@ fn test_csv_globbing() -> Result<()> {
 
 #[test]
 pub fn test_simple_slice() -> Result<()> {
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     let out = scan_foods_parquet(false).limit(3).collect()?;
     assert_eq!(out.height(), 3);
 
@@ -253,7 +247,7 @@ pub fn test_simple_slice() -> Result<()> {
 #[test]
 fn test_union_and_agg_projections() -> Result<()> {
     init_files();
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
     // a union vstacks columns and aggscan optimization determines columns to aggregate in a
     // hashmap, if that doesn't set them sorted the vstack will panic.
     let lf1 = LazyFrame::scan_parquet(GLOB_PARQUET.into(), Default::default())?;
@@ -278,7 +272,7 @@ fn test_union_and_agg_projections() -> Result<()> {
 #[cfg(all(feature = "ipc", feature = "csv-file"))]
 fn test_slice_filter() -> Result<()> {
     init_files();
-    let _guard = PARQUET_IO_LOCK.lock().unwrap();
+    let _guard = SINGLE_LOCK.lock().unwrap();
 
     // make sure that the slices are not applied before the predicates.
     let len = 5;
