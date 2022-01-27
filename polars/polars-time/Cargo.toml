@@ -11,3 +11,8 @@ description = "Time related code for the polars dataframe library"
 [dependencies]
 chrono = "0.4"
 polars-arrow = { version = "0.19.0", path = "../polars-arrow", features = ["compute"] }
+polars-core = { version = "0.19.0", path = "../polars-core", features = ["temporal", "dtype-date", "dtype-datetime"] }
+
+[features]
+dtype-date = []
+dtype-datetime = []

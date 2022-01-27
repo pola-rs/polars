@@ -16,7 +16,6 @@ use std::borrow::Cow;
 
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_core::datatypes::PlHashMap;
-use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 use polars_core::frame::hash_join::JoinType;
 use polars_core::prelude::*;
 #[cfg(feature = "dtype-categorical")]
@@ -32,14 +31,16 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::physical_plan::state::ExecutionState;
+
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
-use crate::prelude::drop_nulls::ReplaceDropNulls;
-use crate::prelude::fast_projection::FastProjection;
-use crate::prelude::simplify_expr::SimplifyBooleanRule;
-use crate::prelude::slice_pushdown::SlicePushDown;
+use crate::prelude::{
+    drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
+    simplify_expr::SimplifyBooleanRule, slice_pushdown::SlicePushDown, *,
+};
+
+use crate::logical_plan::FETCH_ROWS;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
-use crate::{logical_plan::FETCH_ROWS, prelude::*};
 use polars_arrow::prelude::QuantileInterpolOptions;
 
 #[derive(Clone, Debug)]

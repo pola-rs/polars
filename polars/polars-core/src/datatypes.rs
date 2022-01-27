@@ -586,14 +586,6 @@ impl TimeUnit {
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
         }
     }
-
-    #[cfg(any(feature = "temporal", feature = "dynamic_groupby"))]
-    pub(crate) fn to_polars_time(self) -> polars_time::groupby::TimeUnit {
-        match self {
-            TimeUnit::Nanoseconds => polars_time::groupby::TimeUnit::Nanoseconds,
-            TimeUnit::Milliseconds => polars_time::groupby::TimeUnit::Milliseconds,
-        }
-    }
 }
 
 pub type TimeZone = String;

@@ -20,8 +20,6 @@ pub(crate) mod optimizer;
 mod options;
 mod projection;
 
-use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
-
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;

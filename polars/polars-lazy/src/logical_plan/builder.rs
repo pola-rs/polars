@@ -3,7 +3,6 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use ahash::RandomState;
-use polars_core::frame::groupby::{DynamicGroupOptions, RollingGroupOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;

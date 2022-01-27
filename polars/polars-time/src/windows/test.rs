@@ -1,16 +1,14 @@
-use crate::calendar::date_range;
-use crate::duration::Duration;
-use crate::groupby::{groupby_values, groupby_windows, ClosedWindow, GroupsSlice, TimeUnit};
-use crate::window::Window;
+use crate::prelude::*;
 use chrono::prelude::*;
 use polars_arrow::export::arrow::temporal_conversions::timestamp_ns_to_datetime;
+use polars_core::prelude::*;
 
 #[test]
 fn test_date_range() {
     // Test month as interval in date range
     let start = NaiveDate::from_ymd(2022, 1, 1).and_hms(0, 0, 0);
     let end = NaiveDate::from_ymd(2022, 4, 1).and_hms(0, 0, 0);
-    let dates = date_range(
+    let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
@@ -33,7 +31,7 @@ fn test_date_range() {
 fn test_feb_date_range() {
     let start = NaiveDate::from_ymd(2022, 2, 1).and_hms(0, 0, 0);
     let end = NaiveDate::from_ymd(2022, 3, 1).and_hms(0, 0, 0);
-    let dates = date_range(
+    let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("1mo"),
@@ -115,7 +113,7 @@ fn test_boundaries() {
     let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let stop = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
 
-    let ts = date_range(
+    let ts = date_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
@@ -218,7 +216,7 @@ fn test_boundaries_2() {
     let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let stop = NaiveDate::from_ymd(2021, 12, 16).and_hms(4, 0, 0);
 
-    let ts = date_range(
+    let ts = date_range_vec(
         start.timestamp_nanos(),
         stop.timestamp_nanos(),
         Duration::parse("30m"),
@@ -286,7 +284,7 @@ fn test_boundaries_ms() {
     let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let stop = NaiveDate::from_ymd(2021, 12, 16).and_hms(3, 0, 0);
 
-    let ts = date_range(
+    let ts = date_range_vec(
         start.timestamp_millis(),
         stop.timestamp_millis(),
         Duration::parse("30m"),
@@ -390,7 +388,7 @@ fn test_rolling_lookback() {
     // Test month as interval in date range
     let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
     let end = NaiveDate::from_ymd(2021, 12, 16).and_hms(4, 0, 0);
-    let dates = date_range(
+    let dates = date_range_vec(
         start.timestamp_nanos(),
         end.timestamp_nanos(),
         Duration::parse("30m"),

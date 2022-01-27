@@ -1,4 +1,4 @@
-use crate::groupby::ClosedWindow;
+use super::groupby::ClosedWindow;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Bounds {

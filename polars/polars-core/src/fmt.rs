@@ -659,7 +659,7 @@ impl Display for AnyValue<'_> {
             },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
-                let nt: polars_time::export::chrono::NaiveTime = self.into();
+                let nt: chrono::NaiveTime = self.into();
                 write!(f, "{}", nt)
             }
             #[cfg(feature = "dtype-categorical")]

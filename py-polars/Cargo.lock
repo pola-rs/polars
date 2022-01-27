@@ -1212,6 +1212,7 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-lazy",
+ "polars-time",
 ]
 
 [[package]]
@@ -1232,6 +1233,7 @@ dependencies = [
  "anyhow",
  "arrow2",
  "base64",
+ "chrono",
  "comfy-table",
  "hashbrown 0.12.0",
  "hex",
@@ -1241,7 +1243,6 @@ dependencies = [
  "num",
  "num_cpus",
  "polars-arrow",
- "polars-time",
  "polars-utils",
  "rand",
  "rand_distr",
@@ -1286,6 +1287,7 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-io",
+ "polars-time",
  "polars-utils",
  "rayon",
  "regex",
@@ -1297,6 +1299,7 @@ version = "0.1.1"
 dependencies = [
  "chrono",
  "polars-arrow",
+ "polars-core",
 ]
 
 [[package]]
