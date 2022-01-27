@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_foo() -> Result<()> {
+fn test_multiple_roots() -> Result<()> {
     let mut expr_arena = Arena::with_capacity(16);
     let mut lp_arena = Arena::with_capacity(8);
 
@@ -19,6 +19,46 @@ fn test_foo() -> Result<()> {
     assert!(!(&lp_arena)
         .iter(root)
         .any(|(_, lp)| matches!(lp, ALogicalPlan::Selection { .. })));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "is_in")]
+fn test_issue_2472() -> Result<()> {
+    let df = df![
+        "group" => ["54360-2001-0-20020312-4-1"
+    ,"39444-2020-0-20210418-4-1"
+    ,"68398-2020-0-20201216-4-1"
+    ,"30910-2020-0-20210223-4-1"
+    ,"71060-2020-0-20210315-4-1"
+    ,"47959-2020-0-20210305-4-1"
+    ,"63212-2018-0-20181007-2-2"
+    ,"61465-2018-0-20181018-2-2"
+             ]
+    ]?;
+    let base = df
+        .lazy()
+        .with_column(col("group").cast(DataType::Categorical));
+
+    let extract = col("group")
+        .cast(DataType::Utf8)
+        .str()
+        .extract(r#"(\d+-){4}(\w+)-"#, 2)
+        .cast(DataType::Int32)
+        .alias("age");
+    let predicate = col("age").is_in(lit(Series::new("", [2i32])));
+
+    let out = base
+        .clone()
+        .with_column(extract.clone())
+        .filter(predicate.clone())
+        .collect()?;
+
+    assert_eq!(out.shape(), (2, 2));
+
+    let out = base.clone().select([extract]).filter(predicate).collect()?;
+    assert_eq!(out.shape(), (2, 1));
 
     Ok(())
 }

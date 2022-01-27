@@ -604,28 +604,12 @@ impl PyExpr {
             .into()
     }
 
-    pub fn str_extract(&self, pat: String, group_index: usize) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            match ca.extract(&pat, group_index) {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("str.exact")
-            .into()
+    pub fn str_extract(&self, pat: &str, group_index: usize) -> PyExpr {
+        self.inner.clone().str().extract(pat, group_index).into()
     }
 
-    pub fn strftime(&self, fmt: String) -> PyExpr {
-        let function = move |s: Series| s.strftime(&fmt);
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("strftime")
-            .into()
+    pub fn strftime(&self, fmt: &str) -> PyExpr {
+        self.inner.clone().str().strftime(fmt).into()
     }
 
     pub fn arr_lengths(&self) -> PyExpr {
@@ -1220,7 +1204,7 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
     fn str_concat(&self, delimiter: &str) -> Self {
-        self.inner.clone().str_concat(delimiter).into()
+        self.inner.clone().str().concat(delimiter).into()
     }
 
     fn date_truncate(&self, every: &str, offset: &str) -> Self {
