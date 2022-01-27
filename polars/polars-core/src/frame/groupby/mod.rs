@@ -18,8 +18,6 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 pub mod aggregations;
-#[cfg(feature = "dynamic_groupby")]
-mod dynamic;
 pub(crate) mod hashing;
 #[cfg(feature = "rows")]
 pub(crate) mod pivot;
@@ -27,23 +25,10 @@ mod proxy;
 
 #[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
-#[cfg(not(feature = "dynamic_groupby"))]
-#[derive(Clone, Debug)]
-pub struct DynamicGroupOptions {
-    pub index_column: String,
-}
-#[cfg(not(feature = "dynamic_groupby"))]
-#[derive(Clone, Debug)]
-pub struct RollingGroupOptions {
-    pub index_column: String,
-}
 
 pub use proxy::*;
 
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
-
-#[cfg(feature = "dynamic_groupby")]
-pub use dynamic::*;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -570,6 +555,10 @@ impl<'df> GroupBy<'df> {
     ///     Where second value in the tuple is a vector with all matching indexes.
     pub fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
+    }
+
+    pub fn take_groups(self) -> GroupsProxy {
+        self.groups
     }
 
     pub fn keys(&self) -> Vec<Series> {

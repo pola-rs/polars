@@ -14,7 +14,7 @@ rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
-temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal"]
+temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
 random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
@@ -126,8 +126,13 @@ dtype-slim = [
 ]
 
 # opt-in datatypes for Series
-dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
+dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date", "polars-time/dtype-date"]
+dtype-datetime = [
+  "polars-core/dtype-datetime",
+  "polars-lazy/dtype-datetime",
+  "polars-io/dtype-datetime",
+  "polars-time/dtype-datetime",
+]
 dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration"]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
@@ -188,6 +193,7 @@ bench = [
 polars-core = { version = "0.19.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
 polars-io = { version = "0.19.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
 polars-lazy = { version = "0.19.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-time = { version = "0.1.1", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

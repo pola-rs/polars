@@ -1,19 +1,12 @@
-// Ported and adapted from influxdb.
-// Credits to their work.
-// https://github.com/influxdata/influxdb_iox/blob/main/query/src/func/window/internal.rs
-// https://github.com/influxdata/flux/blob/3d6c47d9113fe0d919ddd3d4eef242dfc38ab2fb/interval/window.go
-// https://github.com/influxdata/flux/blob/1e9bfd49f21c0e679b42acf6fc515ce05c6dec2b/values/time.go#L40
-
-mod bounds;
-mod calendar;
-mod duration;
-pub mod export;
-pub mod groupby;
-#[cfg(test)]
-mod test;
-mod window;
+mod date_range;
+mod groupby;
+mod prelude;
+mod truncate;
+mod upsample;
+mod windows;
 
 pub use {
-    calendar::date_range as date_range_vec, duration::Duration, groupby::ClosedWindow,
-    window::Window,
+    date_range::*, groupby::dynamic::*, truncate::*, upsample::*,
+    windows::calendar::date_range as date_range_vec, windows::duration::Duration,
+    windows::groupby::ClosedWindow, windows::window::Window,
 };

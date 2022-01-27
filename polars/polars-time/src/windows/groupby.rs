@@ -1,7 +1,6 @@
-use crate::bounds::Bounds;
-use crate::window::Window;
-use crate::Duration;
+use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
+use polars_core::prelude::*;
 
 pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
 pub type GroupsSlice = Vec<[u32; 2]>;
@@ -12,11 +11,6 @@ pub enum ClosedWindow {
     Right,
     Both,
     None,
-}
-
-pub enum TimeUnit {
-    Nanoseconds,
-    Milliseconds,
 }
 
 /// Based on the given `Window`, which has an

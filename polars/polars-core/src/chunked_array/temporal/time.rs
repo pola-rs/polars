@@ -5,7 +5,7 @@ use crate::chunked_array::kernels::temporal::{
 use crate::prelude::*;
 use crate::utils::NoNull;
 use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
-use polars_time::export::chrono::Timelike;
+use chrono::Timelike;
 
 pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
     time.second() as i64 * NANOSECONDS + time.nanosecond() as i64

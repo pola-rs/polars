@@ -1,9 +1,9 @@
 use super::*;
 #[cfg(feature = "dtype-time")]
 use crate::chunked_array::temporal::time::time_to_time64ns;
-use crate::export::chrono::ParseError;
 use crate::prelude::*;
-use polars_time::export::chrono;
+use chrono;
+use chrono::ParseError;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>

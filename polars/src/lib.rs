@@ -267,11 +267,11 @@
 pub mod docs;
 pub mod prelude;
 
-#[cfg(feature = "temporal")]
-pub use polars_core::time;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::toggle_string_cache;
 pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
+#[cfg(feature = "temporal")]
+pub use polars_time as time;
 
 pub use polars_core::apply_method_all_arrow_series;
 pub use polars_core::df;

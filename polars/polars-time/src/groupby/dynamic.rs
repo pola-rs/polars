@@ -1,9 +1,12 @@
-use crate::frame::groupby::GroupsProxy;
 use crate::prelude::*;
-use crate::POOL;
-use polars_time::groupby::{ClosedWindow, GroupsIdx};
-use polars_time::{Duration, Window};
-use rayon::prelude::*;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::export::rayon::prelude::*;
+use polars_core::frame::groupby::GroupsProxy;
+use polars_core::prelude::*;
+use polars_core::POOL;
+
+#[repr(transparent)]
+struct Wrap<T>(pub T);
 
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
@@ -35,9 +38,33 @@ pub struct RollingGroupOptions {
 const LB_NAME: &str = "_lower_boundary";
 const UP_NAME: &str = "_upper_boundary";
 
-impl DataFrame {
-    pub fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)> {
-        let time = self.column(&options.index_column)?;
+pub trait PolarsTemporalGroupby {
+    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)>;
+
+    fn groupby_dynamic(
+        &self,
+        by: Vec<Series>,
+        options: &DynamicGroupOptions,
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)>;
+}
+
+impl PolarsTemporalGroupby for DataFrame {
+    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)> {
+        Wrap(self).groupby_rolling(options)
+    }
+
+    fn groupby_dynamic(
+        &self,
+        by: Vec<Series>,
+        options: &DynamicGroupOptions,
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+        Wrap(self).groupby_dynamic(by, options)
+    }
+}
+
+impl Wrap<&DataFrame> {
+    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)> {
+        let time = self.0.column(&options.index_column)?;
         let time_type = time.dtype();
 
         if time.null_count() > 0 {
@@ -81,7 +108,7 @@ impl DataFrame {
     }
 
     /// Returns: time_keys, keys, groupsproxy
-    pub fn groupby_dynamic(
+    fn groupby_dynamic(
         &self,
         by: Vec<Series>,
         options: &DynamicGroupOptions,
@@ -95,7 +122,7 @@ impl DataFrame {
             )
         }
 
-        let time = self.column(&options.index_column)?;
+        let time = self.0.column(&options.index_column)?;
         let time_type = time.dtype();
 
         if time.null_count() > 0 {
@@ -180,12 +207,12 @@ impl DataFrame {
                 .downcast_iter()
                 .map(|vals| {
                     let ts = vals.values().as_slice();
-                    let (groups, lower, upper) = polars_time::groupby::groupby_windows(
+                    let (groups, lower, upper) = groupby_windows(
                         w,
                         ts,
                         options.include_boundaries,
                         options.closed_window,
-                        tu.to_polars_time(),
+                        tu,
                     );
                     update_bounds(lower, upper);
                     groups
@@ -199,7 +226,7 @@ impl DataFrame {
                 GroupsProxy::Slice(groups_slice.into_iter().flatten().collect())
             }
         } else {
-            let mut groups = self.groupby_with_series(by.clone(), true)?.groups;
+            let mut groups = self.0.groupby_with_series(by.clone(), true)?.take_groups();
             groups.sort();
             let groups = groups.into_idx();
 
@@ -215,12 +242,12 @@ impl DataFrame {
 
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
-                        let (sub_groups, lower, upper) = polars_time::groupby::groupby_windows(
+                        let (sub_groups, lower, upper) = groupby_windows(
                             w,
                             ts,
                             options.include_boundaries,
                             options.closed_window,
-                            tu.to_polars_time(),
+                            tu,
                         );
                         let _lower = Int64Chunked::new_vec("lower", lower.clone())
                             .into_datetime(tu, None)
@@ -244,12 +271,12 @@ impl DataFrame {
                             };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
-                            let (sub_groups, _, _) = polars_time::groupby::groupby_windows(
+                            let (sub_groups, _, _) = groupby_windows(
                                 w,
                                 ts,
                                 options.include_boundaries,
                                 options.closed_window,
-                                tu.to_polars_time(),
+                                tu,
                             );
                             update_subgroups(&sub_groups, base_g)
                         })
@@ -306,12 +333,12 @@ impl DataFrame {
             .downcast_iter()
             .map(|vals| {
                 let ts = vals.values().as_slice();
-                polars_time::groupby::groupby_values(
+                groupby_values(
                     options.period,
                     options.offset,
                     ts,
                     options.closed_window,
-                    tu.to_polars_time(),
+                    tu,
                 )
             })
             .collect::<Vec<_>>();
@@ -349,8 +376,8 @@ fn update_subgroups(sub_groups: &[[u32; 2]], base_g: &(u32, Vec<u32>)) -> Groups
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::time::date_range;
-    use polars_time::export::chrono::prelude::*;
+    use crate::prelude::*;
+    use chrono::prelude::*;
 
     #[test]
     fn test_rolling_groupby() -> Result<()> {

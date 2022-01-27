@@ -3,9 +3,6 @@ use crate::prelude::*;
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 
-#[cfg(feature = "dtype-datetime")]
-use polars_core::time::in_nanoseconds_window;
-
 #[derive(Clone, PartialEq)]
 pub enum LiteralValue {
     Null,

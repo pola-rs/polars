@@ -26,7 +26,8 @@ impl Default for GroupsProxy {
 }
 
 impl GroupsProxy {
-    pub(crate) fn into_idx(self) -> GroupsIdx {
+    #[cfg(feature = "private")]
+    pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
             GroupsProxy::Slice(groups) => groups

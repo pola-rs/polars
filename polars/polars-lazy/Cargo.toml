@@ -17,7 +17,7 @@ default = ["compile"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
-temporal = ["polars-core/temporal"]
+temporal = ["polars-core/temporal", "polars-time"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
 strings = ["polars-core/strings"]
@@ -90,6 +90,7 @@ regex = { version = "1.5", optional = true }
 polars-arrow = { version = "0.19.1", path = "../polars-arrow" }
 polars-core = { version = "0.19.1", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
 polars-io = { version = "0.19.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-time = { version = "0.1.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.1.0", path = "../polars-utils" }
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version

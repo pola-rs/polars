@@ -13,7 +13,7 @@ description = "Core of the Polars DataFrame library"
 simd = ["arrow/simd"]
 avx512 = []
 docs = []
-temporal = ["regex", "polars-time"]
+temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
@@ -77,7 +77,7 @@ ewma = ["polars-utils"]
 dataframe_arithmetic = []
 product = []
 
-dynamic_groupby = ["polars-time", "dtype-datetime", "dtype-date"]
+dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -135,8 +135,8 @@ docs-selection = [
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-
 base64 = { version = "0.13", optional = true }
+chrono = { version = "0.4", optional = true }
 comfy-table = { version = "5.0", optional = true }
 hashbrown = { version = "0.12", features = ["rayon"] }
 hex = { version = "0.4", optional = true }
@@ -146,7 +146,6 @@ ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
 num_cpus = "1"
 polars-arrow = { version = "0.19.1", path = "../polars-arrow", features = ["compute"] }
-polars-time = { version = "0.1.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.1.0", path = "../polars-utils", optional = true }
 prettytable-rs = { version = "0.8.0", optional = true }
 rand = { version = "0.8", optional = true }
