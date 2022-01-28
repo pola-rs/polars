@@ -134,8 +134,13 @@ where
     if ca.is_empty() {
         return ca.clone();
     }
-    let mut groups = ca.group_tuples(true).into_idx();
-    groups.sort_unstable_by_key(|k| k.1.len());
+    let mut groups = ca
+        .group_tuples(true)
+        .into_idx()
+        .into_iter()
+        .collect_trusted::<Vec<_>>();
+    // groups.sort_unstable_by_key(|k| k.1.len());
+    // TODO! sort by key
     let first = &groups[0];
 
     let max_occur = first.1.len();

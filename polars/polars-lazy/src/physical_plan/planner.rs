@@ -336,8 +336,7 @@ impl DefaultPlanner {
                 //      1. complex expressions in the groupby itself are also not partitionable
                 //          in this case anything more than col("foo")
                 //      2. a custom function cannot be partitioned
-                //      3. maintain order is likely cheaper in default groupby
-                if keys.len() == 1 && apply.is_none() && !maintain_order {
+                if keys.len() == 1 && apply.is_none() {
                     // complex expressions in the groupby itself are also not partitionable
                     // in this case anything more than col("foo")
                     if (&*expr_arena).iter(keys[0]).count() > 1 {
@@ -403,6 +402,7 @@ impl DefaultPlanner {
                         aggs.into_iter()
                             .map(|n| node_to_expr(n, expr_arena))
                             .collect(),
+                        maintain_order,
                     )))
                 } else {
                     Ok(Box::new(GroupByExec::new(

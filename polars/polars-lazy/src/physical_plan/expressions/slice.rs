@@ -39,7 +39,7 @@ impl PhysicalExpr for SliceExpr {
                         let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
                         (offset as u32, idx[offset..offset + len].to_vec())
                     })
-                    .collect_trusted();
+                    .collect();
                 GroupsProxy::Idx(groups)
             }
             GroupsProxy::Slice(groups) => {

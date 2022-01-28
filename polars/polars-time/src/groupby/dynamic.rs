@@ -354,7 +354,7 @@ impl Wrap<&DataFrame> {
     }
 }
 
-fn update_subgroups(sub_groups: &[[u32; 2]], base_g: &(u32, Vec<u32>)) -> GroupsIdx {
+fn update_subgroups(sub_groups: &[[u32; 2]], base_g: (u32, &Vec<u32>)) -> GroupsIdx {
     sub_groups
         .iter()
         .map(|&[first, len]| {

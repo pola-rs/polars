@@ -44,7 +44,7 @@ fn groupby_helper(
     let mut gb = df.groupby_with_series(keys, true)?;
 
     if maintain_order {
-        gb.get_groups_mut().idx_mut().sort_unstable_by_key(|t| t.0)
+        gb.get_groups_mut().idx_mut().sort()
     }
 
     if let Some(f) = apply {
@@ -109,6 +109,7 @@ pub struct PartitionGroupByExec {
     key: Arc<dyn PhysicalExpr>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Expr>,
+    maintain_order: bool,
 }
 
 impl PartitionGroupByExec {
@@ -117,12 +118,14 @@ impl PartitionGroupByExec {
         key: Arc<dyn PhysicalExpr>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Expr>,
+        maintain_order: bool,
     ) -> Self {
         Self {
             input,
             key,
             phys_aggs,
             aggs,
+            maintain_order,
         }
     }
 }
@@ -294,7 +297,14 @@ impl Executor for PartitionGroupByExec {
         let df = accumulate_dataframes_vertical(dfs)?;
         let key = self.key.evaluate(&df, state)?;
 
-        let gb = df.groupby_with_series(vec![key], true)?;
+        // first get mutable access and optionally sort
+        let mut gb = df.groupby_with_series(vec![key], true)?;
+        let groups = gb.get_groups_mut();
+        if self.maintain_order {
+            groups.sort()
+        }
+        // then reborrow as reference to prevent multiple borrows
+        let gb = gb;
         let groups = gb.get_groups();
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;

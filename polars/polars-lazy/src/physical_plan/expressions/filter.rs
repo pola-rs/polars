@@ -70,7 +70,7 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
 
-                            (*idx.get(0).unwrap_or(first), idx)
+                            (*idx.get(0).unwrap_or(&first), idx)
                         })
                         .collect();
 
