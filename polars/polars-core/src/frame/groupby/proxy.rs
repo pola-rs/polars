@@ -1,12 +1,89 @@
 use crate::prelude::*;
 use crate::utils::NoNull;
-use polars_arrow::utils::CustomIterTools;
+use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
+use std::ops::{Deref, DerefMut};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
-pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct GroupsIdx(Vec<(u32, Vec<u32>)>);
+
+pub type IdxItem = (u32, Vec<u32>);
+
+impl From<Vec<IdxItem>> for GroupsIdx {
+    fn from(v: Vec<IdxItem>) -> Self {
+        GroupsIdx(v)
+    }
+}
+
+impl FromIterator<IdxItem> for GroupsIdx {
+    fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
+        GroupsIdx(iter.into_iter().collect())
+    }
+}
+
+impl<'a> IntoIterator for &'a GroupsIdx {
+    type Item = &'a IdxItem;
+    type IntoIter = std::slice::Iter<'a, IdxItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for GroupsIdx {
+    type Item = IdxItem;
+    type IntoIter = std::vec::IntoIter<IdxItem>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl FromTrustedLenIterator<IdxItem> for GroupsIdx {
+    fn from_iter_trusted_length<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self
+    where
+        T::IntoIter: TrustedLen,
+    {
+        GroupsIdx(iter.into_iter().collect_trusted())
+    }
+}
+
+impl FromParallelIterator<IdxItem> for GroupsIdx {
+    fn from_par_iter<I>(par_iter: I) -> Self
+    where
+        I: IntoParallelIterator<Item = IdxItem>,
+    {
+        let v = Vec::from_par_iter(par_iter);
+        GroupsIdx(v)
+    }
+}
+
+impl IntoParallelIterator for GroupsIdx {
+    type Iter = rayon::vec::IntoIter<IdxItem>;
+    type Item = IdxItem;
+
+    fn into_par_iter(self) -> Self::Iter {
+        self.0.into_par_iter()
+    }
+}
+
+impl Deref for GroupsIdx {
+    type Target = Vec<(u32, Vec<u32>)>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for GroupsIdx {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 /// Every group is indicated by an array where the
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
@@ -21,7 +98,7 @@ pub enum GroupsProxy {
 
 impl Default for GroupsProxy {
     fn default() -> Self {
-        GroupsProxy::Idx(vec![])
+        GroupsProxy::Idx(GroupsIdx(vec![]))
     }
 }
 
@@ -32,7 +109,7 @@ impl GroupsProxy {
             GroupsProxy::Idx(groups) => groups,
             GroupsProxy::Slice(groups) => groups
                 .iter()
-                .map(|&[first, len]| (first, (first..first + len).collect()))
+                .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))
                 .collect(),
         }
     }
