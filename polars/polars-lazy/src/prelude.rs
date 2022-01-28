@@ -22,6 +22,7 @@ pub use crate::{
     functions::*,
     logical_plan::{
         optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
+        options::*,
         *,
     },
     physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},

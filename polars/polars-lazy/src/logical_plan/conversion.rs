@@ -363,17 +363,9 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Distinct {
-            input,
-            maintain_order,
-            subset,
-        } => {
+        LogicalPlan::Distinct { input, options } => {
             let i = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::Distinct {
-                input: i,
-                maintain_order,
-                subset,
-            }
+            ALogicalPlan::Distinct { input: i, options }
         }
         LogicalPlan::Udf {
             input,
@@ -801,16 +793,11 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Distinct {
-            input,
-            maintain_order,
-            subset,
-        } => {
+        ALogicalPlan::Distinct { input, options } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Distinct {
                 input: Box::new(i),
-                maintain_order,
-                subset,
+                options,
             }
         }
         ALogicalPlan::Melt {

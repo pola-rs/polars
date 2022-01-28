@@ -57,6 +57,7 @@ Manipulation/ selection
     LazyFrame.fill_nan
     LazyFrame.explode
     LazyFrame.drop_duplicates
+    LazyFrame.distinct
     LazyFrame.drop_nulls
     LazyFrame.sort
     LazyFrame.melt

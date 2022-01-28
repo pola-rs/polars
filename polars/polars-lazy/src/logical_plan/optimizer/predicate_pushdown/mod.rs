@@ -301,8 +301,7 @@ impl PredicatePushDown {
             }
             Distinct {
                 input,
-                subset,
-                maintain_order,
+                options
             } => {
                 // currently the distinct operation only keeps the first occurrences.
                 // this may have influence on the pushed down predicates. If the pushed down predicates
@@ -326,8 +325,7 @@ impl PredicatePushDown {
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Distinct {
                     input,
-                    maintain_order,
-                    subset,
+                    options
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }

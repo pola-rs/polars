@@ -74,6 +74,16 @@ impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
     }
 }
 
+impl<'a> FromPyObject<'a> for Wrap<DistinctKeepStrategy> {
+    fn extract(ob: &'a PyAny) -> PyResult<Self> {
+        match ob.extract::<&str>()? {
+            "first" => Ok(Wrap(DistinctKeepStrategy::First)),
+            "last" => Ok(Wrap(DistinctKeepStrategy::Last)),
+            s => panic!("keep strategy {} is not supported", s),
+        }
+    }
+}
+
 impl<'a, T> FromPyObject<'a> for Wrap<ChunkedArray<T>>
 where
     T: PyPolarsNumericType,

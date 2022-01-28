@@ -17,13 +17,12 @@ mod format;
 pub(crate) mod iterator;
 mod lit;
 pub(crate) mod optimizer;
-mod options;
+pub(crate) mod options;
 mod projection;
 
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
-pub(crate) use options::*;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -34,12 +33,6 @@ pub enum Context {
     Aggregation,
     /// Any operation that is done while projection/ selection of data
     Default,
-}
-
-#[derive(Clone, Debug)]
-pub struct GroupbyOptions {
-    pub(crate) dynamic: Option<DynamicGroupOptions>,
-    pub(crate) rolling: Option<RollingGroupOptions>,
 }
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
@@ -131,8 +124,7 @@ pub enum LogicalPlan {
     /// Remove duplicates from the table
     Distinct {
         input: Box<LogicalPlan>,
-        maintain_order: bool,
-        subset: Arc<Option<Vec<String>>>,
+        options: DistinctOptions,
     },
     /// Sort the table
     Sort {

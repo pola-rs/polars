@@ -8,6 +8,7 @@ use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGr
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
+use polars_core::frame::DistinctKeepStrategy;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -493,9 +494,18 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
-    pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+    pub fn distinct(
+        &self,
+        maintain_order: bool,
+        subset: Option<Vec<String>>,
+        keep: Wrap<DistinctKeepStrategy>,
+    ) -> Self {
         let ldf = self.ldf.clone();
-        ldf.drop_duplicates(maintain_order, subset).into()
+        match maintain_order {
+            true => ldf.distinct_stable(subset, keep.0),
+            false => ldf.distinct(subset, keep.0),
+        }
+        .into()
     }
 
     pub fn drop_nulls(&self, subset: Option<Vec<String>>) -> Self {

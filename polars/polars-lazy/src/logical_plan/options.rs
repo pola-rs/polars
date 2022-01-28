@@ -1,3 +1,5 @@
+use crate::prelude::*;
+use polars_core::prelude::*;
 use polars_io::csv::NullValues;
 
 #[derive(Clone, Debug)]
@@ -36,4 +38,17 @@ pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
     pub(crate) slice_len: u32,
+}
+
+#[derive(Clone, Debug)]
+pub struct GroupbyOptions {
+    pub(crate) dynamic: Option<DynamicGroupOptions>,
+    pub(crate) rolling: Option<RollingGroupOptions>,
+}
+
+#[derive(Clone, Debug)]
+pub struct DistinctOptions {
+    pub(crate) subset: Option<Arc<Vec<String>>>,
+    pub(crate) maintain_order: bool,
+    pub(crate) keep_strategy: DistinctKeepStrategy,
 }

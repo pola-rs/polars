@@ -207,10 +207,10 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
-            Distinct { input, subset, .. } => {
+            Distinct { input, options, .. } => {
                 let mut current_node = String::with_capacity(128);
                 current_node.push_str("DISTINCT");
-                if let Some(subset) = &**subset {
+                if let Some(subset) = &options.subset {
                     current_node.push_str(" BY ");
                     for name in subset.iter() {
                         current_node.push_str(&format!("{}, ", name));

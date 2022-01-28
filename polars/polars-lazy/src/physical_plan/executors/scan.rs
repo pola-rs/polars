@@ -1,9 +1,5 @@
 use super::*;
-use crate::logical_plan::CsvParserOptions;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::LpScanOptions;
-#[cfg(feature = "parquet")]
-use crate::logical_plan::ParquetOptions;
+use crate::prelude::*;
 use crate::utils::try_path_to_str;
 use polars_io::aggregations::ScanAggregation;
 use polars_io::csv::CsvEncoding;

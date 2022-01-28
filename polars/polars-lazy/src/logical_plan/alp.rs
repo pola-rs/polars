@@ -115,8 +115,7 @@ pub enum ALogicalPlan {
     },
     Distinct {
         input: Node,
-        maintain_order: bool,
-        subset: Arc<Option<Vec<String>>>,
+        options: DistinctOptions,
     },
     Udf {
         input: Node,
@@ -269,14 +268,9 @@ impl ALogicalPlan {
                 columns: columns.clone(),
             },
             Cache { .. } => Cache { input: inputs[0] },
-            Distinct {
-                maintain_order,
-                subset,
-                ..
-            } => Distinct {
+            Distinct { options, .. } => Distinct {
                 input: inputs[0],
-                maintain_order: *maintain_order,
-                subset: subset.clone(),
+                options: options.clone(),
             },
             HStack { schema, .. } => HStack {
                 input: inputs[0],
