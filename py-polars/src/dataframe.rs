@@ -943,20 +943,21 @@ impl PyDataFrame {
         self.df.shift(periods).into()
     }
 
-    pub fn drop_duplicates(
+    pub fn distinct(
         &self,
+        py: Python,
         maintain_order: bool,
         subset: Option<Vec<String>>,
+        keep: Wrap<DistinctKeepStrategy>,
     ) -> PyResult<Self> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let df = py
-            .allow_threads(|| {
-                self.df
-                    .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
-            })
-            .map_err(PyPolarsEr::from)?;
+        let df = py.allow_threads(|| {
+            let subset = subset.as_ref().map(|v| v.as_ref());
+            match maintain_order {
+                true => self.df.distinct_stable(subset, keep.0),
+                false => self.df.distinct(subset, keep.0),
+            }
+            .map_err(PyPolarsEr::from)
+        })?;
         Ok(df.into())
     }
 

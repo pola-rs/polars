@@ -46,6 +46,12 @@ pub enum NullStrategy {
     Propagate,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum DistinctKeepStrategy {
+    First,
+    Last,
+}
+
 /// A contiguous growable collection of `Series` that have the same length.
 ///
 /// ## Use declarations
@@ -2630,20 +2636,103 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
+    #[deprecated(note = "use distinct")]
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
+        match maintain_order {
+            true => self.distinct_stable(subset, DistinctKeepStrategy::First),
+            false => self.distinct(subset, DistinctKeepStrategy::First),
+        }
+    }
+
+    /// Drop duplicate rows from a `DataFrame`.
+    /// *This fails when there is a column of type List in DataFrame*
+    ///
+    /// Stable means that the order is maintained. This has a higher cost than an unstable distinct.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df = df! {
+    ///               "flt" => [1., 1., 2., 2., 3., 3.],
+    ///               "int" => [1, 1, 2, 2, 3, 3, ],
+    ///               "str" => ["a", "a", "b", "b", "c", "c"]
+    ///           }?;
+    ///
+    /// println!("{}", df.distinct_stable(None, DistinctKeepStrategy::First)?);
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    /// Returns
+    ///
+    /// ```text
+    /// +-----+-----+-----+
+    /// | flt | int | str |
+    /// | --- | --- | --- |
+    /// | f64 | i32 | str |
+    /// +=====+=====+=====+
+    /// | 1   | 1   | "a" |
+    /// +-----+-----+-----+
+    /// | 2   | 2   | "b" |
+    /// +-----+-----+-----+
+    /// | 3   | 3   | "c" |
+    /// +-----+-----+-----+
+    /// ```
+    pub fn distinct_stable(
+        &self,
+        subset: Option<&[String]>,
+        keep: DistinctKeepStrategy,
+    ) -> Result<DataFrame> {
+        self.distinct_impl(true, subset, keep)
+    }
+
+    /// Unstable distinct. See [`DataFrame::distinct_stable`].
+    pub fn distinct(
+        &self,
+        subset: Option<&[String]>,
+        keep: DistinctKeepStrategy,
+    ) -> Result<DataFrame> {
+        self.distinct_impl(false, subset, keep)
+    }
+
+    fn distinct_impl(
+        &self,
+        maintain_order: bool,
+        subset: Option<&[String]>,
+        keep: DistinctKeepStrategy,
+    ) -> Result<Self> {
+        use DistinctKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
         };
         let gb = self.groupby(names)?;
-        let groups = gb.get_groups().idx_ref().iter().map(|v| v.0);
+        let groups = gb.get_groups().idx_ref();
 
-        let df = if maintain_order {
-            let mut groups = groups.collect::<Vec<_>>();
+        let finish_maintain_order = |mut groups: Vec<u32>| {
             groups.sort_unstable();
-            unsafe { self.take_iter_unchecked(groups.iter().map(|i| *i as usize)) }
-        } else {
-            unsafe { self.take_iter_unchecked(groups.into_iter().map(|i| i as usize)) }
+            let ca = UInt32Chunked::new_from_aligned_vec("", groups);
+            unsafe { self.take_unchecked(&ca) }
+        };
+
+        let df = match (keep, maintain_order) {
+            (First, true) => {
+                let iter = groups.iter().map(|g| g.0);
+                let groups = iter.collect_trusted::<Vec<_>>();
+                finish_maintain_order(groups)
+            }
+            (Last, true) => {
+                let iter = groups.iter().map(|g| g.1[g.1.len() - 1]);
+                let groups = iter.collect_trusted::<Vec<_>>();
+                finish_maintain_order(groups)
+            }
+            (First, false) => {
+                let iter = groups.iter().map(|g| g.0 as usize);
+                unsafe { self.take_iter_unchecked(iter) }
+            }
+            (Last, false) => {
+                let iter = groups.iter().map(|g| g.1[g.1.len() - 1] as usize);
+                unsafe { self.take_iter_unchecked(iter) }
+            }
         };
 
         Ok(df)

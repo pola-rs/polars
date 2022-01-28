@@ -352,11 +352,10 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> Self {
+    pub fn distinct(self, options: DistinctOptions) -> Self {
         LogicalPlan::Distinct {
             input: Box::new(self.0),
-            maintain_order,
-            subset: Arc::new(subset),
+            options,
         }
         .into()
     }

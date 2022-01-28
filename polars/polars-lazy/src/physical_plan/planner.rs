@@ -288,18 +288,9 @@ impl DefaultPlanner {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(CacheExec { key, input }))
             }
-            Distinct {
-                input,
-                maintain_order,
-                subset,
-            } => {
+            Distinct { input, options } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
-                let subset = Arc::try_unwrap(subset).unwrap_or_else(|subset| (*subset).clone());
-                Ok(Box::new(DropDuplicatesExec {
-                    input,
-                    maintain_order,
-                    subset,
-                }))
+                Ok(Box::new(DropDuplicatesExec { input, options }))
             }
             Aggregate {
                 input,

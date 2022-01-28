@@ -458,13 +458,9 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Explode { input, columns })
             }
-            Distinct {
-                input,
-                maintain_order,
-                subset,
-            } => {
+            Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if let Some(subset) = (&*subset).as_ref() {
+                if let Some(subset) = (&options.subset).as_ref() {
                     subset.iter().for_each(|name| {
                         add_str_to_accumulated(
                             name,
@@ -483,11 +479,7 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Distinct {
-                    input,
-                    maintain_order,
-                    subset,
-                })
+                Ok(Distinct { input, options })
             }
             Selection { predicate, input } => {
                 if !acc_projections.is_empty() {

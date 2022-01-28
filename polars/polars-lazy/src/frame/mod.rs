@@ -866,12 +866,43 @@ impl LazyFrame {
     }
 
     /// Drop duplicate rows. [See eager](polars_core::prelude::DataFrame::drop_duplicates).
+    #[deprecated(note = "use distinct")]
     pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> LazyFrame {
+        match maintain_order {
+            true => self.distinct_stable(subset, DistinctKeepStrategy::First),
+            false => self.distinct(subset, DistinctKeepStrategy::First),
+        }
+    }
+
+    /// Keep unique rows and maintain order
+    pub fn distinct_stable(
+        self,
+        subset: Option<Vec<String>>,
+        keep_strategy: DistinctKeepStrategy,
+    ) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self
-            .get_plan_builder()
-            .drop_duplicates(maintain_order, subset)
-            .build();
+        let options = DistinctOptions {
+            subset: subset.map(Arc::new),
+            maintain_order: true,
+            keep_strategy,
+        };
+        let lp = self.get_plan_builder().distinct(options).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Keep unique rows, do not maintain order
+    pub fn distinct(
+        self,
+        subset: Option<Vec<String>>,
+        keep_strategy: DistinctKeepStrategy,
+    ) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let options = DistinctOptions {
+            subset: subset.map(Arc::new),
+            maintain_order: false,
+            keep_strategy,
+        };
+        let lp = self.get_plan_builder().distinct(options).build();
         Self::from_logical_plan(lp, opt_state)
     }
 

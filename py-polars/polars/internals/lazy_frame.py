@@ -1218,12 +1218,41 @@ class LazyFrame:
         subset: Optional[Union[List[str], str]] = None,
     ) -> "LazyFrame":
         """
+
+        .. deprecated:: 0.12.18
+            Use :func:`DataFrame.distinct`
+
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame.
         """
+        return self.distinct(maintain_order, subset, "first")
+
+    def distinct(
+        self,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
+        keep: str = "first",
+    ) -> "LazyFrame":
+        """
+        Drop duplicate rows from this DataFrame.
+        Note that this fails if there is a column of type `List` in the DataFrame or subset.
+
+        Parameters
+        ----------
+        maintain_order
+            Keep the same order as the original DataFrame. This requires more work to compute.
+        subset
+            Subset to use to compare rows
+        keep
+            any of {"first", "last"}
+
+        Returns
+        -------
+        DataFrame with unique rows
+        """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return wrap_ldf(self._ldf.drop_duplicates(maintain_order, subset))
+        return wrap_ldf(self._ldf.distinct(maintain_order, subset, keep))
 
     def drop_nulls(self, subset: Optional[Union[List[str], str]] = None) -> "LazyFrame":
         """
