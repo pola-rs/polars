@@ -1,4 +1,5 @@
 use super::GroupsProxy;
+use crate::frame::groupby::{GroupsIdx, IdxItem};
 use crate::prelude::compare_inner::PartialEqInner;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
@@ -12,11 +13,21 @@ use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
 use std::hash::{BuildHasher, Hash};
 
+fn finish_group_order(out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+    if sorted {
+        let mut out = out.into_iter().flatten().collect::<Vec<_>>();
+        out.sort_unstable_by_key(|g| g.0);
+        GroupsProxy::Idx(GroupsIdx::from_iter(out.into_iter()))
+    } else {
+        GroupsProxy::Idx(GroupsIdx::from(out))
+    }
+}
+
 // We must strike a balance between cache coherence and resizing costs.
 // Overallocation seems a lot more expensive than resizing so we start reasonable small.
 pub(crate) const HASHMAP_INIT_SIZE: usize = 512;
 
-pub(crate) fn groupby<T>(a: impl Iterator<Item = T>) -> GroupsProxy
+pub(crate) fn groupby<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProxy
 where
     T: Hash + Eq,
 {
@@ -37,8 +48,16 @@ where
             }
         }
     });
-
-    GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect())
+    if sorted {
+        let mut groups = hash_tbl
+            .into_iter()
+            .map(|(_k, v)| v)
+            .collect_trusted::<Vec<_>>();
+        groups.sort_unstable_by_key(|g| g.0);
+        GroupsProxy::Idx(groups.into_iter().collect())
+    } else {
+        GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, v)| v).collect())
+    }
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.
@@ -50,6 +69,7 @@ pub(crate) fn groupby_threaded_num<T, IntoSlice>(
     keys: Vec<IntoSlice>,
     group_size_hint: usize,
     n_partitions: u64,
+    sorted: bool,
 ) -> GroupsProxy
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64 + CallHasher,
@@ -106,9 +126,8 @@ where
                     .collect_trusted::<Vec<_>>()
             })
         })
-        .flatten()
-        .collect();
-    GroupsProxy::Idx(out)
+        .collect::<Vec<_>>();
+    finish_group_order(out, sorted)
 }
 
 /// Utility function used as comparison function in the hashmap.
@@ -237,6 +256,7 @@ pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
 pub(crate) fn groupby_threaded_multiple_keys_flat(
     keys: DataFrame,
     n_partitions: usize,
+    sorted: bool,
 ) -> GroupsProxy {
     let dfs = split_df(&keys, n_partitions).unwrap();
     let (hashes, _random_state) = df_rows_to_hashes_threaded(&dfs, None);
@@ -289,7 +309,6 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                 hash_tbl.into_iter().map(|(_k, v)| v).collect::<Vec<_>>()
             })
         })
-        .flatten()
-        .collect();
-    GroupsProxy::Idx(groups)
+        .collect::<Vec<_>>();
+    finish_group_order(groups, sorted)
 }

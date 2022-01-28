@@ -60,8 +60,8 @@ where
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 }
 #[cfg(feature = "object")]

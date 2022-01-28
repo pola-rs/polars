@@ -35,7 +35,7 @@ pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
         unimplemented!()
     }
 }
@@ -45,7 +45,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupsProxy
+fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -66,26 +66,26 @@ where
         if ca.chunks.len() == 1 {
             if !ca.has_validity() {
                 let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions)
+                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
             } else {
                 let keys = ca
                     .downcast_iter()
                     .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions)
+                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
             }
             // use the polars-iterators
         } else if !ca.has_validity() {
             let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions)
+            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
         } else {
             let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions)
+            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
-        groupby(ca.into_no_null_iter())
+        groupby(ca.into_no_null_iter(), sorted)
     } else {
-        groupby(ca.into_iter())
+        groupby(ca.into_iter(), sorted)
     }
 }
 
@@ -94,48 +94,48 @@ where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt64Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_groups_proxy(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt32Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_groups_proxy(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();
-                num_groups_proxy(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded, sorted)
             }
             DataType::Int32 | DataType::Float32 => {
                 let ca = self.bit_repr_small();
-                num_groups_proxy(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded, sorted)
             }
             _ => {
                 let ca = self.cast(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
-                num_groups_proxy(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
         }
     }
 }
 impl IntoGroupsProxy for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
-        ca.group_tuples(multithreaded)
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 
 impl IntoGroupsProxy for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
@@ -160,7 +160,7 @@ impl IntoGroupsProxy for Utf8Chunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(str_hashes, 0, n_partitions as u64)
+            groupby_threaded_num(str_hashes, 0, n_partitions as u64, sorted)
         } else {
             let str_hashes = self
                 .into_iter()
@@ -172,22 +172,22 @@ impl IntoGroupsProxy for Utf8Chunked {
                     StrHash::new(opt_s, hash)
                 })
                 .collect::<Vec<_>>();
-            groupby(str_hashes.iter())
+            groupby(str_hashes.iter(), sorted)
         }
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
 impl IntoGroupsProxy for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
-        self.deref().group_tuples(multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        self.deref().group_tuples(multithreaded, sorted)
     }
 }
 
 impl IntoGroupsProxy for ListChunked {
     #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
-        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)))
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
+        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)), sorted)
     }
 }
 
@@ -196,8 +196,8 @@ impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
-        groupby(self.into_iter())
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
+        groupby(self.into_iter(), sorted)
     }
 }
 
@@ -307,7 +307,12 @@ fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
 }
 
 impl DataFrame {
-    pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+    pub fn groupby_with_series(
+        &self,
+        by: Vec<Series>,
+        multithreaded: bool,
+        sorted: bool,
+    ) -> Result<GroupBy> {
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();
@@ -335,7 +340,7 @@ impl DataFrame {
                 return Ok(GroupBy::new(
                     self,
                     by,
-                    groupby_threaded_num(keys, 0, n_partitions as u64),
+                    groupby_threaded_num(keys, 0, n_partitions as u64, sorted),
                     None,
                 ));
             }};
@@ -373,7 +378,7 @@ impl DataFrame {
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
-                series.group_tuples(multithreaded)
+                series.group_tuples(multithreaded, sorted)
             }
             _ => {
                 // multiple keys is always multi-threaded
@@ -411,7 +416,7 @@ impl DataFrame {
                 }
 
                 let n_partitions = set_partition_size();
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions)
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
             }
         };
         Ok(GroupBy::new(self, by, groups, None))
@@ -435,7 +440,7 @@ impl DataFrame {
         S: AsRef<str>,
     {
         let selected_keys = self.select_series(by)?;
-        self.groupby_with_series(selected_keys, true)
+        self.groupby_with_series(selected_keys, true, false)
     }
 
     /// Group DataFrame using a Series column.
@@ -445,9 +450,8 @@ impl DataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        let mut gb = self.groupby(by)?;
-        gb.groups.idx_mut().sort();
-        Ok(gb)
+        let selected_keys = self.select_series(by)?;
+        self.groupby_with_series(selected_keys, true, true)
     }
 }
 
@@ -1466,12 +1470,10 @@ mod test {
             let ca = UInt32Chunked::new("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
-            let mut a = groupby(ca.into_iter()).into_idx();
-            a.sort();
+            let mut a = groupby(ca.into_iter(), true).into_idx();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let mut b = groupby_threaded_num(keys, 0, split.len() as u64).into_idx();
-            b.sort();
+            let mut b = groupby_threaded_num(keys, 0, split.len() as u64, true).into_idx();
 
             assert_eq!(a, b);
         }

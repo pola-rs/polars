@@ -41,11 +41,7 @@ fn groupby_helper(
     state: &ExecutionState,
     maintain_order: bool,
 ) -> Result<DataFrame> {
-    let mut gb = df.groupby_with_series(keys, true)?;
-
-    if maintain_order {
-        gb.get_groups_mut().idx_mut().sort()
-    }
+    let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
         return gb.apply(|df| f.call_udf(df));
@@ -146,7 +142,7 @@ fn run_partitions(
             .map(|df| {
                 let key = exec.key.evaluate(&df, state)?;
                 let phys_aggs = &exec.phys_aggs;
-                let gb = df.groupby_with_series(vec![key], false)?;
+                let gb = df.groupby_with_series(vec![key], false, false)?;
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
@@ -212,7 +208,7 @@ fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
     let offset = (key.len() / 2) as i64;
     let s = key.slice(offset, sample_size);
     // fast multi-threaded way to get unique.
-    s.group_tuples(true).len() as f32 / s.len() as f32
+    s.group_tuples(true, false).len() as f32 / s.len() as f32
 }
 
 impl Executor for PartitionGroupByExec {
@@ -298,13 +294,7 @@ impl Executor for PartitionGroupByExec {
         let key = self.key.evaluate(&df, state)?;
 
         // first get mutable access and optionally sort
-        let mut gb = df.groupby_with_series(vec![key], true)?;
-        let groups = gb.get_groups_mut();
-        if self.maintain_order {
-            groups.sort()
-        }
-        // then reborrow as reference to prevent multiple borrows
-        let gb = gb;
+        let gb = df.groupby_with_series(vec![key], true, self.maintain_order)?;
         let groups = gb.get_groups();
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;

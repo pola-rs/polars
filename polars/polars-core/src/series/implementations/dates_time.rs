@@ -214,8 +214,8 @@ macro_rules! impl_dyn_series {
                     "cannot do remainder operation on logical".into(),
                 ))
             }
-            fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
-                self.0.group_tuples(multithreaded)
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+                self.0.group_tuples(multithreaded, sorted)
             }
             #[cfg(feature = "sort_multiple")]
             fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {

@@ -236,7 +236,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool) -> GroupsProxy {
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
             invalid_operation_panic!(self)
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {

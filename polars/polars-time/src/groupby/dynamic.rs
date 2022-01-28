@@ -226,8 +226,10 @@ impl Wrap<&DataFrame> {
                 GroupsProxy::Slice(groups_slice.into_iter().flatten().collect())
             }
         } else {
-            let mut groups = self.0.groupby_with_series(by.clone(), true)?.take_groups();
-            groups.sort();
+            let groups = self
+                .0
+                .groupby_with_series(by.clone(), true, true)?
+                .take_groups();
             let groups = groups.into_idx();
 
             // include boundaries cannot be parallel (easily)

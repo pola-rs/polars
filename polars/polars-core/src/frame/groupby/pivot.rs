@@ -181,7 +181,7 @@ impl DataFrame {
                         // group tuples are in bounds
                         let sub_vals_and_cols = match indicator {
                             GroupsIndicator::Idx(g) => unsafe {
-                                values_and_columns[i].take_unchecked_slice(&g.1)
+                                values_and_columns[i].take_unchecked_slice(g.1)
                             },
                             GroupsIndicator::Slice([first, len]) => {
                                 values_and_columns[i].slice(first as i64, len as usize)
@@ -190,7 +190,7 @@ impl DataFrame {
 
                         let s = sub_vals_and_cols.column(column).unwrap().clone();
                         let gb = sub_vals_and_cols
-                            .groupby_with_series(vec![s], false)
+                            .groupby_with_series(vec![s], false, false)
                             .unwrap();
 
                         use PivotAgg::*;

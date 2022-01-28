@@ -135,12 +135,11 @@ where
         return ca.clone();
     }
     let mut groups = ca
-        .group_tuples(true)
+        .group_tuples(true, false)
         .into_idx()
         .into_iter()
         .collect_trusted::<Vec<_>>();
-    // groups.sort_unstable_by_key(|k| k.1.len());
-    // TODO! sort by key
+    groups.sort_unstable_by_key(|k| k.1.len());
     let first = &groups[0];
 
     let max_occur = first.1.len();
@@ -174,7 +173,7 @@ macro_rules! arg_unique_ca {
 
 macro_rules! impl_value_counts {
     ($self:expr) => {{
-        let group_tuples = $self.group_tuples(true).into_idx();
+        let group_tuples = $self.group_tuples(true, false).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
@@ -357,7 +356,7 @@ fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true).into_idx();
+        let groups = self.group_tuples(true, false).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
@@ -383,7 +382,7 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true).into_idx();
+        let groups = self.group_tuples(true, false).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
