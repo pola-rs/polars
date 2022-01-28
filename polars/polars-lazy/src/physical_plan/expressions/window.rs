@@ -39,13 +39,15 @@ impl PhysicalExpr for WindowExpr {
             .collect::<Result<Vec<_>>>()?;
 
         let create_groups = || {
-            let mut gb = df.groupby_with_series(groupby_columns.clone(), true)?;
+            // if we flatten this column we need to make sure the groups are sorted.
+            let sorted = self.options.explode;
+            let mut gb = df.groupby_with_series(groupby_columns.clone(), true, sorted)?;
             let out: Result<GroupsProxy> = Ok(std::mem::take(gb.get_groups_mut()));
             out
         };
 
         // Try to get cached grouptuples
-        let (mut groups, cached, cache_key) = if state.cache_window {
+        let (groups, _, cache_key) = if state.cache_window {
             let mut cache_key = String::with_capacity(32 * groupby_columns.len());
             for s in &groupby_columns {
                 cache_key.push_str(s.name());
@@ -63,11 +65,6 @@ impl PhysicalExpr for WindowExpr {
         } else {
             (create_groups()?, false, "".to_string())
         };
-
-        // if we flatten this column we need to make sure the groups are sorted.
-        if !cached && self.options.explode {
-            groups.sort()
-        }
 
         // 2. create GroupBy object and apply aggregation
         let apply_columns = self

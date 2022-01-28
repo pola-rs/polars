@@ -98,8 +98,8 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
     fn remainder(&self, rhs: &Series) -> Result<Series> {
         NumOpsDispatch::remainder(&self.0, rhs)
     }
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
     #[cfg(feature = "sort_multiple")]

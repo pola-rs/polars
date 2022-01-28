@@ -66,8 +66,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.agg_list(groups)
     }
 
-    fn group_tuples(&self, multithreaded: bool) -> GroupsProxy {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 }
 

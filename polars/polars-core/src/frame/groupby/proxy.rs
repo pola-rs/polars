@@ -1,11 +1,9 @@
 use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::POOL;
-use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
+use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
-use std::ops::{Deref, DerefMut};
-use std::vec::IntoIter;
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
@@ -34,6 +32,12 @@ impl Drop for GroupsIdx {
 impl From<Vec<IdxItem>> for GroupsIdx {
     fn from(v: Vec<IdxItem>) -> Self {
         v.into_iter().collect()
+    }
+}
+
+impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
+    fn from(v: Vec<Vec<IdxItem>>) -> Self {
+        v.into_iter().flatten().collect()
     }
 }
 
@@ -74,9 +78,6 @@ impl GroupsIdx {
 
     pub(crate) fn len(&self) -> usize {
         self.first.len()
-    }
-    pub(crate) fn is_empty(&self) -> bool {
-        self.len() == 0
     }
     pub(crate) unsafe fn get_unchecked(&self, index: usize) -> BorrowIdxItem {
         let first = *self.first.get_unchecked(index);
@@ -132,7 +133,7 @@ impl<'a> IntoParallelIterator for &'a GroupsIdx {
     >;
     type Item = BorrowIdxItem<'a>;
 
-    fn into_par_iter(mut self) -> Self::Iter {
+    fn into_par_iter(self) -> Self::Iter {
         self.first.par_iter().copied().zip(self.all.par_iter())
     }
 }
@@ -326,10 +327,10 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
 
         let out = unsafe {
             match self.vals {
-                GroupsProxy::Idx(groups) => unsafe {
+                GroupsProxy::Idx(groups) => {
                     let item = groups.get_unchecked(self.idx);
                     Some(GroupsIndicator::Idx(item))
-                },
+                }
                 GroupsProxy::Slice(groups) => {
                     Some(GroupsIndicator::Slice(*groups.get_unchecked(self.idx)))
                 }
