@@ -12,6 +12,19 @@ pub struct GroupsIdx(Vec<(u32, Vec<u32>)>);
 
 pub type IdxItem = (u32, Vec<u32>);
 
+impl Drop for GroupsIdx {
+    fn drop(&mut self) {
+        let v = std::mem::take(&mut self.0);
+        // ~65k took approximately 1ms on local machine, so from that point we drop on other thread
+        // to stop query from being blocked
+        if v.len() > 1 << 16 {
+            std::thread::spawn(move || drop(v));
+        } else {
+            drop(v);
+        }
+    }
+}
+
 impl From<Vec<IdxItem>> for GroupsIdx {
     fn from(v: Vec<IdxItem>) -> Self {
         GroupsIdx(v)
@@ -37,8 +50,9 @@ impl<'a> IntoIterator for GroupsIdx {
     type Item = IdxItem;
     type IntoIter = std::vec::IntoIter<IdxItem>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
+    fn into_iter(mut self) -> Self::IntoIter {
+        let a = std::mem::take(&mut self.0);
+        a.into_iter()
     }
 }
 
@@ -65,8 +79,9 @@ impl IntoParallelIterator for GroupsIdx {
     type Iter = rayon::vec::IntoIter<IdxItem>;
     type Item = IdxItem;
 
-    fn into_par_iter(self) -> Self::Iter {
-        self.0.into_par_iter()
+    fn into_par_iter(mut self) -> Self::Iter {
+        let a = std::mem::take(&mut self.0);
+        a.into_par_iter()
     }
 }
 
