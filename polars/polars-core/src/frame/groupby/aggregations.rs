@@ -6,6 +6,7 @@ use arrow::types::{simd::Simd, NativeType};
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
+use crate::frame::groupby::GroupsIdx;
 #[cfg(feature = "object")]
 use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
@@ -22,13 +23,13 @@ where
     ca.slice(first as i64, len as usize)
 }
 
-fn agg_helper_idx<T, F>(groups: &[(u32, Vec<u32>)], f: F) -> Option<Series>
+fn agg_helper_idx<T, F>(groups: &GroupsIdx, f: F) -> Option<Series>
 where
-    F: Fn(&(u32, Vec<u32>)) -> Option<T::Native> + Send + Sync,
+    F: Fn((u32, &Vec<u32>)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
     Some(ca.into_series())
 }
 
@@ -99,7 +100,7 @@ impl Series {
                     if idx.is_empty() {
                         None
                     } else {
-                        Some(*first as usize)
+                        Some(first as usize)
                     }
                 });
                 // Safety:
@@ -198,7 +199,7 @@ where
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    self.get(*first as usize)
+                    self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
                         (false, 1) => Some(unsafe {
@@ -247,7 +248,7 @@ where
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    self.get(*first as usize)
+                    self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
                         (false, 1) => Some(unsafe {
@@ -296,7 +297,7 @@ where
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    self.get(*first as usize)
+                    self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
                         (false, 1) => Some(unsafe {
@@ -365,7 +366,7 @@ where
                     let out = if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
+                        self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => unsafe {
@@ -553,7 +554,7 @@ where
                     if idx.is_empty() {
                         None
                     } else if idx.len() == 1 {
-                        self.get(*first as usize).map(|sum| sum.to_f64().unwrap())
+                        self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
                             (false, 1) => unsafe {

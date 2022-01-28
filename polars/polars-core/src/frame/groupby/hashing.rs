@@ -38,7 +38,7 @@ where
         }
     });
 
-    GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect_trusted())
+    GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, tpl)| tpl).collect())
 }
 
 /// Determine group tuples over different threads. The hash of the key is used to determine the partitions.

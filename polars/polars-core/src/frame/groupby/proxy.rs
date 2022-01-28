@@ -1,20 +1,26 @@
 use crate::prelude::*;
 use crate::utils::NoNull;
+use crate::POOL;
 use polars_arrow::utils::{CustomIterTools, FromTrustedLenIterator};
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 use std::ops::{Deref, DerefMut};
+use std::vec::IntoIter;
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GroupsIdx(Vec<(u32, Vec<u32>)>);
+pub struct GroupsIdx {
+    first: Vec<u32>,
+    all: Vec<Vec<u32>>,
+}
 
 pub type IdxItem = (u32, Vec<u32>);
+pub type BorrowIdxItem<'a> = (u32, &'a Vec<u32>);
 
 impl Drop for GroupsIdx {
     fn drop(&mut self) {
-        let v = std::mem::take(&mut self.0);
+        let v = std::mem::take(&mut self.all);
         // ~65k took approximately 1ms on local machine, so from that point we drop on other thread
         // to stop query from being blocked
         if v.len() > 1 << 16 {
@@ -27,41 +33,85 @@ impl Drop for GroupsIdx {
 
 impl From<Vec<IdxItem>> for GroupsIdx {
     fn from(v: Vec<IdxItem>) -> Self {
-        GroupsIdx(v)
+        v.into_iter().collect()
+    }
+}
+
+impl GroupsIdx {
+    pub fn sort(&mut self) {
+        let mut idx = 0;
+        let first = std::mem::take(&mut self.first);
+        // store index and values so that we can sort those
+        let mut idx_vals = first
+            .into_iter()
+            .map(|v| {
+                let out = [idx, v];
+                idx += 1;
+                out
+            })
+            .collect_trusted::<Vec<_>>();
+        idx_vals.sort_unstable_by_key(|v| v[1]);
+
+        let take_first = || idx_vals.iter().map(|v| v[1]).collect_trusted::<Vec<_>>();
+        let take_all = || {
+            idx_vals
+                .iter()
+                .map(|v| unsafe {
+                    let idx = v[0] as usize;
+                    std::mem::take(self.all.get_unchecked_mut(idx))
+                })
+                .collect_trusted::<Vec<_>>()
+        };
+        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        self.first = first;
+        self.all = all;
+    }
+    pub fn iter(
+        &self,
+    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<u32>>, std::slice::Iter<Vec<u32>>> {
+        self.into_iter()
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.first.len()
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+    pub(crate) unsafe fn get_unchecked(&self, index: usize) -> BorrowIdxItem {
+        let first = *self.first.get_unchecked(index);
+        let all = self.all.get_unchecked(index);
+        (first, all)
     }
 }
 
 impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
-        GroupsIdx(iter.into_iter().collect())
+        let (first, all) = iter.into_iter().unzip();
+        GroupsIdx { first, all }
     }
 }
 
 impl<'a> IntoIterator for &'a GroupsIdx {
-    type Item = &'a IdxItem;
-    type IntoIter = std::slice::Iter<'a, IdxItem>;
+    type Item = BorrowIdxItem<'a>;
+    type IntoIter = std::iter::Zip<
+        std::iter::Copied<std::slice::Iter<'a, u32>>,
+        std::slice::Iter<'a, Vec<u32>>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.0.iter()
+        self.first.iter().copied().zip(self.all.iter())
     }
 }
 
 impl<'a> IntoIterator for GroupsIdx {
     type Item = IdxItem;
-    type IntoIter = std::vec::IntoIter<IdxItem>;
+    type IntoIter = std::iter::Zip<std::vec::IntoIter<u32>, std::vec::IntoIter<Vec<u32>>>;
 
     fn into_iter(mut self) -> Self::IntoIter {
-        let a = std::mem::take(&mut self.0);
-        a.into_iter()
-    }
-}
-
-impl FromTrustedLenIterator<IdxItem> for GroupsIdx {
-    fn from_iter_trusted_length<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self
-    where
-        T::IntoIter: TrustedLen,
-    {
-        GroupsIdx(iter.into_iter().collect_trusted())
+        let first = std::mem::take(&mut self.first);
+        let all = std::mem::take(&mut self.all);
+        first.into_iter().zip(all.into_iter())
     }
 }
 
@@ -70,32 +120,31 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
     where
         I: IntoParallelIterator<Item = IdxItem>,
     {
-        let v = Vec::from_par_iter(par_iter);
-        GroupsIdx(v)
+        let (first, all) = par_iter.into_par_iter().unzip();
+        GroupsIdx { first, all }
+    }
+}
+
+impl<'a> IntoParallelIterator for &'a GroupsIdx {
+    type Iter = rayon::iter::Zip<
+        rayon::iter::Copied<rayon::slice::Iter<'a, u32>>,
+        rayon::slice::Iter<'a, Vec<u32>>,
+    >;
+    type Item = BorrowIdxItem<'a>;
+
+    fn into_par_iter(mut self) -> Self::Iter {
+        self.first.par_iter().copied().zip(self.all.par_iter())
     }
 }
 
 impl IntoParallelIterator for GroupsIdx {
-    type Iter = rayon::vec::IntoIter<IdxItem>;
+    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<u32>, rayon::vec::IntoIter<Vec<u32>>>;
     type Item = IdxItem;
 
     fn into_par_iter(mut self) -> Self::Iter {
-        let a = std::mem::take(&mut self.0);
-        a.into_par_iter()
-    }
-}
-
-impl Deref for GroupsIdx {
-    type Target = Vec<(u32, Vec<u32>)>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for GroupsIdx {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
+        let first = std::mem::take(&mut self.first);
+        let all = std::mem::take(&mut self.all);
+        first.into_par_iter().zip(all.into_par_iter())
     }
 }
 
@@ -113,7 +162,7 @@ pub enum GroupsProxy {
 
 impl Default for GroupsProxy {
     fn default() -> Self {
-        GroupsProxy::Idx(GroupsIdx(vec![]))
+        GroupsProxy::Idx(GroupsIdx::default())
     }
 }
 
@@ -136,9 +185,7 @@ impl GroupsProxy {
     #[cfg(feature = "private")]
     pub fn sort(&mut self) {
         match self {
-            GroupsProxy::Idx(groups) => {
-                groups.sort_unstable_by_key(|t| t.0);
-            }
+            GroupsProxy::Idx(groups) => groups.sort(),
             GroupsProxy::Slice(groups) => {
                 groups.sort_unstable_by_key(|[first, _]| *first);
             }
@@ -164,7 +211,11 @@ impl GroupsProxy {
 
     pub fn get(&self, index: usize) -> GroupsIndicator {
         match self {
-            GroupsProxy::Idx(groups) => GroupsIndicator::Idx(&groups[index]),
+            GroupsProxy::Idx(groups) => {
+                let first = groups.first[index];
+                let all = &groups.all[index];
+                GroupsIndicator::Idx((first, all))
+            }
             GroupsProxy::Slice(groups) => GroupsIndicator::Slice(groups[index]),
         }
     }
@@ -235,7 +286,7 @@ impl From<GroupsIdx> for GroupsProxy {
 }
 
 pub enum GroupsIndicator<'a> {
-    Idx(&'a (u32, Vec<u32>)),
+    Idx(BorrowIdxItem<'a>),
     Slice([u32; 2]),
 }
 
@@ -275,9 +326,10 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
 
         let out = unsafe {
             match self.vals {
-                GroupsProxy::Idx(groups) => {
-                    Some(GroupsIndicator::Idx(groups.get_unchecked(self.idx)))
-                }
+                GroupsProxy::Idx(groups) => unsafe {
+                    let item = groups.get_unchecked(self.idx);
+                    Some(GroupsIndicator::Idx(item))
+                },
                 GroupsProxy::Slice(groups) => {
                     Some(GroupsIndicator::Slice(*groups.get_unchecked(self.idx)))
                 }

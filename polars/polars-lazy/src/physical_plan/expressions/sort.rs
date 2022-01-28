@@ -81,7 +81,7 @@ impl PhysicalExpr for SortExpr {
                         let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
                         (new_idx[0], new_idx)
                     })
-                    .collect_trusted()
+                    .collect()
             }
             GroupsProxy::Slice(groups) => groups
                 .iter()
@@ -91,7 +91,7 @@ impl PhysicalExpr for SortExpr {
                     let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                     (new_idx[0], new_idx)
                 })
-                .collect_trusted(),
+                .collect(),
         };
         let groups = GroupsProxy::Idx(groups);
 

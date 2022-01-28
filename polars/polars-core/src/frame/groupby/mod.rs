@@ -446,7 +446,7 @@ impl DataFrame {
         S: AsRef<str>,
     {
         let mut gb = self.groupby(by)?;
-        gb.groups.idx_mut().sort_unstable_by_key(|t| t.0);
+        gb.groups.idx_mut().sort();
         Ok(gb)
     }
 }
@@ -570,7 +570,7 @@ impl<'df> GroupBy<'df> {
                     // groupby indexes are in bound.
                     unsafe {
                         s.take_iter_unchecked(
-                            &mut self.groups.idx_ref().iter().map(|(idx, _)| *idx as usize),
+                            &mut self.groups.idx_ref().iter().map(|(idx, _)| idx as usize),
                         )
                     }
                 })
