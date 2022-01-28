@@ -196,7 +196,6 @@ Manipulation/ selection
     Expr.clip
     Expr.lower_bound
     Expr.upper_bound
-    Expr.str_concat
     Expr.reshape
     Expr.to_physical
     Expr.shuffle
@@ -282,6 +281,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lengths
     ExprStringNameSpace.to_uppercase
     ExprStringNameSpace.to_lowercase
+    ExprStringNameSpace.concat
     ExprStringNameSpace.strip
     ExprStringNameSpace.lstrip
     ExprStringNameSpace.rstrip
@@ -304,6 +304,7 @@ The following methods are available under the `expr.arr` attribute.
    :toctree: api/
 
     ExprListNameSpace.concat
+    ExprListNameSpace.lengths
     ExprListNameSpace.lengths
     ExprListNameSpace.sum
     ExprListNameSpace.min

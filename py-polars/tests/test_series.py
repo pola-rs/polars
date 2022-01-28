@@ -1094,7 +1094,7 @@ def test_shrink_to_fit() -> None:
 
 def test_str_concat() -> None:
     s = pl.Series(["1", None, "2"])
-    result = s.str_concat()
+    result = s.str.concat()
     expected = pl.Series(["1-null-2"])
     testing.assert_series_equal(result, expected)
 

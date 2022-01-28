@@ -3233,24 +3233,6 @@ class Series:
             self.name
         ]
 
-    def str_concat(self, delimiter: str = "-") -> "Series":
-        """
-        Vertically concat the values in the Series to a single string value.
-
-        Returns
-        -------
-        Series of dtype Utf8
-
-        Examples
-        --------
-        >>> pl.Series([1, None, 2]).str_concat("-")[0]
-        '1-null-2'
-
-        """
-        return self.to_frame().select(pli.col(self.name).str_concat(delimiter))[
-            self.name
-        ]
-
     def reshape(self, dims: Tuple[int, ...]) -> "Series":
         """
         Reshape this Series to a flat series, shape: (len,)
@@ -3501,6 +3483,23 @@ class StringNameSpace:
         Series[u32]
         """
         return wrap_s(self._s.str_lengths())
+
+    def concat(self, delimiter: str = "-") -> "Series":
+        """
+        Vertically concat the values in the Series to a single string value.
+
+        Returns
+        -------
+        Series of dtype Utf8
+
+        Examples
+        --------
+        >>> pl.Series([1, None, 2]).str.concat("-")[0]
+        '1-null-2'
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.concat(delimiter)).to_series()
 
     def contains(self, pattern: str) -> Series:
         """

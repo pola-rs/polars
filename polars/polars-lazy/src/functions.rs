@@ -139,7 +139,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 
 #[cfg(feature = "concat_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
-/// Concat string columns in linear time
+/// Horizontally concat string columns in linear time
 pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
     let sep = sep.to_string();
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
@@ -150,9 +150,9 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
         function,
         output_type: GetOutput::from_type(DataType::Utf8),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: true,
-            auto_explode: false,
+            auto_explode: true,
             fmt_str: "concat_by",
         },
     }
