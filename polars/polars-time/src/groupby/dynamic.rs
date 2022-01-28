@@ -259,7 +259,7 @@ impl Wrap<&DataFrame> {
                         update_bounds(lower, upper);
                         update_subgroups(&sub_groups, base_g)
                     })
-                    .collect::<Vec<_>>();
+                    .collect();
                 GroupsProxy::Idx(groupsidx)
             } else {
                 let groupsidx = POOL.install(|| {
@@ -280,7 +280,7 @@ impl Wrap<&DataFrame> {
                             );
                             update_subgroups(&sub_groups, base_g)
                         })
-                        .collect::<Vec<_>>()
+                        .collect()
                 });
                 GroupsProxy::Idx(groupsidx)
             }
@@ -495,14 +495,17 @@ mod test {
         .into_series();
         assert_eq!(&upper, &range);
 
-        let expected = GroupsProxy::Idx(vec![
-            (0u32, vec![0u32, 1, 2]),
-            (2u32, vec![2]),
-            (5u32, vec![5, 6]),
-            (6u32, vec![6]),
-            (3u32, vec![3, 4]),
-            (4u32, vec![4]),
-        ]);
+        let expected = GroupsProxy::Idx(
+            vec![
+                (0u32, vec![0u32, 1, 2]),
+                (2u32, vec![2]),
+                (5u32, vec![5, 6]),
+                (6u32, vec![6]),
+                (3u32, vec![3, 4]),
+                (4u32, vec![4]),
+            ]
+            .into(),
+        );
         assert_eq!(expected, groups);
     }
 

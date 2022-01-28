@@ -627,7 +627,7 @@ mod test {
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
         let l = s
-            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])]))
+            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into()))
             .unwrap();
 
         match l.dtype() {
