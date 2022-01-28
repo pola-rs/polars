@@ -55,6 +55,11 @@ impl CategoricalChunked {
                 Arc::new(new_rev)
             }
             (Some(RevMapping::Local(arr_l)), Some(RevMapping::Local(arr_r))) => {
+                // they are from the same source, just clone
+                if std::ptr::eq(arr_l, arr_r) {
+                    return self.categorical_map.clone().unwrap()
+                }
+
                 let arr = arrow::compute::concatenate::concatenate(&[arr_l, arr_r]).unwrap();
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap().clone();
 
