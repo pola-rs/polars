@@ -1008,7 +1008,7 @@ def _date(
 
 def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
     """
-    Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
+    Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
     Parameters
     ----------

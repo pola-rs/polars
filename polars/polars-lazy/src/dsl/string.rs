@@ -33,11 +33,19 @@ impl StringNameSpace {
     /// * `delimiter` - A string that will act as delimiter between values.
     pub fn concat(self, delimiter: &str) -> Expr {
         let delimiter = delimiter.to_owned();
-        self.0
-            .apply(
-                move |s| Ok(s.str_concat(&delimiter).into_series()),
-                GetOutput::from_type(DataType::Utf8),
-            )
-            .with_fmt("str_concat")
+        let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+            Ok(s[0].str_concat(&delimiter).into_series())
+        }) as Arc<dyn SeriesUdf>);
+        Expr::Function {
+            input: vec![self.0],
+            function,
+            output_type: GetOutput::from_type(DataType::Utf8),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                input_wildcard_expansion: false,
+                auto_explode: true,
+                fmt_str: "str_concat",
+            },
+        }
     }
 }

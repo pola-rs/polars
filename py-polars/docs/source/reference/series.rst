@@ -175,7 +175,6 @@ Manipulation/ selection
     Series.zip_with
     Series.interpolate
     Series.clip
-    Series.str_concat
     Series.reshape
     Series.to_dummies
     Series.shuffle
@@ -244,6 +243,7 @@ The following methods are available under the `Series.str` attribute.
 
     StringNameSpace.strptime
     StringNameSpace.lengths
+    StringNameSpace.concat
     StringNameSpace.contains
     StringNameSpace.json_path_match
     StringNameSpace.extract

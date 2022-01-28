@@ -837,7 +837,7 @@ def test_clip() -> None:
 
 
 def test_argminmax() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 1, 2, 2, 2]})
     out = df.select(
         [
             pl.col("a").arg_min().alias("min"),
@@ -845,6 +845,12 @@ def test_argminmax() -> None:
         ]
     )
     assert out["max"][0] == 4
+    assert out["min"][0] == 0
+
+    out = df.groupby("b", maintain_order=True).agg(
+        [pl.col("a").arg_min().alias("min"), pl.col("a").arg_max().alias("max")]
+    )
+    assert out["max"][0] == 1
     assert out["min"][0] == 0
 
 
@@ -943,7 +949,7 @@ def test_join_suffix() -> None:
 
 def test_str_concat() -> None:
     df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str_concat("-"))
+    df = df.select(pl.col("foo").str.concat("-"))
     assert df[0, 0] == "1-null-2"
 
 
