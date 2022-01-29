@@ -194,59 +194,6 @@ where
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum ApplyOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    ApplyGroups,
-    // collect groups to a list and then apply
-    ApplyList,
-    // do not collect before apply
-    ApplyFlat,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub struct WindowOptions {
-    /// Explode the aggregated list and just do a hstack instead of a join
-    /// this requires the groups to be sorted to make any sense
-    pub(crate) explode: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct FunctionOptions {
-    /// Collect groups to a list and apply the function over the groups.
-    /// This can be important in aggregation context.
-    pub(crate) collect_groups: ApplyOptions,
-    /// There can be two ways of expanding wildcards:
-    ///
-    /// Say the schema is 'a', 'b' and there is a function f
-    /// f('*')
-    /// can expand to:
-    /// 1.
-    ///     f('a', 'b')
-    /// or
-    /// 2.
-    ///     f('a'), f('b')
-    ///
-    /// setting this to true, will lead to behavior 1.
-    ///
-    /// this also accounts for regex expansion
-    pub(crate) input_wildcard_expansion: bool,
-
-    /// automatically explode on unit length it ran as final aggregation.
-    ///
-    /// this is the case for aggregations like sum, min, covariance etc.
-    /// We need to know this because we cannot see the difference between
-    /// the following functions based on the output type and number of elements:
-    ///
-    /// x: [1, 2, 3]
-    ///
-    /// head_1(x) -> [1]
-    /// sum(x) -> [4]
-    pub(crate) auto_explode: bool,
-    pub(crate) fmt_str: &'static str,
-}
-
 #[derive(PartialEq, Clone)]
 pub enum AggExpr {
     Min(Box<Expr>),

@@ -28,7 +28,7 @@ show_error_codes = true
 files = ["polars", "tests"]
 
 [[tool.mypy.overrides]]
-module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx"]
+module = ["pyarrow.*", "polars.polars", "matplotlib.*", "fsspec.*", "connectorx", "IPython.*"]
 ignore_missing_imports = true
 
 [tool.coverage.report]

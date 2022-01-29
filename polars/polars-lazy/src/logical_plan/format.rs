@@ -159,7 +159,7 @@ FROM
             Slice { input, offset, len } => {
                 write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
             }
-            Udf { input, .. } => write!(f, "UDF \n{:?}", input),
+            Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
         }
     }
 }
@@ -177,7 +177,7 @@ impl fmt::Debug for Expr {
             Explode(expr) => write!(f, "{:?}.explode()", expr),
             Duplicated(expr) => write!(f, "{:?}.is_duplicate()", expr),
             Reverse(expr) => write!(f, "{:?}.reverse()", expr),
-            Alias(expr, name) => write!(f, "{:?}.alias({})", expr, name),
+            Alias(expr, name) => write!(f, "{:?}.alias(\"{}\")", expr, name),
             Column(name) => write!(f, "col(\"{}\")", name),
             Literal(v) => {
                 match v {

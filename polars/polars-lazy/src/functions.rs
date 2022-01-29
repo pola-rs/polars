@@ -393,6 +393,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
             },
             Some(AllowedOptimizations::default()),
             None,
+            Some("RECHUNK"),
         ))
     } else {
         Ok(lf)

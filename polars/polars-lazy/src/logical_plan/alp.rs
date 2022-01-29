@@ -120,10 +120,7 @@ pub enum ALogicalPlan {
     Udf {
         input: Node,
         function: Arc<dyn DataFrameUdf>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
+        options: LogicalPlanUdfOptions,
         schema: Option<SchemaRef>,
     },
     Union {
@@ -370,15 +367,13 @@ impl ALogicalPlan {
             }
             Udf {
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
                 ..
             } => Udf {
                 input: inputs[0],
                 function: function.clone(),
-                predicate_pd: *predicate_pd,
-                projection_pd: *projection_pd,
+                options: *options,
                 schema: schema.clone(),
             },
         }

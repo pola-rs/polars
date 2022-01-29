@@ -802,11 +802,10 @@ impl ProjectionPushDown {
             Udf {
                 input,
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
             } => {
-                if projection_pd {
+                if options.projection_pd {
                     self.pushdown_and_assign(
                         input,
                         acc_projections,
@@ -819,8 +818,7 @@ impl ProjectionPushDown {
                 Ok(Udf {
                     input,
                     function,
-                    predicate_pd,
-                    projection_pd,
+                    options,
                     schema,
                 })
             }
