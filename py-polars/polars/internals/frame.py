@@ -4775,6 +4775,10 @@ class GroupBy:
         values_column
             Column that will be aggregated.
         """
+        if isinstance(pivot_column, str):
+            pivot_column = [pivot_column]
+        if isinstance(values_column, str):
+            values_column = [values_column]
         return PivotOps(self._df, self.by, pivot_column, values_column)
 
     def first(self) -> DataFrame:
