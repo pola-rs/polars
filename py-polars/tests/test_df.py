@@ -1527,6 +1527,14 @@ def test_groupby_order_dispatch() -> None:
     assert df.groupby("x", maintain_order=True).agg_list().frame_equal(expected)
 
 
+def test_partitioned_groupby_order() -> None:
+    # check if group ordering is maintained.
+    # we only have 30 groups, so this triggers a partitioned group by
+    df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
+    out = df.groupby("x", maintain_order=True).agg(pl.all().list())
+    assert out["x"] == df["x"]
+
+
 def test_schema() -> None:
     df = pl.DataFrame(
         {"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0], "ham": ["a", "b", "c"]}
