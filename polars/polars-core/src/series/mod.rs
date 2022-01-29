@@ -115,7 +115,7 @@ use std::sync::Arc;
 ///
 /// ```
 /// # use polars_core::prelude::*;
-/// // Series van be created from Vec's, slices and arrays
+/// // Series can be created from Vec's, slices and arrays
 /// Series::new("boolean series", &[true, false, true]);
 /// Series::new("int series", &[1, 2, 3]);
 /// // And can be nullable
