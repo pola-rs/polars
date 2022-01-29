@@ -15,11 +15,11 @@ fn slice(
     slice_length: usize,
     own_length: usize,
 ) -> Vec<ArrayRef> {
+    let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
     let mut remaining_length = slice_len;
     let mut remaining_offset = raw_offset;
-    let mut new_chunks = Vec::with_capacity(1);
 
     for chunk in chunks {
         let chunk_len = chunk.len();
@@ -33,7 +33,12 @@ fn slice(
             remaining_length
         };
 
-        new_chunks.push(chunk.slice(remaining_offset, take_len).into());
+        debug_assert!(remaining_offset + take_len <= chunk.len());
+        unsafe {
+            // Safety:
+            // this function ensures the slices are in bounds
+            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len).into());
+        }
         remaining_length -= take_len;
         remaining_offset = 0;
         if remaining_length == 0 {

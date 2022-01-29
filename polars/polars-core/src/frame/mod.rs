@@ -993,12 +993,18 @@ impl DataFrame {
             series = series.expand_at_index(0, height);
         }
 
-        if series.len() == height || self.is_empty() || series.len() == 1 {
+        if series.len() == height || self.is_empty() {
             if let Some(idx) = self.find_idx_by_name(series.name()) {
                 self.replace_at_idx(idx, series)?;
             } else {
                 self.columns.push(series);
             }
+            Ok(self)
+        }
+        // special case for literals
+        else if height == 0 && series.len() == 1 {
+            let s = series.slice(0, 0);
+            self.columns.push(s);
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -3056,6 +3062,27 @@ mod test {
         df.replace_or_add("c", Series::new("bar", [1, 2, 3]))?;
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_df_hstack() -> Result<()> {
+        let mut base = df!(
+            "a" => [1, 2, 3],
+            "b" => [1, 2, 3]
+        )?;
+
+        // has got columns, but no rows
+        let mut df = base.slice(0, 0);
+        let out = df.with_column(Series::new("c", [1]))?;
+        assert_eq!(out.shape(), (0, 3));
+        assert!(out.iter().all(|s| s.len() == 0));
+
+        // no columns
+        base.columns = vec![];
+        let out = base.with_column(Series::new("c", [1]))?;
+        assert_eq!(out.shape(), (1, 1));
+
         Ok(())
     }
 }

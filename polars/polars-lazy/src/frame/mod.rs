@@ -975,7 +975,7 @@ impl LazyFrame {
         name: Option<&'static str>,
     ) -> LazyFrame
     where
-        F: DataFrameUdf + 'static,
+        F: 'static + Fn(DataFrame) -> Result<DataFrame> + Send + Sync,
     {
         let opt_state = self.get_opt_state();
         let lp = self
