@@ -168,6 +168,7 @@ impl LogicalPlanBuilder {
                 |_| Ok(DataFrame::new_no_checks(vec![])),
                 AllowedOptimizations::default(),
                 Some(Arc::new(Schema::default())),
+                "EMPTY PROJECTION",
             )
         } else {
             LogicalPlan::Projection {
@@ -425,15 +426,21 @@ impl LogicalPlanBuilder {
         function: F,
         optimizations: AllowedOptimizations,
         schema: Option<SchemaRef>,
+        name: &'static str,
     ) -> Self
     where
         F: DataFrameUdf + 'static,
     {
+        let options = LogicalPlanUdfOptions {
+            predicate_pd: optimizations.predicate_pushdown,
+            projection_pd: optimizations.projection_pushdown,
+            fmt_str: name,
+        };
+
         LogicalPlan::Udf {
             input: Box::new(self.0),
             function: Arc::new(function),
-            predicate_pd: optimizations.predicate_pushdown,
-            projection_pd: optimizations.projection_pushdown,
+            options,
             schema,
         }
         .into()

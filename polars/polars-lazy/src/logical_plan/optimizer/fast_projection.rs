@@ -31,12 +31,17 @@ fn impl_fast_projection(
     if columns.len() == expr.len() {
         let function = move |df: DataFrame| df.select(&columns);
 
+        let options = LogicalPlanUdfOptions {
+            predicate_pd: true,
+            projection_pd: true,
+            fmt_str: "FAST PROJECTION",
+        };
+
         let lp = ALogicalPlan::Udf {
             input,
             function: Arc::new(function),
-            predicate_pd: true,
-            projection_pd: true,
             schema,
+            options,
         };
 
         Some(lp)

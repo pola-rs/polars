@@ -222,7 +222,7 @@ impl SlicePushDown {
             | m @ (Explode {..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
-            | m @ (Udf {predicate_pd: false, ..}, _)
+            | m @ (Udf {options: LogicalPlanUdfOptions{ predicate_pd: false, ..}, ..}, _)
             | m @ (HStack {..},_)
             => {
                 let (lp, state) = m;
@@ -231,7 +231,7 @@ impl SlicePushDown {
             // [Pushdown]
             // these nodes will be pushed down.
             m @ (Melt { .. },_)
-            | m @(Udf{predicate_pd: true, ..}, _)
+            | m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _)
 
             => {
                 let (lp, state) = m;

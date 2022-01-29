@@ -419,7 +419,9 @@ impl PredicatePushDown {
 
             lp @ Udf { .. } => {
                 if let ALogicalPlan::Udf {
-                    predicate_pd: true, ..
+                    options: LogicalPlanUdfOptions {
+                        predicate_pd: true, ..
+                    }, ..
                 } = lp
                 {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)

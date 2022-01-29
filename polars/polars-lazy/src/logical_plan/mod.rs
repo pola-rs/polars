@@ -154,10 +154,7 @@ pub enum LogicalPlan {
     Udf {
         input: Box<LogicalPlan>,
         function: Arc<dyn DataFrameUdf>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
+        options: LogicalPlanUdfOptions,
         schema: Option<SchemaRef>,
     },
     Union {

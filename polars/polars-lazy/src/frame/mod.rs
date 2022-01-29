@@ -327,6 +327,7 @@ impl LazyFrame {
             },
             None,
             None,
+            Some("RENAME"),
         )
     }
 
@@ -971,6 +972,7 @@ impl LazyFrame {
         function: F,
         optimizations: Option<AllowedOptimizations>,
         schema: Option<Schema>,
+        name: Option<&'static str>,
     ) -> LazyFrame
     where
         F: DataFrameUdf + 'static,
@@ -982,6 +984,7 @@ impl LazyFrame {
                 function,
                 optimizations.unwrap_or_default(),
                 schema.map(Arc::new),
+                name.unwrap_or("ANONYMOUS UDF"),
             )
             .build();
         Self::from_logical_plan(lp, opt_state)
@@ -1001,6 +1004,7 @@ impl LazyFrame {
             move |df: DataFrame| df.with_row_count(&name),
             Some(AllowedOptimizations::default()),
             Some(new_schema),
+            Some("WITH ROW COUNT"),
         )
     }
 }

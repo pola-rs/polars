@@ -370,16 +370,14 @@ pub(crate) fn to_alp(
         LogicalPlan::Udf {
             input,
             function,
-            projection_pd,
-            predicate_pd,
+            options,
             schema,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Udf {
                 input,
                 function,
-                projection_pd,
-                predicate_pd,
+                options,
                 schema,
             }
         }
@@ -817,16 +815,14 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::Udf {
             input,
             function,
-            predicate_pd,
-            projection_pd,
+            options,
             schema,
         } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Udf {
                 input,
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
             }
         }

@@ -191,16 +191,18 @@ impl LogicalPlan {
             }
             HStack { input, exprs, .. } => {
                 let mut current_node = String::with_capacity(128);
-                current_node.push_str("STACK");
+                current_node.push_str("WITH COLUMNS [");
                 for e in exprs {
                     if let Expr::Alias(_, name) = e {
-                        current_node.push_str(&format!(" {},", name));
+                        current_node.push_str(&format!("\"{}\",", name));
                     } else {
                         for name in expr_to_root_column_names(e).iter().take(1) {
-                            current_node.push_str(&format!(" {},", name));
+                            current_node.push_str(&format!("\"{}\",", name));
                         }
                     }
                 }
+                current_node.pop();
+                current_node.push(']');
                 current_node.push_str(&format!(" [{:?}]", (branch, id)));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
@@ -302,8 +304,8 @@ impl LogicalPlan {
                 input_left.dot(acc_str, (branch + 10, id + 1), &current_node)?;
                 input_right.dot(acc_str, (branch + 20, id + 1), &current_node)
             }
-            Udf { input, .. } => {
-                let current_node = format!("UDF [{:?}]", (branch, id));
+            Udf { input, options, .. } => {
+                let current_node = format!("{} [{:?}]", options.fmt_str, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }

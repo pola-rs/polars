@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
-from polars.utils import _process_null_values
+from polars.utils import _in_notebook, _process_null_values
 
 
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
@@ -152,11 +152,18 @@ class LazyFrame:
         return func(self, *args, **kwargs)
 
     def _repr_html_(self) -> str:
-        insert = self.describe_plan().replace("\n", "<p></p>")
+        try:
+            dot = self._ldf.to_dot(optimized=False)
+            svg = subprocess.check_output(
+                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+            )
+            return f"<h4>NAIVE QUERY PLAN</h4><p>run <b>LazyFrame.show_graph()</b> to see the optimized version</p>{svg.decode()}"
+        except Exception:
+            insert = self.describe_plan().replace("\n", "<p></p>")
 
-        return f"""<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
-<p></p>
-<div>{insert}</div>"""
+            return f"""<i>naive plan: (run <b>LazyFrame.describe_optimized_plan()</b> to see the optimized plan)</i>
+    <p></p>
+    <div>{insert}</div>"""
 
     def __str__(self) -> str:
         return f"""naive plan: (run LazyFrame.describe_optimized_plan() to see the optimized plan)
@@ -212,10 +219,22 @@ class LazyFrame:
         output_path
             Write the figure to disk.
         raw_output
-            Return dot syntax.
+            Return dot syntax. This cannot be combined with `show`
         figsize
             Passed to matlotlib if `show` == True.
         """
+        if raw_output:
+            show = False
+
+        if show and _in_notebook():
+            from IPython.display import SVG, display
+
+            dot = self._ldf.to_dot(optimized)
+            svg = subprocess.check_output(
+                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+            )
+            return display(SVG(svg))
+
         try:
             import matplotlib.image as mpimg
             import matplotlib.pyplot as plt
