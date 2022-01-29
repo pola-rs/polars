@@ -278,15 +278,9 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    // first determine output field, and then check if that output field could be selected
-    // on the input schema.
-    match expr_arena
-        .get(node)
-        .to_field(input_schema, Context::Default, expr_arena)
-    {
-        Ok(output_expr) => input_schema.field_with_name(output_expr.name()).is_ok(),
-        Err(_) => false,
-    }
+    aexpr_to_root_names(node, expr_arena)
+        .iter()
+        .all(|name| input_schema.index_of(name).is_ok())
 }
 
 pub(crate) fn aexprs_to_schema(

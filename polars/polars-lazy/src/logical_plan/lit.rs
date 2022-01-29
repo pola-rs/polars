@@ -122,6 +122,7 @@ make_literal!(u64, UInt64);
 
 /// The literal Null
 pub struct Null {}
+pub const NULL: Null = Null {};
 
 impl Literal for Null {
     fn lit(self) -> Expr {

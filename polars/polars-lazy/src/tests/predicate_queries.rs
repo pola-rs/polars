@@ -80,3 +80,19 @@ fn test_pass_unrelated_apply() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn filter_added_column_issue_2470() -> Result<()> {
+    let df = fruits_cars();
+
+    // the binary expression in the predicate lead to an incorrect pushdown because the rhs
+    // was not checked on the schema.
+    let out = df
+        .lazy()
+        .select([col("A"), lit(NULL).alias("foo")])
+        .filter(col("A").gt(lit(2i32)).and(col("foo").is_null()))
+        .collect()?;
+    assert_eq!(out.shape(), (3, 2));
+
+    Ok(())
+}
