@@ -37,7 +37,12 @@ impl LogicalPlan {
         if id == 0 {
             writeln!(acc_str, "graph  polars_query {{")
         } else {
-            writeln!(acc_str, "\"{}\" -- \"{}\"", prev_node, current_node)
+            writeln!(
+                acc_str,
+                "\"{}\" -- \"{}\"",
+                prev_node.replace('"', r#"\""#),
+                current_node.replace('"', r#"\""#)
+            )
         }
     }
 
@@ -174,9 +179,12 @@ impl LogicalPlan {
                 input, keys, aggs, ..
             } => {
                 let mut s_keys = String::with_capacity(128);
+                s_keys.push('[');
                 for key in keys.iter() {
-                    s_keys.push_str(&format!("{:?}", key));
+                    s_keys.push_str(&format!("{:?},", key));
                 }
+                s_keys.pop();
+                s_keys.push(']');
                 let current_node = format!("AGG {:?} BY {} [{:?}]", aggs, s_keys, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
