@@ -50,7 +50,7 @@ impl LogicalPlan {
     /// # Arguments
     /// `id` - (branch, id)
     ///     Used to make sure that the dot boxes are distinct.
-    ///     branch is an id per join branch
+    ///     branch is an id per join/union branch
     ///     id is incremented by the depth traversal of the tree.
     #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
     pub(crate) fn dot(
@@ -60,13 +60,14 @@ impl LogicalPlan {
         prev_node: &str,
     ) -> std::fmt::Result {
         use LogicalPlan::*;
-        let (branch, id) = id;
+        let (mut branch, id) = id;
         match self {
             Union { inputs, .. } => {
                 for input in inputs {
                     let current_node = format!("UNION [{:?}]", (branch, id));
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
-                    input.dot(acc_str, (branch, id + 1), &current_node)?
+                    input.dot(acc_str, (branch, id + 1), &current_node)?;
+                    branch += 1;
                 }
                 Ok(())
             }
@@ -185,7 +186,7 @@ impl LogicalPlan {
                 }
                 s_keys.pop();
                 s_keys.push(']');
-                let current_node = format!("AGG {:?} BY {} [{:?}]", aggs, s_keys, (branch, id));
+                let current_node = format!("AGG {:?}\nBY\n{} [{:?}]", aggs, s_keys, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }

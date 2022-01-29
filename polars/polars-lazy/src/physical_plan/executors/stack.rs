@@ -15,6 +15,8 @@ impl Executor for StackExec {
         let mut df = self.input.execute(state)?;
 
         let res = if self.has_windows {
+            // we have a different run here
+            // to ensure the window functions run sequential and share caches
             execute_projection_cached_window_fns(&df, &self.expr, state)?
         } else {
             POOL.install(|| {

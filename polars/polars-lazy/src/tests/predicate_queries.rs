@@ -96,3 +96,23 @@ fn filter_added_column_issue_2470() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn filter_blocked_by_map() -> Result<()> {
+    let df = fruits_cars();
+
+    let allowed = AllowedOptimizations {
+        predicate_pushdown: false,
+        ..Default::default()
+    };
+    let q = df
+        .lazy()
+        .map(|df| Ok(df), Some(allowed), None, None)
+        .filter(col("A").gt(lit(2i32)));
+
+    assert!(!predicate_at_scan(q.clone()));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 4));
+
+    Ok(())
+}

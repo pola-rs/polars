@@ -1393,7 +1393,7 @@ class LazyFrame:
         no_optimizations
             Turn off all optimizations past this point.
         """
-        if not no_optimizations:
+        if no_optimizations:
             predicate_pushdown = False
             projection_pushdown = False
         return wrap_ldf(self._ldf.map(f, predicate_pushdown, projection_pushdown))

@@ -426,7 +426,7 @@ impl PredicatePushDown {
                 {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
                 } else {
-                    Ok(lp)
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 }
             }
             // Pushed down passed these nodes
