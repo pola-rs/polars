@@ -131,6 +131,7 @@ fn run_partitions(
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
     n_threads: usize,
+    maintain_order: bool,
 ) -> Result<Vec<DataFrame>> {
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
@@ -142,7 +143,7 @@ fn run_partitions(
             .map(|df| {
                 let key = exec.key.evaluate(&df, state)?;
                 let phys_aggs = &exec.phys_aggs;
-                let gb = df.groupby_with_series(vec![key], false, false)?;
+                let gb = df.groupby_with_series(vec![key], false, maintain_order)?;
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
@@ -286,7 +287,7 @@ impl Executor for PartitionGroupByExec {
 
         // Run the partitioned aggregations
         let n_threads = POOL.current_num_threads();
-        let dfs = run_partitions(&original_df, self, state, n_threads)?;
+        let dfs = run_partitions(&original_df, self, state, n_threads, self.maintain_order)?;
 
         // MERGE phase
         // merge and hash aggregate again
