@@ -493,6 +493,17 @@ def test_pivot() -> None:
         out = df.pivot(values="c", index="b", columns="a", aggregate_fn=agg_fn)
         assert out.shape == (2, 6)
 
+    # example in polars-book
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    out = df.groupby("foo").pivot(pivot_column="bar", values_column="N").first()
+    assert out.shape == (3, 6)
+
 
 def test_join() -> None:
     df_left = pl.DataFrame(
