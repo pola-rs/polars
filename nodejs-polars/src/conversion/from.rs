@@ -16,6 +16,17 @@ impl FromJsUnknown for String {
     }
 }
 
+impl FromJsUnknown for DistinctKeepStrategy {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        let s = String::from_js(val)?;
+        match s.as_str() {
+            "first" => Ok(DistinctKeepStrategy::First),
+            "last" => Ok(DistinctKeepStrategy::Last),
+            s => panic!("keep strategy {} is not supported", s),
+        }
+    }
+}
+
 impl<V> FromJsUnknown for Vec<V>
 where
     V: FromJsUnknown,

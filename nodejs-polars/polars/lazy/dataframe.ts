@@ -81,8 +81,19 @@ export interface LazyDataFrame {
   /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @param maintainOrder
+   * @param subset - subset to drop duplicates for
+   * @param keep "first" | "last"
+   */
+  distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
+  distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
+  /**
+   * Drop duplicate rows from this DataFrame.
+   * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @deprecated @since 0.2.1 @use {@link distinct}
    */
   dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): LazyDataFrame
+  /** @deprecated @since 0.2.1 @use {@link distinct} */
   dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): LazyDataFrame
   /**
    * Drop rows with null values from this DataFrame.
@@ -300,14 +311,24 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     drop(...cols) {
       return wrap("dropColumns", {cols: cols.flat(2)});
     },
-    dropDuplicates(opts: any=false, subset?) {
-      const maintainOrder = opts?.maintainOrder ?? opts;
-      subset = opts?.subset ?? subset;
-      if(typeof subset! === "string") {
-        subset = [subset];
+    distinct(opts: any = false, subset?, keep = "first") {
+      const defaultOptions = {
+        maintainOrder: false,
+        keep: "first",
+      };
+
+      if(typeof opts === "boolean") {
+        return wrap("distinct", {...defaultOptions, maintainOrder: opts, subset, keep});
       }
 
-      return wrap("dropDuplicates", {maintainOrder, subset});
+      if(opts.subset) {
+        opts.subset = [opts.subset].flat(3);
+      }
+
+      return wrap("distinct", {...defaultOptions, ...opts});
+    },
+    dropDuplicates(opts, subset?) {
+      return this.distinct(opts, subset);
     },
     dropNulls(...subset) {
       if(subset.length) {

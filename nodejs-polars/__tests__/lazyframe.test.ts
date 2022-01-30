@@ -31,7 +31,7 @@ describe("lazyframe", () => {
       "bar": ["a", "b"]
     }).lazy();
     const actual = df.describePlan().replace(/\s+/g, " ");
-    expect(actual).toEqual(`MEMTABLE: ["foo", "bar"];
+    expect(actual).toEqual(`DATAFRAME(in-memory): ["foo", "bar"];
 project */2 columns	|	details: None;
 selection: "None" `.replace(/\s+/g, " "));
   });
@@ -42,7 +42,7 @@ selection: "None" `.replace(/\s+/g, " "));
     }).lazy();
     const actual = df.describeOptimizedPlan().replace(/\s+/g, " ");
     expect(actual).toEqual(
-      `MEMTABLE: ["foo", "bar"];
+      `DATAFRAME(in-memory): ["foo", "bar"];
       project */2 columns	|	details: None;
       selection: "None" `.replace(/\s+/g, " "));
   });

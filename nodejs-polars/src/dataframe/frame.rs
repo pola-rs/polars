@@ -1,7 +1,6 @@
 use crate::conversion::prelude::*;
 use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
-use crate::jsiterator::JsIterator;
 use crate::prelude::JsResult;
 use napi::{
     CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsUndefined, JsUnknown,
@@ -582,15 +581,21 @@ pub fn shift(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn drop_duplicates(cx: CallContext) -> JsResult<JsExternal> {
+pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
-    let maintain_order: bool = params.get_or("maintainOrder", true)?;
-    let subset = params.get_as::<Option<Vec<String>>>("subset")?;
+    let maintain_order: bool = params.get_or("maintainOrder", false)?;
+    let keep: DistinctKeepStrategy = params.get_as("keep")?;
 
-    df.drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
+    let subset: Option<Vec<String>> = params.get_as("subset")?;
+    let subset = subset.as_ref().map(|v| v.as_ref());
+    let df = match maintain_order {
+        true => df.distinct_stable(subset, keep),
+        false => df.distinct(subset, keep),
+    }
+    .map_err(JsPolarsEr::from)?;
+
+    df.try_into_js(&cx)
 }
 
 #[js_function(1)]

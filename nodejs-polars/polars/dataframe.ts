@@ -172,6 +172,16 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   describe(): DataFrame
+
+  /**
+   * Drop duplicate rows from this DataFrame.
+   * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @param maintainOrder
+   * @param subset - subset to drop duplicates for
+   * @param keep "first" | "last"
+   */
+  distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
+  distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
   /**
    * __Remove column from DataFrame and return as new.__
    * ___
@@ -210,8 +220,10 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * Note that this fails if there is a column of type `List` in the DataFrame.
    * @param maintainOrder
    * @param subset - subset to drop duplicates for
+   * @deprecated @since 0.2.1 @use {@link distinct}
    */
   dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
+  /** @deprecated @since 0.2.1 @use {@link distinct} ==*/
   dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
   /**
    * __Return a new DataFrame where the null values are dropped.__
@@ -1541,14 +1553,24 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return wrap("drop_nulls");
       }
     },
-    dropDuplicates(opts: any=false, subset?) {
-      const maintainOrder = opts?.maintainOrder ?? opts;
-      subset = opts?.subset ?? subset;
-      if(typeof subset! === "string") {
-        subset = [subset];
+    distinct(opts: any = false, subset?, keep = "first") {
+      const defaultOptions = {
+        maintainOrder: false,
+        keep,
+      };
+
+      if(typeof opts === "boolean") {
+        return wrap("distinct", {...defaultOptions, maintainOrder: opts, subset, keep});
       }
 
-      return wrap("drop_duplicates", {maintainOrder, subset});
+      if(opts.subset) {
+        opts.subset = [opts.subset].flat(3);
+      }
+
+      return wrap("distinct", {...defaultOptions, ...opts});
+    },
+    dropDuplicates(opts: any=false, subset?) {
+      return this.distinct(opts, subset);
     },
     explode(...columns)  {
       return dfWrapper(_df)

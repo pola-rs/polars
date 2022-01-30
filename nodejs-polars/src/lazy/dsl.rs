@@ -393,6 +393,16 @@ pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::Boolean))
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn str_concat(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let delimiter = params.get_as::<String>("delimiter")?;
+    expr.clone()
+        .str()
+        .concat(&delimiter)
+        .try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub fn str_json_path_match(cx: CallContext) -> JsResult<JsExternal> {
@@ -717,7 +727,6 @@ impl_expr!(cumcount, bool, "reverse");
 impl_expr!(prefix, &str, "prefix");
 impl_expr!(suffix, &str, "suffix");
 impl_expr!(skew, bool, "bias");
-impl_expr!(str_concat, &str, "delimiter");
 
 macro_rules! impl_no_arg_expr {
     ($name:ident) => {
