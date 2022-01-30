@@ -350,7 +350,7 @@ pub fn with_column_renamed(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let existing: String = params.get_as("existing")?;
     let replacement: String = params.get_as("replacement")?;
-    ldf.with_column_renamed(&existing, &replacement)
+    ldf.rename(vec![&existing], vec![&replacement])
         .try_into_js(&cx)
 }
 

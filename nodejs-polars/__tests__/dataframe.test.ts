@@ -1079,6 +1079,68 @@ describe("dataframe", () => {
     const expected  = [9, 8];
     expect(actual).toEqual(expected);
   });
+  test("transpose", () => {
+    const expected = pl.DataFrame({
+      "column_0": [1, 1],
+      "column_1": [2, 2],
+      "column_2": [3, 3]
+    });
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+      b: [1, 2, 3]
+    });
+    const actual = df.transpose();
+    expect(actual).toFrameEqual(expected);
+  });
+  test("transpose:includeHeader", () => {
+    const expected = pl.DataFrame({
+      "column": ["a", "b"],
+      "column_0": [1, 1],
+      "column_1": [2, 2],
+      "column_2": [3, 3]
+    });
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+      b: [1, 2, 3]
+    });
+    const actual = df.transpose({includeHeader:true});
+    expect(actual).toFrameEqual(expected);
+  });
+  test("transpose:columnNames", () => {
+    const expected = pl.DataFrame({
+      "a": [1, 1],
+      "b": [2, 2],
+      "c": [3, 3]
+    });
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+      b: [1, 2, 3]
+    });
+    const actual = df.transpose({includeHeader:false, columnNames: "abc"});
+    expect(actual).toFrameEqual(expected);
+  });
+  test("transpose:columnNames:generator", () => {
+    const expected = pl.DataFrame({
+      "col_0": [1, 1],
+      "col_1": [2, 2],
+      "col_2": [3, 3]
+    });
+    function *namesGenerator() {
+      const baseName = "col_";
+      let count = 0;
+      while(true) {
+        let name = `${baseName}${count}`;
+        yield name;
+        count++;
+      }
+    }
+    const df = pl.DataFrame({
+      a: [1, 2, 3],
+      b: [1, 2, 3]
+    });
+    const actual = df.transpose({includeHeader:false, columnNames: namesGenerator()});
+    expect(actual).toFrameEqual(expected);
+  });
   test("var", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],

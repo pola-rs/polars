@@ -1299,8 +1299,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * │ 1           ┆ 2           ┆ 3           │
    * └─────────────┴─────────────┴─────────────┘
    */
-  transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: IterableIterator<string>})
-  /**
+  transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: Iterable<string>})
+   /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
    * ```
@@ -1841,6 +1841,7 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       let df = wrap("transpose", options);
       if(options?.columnNames) {
+
         function *namesIter() {
           if(options?.includeHeader) {
             yield options.headerName;
@@ -1852,13 +1853,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
             yield next.value;
           }
         }
+
         const newColumns = Array.from(
           {length: df.width},
           (i => () => i.next().value)(namesIter())
         );
 
         df.columns = newColumns;
-
       }
 
       return df;

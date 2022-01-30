@@ -1,6 +1,7 @@
 use crate::conversion::prelude::*;
 use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
+use crate::jsiterator::JsIterator;
 use crate::prelude::JsResult;
 use napi::{
     CallContext, Either, JsBoolean, JsExternal, JsNumber, JsObject, JsUndefined, JsUnknown,
@@ -723,21 +724,19 @@ pub fn hash_rows(cx: CallContext) -> JsResult<JsExternal> {
     hash.into_series().try_into_js(&cx)
 }
 
-
 #[js_function(1)]
 pub fn transpose(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df: &mut DataFrame = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let include_header: bool = params.get_or("includeHeader", false)?;
-    let name = params.get_as::<String>("headerName")?;
-    let mut df = df.transpose().map_err(JsPolarsEr::from)?;
-
+    let mut new_df = df.transpose().map_err(JsPolarsEr::from)?;
     if include_header {
-        let s = Utf8Chunked::new_from_iter(&name, df.get_columns().iter().map(|s| s.name()))
-            .into_series();
-        df.insert_at_idx(0, s).unwrap();
+        let name: String = params.get_or("headerName", "column".to_owned())?;
+        let column_names = df.get_columns().iter().map(|s| s.name());
+        let s = Utf8Chunked::new_from_iter(&name, column_names).into_series();
+        new_df.insert_at_idx(0, s).unwrap();
     }
-    df.try_into_js(&cx)
+    new_df.try_into_js(&cx)
 }
 
 #[js_function(1)]
