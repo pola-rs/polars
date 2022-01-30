@@ -29,7 +29,6 @@ thiserror = "^1.0"
 
 [patch.crates-io]
 pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
-packed_simd_2 = { git = "https://github.com/hkratz/packed_simd", branch = "remove_llvm_asm" }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
