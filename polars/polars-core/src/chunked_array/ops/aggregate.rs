@@ -84,8 +84,36 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        let len = (self.len() - self.null_count()) as f64;
-        self.sum().map(|v| v.to_f64().unwrap() / len)
+        match self.dtype() {
+            DataType::Float64 => {
+                let len = (self.len() - self.null_count()) as f64;
+                self.sum().map(|v| v.to_f64().unwrap() / len)
+            }
+            _ => {
+                let mut acc = None;
+                let len = (self.len() - self.null_count()) as f64;
+
+                let mut update_acc = |val: f64| match &acc {
+                    None => acc = Some(val),
+                    Some(_acc) => acc = Some(_acc + val),
+                };
+
+                for arr in self.downcast_iter() {
+                    if arr.null_count() > 0 {
+                        for v in arr.into_iter().flatten() {
+                            let val = v.to_f64().unwrap();
+                            update_acc(val)
+                        }
+                    } else {
+                        for v in arr.values().as_slice() {
+                            let val = v.to_f64().unwrap();
+                            update_acc(val)
+                        }
+                    }
+                }
+                acc.map(|acc| acc / len)
+            }
+        }
     }
 }
 
@@ -1347,5 +1375,13 @@ mod test {
                 .abs()
                 < 0.0001
         );
+    }
+
+    #[test]
+    fn test_median_floats() {
+        let a = Series::new("a", &[1.0f64, 2.0, 3.0]);
+        let expected = Series::new("a", [2.0f64]);
+        assert!(a.median_as_series().series_equal_missing(&expected));
+        assert_eq!(a.median(), Some(2.0f64))
     }
 }
