@@ -1453,3 +1453,8 @@ def test_duration_extract_times() -> None:
 
     expected = pl.Series("b", [3600 * 24 * int(1e9)])
     verify_series_and_expr_api(duration, expected, "dt.nanoseconds")
+
+
+def test_mean_overflow() -> None:
+    arr = np.array([255] * (1 << 17), dtype="int16")
+    assert arr.mean() == 255.0
