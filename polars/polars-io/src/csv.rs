@@ -1457,4 +1457,23 @@ b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,8
         assert_eq!(df.shape(), (2, 9));
         Ok(())
     }
+
+    #[test]
+    fn test_quoted_bool_ints() -> Result<()> {
+        let csv = r#"foo,bar,baz
+1,"4","false"
+3,"5","false"
+5,"6","true"
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+        let expected = df![
+            "foo" => [1, 3, 5],
+            "bar" => [4, 5, 6],
+            "baz" => [false, false, true],
+        ]?;
+        assert!(df.frame_equal_missing(&expected));
+
+        Ok(())
+    }
 }

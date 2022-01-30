@@ -202,6 +202,10 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
             self.append_value(false);
         } else if bytes.eq_ignore_ascii_case(b"true") {
             self.append_value(true);
+        } else if bytes.eq_ignore_ascii_case(b"\"false\"") {
+            self.append_value(false);
+        } else if bytes.eq_ignore_ascii_case(b"\"true\"") {
+            self.append_value(true);
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();
         } else {
