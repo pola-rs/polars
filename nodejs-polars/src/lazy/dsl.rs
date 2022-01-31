@@ -556,7 +556,6 @@ pub fn exclude(cx: CallContext) -> JsResult<JsExternal> {
     expr.clone().exclude(&columns).try_into_js(&cx)
 }
 
-
 #[js_function(1)]
 pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -818,18 +817,18 @@ pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let quantile = params.get_as::<f64>("quantile")?;
-    let interpolation = params.get_as::<QuantileInterpolOptions>("interpolation")?;
-    let window_size = params.get_as::<usize>("window_size")?;
+    let interpolation: QuantileInterpolOptions =
+        params.get_or("interpolation", QuantileInterpolOptions::Nearest)?;
+    let window_size: usize = params.get_or("window_size", 2)?;
+    let min_periods: usize = params.get_or("min_periods", 2)?;
+    let center: bool = params.get_or("center", false)?;
     let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-    let min_periods = params.get_as::<usize>("min_periods")?;
-    let center = params.get_as::<bool>("center")?;
     let options = RollingOptions {
         window_size,
         weights,
         min_periods,
         center,
     };
-
     expr.clone()
         .rolling_quantile(quantile, interpolation, options)
         .try_into_js(&cx)

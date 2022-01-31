@@ -1143,7 +1143,6 @@ pub(crate) fn clip(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let min = params.get_as::<f64>("min")?;
     let max = params.get_as::<f64>("max")?;
-    
     series
         .clip(min, max)
         .map_err(JsPolarsEr::from)?
@@ -1338,11 +1337,12 @@ pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let quantile = params.get_as::<f64>("quantile")?;
-    let interpolation = params.get_as::<QuantileInterpolOptions>("interpolation")?;
-    let window_size = params.get_as::<usize>("window_size")?;
+    let interpolation: QuantileInterpolOptions =
+        params.get_or("interpolation", QuantileInterpolOptions::Nearest)?;
+    let window_size: usize = params.get_or("window_size", 2)?;
+    let min_periods: usize = params.get_or("min_periods", 2)?;
+    let center: bool = params.get_or("center", false)?;
     let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-    let min_periods = params.get_as::<usize>("min_periods")?;
-    let center = params.get_as::<bool>("center")?;
     let options = RollingOptions {
         window_size,
         weights,
