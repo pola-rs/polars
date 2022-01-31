@@ -111,6 +111,8 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
+                // keep logical type info
+                let dummy = dummy.cast(l.dtype()).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
@@ -159,6 +161,8 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
+                // keep logical type info
+                let dummy = dummy.cast(r.dtype()).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
                 let mut ca: ListChunked = l

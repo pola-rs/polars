@@ -360,60 +360,28 @@ impl PyExpr {
     }
 
     pub fn str_parse_date(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let out = if exact {
-                ca.as_date(fmt.as_deref())
-            } else {
-                ca.as_date_not_exact(fmt.as_deref())
-            }?;
-            if strict {
-                if out.null_count() != ca.null_count() {
-                    Err(PolarsError::ComputeError(
-                        "strict conversion to dates failed, maybe set strict=False".into(),
-                    ))
-                } else {
-                    Ok(out.into_series())
-                }
-            } else {
-                Ok(out.into_series())
-            }
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::Date))
-            .with_fmt("strptime")
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Date,
+                fmt,
+                strict,
+                exact,
+            })
             .into()
     }
 
     pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
-        let function = move |s: Series| {
-            let ca = s.utf8()?;
-            let out = if exact {
-                ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)
-            } else {
-                ca.as_datetime_not_exact(fmt.as_deref(), TimeUnit::Milliseconds)
-            }?;
-
-            if strict {
-                if out.null_count() != ca.null_count() {
-                    Err(PolarsError::ComputeError(
-                        "strict conversion to dates failed, maybe set strict=False".into(),
-                    ))
-                } else {
-                    Ok(out.into_series())
-                }
-            } else {
-                Ok(out.into_series())
-            }
-        };
-        self.clone()
-            .inner
-            .map(
-                function,
-                GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
-            )
-            .with_fmt("strptime")
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Datetime(TimeUnit::Milliseconds, None),
+                fmt,
+                strict,
+                exact,
+            })
             .into()
     }
 
@@ -609,7 +577,7 @@ impl PyExpr {
     }
 
     pub fn strftime(&self, fmt: &str) -> PyExpr {
-        self.inner.clone().str().strftime(fmt).into()
+        self.inner.clone().dt().strftime(fmt).into()
     }
 
     pub fn arr_lengths(&self) -> PyExpr {

@@ -1,10 +1,12 @@
 mod arity;
 #[cfg(feature = "parquet")]
 mod io;
+mod logical;
 mod optimization_checks;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
+
 use optimization_checks::*;
 use std::sync::Mutex;
 
