@@ -5,6 +5,8 @@ export type RollingOptions = {
   center?: boolean
 };
 
+export type Interpolation = "nearest" | "higher" | "lower" | "midpoint" | "linear"
+
 export interface Arithmetic<T> {
   add(rhs: any): T
   sub(rhs: any): T
@@ -223,11 +225,24 @@ export interface Rolling<T> {
   rollingMedian(windowSize: number, weights?: Array<number>, minPeriods?: Array<number>, center?: boolean): T
   /**
    * Compute a rolling quantile
-   * @param windowSize Size of the rolling window
    * @param quantile quantile to compute
+   * @param interpolation interpolation type
+   * @param windowSize Size of the rolling window
+   * @param weights - An optional slice with the same length as the window that will be multiplied
+   * elementwise with the values in the window.
+   * @param minPeriods The number of values in the window that should be non-null before computing a result.
+   * If undefined, it will be set equal to window size.
+   * @param center - Set the labels at the center of the window
    */
-  rollingQuantile(windowSize: number, quantile: number): T
-  rollingQuantile({windowSize, quantile}: {windowSize: number, quantile: number}): T
+  rollingQuantile(options: RollingOptions & {quantile: number, interpolation?: Interpolation}): T
+  rollingQuantile(
+    quantile: number,
+    interpolation?: Interpolation,
+    windowSize?: number,
+    weights?: Array<number>,
+    minPeriods?: Array<number>,
+    center?: boolean
+  ): T
   /**
    * Compute a rolling skew
    * @param windowSize Size of the rolling window

@@ -1399,11 +1399,19 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     rollingStd: rolling("rolling_std"),
     rollingVar: rolling("rolling_var"),
     rollingMedian: rolling("rollingMedian"),
-    rollingQuantile(windowSize, quantile?) {
-      return this
-        .toFrame()
-        .select(col(this.name).rollingQuantile(windowSize, quantile))
-        .getColumn(this.name);
+    rollingQuantile(val, interpolation?, windowSize?, weights?, minPeriods?, center?) {
+      if(typeof val === "number") {
+        return wrap("rolling_quantile", {
+          quantile: val,
+          interpolation,
+          windowSize,
+          weights,
+          minPeriods,
+          center
+        });
+      }
+
+      return wrap("rolling_quantile", val);
     },
     rollingSkew(windowSize, bias?) {
       return this

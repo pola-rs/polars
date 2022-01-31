@@ -398,10 +398,7 @@ pub fn str_concat(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let delimiter = params.get_as::<String>("delimiter")?;
-    expr.clone()
-        .str()
-        .concat(&delimiter)
-        .try_into_js(&cx)
+    expr.clone().str().concat(&delimiter).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -558,6 +555,7 @@ pub fn exclude(cx: CallContext) -> JsResult<JsExternal> {
     let columns = params.get_as::<Vec<String>>("columns")?;
     expr.clone().exclude(&columns).try_into_js(&cx)
 }
+
 
 #[js_function(1)]
 pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
@@ -817,18 +815,24 @@ impl_rolling_method!(rolling_median);
 
 #[js_function(1)]
 pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
-    todo!()
-    // let params = get_params(&cx)?;
-    // let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    // let window_size = params.get_as::<usize>("windowSize")?;
-    // let quantile = params.get_as::<f64>("quantile")?;
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let quantile = params.get_as::<f64>("quantile")?;
+    let interpolation = params.get_as::<QuantileInterpolOptions>("interpolation")?;
+    let window_size = params.get_as::<usize>("window_size")?;
+    let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
+    let min_periods = params.get_as::<usize>("min_periods")?;
+    let center = params.get_as::<bool>("center")?;
+    let options = RollingOptions {
+        window_size,
+        weights,
+        min_periods,
+        center,
+    };
 
-    // expr.clone()
-    //     .rolling_apply_quantile(window_size, move |ca| {
-            
-    //         ChunkAgg::quantile(ca, quantile, QuantileInterpolOptions::default()).unwrap()
-    //     })
-    //     .try_into_js(&cx)
+    expr.clone()
+        .rolling_quantile(quantile, interpolation, options)
+        .try_into_js(&cx)
 }
 
 #[js_function(1)]

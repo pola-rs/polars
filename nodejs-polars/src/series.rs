@@ -1333,6 +1333,28 @@ macro_rules! impl_rolling_method {
     };
 }
 
+#[js_function(1)]
+pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let quantile = params.get_as::<f64>("quantile")?;
+    let interpolation = params.get_as::<QuantileInterpolOptions>("interpolation")?;
+    let window_size = params.get_as::<usize>("window_size")?;
+    let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
+    let min_periods = params.get_as::<usize>("min_periods")?;
+    let center = params.get_as::<bool>("center")?;
+    let options = RollingOptions {
+        window_size,
+        weights,
+        min_periods,
+        center,
+    };
+
+    series
+        .rolling_quantile(quantile, interpolation, options)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
 impl_rolling_method!(rolling_sum);
 impl_rolling_method!(rolling_mean);
 impl_rolling_method!(rolling_max);
