@@ -749,6 +749,10 @@ impl Series {
 
     #[cfg(feature = "dtype-time")]
     pub(crate) fn into_time(self) -> Series {
+        #[cfg(not(feature = "dtype-time"))]
+        {
+            panic!("activate feature dtype-time")
+        }
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -763,6 +767,10 @@ impl Series {
     }
 
     pub(crate) fn into_date(self) -> Series {
+        #[cfg(not(feature = "dtype-date"))]
+        {
+            panic!("activate feature dtype-date")
+        }
         match self.dtype() {
             #[cfg(feature = "dtype-date")]
             DataType::Int32 => self.i32().unwrap().clone().into_date().into_series(),
@@ -778,6 +786,11 @@ impl Series {
         }
     }
     pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
+        #[cfg(not(feature = "dtype-datetime"))]
+        {
+            panic!("activate feature dtype-datetime")
+        }
+
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
             DataType::Int64 => self
@@ -799,6 +812,10 @@ impl Series {
     }
 
     pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+        #[cfg(not(feature = "dtype-duration"))]
+        {
+            panic!("activate feature dtype-duration")
+        }
         match self.dtype() {
             #[cfg(feature = "dtype-duration")]
             DataType::Int64 => self
@@ -821,11 +838,7 @@ impl Series {
 
     /// Check if the underlying data is a logical type.
     pub fn is_logical(&self) -> bool {
-        use DataType::*;
-        matches!(
-            self.dtype(),
-            Date | Duration(_) | Datetime(_, _) | Time | Categorical
-        )
+        self.dtype().is_logical()
     }
 
     /// Check if underlying physical data is numeric.

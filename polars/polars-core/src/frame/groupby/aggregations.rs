@@ -61,6 +61,14 @@ impl Series {
         self.slice(first as i64, len as usize)
     }
 
+    fn restore_logical(&self, out: Series) -> Series {
+        if self.is_logical() {
+            out.cast(self.dtype()).unwrap()
+        } else {
+            out
+        }
+    }
+
     #[cfg(feature = "private")]
     pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
@@ -94,7 +102,7 @@ impl Series {
 
     #[cfg(feature = "private")]
     pub fn agg_first(&self, groups: &GroupsProxy) -> Series {
-        match groups {
+        let out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(first, idx)| {
                     if idx.is_empty() {
@@ -122,7 +130,8 @@ impl Series {
                 // groups are always in bounds
                 unsafe { self.take_opt_iter_unchecked(&mut iter) }
             }
-        }
+        };
+        self.restore_logical(out)
     }
 
     #[cfg(feature = "private")]
@@ -154,7 +163,7 @@ impl Series {
 
     #[cfg(feature = "private")]
     pub fn agg_last(&self, groups: &GroupsProxy) -> Series {
-        match groups {
+        let out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(_, idx)| {
                     if idx.is_empty() {
@@ -178,7 +187,8 @@ impl Series {
                     );
                 unsafe { self.take_opt_iter_unchecked(&mut iter) }
             }
-        }
+        };
+        self.restore_logical(out)
     }
 }
 

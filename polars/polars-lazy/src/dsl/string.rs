@@ -18,12 +18,48 @@ impl StringNameSpace {
     }
 
     #[cfg(feature = "temporal")]
-    pub fn strftime(self, fmt: &str) -> Expr {
-        let fmt = fmt.to_string();
-        let function = move |s: Series| s.strftime(&fmt);
+    pub fn strptime(self, options: StrpTimeOptions) -> Expr {
+        let out_type = options.date_dtype.clone();
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+
+            let out = match &options.date_dtype {
+                DataType::Date => {
+                    if options.exact {
+                        ca.as_date(options.fmt.as_deref())?.into_series()
+                    } else {
+                        ca.as_date_not_exact(options.fmt.as_deref())?.into_series()
+                    }
+                }
+                DataType::Datetime(tu, _) => {
+                    if options.exact {
+                        ca.as_datetime(options.fmt.as_deref(), *tu)?.into_series()
+                    } else {
+                        ca.as_datetime_not_exact(options.fmt.as_deref(), *tu)?
+                            .into_series()
+                    }
+                }
+                dt => {
+                    return Err(PolarsError::ComputeError(
+                        format!("not implemented for dtype {:?}", dt).into(),
+                    ))
+                }
+            };
+            if options.strict {
+                if out.null_count() != ca.null_count() {
+                    Err(PolarsError::ComputeError(
+                        "strict conversion to dates failed, maybe set strict=False".into(),
+                    ))
+                } else {
+                    Ok(out.into_series())
+                }
+            } else {
+                Ok(out.into_series())
+            }
+        };
         self.0
-            .map(function, GetOutput::from_type(DataType::Utf8))
-            .with_fmt("strftime")
+            .map(function, GetOutput::from_type(out_type))
+            .with_fmt("strptime")
     }
 
     #[cfg(feature = "concat_str")]

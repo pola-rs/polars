@@ -522,6 +522,8 @@ impl PartialEq for AnyValue<'_> {
                 }
                 _ => false,
             },
+            #[cfg(feature = "dtype-duration")]
+            (Duration(l, tu_l), Duration(r, tu_r)) => l == r && tu_l == tu_r,
             _ => false,
         }
     }
@@ -647,6 +649,11 @@ impl DataType {
             Categorical => UInt32,
             _ => self.clone(),
         }
+    }
+
+    /// Check if this dtype is a logical type
+    pub fn is_logical(&self) -> bool {
+        self != &self.to_physical()
     }
 
     /// Convert to an Arrow data type.

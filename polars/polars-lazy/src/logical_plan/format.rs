@@ -317,7 +317,7 @@ impl Debug for LiteralValue {
             DateTime(nd, _) => {
                 write!(f, "{}", nd)
             }
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             Duration(du, _) => {
                 write!(f, "{}", du)
             }

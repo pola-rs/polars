@@ -41,7 +41,7 @@ pub enum LiteralValue {
     },
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
     DateTime(NaiveDateTime, TimeUnit),
-    #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+    #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
     Duration(ChronoDuration, TimeUnit),
     Series(NoEq<Series>),
 }
@@ -69,7 +69,7 @@ impl LiteralValue {
             LiteralValue::Range { data_type, .. } => data_type.clone(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             LiteralValue::DateTime(_, tu) => DataType::Datetime(*tu, None),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             LiteralValue::Duration(_, tu) => DataType::Duration(*tu),
             LiteralValue::Series(s) => s.dtype().clone(),
             LiteralValue::Null => DataType::Null,

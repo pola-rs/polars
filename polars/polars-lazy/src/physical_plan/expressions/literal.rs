@@ -84,7 +84,7 @@ impl PhysicalExpr for LiteralExpr {
                     .into_datetime(*tu, None)
                     .into_series()
             }
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             Duration(v, tu) => {
                 let duration = match tu {
                     TimeUnit::Milliseconds => v.num_milliseconds(),
@@ -144,7 +144,7 @@ impl PhysicalExpr for LiteralExpr {
             Range { data_type, .. } => Field::new(name, data_type.clone()),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
             DateTime(_, tu) => Field::new(name, DataType::Datetime(*tu, None)),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
             Duration(_, tu) => Field::new(name, DataType::Duration(*tu)),
             Series(s) => s.field().into_owned(),
         };

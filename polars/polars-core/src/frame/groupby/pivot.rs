@@ -388,31 +388,6 @@ pub struct Pivot<'df> {
     values: Vec<String>,
 }
 
-pub(crate) trait ChunkPivot {
-    fn pivot<'a>(
-        &self,
-        _pivot_series: &'a Series,
-        _keys: Vec<Series>,
-        _groups: &GroupsProxy,
-        _agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "Pivot operation not implemented for this type".into(),
-        ))
-    }
-
-    fn pivot_count<'a>(
-        &self,
-        _pivot_series: &'a Series,
-        _keys: Vec<Series>,
-        _groups: &GroupsProxy,
-    ) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "Pivot count operation not implemented for this type".into(),
-        ))
-    }
-}
-
 fn sort_cols(cols: &mut [Series], offset: usize) {
     (&mut cols[offset..]).sort_unstable_by(|s1, s2| {
         if s1.name() > s2.name() {

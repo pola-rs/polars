@@ -1,4 +1,5 @@
 //! This module exists to reduce compilation times.
+//!
 //! All the data types are backed by a physical type in memory e.g. Date -> i32, Datetime-> i64.
 //!
 //! Series lead to code implementations of all traits. Whereas there are a lot of duplicates due to
@@ -171,6 +172,7 @@ macro_rules! impl_dyn_series {
                     .$into_logical()
                     .into_series()
             }
+
             fn subtract(&self, rhs: &Series) -> Result<Series> {
                 match (self.dtype(), rhs.dtype()) {
                     (DataType::Date, DataType::Date) => {

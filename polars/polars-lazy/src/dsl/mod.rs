@@ -1,4 +1,7 @@
 //! Domain specific language for the Lazy api.
+#[cfg(feature = "temporal")]
+mod dt;
+mod options;
 #[cfg(feature = "strings")]
 pub mod string;
 
@@ -20,6 +23,7 @@ use std::{
 pub use crate::frame::IntoLazy;
 pub use crate::functions::*;
 pub use crate::logical_plan::lit;
+pub use options::*;
 
 use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
@@ -2046,6 +2050,11 @@ impl Expr {
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)
+    }
+
+    #[cfg(feature = "temporal")]
+    pub fn dt(self) -> dt::DateLikeNameSpace {
+        dt::DateLikeNameSpace(self)
     }
 }
 

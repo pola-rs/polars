@@ -462,7 +462,11 @@ fn test_lazy_query_9() -> Result<()> {
 }
 
 #[test]
-#[cfg(feature = "temporal")]
+#[cfg(all(
+    feature = "temporal",
+    feature = "dtype-datetime",
+    feature = "dtype-date"
+))]
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
     let date = NaiveDate::from_ymd(2021, 3, 5);
@@ -536,7 +540,11 @@ fn test_lazy_query_10() {
 }
 
 #[test]
-#[cfg(feature = "temporal")]
+#[cfg(all(
+    feature = "temporal",
+    feature = "dtype-date",
+    feature = "dtype-datetime"
+))]
 fn test_lazy_query_7() {
     let date = NaiveDate::from_ymd(2021, 3, 5);
     let dates = vec![
