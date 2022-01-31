@@ -393,6 +393,13 @@ pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::from_type(DataType::Boolean))
         .try_into_js(&cx)
 }
+#[js_function(1)]
+pub fn str_concat(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let delimiter = params.get_as::<String>("delimiter")?;
+    expr.clone().str().concat(&delimiter).try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub fn str_json_path_match(cx: CallContext) -> JsResult<JsExternal> {
@@ -717,7 +724,6 @@ impl_expr!(cumcount, bool, "reverse");
 impl_expr!(prefix, &str, "prefix");
 impl_expr!(suffix, &str, "suffix");
 impl_expr!(skew, bool, "bias");
-impl_expr!(str_concat, &str, "delimiter");
 
 macro_rules! impl_no_arg_expr {
     ($name:ident) => {
@@ -810,13 +816,21 @@ impl_rolling_method!(rolling_median);
 pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let window_size = params.get_as::<usize>("windowSize")?;
     let quantile = params.get_as::<f64>("quantile")?;
-
+    let interpolation: QuantileInterpolOptions =
+        params.get_or("interpolation", QuantileInterpolOptions::Nearest)?;
+    let window_size: usize = params.get_or("window_size", 2)?;
+    let min_periods: usize = params.get_or("min_periods", 2)?;
+    let center: bool = params.get_or("center", false)?;
+    let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
+    let options = RollingOptions {
+        window_size,
+        weights,
+        min_periods,
+        center,
+    };
     expr.clone()
-        .rolling_apply_float(window_size, move |ca| {
-            ChunkAgg::quantile(ca, quantile, QuantileInterpolOptions::default()).unwrap()
-        })
+        .rolling_quantile(quantile, interpolation, options)
         .try_into_js(&cx)
 }
 

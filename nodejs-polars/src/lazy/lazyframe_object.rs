@@ -20,7 +20,7 @@ impl JsLazyFrame {
             napi::Property::new(env, "collectSync")?.with_method(lazyframe::collect_sync),
             napi::Property::new(env, "columns")?.with_method(lazyframe::columns),
             napi::Property::new(env, "dropColumns")?.with_method(lazyframe::drop_columns),
-            napi::Property::new(env, "dropDuplicates")?.with_method(lazyframe::drop_duplicates),
+            napi::Property::new(env, "distinct")?.with_method(lazyframe::distinct),
             napi::Property::new(env, "dropNulls")?.with_method(lazyframe::drop_nulls),
             napi::Property::new(env, "explode")?.with_method(lazyframe::explode),
             napi::Property::new(env, "fetch")?.with_method(lazyframe::fetch),

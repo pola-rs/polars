@@ -166,7 +166,7 @@ pub(crate) fn read_csv_path(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub(crate) fn write_csv_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let has_headers: bool = params.get_as("hasHeader")?;
 
     let sep: String = params.get_as("sep")?;
@@ -181,7 +181,7 @@ pub(crate) fn write_csv_stream(cx: CallContext) -> JsResult<JsUndefined> {
     CsvWriter::new(writeable)
         .has_header(has_headers)
         .with_delimiter(sep as u8)
-        .finish(&df)
+        .finish(df)
         .map_err(JsPolarsEr::from)?;
     cx.env.get_undefined()
 }
@@ -189,7 +189,7 @@ pub(crate) fn write_csv_stream(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn write_csv_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let has_headers: bool = params.get_as("hasHeader")?;
 
     let sep: String = params.get_as("sep")?;
@@ -203,7 +203,7 @@ pub(crate) fn write_csv_path(cx: CallContext) -> JsResult<JsUndefined> {
     CsvWriter::new(f)
         .has_header(has_headers)
         .with_delimiter(sep as u8)
-        .finish(&df)
+        .finish(df)
         .map_err(JsPolarsEr::from)?;
     cx.env.get_undefined()
 }
@@ -287,7 +287,6 @@ pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn write_parquet_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let compression = params.get_as::<String>("compression")?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
     let writeable = JsWriteStream {
@@ -360,7 +359,7 @@ pub(crate) fn read_ipc_buffer(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let path = params.get_as::<String>("path")?;
     let compression = params.get_as::<String>("compression")?;
     let compression = match compression.as_str() {
@@ -381,7 +380,7 @@ pub(crate) fn write_ipc_path(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn write_ipc_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
     let writeable = JsWriteStream {
         inner: stream,
@@ -462,7 +461,7 @@ pub(crate) fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
 #[js_function(1)]
 pub(crate) fn write_json_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let multiline: bool = params.get_or("multiline", false)?;
     let stream = params.get::<JsObject>("writeStream")?;
     let writeable = JsWriteStream {
@@ -483,7 +482,7 @@ pub(crate) fn write_json_stream(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn write_json_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let path = params.get_as::<String>("path")?;
     let multiline: bool = params.get_or("multiline", false)?;
     let json_fmt = match multiline {

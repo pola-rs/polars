@@ -321,6 +321,7 @@ impl JsSeries {
             napi::Property::new(env, "rolling_std")?.with_method(rolling_std),
             napi::Property::new(env, "rolling_median")?.with_method(rolling_median),
             napi::Property::new(env, "rolling_var")?.with_method(rolling_var),
+            napi::Property::new(env, "rolling_quantile")?.with_method(rolling_quantile),
             napi::Property::new(env, "round")?.with_method(round),
             napi::Property::new(env, "sample_frac")?.with_method(sample_frac),
             napi::Property::new(env, "sample_n")?.with_method(sample_n),

@@ -350,7 +350,7 @@ pub fn with_column_renamed(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let existing: String = params.get_as("existing")?;
     let replacement: String = params.get_as("replacement")?;
-    ldf.with_column_renamed(&existing, &replacement)
+    ldf.rename(vec![&existing], vec![&replacement])
         .try_into_js(&cx)
 }
 
@@ -410,14 +410,20 @@ pub fn explode(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn drop_duplicates(cx: CallContext) -> JsResult<JsExternal> {
+pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let maintain_order: bool = params.get_or("maintainOrder", false)?;
-    let subset: Option<Vec<String>> = params.get_as("subset")?;
+    let keep: DistinctKeepStrategy = params.get_as("keep")?;
 
-    ldf.drop_duplicates(maintain_order, subset).try_into_js(&cx)
+    let subset: Option<Vec<String>> = params.get_as("subset")?;
+    match maintain_order {
+        true => ldf.distinct_stable(subset, keep),
+        false => ldf.distinct(subset, keep),
+    }
+    .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn drop_nulls(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

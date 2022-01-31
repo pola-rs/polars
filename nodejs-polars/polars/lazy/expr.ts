@@ -687,7 +687,20 @@ const _Expr = (_expr: any): Expr => {
     rollingStd: rolling("rollingStd"),
     rollingVar: rolling("rollingVar"),
     rollingMedian: rolling("rollingMedian"),
-    rollingQuantile: wrapBinary("rollingQuantile", "windowSize", "quantile"),
+    rollingQuantile(val, interpolation?, windowSize?, weights?, minPeriods?, center?) {
+      if(typeof val === "number") {
+        return wrap("rollingQuantile", {
+          quantile: val,
+          interpolation,
+          windowSize,
+          weights,
+          minPeriods,
+          center
+        });
+      }
+
+      return wrap("rollingQuantile", val);
+    },
     rollingSkew(val, bias=true)  {
       if(typeof val === "number") {
         return wrap("rollingSkew", {windowSize: val, bias});

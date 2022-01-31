@@ -1903,7 +1903,13 @@ describe("rolling", () => {
         .rollingQuantile({windowSize: 2, quantile: 0.5})
         .prefix("rolling_quantile_")
     );
+    const seriesActual = df
+      .getColumn("a")
+      .rollingQuantile({windowSize: 2, quantile: 0.5})
+      .rename("rolling_quantile_a");
+
     expect(actual).toFrameStrictEqual(expected);
+    expect(seriesActual).toSeriesStrictEqual(expected["rolling_quantile_a"]);
   });
   test("rollingSkew", () => {
     const df = pl.DataFrame({"a": [1, 2, 3, 3, 2, 10, 8]});

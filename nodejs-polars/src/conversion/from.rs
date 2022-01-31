@@ -15,6 +15,30 @@ impl FromJsUnknown for String {
         s.into_utf8()?.into_owned()
     }
 }
+impl FromJsUnknown for QuantileInterpolOptions {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        let s = String::from_js(val)?;
+        match s.as_str() {
+            "nearest" => Ok(QuantileInterpolOptions::Nearest),
+            "lower" => Ok(QuantileInterpolOptions::Lower),
+            "higher" => Ok(QuantileInterpolOptions::Higher),
+            "midpoinp" => Ok(QuantileInterpolOptions::Midpoint),
+            "linear" => Ok(QuantileInterpolOptions::Linear),
+            s => panic!("quantile interpolation option {} is not supported", s),
+        }
+    }
+}
+
+impl FromJsUnknown for DistinctKeepStrategy {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        let s = String::from_js(val)?;
+        match s.as_str() {
+            "first" => Ok(DistinctKeepStrategy::First),
+            "last" => Ok(DistinctKeepStrategy::Last),
+            s => panic!("keep strategy {} is not supported", s),
+        }
+    }
+}
 
 impl<V> FromJsUnknown for Vec<V>
 where
