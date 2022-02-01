@@ -486,7 +486,9 @@ def tail(
 
 
 def lit(
-    value: Optional[Union[float, int, str, date, datetime, "pli.Series"]],
+    value: Optional[
+        Union[float, int, str, date, datetime, "pli.Series", np.ndarray, Any]
+    ],
     dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -561,6 +563,10 @@ def lit(
 
     if dtype:
         return pli.wrap_expr(pylit(value)).cast(dtype)
+    # numpy literals like np.float32(0)
+    # have an item
+    if hasattr(value, "item"):
+        value = value.item()  # type: ignore
     return pli.wrap_expr(pylit(value))
 
 
