@@ -8,6 +8,14 @@ mod predicate_queries;
 mod projection_queries;
 mod queries;
 
+fn load_df() -> DataFrame {
+    df!("a" => &[1, 2, 3, 4, 5],
+                 "b" => &["a", "a", "b", "c", "c"],
+                 "c" => &[1, 2, 3, 4, 5]
+    )
+    .unwrap()
+}
+
 use optimization_checks::*;
 use std::sync::Mutex;
 

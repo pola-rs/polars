@@ -778,9 +778,10 @@ where
                             // Safety:
                             // group tuples are in bounds
                             unsafe {
-                                list_values.extend(
-                                    idx.iter().map(|idx| *values.get_unchecked(*idx as usize)),
-                                );
+                                list_values.extend(idx.iter().map(|idx| {
+                                    debug_assert!((*idx as usize) < values.len());
+                                    *values.get_unchecked(*idx as usize)
+                                }));
                                 // Safety:
                                 // we know that offsets has allocated enough slots
                                 offsets.push_unchecked(length_so_far);

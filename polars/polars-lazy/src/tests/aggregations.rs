@@ -351,3 +351,29 @@ fn test_binary_agg_context_2() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_shift_elementwise_issue_2509() -> Result<()> {
+    let df = df![
+        "x"=> [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        "y"=> [0, 10, 20, 0, 10, 20, 0, 10, 20]
+    ]?;
+    let out = df
+        .lazy()
+        // Don't use maintain order here! That hides the bug
+        .groupby([col("x")])
+        .agg(&[(col("y").shift(-1) + col("x")).list().alias("sum")])
+        .sort("x", false)
+        .collect()?;
+
+    let out = out.explode(["sum"])?;
+    let out = out.column("sum")?;
+    assert_eq!(out.get(0), AnyValue::Int32(10));
+    assert_eq!(out.get(1), AnyValue::Int32(20));
+    assert_eq!(out.get(2), AnyValue::Null);
+    assert_eq!(out.get(3), AnyValue::Int32(11));
+    assert_eq!(out.get(4), AnyValue::Int32(21));
+    assert_eq!(out.get(5), AnyValue::Null);
+
+    Ok(())
+}

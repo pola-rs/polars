@@ -60,3 +60,18 @@ fn test_single_thread_when_then_otherwise_categorical() -> Result<()> {
     assert!(s.contains("same"));
     Ok(())
 }
+
+#[test]
+fn test_lazy_ternary() {
+    let df = get_df()
+        .lazy()
+        .with_column(
+            when(col("sepal.length").lt(lit(5.0)))
+                .then(lit(10))
+                .otherwise(lit(1))
+                .alias("new"),
+        )
+        .collect()
+        .unwrap();
+    assert_eq!(Some(43), df.column("new").unwrap().sum::<i32>());
+}
