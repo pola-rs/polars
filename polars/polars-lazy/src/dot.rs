@@ -63,9 +63,9 @@ impl LogicalPlan {
         let (mut branch, id) = id;
         match self {
             Union { inputs, .. } => {
+                let current_node = format!("UNION [{:?}]", (branch, id));
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
                 for input in inputs {
-                    let current_node = format!("UNION [{:?}]", (branch, id));
-                    self.write_dot(acc_str, prev_node, &current_node, id)?;
                     input.dot(acc_str, (branch, id + 1), &current_node)?;
                     branch += 1;
                 }
@@ -299,8 +299,12 @@ impl LogicalPlan {
                 right_on,
                 ..
             } => {
-                let current_node =
-                    format!("JOIN left {:?}; right: {:?} [{}]", left_on, right_on, id);
+                let current_node = format!(
+                    r#"JOIN
+                    left {:?};
+                    right: {:?} [{}]"#,
+                    left_on, right_on, id
+                );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input_left.dot(acc_str, (branch + 10, id + 1), &current_node)?;
                 input_right.dot(acc_str, (branch + 20, id + 1), &current_node)

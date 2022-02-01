@@ -227,14 +227,18 @@ class LazyFrame:
             show = False
 
         if show and _in_notebook():
-            from IPython.display import SVG, display
+            try:
+                from IPython.display import SVG, display
 
-            dot = self._ldf.to_dot(optimized)
-            svg = subprocess.check_output(
-                ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
-            )
-            return display(SVG(svg))
-
+                dot = self._ldf.to_dot(optimized)
+                svg = subprocess.check_output(
+                    ["dot", "-Nshape=box", "-Tsvg"], input=f"{dot}".encode()
+                )
+                return display(SVG(svg))
+            except Exception:
+                raise ImportError(
+                    "Graphviz dot binary should be on your PATH and matplotlib should be installed to show graph."
+                )
         try:
             import matplotlib.image as mpimg
             import matplotlib.pyplot as plt
