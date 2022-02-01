@@ -72,7 +72,7 @@ class LazyFrame:
         n_rows: Optional[int] = None,
         low_memory: bool = False,
         rechunk: bool = True,
-        offset_schema_inference: int = 0,
+        skip_rows_after_header: int = 0,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -101,7 +101,7 @@ class LazyFrame:
             infer_schema_length,
             with_column_names,
             rechunk,
-            offset_schema_inference,
+            skip_rows_after_header,
         )
         return self
 

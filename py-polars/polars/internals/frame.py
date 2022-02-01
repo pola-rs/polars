@@ -384,7 +384,7 @@ class DataFrame:
         encoding: str = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
-        offset_schema_inference: int = 0,
+        skip_rows_after_header: int = 0,
     ) -> "DataFrame":
         """
         Read a CSV file into a Dataframe.
@@ -410,7 +410,8 @@ class DataFrame:
             Single byte character used for csv quoting, default = ''.
             Set to None to turn off special handling and escaping of quotes.
         skip_rows
-            Start reading after ``skip_rows`` lines.
+            Start reading after ``skip_rows`` lines. The header is also inferred at
+            this offset
         dtypes
             Overwrite dtypes during inference.
         null_values
@@ -449,8 +450,8 @@ class DataFrame:
         rechunk
             Make sure that all columns are contiguous in memory by
             aggregating the chunks into a single array.
-        offset_schema_inference
-            Start schema parsing of the header at this offset
+        skip_rows_after_header
+            These number of rows will be skipped when the header is parsed.
 
         Returns
         -------
@@ -512,7 +513,7 @@ class DataFrame:
                 n_rows=n_rows,
                 low_memory=low_memory,
                 rechunk=rechunk,
-                offset_schema_inference=offset_schema_inference,
+                skip_rows_after_header=skip_rows_after_header,
             )
             if columns is None:
                 return scan.collect()
@@ -547,7 +548,7 @@ class DataFrame:
             quote_char,
             processed_null_values,
             parse_dates,
-            offset_schema_inference,
+            skip_rows_after_header,
         )
         return self
 

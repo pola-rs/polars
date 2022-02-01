@@ -554,18 +554,28 @@ def test_csv_globbing() -> None:
     assert df.dtypes == list(dtypes.values())
 
 
-def test_csv_schema_offset() -> None:
-    csv = r"""
-c,d,3
-a,b,c
---
--
-a,b,c
-1,2,3
-1,2,3
-    """.encode()
-    df = pl.read_csv(csv, offset_schema_inference=4, skip_rows=4)
-    assert df.columns == ["a", "b", "c"]
+def test_csv_schema_offset(foods_csv: str) -> None:
+    csv = """metadata
+line
+foo,bar
+1,2
+3,4
+5,6
+""".encode()
+    df = pl.read_csv(csv, skip_rows=2)
+    assert df.columns == ["foo", "bar"]
+    assert df.shape == (3, 2)
+    df = pl.read_csv(csv, skip_rows=2, skip_rows_after_header=2)
+    assert df.columns == ["foo", "bar"]
+    assert df.shape == (1, 2)
+
+    df = pl.scan_csv(foods_csv, skip_rows=4).collect()
+    assert df.columns == ["fruit", "60", "0", "11"]
+    assert df.shape == (23, 4)
+
+    df = pl.scan_csv(foods_csv, skip_rows_after_header=10).collect()
+    assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
+    assert df.shape == (17, 4)
 
 
 def test_from_different_chunks() -> None:

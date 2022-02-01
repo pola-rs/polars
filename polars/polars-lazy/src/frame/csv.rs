@@ -23,7 +23,7 @@ pub struct LazyCsvReader<'a> {
     null_values: Option<NullValues>,
     infer_schema_length: Option<usize>,
     rechunk: bool,
-    offset_schema_inference: usize,
+    skip_rows_after_header: usize,
 }
 
 #[cfg(feature = "csv-file")]
@@ -46,14 +46,14 @@ impl<'a> LazyCsvReader<'a> {
             null_values: None,
             infer_schema_length: Some(100),
             rechunk: true,
-            offset_schema_inference: 0,
+            skip_rows_after_header: 0,
         }
     }
 
-    /// Start schema parsing of the header at this offset
+    /// Skip this number of rows after the header location.
     #[must_use]
-    pub fn with_offset_schema_inference(mut self, offset: usize) -> Self {
-        self.offset_schema_inference = offset;
+    pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
+        self.skip_rows_after_header = offset;
         self
     }
 
@@ -88,7 +88,7 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
-    /// Skip the first `n` rows during parsing.
+    /// Skip the first `n` rows during parsing. The header will be parsed at row `n`.
     #[must_use]
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
@@ -162,12 +162,13 @@ impl<'a> LazyCsvReader<'a> {
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
-    pub fn with_schema_modify<F>(mut self, f: F) -> Result<Self>
+    pub fn with_schema_modify<F>(self, f: F) -> Result<Self>
     where
         F: Fn(Schema) -> Result<Schema>,
     {
         let mut file = std::fs::File::open(&self.path)?;
         let reader_bytes = get_reader_bytes(&mut file).expect("could not mmap file");
+        let mut skip_rows = self.skip_rows;
 
         let (schema, _) = infer_file_schema(
             &reader_bytes,
@@ -175,11 +176,10 @@ impl<'a> LazyCsvReader<'a> {
             self.infer_schema_length,
             self.has_header,
             self.schema_overwrite,
-            &mut self.skip_rows,
+            &mut skip_rows,
             self.comment_char,
             self.quote_char,
             None,
-            self.offset_schema_inference,
         )?;
         let schema = f(schema)?;
         Ok(self.with_schema(Arc::new(schema)))
@@ -202,7 +202,7 @@ impl<'a> LazyCsvReader<'a> {
             self.null_values,
             self.infer_schema_length,
             self.rechunk,
-            self.offset_schema_inference,
+            self.skip_rows_after_header,
         )?
         .build()
         .into();

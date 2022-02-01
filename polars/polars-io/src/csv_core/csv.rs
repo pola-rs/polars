@@ -162,7 +162,7 @@ impl<'a> CoreReader<'a> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
         to_cast: &'a [&'a Field],
-        schema_inference_offset: usize,
+        skip_rows_after_header: usize,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -175,7 +175,6 @@ impl<'a> CoreReader<'a> {
         // check if schema should be inferred
         let delimiter = delimiter.unwrap_or(b',');
 
-        let mut add_skip_rows = 0;
         let mut schema = match schema {
             Some(schema) => Cow::Borrowed(schema),
             None => {
@@ -194,11 +193,10 @@ impl<'a> CoreReader<'a> {
                         max_records,
                         has_header,
                         schema_overwrite,
-                        &mut add_skip_rows,
+                        &mut skip_rows,
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
-                        schema_inference_offset,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -210,17 +208,16 @@ impl<'a> CoreReader<'a> {
                         max_records,
                         has_header,
                         schema_overwrite,
-                        &mut add_skip_rows,
+                        &mut skip_rows,
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
-                        schema_inference_offset,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
             }
         };
-        skip_rows += add_skip_rows;
+        skip_rows += skip_rows_after_header;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
             let fields = s.fields_mut();
