@@ -41,14 +41,17 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
-    let array_values = arr.values();
-    let index_values = indices.values();
+    let array_values = arr.values().as_slice();
+    let index_values = indices.values().as_slice();
     let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
     let values: Vec<T> = index_values
         .iter()
-        .map(|idx| *array_values.get_unchecked(*idx as usize))
+        .map(|idx| {
+            debug_assert!((*idx as usize) < array_values.len());
+            *array_values.get_unchecked(*idx as usize)
+        })
         .collect_trusted();
 
     // the validity buffer we will fill with all valid. And we unset the ones that are null
@@ -92,9 +95,10 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
 
-    let iter = index_values
-        .iter()
-        .map(|idx| *array_values.get_unchecked(*idx as usize));
+    let iter = index_values.iter().map(|idx| {
+        debug_assert!((*idx as usize) < array_values.len());
+        *array_values.get_unchecked(*idx as usize)
+    });
 
     let values = Buffer::from_trusted_len_iter(iter);
     let validity = indices.validity().cloned();
@@ -121,9 +125,10 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
     debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
 
-    let iter = indices
-        .into_iter()
-        .map(|idx| *array_values.get_unchecked(idx));
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!((idx as usize) < array_values.len());
+        *array_values.get_unchecked(idx)
+    });
 
     let values = Buffer::from_trusted_len_iter_unchecked(iter);
     Arc::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))

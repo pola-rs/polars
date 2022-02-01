@@ -189,6 +189,23 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(ca.into_series(), true);
                 Ok(ac_l)
             }
+            (AggState::AggregatedList(_), AggState::NotAggregated(_))
+            | (AggState::NotAggregated(_), AggState::AggregatedList(_)) => {
+                ac_l.sort_by_groups();
+                ac_r.sort_by_groups();
+
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
+
+                // we flattened the series, so that sorts by group
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                ac_l.with_series(out, false);
+                Ok(ac_l)
+            }
+
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series and apply the operators
             _ => {
@@ -197,6 +214,7 @@ impl PhysicalExpr for BinaryExpr {
                     ac_r.flat_naive().as_ref(),
                     self.op,
                 )?;
+
                 ac_l.combine_groups(ac_r).with_series(out, false);
                 Ok(ac_l)
             }

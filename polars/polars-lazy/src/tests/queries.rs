@@ -2,29 +2,6 @@ use super::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::series::ops::NullBehavior;
 
-pub(crate) fn load_df() -> DataFrame {
-    df!("a" => &[1, 2, 3, 4, 5],
-                 "b" => &["a", "a", "b", "c", "c"],
-                 "c" => &[1, 2, 3, 4, 5]
-    )
-    .unwrap()
-}
-
-#[test]
-fn test_lazy_ternary() {
-    let df = get_df()
-        .lazy()
-        .with_column(
-            when(col("sepal.length").lt(lit(5.0)))
-                .then(lit(10))
-                .otherwise(lit(1))
-                .alias("new"),
-        )
-        .collect()
-        .unwrap();
-    assert_eq!(Some(43), df.column("new").unwrap().sum::<i32>());
-}
-
 #[test]
 fn test_lazy_with_column() {
     let df = get_df()
@@ -91,7 +68,6 @@ fn test_lazy_melt() {
         .collect()
         .unwrap();
     assert_eq!(out.shape(), (7, 3));
-    dbg!(out);
 }
 
 #[test]

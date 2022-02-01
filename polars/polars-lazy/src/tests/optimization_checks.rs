@@ -1,5 +1,4 @@
 use super::*;
-use crate::tests::queries::load_df;
 
 fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
     let expr_arena = Arena::with_capacity(16);
@@ -98,7 +97,13 @@ fn test_no_left_join_pass() -> Result<()> {
         .filter(col("bar").eq(lit(5i32)))
         .collect()?;
 
-    dbg!(out);
+    let expected = df![
+        "foo" => ["abc", "def"],
+        "idx1" => [0, 0],
+        "bar" => [5, 5],
+    ]?;
+
+    assert!(out.frame_equal(&expected));
     Ok(())
 }
 
