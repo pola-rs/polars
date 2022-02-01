@@ -1,3 +1,4 @@
+mod aggregations;
 mod arity;
 #[cfg(feature = "parquet")]
 mod io;
