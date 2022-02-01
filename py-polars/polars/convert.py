@@ -67,6 +67,8 @@ def from_records(
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
 
+    Note that this is slower than creating from columnar memory.
+
     Parameters
     ----------
     data : numpy ndarray or Sequence of sequences
