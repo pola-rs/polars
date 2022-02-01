@@ -229,7 +229,7 @@ where
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
     quote_char: Option<u8>,
-    offset_schema_inference: usize,
+    skip_rows_after_header: usize,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
 }
@@ -238,9 +238,9 @@ impl<'a, R> CsvReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
-    /// Start schema parsing of the header and dtypes at this offset.
-    pub fn with_offset_schema_inference(mut self, offset: usize) -> Self {
-        self.offset_schema_inference = offset;
+    /// Skip these rows after the header
+    pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
+        self.skip_rows_after_header = offset;
         self
     }
 
@@ -278,7 +278,7 @@ where
         self
     }
 
-    /// Skip the first `n` rows during parsing.
+    /// Skip the first `n` rows during parsing. The header will be parsed an `n` lines.
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
         self
@@ -449,7 +449,7 @@ where
             predicate: None,
             aggregate: None,
             quote_char: Some(b'"'),
-            offset_schema_inference: 0,
+            skip_rows_after_header: 0,
             #[cfg(feature = "temporal")]
             parse_dates: false,
         }
@@ -527,7 +527,7 @@ where
                 self.predicate,
                 self.aggregate,
                 &to_cast,
-                self.offset_schema_inference,
+                self.skip_rows_after_header,
             )?;
             csv_reader.as_df()?
         } else {
@@ -556,7 +556,7 @@ where
                 self.predicate,
                 self.aggregate,
                 &[],
-                self.offset_schema_inference,
+                self.skip_rows_after_header,
             )?;
             csv_reader.as_df()?
         };
@@ -1473,6 +1473,31 @@ b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,8
             "baz" => [false, false, true],
         ]?;
         assert!(df.frame_equal_missing(&expected));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_inference() -> Result<()> {
+        let csv = r#"metadata
+line
+foo,bar
+1,2
+3,4
+5,6
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file.clone()).with_skip_rows(2).finish()?;
+        assert_eq!(df.get_column_names(), &["foo", "bar"]);
+        assert_eq!(df.shape(), (3, 2));
+        let df = CsvReader::new(file.clone())
+            .with_skip_rows(2)
+            .with_skip_rows_after_header(2)
+            .finish()?;
+        assert_eq!(df.get_column_names(), &["foo", "bar"]);
+        assert_eq!(df.shape(), (1, 2));
+        let df = CsvReader::new(file).finish()?;
+        assert_eq!(df.shape(), (5, 1));
 
         Ok(())
     }

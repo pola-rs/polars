@@ -100,7 +100,7 @@ impl LogicalPlanBuilder {
         null_values: Option<NullValues>,
         infer_schema_length: Option<usize>,
         rechunk: bool,
-        offset_schema_inference: usize,
+        skip_rows_after_header: usize,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -125,11 +125,11 @@ impl LogicalPlanBuilder {
                 comment_char,
                 quote_char,
                 null_values.as_ref(),
-                offset_schema_inference,
             )
             .expect("could not read schema");
             Arc::new(schema)
         });
+        skip_rows += skip_rows_after_header;
         Ok(LogicalPlan::CsvScan {
             path,
             schema,

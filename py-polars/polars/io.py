@@ -158,7 +158,7 @@ def read_csv(
     rechunk: bool = True,
     use_pyarrow: bool = False,
     storage_options: Optional[Dict] = None,
-    offset_schema_inference: int = 0,
+    skip_rows_after_header: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -243,8 +243,8 @@ def read_csv(
         Extra options that make sense for ``fsspec.open()`` or a
         particular storage connection.
         e.g. host, port, username, password, etc.
-    offset_schema_inference
-        Start schema parsing of the header at this offset
+    skip_rows_after_header
+        Skip these number of rows when the header is parsed
 
     Returns
     -------
@@ -406,7 +406,7 @@ def read_csv(
             encoding=encoding,
             low_memory=low_memory,
             rechunk=rechunk,
-            offset_schema_inference=offset_schema_inference,
+            skip_rows_after_header=skip_rows_after_header,
         )
 
     if new_columns:
@@ -430,7 +430,7 @@ def scan_csv(
     n_rows: Optional[int] = None,
     low_memory: bool = False,
     rechunk: bool = True,
-    offset_schema_inference: int = 0,
+    skip_rows_after_header: int = 0,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -458,7 +458,7 @@ def scan_csv(
         Single byte character used for csv quoting, default = ''.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
-        Start reading after ``skip_rows`` lines.
+        Start reading after ``skip_rows`` lines. The header will be parsed at this offset.
     dtypes
         Overwrite dtypes during inference.
     null_values
@@ -487,8 +487,8 @@ def scan_csv(
         Reduce memory usage in expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
-    offset_schema_inference
-        Start schema parsing of the header at this offset
+    skip_rows_after_header
+        Skip these number of rows when the header is parsed
 
     Examples
     --------
@@ -554,7 +554,7 @@ def scan_csv(
         n_rows=n_rows,
         low_memory=low_memory,
         rechunk=rechunk,
-        offset_schema_inference=offset_schema_inference,
+        skip_rows_after_header=skip_rows_after_header,
     )
 
 
