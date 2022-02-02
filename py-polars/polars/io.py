@@ -55,7 +55,13 @@ try:
 except ImportError:
     _WITH_FSSPEC = False
 
+try:
+    import sqlalchemy as sqla
 
+    _WITH_SQLA = True
+except ImportError:
+    _WITH_SQLA = False
+    
 def _process_http_file(path: str) -> BytesIO:
     with urlopen(path) as f:
         return BytesIO(f.read())
