@@ -175,16 +175,13 @@ impl Series {
                 unsafe { self.take_opt_iter_unchecked(&mut iter) }
             }
             GroupsProxy::Slice(groups) => {
-                let mut iter =
-                    groups.iter().map(
-                        |&[first, len]| {
-                            if len == 0 {
-                                None
-                            } else {
-                                Some(first as usize)
-                            }
-                        },
-                    );
+                let mut iter = groups.iter().map(|&[first, len]| {
+                    if len == 0 {
+                        None
+                    } else {
+                        Some((first + len - 1) as usize)
+                    }
+                });
                 unsafe { self.take_opt_iter_unchecked(&mut iter) }
             }
         };

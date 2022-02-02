@@ -175,9 +175,12 @@ pub unsafe fn take_no_null_primitive_opt_iter_unchecked<
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values().as_slice();
 
-    let iter = indices
-        .into_iter()
-        .map(|opt_idx| opt_idx.map(|idx| *array_values.get_unchecked(idx)));
+    let iter = indices.into_iter().map(|opt_idx| {
+        opt_idx.map(|idx| {
+            debug_assert!(idx < array_values.len());
+            *array_values.get_unchecked(idx)
+        })
+    });
     let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
 
     Arc::new(arr)
@@ -203,6 +206,7 @@ pub unsafe fn take_primitive_opt_iter_unchecked<
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
             if validity.get_bit_unchecked(idx) {
+                debug_assert!(idx < array_values.len());
                 Some(*array_values.get_unchecked(idx))
             } else {
                 None
@@ -225,10 +229,14 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     indices: I,
 ) -> Arc<BooleanArray> {
     debug_assert!(!arr.has_validity());
-    let iter = indices
-        .into_iter()
-        .map(|idx| Some(arr.values().get_bit_unchecked(idx)));
+    let values = arr.values();
 
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < values.len());
+        Some(values.get_bit_unchecked(idx))
+    });
+
+    // TODO: use values_iter. Need to add unchecked version for arrow
     Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
 }
 

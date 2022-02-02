@@ -353,6 +353,23 @@ fn test_binary_agg_context_2() -> Result<()> {
 }
 
 #[test]
+fn test_binary_agg_context_3() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .groupby_stable([col("cars")])
+        .agg([(col("A") - col("A").first()).last().alias("last")])
+        .collect()?;
+
+    let out = out.column("last")?;
+    assert_eq!(out.get(0), AnyValue::Int32(4));
+    assert_eq!(out.get(1), AnyValue::Int32(0));
+
+    Ok(())
+}
+
+#[test]
 fn test_shift_elementwise_issue_2509() -> Result<()> {
     let df = df![
         "x"=> [0, 0, 0, 1, 1, 1, 2, 2, 2],
