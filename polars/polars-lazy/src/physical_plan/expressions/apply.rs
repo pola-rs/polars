@@ -123,9 +123,7 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
-                    let s = self
-                        .function
-                        .call_udf(&mut [ac.aggregated().into_owned()])?;
+                    let s = self.function.call_udf(&mut [ac.aggregated()])?;
                     ac.with_series(s, true);
                     Ok(ac)
                 }
@@ -188,10 +186,7 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
-                    let mut s = acs
-                        .iter_mut()
-                        .map(|ac| ac.aggregated().into_owned())
-                        .collect::<Vec<_>>();
+                    let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
@@ -218,7 +213,7 @@ impl PhysicalAggregation for ApplyExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated().into_owned();
+        let s = ac.aggregated();
         Ok(Some(s))
     }
 }

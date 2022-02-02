@@ -100,7 +100,9 @@ impl PhysicalExpr for BinaryExpr {
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_)) if s.len() != df.height() => {
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
+                if s.len() != df.height() =>
+            {
                 // this is a flat series of len eq to group tuples
                 let l = ac_l.aggregated();
                 let l = l.as_ref();
@@ -146,7 +148,9 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_), AggState::AggregatedFlat(s)) if s.len() != df.height() => {
+            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
+                if s.len() != df.height() =>
+            {
                 // this is now a list
                 let l = ac_l.aggregated();
                 let l = l.list().unwrap();
@@ -189,8 +193,8 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(ca.into_series(), true);
                 Ok(ac_l)
             }
-            (AggState::AggregatedList(_), AggState::NotAggregated(_))
-            | (AggState::NotAggregated(_), AggState::AggregatedList(_)) => {
+            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_))
+            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_)) => {
                 ac_l.sort_by_groups();
                 ac_r.sort_by_groups();
 

@@ -35,9 +35,9 @@ impl PhysicalExpr for SliceExpr {
             GroupsProxy::Idx(groups) => {
                 let groups = groups
                     .iter()
-                    .map(|(_, idx)| {
-                        let (offset, len) = slice_offsets(self.offset, self.len, idx.len());
-                        (offset as u32, idx[offset..offset + len].to_vec())
+                    .map(|(first, idx)| {
+                        let (offset, len) = slice_offsets(self.offset as i64, self.len, idx.len());
+                        (first + offset as u32, idx[offset..offset + len].to_vec())
                     })
                     .collect();
                 GroupsProxy::Idx(groups)
@@ -45,9 +45,10 @@ impl PhysicalExpr for SliceExpr {
             GroupsProxy::Slice(groups) => {
                 let groups = groups
                     .iter()
-                    .map(|&[_first, len]| {
-                        let (offset, len) = slice_offsets(self.offset, self.len, len as usize);
-                        [offset as u32, len as u32]
+                    .map(|&[first, len]| {
+                        let (offset, len) =
+                            slice_offsets(self.offset as i64, self.len, len as usize);
+                        [first + offset as u32, len as u32]
                     })
                     .collect_trusted();
                 GroupsProxy::Slice(groups)
@@ -76,7 +77,7 @@ impl PhysicalAggregation for SliceExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated().into_owned();
+        let s = ac.aggregated();
         Ok(Some(s))
     }
 }

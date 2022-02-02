@@ -775,7 +775,7 @@ impl Expr {
     pub fn arg_sort(self, reverse: bool) -> Self {
         assert!(
             !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
-            "wildcard not supported in unique expr"
+            "wildcard not supported in argsort expr"
         );
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
