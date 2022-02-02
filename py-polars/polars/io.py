@@ -885,3 +885,55 @@ def read_sql(
         raise ImportError(
             "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
         )
+
+
+def to_sql(
+    df: DataFrame,
+    connection_uri: str,
+    table_name: str
+) -> None:
+    """
+    Insert a DataFrame into a SQL database.
+    Make sure to install sqlalchemy>=1.4.31
+
+    # Sources
+    Supports reading a sql query from the following data sources:
+
+    * Mysql
+    * Sqlite
+    * MariaDB
+
+    Parameters
+    ----------
+    df
+        a polars DataFrame.
+    connection_uri
+        sqlalchemy connection uri:
+            - "mysql+pymysql://username:password@server:port/database"
+    table_name
+      the table name in which the data will be inserted.
+
+    Examples
+    --------
+
+    Insert a DataFrame into a SQL database:
+
+    >>> df = pl.DataFrame({"col1":[0, 1], "col2":["a", "b"]})
+    >>> uri = "mysql+pymysql://username:password@server:port/database"
+    >>> table_name = table_name
+    >>> pl.read_sql(df, uri, table_name)
+
+    """
+    if _WITH_SQLA:
+        columns = ', '.join(map(str, df.columns))
+        values = ', '.join(map(str, ["%s" for _ in df.columns]))
+        sql = "INSERT INTO {} ({}) VALUES ({});".format(
+            table_name,
+            columns, 
+            values)
+        connection = sqla.create_engine(connection_uri).raw_connection()
+        connection.cursor().executemany(sql, df.rows()).commit()
+    else:
+        raise ImportError(
+            "sqlalchemy is not installed." "Please run pip install sqlalchemy>=1.4.31"
+        )
