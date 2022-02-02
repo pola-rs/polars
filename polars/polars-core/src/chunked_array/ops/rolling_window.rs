@@ -280,9 +280,10 @@ mod inner_mod {
     /// utility
     fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
         let (start, end) = if center {
+            let right_window = (window_size + 1) / 2;
             (
-                idx.saturating_sub(window_size / 2),
-                std::cmp::min(len, idx + window_size / 2),
+                idx.saturating_sub(window_size - right_window),
+                std::cmp::min(len, idx + right_window),
             )
         } else {
             (idx.saturating_sub(window_size - 1), idx + 1)
@@ -626,6 +627,29 @@ mod test {
             ]
         );
 
+        // check centered rolling window
+        let a = ca
+            .rolling_mean(RollingOptions {
+                window_size: 3,
+                min_periods: 1,
+                center: true,
+                weights: None,
+            })
+            .unwrap();
+        let a = a.f64().unwrap();
+        assert_eq!(
+            Vec::from(a),
+            &[
+                Some(0.5),
+                Some(1.0),
+                Some(1.5),
+                Some(2.0),
+                Some(5.0),
+                Some(5.5),
+                Some(5.5)
+            ]
+        );
+
         // integers
         let ca = Int32Chunked::new_from_slice("", &[1, 8, 6, 2, 16, 10]);
         let out = ca
@@ -740,6 +764,31 @@ mod test {
         assert_eq!(
             Vec::from(out),
             &[None, None, Some(17), Some(10), Some(20), Some(34),]
+        );
+
+        // check centered rolling window
+        let out = ca
+            .rolling_var(RollingOptions {
+                window_size: 4,
+                min_periods: 3,
+                center: true,
+                weights: None,
+            })
+            .unwrap()
+            .round(2)
+            .unwrap();
+        let out = out.f64().unwrap();
+
+        assert_eq!(
+            Vec::from(out),
+            &[
+                None,
+                Some(17.33),
+                Some(11.58),
+                Some(21.58),
+                Some(24.67),
+                Some(34.33)
+            ]
         );
     }
 

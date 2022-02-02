@@ -632,16 +632,10 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
             pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
             pl.col("A").rolling_sum(3).alias("4b"),
             # below we use .round purely for the ability to do .frame_equal()
-            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
-            pl.col("A").rolling_std(3).alias("std2"),
-            pl.col("A").rolling_var(3, min_periods=1).round(decimals=4).alias("var"),
-            pl.col("A").rolling_var(3).alias("var2"),
+            pl.col("A").rolling_std(3).round(1).alias("std"),
+            pl.col("A").rolling_var(3).round(1).alias("var"),
         ]
     )
-
-    # TODO: rolling_std & rolling_var return nan instead of null if it cant compute
-    out[0, "std"] = None
-    out[0, "var"] = None
 
     assert out.frame_equal(
         pl.DataFrame(
@@ -654,13 +648,21 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
                 "3b": [None, None, 3, 4, 5],
                 "4": [1, 3, 6, 9, 12],
                 "4b": [None, None, 6, 9, 12],
-                "std": [None, 0.7071, 1, 1, 1],
-                "std2": [None, None, 1, 1, 1],
-                "var": [None, 0.5, 1, 1, 1],
-                "var2": [None, None, 1, 1, 1],
+                "std": [None, None, 1.0, 1.0, 1.0],
+                "var": [None, None, 1.0, 1.0, 1.0],
             }
         )
     )
+
+    out_nan = df.select(
+        [
+            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
+            pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
+        ]
+    )
+
+    assert out_nan[0, "std"] != out_nan[0, "std"]  # true if value is NaN
+    assert out_nan[0, "var"] != out_nan[0, "var"]  # true if value is NaN
 
 
 def test_rolling_apply() -> None:
