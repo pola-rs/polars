@@ -12,9 +12,10 @@ fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
     (i.saturating_sub(window_size - 1), i + 1)
 }
 fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usize) {
+    let right_window = (window_size + 1) / 2;
     (
-        i.saturating_sub(window_size / 2),
-        std::cmp::min(len, i + window_size / 2),
+        i.saturating_sub(window_size - right_window),
+        std::cmp::min(len, i + right_window),
     )
 }
 

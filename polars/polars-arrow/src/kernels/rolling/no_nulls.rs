@@ -157,17 +157,21 @@ where
 
 pub(crate) fn compute_var<T>(vals: &[T]) -> T
 where
-    T: Float + std::iter::Sum,
+    T: Float + std::ops::AddAssign + std::fmt::Debug,
 {
-    let len = T::from(vals.len()).unwrap();
-    let mean = vals.iter().copied().sum::<T>() / len;
-
+    let mut count = T::zero();
     let mut sum = T::zero();
+    let mut sum_of_squares = T::zero();
+
     for &val in vals {
-        let v = val - mean;
-        sum = sum + v * v
+        sum += val;
+        sum_of_squares += val * val;
+        count += T::one();
     }
-    sum / (len - T::one())
+
+    let mean = sum / count;
+    // apply Bessel's correction
+    ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
 }
 
 fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T
@@ -176,17 +180,19 @@ where
 {
     let weighted_iter = vals.iter().zip(weights).map(|(x, y)| *x * *y);
 
-    let mut x = T::zero();
-    let mut xsquare = T::zero();
-    let mut len = T::zero();
+    let mut count = T::zero();
+    let mut sum = T::zero();
+    let mut sum_of_squares = T::zero();
 
     for val in weighted_iter {
-        x += val;
-        xsquare += val * val;
-        len += T::one();
+        sum += val;
+        sum_of_squares += val * val;
+        count += T::one();
     }
 
-    ((xsquare / len) - (x / len) * (x / len)) / (len - T::one()) * len
+    let mean = sum / count;
+    // apply Bessel's correction
+    ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
 }
 
 pub(crate) fn compute_mean<T>(values: &[T]) -> T
@@ -542,7 +548,7 @@ pub fn rolling_var<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + Float + std::iter::Sum,
+    T: NativeType + Float + std::ops::AddAssign,
 {
     match (center, weights) {
         (true, None) => rolling_apply(
