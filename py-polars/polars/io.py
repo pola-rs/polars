@@ -938,7 +938,8 @@ def to_sql(
             columns, 
             values)
         connection = sqla.create_engine(connection_uri).raw_connection()
-        connection.cursor().executemany(sql, df.rows()).commit()
+        connection.cursor().executemany(sql, df.rows())
+        connection.commit()
     else:
         raise ImportError(
             "sqlalchemy is not installed." "Please run pip install sqlalchemy>=1.4.31"
