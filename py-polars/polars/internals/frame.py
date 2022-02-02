@@ -356,6 +356,9 @@ class DataFrame:
         -------
         DataFrame
         """
+        if data.shape[0] == 0:
+            return DataFrame([pli.Series(name, data[name]) for name in data.columns])
+
         return cls._from_pydf(
             pandas_to_pydf(
                 data, columns=columns, rechunk=rechunk, nan_to_none=nan_to_none

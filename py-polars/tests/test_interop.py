@@ -179,3 +179,16 @@ def test_numpy_to_lit() -> None:
     assert out == [1, 2, 3]
     out = pl.select(pl.lit(np.float32(0))).to_series().to_list()
     assert out == [0.0]
+
+
+def test_from_empty_pandas() -> None:
+    pandas_df = pd.DataFrame(
+        {
+            "A": [],
+            "fruits": [],
+        }
+    )
+
+    polars_df = pl.from_pandas(pandas_df)
+    assert polars_df.columns == ["A", "fruits"]
+    assert polars_df.dtypes == [pl.Float64, pl.Float64]
