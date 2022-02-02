@@ -377,3 +377,123 @@ fn test_shift_elementwise_issue_2509() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn take_aggregations() -> Result<()> {
+    let df = df![
+        "user" => ["lucy", "bob", "bob", "lucy", "tim"],
+        "book" => ["c", "b", "a", "a", "a"],
+        "count" => [3, 1, 2, 1, 1]
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("user")])
+        .agg([col("book").take(col("count").arg_max()).alias("fav_book")])
+        .sort("user", false)
+        .collect()?;
+
+    let s = out.column("fav_book")?;
+    assert_eq!(s.get(0), AnyValue::Utf8("a"));
+    assert_eq!(s.get(1), AnyValue::Utf8("c"));
+    assert_eq!(s.get(2), AnyValue::Utf8("a"));
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("user")])
+        .agg([
+            // keep the head as it test slice correctness
+            col("book")
+                .take(col("count").arg_sort(true).head(Some(2)))
+                .alias("ordered"),
+        ])
+        .sort("user", false)
+        .collect()?;
+    let s = out.column("ordered")?;
+    let flat = s.explode()?;
+    let flat = flat.utf8()?;
+    let vals = flat.into_no_null_iter().collect::<Vec<_>>();
+    assert_eq!(vals, ["a", "b", "c", "a", "a"]);
+
+    let out = df
+        .lazy()
+        .groupby([col("user")])
+        .agg([col("book").take(lit(0)).alias("take_lit")])
+        .sort("user", false)
+        .collect()?;
+
+    let taken = out.column("take_lit")?;
+    let taken = taken.utf8()?;
+    let vals = taken.into_no_null_iter().collect::<Vec<_>>();
+    assert_eq!(vals, ["b", "c", "a"]);
+
+    Ok(())
+}
+#[test]
+fn test_take_consistency() -> Result<()> {
+    let df = fruits_cars();
+    let out = df
+        .clone()
+        .lazy()
+        .select([col("A").arg_sort(true).take(lit(0))])
+        .collect()?;
+
+    assert_eq!(out.column("A")?.get(0), AnyValue::UInt32(4));
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby_stable([col("cars")])
+        .agg([col("A").arg_sort(true).take(lit(0))])
+        .collect()?;
+
+    let out = out.column("A")?;
+    let out = out.u32()?;
+    assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+
+    let out_df = df
+        .clone()
+        .lazy()
+        .groupby_stable([col("cars")])
+        .agg([
+            col("A"),
+            col("A").arg_sort(true).take(lit(0)).alias("1"),
+            col("A")
+                .take(col("A").arg_sort(true).take(lit(0)))
+                .alias("2"),
+        ])
+        .collect()?;
+
+    let out = out_df.column("2")?;
+    let out = out.i32()?;
+    assert_eq!(Vec::from(out), &[Some(5), Some(2)]);
+
+    let out = out_df.column("1")?;
+    let out = out.u32()?;
+    assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_take_in_groups() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .lazy()
+        .sort("fruits", false)
+        .select([col("B")
+            .take(lit(Series::new("", &[0u32])))
+            .over([col("fruits")])
+            .alias("taken")])
+        .collect()?;
+
+    dbg!(&out);
+    assert_eq!(
+        Vec::from(out.column("taken")?.i32()?),
+        &[Some(3), Some(3), Some(5), Some(5), Some(5)]
+    );
+    Ok(())
+}

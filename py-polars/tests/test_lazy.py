@@ -603,13 +603,19 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
             )
         )
 
-    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1]), pl.lit(1)]:
+    for index in [[0, 1], pl.Series([0, 1]), np.array([0, 1])]:
         out = df.sort("fruits").select(
             [col("B").reverse().take(index).list().over("fruits"), "fruits"]  # type: ignore
         )
 
         assert out[0, "B"] == [2, 3]
         assert out[4, "B"] == [1, 4]
+
+    out = df.sort("fruits").select(
+        [col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]  # type: ignore
+    )
+    assert out[0, "B"] == 3
+    assert out[4, "B"] == 4
 
 
 def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:

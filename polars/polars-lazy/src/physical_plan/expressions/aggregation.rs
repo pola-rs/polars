@@ -113,7 +113,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let agg = ac.aggregated().into_owned();
+                let agg = ac.aggregated();
                 Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {

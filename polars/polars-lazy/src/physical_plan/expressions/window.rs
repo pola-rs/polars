@@ -95,7 +95,7 @@ impl PhysicalExpr for WindowExpr {
                     .phys_function
                     .evaluate_on_groups(df, gb.get_groups(), state)?;
                 let mut cols = gb.keys();
-                let out = acc.aggregated().into_owned();
+                let out = acc.aggregated();
                 cols.push(out);
                 Ok(DataFrame::new_no_checks(cols))
             }

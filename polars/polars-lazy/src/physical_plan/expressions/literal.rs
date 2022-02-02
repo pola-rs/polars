@@ -117,7 +117,7 @@ impl PhysicalExpr for LiteralExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
+        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {

@@ -16,7 +16,7 @@ pub(crate) fn as_aggregated(
         // function in groupby context and aggregate the result to a list
         Err(_) => {
             let mut ac = expr.evaluate_on_groups(df, groups, state)?;
-            let s = ac.aggregated().into_owned();
+            let s = ac.aggregated();
             Ok(Some(s))
         }
     }

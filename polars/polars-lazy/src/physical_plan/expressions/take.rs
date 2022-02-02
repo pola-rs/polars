@@ -1,7 +1,9 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+use polars_core::utils::NoNull;
 use std::sync::Arc;
 
 pub struct TakeExpr {
@@ -37,17 +39,151 @@ impl PhysicalExpr for TakeExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
-        let idx = self.idx.evaluate(df, state)?.cast(&DataType::UInt32)?;
-        let idx_ca = idx.u32()?;
+        let mut idx = self.idx.evaluate_on_groups(df, groups, state)?;
+
+        let idx =
+            match idx.state {
+                AggState::AggregatedFlat(s) => {
+                    let idx = s.cast(&DataType::UInt32)?;
+                    let idx = idx.u32().unwrap();
+
+                    // The indexes are AggregatedFlat, meaning they are a single values pointing into
+                    // a group.
+                    // If we zip this with the first of each group -> `idx + firs` then we can
+                    // simply use a take operation on the whole array instead of per group.
+
+                    // The groups maybe scattered all over the place, so we sort by group
+                    ac.sort_by_groups();
+
+                    // A previous aggregation may have updated the groups
+                    let groups = ac.groups();
+
+                    // Determine the take indices
+                    let idx: UInt32Chunked =
+                        match groups.as_ref() {
+                            GroupsProxy::Idx(groups) => {
+                                if groups.all().iter().zip(idx.into_iter()).any(
+                                    |(g, idx)| match idx {
+                                        None => true,
+                                        Some(idx) => idx >= g.len() as u32,
+                                    },
+                                ) {
+                                    return Err(PolarsError::ComputeError("out of bounds".into()));
+                                }
+
+                                idx.into_iter()
+                                    .zip(groups.first().iter())
+                                    .map(|(idx, first)| idx.map(|idx| idx + first))
+                                    .collect_trusted()
+                            }
+                            GroupsProxy::Slice(groups) => {
+                                if groups
+                                    .iter()
+                                    .zip(idx.into_iter())
+                                    .any(|(g, idx)| match idx {
+                                        None => true,
+                                        Some(idx) => idx >= g[1],
+                                    })
+                                {
+                                    return Err(PolarsError::ComputeError("out of bounds".into()));
+                                }
+
+                                idx.into_iter()
+                                    .zip(groups.iter())
+                                    .map(|(idx, g)| idx.map(|idx| idx + g[0]))
+                                    .collect_trusted()
+                            }
+                        };
+                    let taken = ac.flat_naive().take(&idx)?;
+                    ac.with_series(taken, true);
+                    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                    return Ok(ac);
+                }
+                AggState::AggregatedList(s) => s.list().unwrap().clone(),
+                // Maybe a literal as well, this needs a different path
+                AggState::NotAggregated(_) => {
+                    let s = idx.aggregated();
+                    s.list().unwrap().clone()
+                }
+                AggState::Literal(s) => {
+                    let idx = s.cast(&DataType::UInt32)?;
+                    let idx = idx.u32().unwrap();
+
+                    return if idx.len() == 1 {
+                        match idx.get(0) {
+                            None => Err(PolarsError::ValueError("cannot take by a null".into())),
+                            Some(idx) => {
+                                if idx != 0 {
+                                    // We must make sure that the column we take from is sorted by
+                                    // groups otherwise we might point into the wrong group
+                                    ac.sort_by_groups()
+                                }
+                                // Make sure that we look at the updated groups.
+                                let groups = ac.groups();
+
+                                // we offset the groups first by idx;
+                                let idx: NoNull<UInt32Chunked> = match groups.as_ref() {
+                                    GroupsProxy::Idx(groups) => {
+                                        if groups.all().iter().any(|g| idx >= g.len() as u32) {
+                                            return Err(PolarsError::ComputeError(
+                                                "out of bounds".into(),
+                                            ));
+                                        }
+
+                                        groups.first().iter().map(|f| *f + idx).collect_trusted()
+                                    }
+                                    GroupsProxy::Slice(groups) => {
+                                        if groups.iter().any(|g| idx >= g[1]) {
+                                            return Err(PolarsError::ComputeError(
+                                                "out of bounds".into(),
+                                            ));
+                                        }
+
+                                        groups.iter().map(|g| g[0] + idx).collect_trusted()
+                                    }
+                                };
+                                let taken = ac.flat_naive().take(&idx.into_inner())?;
+                                ac.with_series(taken, true);
+                                ac.with_update_groups(UpdateGroups::WithSeriesLen);
+                                Ok(ac)
+                            }
+                        }
+                    } else {
+                        let out = ac
+                            .aggregated()
+                            .list()
+                            .unwrap()
+                            .try_apply_amortized(|s| s.as_ref().take(idx))?;
+
+                        ac.with_series(out.into_series(), true);
+                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                        Ok(ac)
+                    };
+                }
+            };
+
+        let s = idx.cast(&DataType::List(Box::new(DataType::UInt32)))?;
+        let idx = s.list().unwrap();
 
         let taken = ac
             .aggregated()
             .list()
             .unwrap()
-            .try_apply_amortized(|s| s.as_ref().take(idx_ca))?;
+            .amortized_iter()
+            .zip(idx.amortized_iter())
+            .map(|(s, idx)| {
+                s.and_then(|s| {
+                    idx.map(|idx| {
+                        let idx = idx.as_ref().u32().unwrap();
+                        s.as_ref().take(idx)
+                    })
+                })
+                .transpose()
+            })
+            .collect::<Result<ListChunked>>()?;
 
-        ac.with_update_groups(UpdateGroups::WithSeriesLen)
-            .with_series(taken.into_series(), true);
+        ac.with_series(taken.into_series(), true);
+        ac.with_update_groups(UpdateGroups::WithGroupsLen);
         Ok(ac)
     }
 
@@ -68,59 +204,8 @@ impl PhysicalAggregation for TakeExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
-        let idx = self.idx.evaluate_on_groups(df, groups, state)?;
-        let idx = idx.series();
-
-        let mut all_unit_length = true;
-        let mut taken = if let Ok(idx) = idx.list() {
-            // cast the indices up front.
-            let idx = idx.cast(&DataType::List(Box::new(DataType::UInt32)))?;
-
-            let idx = idx.list().unwrap();
-            let ca: ListChunked = ac
-                .aggregated()
-                .list()?
-                .into_iter()
-                .zip(idx.into_iter())
-                .map(|(opt_s, opt_idx)| {
-                    if let (Some(s), Some(idx)) = (opt_s, opt_idx) {
-                        let idx = idx.u32()?;
-                        let s = s.take(idx)?;
-                        if s.len() != 1 {
-                            all_unit_length = false;
-                        }
-                        Ok(Some(s))
-                    } else {
-                        Ok(None)
-                    }
-                })
-                .collect::<Result<_>>()?;
-            ca
-        } else {
-            let idx = idx.cast(&DataType::UInt32)?;
-            let idx_ca = idx.u32()?;
-
-            ac.aggregated().list().unwrap().try_apply_amortized(|s| {
-                match s.as_ref().take(idx_ca) {
-                    Ok(s) => {
-                        if s.len() != 1 {
-                            all_unit_length = false;
-                        }
-                        Ok(s)
-                    }
-                    e => e,
-                }
-            })?
-        };
-
-        taken.rename(ac.series().name());
-
-        if all_unit_length {
-            let s = taken.explode()?;
-            Ok(Some(s))
-        } else {
-            Ok(Some(taken.into_series()))
-        }
+        return self
+            .evaluate_on_groups(df, groups, state)
+            .map(|mut s| Some(s.aggregated()));
     }
 }
