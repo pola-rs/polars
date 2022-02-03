@@ -68,13 +68,14 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=086c54d00aee7b26ba3c8d0c5c683c531e2c75c1#086c54d00aee7b26ba3c8d0c5c683c531e2c75c1"
+source = "git+https://github.com/ritchie46/arrow2?branch=from_iter_variants2#e68914bca6fbb1d94a784ade2420ba71b9293089"
 dependencies = [
  "arrow-format",
  "base64",
  "bytemuck",
  "chrono",
  "csv",
+ "either",
  "fallible-streaming-iterator",
  "futures",
  "hash_hasher",
@@ -1143,9 +1144,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7ee9d21df8de64b98e08ad59bf3106c27e00e556c0843e81a3271f7470c65dc"
+checksum = "45476d276db539ec4076f6abe62392619460fb70a1a8edebcc06e11cd93c0ec3"
 dependencies = [
  "async-stream",
  "bitpacking",

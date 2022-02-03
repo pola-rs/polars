@@ -101,7 +101,7 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series
                         })
                         .trust_my_length(len)
                 };
-                builder.append_iter(iter)
+                builder.append_trusted_len_iter(iter)
             }
             builder.finish().into_series()
         }

@@ -1,4 +1,5 @@
 use super::*;
+use polars_arrow::array::ValueSize;
 
 pub struct StringNameSpace(pub(crate) Expr);
 
@@ -7,10 +8,7 @@ impl StringNameSpace {
         let pat = pat.to_string();
         let function = move |s: Series| {
             let ca = s.utf8()?;
-            match ca.extract(&pat, group_index) {
-                Ok(ca) => Ok(ca.into_series()),
-                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-            }
+            ca.extract(&pat, group_index).map(|ca| ca.into_series())
         };
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
@@ -59,7 +57,7 @@ impl StringNameSpace {
         };
         self.0
             .map(function, GetOutput::from_type(out_type))
-            .with_fmt("strptime")
+            .with_fmt("str.strptime")
     }
 
     #[cfg(feature = "concat_str")]
@@ -80,8 +78,33 @@ impl StringNameSpace {
                 collect_groups: ApplyOptions::ApplyGroups,
                 input_wildcard_expansion: false,
                 auto_explode: true,
-                fmt_str: "str_concat",
+                fmt_str: "str.concat",
             },
         }
+    }
+
+    /// Split the string by a substring.
+    pub fn split(self, by: &str) -> Expr {
+        let by = by.to_string();
+
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+
+            let mut builder = ListUtf8ChunkedBuilder::new(s.name(), s.len(), ca.get_values_size());
+            ca.into_iter().for_each(|opt_s| match opt_s {
+                None => builder.append_null(),
+                Some(s) => {
+                    let iter = s.split(&by);
+                    builder.append_values_iter(iter);
+                }
+            });
+            Ok(builder.finish().into_series())
+        };
+        self.0
+            .map(
+                function,
+                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
+            )
+            .with_fmt("str.split")
     }
 }

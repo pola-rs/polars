@@ -233,11 +233,14 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
 
     let iter = indices.into_iter().map(|idx| {
         debug_assert!(idx < values.len());
-        Some(values.get_bit_unchecked(idx))
+        values.get_bit_unchecked(idx)
     });
-
-    // TODO: use values_iter. Need to add unchecked version for arrow
-    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
+    let mutable = MutableBitmap::from_trusted_len_iter_unchecked(iter);
+    Arc::new(BooleanArray::from_data(
+        DataType::Boolean,
+        mutable.into(),
+        None,
+    ))
 }
 
 /// Take kernel for single chunk and an iterator as index.

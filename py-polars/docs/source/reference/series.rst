@@ -247,6 +247,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.contains
     StringNameSpace.json_path_match
     StringNameSpace.extract
+    StringNameSpace.split
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase

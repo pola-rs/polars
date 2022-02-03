@@ -160,10 +160,10 @@ unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "086c54d00aee7b26ba3c8d0c5c683c531e2c75c1"
-# branch = "offset_pub"
+# git = "https://github.com/jorgecarleitao/arrow2"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "54797de5e4860cebc4eb73ad1890457cd1a658eb"
+branch = "from_iter_variants2"
 # version = "0.9"
 default-features = false
 features = [
