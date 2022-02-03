@@ -3657,10 +3657,7 @@ class DataFrame:
         exprs: Union[
             str,
             "pli.Expr",
-            Sequence[Union[str, "pli.Expr"]],
-            Sequence[bool],
-            Sequence[int],
-            Sequence[float],
+            Sequence[Union[str, "pli.Expr", bool, int, float, "pli.Series"]],
             "pli.Series",
         ],
     ) -> "DataFrame":

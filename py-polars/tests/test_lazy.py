@@ -599,7 +599,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
     with pytest.raises(RuntimeError):
         (
             df.sort("fruits").select(
-                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]  # type: ignore
+                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
             )
         )
 
@@ -612,7 +612,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
         assert out[4, "B"] == [1, 4]
 
     out = df.sort("fruits").select(
-        [col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]  # type: ignore
+        [col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]
     )
     assert out[0, "B"] == 3
     assert out[4, "B"] == 4
@@ -756,7 +756,7 @@ def test_rolling_apply() -> None:
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(
-        [  # type: ignore
+        [
             "fruits",
             col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
             col("B").min().over("fruits").alias("B_by_fruits_min2"),
