@@ -926,6 +926,16 @@ impl Series {
         };
         self.slice(-(len as i64), len)
     }
+
+    pub fn mean_as_series(&self) -> Series {
+        let val = [self.mean()];
+        let s = Series::new(self.name(), val);
+        if !self.is_numeric() {
+            s.cast(self.dtype()).unwrap()
+        } else {
+            s
+        }
+    }
 }
 
 impl Deref for Series {

@@ -777,10 +777,6 @@ pub trait SeriesTrait:
     fn min_as_series(&self) -> Series {
         invalid_operation_panic!(self)
     }
-    /// Get the mean of the Series as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
         invalid_operation_panic!(self)

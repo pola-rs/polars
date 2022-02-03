@@ -233,8 +233,8 @@ pub fn map_mul(
         None => fld.clone(),
     });
     if apply_groups {
-        polars::lazy::dsl::apply_mul(function, exprs, output_map).into()
+        polars::lazy::dsl::apply_multiple(function, exprs, output_map).into()
     } else {
-        polars::lazy::dsl::map_mul(function, exprs, output_map).into()
+        polars::lazy::dsl::map_multiple(function, exprs, output_map).into()
     }
 }

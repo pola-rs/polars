@@ -302,9 +302,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn min_as_series(&self) -> Series {
         CategoricalChunked::full_null(self.name(), 1).into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        CategoricalChunked::full_null(self.name(), 1).into_series()
-    }
     fn median_as_series(&self) -> Series {
         CategoricalChunked::full_null(self.name(), 1).into_series()
     }
