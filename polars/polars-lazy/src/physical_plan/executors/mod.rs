@@ -95,7 +95,12 @@ fn execute_projection_cached_window_fns(
         for (index, e) in partition.1 {
             // caching more than one window expression is a complicated topic for another day
             // see issue #2523
-            state.cache_window = e.as_expression().into_iter().filter(|e| matches!(e, Expr::Window {..})).count() == 1;
+            state.cache_window = e
+                .as_expression()
+                .into_iter()
+                .filter(|e| matches!(e, Expr::Window { .. }))
+                .count()
+                == 1;
 
             let s = e.evaluate(df, &state)?;
             selected_columns.push((index, s));
