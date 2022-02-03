@@ -459,7 +459,7 @@ where
     T: PolarsNumericType,
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
-    pub fn new_from_aligned_vec(name: &str, v: Vec<T::Native>) -> Self {
+    pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
         Self::new_from_chunks(name, vec![arr])
     }

@@ -391,7 +391,7 @@ pub fn take(cx: CallContext) -> JsResult<JsExternal> {
         })
         .collect();
 
-    let indices = UInt32Chunked::new_from_aligned_vec("", indices);
+    let indices = UInt32Chunked::from_vec("", indices);
     df.take(&indices)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)

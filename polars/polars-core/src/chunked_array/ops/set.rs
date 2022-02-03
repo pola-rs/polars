@@ -88,7 +88,7 @@ where
                         *val = value;
                         Ok(())
                     })?;
-                    return Ok(Self::new_from_aligned_vec(self.name(), av));
+                    return Ok(Self::from_vec(self.name(), av));
                 }
             }
         }

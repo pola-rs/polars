@@ -716,7 +716,7 @@ impl PyDataFrame {
 
     pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::new_from_aligned_vec("", indices);
+        let indices = UInt32Chunked::from_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }

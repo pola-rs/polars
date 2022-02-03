@@ -24,7 +24,7 @@ impl DurationChunked {
             TimeUnit::Milliseconds => |v: &ChronoDuration| v.num_milliseconds(),
         };
         let vals = v.iter().map(func).collect_trusted::<Vec<_>>();
-        Int64Chunked::new_from_aligned_vec(name, vals).into_duration(tu)
+        Int64Chunked::from_vec(name, vals).into_duration(tu)
     }
 
     /// Extract the hours from a `Duration`

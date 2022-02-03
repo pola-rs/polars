@@ -72,7 +72,7 @@ where
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
         let av = iter.into_iter().collect::<Vec<T::Native>>();
-        NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
+        NoNull::new(ChunkedArray::from_vec("", av))
     }
 }
 

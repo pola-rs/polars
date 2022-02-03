@@ -102,7 +102,7 @@ impl ListChunked {
                 last = *o;
             }
         });
-        UInt32Chunked::new_from_aligned_vec(self.name(), lengths)
+        UInt32Chunked::from_vec(self.name(), lengths)
     }
 
     /// Get the value by index in the sublists.

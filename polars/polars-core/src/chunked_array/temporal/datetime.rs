@@ -175,7 +175,7 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
         let vals = v.iter().map(func).collect_trusted::<Vec<_>>();
-        Int64Chunked::new_from_aligned_vec(name, vals).into_datetime(tu, None)
+        Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> Self {

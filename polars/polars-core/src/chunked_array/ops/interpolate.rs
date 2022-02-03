@@ -111,7 +111,7 @@ where
             );
             Self::new_from_chunks(self.name(), vec![Arc::new(array)])
         } else {
-            Self::new_from_aligned_vec(self.name(), av)
+            Self::from_vec(self.name(), av)
         }
     }
 }
