@@ -1,7 +1,7 @@
 use super::ArrowResult;
 use arrow::datatypes::PhysicalType;
 use arrow::error::ArrowError;
-use arrow::io::parquet::write::{self, *};
+use arrow::io::parquet::write::{self, FileWriter, *};
 use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
 use rayon::prelude::*;
@@ -103,13 +103,11 @@ where
             })
             .collect::<Vec<_>>();
 
-        // clone is needed because parquet schema is moved into `write_file`
-        let parquet_schema_iter = parquet_schema.clone();
         let row_group_iter = rb_iter.map(|batch| {
             let columns = batch
                 .columns()
                 .par_iter()
-                .zip(parquet_schema_iter.columns().par_iter())
+                .zip(parquet_schema.columns().par_iter())
                 .zip(encodings.par_iter())
                 .map(|((array, descriptor), encoding)| {
                     let encoded_pages =
@@ -127,17 +125,17 @@ where
                     .into_iter()
                     .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
             );
-            ArrowResult::Ok(row_group)
+            ArrowResult::Ok((row_group, batch.columns()[0].len()))
         });
 
-        write::write_file(
-            &mut self.writer,
-            row_group_iter,
-            &schema,
-            parquet_schema,
-            options,
-            None,
-        )?;
+        let mut writer = FileWriter::try_new(&mut self.writer, schema, options)?;
+        // write the headers
+        writer.start()?;
+        for group in row_group_iter {
+            let (group, len) = group?;
+            writer.write(group, len)?;
+        }
+        let _ = writer.end(None)?;
 
         Ok(())
     }
