@@ -51,8 +51,12 @@ pub fn read_parquet<R: MmapBytesReader>(
         if let Some(pred) = &predicate {
             if let Some(pred) = pred.as_stats_evaluator() {
                 if let Some(stats) = collect_statistics(md.columns(), schema)? {
-                    if !pred.should_read(&stats)? {
+                    let should_read = pred.should_read(&stats);
+                    // a parquet file may not have statistics of all columns
+                    if matches!(should_read, Ok(false)) {
                         continue;
+                    } else if !matches!(should_read, Err(PolarsError::NotFound(_))) {
+                        let _ = should_read?;
                     }
                 }
             }
@@ -157,8 +161,12 @@ pub(crate) fn parallel_read<R: MmapBytesReader>(
         if let Some(pred) = &predicate {
             if let Some(pred) = pred.as_stats_evaluator() {
                 if let Some(stats) = collect_statistics(md.columns(), arrow_schema)? {
-                    if !pred.should_read(&stats)? {
+                    let should_read = pred.should_read(&stats);
+                    // a parquet file may not have statistics of all columns
+                    if matches!(should_read, Ok(false)) {
                         continue;
+                    } else if !matches!(should_read, Err(PolarsError::NotFound(_))) {
+                        let _ = should_read?;
                     }
                 }
             }
