@@ -116,3 +116,28 @@ fn filter_blocked_by_map() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "temporal", feature = "strings"))]
+fn test_strptime_block_predicate() -> Result<()> {
+    let df = df![
+        "date" => ["2021-01-01", "2021-01-02"]
+    ]?;
+
+    let q = df
+        .lazy()
+        .with_column(col("date").str().strptime(StrpTimeOptions {
+            date_dtype: DataType::Date,
+            ..Default::default()
+        }))
+        .filter(col("date").gt(Expr::Literal(LiteralValue::DateTime(
+            NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0),
+            TimeUnit::Milliseconds,
+        ))));
+
+    assert!(!predicate_at_scan(q.clone()));
+    let df = q.collect()?;
+    assert_eq!(df.shape(), (1, 1));
+
+    Ok(())
+}
