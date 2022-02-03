@@ -3662,6 +3662,19 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
+    def split(self, by: str) -> Series:
+        """
+        Split the string by a substring.
+        The return type will by of type List<Utf8>
+
+        Parameters
+        ----------
+        by
+            substring
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.split(by)).to_series()
+
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.

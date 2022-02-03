@@ -2739,6 +2739,18 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
+    def split(self, by: str) -> Expr:
+        """
+        Split the string by a substring.
+        The return type will by of type List<Utf8>
+
+        Parameters
+        ----------
+        by
+            substring
+        """
+        return wrap_expr(self._pyexpr.str_split(by))
+
     def replace(self, pattern: str, value: str) -> Expr:
         """
         Replace first regex match with a string value.

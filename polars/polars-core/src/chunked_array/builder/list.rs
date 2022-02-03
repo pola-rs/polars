@@ -197,8 +197,10 @@ impl ListUtf8ChunkedBuilder {
         }
     }
 
-    #[inline]
-    pub fn append_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(
+        &mut self,
+        iter: I,
+    ) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -210,7 +212,16 @@ impl ListUtf8ChunkedBuilder {
         self.builder.try_push_valid().unwrap();
     }
 
-    #[inline]
+    pub fn append_values_iter<'a, I: Iterator<Item = &'a str>>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        values.extend_values(iter);
+        self.builder.try_push_valid().unwrap();
+    }
+
     pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
         let value_builder = self.builder.mut_values();
         value_builder.try_extend(ca).unwrap();
@@ -234,7 +245,6 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         self.builder.push_null();
     }
 
-    #[inline]
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
             self.fast_explode = false;
