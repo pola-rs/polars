@@ -7,6 +7,36 @@ pub trait NamedFrom<T, Phantom: ?Sized> {
     fn new(name: &str, _: T) -> Self;
 }
 
+pub trait NamedFromOwned<T> {
+    /// Initialize by name and values.
+    fn from_vec(name: &str, _: T) -> Self;
+}
+
+macro_rules! impl_named_from_owned {
+    ($type:ty, $polars_type:ident) => {
+        impl NamedFromOwned<$type> for Series {
+            fn from_vec(name: &str, v: $type) -> Self {
+                ChunkedArray::<$polars_type>::from_vec(name, v).into_series()
+            }
+        }
+    };
+}
+
+#[cfg(feature = "dtype-i8")]
+impl_named_from_owned!(Vec<i8>, Int8Type);
+#[cfg(feature = "dtype-i16")]
+impl_named_from_owned!(Vec<i16>, Int16Type);
+impl_named_from_owned!(Vec<i32>, Int32Type);
+impl_named_from_owned!(Vec<i64>, Int64Type);
+#[cfg(feature = "dtype-u8")]
+impl_named_from_owned!(Vec<u8>, UInt8Type);
+#[cfg(feature = "dtype-u16")]
+impl_named_from_owned!(Vec<u16>, UInt16Type);
+impl_named_from_owned!(Vec<u32>, UInt32Type);
+impl_named_from_owned!(Vec<u64>, UInt64Type);
+impl_named_from_owned!(Vec<f32>, Float32Type);
+impl_named_from_owned!(Vec<f64>, Float64Type);
+
 macro_rules! impl_named_from {
     ($type:ty, $polars_type:ident, $method:ident) => {
         impl<T: AsRef<$type>> NamedFrom<T, $type> for Series {
@@ -182,6 +212,6 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Specialization that prevents an allocation
     /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
     pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
-        ChunkedArray::new_from_aligned_vec(name, v)
+        ChunkedArray::from_vec(name, v)
     }
 }

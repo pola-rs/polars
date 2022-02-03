@@ -199,10 +199,7 @@ where
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -242,10 +239,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -331,7 +325,7 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked 
         *elem = 1;
     }
 
-    ChunkedArray::new_from_aligned_vec(name, av)
+    ChunkedArray::from_vec(name, av)
 }
 
 #[cfg(not(feature = "dtype-u8"))]
@@ -346,7 +340,7 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked 
         *elem = 1;
     }
 
-    ChunkedArray::new_from_aligned_vec(name, av)
+    ChunkedArray::from_vec(name, av)
 }
 
 fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
@@ -422,10 +416,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {

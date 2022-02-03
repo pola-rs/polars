@@ -302,10 +302,8 @@ impl DataFrame {
     /// ```
     pub fn with_row_count(&self, name: &str) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
-        columns.push(
-            UInt32Chunked::new_from_aligned_vec(name, (0..self.height() as u32).collect())
-                .into_series(),
-        );
+        columns
+            .push(UInt32Chunked::from_vec(name, (0..self.height() as u32).collect()).into_series());
 
         self.columns.iter().for_each(|s| columns.push(s.clone()));
         DataFrame::new(columns)
@@ -2716,7 +2714,7 @@ impl DataFrame {
 
         let finish_maintain_order = |mut groups: Vec<u32>| {
             groups.sort_unstable();
-            let ca = UInt32Chunked::new_from_aligned_vec("", groups);
+            let ca = UInt32Chunked::from_vec("", groups);
             unsafe { self.take_unchecked(&ca) }
         };
 

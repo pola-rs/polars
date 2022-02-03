@@ -210,7 +210,7 @@ where
                 );
             }
 
-            ChunkedArray::new_from_aligned_vec(self.name(), vals)
+            ChunkedArray::from_vec(self.name(), vals)
         } else {
             let null_count = self.null_count();
             let len = self.len();

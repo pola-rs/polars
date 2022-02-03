@@ -8,7 +8,7 @@ macro_rules! typed_to_chunked {
         let v: &[$type] = $arr.as_ref();
         let mut buffer = Vec::<$type>::new();
         buffer.extend_from_slice(v);
-        ChunkedArray::<$pl_type>::new_from_aligned_vec("", buffer)
+        ChunkedArray::<$pl_type>::from_vec("", buffer)
     }};
 }
 

@@ -104,7 +104,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
     use RankMethod::*;
     match method {
         Ordinal => {
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = UInt32Chunked::from_vec(s.name(), inv);
             inv_ca.into_series()
         }
         #[cfg(feature = "random")]
@@ -155,11 +155,11 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
                 });
             }
 
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = UInt32Chunked::from_vec(s.name(), inv);
             inv_ca.into_series()
         }
         _ => {
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = UInt32Chunked::from_vec(s.name(), inv);
             // Safety:
             // in bounds
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
@@ -223,7 +223,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             }
 
             count.push((len - null_count) as u32);
-            let count = UInt32Chunked::new_from_aligned_vec(s.name(), count);
+            let count = UInt32Chunked::from_vec(s.name(), count);
 
             match method {
                 Max => {

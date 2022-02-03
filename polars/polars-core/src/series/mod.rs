@@ -142,7 +142,7 @@ impl Eq for Wrap<Series> {}
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let rs = RandomState::with_seeds(0, 0, 0, 0);
-        let h = UInt64Chunked::new_from_aligned_vec("", self.0.vec_hash(rs)).sum();
+        let h = UInt64Chunked::from_vec("", self.0.vec_hash(rs)).sum();
         h.hash(state)
     }
 }
@@ -446,7 +446,7 @@ impl Series {
     #[cfg_attr(docsrs, doc(cfg(feature = "row_hash")))]
     /// Get a hash of this Series
     pub fn hash(&self, build_hasher: ahash::RandomState) -> UInt64Chunked {
-        UInt64Chunked::new_from_aligned_vec(self.name(), self.0.vec_hash(build_hasher))
+        UInt64Chunked::from_vec(self.name(), self.0.vec_hash(build_hasher))
     }
 
     /// Get the sum of the Series as a new Series of length 1.
