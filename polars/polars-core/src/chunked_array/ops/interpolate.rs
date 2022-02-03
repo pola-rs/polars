@@ -79,6 +79,7 @@ where
                                             av.push(v)
                                         }
                                         av.push(high);
+                                        low_val = Some(high);
                                         break;
                                     }
                                 }
@@ -141,6 +142,48 @@ mod test {
         assert_eq!(
             Vec::from(&out),
             &[None, Some(1), Some(2), Some(3), Some(4), Some(5), None]
+        );
+    }
+
+    #[test]
+    fn test_interpolate2() {
+        let ca = Float32Chunked::new(
+            "",
+            &[
+                Some(4653f32),
+                None,
+                None,
+                None,
+                Some(4657f32),
+                None,
+                None,
+                Some(4657f32),
+                None,
+                Some(4657f32),
+                None,
+                None,
+                Some(4660f32),
+            ],
+        );
+        let out = ca.interpolate();
+
+        assert_eq!(
+            Vec::from(&out),
+            &[
+                Some(4653.0),
+                Some(4654.0),
+                Some(4655.0),
+                Some(4656.0),
+                Some(4657.0),
+                Some(4657.0),
+                Some(4657.0),
+                Some(4657.0),
+                Some(4657.0),
+                Some(4657.0),
+                Some(4658.0),
+                Some(4659.0),
+                Some(4660.0)
+            ]
         );
     }
 }
