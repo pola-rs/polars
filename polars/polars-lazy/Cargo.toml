@@ -17,7 +17,7 @@ default = ["compile"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
-temporal = ["polars-core/temporal", "polars-time"]
+temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
 strings = ["polars-core/strings"]

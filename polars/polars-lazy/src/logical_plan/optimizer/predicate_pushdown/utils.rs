@@ -1,9 +1,6 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{
-    aexpr_to_root_column_name, aexpr_to_root_names, check_input_node, has_aexpr,
-    rename_aexpr_root_names,
-};
+use crate::utils::{aexpr_to_root_names, check_input_node, has_aexpr, rename_aexpr_root_names};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 
@@ -178,33 +175,34 @@ where
     // aliases change the column names and because we push the predicates downwards
     // this may be problematic as the aliased column may not yet exist.
     for projection_node in &projections {
+        let projection_is_boundary =
+            predicate_column_is_pushdown_boundary(*projection_node, expr_arena);
+        let projection_roots = aexpr_to_root_names(*projection_node, expr_arena);
         {
             let projection_aexpr = expr_arena.get(*projection_node);
-            if let AExpr::Alias(projection_node, name) = projection_aexpr {
+            if let AExpr::Alias(_, name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
                 if let Some(predicate) = acc_predicates.remove(&*name) {
-                    if predicate_column_is_pushdown_boundary(*projection_node, expr_arena) {
+                    if projection_is_boundary {
                         local_predicates.push(predicate);
                         continue;
                     }
-
-                    match aexpr_to_root_column_name(*projection_node, &*expr_arena) {
+                    if projection_roots.len() == 1 {
                         // we were able to rename the alias column with the root column name
                         // before pushing down the predicate
-                        Ok(new_name) => {
-                            rename_aexpr_root_names(predicate, expr_arena, new_name.clone());
+                        rename_aexpr_root_names(predicate, expr_arena, projection_roots[0].clone());
 
-                            insert_and_combine_predicate(
-                                acc_predicates,
-                                new_name,
-                                predicate,
-                                expr_arena,
-                            );
-                        }
+                        insert_and_combine_predicate(
+                            acc_predicates,
+                            projection_roots[0].clone(),
+                            predicate,
+                            expr_arena,
+                        );
+                    } else {
                         // this may be a complex binary function. The predicate may only be valid
                         // on this projected column so we do filter locally.
-                        Err(_) => local_predicates.push(predicate),
+                        local_predicates.push(predicate)
                     }
                 }
             }
@@ -219,16 +217,24 @@ where
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
             .iter()
-            .filter_map(|kv| {
-                // if they can be executed on input node above its ok
-                if check_input_node(*kv.1, input_schema, expr_arena)
-                    // if this predicate not equals a column that is a computation
-                    // it is ok
-                    && !is_boundary
+            .filter_map(|(name, predicate)| {
+                // there are some conditions we need to check for every predicate we try to push down
+                // 1. does the column exist on the node above
+                // 2. if the projection is a computation/transformation and the predicate is based on that column
+                //    we must block because the predicate would be incorrect.
+                // 3. if applying the predicate earlier does not influence the result of this projection
+                //    this is the case for instance with a sum operation (filtering out rows influences the result)
+
+                // checks 1.
+                if check_input_node(*predicate, input_schema, expr_arena)
+                // checks 2.
+                && !(projection_roots.contains(name) && projection_is_boundary)
+                // checks 3.
+                && !is_boundary
                 {
                     None
                 } else {
-                    Some(kv.0.clone())
+                    Some(name.clone())
                 }
             })
             .collect::<Vec<_>>();
