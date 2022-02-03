@@ -2108,7 +2108,7 @@ impl Rem for Expr {
 ///
 /// It is the responsibility of the caller that the schema is correct by giving
 /// the correct output_type. If None given the output type of the input expr is used.
-pub fn map_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn map_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
@@ -2135,7 +2135,7 @@ where
 ///  * `map_mul` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 ///  * `apply_mul` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
 ///  * `map_list_mul` should be used when the function expects a list aggregated series.
-pub fn map_list_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn map_list_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,
@@ -2164,7 +2164,7 @@ where
 ///
 /// * `[map_mul]` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
 /// * `[apply_mul]` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
-pub fn apply_mul<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
+pub fn apply_multiple<F, E>(function: F, expr: E, output_type: GetOutput) -> Expr
 where
     F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
     E: AsRef<[Expr]>,

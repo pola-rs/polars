@@ -246,9 +246,6 @@ where
     fn min_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
     fn median_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }

@@ -487,9 +487,6 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> Series {
                 ChunkAggSeries::min_as_series(&self.0)
             }
-            fn mean_as_series(&self) -> Series {
-                ChunkAggSeries::mean_as_series(&self.0)
-            }
             fn median_as_series(&self) -> Series {
                 QuantileAggSeries::median_as_series(&self.0)
             }

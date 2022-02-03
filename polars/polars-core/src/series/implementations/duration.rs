@@ -492,11 +492,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn min_as_series(&self) -> Series {
         self.0.min_as_series().into_duration(self.0.time_unit())
     }
-    fn mean_as_series(&self) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
-    }
     fn median_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())

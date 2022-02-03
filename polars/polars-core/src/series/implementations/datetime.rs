@@ -532,11 +532,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .min_as_series()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
     }
-    fn mean_as_series(&self) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
-    }
     fn median_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())

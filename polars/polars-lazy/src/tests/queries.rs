@@ -1850,7 +1850,7 @@ fn test_apply_multiple_columns() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .select([map_mul(
+        .select([map_multiple(
             multiply,
             [col("A"), col("B")],
             GetOutput::from_type(DataType::Float64),
@@ -1866,7 +1866,7 @@ fn test_apply_multiple_columns() -> Result<()> {
     let out = df
         .lazy()
         .groupby_stable([col("cars")])
-        .agg([apply_mul(
+        .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
             GetOutput::from_type(DataType::Float64),

@@ -19,7 +19,7 @@ pub use crate::{
     df,
     error::{PolarsError, Result},
     frame::{groupby::GroupsProxy, hash_join::JoinType, *},
-    named_from::NamedFrom,
+    named_from::{NamedFrom, NamedFromOwned},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, Series, SeriesTrait,

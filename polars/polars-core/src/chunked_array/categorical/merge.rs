@@ -71,13 +71,13 @@ impl CategoricalChunked {
 }
 
 #[cfg(test)]
+#[cfg(feature = "single_thread")]
 mod test {
     use super::*;
     use crate::chunked_array::categorical::CategoricalChunkedBuilder;
     use crate::{reset_string_cache, toggle_string_cache};
 
     #[test]
-    #[cfg(feature = "single_thread")]
     fn test_merge_rev_map() {
         reset_string_cache();
         toggle_string_cache(true);

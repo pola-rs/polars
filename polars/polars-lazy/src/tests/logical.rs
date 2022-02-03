@@ -1,5 +1,4 @@
 use super::*;
-use polars_core::prelude::TimeUnit::Milliseconds;
 use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 
 #[test]

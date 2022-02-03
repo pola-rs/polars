@@ -24,10 +24,6 @@ pub trait ChunkAggSeries {
     fn min_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the mean of the ChunkedArray as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        unimplemented!()
-    }
     /// Get the product of the ChunkedArray as a new Series of length 1.
     fn prod_as_series(&self) -> Series {
         unimplemented!()
@@ -522,10 +518,6 @@ where
         ca.rename(self.name());
         ca.into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        let val = [self.mean()];
-        Series::new(self.name(), val)
-    }
 
     fn prod_as_series(&self) -> Series {
         let mut prod = None;
@@ -777,9 +769,6 @@ impl ChunkAggSeries for BooleanChunked {
         ca.rename(self.name());
         ca.into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        BooleanChunked::full_null(self.name(), 1).into_series()
-    }
 }
 
 macro_rules! one_null_utf8 {
@@ -798,9 +787,6 @@ impl ChunkAggSeries for Utf8Chunked {
         one_null_utf8!(self)
     }
     fn min_as_series(&self) -> Series {
-        one_null_utf8!(self)
-    }
-    fn mean_as_series(&self) -> Series {
         one_null_utf8!(self)
     }
 }
@@ -824,9 +810,6 @@ impl ChunkAggSeries for ListChunked {
         one_null_list!(self)
     }
     fn min_as_series(&self) -> Series {
-        one_null_list!(self)
-    }
-    fn mean_as_series(&self) -> Series {
         one_null_list!(self)
     }
 }
@@ -969,11 +952,22 @@ mod test {
         let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         // all mean_as_series are cast to f64.
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
+        assert_eq!(
+            ca.into_series()
+                .mean_as_series()
+                .f64()
+                .unwrap()
+                .get(0)
+                .unwrap(),
+            1.5
+        );
         // all null values case
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0), None);
+        assert_eq!(
+            ca.into_series().mean_as_series().f64().unwrap().get(0),
+            None
+        );
     }
 
     #[test]
