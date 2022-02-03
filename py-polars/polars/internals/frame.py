@@ -2854,7 +2854,6 @@ class DataFrame:
         ...         time_column="time", every="1mo", by="groups", maintain_order=True
         ...     ).select(pl.all().forward_fill())
         ... )
-
         shape: (7, 3)
         ┌─────────────────────┬────────┬────────┐
         │ time                ┆ groups ┆ values │
