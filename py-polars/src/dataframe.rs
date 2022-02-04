@@ -654,6 +654,11 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    pub fn extend(&mut self, df: &PyDataFrame) -> PyResult<()> {
+        self.df.extend(&df.df).map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn vstack_mut(&mut self, df: &PyDataFrame) -> PyResult<()> {
         self.df.vstack_mut(&df.df).map_err(PyPolarsEr::from)?;
         Ok(())

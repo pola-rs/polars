@@ -494,7 +494,7 @@ macro_rules! impl_dyn_series {
 
             fn extend(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
-                    self.0.append(other.as_ref().as_ref());
+                    self.0.extend(other.as_ref().as_ref());
                     Ok(())
                 } else {
                     Err(PolarsError::SchemaMisMatch(

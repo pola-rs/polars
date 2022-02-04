@@ -433,6 +433,13 @@ impl PySeries {
         Ok(())
     }
 
+    pub fn extend(&mut self, other: &PySeries) -> PyResult<()> {
+        self.series
+            .extend(&other.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
     pub fn filter(&self, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series;
         if let Ok(ca) = filter_series.bool() {
@@ -1439,9 +1446,12 @@ impl PySeries {
     pub fn shuffle(&self, seed: u64) -> Self {
         self.series.shuffle(seed).into()
     }
-    pub fn extend(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
+    pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
         let value = value.0;
-        let out = self.series.extend(value, n).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .extend_constant(value, n)
+            .map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
 

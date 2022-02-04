@@ -153,7 +153,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if self.0.dtype() == other.dtype() {
             let other = other.categorical()?;
             self.0.append(other);
-            self.0.merge_categorical_map(other);
+            self.0.categorical_map = Some(self.0.merge_categorical_map(other));
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
@@ -165,7 +165,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if self.0.dtype() == other.dtype() {
             let other = other.categorical()?;
             self.0.extend(other);
-            self.0.merge_categorical_map(other);
+            self.0.categorical_map = Some(self.0.merge_categorical_map(other));
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(

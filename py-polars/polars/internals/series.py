@@ -1127,7 +1127,7 @@ class Series:
         """
         return wrap_s(self._s.slice(offset, length))
 
-    def append(self, other: "Series") -> None:
+    def append(self, other: "Series", append_chunks: bool = True) -> None:
         """
         Append a Series to this one.
 
@@ -1135,6 +1135,25 @@ class Series:
         ----------
         other
             Series to append.
+        append_chunks
+            If set to `True` the append operation will add the chunks from `other` to self. This is super cheap.
+
+            if set to `False` the append operation will do the same as `DataFrame.extend` wich:
+            extends the memory backed by this `Series` with the values from `other`.
+
+            Different from `append chunks`, `extent` appends the data from `other` to the underlying memory locations and
+            thus may cause a reallocation (which are expensive).
+
+            If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+            and thus will yield faster queries.
+
+            Prefer `extend` over `append_chunks` when you want to do a query after a single append. For instance during
+            online operations where you add `n` rows and rerun a query.
+
+            Prefer `append_chunks` over `extend` when you want to append many times before doing a query. For instance
+            when you read in multiple files and when to store them in a single `Series`.
+            In the latter case, finish the sequence of `append_chunks` operations with a `rechunk`.
+
 
         Examples
         --------
@@ -1154,7 +1173,10 @@ class Series:
         ]
 
         """
-        self._s.append(other._s)
+        if append_chunks:
+            self._s.append(other._s)
+        else:
+            self._s.extend(other._s)
 
     def filter(self, predicate: Union["Series", list]) -> "Series":
         """
@@ -3385,7 +3407,9 @@ class Series:
             .to_series()
         )
 
-    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
+    def extend_constant(
+        self, value: Optional[Union[int, float, str, bool]], n: int
+    ) -> "Series":
         """
         Extend the Series with given number of values.
 
@@ -3396,7 +3420,23 @@ class Series:
         n
             The number of values to extend.
         """
-        return wrap_s(self._s.extend(value, n))
+        return wrap_s(self._s.extend_constant(value, n))
+
+    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
+        """
+        Extend the Series with given number of values.
+
+        .. deprecated::0.12.21
+            use extend_constant
+
+        Parameters
+        ----------
+        value
+            The value to extend the Series with. This value may be None to fill with nulls.
+        n
+            The number of values to extend.
+        """
+        return self.extend_constant(value, n)
 
     @property
     def time_unit(self) -> Optional[str]:

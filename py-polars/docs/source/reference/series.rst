@@ -178,6 +178,7 @@ Manipulation/ selection
     Series.reshape
     Series.to_dummies
     Series.shuffle
+    Series.extend_constant
     Series.extend
 
 Various

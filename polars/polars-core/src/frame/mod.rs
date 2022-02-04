@@ -775,36 +775,6 @@ impl DataFrame {
         Ok(df)
     }
 
-    // utility to test if we can vstack/extend the columns
-    fn can_extend(&self, left: &Series, right: &Series) -> Result<()> {
-        if left.dtype() != right.dtype() || left.name() != right.name() {
-            if left.dtype() != right.dtype() {
-                return Err(PolarsError::SchemaMisMatch(
-                    format!(
-                        "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
-                                left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
-                        left.name(),
-                        left.dtype(),
-                        right.dtype(),
-                        right.name()
-                    )
-                        .into(),
-                ));
-            } else {
-                return Err(PolarsError::SchemaMisMatch(
-                    format!(
-                        "cannot vstack: because column names in the two DataFrames do not match for \
-                                left.name='{}' != right.name='{}'",
-                        left.name(),
-                        right.name()
-                    )
-                        .into(),
-                ));
-            }
-        };
-        Ok(())
-    }
-
     /// Concatenate a DataFrame to this DataFrame
     ///
     /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
@@ -855,8 +825,8 @@ impl DataFrame {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
-            .try_for_each(|(left, right)| {
-                self.can_extend(left, right)?;
+            .try_for_each::<_, Result<_>>(|(left, right)| {
+                can_extend(left, right)?;
                 left.append(right).expect("should not fail");
                 Ok(())
             })?;
@@ -871,7 +841,7 @@ impl DataFrame {
     /// If this does not cause a reallocation, the resulting data structure will not have any extra chunks
     /// and thus will yield faster queries.
     ///
-    /// Prefer `extend` over `vstack` when you want do a query after a single append. For instance during
+    /// Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
     /// online operations where you add `n` rows and rerun a query.
     ///
     /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
@@ -887,8 +857,8 @@ impl DataFrame {
         self.columns
             .iter_mut()
             .zip(other.columns.iter())
-            .try_for_each(|(left, right)| {
-                self.can_extend(left, right)?;
+            .try_for_each::<_, Result<_>>(|(left, right)| {
+                can_extend(left, right)?;
                 left.extend(right).unwrap();
                 Ok(())
             })?;
@@ -2885,6 +2855,36 @@ impl From<DataFrame> for Vec<Series> {
     fn from(df: DataFrame) -> Self {
         df.columns
     }
+}
+
+// utility to test if we can vstack/extend the columns
+fn can_extend(left: &Series, right: &Series) -> Result<()> {
+    if left.dtype() != right.dtype() || left.name() != right.name() {
+        if left.dtype() != right.dtype() {
+            return Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
+                                left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
+                    left.name(),
+                    left.dtype(),
+                    right.dtype(),
+                    right.name()
+                )
+                    .into(),
+            ));
+        } else {
+            return Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot vstack: because column names in the two DataFrames do not match for \
+                                left.name='{}' != right.name='{}'",
+                    left.name(),
+                    right.name()
+                )
+                .into(),
+            ));
+        }
+    };
+    Ok(())
 }
 
 #[cfg(test)]

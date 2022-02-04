@@ -301,7 +301,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn extend(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
             let other = other.to_physical_repr();
-            self.0.append(other.as_ref().as_ref().as_ref());
+            self.0.extend(other.as_ref().as_ref().as_ref());
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(

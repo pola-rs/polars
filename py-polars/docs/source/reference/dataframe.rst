@@ -107,6 +107,7 @@ Manipulation/ selection
     DataFrame.with_column
     DataFrame.hstack
     DataFrame.vstack
+    DataFrame.extend
     DataFrame.groupby
     DataFrame.groupby_dynamic
     DataFrame.groupby_rolling

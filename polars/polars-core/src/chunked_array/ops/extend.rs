@@ -26,7 +26,7 @@ where
     /// However if this does not cause a reallocation, the resulting data structure will not have any extra chunks
     /// and thus will yield faster queries.
     ///
-    /// Prefer `extend` over `append` when you want do a query after a single append. For instance during
+    /// Prefer `extend` over `append` when you want to do a query after a single append. For instance during
     /// online operations where you add `n` rows and rerun a query.
     ///
     /// Prefer `append` over `extend` when you want to append many times before doing a query. For instance

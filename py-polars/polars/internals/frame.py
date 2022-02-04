@@ -3212,6 +3212,30 @@ class DataFrame:
         else:
             return wrap_df(self._df.vstack(df._df))
 
+    def extend(self, other: "DataFrame") -> None:
+        """
+        Extend the memory backed by this `DataFrame` with the values from `other`.
+
+        Different from `vstack` which adds the chunks from `other` to the chunks of this `DataFrame`
+        `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+
+        If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+        and thus will yield faster queries.
+
+        Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
+        online operations where you add `n` rows and rerun a query.
+
+        Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
+        when you read in multiple files and when to store them in a single `DataFrame`.
+        In the latter case, finish the sequence of `vstack` operations with a `rechunk`.
+
+        Parameters
+        ----------
+        other
+            DataFrame to vertically add.
+        """
+        self._df.extend(other._df)
+
     def drop(self, name: Union[str, List[str]]) -> "DataFrame":
         """
         Remove column from DataFrame and return as new.
