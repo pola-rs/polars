@@ -114,6 +114,10 @@ where
         }
     }
 
+    fn extend(&mut self, _other: &Series) -> Result<()> {
+        panic!("extend not implemented for Object dtypes")
+    }
+
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }

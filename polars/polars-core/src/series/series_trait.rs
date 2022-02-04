@@ -473,11 +473,15 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Append a Series of the same type in place.
+    #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> Result<()> {
         invalid_operation_panic!(self)
     }
 
+    #[doc(hidden)]
+    fn extend(&mut self, _other: &Series) -> Result<()> {
+        invalid_operation_panic!(self)
+    }
 
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> Result<Series> {

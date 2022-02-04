@@ -15,8 +15,8 @@ fn extend_immutable(immutable: &dyn Array, chunks: &mut Vec<ArrayRef>, other_chu
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     /// Extend the memory backed by this array with the values from `other`.
     ///
@@ -30,13 +30,14 @@ impl<T> ChunkedArray<T>
     /// online operations where you add `n` rows and rerun a query.
     ///
     /// Prefer `append` over `extend` when you want to append many times before doing a query. For instance
-    /// when you read in multiple files and when to store them in a single `DataFrame`. Finish the sequence
-    /// of `append` operations with a [`rechunk`](Self::rechunk).
+    /// when you read in multiple files and when to store them in a single `DataFrame`.
+    /// In the latter case finish the sequence of `append` operations with a [`rechunk`](Self::rechunk).
     pub fn extend(&mut self, other: &Self) {
-        // make sure that we are a single chunk already
+        // all to a single chunk
         if self.chunks.len() > 1 {
-            self.rechunk();
-            self.extend(other)
+            self.append(other);
+            *self = self.rechunk();
+            return;
         }
         // Depending on the state of the underlying arrow array we
         // might be able to get a `MutablePrimitiveArray`
@@ -48,7 +49,7 @@ impl<T> ChunkedArray<T>
         let arr = self.downcast_iter().next().unwrap();
 
         // increments 1
-        let mut arr = arr.clone();
+        let arr = arr.clone();
 
         // now we drop our owned ArrayRefs so that
         // decrements 1
@@ -79,15 +80,15 @@ impl<T> ChunkedArray<T>
 #[doc(hidden)]
 impl Utf8Chunked {
     pub fn extend(&mut self, other: &Self) {
-        // make sure that we are a single chunk already
         if self.chunks.len() > 1 {
-            self.rechunk();
-            self.extend(other)
+            self.append(other);
+            *self = self.rechunk();
+            return;
         }
         let arr = self.downcast_iter().next().unwrap();
 
         // increments 1
-        let mut arr = arr.clone();
+        let arr = arr.clone();
 
         // now we drop our owned ArrayRefs so that
         // decrements 1
@@ -117,13 +118,14 @@ impl BooleanChunked {
     pub fn extend(&mut self, other: &Self) {
         // make sure that we are a single chunk already
         if self.chunks.len() > 1 {
-            self.rechunk();
-            self.extend(other)
+            self.append(other);
+            *self = self.rechunk();
+            return;
         }
         let arr = self.downcast_iter().next().unwrap();
 
         // increments 1
-        let mut arr = arr.clone();
+        let arr = arr.clone();
 
         // now we drop our owned ArrayRefs so that
         // decrements 1
@@ -155,7 +157,6 @@ impl ListChunked {
         // this is harder because we don't know the inner type of the list
         self.append(other);
     }
-
 }
 
 #[cfg(test)]
@@ -189,8 +190,8 @@ mod test {
 
     #[test]
     fn test_extend_utf8() {
-        let mut ca= Utf8Chunked::new("a", &["a", "b", "c"]);
-        let to_append= Utf8Chunked::new("a", &["a", "b", "e"]);
+        let mut ca = Utf8Chunked::new("a", &["a", "b", "c"]);
+        let to_append = Utf8Chunked::new("a", &["a", "b", "e"]);
 
         ca.extend(&to_append);
         let vals = ca.into_no_null_iter().collect::<Vec<_>>();
@@ -199,8 +200,8 @@ mod test {
 
     #[test]
     fn test_extend_bool() {
-        let mut ca= BooleanChunked::new("a", [true, false]);
-        let to_append= BooleanChunked::new("a", &[false, false]);
+        let mut ca = BooleanChunked::new("a", [true, false]);
+        let to_append = BooleanChunked::new("a", &[false, false]);
 
         ca.extend(&to_append);
         let vals = ca.into_no_null_iter().collect::<Vec<_>>();
