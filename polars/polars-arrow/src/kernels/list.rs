@@ -38,10 +38,14 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> PrimitiveArray<u32> 
         let a: PrimitiveArray<u32> = iter
             .map(|&offset| {
                 let len = offset - previous;
+                // make sure that empty lists don't get accessed
+                if len == 0 {
+                    return None;
+                }
                 previous = offset;
 
                 let out = index
-                    .to_usize(len as usize)
+                    .negative_to_usize(len as usize)
                     .map(|idx| idx as u32 + cum_offset);
                 cum_offset += len as u32;
                 out
