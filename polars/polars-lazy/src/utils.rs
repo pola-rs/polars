@@ -193,6 +193,27 @@ pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_
     }
 }
 
+/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
+/// Returns `Node` on first sucessful rename.
+pub(crate) fn aexpr_assign_renamed_root(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    current: &str,
+    new_name: &str,
+) -> Node {
+    let roots = aexpr_to_root_nodes(node, arena);
+
+    for node in roots {
+        match arena.get(node) {
+            AExpr::Column(name) if &**name == current => {
+                return arena.add(AExpr::Column(Arc::from(new_name)))
+            }
+            _ => {}
+        }
+    }
+    panic!("should be a root column that is renamed");
+}
+
 /// Get all root column expressions in the expression tree.
 pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
     let mut out = vec![];

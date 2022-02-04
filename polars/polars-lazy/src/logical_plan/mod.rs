@@ -314,7 +314,6 @@ mod test {
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
             let df = lf.collect().unwrap();
-            println!("{:?}", df);
         }
 
         // check if optimization succeeds with selection
@@ -325,9 +324,7 @@ mod test {
                 .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp")]);
 
-            print_plans(&lf);
             let df = lf.collect().unwrap();
-            println!("{:?}", df);
         }
 
         // check if optimization succeeds with selection of a renamed column due to the join
@@ -339,7 +336,6 @@ mod test {
 
             print_plans(&lf);
             let df = lf.collect().unwrap();
-            println!("{:?}", df);
         }
     }
 

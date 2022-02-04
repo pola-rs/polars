@@ -1,6 +1,9 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_input_node, has_aexpr};
+use crate::utils::{
+    aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
+    has_aexpr,
+};
 use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
@@ -246,15 +249,15 @@ impl ProjectionPushDown {
                 // the projections should all be done at the latest projection node to keep the same schema order
                 if projections_seen == 0 {
                     let schema = lp.schema(lp_arena);
-                    for expr in expr {
+                    for node in expr {
                         // Due to the pushdown, a lot of projections cannot be done anymore at the final
                         // node and should be skipped
                         if expr_arena
-                            .get(expr)
+                            .get(node)
                             .to_field(schema, Context::Default, expr_arena)
                             .is_ok()
                         {
-                            local_projection.push(expr);
+                            local_projection.push(node);
                         }
                     }
                     // only aliases should be projected locally in the rest of the projections.
@@ -718,13 +721,7 @@ impl ProjectionPushDown {
                                 if names_right.insert(Arc::from(downwards_name)) {
                                     pushdown_right.push(downwards_name_column);
                                 }
-
-                                // locally we project and alias
-                                let projection = expr_arena.add(AExpr::Alias(
-                                    downwards_name_column,
-                                    Arc::from(format!("{}{}", downwards_name, suffix)),
-                                ));
-                                local_projection.push(projection);
+                                local_projection.push(proj);
                             }
                         } else if add_local {
                             // always also do the projection locally, because the join columns may not be
@@ -758,12 +755,43 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena).join(
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                );
+                // Because we do a projection pushdown
+                // We may influence the suffixes.
+                // For instance if a join would have created a schema
+                //
+                // "foo", "foo_right"
+                //
+                // but we only project the "foo_right" column, the join will not produce
+                // a "name_right" because we did not project its left name duplicate "foo"
+                //
+                // The code below checks if can do the suffixed projections on the schema that
+                // we have after the join. If we cannot then we modify the projection:
+                //
+                // col("foo_right")  to col("foo").alias("foo_right")
+                let suffix = options.suffix.clone();
+
+                let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
+                    .join(input_right, left_on, right_on, options)
+                    .build();
+                let schema_after_join = alp.schema(lp_arena);
+
+                for proj in &mut local_projection {
+                    for name in aexpr_to_root_names(*proj, expr_arena) {
+                        if name.contains(suffix.as_ref())
+                            && schema_after_join.column_with_name(&*name).is_none()
+                        {
+                            let new_name = &name.as_ref()[..name.len() - suffix.len()];
+
+                            let renamed =
+                                aexpr_assign_renamed_root(*proj, expr_arena, &*name, new_name);
+
+                            let aliased = expr_arena.add(AExpr::Alias(renamed, name));
+                            *proj = aliased;
+                        }
+                    }
+                }
+                let root = lp_arena.add(alp);
+                let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
                 Ok(self.finish_node(local_projection, builder))
             }
             HStack { input, exprs, .. } => {
