@@ -1,18 +1,18 @@
 pub(crate) trait IndexToUsize {
     /// Translate the negative index to an offset.
-    fn to_usize(self, length: usize) -> Option<usize>;
+    fn negative_to_usize(self, index: usize) -> Option<usize>;
 }
 
 impl IndexToUsize for i64 {
-    fn to_usize(self, length: usize) -> Option<usize> {
-        if self >= 0 && (self as usize) < length {
+    fn negative_to_usize(self, index: usize) -> Option<usize> {
+        if self >= 0 && (self as usize) < index {
             Some(self as usize)
         } else {
             let subtract = self.abs() as usize;
-            if subtract > length {
+            if subtract > index {
                 None
             } else {
-                Some(length - subtract)
+                Some(index - subtract)
             }
         }
     }

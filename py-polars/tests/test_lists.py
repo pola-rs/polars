@@ -119,3 +119,23 @@ def test_list_append() -> None:
 
     out_s = df["a"].arr.concat(([4, 1]))
     assert out_s[0].to_list() == [1, 2, 4, 1]
+
+
+def test_list_arr_empty() -> None:
+    df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
+
+    out = df.select(
+        [
+            pl.col("cars").arr.first().alias("cars_first"),
+            pl.when(pl.col("cars").arr.first() == 2)
+            .then(1)
+            .when(pl.col("cars").arr.contains(2))
+            .then(2)
+            .otherwise(3)
+            .alias("cars_literal"),
+        ]
+    )
+    expected = pl.DataFrame(
+        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
+    )
+    assert out.frame_equal(expected)
