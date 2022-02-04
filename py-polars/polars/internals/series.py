@@ -3662,7 +3662,7 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
-    def split(self, by: str) -> Series:
+    def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
         The return type will by of type List<Utf8>
@@ -3671,9 +3671,11 @@ class StringNameSpace:
         ----------
         by
             substring
+        inclusive
+            Include the split character/string in the results
         """
         s = wrap_s(self._s)
-        return s.to_frame().select(pli.col(s.name).str.split(by)).to_series()
+        return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
     def replace(self, pattern: str, value: str) -> Series:
         """

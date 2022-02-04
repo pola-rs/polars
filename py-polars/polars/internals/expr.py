@@ -2739,7 +2739,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
-    def split(self, by: str) -> Expr:
+    def split(self, by: str, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
         The return type will by of type List<Utf8>
@@ -2748,7 +2748,11 @@ class ExprStringNameSpace:
         ----------
         by
             substring
+        inclusive
+            Include the split character/string in the results
         """
+        if inclusive:
+            return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
     def replace(self, pattern: str, value: str) -> Expr:
