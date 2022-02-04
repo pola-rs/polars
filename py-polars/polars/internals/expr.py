@@ -2303,7 +2303,25 @@ class Expr:
         n
             The number of values to extend.
         """
-        return wrap_expr(self._pyexpr.extend(value, n))
+        return wrap_expr(self._pyexpr.extend_constant(value, n))
+
+    def extend_constant(
+        self, value: Optional[Union[int, float, str, bool]], n: int
+    ) -> "Expr":
+        """
+        Extend the Series with given number of values.
+
+        .. deprecated::0.12.21
+            use extend_constant
+
+        Parameters
+        ----------
+        value
+            The value to extend the Series with. This value may be None to fill with nulls.
+        n
+            The number of values to extend.
+        """
+        return self.extend_constant(value, n)
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"

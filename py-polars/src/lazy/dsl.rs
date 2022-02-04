@@ -1249,7 +1249,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_var(options).into()
     }
-    pub fn extend(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+    pub fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
         let value = value.into_py(py);
         self.inner
             .clone()
@@ -1258,7 +1258,7 @@ impl PyExpr {
                     let gil = Python::acquire_gil();
                     let py = gil.python();
                     let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
-                    s.extend(value, n)
+                    s.extend_constant(value, n)
                 },
                 GetOutput::same_type(),
             )

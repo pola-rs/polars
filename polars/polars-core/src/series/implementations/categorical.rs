@@ -151,12 +151,25 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            // todo! add object
-            self.0.append(other.as_ref().as_ref());
+            let other = other.categorical()?;
+            self.0.append(other);
+            self.0.categorical_map = Some(self.0.merge_categorical_map(other));
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            let other = other.categorical()?;
+            self.0.extend(other);
+            self.0.categorical_map = Some(self.0.merge_categorical_map(other));
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
             ))
         }
     }

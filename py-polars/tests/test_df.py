@@ -635,6 +635,55 @@ def test_vstack(in_place: bool) -> None:
         assert out.frame_equal(expected)  # type: ignore
 
 
+def test_extend() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {
+                "foo": [1, 2],
+                "bar": [True, False],
+                "ham": ["a", "b"],
+                "cat": ["A", "B"],
+                "dates": [datetime(2021, 1, 1), datetime(2021, 2, 1)],
+            }
+        ).with_columns(
+            [
+                pl.col("cat").cast(pl.Categorical),
+            ]
+        )
+        df2 = pl.DataFrame(
+            {
+                "foo": [3, 4],
+                "bar": [True, None],
+                "ham": ["c", "d"],
+                "cat": ["C", "B"],
+                "dates": [datetime(2022, 9, 1), datetime(2021, 2, 1)],
+            }
+        ).with_columns(
+            [
+                pl.col("cat").cast(pl.Categorical),
+            ]
+        )
+
+    df1.extend(df2)
+    expected = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4],
+            "bar": [True, False, True, None],
+            "ham": ["a", "b", "c", "d"],
+            "cat": ["A", "B", "C", "B"],
+            "dates": [
+                datetime(2021, 1, 1),
+                datetime(2021, 2, 1),
+                datetime(2022, 9, 1),
+                datetime(2021, 2, 1),
+            ],
+        }
+    ).with_column(
+        pl.col("cat").cast(pl.Categorical),
+    )
+    assert df1.frame_equal(expected)
+
+
 def test_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
     df = df.drop("a")

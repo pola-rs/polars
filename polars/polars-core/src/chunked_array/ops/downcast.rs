@@ -36,6 +36,7 @@ impl<'a, T> Chunks<'a, T> {
     }
 }
 
+#[doc(hidden)]
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -64,6 +65,7 @@ where
     }
 }
 
+#[doc(hidden)]
 impl BooleanChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &BooleanArray> + DoubleEndedIterator {
         self.chunks.iter().map(|arr| {
@@ -86,6 +88,7 @@ impl BooleanChunked {
     }
 }
 
+#[doc(hidden)]
 impl Utf8Chunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &Utf8Array<i64>> + DoubleEndedIterator {
         // Safety:
@@ -110,6 +113,7 @@ impl Utf8Chunked {
     }
 }
 
+#[doc(hidden)]
 impl ListChunked {
     pub fn downcast_iter(&self) -> impl Iterator<Item = &ListArray<i64>> + DoubleEndedIterator {
         // Safety:
@@ -133,6 +137,7 @@ impl ListChunked {
 }
 
 #[cfg(feature = "object")]
+#[doc(hidden)]
 impl<'a, T> ObjectChunked<T>
 where
     T: PolarsObject,

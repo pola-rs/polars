@@ -176,9 +176,19 @@ impl Series {
         Ok(self)
     }
 
-    /// Append a Series of the same type in place.
+    /// Append in place. This is done by adding the chunks of `other` to this [`Series`].
+    ///
+    /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> Result<&mut Self> {
         self.get_inner_mut().append(other)?;
+        Ok(self)
+    }
+
+    /// Extend the memory backed by this array with the values from `other`.
+    ///
+    /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
+    pub fn extend(&mut self, other: &Series) -> Result<&mut Self> {
+        self.get_inner_mut().extend(other)?;
         Ok(self)
     }
 

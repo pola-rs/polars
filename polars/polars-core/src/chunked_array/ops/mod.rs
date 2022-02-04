@@ -27,6 +27,7 @@ mod concat_str;
 mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
+mod extend;
 mod fill_null;
 mod filter;
 pub mod full;

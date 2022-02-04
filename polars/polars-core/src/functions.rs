@@ -182,7 +182,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
                     let diff = max_len - df.height();
                     df.columns
                         .iter_mut()
-                        .for_each(|s| *s = s.extend(AnyValue::Null, diff).unwrap());
+                        .for_each(|s| *s = s.extend_constant(AnyValue::Null, diff).unwrap());
                 }
                 df
             })

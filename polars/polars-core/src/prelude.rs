@@ -10,7 +10,7 @@ pub use crate::{
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        iterator::{IntoNoNullIterator, PolarsIterator},
+        iterator::PolarsIterator,
         ops::{aggregate::*, *},
         ChunkedArray,
     },

@@ -731,6 +731,8 @@ impl DataFrame {
 
     /// Concatenate a `DataFrame` to this `DataFrame` and return as newly allocated `DataFrame`.
     ///
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
+    ///
     /// # Example
     ///
     /// ```rust
@@ -767,13 +769,15 @@ impl DataFrame {
     /// | Palladium | 1828.05           |
     /// +-----------+-------------------+
     /// ```
-    pub fn vstack(&self, columns: &DataFrame) -> Result<Self> {
+    pub fn vstack(&self, other: &DataFrame) -> Result<Self> {
         let mut df = self.clone();
-        df.vstack_mut(columns)?;
+        df.vstack_mut(other)?;
         Ok(df)
     }
 
     /// Concatenate a DataFrame to this DataFrame
+    ///
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::rechunk`].
     ///
     /// # Example
     ///
@@ -811,49 +815,54 @@ impl DataFrame {
     /// | Palladium | 1828.05           |
     /// +-----------+-------------------+
     /// ```
-    pub fn vstack_mut(&mut self, df: &DataFrame) -> Result<&mut Self> {
-        if self.width() != df.width() {
+    pub fn vstack_mut(&mut self, other: &DataFrame) -> Result<&mut Self> {
+        if self.width() != other.width() {
             return Err(PolarsError::ShapeMisMatch(
-                format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), df.width()).into()
+                format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
             ));
         }
 
         self.columns
             .iter_mut()
-            .zip(df.columns.iter())
-            .try_for_each(|(left, right)| {
-                if left.dtype() != right.dtype() || left.name() != right.name() {
-                    if left.dtype() != right.dtype() {
-                        return Err(PolarsError::SchemaMisMatch(
-                            format!(
-                                "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
-                                left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
-                                left.name(),
-                                left.dtype(),
-                                right.dtype(),
-                                right.name()
-                            )
-                            .into(),
-                        ));
-                    }
-                    else {
-                        return Err(PolarsError::SchemaMisMatch(
-                            format!(
-                                "cannot vstack: because column names in the two DataFrames do not match for \
-                                left.name='{}' != right.name='{}'",
-                                left.name(),
-                                right.name()
-                            )
-                            .into(),
-                        ));
-                    }
-                }
-
+            .zip(other.columns.iter())
+            .try_for_each::<_, Result<_>>(|(left, right)| {
+                can_extend(left, right)?;
                 left.append(right).expect("should not fail");
                 Ok(())
             })?;
-        // don't rechunk here. Chunks in columns always match.
         Ok(self)
+    }
+
+    /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
+    ///
+    /// Different from [`vstack`](Self::vstack) which adds the chunks from `other` to the chunks of this [`DataFrame`]
+    /// `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+    ///
+    /// If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+    /// and thus will yield faster queries.
+    ///
+    /// Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
+    /// online operations where you add `n` rows and rerun a query.
+    ///
+    /// Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
+    /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
+    /// of `append` operations with a [`rechunk`](Self::rechunk).
+    pub fn extend(&mut self, other: &DataFrame) -> Result<()> {
+        if self.width() != other.width() {
+            return Err(PolarsError::ShapeMisMatch(
+                format!("Could not extend DataFrame. The DataFrames extended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
+            ));
+        }
+
+        self.columns
+            .iter_mut()
+            .zip(other.columns.iter())
+            .try_for_each::<_, Result<_>>(|(left, right)| {
+                can_extend(left, right)?;
+                left.extend(right).unwrap();
+                Ok(())
+            })?;
+        Ok(())
     }
 
     /// Remove a column by name and return the column removed.
@@ -2846,6 +2855,36 @@ impl From<DataFrame> for Vec<Series> {
     fn from(df: DataFrame) -> Self {
         df.columns
     }
+}
+
+// utility to test if we can vstack/extend the columns
+fn can_extend(left: &Series, right: &Series) -> Result<()> {
+    if left.dtype() != right.dtype() || left.name() != right.name() {
+        if left.dtype() != right.dtype() {
+            return Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot vstack: because column datatypes (dtypes) in the two DataFrames do not match for \
+                                left.name='{}' with left.dtype={} != right.dtype={} with right.name='{}'",
+                    left.name(),
+                    left.dtype(),
+                    right.dtype(),
+                    right.name()
+                )
+                    .into(),
+            ));
+        } else {
+            return Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot vstack: because column names in the two DataFrames do not match for \
+                                left.name='{}' != right.name='{}'",
+                    left.name(),
+                    right.name()
+                )
+                .into(),
+            ));
+        }
+    };
+    Ok(())
 }
 
 #[cfg(test)]

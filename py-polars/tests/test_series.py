@@ -211,6 +211,16 @@ def test_add_string() -> None:
     testing.assert_series_equal(result, pl.Series(["hello world", "weird world"]))
 
 
+def test_append_extend() -> None:
+    a = pl.Series("a", [1, 2])
+    b = pl.Series("b", [8, 9, None])
+    a.append(b, append_chunks=False)
+    expected = pl.Series("a", [1, 2, 8, 9, None])
+    assert a.series_equal(expected, null_equal=True)
+    print(a.chunk_lengths())
+    assert a.n_chunks() == 1
+
+
 def test_various() -> None:
     a = pl.Series("a", [1, 2])
 

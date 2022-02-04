@@ -167,6 +167,17 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         }
     }
 
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
+            ))
+        }
+    }
+
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
