@@ -122,6 +122,7 @@ impl<'a> ExactSizeIterator for BoolIterNoNull<'a> {}
 
 impl BooleanChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = bool>
@@ -203,6 +204,7 @@ impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
 
 impl Utf8Chunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter<'a>(
         &'a self,
     ) -> impl Iterator<Item = &'a str>
@@ -299,6 +301,7 @@ impl<'a> ExactSizeIterator for ListIterNoNull<'a> {}
 
 impl ListChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = Series>
@@ -333,6 +336,7 @@ where
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ObjectChunked<T> {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
@@ -344,15 +348,6 @@ impl<T: PolarsObject> ObjectChunked<T> {
                 .trust_my_length(self.len())
         }
     }
-}
-
-/// Trait for ChunkedArrays that don't have null values.
-/// The result is the most efficient implementation `Iterator`, according to the number of chunks.
-pub trait IntoNoNullIterator {
-    type Item;
-    type IntoIter: Iterator<Item = Self::Item>;
-
-    fn into_no_null_iter(self) -> Self::IntoIter;
 }
 
 /// Wrapper struct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
@@ -388,8 +383,10 @@ where
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
 
 #[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
 impl CategoricalChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = u32>

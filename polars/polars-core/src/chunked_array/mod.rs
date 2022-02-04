@@ -134,15 +134,15 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
 ///
-/// However, multiple chunks in a `ChunkArray` will slow down the Iterators, arithmetic and other operations.
+/// However, multiple chunks in a `ChunkArray` will slow down many operations that need random access because we have an extra indirection
+/// and indexes need to be mapped to the proper chunk. Arithmetic may also be slowed down by this.
 /// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
-/// However, when chunk size don't match, Iterators will be used to do the operation (instead of arrows upstream implementation, which may utilize SIMD) and
-/// the result will be a single chunked array.
 ///
-/// **The key takeaway is that by applying operations on a `ChunkArray` of multiple chunks, the results will converge to
-/// a `ChunkArray` of a single chunk!** It is recommended to leave them as is. If you want to have predictable performance
+/// If you want to have predictable performance
 /// (no unexpected re-allocation of memory), it is advised to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
 /// multiple append operations.
+///
+/// See also [`ChunkedArray::extend`] for appends within a chunk.
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,

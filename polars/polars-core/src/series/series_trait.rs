@@ -478,6 +478,7 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
+
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> Result<Series> {
         invalid_operation_panic!(self)
