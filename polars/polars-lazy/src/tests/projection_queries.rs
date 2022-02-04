@@ -33,3 +33,32 @@ fn test_join_suffix_and_drop() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_cross_join_pd() -> Result<()> {
+    let food = df![
+        "name"=> ["Omelette", "Fried Egg"],
+        "price" => [8, 5]
+    ]?;
+
+    let drink = df![
+        "name" => ["Orange Juice", "Tea"],
+        "price" => [5, 4]
+    ]?;
+
+    let q = food.lazy().cross_join(drink.lazy()).select([
+        col("name").alias("food"),
+        col("name_right").alias("beverage"),
+        (col("price") + col("price_right")).alias("total"),
+    ]);
+
+    let out = q.collect()?;
+    let expected = df![
+        "food" => ["Omelette", "Omelette", "Fried Egg", "Fried Egg"],
+        "beverage" => ["Orange Juice", "Tea", "Orange Juice", "Tea"],
+        "total" => [13, 12, 10, 9]
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+    Ok(())
+}
