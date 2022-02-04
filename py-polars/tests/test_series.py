@@ -1466,3 +1466,11 @@ def test_str_split() -> None:
         assert out[0].to_list() == ["a", " b"]
         assert out[1].to_list() == ["a"]
         assert out[2].to_list() == ["ab", "c", "de"]
+
+    for out in [
+        a.str.split(",", inclusive=True),
+        pl.select(pl.lit(a).str.split(",", inclusive=True)).to_series(),
+    ]:
+        assert out[0].to_list() == ["a,", " b"]
+        assert out[1].to_list() == ["a"]
+        assert out[2].to_list() == ["ab,", "c,", "de"]

@@ -582,6 +582,9 @@ impl PyExpr {
     pub fn str_split(&self, by: &str) -> PyExpr {
         self.inner.clone().str().split(by).into()
     }
+    pub fn str_split_inclusive(&self, by: &str) -> PyExpr {
+        self.inner.clone().str().split_inclusive(by).into()
+    }
 
     pub fn arr_lengths(&self) -> PyExpr {
         let function = |s: Series| {
