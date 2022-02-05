@@ -587,15 +587,7 @@ impl PyExpr {
     }
 
     pub fn arr_lengths(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.list()?;
-            Ok(ca.lst_lengths().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("arr.len")
-            .into()
+        self.inner.clone().arr().lengths().into()
     }
 
     pub fn year(&self) -> PyExpr {
@@ -1043,77 +1035,26 @@ impl PyExpr {
     }
 
     fn lst_max(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_max()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.max")
-            .into()
+        self.inner.clone().arr().max().into()
     }
 
     fn lst_min(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_min()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.min")
-            .into()
+        self.inner.clone().arr().min().into()
     }
 
     fn lst_sum(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_sum()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.sum")
-            .into()
+        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
     }
 
     fn lst_mean(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_mean().into_series()),
-                GetOutput::from_type(DataType::Float64),
-            )
-            .with_fmt("arr.mean")
-            .into()
+        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
     }
 
     fn lst_sort(&self, reverse: bool) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .sort(reverse)
             .with_fmt("arr.sort")
             .into()
     }
@@ -1121,10 +1062,8 @@ impl PyExpr {
     fn lst_reverse(&self) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_reverse().into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .reverse()
             .with_fmt("arr.reverse")
             .into()
     }
@@ -1132,25 +1071,18 @@ impl PyExpr {
     fn lst_unique(&self) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_unique()?.into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .unique()
             .with_fmt("arr.unique")
             .into()
     }
 
     fn lst_get(&self, index: i64) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.list()?.lst_get(index),
-                GetOutput::map_field(|field| match field.data_type() {
-                    DataType::List(inner) => Field::new(field.name(), *inner.clone()),
-                    _ => panic!("should be a list type"),
-                }),
-            )
-            .into()
+        self.inner.clone().arr().get(index).into()
+    }
+
+    fn lst_join(&self, separator: &str) -> Self {
+        self.inner.clone().arr().join(separator).into()
     }
 
     fn rank(&self, method: &str, reverse: bool) -> Self {

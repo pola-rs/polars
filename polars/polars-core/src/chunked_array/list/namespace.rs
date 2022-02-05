@@ -3,6 +3,7 @@ use crate::prelude::*;
 use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
+use std::fmt::Write;
 
 fn cast_rhs(
     other: &mut [Series],
@@ -51,6 +52,50 @@ fn cast_rhs(
 }
 
 impl ListChunked {
+    /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
+    /// single string separated by `separator`.
+    pub fn lst_join(&self, separator: &str) -> Result<Utf8Chunked> {
+        match self.inner_dtype() {
+            DataType::Utf8 => {
+                // used to amortize heap allocs
+                let mut buf = String::with_capacity(128);
+
+                let mut builder = Utf8ChunkedBuilder::new(
+                    self.name(),
+                    self.len(),
+                    self.get_values_size() + separator.len() * self.len(),
+                );
+
+                self.amortized_iter().for_each(|opt_s| {
+                    let opt_val = opt_s.map(|s| {
+                        // make sure that we don't write values of previous iteration
+                        buf.clear();
+                        let ca = s.as_ref().utf8().unwrap();
+                        let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+
+                        for val in iter {
+                            buf.write_str(val).unwrap();
+                            buf.write_str(separator).unwrap();
+                        }
+                        // last value should not have a separator, so slice that off
+                        // saturating sub because there might have been nothing written.
+                        &buf[..buf.len().saturating_sub(separator.len())]
+                    });
+                    builder.append_option(opt_val)
+                });
+                Ok(builder.finish())
+            }
+            dt => Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot call lst.join on Series with dtype {:?}.\
+                Inner type must be Utf8",
+                    dt
+                )
+                .into(),
+            )),
+        }
+    }
+
     pub fn lst_max(&self) -> Series {
         self.apply_amortized(|s| s.as_ref().max_as_series())
             .explode()

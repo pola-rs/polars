@@ -1,3 +1,5 @@
+from test_series import verify_series_and_expr_api
+
 import polars as pl
 from polars import testing
 
@@ -67,3 +69,9 @@ def test_min_nulls_consistency() -> None:
     out = df.select([pl.max(["a", "b", "c"])]).to_series()
     expected = pl.Series("max", [7, 5, 6])
     testing.assert_series_equal(out, expected)
+
+
+def test_list_join_strings() -> None:
+    s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
+    expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
+    verify_series_and_expr_api(s, expected, "arr.join", "-")

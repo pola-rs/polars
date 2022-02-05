@@ -2470,6 +2470,23 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
 
+    def join(self, separator: str) -> "Expr":
+        """
+        Join all string items in a sublist and place a separator between them.
+        This errors if inner type of list `!= Utf8`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Series of dtype Utf8
+        """
+
+        return wrap_expr(self._pyexpr.lst_join(separator))
+
 
 class ExprStringNameSpace:
     """

@@ -1,6 +1,7 @@
 use super::*;
 use polars_arrow::array::ValueSize;
 
+/// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);
 
 impl StringNameSpace {
