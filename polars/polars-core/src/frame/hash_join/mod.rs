@@ -1390,6 +1390,10 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
+
+        // store this so that we can keep original column order.
+        let join_column_index = self.iter().position(|s| s.name() == s_left.name()).unwrap();
+
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
 
@@ -1430,7 +1434,7 @@ impl DataFrame {
             _ => s,
         };
 
-        df_left.hstack_mut(&[s])?;
+        df_left.get_columns_mut().insert(join_column_index, s);
         self.finish_join(df_left, df_right, suffix)
     }
 }
@@ -1848,6 +1852,11 @@ mod test {
             .outer_join(&df_right, ["col1"], ["join_col1"])
             .unwrap();
 
+        // ensure the column names don't get swapped by the drop we do
+        assert_eq!(
+            df_outer_join.get_column_names(),
+            &["col1", "int_col", "dbl_col"]
+        );
         assert_eq!(df_outer_join.height(), 12);
         assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
         assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
