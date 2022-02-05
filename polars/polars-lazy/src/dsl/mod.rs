@@ -1,6 +1,8 @@
 //! Domain specific language for the Lazy api.
 #[cfg(feature = "temporal")]
 mod dt;
+#[cfg(feature = "list")]
+mod list;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
@@ -2055,6 +2057,10 @@ impl Expr {
     #[cfg(feature = "temporal")]
     pub fn dt(self) -> dt::DateLikeNameSpace {
         dt::DateLikeNameSpace(self)
+    }
+    #[cfg(feature = "list")]
+    pub fn arr(self) -> list::ListNameSpace {
+        list::ListNameSpace(self)
     }
 }
 

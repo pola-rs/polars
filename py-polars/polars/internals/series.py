@@ -3876,6 +3876,23 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.get(index)).to_series()
 
+    def join(self, separator: str) -> "Series":
+        """
+        Join all string items in a sublist and place a separator between them.
+        This errors if inner type of list `!= Utf8`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Series of dtype Utf8
+        """
+
+        return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
+
     def first(self) -> "Series":
         """
         Get the first value of the sublists.

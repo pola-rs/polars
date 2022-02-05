@@ -307,7 +307,6 @@ The following methods are available under the `expr.arr` attribute.
 
     ExprListNameSpace.concat
     ExprListNameSpace.lengths
-    ExprListNameSpace.lengths
     ExprListNameSpace.sum
     ExprListNameSpace.min
     ExprListNameSpace.max
@@ -319,3 +318,4 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.first
     ExprListNameSpace.last
     ExprListNameSpace.contains
+    ExprListNameSpace.join

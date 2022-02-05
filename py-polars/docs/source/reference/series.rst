@@ -283,3 +283,4 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.first
     ListNameSpace.last
     ListNameSpace.contains
+    ListNameSpace.join
