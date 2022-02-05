@@ -600,19 +600,19 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
+pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
     let val = params.get::<JsUnknown>("value")?;
     let n = params.get_as::<usize>("n")?;
     match val.get_type()? {
         ValueType::Undefined | ValueType::Null => {
-            expr.apply(move |s| s.extend(AnyValue::Null, n), GetOutput::same_type())
+            expr.apply(move |s| s.extend_constant(AnyValue::Null, n), GetOutput::same_type())
         }
         ValueType::Boolean => {
             let val = bool::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::Boolean(val), n),
+                move |s| s.extend_constant(AnyValue::Boolean(val), n),
                 GetOutput::same_type(),
             )
         }
@@ -622,18 +622,18 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
                 let val = f_val as i64;
                 if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
                     expr.apply(
-                        move |s| s.extend(AnyValue::Int32(val as i32), n),
+                        move |s| s.extend_constant(AnyValue::Int32(val as i32), n),
                         GetOutput::same_type(),
                     )
                 } else {
                     expr.apply(
-                        move |s| s.extend(AnyValue::Int64(val), n),
+                        move |s| s.extend_constant(AnyValue::Int64(val), n),
                         GetOutput::same_type(),
                     )
                 }
             } else {
                 expr.apply(
-                    move |s| s.extend(AnyValue::Float64(f_val), n),
+                    move |s| s.extend_constant(AnyValue::Float64(f_val), n),
                     GetOutput::same_type(),
                 )
             }
@@ -641,14 +641,14 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
         ValueType::String => {
             let val = String::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::Utf8(&val), n),
+                move |s| s.extend_constant(AnyValue::Utf8(&val), n),
                 GetOutput::same_type(),
             )
         }
         ValueType::Bigint => {
             let val = u64::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::UInt64(val), n),
+                move |s| s.extend_constant(AnyValue::UInt64(val), n),
                 GetOutput::same_type(),
             )
         }
@@ -658,7 +658,7 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
                 let d = d.value_of()?;
                 let d = d as i64;
                 expr.apply(
-                    move |s| s.extend(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n),
+                    move |s| s.extend_constant(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n),
                     GetOutput::same_type(),
                 )
             } else {

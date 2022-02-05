@@ -126,6 +126,7 @@ impl JsSeries {
             napi::Property::new(env, "eq")?.with_method(eq),
             napi::Property::new(env, "explode")?.with_method(explode),
             napi::Property::new(env, "extend")?.with_method(extend),
+            napi::Property::new(env, "extend_constant")?.with_method(extend_constant),
             napi::Property::new(env, "fill_null")?.with_method(fill_null),
             napi::Property::new(env, "filter")?.with_method(filter),
             napi::Property::new(env, "floor")?.with_method(floor),
