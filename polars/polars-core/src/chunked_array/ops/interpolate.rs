@@ -71,12 +71,21 @@ where
                                     // another null
                                     Some(None) => {}
                                     Some(Some(high)) => {
-                                        let diff = high - low;
                                         let steps_n = T::Native::from_u32(steps).unwrap();
-                                        for step_i in 1..steps {
-                                            let step_i = T::Native::from_u32(step_i).unwrap();
-                                            let v = linear_itp(low, step_i, diff, steps_n);
-                                            av.push(v)
+                                        if high >= low {
+                                            let diff = high - low;
+                                            for step_i in 1..steps {
+                                                let step_i = T::Native::from_u32(step_i).unwrap();
+                                                let v = linear_itp(low, step_i, diff, steps_n);
+                                                av.push(v)
+                                            }
+                                        } else {
+                                            let diff = low - high;
+                                            for step_i in (1..steps).rev() {
+                                                let step_i = T::Native::from_u32(step_i).unwrap();
+                                                let v = linear_itp(high, step_i, diff, steps_n);
+                                                av.push(v)
+                                            }
                                         }
                                         av.push(high);
                                         low_val = Some(high);
@@ -143,6 +152,13 @@ mod test {
             Vec::from(&out),
             &[None, Some(1), Some(2), Some(3), Some(4), Some(5), None]
         );
+    }
+
+    #[test]
+    fn test_interpolate_decreasing_unsigned() {
+        let ca = UInt32Chunked::new("", &[Some(4), None, None, Some(1)]);
+        let out = ca.interpolate();
+        assert_eq!(Vec::from(&out), &[Some(4), Some(3), Some(2), Some(1)])
     }
 
     #[test]
