@@ -316,3 +316,15 @@ fn test_slice_filter() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn skip_rows_and_slice() -> Result<()> {
+    let out = LazyCsvReader::new(FOODS_CSV.to_string())
+        .with_skip_rows(4)
+        .finish()?
+        .limit(1)
+        .collect()?;
+    assert_eq!(out.column("fruit")?.get(0), AnyValue::Utf8("seafood"));
+    assert_eq!(out.shape(), (1, 4));
+    Ok(())
+}

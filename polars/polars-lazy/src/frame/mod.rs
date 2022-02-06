@@ -938,7 +938,7 @@ impl LazyFrame {
         self.slice(-1, 1)
     }
 
-    /// Get the n last rows
+    /// Get the last `n` rows
     pub fn tail(self, n: u32) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)

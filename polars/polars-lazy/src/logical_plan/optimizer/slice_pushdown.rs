@@ -155,7 +155,7 @@ impl SlicePushDown {
                 aggregate,
             }, Some(state)) if state.offset >= 0 && predicate.is_none() => {
                 let mut options = options;
-                options.skip_rows = state.offset as usize;
+                options.skip_rows += state.offset as usize;
                 options.n_rows = Some(state.len as usize);
 
                 let lp = CsvScan {
