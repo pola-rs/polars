@@ -437,8 +437,13 @@ def arrow_to_pydf(
             data_dict[name] = column
 
     if len(data_dict) > 0:
-        batches = pa.table(data_dict).to_batches()
-        pydf = PyDataFrame.from_arrow_record_batches(batches)
+        tbl = pa.table(data_dict)
+
+        # path for table without rows that keeps datatype
+        if tbl.shape[0] == 0:
+            pydf = pli.DataFrame._from_pandas(tbl.to_pandas())._df
+        else:
+            pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
     else:
         pydf = pli.DataFrame([])._df
     if rechunk:
