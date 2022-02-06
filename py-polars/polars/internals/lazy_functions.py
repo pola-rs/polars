@@ -22,6 +22,7 @@ try:
     from polars.polars import cols as pycols
     from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
+    from polars.polars import count as _count
     from polars.polars import cov as pycov
     from polars.polars import dtype_cols as _dtype_cols
     from polars.polars import fold as pyfold
@@ -160,10 +161,26 @@ def count(column: "pli.Series") -> int:
     ...
 
 
-def count(column: Union[str, "pli.Series"] = "") -> Union["pli.Expr", int]:
+@overload
+def count(column: None = None) -> "pli.Expr":
+    ...
+
+
+def count(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr", int]:
     """
-    Count the number of values in this column.
+    Count the number of values in this column/context.
+
+    Parameters
+    ----------
+    column
+        If dtype is:
+            pl.Series -> count the values in the series
+            str -> count the values in this column
+            None -> count the number of values in this context
     """
+    if column is None:
+        return pli.wrap_expr(_count())
+
     if isinstance(column, pli.Series):
         return column.len()
     return col(column).count()

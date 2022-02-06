@@ -4,6 +4,7 @@ pub(crate) mod apply;
 pub(crate) mod binary;
 pub(crate) mod cast;
 pub(crate) mod column;
+pub(crate) mod count;
 pub(crate) mod filter;
 pub(crate) mod is_not_null;
 pub(crate) mod is_null;
