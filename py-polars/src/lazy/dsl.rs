@@ -72,6 +72,9 @@ impl<'p> PyObjectProtocol<'p> for PyExpr {
 
 #[pymethods]
 impl PyExpr {
+    pub fn to_str(&self) -> String {
+        format!("{:?}", self.inner)
+    }
     pub fn eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.eq(other.inner).into()
     }
