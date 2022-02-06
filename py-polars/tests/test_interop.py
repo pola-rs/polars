@@ -192,3 +192,9 @@ def test_from_empty_pandas() -> None:
     polars_df = pl.from_pandas(pandas_df)
     assert polars_df.columns == ["A", "fruits"]
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
+
+
+def test_from_empty_arrow() -> None:
+    df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
+    assert df.columns == ["a", "b"]  # type: ignore
+    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore

@@ -144,6 +144,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     return DataFrame._from_dicts(dicts)
 
 
+# Note that we cannot overload because pyarrow has no stubs :(
 def from_arrow(
     a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
 ) -> Union[DataFrame, Series]:

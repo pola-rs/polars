@@ -356,6 +356,7 @@ class DataFrame:
         -------
         DataFrame
         """
+        # path for table without rows that keeps datatype
         if data.shape[0] == 0:
             return DataFrame([pli.Series(name, data[name]) for name in data.columns])
 
