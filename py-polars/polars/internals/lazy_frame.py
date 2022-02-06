@@ -1080,7 +1080,7 @@ class LazyFrame:
         """
         return self.slice(0, 1)
 
-    def with_row_count(self, name: str = "row_nr") -> "LazyFrame":
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> "LazyFrame":
         """
         Add a column at index 0 that counts the rows.
 
@@ -1088,8 +1088,10 @@ class LazyFrame:
         ----------
         name
             Name of the column to add.
+        offset
+            Start the row count at this offset
         """
-        return wrap_ldf(self._ldf.with_row_count(name))
+        return wrap_ldf(self._ldf.with_row_count(name, offset))
 
     def fill_null(self, fill_value: Union[int, str, "pli.Expr"]) -> "LazyFrame":
         """

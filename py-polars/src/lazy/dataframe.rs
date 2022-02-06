@@ -529,9 +529,9 @@ impl PyLazyFrame {
         ldf.melt(id_vars, value_vars).into()
     }
 
-    pub fn with_row_count(&self, name: &str) -> Self {
+    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.with_row_count(name).into()
+        ldf.with_row_count(name, offset).into()
     }
 
     pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {

@@ -185,3 +185,78 @@ fn test_lazy_filter_and_rename() {
 
     assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
 }
+
+#[test]
+fn test_with_row_count_opts() -> Result<()> {
+    let df = df![
+        "a" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .tail(5)
+        .collect()?;
+    let expected = df![
+        "row_nr" => [5, 6, 7, 8, 9],
+        "a" => [5, 6, 7, 8, 9],
+    ]?;
+    assert!(out.frame_equal(&expected));
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .slice(1, 2)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[1, 2]
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .filter(col("a").eq(lit(3i32)))
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[3]
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .slice(1, 2)
+        .with_row_count("row_nr", None)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[0, 1]
+    );
+
+    let out = df
+        .lazy()
+        .filter(col("a").eq(lit(3i32)))
+        .with_row_count("row_nr", None)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .u32()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[0]
+    );
+
+    Ok(())
+}

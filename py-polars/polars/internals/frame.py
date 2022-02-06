@@ -2288,7 +2288,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def with_row_count(self, name: str = "row_nr") -> "DataFrame":
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> "DataFrame":
         """
         Add a column at index 0 that counts the rows.
 
@@ -2296,8 +2296,10 @@ class DataFrame:
         ----------
         name
             Name of the column to add.
+        offset
+            Start the row count at this offset. Default = 0
         """
-        return wrap_df(self._df.with_row_count(name))
+        return wrap_df(self._df.with_row_count(name, offset))
 
     def groupby(
         self,
