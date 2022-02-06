@@ -35,6 +35,7 @@ fn test_join_suffix_and_drop() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "cross_join")]
 fn test_cross_join_pd() -> Result<()> {
     let food = df![
         "name"=> ["Omelette", "Fried Egg"],
