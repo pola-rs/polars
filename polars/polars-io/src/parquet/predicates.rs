@@ -107,11 +107,8 @@ pub(crate) fn collect_statistics(
     let mut fields = vec![];
     let mut stats = vec![];
 
-    for (column_chunk_md, fld) in md.iter().zip(&schema.fields) {
-        if let Some(parquet_stats) = column_chunk_md.statistics() {
-            let parquet_stats = parquet_stats?;
-            let st = deserialize_statistics(&*parquet_stats)?;
-
+    for fld in &schema.fields {
+        for st in deserialize_statistics(fld, md)?.into_iter().flatten() {
             fields.push(fld.into());
             stats.push(ColumnStats(st));
         }
