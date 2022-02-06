@@ -5,6 +5,7 @@ use crate::physical_plan::executors::groupby_rolling::GroupByRollingExec;
 #[cfg(feature = "ipc")]
 use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
+use crate::prelude::count::CountExpr;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
 use crate::utils::{expr_to_root_column_name, has_window_aexpr};
@@ -486,6 +487,7 @@ impl DefaultPlanner {
         use AExpr::*;
 
         match expr_arena.get(expression).clone() {
+            Count => Ok(Arc::new(CountExpr::new())),
             Window {
                 mut function,
                 partition_by,

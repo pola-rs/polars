@@ -1285,6 +1285,10 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+pub fn count() -> PyExpr {
+    dsl::count().into()
+}
+
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }

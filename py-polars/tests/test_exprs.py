@@ -75,3 +75,15 @@ def test_list_join_strings() -> None:
     s = pl.Series("a", [["ab", "c", "d"], ["e", "f"], ["g"], []])
     expected = pl.Series("a", ["ab-c-d", "e-f", "g", ""])
     verify_series_and_expr_api(s, expected, "arr.join", "-")
+
+
+def test_count_expr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 3, 3], "b": ["a", "a", "b", "a", "a"]})
+
+    out = df.select(pl.count())
+    assert out.shape == (1, 1)
+    assert out[0, 0] == 5
+
+    out = df.groupby("b", maintain_order=True).agg(pl.count())
+    assert out["b"].to_list() == ["a", "b"]
+    assert out["count"].to_list() == [4, 1]

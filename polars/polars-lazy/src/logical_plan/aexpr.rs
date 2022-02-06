@@ -98,6 +98,7 @@ pub enum AExpr {
         offset: i64,
         length: usize,
     },
+    Count,
 }
 
 impl Default for AExpr {
@@ -126,6 +127,7 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
+            Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
 

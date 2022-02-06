@@ -332,6 +332,8 @@ pub enum Expr {
         value: String,
         expr: Box<Expr>,
     },
+    /// Special case without that does not need columns
+    Count,
 }
 
 impl Default for Expr {
@@ -2188,6 +2190,11 @@ where
             fmt_str: "",
         },
     }
+}
+
+/// Count expression
+pub fn count() -> Expr {
+    Expr::Count
 }
 
 #[cfg(test)]

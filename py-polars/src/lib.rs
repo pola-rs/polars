@@ -51,6 +51,11 @@ fn col(name: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn count() -> dsl::PyExpr {
+    dsl::count()
+}
+
+#[pyfunction]
 fn cols(names: Vec<String>) -> dsl::PyExpr {
     dsl::cols(names)
 }
@@ -344,6 +349,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
