@@ -1078,6 +1078,24 @@ describe("expr.str", () => {
     expect(actual).toFrameEqual(expected);
     expect(seriesActual).toSeriesEqual(expected.getColumn("isLinux"));
   });
+  test("split", () => {
+    const df = pl.DataFrame({"a": ["ab,cd", "e,fg", "h"]});
+    const expected = pl.DataFrame({"split": [["ab", "cd"], ["e", "fg"], ["h"]]});
+    const actual = df.select(
+      col("a")
+        .str
+        .split(",")
+        .as("split")
+    );
+    const actualFromSeries = df.getColumn("a")
+      .str
+      .split(",")
+      .rename("split")
+      .toFrame();
+
+    expect(actual).toFrameEqual(expected);
+    expect(actualFromSeries).toFrameEqual(expected);
+  });
   test("extract", () => {
     const df = pl.DataFrame({
       "a": [
@@ -1591,6 +1609,45 @@ describe("expr.lst", () => {
     expect(actual).toFrameEqual(expected);
     expect(actualFromSeries).toFrameEqual(expected);
   });
+  test("join", () => {
+
+    const df = pl.DataFrame({"a": [["ab", "cd"], ["e", "fg"], ["h"]]});
+    const expected = pl.DataFrame({"joinedString": ["ab,cd", "e,fg", "h"]});
+    const actual = df.select(
+      col("a")
+        .lst
+        .join()
+        .as("joinedString")
+    );
+    const actualFromSeries = df.getColumn("a")
+      .lst
+      .join()
+      .rename("joinedString")
+      .toFrame();
+
+    expect(actual).toFrameEqual(expected);
+    expect(actualFromSeries).toFrameEqual(expected);
+  });
+  test("join:separator", () => {
+
+    const df = pl.DataFrame({"a": [["ab", "cd"], ["e", "fg"], ["h"]]});
+    const expected = pl.DataFrame({"joinedString": ["ab|cd", "e|fg", "h"]});
+    const actual = df.select(
+      col("a")
+        .lst
+        .join("|")
+        .as("joinedString")
+    );
+    const actualFromSeries = df.getColumn("a")
+      .lst
+      .join("|")
+      .rename("joinedString")
+      .toFrame();
+
+    expect(actual).toFrameEqual(expected);
+    expect(actualFromSeries).toFrameEqual(expected);
+  });
+
   test("last", () => {
     const df = pl.DataFrame({"a": [[1, 10], [2, 12]]});
     const expected = pl.DataFrame({"last": [10, 12]});

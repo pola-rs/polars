@@ -315,6 +315,28 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   explode(columns: ExprOrString[]): DataFrame
   explode(column: ExprOrString, ...columns: ExprOrString[]): DataFrame
   /**
+   *
+   *
+   * __Extend the memory backed by this `DataFrame` with the values from `other`.__
+   * ___
+
+    Different from `vstack` which adds the chunks from `other` to the chunks of this `DataFrame`
+    `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+
+    If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+    and thus will yield faster queries.
+
+    Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
+    online operations where you add `n` rows and rerun a query.
+
+    Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
+    when you read in multiple files and when to store them in a single `DataFrame`.
+    In the latter case, finish the sequence of `vstack` operations with a `rechunk`.
+
+   * @param other DataFrame to vertically add.
+   */
+  extend(other: DataFrame): DataFrame
+  /**
    * Fill null/missing values by a filling strategy
    *
    * @param strategy - One of:
@@ -1577,6 +1599,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         .lazy()
         .explode(columns)
         .collectSync({noOptimization:true});
+    },
+    extend(other) {
+      return wrap("extend", {other: other._df});
     },
     filter(predicate)  {
       return this

@@ -238,13 +238,22 @@ export interface Series<T> extends
    * ```
    */
   explode(): any
-  /**
- * Extend the Series with given number of values.
- * @param value The value to extend the Series with. This value may be null to fill with nulls.
- * @param n The number of values to extend.
- */
+ /**
+  * Extend the Series with given number of values.
+  * @param value The value to extend the Series with. This value may be null to fill with nulls.
+  * @param n The number of values to extend.
+  * @deprecated
+  * @see {@link extendConstant}
+  */
   extend(value: any, n: number): Series<T>
   extend(opt: {value: any, n: number}): Series<T>
+  /**
+   * Extend the Series with given number of values.
+   * @param value The value to extend the Series with. This value may be null to fill with nulls.
+   * @param n The number of values to extend.
+   */
+  extendConstant(value: any, n: number): Series<T>
+  extendConstant(opt: {value: any, n: number}): Series<T>
   /**
    * __Fill null values with a filling strategy.__
    * ___
@@ -1224,11 +1233,14 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     },
     explode: noArgWrap("explode"),
     extend(o, n?) {
+      return this.extendConstant(o, n);
+    },
+    extendConstant(o, n?) {
       if (n !== null && typeof n === "number") {
-        return wrap("extend", {value: o, n});
+        return wrap("extend_constant", {value: o, n});
       }
 
-      return wrap("extend", o);
+      return wrap("extend_constant", o);
     },
     fillNull(strategy) {
       return typeof strategy === "string" ?

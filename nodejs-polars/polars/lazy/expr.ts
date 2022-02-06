@@ -162,9 +162,18 @@ export interface Expr extends
    * Extend the Series with given number of values.
    * @param value The value to extend the Series with. This value may be null to fill with nulls.
    * @param n The number of values to extend.
+   * @deprecated
+   * @see {@link extendConstant}
    */
   extend(value: any, n: number): Expr
   extend(opt: {value: any, n: number}): Expr
+  /**
+   * Extend the Series with given number of values.
+   * @param value The value to extend the Series with. This value may be null to fill with nulls.
+   * @param n The number of values to extend.
+   */
+  extendConstant(value: any, n: number): Expr
+  extendConstant(opt: {value: any, n: number}): Expr
   /** Fill nan value with a fill value */
   fillNan(other: any): Expr
   /** Fill null value with a fill value or strategy */
@@ -602,10 +611,17 @@ const _Expr = (_expr: any): Expr => {
     explode: wrapNullArgs("explode"),
     extend(o, n?) {
       if(n !== null && typeof n === "number") {
-        return wrap("extend", {value: o, n});
+        return wrap("extendConstant", {value: o, n});
       }
 
-      return wrap("extend", o);
+      return wrap("extendConstant", o);
+    },
+    extendConstant(o, n?) {
+      if(n !== null && typeof n === "number") {
+        return wrap("extendConstant", {value: o, n});
+      }
+
+      return wrap("extendConstant", o);
     },
     fillNan: wrapExprArg("fillNan", true),
     fillNull(fillValue)  {

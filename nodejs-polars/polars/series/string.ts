@@ -153,6 +153,13 @@ export interface StringFunctions {
    */
   slice(start: number, length?: number): Series<string>
   /**
+   * Split a string into substrings using the specified separator.
+   * The return type will by of type List<Utf8>
+   * @param separator — A string that identifies character or characters to use in separating the string.
+   * @param inclusive Include the split character/string in the results
+   */
+  split(separator: string, options?: {inclusive?: boolean} | boolean): Series<Series<string>>
+  /**
    * Parse a Series of dtype Utf8 to a Date/Datetime Series.
    * @param datatype Date or Datetime.
    * @param fmt formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
@@ -233,6 +240,23 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
     },
     slice(start: number, length?: number) {
       return wrap("slice", {start, length});
+    },
+    split(by: string, options?) {
+      const inclusive = typeof options === "boolean" ? options : options?.inclusive;
+
+      const s = seriesWrapper(_s);
+
+      return s
+        .toFrame()
+        .select(
+          col(s.name)
+            .str
+            .split(by, inclusive)
+            .as(s.name)
+        )
+        .getColumn(s.name);
+
+
     },
     strftime(dtype, fmt?) {
       if (dtype === DataType.Date) {

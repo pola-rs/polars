@@ -917,6 +917,7 @@ pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
+
 #[js_function(1)]
 pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;

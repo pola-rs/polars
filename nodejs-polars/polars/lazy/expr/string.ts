@@ -158,7 +158,13 @@ export interface ExprString {
    * @param length - Optional length of the slice.
    */
   slice(start: number, length?: number): Expr;
-    /**
+  /**
+   * Split a string into substrings using the specified separator and return them as a Series.
+   * @param separator — A string that identifies character or characters to use in separating the string.
+   * @param inclusive Include the split character/string in the results
+   */
+  split(by: string, options?: {inclusive?: boolean} | boolean): Expr
+  /**
    * Parse a Series of dtype Utf8 to a Date/Datetime Series.
    * @param datatype Date or Datetime.
    * @param fmt formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
@@ -230,6 +236,11 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
     },
     slice(start: number, length?: number) {
       return wrap("slice", {start, length});
+    },
+    split(by: string, options?) {
+      const inclusive = typeof options === "boolean" ? options : options?.inclusive;
+
+      return wrap("split", {by, inclusive});
     },
     strftime(dtype, fmt?) {
       if (dtype === DataType.Date) {

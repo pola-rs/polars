@@ -2,7 +2,7 @@ import * as series from "./series/series";
 import * as df from "./dataframe";
 import { DataType } from "./datatypes";
 import * as func from "./functions";
-import io from "./io";
+import * as io from "./io";
 import * as cfg from "./cfg";
 import {version as _version} from "../package.json";
 
