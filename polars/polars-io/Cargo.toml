@@ -16,7 +16,7 @@ json = ["arrow/io_json"]
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # ipc = []
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "polars-utils"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "polars-utils", "memmap"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
@@ -31,8 +31,8 @@ private = []
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "b46a636f31d70a20bd54df9c7f9e9363053ade08", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "cherry_pick", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "0175d9e3c54f6c3c81e3a6db3f1c39b4ba3b93fe", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "cherry_pick", default-features = false }
 # arrow = { package = "arrow2", version = "0.9", default-features = false }
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
