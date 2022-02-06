@@ -440,6 +440,19 @@ pub fn str_extract(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
+pub fn str_split(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let by = params.get_as::<String>("by")?;
+    let inclusive: bool = params.get_or("inclusive", false)?;
+    if inclusive {
+        expr.clone().str().split_inclusive(&by).try_into_js(&cx)
+    } else {
+        expr.clone().str().split(&by).try_into_js(&cx)
+    }
+}
+
+#[js_function(1)]
 pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
@@ -600,19 +613,20 @@ pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
+pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
     let val = params.get::<JsUnknown>("value")?;
     let n = params.get_as::<usize>("n")?;
     match val.get_type()? {
-        ValueType::Undefined | ValueType::Null => {
-            expr.apply(move |s| s.extend(AnyValue::Null, n), GetOutput::same_type())
-        }
+        ValueType::Undefined | ValueType::Null => expr.apply(
+            move |s| s.extend_constant(AnyValue::Null, n),
+            GetOutput::same_type(),
+        ),
         ValueType::Boolean => {
             let val = bool::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::Boolean(val), n),
+                move |s| s.extend_constant(AnyValue::Boolean(val), n),
                 GetOutput::same_type(),
             )
         }
@@ -622,18 +636,18 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
                 let val = f_val as i64;
                 if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
                     expr.apply(
-                        move |s| s.extend(AnyValue::Int32(val as i32), n),
+                        move |s| s.extend_constant(AnyValue::Int32(val as i32), n),
                         GetOutput::same_type(),
                     )
                 } else {
                     expr.apply(
-                        move |s| s.extend(AnyValue::Int64(val), n),
+                        move |s| s.extend_constant(AnyValue::Int64(val), n),
                         GetOutput::same_type(),
                     )
                 }
             } else {
                 expr.apply(
-                    move |s| s.extend(AnyValue::Float64(f_val), n),
+                    move |s| s.extend_constant(AnyValue::Float64(f_val), n),
                     GetOutput::same_type(),
                 )
             }
@@ -641,14 +655,14 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
         ValueType::String => {
             let val = String::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::Utf8(&val), n),
+                move |s| s.extend_constant(AnyValue::Utf8(&val), n),
                 GetOutput::same_type(),
             )
         }
         ValueType::Bigint => {
             let val = u64::from_js(val)?;
             expr.apply(
-                move |s| s.extend(AnyValue::UInt64(val), n),
+                move |s| s.extend_constant(AnyValue::UInt64(val), n),
                 GetOutput::same_type(),
             )
         }
@@ -658,7 +672,9 @@ pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
                 let d = d.value_of()?;
                 let d = d as i64;
                 expr.apply(
-                    move |s| s.extend(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n),
+                    move |s| {
+                        s.extend_constant(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n)
+                    },
                     GetOutput::same_type(),
                 )
             } else {
@@ -850,55 +866,31 @@ pub fn rolling_skew(cx: CallContext) -> JsResult<JsExternal> {
 
 #[js_function(1)]
 pub fn lst_lengths(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    let function = |s: Series| {
-        let ca = s.list()?;
-        Ok(ca.lst_lengths().into_series())
-    };
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt32))
+    get_params(&cx)?
+        .get_external::<Expr>(&cx, "_expr")?
+        .clone()
+        .arr()
+        .lengths()
         .try_into_js(&cx)
 }
 
 #[js_function(1)]
 pub fn lst_max(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    expr.clone()
-        .map(
-            |s| Ok(s.list()?.lst_max()),
-            GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), *adt.clone())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }),
-        )
+    get_params(&cx)?
+        .get_external::<Expr>(&cx, "_expr")?
+        .clone()
+        .arr()
+        .max()
         .try_into_js(&cx)
 }
 
 #[js_function(1)]
 pub fn lst_min(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    expr.clone()
-        .map(
-            |s| Ok(s.list()?.lst_min()),
-            GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), *adt.clone())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }),
-        )
+    get_params(&cx)?
+        .get_external::<Expr>(&cx, "_expr")?
+        .clone()
+        .arr()
+        .min()
         .try_into_js(&cx)
 }
 
@@ -907,17 +899,8 @@ pub fn lst_sum(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
         .get_external::<Expr>(&cx, "_expr")?
         .clone()
-        .map(
-            |s| Ok(s.list()?.lst_sum()),
-            GetOutput::map_field(|f| {
-                if let DataType::List(adt) = f.data_type() {
-                    Field::new(f.name(), *adt.clone())
-                } else {
-                    // inner type
-                    f.clone()
-                }
-            }),
-        )
+        .arr()
+        .sum()
         .try_into_js(&cx)
 }
 
@@ -926,10 +909,8 @@ pub fn lst_mean(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
         .get_external::<Expr>(&cx, "_expr")?
         .clone()
-        .map(
-            |s| Ok(s.list()?.lst_mean().into_series()),
-            GetOutput::from_type(DataType::Float64),
-        )
+        .arr()
+        .mean()
         .try_into_js(&cx)
 }
 
@@ -939,12 +920,7 @@ pub fn lst_sort(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let reverse = params.get_as::<bool>("reverse")?;
 
-    expr.clone()
-        .map(
-            move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
+    expr.clone().arr().sort(reverse).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -952,10 +928,8 @@ pub fn lst_reverse(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
         .get_external::<Expr>(&cx, "_expr")?
         .clone()
-        .map(
-            move |s| Ok(s.list()?.lst_reverse().into_series()),
-            GetOutput::same_type(),
-        )
+        .arr()
+        .reverse()
         .try_into_js(&cx)
 }
 
@@ -964,10 +938,8 @@ pub fn lst_unique(cx: CallContext) -> JsResult<JsExternal> {
     get_params(&cx)?
         .get_external::<Expr>(&cx, "_expr")?
         .clone()
-        .map(
-            move |s| Ok(s.list()?.lst_unique()?.into_series()),
-            GetOutput::same_type(),
-        )
+        .arr()
+        .unique()
         .try_into_js(&cx)
 }
 
@@ -977,15 +949,16 @@ pub fn lst_get(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let index = params.get_as::<i64>("index")?;
 
-    expr.clone()
-        .map(
-            move |s| s.list()?.lst_get(index),
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::List(inner) => Field::new(field.name(), *inner.clone()),
-                _ => panic!("should be a list type"),
-            }),
-        )
-        .try_into_js(&cx)
+    expr.clone().arr().get(index).try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn lst_join(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let sep = params.get_as::<String>("separator")?;
+
+    expr.clone().arr().join(&sep).try_into_js(&cx)
 }
 
 #[js_function(1)]

@@ -4,6 +4,13 @@ import {col} from "../lazy/functions";
 export interface ListFunctions<T> {
   get(index: number): Series<T>
   first(): Series<T>
+  /**
+   * Join all string items in a sublist and place a separator between them.
+   * This errors if inner type of list `!= Utf8`.
+   * @param separator A string used to separate one element of the list from the next in the resulting string.
+   * If omitted, the list elements are separated with a comma.
+   */
+  join(separator?: string): Series<string>
   last(): Series<T>
   /** Get the length of the arrays as UInt32. */
   lengths(): Series<number>
@@ -41,6 +48,7 @@ export const ListFunctions = <T>(_s: JsSeries): ListFunctions<T> => {
   return {
     get: callExpr("get"),
     first: callExpr("first"),
+    join: callExpr("join"),
     last: callExpr("last"),
     lengths: callExpr("lengths"),
     max: callExpr("max"),

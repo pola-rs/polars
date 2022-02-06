@@ -905,16 +905,26 @@ pub fn rechunk(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
         rechunked_series.try_into_js(&cx).map(Either::A)
     }
 }
+
 #[js_function(1)]
-pub fn extend(cx: CallContext) -> JsResult<JsExternal> {
+pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
+    let series = params.get_external_mut::<Series>(&cx, "_series")?;
     let val = params.get_as::<AnyValue>("value")?;
     let n = params.get_as::<usize>("n")?;
     series
-        .extend(val, n)
+        .extend_constant(val, n)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let series: &mut Series = params.get_external_mut::<Series>(&cx, "_series")?;
+    let other = params.get_external::<Series>(&cx, "other")?;
+    series.extend(other).map_err(JsPolarsEr::from)?;
+    cx.env.get_undefined()
 }
 
 macro_rules! init_method {

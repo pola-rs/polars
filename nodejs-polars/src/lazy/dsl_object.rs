@@ -43,6 +43,7 @@ impl dsl::JsExpr {
         lst_obj.define_properties(&[
             napi::Property::new(env, "get")?.with_method(dsl::lst_get),
             napi::Property::new(env, "lengths")?.with_method(dsl::lst_lengths),
+            napi::Property::new(env, "join")?.with_method(dsl::lst_join),
             napi::Property::new(env, "max")?.with_method(dsl::lst_max),
             napi::Property::new(env, "mean")?.with_method(dsl::lst_mean),
             napi::Property::new(env, "min")?.with_method(dsl::lst_min),
@@ -62,6 +63,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "replace")?.with_method(dsl::str_replace),
             napi::Property::new(env, "replaceAll")?.with_method(dsl::str_replace_all),
             napi::Property::new(env, "slice")?.with_method(dsl::str_slice),
+            napi::Property::new(env, "split")?.with_method(dsl::str_split),
             napi::Property::new(env, "toLowerCase")?.with_method(dsl::str_to_lowercase),
             napi::Property::new(env, "toUpperCase")?.with_method(dsl::str_to_uppercase),
             napi::Property::new(env, "encodeHex")?.with_method(dsl::hex_encode),
@@ -117,7 +119,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "eq")?.with_method(dsl::eq),
             napi::Property::new(env, "exclude")?.with_method(dsl::exclude),
             napi::Property::new(env, "explode")?.with_method(dsl::explode),
-            napi::Property::new(env, "extend")?.with_method(dsl::extend),
+            napi::Property::new(env, "extendConstant")?.with_method(dsl::extend_constant),
             napi::Property::new(env, "fillNan")?.with_method(dsl::fill_nan),
             napi::Property::new(env, "fillNullWithStrategy")?
                 .with_method(dsl::fill_null_with_strategy),
@@ -185,6 +187,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "sortWith")?.with_method(dsl::sort_with),
             napi::Property::new(env, "std")?.with_method(dsl::std),
             napi::Property::new(env, "suffix")?.with_method(dsl::suffix),
+
             napi::Property::new(env, "sum")?.with_method(dsl::sum),
             napi::Property::new(env, "tail")?.with_method(dsl::tail),
             napi::Property::new(env, "takeEvery")?.with_method(dsl::take_every),

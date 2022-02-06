@@ -581,6 +581,16 @@ pub fn shift(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
+pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
+    let other = params.get_external::<DataFrame>(&cx, "other")?;
+
+    df.extend(other).map_err(JsPolarsEr::from)?;
+    cx.env.get_undefined()
+}
+
+#[js_function(1)]
 pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;

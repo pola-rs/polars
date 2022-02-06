@@ -25,6 +25,7 @@ impl JsDataFrame {
             napi::Property::new(env, "distinct")?.with_method(df::distinct),
             napi::Property::new(env, "drop")?.with_method(df::drop),
             napi::Property::new(env, "dtypes")?.with_method(df::dtypes),
+            napi::Property::new(env, "extend")?.with_method(df::extend),
             napi::Property::new(env, "fill_null")?.with_method(df::fill_null),
             napi::Property::new(env, "filter")?.with_method(df::filter),
             napi::Property::new(env, "find_idx_by_name")?.with_method(df::find_idx_by_name),

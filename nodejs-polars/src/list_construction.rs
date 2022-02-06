@@ -350,7 +350,7 @@ pub fn js_arr_to_list(name: &str, obj: &JsObject, dtype: &DataType) -> JsResult<
                         _ => v.push(None),
                     }
                 }
-                builder.append_iter(v.into_iter());
+                builder.append_trusted_len_iter(v.into_iter());
             }
             builder.finish().into_series()
         }

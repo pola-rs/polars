@@ -14,6 +14,13 @@ export interface ExprList {
   get(index: number): Expr
   /** Get the first value of the sublists. */
   first(): Expr
+  /**
+   * Join all string items in a sublist and place a separator between them.
+   * This errors if inner type of list `!= Utf8`.
+   * @param separator A string used to separate one element of the list from the next in the resulting string.
+   * If omitted, the list elements are separated with a comma.
+   */
+  join(separator?: string): Expr
   /** Get the last value of the sublists. */
   last(): Expr
   lengths(): Expr;
@@ -39,6 +46,9 @@ export const ExprListFunctions = (_expr: any): ExprList => {
     },
     first() {
       return wrap("get", {index:0});
+    },
+    join(separator = ",") {
+      return wrap("join", {separator});
     },
     last() {
       return wrap("get", {index:-1});
