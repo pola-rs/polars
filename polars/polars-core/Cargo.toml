@@ -160,10 +160,10 @@ unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "b46a636f31d70a20bd54df9c7f9e9363053ade08"
-# branch = "from_iter_variants"
+# git = "https://github.com/jorgecarleitao/arrow2"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "b46a636f31d70a20bd54df9c7f9e9363053ade08"
+branch = "cherry_pick"
 # version = "0.9"
 default-features = false
 features = [
