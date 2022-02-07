@@ -18,12 +18,17 @@ impl DurationChunked {
         self.2 = Some(Duration(tu))
     }
 
-    pub fn new_from_duration(name: &str, v: &[ChronoDuration], tu: TimeUnit) -> Self {
+    /// Construct a new [`DurationChunked`] from an iterator over [`ChronoDuration`].
+    pub fn from_duration<I: IntoIterator<Item = ChronoDuration>>(
+        name: &str,
+        v: I,
+        tu: TimeUnit,
+    ) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => |v: &ChronoDuration| v.num_nanoseconds().unwrap(),
-            TimeUnit::Milliseconds => |v: &ChronoDuration| v.num_milliseconds(),
+            TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
+            TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
         };
-        let vals = v.iter().map(func).collect_trusted::<Vec<_>>();
+        let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_duration(tu)
     }
 

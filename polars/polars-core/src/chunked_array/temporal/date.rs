@@ -75,8 +75,9 @@ impl DateChunked {
         ca
     }
 
-    pub fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
-        let unit = v.iter().map(|v| naive_date_to_date(*v)).collect::<Vec<_>>();
+    /// Construct a new [`DateChunked`] from an iterator over [`NaiveDate`].
+    pub fn from_naive_date<I: IntoIterator<Item = NaiveDate>>(name: &str, v: I) -> Self {
+        let unit = v.into_iter().map(naive_date_to_date).collect::<Vec<_>>();
         Int32Chunked::from_vec(name, unit).into()
     }
 
