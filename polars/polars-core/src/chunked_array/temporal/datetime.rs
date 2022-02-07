@@ -169,12 +169,17 @@ impl DatetimeChunked {
         ca
     }
 
-    pub fn new_from_naive_datetime(name: &str, v: &[NaiveDateTime], tu: TimeUnit) -> Self {
+    /// Construct a new [`DatetimeChunked`] from an iterator over [`NaiveDateTime`].
+    pub fn from_naive_datetime<I: IntoIterator<Item = NaiveDateTime>>(
+        name: &str,
+        v: I,
+        tu: TimeUnit,
+    ) -> Self {
         let func = match tu {
             TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
             TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
-        let vals = v.iter().map(func).collect_trusted::<Vec<_>>();
+        let vals = v.into_iter().map(|nd| func(&nd)).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
 
@@ -221,8 +226,11 @@ mod test {
         .collect();
 
         // NOTE: the values are checked and correct.
-        let dt =
-            DatetimeChunked::new_from_naive_datetime("name", &datetimes, TimeUnit::Nanoseconds);
+        let dt = DatetimeChunked::from_naive_datetime(
+            "name",
+            datetimes.iter().copied(),
+            TimeUnit::Nanoseconds,
+        );
         assert_eq!(
             [
                 588470416000_000_000,

@@ -62,7 +62,8 @@ impl TimeChunked {
         self.apply_kernel_cast::<_, UInt32Type>(time_to_nanosecond)
     }
 
-    pub fn new_from_naive_time(name: &str, v: &[NaiveTime]) -> Self {
+    /// Construct a new [`TimeChunked`] from an iterator over [`NaiveTime`].
+    pub fn from_naive_time(name: &str, v: &[NaiveTime]) -> Self {
         let ca: NoNull<Int64Chunked> = v.iter().map(time_to_time64ns).collect_trusted();
         let mut ca = ca.into_inner();
         ca.rename(name);
