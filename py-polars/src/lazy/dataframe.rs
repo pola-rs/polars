@@ -6,7 +6,7 @@ use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
-use polars::prelude::{ClosedWindow, DataFrame, Field, JoinType, Schema};
+use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
 use polars_core::prelude::QuantileInterpolOptions;
@@ -107,11 +107,22 @@ impl PyLazyFrame {
         with_schema_modify: Option<PyObject>,
         rechunk: bool,
         skip_rows_after_header: usize,
+        encoding: &str,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
+
+        let encoding = match encoding {
+            "utf8" => CsvEncoding::Utf8,
+            "utf8-lossy" => CsvEncoding::LossyUtf8,
+            e => {
+                return Err(
+                    PyPolarsEr::Other(format!("encoding not {} not implemented.", e)).into(),
+                )
+            }
+        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
@@ -138,6 +149,7 @@ impl PyLazyFrame {
             .with_quote_char(quote_char)
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
+            .with_encoding(encoding)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {

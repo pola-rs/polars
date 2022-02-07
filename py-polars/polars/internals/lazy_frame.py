@@ -70,6 +70,7 @@ class LazyFrame:
         with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
         infer_schema_length: Optional[int] = 100,
         n_rows: Optional[int] = None,
+        encoding: str = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
@@ -102,6 +103,7 @@ class LazyFrame:
             with_column_names,
             rechunk,
             skip_rows_after_header,
+            encoding,
         )
         return self
 

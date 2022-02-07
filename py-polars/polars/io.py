@@ -428,6 +428,7 @@ def scan_csv(
     with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
     infer_schema_length: Optional[int] = 100,
     n_rows: Optional[int] = None,
+    encoding: str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
@@ -483,6 +484,10 @@ def scan_csv(
         If set to ``None``, a full table scan will be done (slow).
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
+    encoding
+        Allowed encodings: ``utf8`` or ``utf8-lossy``.
+        Lossy means that invalid utf8 values are replaced with ``�``
+        characters.
     low_memory
         Reduce memory usage in expense of performance.
     rechunk
@@ -555,6 +560,7 @@ def scan_csv(
         low_memory=low_memory,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
+        encoding=encoding,
     )
 
 

@@ -4,6 +4,7 @@ use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use ahash::RandomState;
 use polars_core::prelude::*;
+use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "ipc")]
@@ -101,6 +102,7 @@ impl LogicalPlanBuilder {
         infer_schema_length: Option<usize>,
         rechunk: bool,
         skip_rows_after_header: usize,
+        encoding: CsvEncoding,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -146,6 +148,7 @@ impl LogicalPlanBuilder {
                 quote_char,
                 null_values,
                 rechunk,
+                encoding,
             },
             predicate: None,
             aggregate: vec![],

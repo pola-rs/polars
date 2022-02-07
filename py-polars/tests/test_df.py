@@ -466,7 +466,7 @@ def test_groupby() -> None:
     assert df.groupby("b").last().shape == (2, 3)
     assert df.groupby("b").max().shape == (2, 3)
     assert df.groupby("b").min().shape == (2, 3)
-    assert df.groupby("b").count().shape == (2, 3)
+    assert df.groupby("b").count().shape == (2, 2)
     assert df.groupby("b").mean().shape == (2, 3)
     assert df.groupby("b").n_unique().shape == (2, 3)
     assert df.groupby("b").median().shape == (2, 3)
@@ -1581,7 +1581,7 @@ def test_extension() -> None:
 
 def test_groupby_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
-    expected = pl.DataFrame({"x": ["b", "a"], "y_count": [2, 1]})
+    expected = pl.DataFrame({"x": ["b", "a"], "count": [2, 1]})
     assert df.groupby("x", maintain_order=True).count().frame_equal(expected)
     expected = pl.DataFrame({"x": ["b", "a"], "y_agg_list": [[0, 2], [1]]})
     assert df.groupby("x", maintain_order=True).agg_list().frame_equal(expected)
