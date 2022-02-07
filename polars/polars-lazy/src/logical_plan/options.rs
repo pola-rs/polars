@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::csv::NullValues;
+use polars_io::csv::{CsvEncoding, NullValues};
 
 #[derive(Clone, Debug)]
 pub struct CsvParserOptions {
@@ -16,6 +16,7 @@ pub struct CsvParserOptions {
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
     pub(crate) rechunk: bool,
+    pub(crate) encoding: CsvEncoding,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]

@@ -230,17 +230,17 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
     let gil = Python::acquire_gil();
     let py = gil.python();
 
+    // bytes object
+    if let Ok(bytes) = py_f.downcast::<PyBytes>() {
+        Ok(Box::new(Cursor::new(bytes.as_bytes())))
+    }
     // string so read file
-    if let Ok(pstring) = py_f.downcast::<PyString>() {
+    else if let Ok(pstring) = py_f.downcast::<PyString>() {
         let s = pstring.to_string();
         let p = std::path::Path::new(&s);
         let p = resolve_homedir(p);
         let f = File::open(&p)?;
         Ok(Box::new(f))
-    }
-    // bytes object
-    else if let Ok(bytes) = py_f.downcast::<PyBytes>() {
-        Ok(Box::new(Cursor::new(bytes.as_bytes())))
     }
     // a normal python file: with open(...) as f:.
     else if py_f.getattr("read").is_ok() {

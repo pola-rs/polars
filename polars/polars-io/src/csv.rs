@@ -142,6 +142,7 @@ where
 }
 
 #[derive(Copy, Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum CsvEncoding {
     /// Utf8 encoding
     Utf8,
@@ -149,7 +150,8 @@ pub enum CsvEncoding {
     LossyUtf8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum NullValues {
     /// A single value that's used for all columns
     AllColumns(String),
@@ -250,7 +252,7 @@ where
         self
     }
 
-    /// Sets the CsvEncoding
+    /// Set  [`CsvEncoding`]
     pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
         self.encoding = enc;
         self

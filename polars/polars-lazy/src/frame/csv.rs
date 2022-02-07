@@ -1,7 +1,7 @@
 use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::csv::NullValues;
+use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::csv_core::utils::get_reader_bytes;
 use polars_io::csv_core::utils::infer_file_schema;
 
@@ -24,6 +24,7 @@ pub struct LazyCsvReader<'a> {
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
+    encoding: CsvEncoding,
 }
 
 #[cfg(feature = "csv-file")]
@@ -47,6 +48,7 @@ impl<'a> LazyCsvReader<'a> {
             infer_schema_length: Some(100),
             rechunk: true,
             skip_rows_after_header: 0,
+            encoding: CsvEncoding::Utf8,
         }
     }
 
@@ -159,6 +161,13 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set  [`CsvEncoding`]
+    #[must_use]
+    pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
+        self.encoding = enc;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -203,6 +212,7 @@ impl<'a> LazyCsvReader<'a> {
             self.infer_schema_length,
             self.rechunk,
             self.skip_rows_after_header,
+            self.encoding,
         )?
         .build()
         .into();

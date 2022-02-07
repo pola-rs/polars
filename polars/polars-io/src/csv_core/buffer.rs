@@ -122,8 +122,11 @@ impl Utf8Field {
     }
 }
 
+/// We delay validation if we expect utf8 and no errors
+/// In case of `ignore-error`
+#[inline]
 fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
-    !matches!((encoding, ignore_errors), (CsvEncoding::LossyUtf8, true))
+    !(matches!(encoding, CsvEncoding::LossyUtf8) || ignore_errors)
 }
 
 impl ParsedBuffer<Utf8Type> for Utf8Field {
@@ -149,6 +152,8 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             self.data
                 .reserve(std::cmp::max(self.data.capacity(), bytes.len()))
         }
+
+        // note that one branch writes without updating the length, so we must do that later.
         let n_written = if needs_escaping {
             // Safety:
             // we just allocated enough capacity and data_len is correct.
@@ -173,6 +178,9 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
                     )
                     .into_owned();
                     let b = s.as_bytes();
+                    // Make sure that we extend at the proper location,
+                    // otherwise we append valid bytes to invalid utf8 bytes.
+                    unsafe { self.data.set_len(data_len) }
                     self.data.extend_from_slice(b);
                     self.offsets.push(self.data.len() as i64);
                     self.validity.push(true);

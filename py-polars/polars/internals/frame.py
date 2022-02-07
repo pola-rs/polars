@@ -4887,7 +4887,7 @@ class GroupBy:
         """
         Count the number of values in each group.
         """
-        return self.agg(pli.all().count())
+        return self.agg(pli.lazy_functions.count())
 
     def mean(self) -> DataFrame:
         """
