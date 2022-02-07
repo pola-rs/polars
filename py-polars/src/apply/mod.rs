@@ -28,20 +28,23 @@ fn iterator_to_primitive<T>(
 where
     T: PyArrowPrimitiveType,
 {
-    let mut ca: ChunkedArray<T> = if init_null_count > 0 {
-        (0..init_null_count)
-            .map(|_| None)
-            .chain(std::iter::once(first_value))
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else if first_value.is_some() {
-        std::iter::once(first_value)
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else {
-        it.collect()
+    // safety: we know the iterators len
+    let mut ca: ChunkedArray<T> = unsafe {
+        if init_null_count > 0 {
+            (0..init_null_count)
+                .map(|_| None)
+                .chain(std::iter::once(first_value))
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else if first_value.is_some() {
+            std::iter::once(first_value)
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else {
+            it.collect()
+        }
     };
     debug_assert_eq!(ca.len(), capacity);
     ca.rename(name);
@@ -55,20 +58,23 @@ fn iterator_to_bool(
     name: &str,
     capacity: usize,
 ) -> ChunkedArray<BooleanType> {
-    let mut ca: BooleanChunked = if init_null_count > 0 {
-        (0..init_null_count)
-            .map(|_| None)
-            .chain(std::iter::once(first_value))
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else if first_value.is_some() {
-        std::iter::once(first_value)
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else {
-        it.collect()
+    // safety: we know the iterators len
+    let mut ca: BooleanChunked = unsafe {
+        if init_null_count > 0 {
+            (0..init_null_count)
+                .map(|_| None)
+                .chain(std::iter::once(first_value))
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else if first_value.is_some() {
+            std::iter::once(first_value)
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else {
+            it.collect()
+        }
     };
     debug_assert_eq!(ca.len(), capacity);
     ca.rename(name);
@@ -82,20 +88,23 @@ fn iterator_to_object(
     name: &str,
     capacity: usize,
 ) -> ObjectChunked<ObjectValue> {
-    let mut ca: ObjectChunked<ObjectValue> = if init_null_count > 0 {
-        (0..init_null_count)
-            .map(|_| None)
-            .chain(std::iter::once(first_value))
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else if first_value.is_some() {
-        std::iter::once(first_value)
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else {
-        it.collect()
+    // safety: we know the iterators len
+    let mut ca: ObjectChunked<ObjectValue> = unsafe {
+        if init_null_count > 0 {
+            (0..init_null_count)
+                .map(|_| None)
+                .chain(std::iter::once(first_value))
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else if first_value.is_some() {
+            std::iter::once(first_value)
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else {
+            it.collect()
+        }
     };
     debug_assert_eq!(ca.len(), capacity);
     ca.rename(name);
@@ -109,20 +118,23 @@ fn iterator_to_utf8<'a>(
     name: &str,
     capacity: usize,
 ) -> Utf8Chunked {
-    let mut ca: Utf8Chunked = if init_null_count > 0 {
-        (0..init_null_count)
-            .map(|_| None)
-            .chain(std::iter::once(first_value))
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else if first_value.is_some() {
-        std::iter::once(first_value)
-            .chain(it)
-            .trust_my_length(capacity)
-            .collect()
-    } else {
-        it.collect()
+    // safety: we know the iterators len
+    let mut ca: Utf8Chunked = unsafe {
+        if init_null_count > 0 {
+            (0..init_null_count)
+                .map(|_| None)
+                .chain(std::iter::once(first_value))
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else if first_value.is_some() {
+            std::iter::once(first_value)
+                .chain(it)
+                .trust_my_length(capacity)
+                .collect_trusted()
+        } else {
+            it.collect()
+        }
     };
     debug_assert_eq!(ca.len(), capacity);
     ca.rename(name);

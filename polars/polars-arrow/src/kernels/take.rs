@@ -1,10 +1,38 @@
+use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
 use arrow::array::*;
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::{Buffer, MutableBuffer};
-use arrow::datatypes::DataType;
+use arrow::buffer::Buffer;
+use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 use std::sync::Arc;
+
+/// # Safety
+/// Does not do bounds checks
+pub unsafe fn take_unchecked(arr: &dyn Array, idx: &UInt32Array) -> ArrayRef {
+    use PhysicalType::*;
+    match arr.data_type().to_physical_type() {
+        Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
+            let arr: &PrimitiveArray<$T> = arr.as_any().downcast_ref().unwrap();
+            if arr.validity().is_some() {
+                take_primitive_unchecked::<$T>(arr, idx)
+            } else {
+                take_no_null_primitive::<$T>(arr, idx)
+            }
+        }),
+        LargeUtf8 => {
+            let arr = arr.as_any().downcast_ref().unwrap();
+            take_utf8_unchecked(arr, idx)
+        }
+        // TODO! implement proper unchecked version
+        #[cfg(feature = "compute")]
+        Boolean => {
+            use arrow::compute::take::take;
+            Arc::from(take(arr, idx).unwrap())
+        }
+        _ => unimplemented!(),
+    }
+}
 
 /// Take kernel for single chunk with nulls and arrow array as index that may have nulls.
 /// # Safety
@@ -13,14 +41,17 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
     indices: &UInt32Array,
 ) -> Arc<PrimitiveArray<T>> {
-    let array_values = arr.values();
-    let index_values = indices.values();
+    let array_values = arr.values().as_slice();
+    let index_values = indices.values().as_slice();
     let validity_values = arr.validity().expect("should have nulls");
 
     // first take the values, these are always needed
-    let values: AlignedVec<T> = index_values
+    let values: Vec<T> = index_values
         .iter()
-        .map(|idx| *array_values.get_unchecked(*idx as usize))
+        .map(|idx| {
+            debug_assert!((*idx as usize) < array_values.len());
+            *array_values.get_unchecked(*idx as usize)
+        })
         .collect_trusted();
 
     // the validity buffer we will fill with all valid. And we unset the ones that are null
@@ -48,7 +79,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
             }
         });
     };
-    let arr = PrimitiveArray::from_data(T::DATA_TYPE, values.into(), Some(validity.into()));
+    let arr = PrimitiveArray::from_data(T::PRIMITIVE.into(), values.into(), Some(validity.into()));
 
     Arc::new(arr)
 }
@@ -64,13 +95,18 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
 
-    let iter = index_values
-        .iter()
-        .map(|idx| *array_values.get_unchecked(*idx as usize));
+    let iter = index_values.iter().map(|idx| {
+        debug_assert!((*idx as usize) < array_values.len());
+        *array_values.get_unchecked(*idx as usize)
+    });
 
     let values = Buffer::from_trusted_len_iter(iter);
     let validity = indices.validity().cloned();
-    Arc::new(PrimitiveArray::from_data(T::DATA_TYPE, values, validity))
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        values,
+        validity,
+    ))
 }
 
 /// Take kernel for single chunk without nulls and an iterator as index.
@@ -89,12 +125,13 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
     debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
 
-    let iter = indices
-        .into_iter()
-        .map(|idx| *array_values.get_unchecked(idx));
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!((idx as usize) < array_values.len());
+        *array_values.get_unchecked(idx)
+    });
 
     let values = Buffer::from_trusted_len_iter_unchecked(iter);
-    Arc::new(PrimitiveArray::from_data(T::DATA_TYPE, values, None))
+    Arc::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))
 }
 
 /// Take kernel for a single chunk with null values and an iterator as index.
@@ -138,10 +175,13 @@ pub unsafe fn take_no_null_primitive_opt_iter_unchecked<
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values().as_slice();
 
-    let iter = indices
-        .into_iter()
-        .map(|opt_idx| opt_idx.map(|idx| *array_values.get_unchecked(idx)));
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::DATA_TYPE);
+    let iter = indices.into_iter().map(|opt_idx| {
+        opt_idx.map(|idx| {
+            debug_assert!(idx < array_values.len());
+            *array_values.get_unchecked(idx)
+        })
+    });
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
 
     Arc::new(arr)
 }
@@ -166,13 +206,14 @@ pub unsafe fn take_primitive_opt_iter_unchecked<
     let iter = indices.into_iter().map(|opt_idx| {
         opt_idx.and_then(|idx| {
             if validity.get_bit_unchecked(idx) {
+                debug_assert!(idx < array_values.len());
                 Some(*array_values.get_unchecked(idx))
             } else {
                 None
             }
         })
     });
-    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::DATA_TYPE);
+    let arr = PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::PRIMITIVE.into());
 
     Arc::new(arr)
 }
@@ -188,11 +229,18 @@ pub unsafe fn take_no_null_bool_iter_unchecked<I: IntoIterator<Item = usize>>(
     indices: I,
 ) -> Arc<BooleanArray> {
     debug_assert!(!arr.has_validity());
-    let iter = indices
-        .into_iter()
-        .map(|idx| Some(arr.values().get_bit_unchecked(idx)));
+    let values = arr.values();
 
-    Arc::new(BooleanArray::from_trusted_len_iter_unchecked(iter))
+    let iter = indices.into_iter().map(|idx| {
+        debug_assert!(idx < values.len());
+        values.get_bit_unchecked(idx)
+    });
+    let mutable = MutableBitmap::from_trusted_len_iter_unchecked(iter);
+    Arc::new(BooleanArray::from_data(
+        DataType::Boolean,
+        mutable.into(),
+        None,
+    ))
 }
 
 /// Take kernel for single chunk and an iterator as index.
@@ -336,7 +384,7 @@ pub unsafe fn take_utf8_unchecked(
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
-    let mut offset_buf = MutableBuffer::<i64>::from_len_zeroed(data_len + 1);
+    let mut offset_buf = vec![0; data_len + 1];
     let offset_typed = offset_buf.as_mut_slice();
 
     let mut length_so_far = 0;
@@ -354,7 +402,7 @@ pub unsafe fn take_utf8_unchecked(
     };
 
     // 16 bytes per string as default alloc
-    let mut values_buf = AlignedVec::<u8>::with_capacity(values_capacity);
+    let mut values_buf = Vec::<u8>::with_capacity(values_capacity);
 
     // both 0 nulls
     if !arr.has_validity() && !indices.has_validity() {
@@ -455,12 +503,12 @@ pub unsafe fn take_utf8_unchecked(
 pub unsafe fn take_value_indices_from_list(
     list: &ListArray<i64>,
     indices: &UInt32Array,
-) -> (UInt32Array, AlignedVec<i64>) {
+) -> (UInt32Array, Vec<i64>) {
     let offsets = list.offsets().as_slice();
 
-    let mut new_offsets = AlignedVec::with_capacity(indices.len());
+    let mut new_offsets = Vec::with_capacity(indices.len());
     // will likely have at least indices.len values
-    let mut values = AlignedVec::with_capacity(indices.len());
+    let mut values = Vec::with_capacity(indices.len());
     let mut current_offset = 0;
     // add first offset
     new_offsets.push(0);

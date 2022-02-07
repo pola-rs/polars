@@ -1,8 +1,9 @@
 [package]
 name = "polars"
-version = "0.18.0"
+version = "0.19.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2018"
+edition = "2021"
+keywords = ["dataframe", "query-engine", "arrow"]
 license = "MIT"
 readme = "../README.md"
 repository = "https://github.com/pola-rs/polars"
@@ -13,8 +14,8 @@ rows = ["polars-core/rows"]
 simd = ["polars-core/simd"]
 avx512 = ["polars-core/avx512"]
 docs = ["polars-core/docs"]
-temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal"]
-random = ["polars-core/random"]
+temporal = ["polars-core/temporal", "polars-lazy/temporal", "polars-io/temporal", "polars-time"]
+random = ["polars-core/random", "polars-lazy/random"]
 default = [
   "docs",
   "zip_with",
@@ -33,7 +34,7 @@ lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 # parallel = ["polars-core/parallel"]
 
 # extra utilities for Utf8Chunked
-strings = ["polars-core/strings"]
+strings = ["polars-core/strings", "polars-lazy/strings"]
 
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["polars-core/object", "polars-lazy/object"]
@@ -57,11 +58,6 @@ performant = ["polars-core/performant"]
 plain_fmt = ["polars-core/plain_fmt"]
 pretty_fmt = ["polars-core/pretty_fmt"]
 
-# features
-# resample operation on DataFrame
-pivot = ["polars-core/pivot"]
-# resample operation on DataFrame
-downsample = ["polars-core/downsample"]
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
 
@@ -84,6 +80,7 @@ decompress-fast = ["polars-io/decompress-fast"]
 mode = ["polars-core/mode", "polars-lazy/mode"]
 take_opt_iter = ["polars-core/take_opt_iter"]
 extract_jsonpath = ["polars-core/extract_jsonpath", "polars-core/strings"]
+string_encoding = ["polars-core/string_encoding", "polars-core/strings"]
 groupby_list = ["polars-core/groupby_list"]
 lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
@@ -92,11 +89,18 @@ interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
 list = ["polars-core/list", "polars-lazy/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
 diff = ["polars-core/diff", "polars-lazy/diff"]
+pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
 moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
 true_div = ["polars-lazy/true_div"]
 diagonal_concat = ["polars-core/diagonal_concat"]
+horizontal_concat = ["polars-core/horizontal_concat"]
 abs = ["polars-core/abs", "polars-lazy/abs"]
+dynamic_groupby = ["polars-core/dynamic_groupby", "polars-lazy/dynamic_groupby"]
+ewma = ["polars-core/ewma", "polars-lazy/ewma"]
+dot_diagram = ["polars-lazy/dot_diagram"]
+dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
+product = ["polars-core/product"]
 
 # don't use this
 private = ["polars-lazy/private"]
@@ -105,6 +109,7 @@ private = ["polars-lazy/private"]
 dtype-full = [
   "dtype-date",
   "dtype-datetime",
+  "dtype-duration",
   "dtype-time",
   "dtype-i8",
   "dtype-i16",
@@ -117,11 +122,18 @@ dtype-full = [
 dtype-slim = [
   "dtype-date",
   "dtype-datetime",
+  "dtype-duration",
 ]
 
 # opt-in datatypes for Series
-dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-lazy/dtype-datetime", "polars-io/dtype-datetime"]
+dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date", "polars-time/dtype-date"]
+dtype-datetime = [
+  "polars-core/dtype-datetime",
+  "polars-lazy/dtype-datetime",
+  "polars-io/dtype-datetime",
+  "polars-time/dtype-datetime",
+]
+dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration"]
 dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
@@ -135,7 +147,6 @@ docs-selection = [
   "parquet",
   "ipc",
   "dtype-full",
-  "pivot",
   "is_in",
   "sort_multiple",
   "rows",
@@ -149,7 +160,6 @@ docs-selection = [
   "round_series",
   "checked_arithmetic",
   "ndarray",
-  "downsample",
   "repeat_by",
   "is_first",
   "is_last",
@@ -167,7 +177,12 @@ docs-selection = [
   "rank",
   "list",
   "arange",
+  "diagonal_concat",
+  "horizontal_concat",
   "abs",
+  "dot_diagram",
+  "string_encoding",
+  "product",
 ]
 
 bench = [
@@ -175,9 +190,10 @@ bench = [
 ]
 
 [dependencies]
-polars-core = { version = "0.18.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.18.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.18.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-core = { version = "0.19.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.19.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.19.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-time = { version = "0.1.1", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

@@ -1,6 +1,9 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_input_node, has_aexpr};
+use crate::utils::{
+    aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
+    has_aexpr,
+};
 use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
@@ -246,15 +249,15 @@ impl ProjectionPushDown {
                 // the projections should all be done at the latest projection node to keep the same schema order
                 if projections_seen == 0 {
                     let schema = lp.schema(lp_arena);
-                    for expr in expr {
+                    for node in expr {
                         // Due to the pushdown, a lot of projections cannot be done anymore at the final
                         // node and should be skipped
                         if expr_arena
-                            .get(expr)
+                            .get(node)
                             .to_field(schema, Context::Default, expr_arena)
                             .is_ok()
                         {
-                            local_projection.push(expr);
+                            local_projection.push(node);
                         }
                     }
                     // only aliases should be projected locally in the rest of the projections.
@@ -348,8 +351,7 @@ impl ProjectionPushDown {
                 schema,
                 predicate,
                 aggregate,
-                stop_after_n_rows,
-                cache,
+                mut options,
                 ..
             } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
@@ -362,16 +364,15 @@ impl ProjectionPushDown {
                         &*schema,
                     )?))
                 };
+                options.with_columns = with_columns;
 
                 let lp = ParquetScan {
                     path,
                     schema,
                     output_schema,
-                    with_columns,
                     predicate,
                     aggregate,
-                    stop_after_n_rows,
-                    cache,
+                    options,
                 };
                 Ok(lp)
             }
@@ -460,13 +461,9 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Explode { input, columns })
             }
-            Distinct {
-                input,
-                maintain_order,
-                subset,
-            } => {
+            Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if let Some(subset) = (&*subset).as_ref() {
+                if let Some(subset) = (&options.subset).as_ref() {
                     subset.iter().for_each(|name| {
                         add_str_to_accumulated(
                             name,
@@ -485,11 +482,7 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Distinct {
-                    input,
-                    maintain_order,
-                    subset,
-                })
+                Ok(Distinct { input, options })
             }
             Selection { predicate, input } => {
                 if !acc_projections.is_empty() {
@@ -565,6 +558,7 @@ impl ProjectionPushDown {
                 apply,
                 schema,
                 maintain_order,
+                options,
             } => {
                 // the custom function may need all columns so we do the projections here.
                 if let Some(f) = apply {
@@ -575,6 +569,7 @@ impl ProjectionPushDown {
                         schema,
                         apply: Some(f),
                         maintain_order,
+                        options,
                     };
                     let input = lp_arena.add(lp);
 
@@ -599,6 +594,19 @@ impl ProjectionPushDown {
                         add_expr_to_accumulated(*key, &mut acc_projections, &mut names, expr_arena);
                     }
 
+                    // make sure that the dynamic key is projected
+                    if let Some(options) = &options.dynamic {
+                        let node =
+                            expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+                        add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                    }
+                    // make sure that the rolling key is projected
+                    if let Some(options) = &options.rolling {
+                        let node =
+                            expr_arena.add(AExpr::Column(Arc::from(options.index_column.as_str())));
+                        add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
+                    }
+
                     self.pushdown_and_assign(
                         input,
                         acc_projections,
@@ -613,6 +621,7 @@ impl ProjectionPushDown {
                         aggs,
                         apply,
                         maintain_order,
+                        options,
                     );
                     Ok(builder.build())
                 }
@@ -698,7 +707,7 @@ impl ProjectionPushDown {
                             let root_column_name =
                                 aexpr_to_root_names(proj, expr_arena).pop().unwrap();
 
-                            let suffix = options.suffix.as_deref().unwrap_or("_right");
+                            let suffix = options.suffix.as_ref();
                             // If _right suffix exists we need to push a projection down without this
                             // suffix.
                             if root_column_name.ends_with(suffix) {
@@ -712,13 +721,7 @@ impl ProjectionPushDown {
                                 if names_right.insert(Arc::from(downwards_name)) {
                                     pushdown_right.push(downwards_name_column);
                                 }
-
-                                // locally we project and alias
-                                let projection = expr_arena.add(AExpr::Alias(
-                                    downwards_name_column,
-                                    Arc::from(format!("{}{}", downwards_name, suffix)),
-                                ));
-                                local_projection.push(projection);
+                                local_projection.push(proj);
                             }
                         } else if add_local {
                             // always also do the projection locally, because the join columns may not be
@@ -752,12 +755,43 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena).join(
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                );
+                // Because we do a projection pushdown
+                // We may influence the suffixes.
+                // For instance if a join would have created a schema
+                //
+                // "foo", "foo_right"
+                //
+                // but we only project the "foo_right" column, the join will not produce
+                // a "name_right" because we did not project its left name duplicate "foo"
+                //
+                // The code below checks if can do the suffixed projections on the schema that
+                // we have after the join. If we cannot then we modify the projection:
+                //
+                // col("foo_right")  to col("foo").alias("foo_right")
+                let suffix = options.suffix.clone();
+
+                let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
+                    .join(input_right, left_on, right_on, options)
+                    .build();
+                let schema_after_join = alp.schema(lp_arena);
+
+                for proj in &mut local_projection {
+                    for name in aexpr_to_root_names(*proj, expr_arena) {
+                        if name.contains(suffix.as_ref())
+                            && schema_after_join.column_with_name(&*name).is_none()
+                        {
+                            let new_name = &name.as_ref()[..name.len() - suffix.len()];
+
+                            let renamed =
+                                aexpr_assign_renamed_root(*proj, expr_arena, &*name, new_name);
+
+                            let aliased = expr_arena.add(AExpr::Alias(renamed, name));
+                            *proj = aliased;
+                        }
+                    }
+                }
+                let root = lp_arena.add(alp);
+                let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
                 Ok(self.finish_node(local_projection, builder))
             }
             HStack { input, exprs, .. } => {
@@ -796,11 +830,10 @@ impl ProjectionPushDown {
             Udf {
                 input,
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
             } => {
-                if projection_pd {
+                if options.projection_pd {
                     self.pushdown_and_assign(
                         input,
                         acc_projections,
@@ -813,8 +846,7 @@ impl ProjectionPushDown {
                 Ok(Udf {
                     input,
                     function,
-                    predicate_pd,
-                    projection_pd,
+                    options,
                     schema,
                 })
             }
@@ -823,39 +855,24 @@ impl ProjectionPushDown {
                 let inputs = lp.get_inputs();
                 let exprs = lp.get_exprs();
 
-                let new_inputs = if inputs.len() == 1 {
-                    let node = inputs[0];
-                    let alp = lp_arena.take(node);
-                    let alp = self.push_down(
-                        alp,
-                        acc_projections,
-                        projected_names,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                    )?;
-                    lp_arena.replace(node, alp);
-                    vec![node]
-                } else {
-                    inputs
-                        .iter()
-                        .map(|&node| {
-                            let alp = lp_arena.take(node);
-                            let alp = self.push_down(
-                                alp,
-                                acc_projections.clone(),
-                                projected_names.clone(),
-                                projections_seen,
-                                lp_arena,
-                                expr_arena,
-                            )?;
-                            lp_arena.replace(node, alp);
-                            Ok(node)
-                        })
-                        .collect::<Result<Vec<_>>>()?
-                };
+                let new_inputs = inputs
+                    .iter()
+                    .map(|&node| {
+                        let alp = lp_arena.take(node);
+                        let alp = self.push_down(
+                            alp,
+                            acc_projections.clone(),
+                            projected_names.clone(),
+                            projections_seen,
+                            lp_arena,
+                            expr_arena,
+                        )?;
+                        lp_arena.replace(node, alp);
+                        Ok(node)
+                    })
+                    .collect::<Result<Vec<_>>>()?;
 
-                Ok(lp.from_exprs_and_input(exprs, new_inputs))
+                Ok(lp.with_exprs_and_input(exprs, new_inputs))
             }
         }
     }

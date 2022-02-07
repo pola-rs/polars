@@ -1,13 +1,13 @@
 use arrow::array::{Array, ArrayRef, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::MutableBuffer;
 use arrow::datatypes::DataType;
-use arrow::types::{NativeType, NaturalDataType};
+use arrow::types::NativeType;
 use std::sync::Arc;
 
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
+pub mod list;
 
 pub trait ValueSize {
     /// Useful for a Utf8 or a List to get underlying value size.
@@ -77,7 +77,7 @@ pub trait ListFromIter {
         data_type: DataType,
     ) -> ListArray<i64>
     where
-        T: NativeType + NaturalDataType,
+        T: NativeType,
         P: IntoIterator<Item = Option<T>>,
         I: IntoIterator<Item = Option<P>>,
     {
@@ -85,7 +85,7 @@ pub trait ListFromIter {
         let (lower, _) = iterator.size_hint();
 
         let mut validity = MutableBitmap::with_capacity(lower);
-        let mut offsets = MutableBuffer::<i64>::with_capacity(lower + 1);
+        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
@@ -112,8 +112,8 @@ pub trait ListFromIter {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
 
-        let mut validity = MutableBitmap::with_capacity(lower);
-        let mut offsets = MutableBuffer::<i64>::with_capacity(lower + 1);
+        let mut validity = Vec::with_capacity(lower);
+        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
@@ -142,7 +142,7 @@ pub trait ListFromIter {
         let (lower, _) = iterator.size_hint();
 
         let mut validity = MutableBitmap::with_capacity(lower);
-        let mut offsets = MutableBuffer::<i64>::with_capacity(lower + 1);
+        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
         let values: Utf8Array<i64> = iterator

@@ -40,13 +40,14 @@
 //! // Create the ChunkedArray
 //! let ca = Utf8Chunked::new("datetime", datetime_values);
 //! // Parse strings as DateTime objects
-//! let date_ca = ca.as_datetime(Some(fmt));
+//! let date_ca = ca.as_datetime(Some(fmt), TimeUnit::Milliseconds);
 //! ```
 //! #### Parsing directly from slice
 //!
 //! ```rust
 //! use polars_core::prelude::*;
-//! use chrono::NaiveDateTime;
+//! // don't use this in your code, use chrono directly!
+//! use polars_core::export::chrono::NaiveDateTime;
 //!
 //! // String values to parse, Note that the 2nd value is not a correct time value.
 //! let datetime_values = &[
@@ -58,7 +59,7 @@
 //! let fmt = "%Y-%m-%d %H:%M:%S";
 //!
 //! // Create the ChunkedArray
-//! let ca = DatetimeChunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt);
+//! let ca = DatetimeChunked::parse_from_str_slice("datetime as ms since Epoch", datetime_values, fmt, TimeUnit::Nanoseconds);
 //!
 //! // or dates in different precision (days)
 //! let ca = DateChunked::parse_from_str_slice("date as days since Epoch", datetime_values, fmt);

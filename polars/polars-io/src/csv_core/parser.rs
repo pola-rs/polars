@@ -19,15 +19,7 @@ pub(crate) fn next_line_position_naive(input: &[u8]) -> Option<usize> {
     if input.len() - pos == 0 {
         return None;
     }
-    input.get(pos + 1).and_then(|&b| {
-        Option::from({
-            if b == b'\r' {
-                pos + 1
-            } else {
-                pos
-            }
-        })
-    })
+    Some(pos)
 }
 
 /// Find the nearest next line position that is not embedded in a String field.
@@ -53,15 +45,7 @@ pub(crate) fn next_line_position(
                 .count()
                 == expected_fields
             {
-                return input.get(pos + 1).and_then(|&b| {
-                    Option::from({
-                        if b == b'\r' {
-                            total_pos + pos + 1
-                        } else {
-                            total_pos + pos
-                        }
-                    })
-                });
+                return Some(total_pos + pos);
             } else {
                 input = &input[pos + 1..];
                 total_pos += pos + 1;
@@ -281,6 +265,7 @@ impl<'a> SplitFields<'a> {
     }
 }
 
+#[inline]
 fn find_quoted(bytes: &[u8], quote_char: u8, needle: u8) -> Option<usize> {
     let mut in_field = false;
 
@@ -370,14 +355,15 @@ impl<'a> Iterator for SplitFields<'a> {
     }
 }
 
-fn skip_this_line(bytes: &[u8], quote: Option<u8>, offset: usize) -> (&[u8], usize) {
+#[inline]
+fn skip_this_line(bytes: &[u8], quote: Option<u8>) -> &[u8] {
     let pos = match quote {
         Some(quote) => find_quoted(bytes, quote, b'\n'),
         None => bytes.iter().position(|x| *x == b'\n'),
     };
     match pos {
-        None => (&[], bytes.len() + offset),
-        Some(pos) => (&bytes[pos + 1..], pos + 1 + offset),
+        None => &[],
+        Some(pos) => &bytes[pos + 1..],
     }
 }
 
@@ -403,6 +389,11 @@ pub(crate) fn parse_lines(
     ignore_parser_errors: bool,
     n_lines: usize,
 ) -> Result<usize> {
+    assert!(
+        !projection.is_empty(),
+        "at least one column should be projected"
+    );
+
     // we use the pointers to track the no of bytes read.
     let start = bytes.as_ptr() as usize;
     let original_bytes_len = bytes.len();
@@ -414,6 +405,7 @@ pub(crate) fn parse_lines(
             let end = bytes.as_ptr() as usize;
             return Ok(end - start);
         }
+
         let (b, _) = skip_whitespace_exclude(bytes, delimiter);
         bytes = b;
         if bytes.is_empty() {
@@ -424,7 +416,7 @@ pub(crate) fn parse_lines(
         if let Some(c) = comment_char {
             // line is a comment -> skip
             if bytes[0] == c {
-                let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
+                let bytes_rem = skip_this_line(bytes, quote_char);
                 bytes = bytes_rem;
                 continue;
             }
@@ -434,24 +426,19 @@ pub(crate) fn parse_lines(
         // Therefore we check if the idx of the field is in our projected columns.
         // If it is not, we skip the field.
         let mut projection_iter = projection.iter().copied();
-        let mut next_projected = projection_iter
-            .next()
-            .expect("at least one column should be projected");
+        let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
         let mut iter = SplitFields::new(bytes, delimiter, quote_char);
         let mut idx = 0u32;
+        let mut read_sol = 0;
         loop {
-            let mut read_sol = 0;
-
-            let track_bytes = |bytes: &mut &[u8], read_sol: usize| {
-                // benchmarking showed it is 6% faster to take the min of these two
-                // not needed for correctness.
-                *bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
-            };
-
             match iter.next() {
-                None => break,
+                // end of line
+                None => {
+                    bytes = &bytes[std::cmp::min(read_sol, bytes.len())..];
+                    break;
+                }
                 Some((mut field, needs_escaping)) => {
                     idx += 1;
                     let field_len = field.len();
@@ -508,19 +495,15 @@ pub(crate) fn parse_lines(
 
                         processed_fields += 1;
 
-                        let a = projection_iter.next();
-
                         // if we have all projected columns we are done with this line
-                        match a {
-                            Some(p) => {
-                                track_bytes(&mut bytes, read_sol);
-                                next_projected = p
-                            }
+                        match projection_iter.next() {
+                            Some(p) => next_projected = p,
                             None => {
-                                if let Some(b'\n') = bytes.get(0) {
+                                if bytes.get(read_sol - 1) == Some(&b'\n') {
                                     bytes = &bytes[read_sol..];
                                 } else {
-                                    let (bytes_rem, _) = skip_this_line(bytes, quote_char, 0);
+                                    let bytes_rem =
+                                        skip_this_line(&bytes[read_sol - 1..], quote_char);
                                     bytes = bytes_rem;
                                 }
                                 break;

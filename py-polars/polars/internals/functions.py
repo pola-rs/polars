@@ -1,16 +1,21 @@
 from datetime import datetime, timedelta
 from typing import Optional, Sequence, Union, overload
 
-import numpy as np
-
 from polars import internals as pli
-from polars.datatypes import Datetime, py_type_to_dtype
+from polars.datatypes import py_type_to_dtype
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_duration,
+    in_nanoseconds_window,
+)
 
 try:
     from polars.polars import concat_df as _concat_df
     from polars.polars import concat_lf as _concat_lf
     from polars.polars import concat_series as _concat_series
+    from polars.polars import py_date_range as _py_date_range
     from polars.polars import py_diag_concat_df as _diag_concat_df
+    from polars.polars import py_hor_concat_df as _hor_concat_df
 
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
@@ -66,9 +71,28 @@ def concat(
     how
         Only used if the items are DataFrames.
 
-        On of {"vertical", "diagonal"}.
-        Vertical: Applies multiple `vstack` operations.
-        Diagonal: Finds a union between the column schemas and fills missing column values with null.
+        One of {"vertical", "diagonal", "horizontal"}.
+
+        - Vertical: Applies multiple `vstack` operations.
+        - Diagonal: Finds a union between the column schemas and fills missing column values with null.
+        - Horizontal: Stacks Series horizontally and fills with nulls if the lengths don't match.
+
+    Examples
+    --------
+    >>> df1 = pl.DataFrame({"a": [1], "b": [3]})
+    >>> df2 = pl.DataFrame({"a": [2], "b": [4]})
+    >>> pl.concat([df1, df2])
+    shape: (2, 2)
+    ┌─────┬─────┐
+    │ a   ┆ b   │
+    │ --- ┆ --- │
+    │ i64 ┆ i64 │
+    ╞═════╪═════╡
+    │ 1   ┆ 3   │
+    ├╌╌╌╌╌┼╌╌╌╌╌┤
+    │ 2   ┆ 4   │
+    └─────┴─────┘
+
     """
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
@@ -79,6 +103,8 @@ def concat(
             out = pli.wrap_df(_concat_df(items))
         elif how == "diagonal":
             out = pli.wrap_df(_diag_concat_df(items))
+        elif how == "horizontal":
+            out = pli.wrap_df(_hor_concat_df(items))
         else:
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
@@ -135,9 +161,10 @@ def arg_where(mask: "pli.Series") -> "pli.Series":
 def date_range(
     low: datetime,
     high: datetime,
-    interval: timedelta,
-    closed: Optional[str] = None,
+    interval: Union[str, timedelta],
+    closed: Optional[str] = "both",
     name: Optional[str] = None,
+    time_unit: Optional[str] = None,
 ) -> "pli.Series":
     """
     Create a date range of type `Datetime`.
@@ -150,10 +177,14 @@ def date_range(
         Upper bound of the date range
     interval
         Interval periods
-    closed {None, 'left', 'right'}
-        Make the interval closed to the 'left', 'right', or both sides (None, the default).
+        A python timedelta object or a polars duration `str`
+        e.g.: "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+    closed {None, 'left', 'right', 'both', 'none'}
+        Make the interval closed to the 'left', 'right', 'none' or 'both' sides.
     name
         Name of the output Series
+    time_unit
+        Set the time unit; one of {'ns', 'ms'}
 
     Returns
     -------
@@ -161,12 +192,10 @@ def date_range(
 
     Examples
     --------
-    >>> from datetime import datetime, timedelta
-    >>> pl.date_range(
-    ...     datetime(1985, 1, 1), datetime(2015, 7, 1), timedelta(days=1, hours=12)
-    ... )
+    >>> from datetime import datetime
+    >>> pl.date_range(datetime(1985, 1, 1), datetime(2015, 7, 1), "1d12h")
     shape: (7426,)
-    Series: '' [datetime]
+    Series: '' [datetime[ns]]
     [
         1985-01-01 00:00:00
         1985-01-02 12:00:00
@@ -196,9 +225,19 @@ def date_range(
     ]
 
     """
-    values = np.arange(low, high, interval, dtype="datetime64[ms]")
-    if closed in (None, "right") and (high - low) % interval == timedelta(0):
-        values = np.append(values, np.array(high, dtype="datetime64[ms]"))
-    if closed == "right":
-        values = values[1:]
-    return pli.Series(name=name, values=values.astype(np.int64)).cast(Datetime)
+    if isinstance(interval, timedelta):
+        interval = _timedelta_to_pl_duration(interval)
+
+    if in_nanoseconds_window(low) and in_nanoseconds_window(high) and time_unit is None:
+        tu = "ns"
+    elif time_unit is not None:
+        tu = time_unit
+    else:
+        tu = "ms"
+
+    start = _datetime_to_pl_timestamp(low, tu)
+    stop = _datetime_to_pl_timestamp(high, tu)
+    if name is None:
+        name = ""
+
+    return pli.wrap_s(_py_date_range(start, stop, interval, closed, name, tu))

@@ -70,12 +70,17 @@ impl OptimizationRule for ReplaceDropNulls {
 
                     let function = move |df: DataFrame| df.drop_nulls(Some(&subset));
 
-                    Some(ALogicalPlan::Udf {
-                        input: *input,
-                        function: Arc::new(function),
+                    let options = LogicalPlanUdfOptions {
                         // does not matter as this runs after pushdowns have occurred
                         predicate_pd: true,
                         projection_pd: true,
+                        fmt_str: "DROP NULLS",
+                    };
+
+                    Some(ALogicalPlan::Udf {
+                        input: *input,
+                        function: Arc::new(function),
+                        options,
                         schema: None,
                     })
                 } else {

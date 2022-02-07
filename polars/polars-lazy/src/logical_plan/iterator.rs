@@ -4,7 +4,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) => {}
+            Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
@@ -78,12 +78,6 @@ macro_rules! push_expr {
                 }
             }
             Slice { input, .. } => $push(input),
-            BinaryFunction {
-                input_a, input_b, ..
-            } => {
-                $push(input_a);
-                $push(input_b)
-            }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             SufPreFix { expr, .. } => $push(expr),
@@ -161,7 +155,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Column(_) | Literal(_) | Wildcard => {}
+            Column(_) | Literal(_) | Wildcard | Count => {}
             Alias(e, _) => push(e),
             Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {
@@ -235,12 +229,6 @@ impl AExpr {
                 }
             }
             Slice { input, .. } => push(input),
-            BinaryFunction {
-                input_a, input_b, ..
-            } => {
-                push(input_a);
-                push(input_b)
-            }
         }
     }
 }

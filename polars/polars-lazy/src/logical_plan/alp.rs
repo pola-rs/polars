@@ -1,11 +1,13 @@
 #[cfg(feature = "ipc")]
-use crate::logical_plan::IpcOptions;
+use crate::logical_plan::LpScanOptions;
+#[cfg(feature = "parquet")]
+use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
 use ahash::RandomState;
 use polars_core::prelude::*;
-use polars_core::utils::{Arena, Node};
+use polars_utils::arena::{Arena, Node};
 use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
@@ -23,7 +25,7 @@ pub enum ALogicalPlan {
     Slice {
         input: Node,
         offset: i64,
-        len: usize,
+        len: u32,
     },
     Selection {
         input: Node,
@@ -46,7 +48,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: IpcOptions,
+        options: LpScanOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
@@ -57,11 +59,9 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        with_columns: Option<Vec<String>>,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
+        options: ParquetOptions,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
@@ -98,6 +98,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        options: GroupbyOptions,
     },
     Join {
         input_left: Node,
@@ -114,20 +115,17 @@ pub enum ALogicalPlan {
     },
     Distinct {
         input: Node,
-        maintain_order: bool,
-        subset: Arc<Option<Vec<String>>>,
+        options: DistinctOptions,
     },
     Udf {
         input: Node,
         function: Arc<dyn DataFrameUdf>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
+        options: LogicalPlanUdfOptions,
         schema: Option<SchemaRef>,
     },
     Union {
         inputs: Vec<Node>,
+        options: UnionOptions,
     },
 }
 
@@ -184,90 +182,18 @@ impl ALogicalPlan {
             },
         }
     }
-
-    /// Check ALogicalPlan equality. The nodes may differ.
-    ///
-    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
-    /// but would have different node values.
-    #[cfg(feature = "private")]
-    pub(crate) fn eq(
-        node_left: Node,
-        node_right: Node,
-        lp_arena: &Arena<ALogicalPlan>,
-        expr_arena: &Arena<AExpr>,
-    ) -> bool {
-        use crate::logical_plan::iterator::ArenaLpIter;
-        use std::fs::canonicalize;
-
-        let cmp = |(node_left, node_right)| {
-            use ALogicalPlan::*;
-            match (lp_arena.get(node_left), lp_arena.get(node_right)) {
-                #[cfg(feature = "csv-file")]
-                (CsvScan { path: path_a, .. }, CsvScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                #[cfg(feature = "parquet")]
-                (ParquetScan { path: path_a, .. }, ParquetScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                #[cfg(feature = "ipc")]
-                (IpcScan { path: path_a, .. }, IpcScan { path: path_b, .. }) => {
-                    canonicalize(path_a).unwrap() == canonicalize(path_b).unwrap()
-                }
-                (DataFrameScan { df: df_a, .. }, DataFrameScan { df: df_b, .. }) => {
-                    df_a.ptr_equal(df_b)
-                }
-                // the following don't affect the schema, but do affect the # of rows or the row order.
-                (Selection { predicate: l, .. }, Selection { predicate: r, .. }) => {
-                    AExpr::eq(*l, *r, expr_arena)
-                }
-                (
-                    Sort {
-                        by_column: l,
-                        reverse: r_l,
-                        ..
-                    },
-                    Sort {
-                        by_column: r,
-                        reverse: r_r,
-                        ..
-                    },
-                ) => l == r && r_l == r_r,
-                (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
-                (
-                    Distinct {
-                        maintain_order: l1,
-                        subset: l2,
-                        ..
-                    },
-                    Distinct {
-                        maintain_order: r1,
-                        subset: r2,
-                        ..
-                    },
-                ) => l1 == r1 && l2 == r2,
-                (a, b) => {
-                    std::mem::discriminant(a) == std::mem::discriminant(b)
-                        && a.schema(lp_arena) == b.schema(lp_arena)
-                }
-            }
-        };
-
-        lp_arena
-            .iter(node_left)
-            .zip(lp_arena.iter(node_right))
-            .map(|(tpll, tplr)| (tpll.0, tplr.0))
-            .all(cmp)
-    }
 }
 
 impl ALogicalPlan {
     /// Takes the expressions of an LP node and the inputs of that node and reconstruct
-    pub fn from_exprs_and_input(&self, mut exprs: Vec<Node>, inputs: Vec<Node>) -> ALogicalPlan {
+    pub fn with_exprs_and_input(&self, mut exprs: Vec<Node>, inputs: Vec<Node>) -> ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
-            Union { .. } => Union { inputs },
+            Union { options, .. } => Union {
+                inputs,
+                options: *options,
+            },
             Melt {
                 id_vars,
                 value_vars,
@@ -303,6 +229,7 @@ impl ALogicalPlan {
                 schema,
                 apply,
                 maintain_order,
+                options: dynamic_options,
                 ..
             } => Aggregate {
                 input: inputs[0],
@@ -311,6 +238,7 @@ impl ALogicalPlan {
                 schema: schema.clone(),
                 apply: apply.clone(),
                 maintain_order: *maintain_order,
+                options: dynamic_options.clone(),
             },
             Join {
                 schema,
@@ -337,14 +265,9 @@ impl ALogicalPlan {
                 columns: columns.clone(),
             },
             Cache { .. } => Cache { input: inputs[0] },
-            Distinct {
-                maintain_order,
-                subset,
-                ..
-            } => Distinct {
+            Distinct { options, .. } => Distinct {
                 input: inputs[0],
-                maintain_order: *maintain_order,
-                subset: subset.clone(),
+                options: options.clone(),
             },
             HStack { schema, .. } => HStack {
                 input: inputs[0],
@@ -380,10 +303,8 @@ impl ALogicalPlan {
                 path,
                 schema,
                 output_schema,
-                with_columns,
                 predicate,
-                stop_after_n_rows,
-                cache,
+                options,
                 ..
             } => {
                 let mut new_predicate = None;
@@ -395,11 +316,9 @@ impl ALogicalPlan {
                     path: path.clone(),
                     schema: schema.clone(),
                     output_schema: output_schema.clone(),
-                    with_columns: with_columns.clone(),
                     predicate: new_predicate,
                     aggregate: exprs,
-                    stop_after_n_rows: *stop_after_n_rows,
-                    cache: *cache,
+                    options: options.clone(),
                 }
             }
             #[cfg(feature = "csv-file")]
@@ -448,15 +367,13 @@ impl ALogicalPlan {
             }
             Udf {
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
                 ..
             } => Udf {
                 input: inputs[0],
                 function: function.clone(),
-                predicate_pd: *predicate_pd,
-                projection_pd: *projection_pd,
+                options: *options,
                 schema: schema.clone(),
             },
         }
@@ -712,8 +629,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         aggs: Vec<Node>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        options: GroupbyOptions,
     ) -> Self {
-        debug_assert!(!keys.is_empty());
+        debug_assert!(!(keys.is_empty() && options.dynamic.is_none()));
         let current_schema = self.schema();
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
@@ -731,6 +649,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             schema: Arc::new(schema),
             apply,
             maintain_order,
+            options,
         };
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)
@@ -772,7 +691,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             let name = f.name();
             if !right_names.contains(name.as_str()) {
                 if names.contains(name.as_str()) {
-                    let new_name = format!("{}_right", name);
+                    let new_name = format!("{}{}", name, options.suffix.as_ref());
                     let field = Field::new(&new_name, f.data_type().clone());
                     fields.push(field)
                 } else {

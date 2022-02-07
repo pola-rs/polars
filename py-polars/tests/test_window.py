@@ -30,3 +30,27 @@ def test_std(dtype: Type[pl.DataType]) -> None:
     assert np.isclose(out["values"][0], 0.5)
     out = df.select(pl.col("values").mean().over("groups"))
     assert np.isclose(out["values"][0], 1.5)
+
+
+def test_issue_2529() -> None:
+    def stdize_out(value: str, control_for: str) -> pl.Expr:
+        return (pl.col(value) - pl.mean(value).over(control_for)) / pl.std(value).over(
+            control_for
+        )
+
+    df = pl.from_dicts(
+        [
+            {"cat": cat, "val1": cat + _, "val2": cat + _}
+            for cat in range(2)
+            for _ in range(2)
+        ]
+    )
+
+    out = df.select(
+        [
+            "*",
+            stdize_out("val1", "cat").alias("out1"),
+            stdize_out("val2", "cat").alias("out2"),
+        ]
+    )
+    assert out["out1"].to_list() == out["out2"].to_list()

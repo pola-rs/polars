@@ -18,7 +18,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
                         .into_no_null_iter()
                         .zip($rhs.into_no_null_iter())
                         .map(|(left, right)| left $operand right)
-                        .collect();
+                        .collect_trusted();
                         a.into_inner()
                     },
                     (false, _) => {
@@ -33,7 +33,7 @@ macro_rules! apply_operand_on_chunkedarray_by_iter {
                         .into_iter()
                         .zip($rhs.into_no_null_iter())
                         .map(|(opt_left, right)| opt_left.map(|left| left $operand right))
-                        .collect()
+                        .collect_trusted()
                     },
                     (_, _) => {
                     $self.into_iter()
@@ -363,13 +363,16 @@ impl Add for &Utf8Chunked {
         }
 
         // todo! add no_null variants. Need 4 paths.
-        self.into_iter()
+        let mut ca: Self::Output = self
+            .into_iter()
             .zip(rhs.into_iter())
             .map(|(opt_l, opt_r)| match (opt_l, opt_r) {
                 (Some(l), Some(r)) => Some(concat_strings(l, r)),
                 _ => None,
             })
-            .collect()
+            .collect_trusted();
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -385,16 +388,18 @@ impl Add<&str> for &Utf8Chunked {
     type Output = Utf8Chunked;
 
     fn add(self, rhs: &str) -> Self::Output {
-        match self.has_validity() {
+        let mut ca: Self::Output = match self.has_validity() {
             false => self
                 .into_no_null_iter()
                 .map(|l| concat_strings(l, rhs))
-                .collect(),
+                .collect_trusted(),
             _ => self
                 .into_iter()
                 .map(|opt_l| opt_l.map(|l| concat_strings(l, rhs)))
-                .collect(),
-        }
+                .collect_trusted(),
+        };
+        ca.rename(self.name());
+        ca
     }
 }
 

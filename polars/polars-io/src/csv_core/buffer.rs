@@ -138,7 +138,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         let parse_result = if delay_utf8_validation(self.encoding, ignore_errors) {
             true
         } else {
-            simdutf8::basic::from_utf8(bytes).is_ok()
+            bytes.is_ascii() || simdutf8::basic::from_utf8(bytes).is_ok()
         };
         let data_len = self.data.len();
 
@@ -201,6 +201,10 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
         if bytes.eq_ignore_ascii_case(b"false") {
             self.append_value(false);
         } else if bytes.eq_ignore_ascii_case(b"true") {
+            self.append_value(true);
+        } else if bytes.eq_ignore_ascii_case(b"\"false\"") {
+            self.append_value(false);
+        } else if bytes.eq_ignore_ascii_case(b"\"true\"") {
             self.append_value(true);
         } else if ignore_errors || bytes.is_empty() {
             self.append_null();

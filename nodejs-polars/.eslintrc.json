@@ -1,0 +1,82 @@
+{
+    "ignorePatterns": [
+        "**/*.js"
+    ],
+    "env": {
+        "browser": true,
+        "es2021": true,
+        "jest/globals": true
+    },
+    "globals": {
+        "Buffer": "readonly",
+        "process": "writable"
+    },
+    "extends": [
+        "eslint:recommended"
+    ],
+    "parser": "@typescript-eslint/parser",
+    "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "module"
+    },
+    "plugins": [
+        "@typescript-eslint",
+        "jest"
+    ],
+    "rules": {
+        "arrow-spacing": "error",
+        "eol-last": "error",
+        "no-inner-declarations": "off",
+        "func-call-spacing": "off",
+        "no-duplicate-imports": "off",
+        "comma-spacing": "off",
+        "quotes": [
+            "error",
+            "double",
+            {
+                "allowTemplateLiterals": true,
+                "avoidEscape": true
+            }
+        ],
+        "no-redeclare": "off",
+        "no-trailing-spaces": "error",
+        "semi": [
+            "error",
+            "always"
+        ],
+        "indent": [
+            "error",
+            2,
+            {
+                "MemberExpression": 1
+            }
+        ],
+        "no-dupe-class-members": "off",
+        "no-unused-vars": "off",
+        "newline-per-chained-call": [
+            "error",
+            {
+                "ignoreChainWithDepth": 2
+            }
+        ],
+        "no-multiple-empty-lines": [
+            "error",
+            {
+                "max": 2,
+                "maxEOF": 0
+            }
+        ],
+        "padding-line-between-statements": [
+            "error",
+            {
+                "blankLine": "always",
+                "prev": "*",
+                "next": "return"
+            }
+        ],
+        "@typescript-eslint/func-call-spacing": "error",
+        "@typescript-eslint/no-duplicate-imports": "error",
+        "@typescript-eslint/comma-spacing": "error",
+        "@typescript-eslint/type-annotation-spacing": "error"
+    }
+}

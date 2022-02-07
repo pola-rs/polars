@@ -33,10 +33,13 @@ pub mod utils;
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::PyPolarsEr;
 use crate::file::get_either_file;
-use crate::prelude::{DataType, PyDataType};
+use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
+use dsl::ToExprs;
 use mimalloc::MiMalloc;
-use polars::functions::diag_concat_df;
+use polars::functions::{diag_concat_df, hor_concat_df};
+use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
+use polars_core::prelude::IntoSeries;
 use pyo3::types::PyDict;
 
 #[global_allocator]
@@ -45,6 +48,11 @@ static GLOBAL: MiMalloc = MiMalloc;
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
     dsl::col(name)
+}
+
+#[pyfunction]
+fn count() -> dsl::PyExpr {
+    dsl::count()
 }
 
 #[pyfunction]
@@ -224,6 +232,22 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
 }
 
 #[pyfunction]
+fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
+    let (seq, _len) = get_pyseq(dfs)?;
+    let iter = seq.iter()?;
+
+    let dfs = iter
+        .map(|item| {
+            let item = item?;
+            get_df(item)
+        })
+        .collect::<PyResult<Vec<_>>>()?;
+
+    let df = hor_concat_df(&dfs).map_err(PyPolarsEr::from)?;
+    Ok(df.into())
+}
+
+#[pyfunction]
 fn concat_series(series: &PyAny) -> PyResult<PySeries> {
     let (seq, _len) = get_pyseq(series)?;
     let mut iter = seq.iter()?;
@@ -249,9 +273,9 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     };
 
     let dict = PyDict::new(py);
-    for field in metadata.schema().fields() {
+    for field in metadata.schema.fields {
         let dt: Wrap<DataType> = Wrap((&field.data_type).into());
-        dict.set_item(field.name(), dt.to_object(py))?;
+        dict.set_item(field.name, dt.to_object(py))?;
     }
     Ok(dict.to_object(py))
 }
@@ -286,6 +310,37 @@ pub fn map_mul(
     lazy::map_mul(&pyexpr, py, lambda, output_type, apply_groups)
 }
 
+#[pyfunction]
+fn py_date_range(
+    start: i64,
+    stop: i64,
+    every: &str,
+    closed: Wrap<ClosedWindow>,
+    name: &str,
+    tu: &str,
+) -> PySeries {
+    let tu = match tu {
+        "ns" => TimeUnit::Nanoseconds,
+        "ms" => TimeUnit::Milliseconds,
+        _ => panic!("{}", "expected one of {'ns', 'ms'}"),
+    };
+    polars::time::date_range(name, start, stop, Duration::parse(every), closed.0, tu)
+        .into_series()
+        .into()
+}
+
+#[pyfunction]
+fn min_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::functions::min_exprs(exprs).into()
+}
+
+#[pyfunction]
+fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::functions::max_exprs(exprs).into()
+}
+
 #[pymodule]
 fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
@@ -294,6 +349,7 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
@@ -318,6 +374,10 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     Ok(())
 }

@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use polars_arrow::kernels::list::array_to_unit_list;
 use std::borrow::Cow;
 
 impl Series {
@@ -10,18 +11,21 @@ impl Series {
         let s = self.rechunk();
         let values = &s.chunks()[0];
 
-        let mut offsets = AlignedVec::with_capacity(2);
-        offsets.push(0i64);
-        offsets.push(values.len() as i64);
+        let offsets = vec![0i64, values.len() as i64];
+        let inner_type = self.dtype();
 
-        let data_type = ListArray::<i64>::default_datatype(self.dtype().to_arrow());
+        let data_type = ListArray::<i64>::default_datatype(inner_type.to_physical().to_arrow());
 
         let arr = ListArray::from_data(data_type, offsets.into(), values.clone(), None);
+        let name = self.name();
 
-        Ok(ListChunked::new_from_chunks(
-            self.name(),
-            vec![Arc::new(arr)],
-        ))
+        let mut ca = ListChunked::new_from_chunks(name, vec![Arc::new(arr)]);
+        if self.dtype() != &self.dtype().to_physical() {
+            ca.to_logical(inner_type.clone())
+        }
+        ca.set_fast_explode();
+
+        Ok(ca)
     }
 
     pub fn reshape(&self, dims: &[i64]) -> Result<Series> {
@@ -68,6 +72,19 @@ impl Series {
                     cols = rows / s_ref.len() as i64
                 }
 
+                // fast path, we can create a unit list so we only allocate offsets
+                if rows as usize == s_ref.len() && cols == 1 {
+                    let chunks = s_ref
+                        .chunks()
+                        .iter()
+                        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+                        .collect::<Vec<_>>();
+
+                    let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+                    ca.set_fast_explode();
+                    return Ok(ca.into_series());
+                }
+
                 let mut builder =
                     get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name());
 
@@ -102,6 +119,22 @@ mod test {
         let out = s.to_list()?;
         assert!(expected.into_series().series_equal(&out.into_series()));
 
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(all(feature = "temporal", feature = "dtype-date"))]
+    fn test_to_list_logical() -> Result<()> {
+        let ca = Utf8Chunked::new("a", &["2021-01-01", "2021-01-02", "2021-01-03"]);
+        let out = ca.as_date(None)?.into_series();
+        let out = out.to_list().unwrap();
+        assert_eq!(out.len(), 1);
+        let s = format!("{:?}", out);
+        // check if dtype is maintained all the way to formatting
+        assert!(s.contains("[2021-01-01, 2021-01-02, 2021-01-03]"));
+
+        let expl = out.explode().unwrap();
+        assert_eq!(expl.dtype(), &DataType::Date);
         Ok(())
     }
 

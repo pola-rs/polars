@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
-use arrow::temporal_conversions::{date32_to_date, timestamp_ms_to_datetime};
+use arrow::temporal_conversions::{date32_to_date, timestamp_ns_to_datetime};
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -9,6 +9,7 @@ use std::{
 };
 const LIMIT: usize = 25;
 
+use arrow::temporal_conversions::timestamp_ms_to_datetime;
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
@@ -76,7 +77,7 @@ macro_rules! format_array {
 fn format_object_array(
     limit: usize,
     f: &mut Formatter<'_>,
-    object: &dyn SeriesTrait,
+    object: &Series,
     name: &str,
     array_type: &str,
 ) -> fmt::Result {
@@ -244,14 +245,28 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
-            DataType::Datetime => format_array!(
-                limit,
-                f,
-                self.datetime().unwrap(),
-                "datetime",
-                self.name(),
-                "Series"
-            ),
+            DataType::Datetime(_, _) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(
+                    limit,
+                    f,
+                    self.datetime().unwrap(),
+                    &dt,
+                    self.name(),
+                    "Series"
+                )
+            }
+            DataType::Duration(_) => {
+                let dt = format!("{}", self.dtype());
+                format_array!(
+                    limit,
+                    f,
+                    self.duration().unwrap(),
+                    &dt,
+                    self.name(),
+                    "Series"
+                )
+            }
             DataType::List(_) => format_array!(
                 limit,
                 f,
@@ -261,9 +276,7 @@ impl Debug for Series {
                 "Series"
             ),
             #[cfg(feature = "object")]
-            DataType::Object(_) => {
-                format_object_array(limit, f, self.as_ref(), self.name(), "Series")
-            }
+            DataType::Object(_) => format_object_array(limit, f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => format_array!(
                 limit,
@@ -289,24 +302,24 @@ impl Debug for DataFrame {
         Display::fmt(self, f)
     }
 }
+#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+fn make_str_val(v: &str) -> String {
+    let string_limit = 32;
+    let v_trunc = &v[..v
+        .char_indices()
+        .take(string_limit)
+        .last()
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0)];
+    if v == v_trunc {
+        v.to_string()
+    } else {
+        format!("{}...", v_trunc)
+    }
+}
 
 #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
-    fn make_str_val(v: &str) -> String {
-        let string_limit = 32;
-        let v_trunc = &v[..v
-            .char_indices()
-            .take(string_limit)
-            .last()
-            .map(|(i, c)| i + c.len_utf8())
-            .unwrap_or(0)];
-        if v == v_trunc {
-            v.to_string()
-        } else {
-            format!("{}...", v_trunc)
-        }
-    }
-
     let reduce_columns = n_first + n_last < row.len();
     let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
     for v in row[0..n_first].iter() {
@@ -333,6 +346,7 @@ impl Display for DataFrame {
             .unwrap_or_else(|_| "8".to_string())
             .parse()
             .unwrap_or(8);
+
         #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
         let max_n_rows = {
             let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
@@ -352,22 +366,52 @@ impl Display for DataFrame {
         };
         let reduce_columns = n_first + n_last < self.width();
 
-        let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
-
         let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
-        let schema = self.schema();
-        let fields = schema.fields();
-        for field in fields[0..n_first].iter() {
-            names.push(field_to_str(field))
+
+        #[cfg(not(feature = "pretty_fmt"))]
+        {
+            let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
+            let schema = self.schema();
+            let fields = schema.fields();
+            for field in fields[0..n_first].iter() {
+                names.push(field_to_str(field));
+            }
+            if reduce_columns {
+                names.push("...".into());
+            }
+            for field in fields[self.width() - n_last..].iter() {
+                names.push(field_to_str(field));
+            }
         }
-        if reduce_columns {
-            names.push("...".to_string())
-        }
-        for field in fields[self.width() - n_last..].iter() {
-            names.push(field_to_str(field))
-        }
+
         #[cfg(feature = "pretty_fmt")]
         {
+            let field_to_str = |f: &Field| {
+                let name = make_str_val(f.name());
+                let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
+                let s = format!("{}\n---\n{}", name, f.data_type());
+                (s, lower_bounds)
+            };
+            let tbl_lower_bounds = |l: usize| {
+                comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
+            };
+            let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+            let schema = self.schema();
+            let fields = schema.fields();
+            for field in fields[0..n_first].iter() {
+                let (s, l) = field_to_str(field);
+                names.push(s);
+                constraints.push(tbl_lower_bounds(l));
+            }
+            if reduce_columns {
+                names.push("...".into());
+                constraints.push(tbl_lower_bounds(5));
+            }
+            for field in fields[self.width() - n_last..].iter() {
+                let (s, l) = field_to_str(field);
+                names.push(s);
+                constraints.push(tbl_lower_bounds(l));
+            }
             let mut table = Table::new();
             let preset = if std::env::var("POLARS_FMT_NO_UTF8").is_ok() {
                 ASCII_FULL
@@ -377,16 +421,8 @@ impl Display for DataFrame {
 
             table
                 .load_preset(preset)
-                .set_content_arrangement(ContentArrangement::Dynamic)
-                .set_table_width(
-                    std::env::var("POLARS_TABLE_WIDTH")
-                        .map(|s| {
-                            s.parse::<u16>()
-                                .expect("could not parse table width argument")
-                        })
-                        .unwrap_or(100),
-                )
-                .set_header(names);
+                .set_content_arrangement(ContentArrangement::Dynamic);
+
             let mut rows = Vec::with_capacity(max_n_rows);
             if self.height() > max_n_rows {
                 for i in 0..(max_n_rows / 2) {
@@ -395,7 +431,7 @@ impl Display for DataFrame {
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -403,14 +439,35 @@ impl Display for DataFrame {
                     table.add_row(row);
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(prepare_row(row, n_first, n_last));
                     } else {
                         break;
                     }
                 }
+            }
+
+            table.set_header(names).set_constraints(constraints);
+
+            let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
+                .map(|s| {
+                    Some(
+                        s.parse::<u16>()
+                            .expect("could not parse table width argument"),
+                    )
+                })
+                .unwrap_or(None);
+            // if tbl_width is explicitly set, use it
+            if let Some(w) = tbl_width {
+                table.set_table_width(w);
+            }
+
+            // if no tbl_width (its not-tty && it is not explicitly set), then set default
+            // this is needed to support non-tty applications
+            if !table.is_tty() && table.get_table_width().is_none() {
+                table.set_table_width(100);
             }
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
@@ -436,7 +493,7 @@ impl Display for DataFrame {
                 }
                 let dots = rows[0].iter().map(|_| "...".to_string()).collect();
                 rows.push(dots);
-                for i in (self.height() - max_n_rows / 2 - 1)..self.height() {
+                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
                     let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                     rows.push(prepare_row(row, n_first, n_last));
                 }
@@ -444,8 +501,8 @@ impl Display for DataFrame {
                     table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
                 }
             } else {
-                for i in 0..max_n_rows {
-                    if i < self.height() && self.width() > 0 {
+                for i in 0..self.height() {
+                    if self.width() > 0 {
                         let row = self.columns.iter().map(|s| s.str_value(i)).collect();
                         table.add_row(Row::new(
                             prepare_row(row, n_first, n_last)
@@ -474,15 +531,101 @@ fn fmt_integer<T: Num + NumCast + Display>(
     write!(f, "{:>width$}", v, width = width)
 }
 
+const SCIENTIFIC_BOUND: f64 = 999999.0;
 fn fmt_float<T: Num + NumCast>(f: &mut Formatter<'_>, width: usize, v: T) -> fmt::Result {
     let v: f64 = NumCast::from(v).unwrap();
-    if v == 0.0 {
+    // show integers as 0.0, 1.0 ... 101.0
+    if v.fract() == 0.0 && v.abs() < SCIENTIFIC_BOUND {
         write!(f, "{:>width$.1}", v, width = width)
-    } else if !(0.0001..=9999.).contains(&v) {
+    } else if format!("{}", v).len() > 9 {
+        // large and small floats in scientific notation
+        if !(0.000001..=SCIENTIFIC_BOUND).contains(&v.abs()) | (v.abs() > SCIENTIFIC_BOUND) {
+            write!(f, "{:>width$.4e}", v, width = width)
+        } else {
+            // this makes sure we don't write 12.00000 in case of a long flt that is 12.0000000001
+            // instead we write 12.0
+            let s = format!("{:>width$.6}", v, width = width);
+
+            if s.ends_with('0') {
+                let mut s = s.as_str();
+                let mut len = s.len() - 1;
+
+                while s.ends_with('0') {
+                    len -= 1;
+                    s = &s[..len];
+                }
+                if s.ends_with('.') {
+                    write!(f, "{}0", s)
+                } else {
+                    write!(f, "{}", s)
+                }
+            } else {
+                // 12.0934509341243124
+                // written as
+                // 12.09345
+                write!(f, "{:>width$.6}", v, width = width)
+            }
+        }
+    } else if v.fract() == 0.0 {
         write!(f, "{:>width$e}", v, width = width)
     } else {
         write!(f, "{:>width$}", v, width = width)
     }
+}
+
+const SIZES_NS: [i64; 4] = [
+    86_400_000_000_000,
+    3_600_000_000_000,
+    60_000_000_000,
+    1_000_000_000,
+];
+const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
+const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
+
+fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 ns");
+    }
+    format_duration(f, v, SIZES_NS.as_slice(), NAMES.as_slice())?;
+    if v % 1000 != 0 {
+        write!(f, "{} ns", v % 1_000_000_000)?;
+    } else if v % 1_000_000 != 0 {
+        write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
+    } else if v % 1_000_000_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn fmt_duration_ms(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 ms");
+    }
+    format_duration(f, v, SIZES_MS.as_slice(), NAMES.as_slice())?;
+    if v % 1_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn format_duration(f: &mut Formatter, v: i64, sizes: &[i64], names: &[&str]) -> fmt::Result {
+    for i in 0..4 {
+        let whole_num = if i == 0 {
+            v / sizes[i]
+        } else {
+            (v % sizes[i - 1]) / sizes[i]
+        };
+        if whole_num <= -1 || whole_num >= 1 {
+            write!(f, "{} {}", whole_num, names[i])?;
+            if whole_num != 1 {
+                write!(f, "s")?;
+            }
+            if v % sizes[i] != 0 {
+                write!(f, " ")?;
+            }
+        }
+    }
+    Ok(())
 }
 
 impl Display for AnyValue<'_> {
@@ -505,7 +648,15 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v) => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            AnyValue::Datetime(v, tu, _) => match tu {
+                TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
+            },
+            #[cfg(feature = "dtype-duration")]
+            AnyValue::Duration(v, tu) => match tu {
+                TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
+                TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
+            },
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
                 let nt: chrono::NaiveTime = self.into();
@@ -518,7 +669,7 @@ impl Display for AnyValue<'_> {
             }
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
-            AnyValue::Object(_) => write!(f, "object"),
+            AnyValue::Object(v) => write!(f, "{}", v),
         }
     }
 }
@@ -598,6 +749,13 @@ impl FmtList for DatetimeChunked {
     }
 }
 
+#[cfg(feature = "dtype-duration")]
+impl FmtList for DurationChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
 #[cfg(feature = "dtype-time")]
 impl FmtList for TimeChunked {
     fn fmt_list(&self) -> String {
@@ -654,14 +812,15 @@ Series: 'Date' [date]
             format!("{:?}", s.into_series())
         );
 
-        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)]).into_date();
+        let s = Int64Chunked::new("", &[Some(1), None, Some(1_000_000_000_000)])
+            .into_datetime(TimeUnit::Nanoseconds, None);
         assert_eq!(
             r#"shape: (3,)
-Series: '' [datetime]
+Series: '' [datetime[ns]]
 [
-	1970-01-01 00:00:00.001
+	1970-01-01 00:00:00.000000001
 	null
-	2001-09-09 01:46:40
+	1970-01-01 00:16:40
 ]"#,
             format!("{:?}", s.into_series())
         );

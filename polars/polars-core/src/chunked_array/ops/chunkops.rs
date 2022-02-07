@@ -5,7 +5,6 @@ use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
-use itertools::Itertools;
 #[cfg(feature = "dtype-categorical")]
 use std::ops::Deref;
 
@@ -16,11 +15,11 @@ fn slice(
     slice_length: usize,
     own_length: usize,
 ) -> Vec<ArrayRef> {
+    let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
     let mut remaining_length = slice_len;
     let mut remaining_offset = raw_offset;
-    let mut new_chunks = Vec::with_capacity(1);
 
     for chunk in chunks {
         let chunk_len = chunk.len();
@@ -28,14 +27,18 @@ fn slice(
             remaining_offset -= chunk_len;
             continue;
         }
-        let take_len;
-        if remaining_length + remaining_offset > chunk_len {
-            take_len = chunk_len - remaining_offset;
+        let take_len = if remaining_length + remaining_offset > chunk_len {
+            chunk_len - remaining_offset
         } else {
-            take_len = remaining_length;
-        }
+            remaining_length
+        };
 
-        new_chunks.push(chunk.slice(remaining_offset, take_len).into());
+        debug_assert!(remaining_offset + take_len <= chunk.len());
+        unsafe {
+            // Safety:
+            // this function ensures the slices are in bounds
+            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len).into());
+        }
         remaining_length -= take_len;
         remaining_offset = 0;
         if remaining_length == 0 {
@@ -54,7 +57,11 @@ where
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -73,7 +80,11 @@ impl ChunkOps for BooleanChunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -92,7 +103,11 @@ impl ChunkOps for Utf8Chunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -130,7 +145,11 @@ impl ChunkOps for ListChunked {
             self.clone()
         } else {
             let chunks = vec![concatenate::concatenate(
-                self.chunks.iter().map(|a| &**a).collect_vec().as_slice(),
+                self.chunks
+                    .iter()
+                    .map(|a| &**a)
+                    .collect::<Vec<_>>()
+                    .as_slice(),
             )
             .unwrap()
             .into()];
@@ -201,7 +220,7 @@ mod test {
         let mut a = s.cast(&DataType::Categorical).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
-        a.rechunk();
+        let a = a.rechunk();
         assert!(a.categorical().unwrap().categorical_map.is_some());
     }
 }

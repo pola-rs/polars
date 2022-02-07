@@ -4,16 +4,18 @@ use polars_core::prelude::*;
 
 pub(crate) struct DropDuplicatesExec {
     pub(crate) input: Box<dyn Executor>,
-    pub(crate) maintain_order: bool,
-    pub(crate) subset: Option<Vec<String>>,
+    pub(crate) options: DistinctOptions,
 }
 
 impl Executor for DropDuplicatesExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
-        df.drop_duplicates(
-            self.maintain_order,
-            self.subset.as_ref().map(|v| v.as_ref()),
-        )
+        let subset = self.options.subset.as_ref().map(|v| &***v);
+        let keep = self.options.keep_strategy;
+
+        match self.options.maintain_order {
+            true => df.distinct_stable(subset, keep),
+            false => df.distinct(subset, keep),
+        }
     }
 }

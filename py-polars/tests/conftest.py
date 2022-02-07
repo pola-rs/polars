@@ -1,6 +1,23 @@
+import os
+
 import pytest
 
 import polars as pl
+
+
+@pytest.fixture
+def foods_csv() -> str:
+    return os.path.abspath(
+        os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "examples",
+            "aggregate_multiple_files_in_chunks",
+            "datasets",
+            "foods1.csv",
+        )
+    )
 
 
 @pytest.fixture
@@ -40,8 +57,3 @@ def fruits_cars() -> pl.DataFrame:
             "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
         }
     )
-
-
-@pytest.fixture
-def series() -> pl.Series:
-    return pl.Series("a", [1, 2])

@@ -1,90 +1,306 @@
 use super::GroupBy;
 use crate::prelude::*;
-use hashbrown::HashMap;
-use itertools::Itertools;
-use num::{Num, NumCast, Zero};
-use std::collections::hash_map::RandomState;
-use std::fmt::{Debug, Formatter};
-use std::ops::{Add, Deref};
+use rayon::prelude::*;
+use std::cmp::Ordering;
 
-/// Utility enum used for grouping on multiple columns
-#[derive(Copy, Clone, Hash, Eq, PartialEq)]
-pub(crate) enum Groupable<'a> {
-    Boolean(bool),
-    Utf8(&'a str),
-    UInt32(u32),
-    UInt64(u64),
-    Int32(i32),
-    Int64(i64),
+use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
+use crate::POOL;
+#[cfg(feature = "dtype-date")]
+use arrow::temporal_conversions::date32_to_date;
+#[cfg(feature = "dtype-datetime")]
+use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
+
+pub enum PivotAgg {
+    First,
+    Sum,
+    Min,
+    Max,
+    Mean,
+    Median,
+    Count,
+    Last,
 }
 
-impl<'a> Debug for Groupable<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use Groupable::*;
-        match self {
-            Boolean(v) => write!(f, "{}", v),
-            Utf8(v) => write!(f, "{}", v),
-            UInt32(v) => write!(f, "{}", v),
-            UInt64(v) => write!(f, "{}", v),
-            Int32(v) => write!(f, "{}", v),
-            Int64(v) => write!(f, "{}", v),
+impl DataFrame {
+    pub fn pivot<I0, S0, I1, S1, I2, S2>(
+        &self,
+        values: I0,
+        index: I1,
+        columns: I2,
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame>
+    where
+        I0: IntoIterator<Item = S0>,
+        S0: AsRef<str>,
+        I1: IntoIterator<Item = S1>,
+        S1: AsRef<str>,
+        I2: IntoIterator<Item = S2>,
+        S2: AsRef<str>,
+    {
+        let values = values
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let index = index
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let columns = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let groups = self.groupby(&index)?.groups;
+        self.pivot_impl(&values, &index, &columns, &groups, agg_fn)
+    }
+
+    pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
+        &self,
+        values: I0,
+        index: I1,
+        columns: I2,
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame>
+    where
+        I0: IntoIterator<Item = S0>,
+        S0: AsRef<str>,
+        I1: IntoIterator<Item = S1>,
+        S1: AsRef<str>,
+        I2: IntoIterator<Item = S2>,
+        S2: AsRef<str>,
+    {
+        let values = values
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let index = index
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let columns = columns
+            .into_iter()
+            .map(|s| s.as_ref().to_string())
+            .collect::<Vec<_>>();
+
+        let groups = self.groupby_stable(&index)?.groups;
+
+        self.pivot_impl(&values, &index, &columns, &groups, agg_fn)
+    }
+
+    fn pivot_impl(
+        &self,
+        // these columns will be aggregated in the nested groupby
+        values: &[String],
+        // keys of the first groupby operation
+        index: &[String],
+        // these columns will be used for a nested groupby
+        // the rows of this nested groupby will be pivoted as header column values
+        columns: &[String],
+        // matching a groupby on index
+        groups: &GroupsProxy,
+        // aggregation function
+        agg_fn: PivotAgg,
+    ) -> Result<DataFrame> {
+        // broadcast values argument
+        let mut values = values.to_vec();
+        if values.len() != columns.len() && values.len() == 1 {
+            for _ in 0..columns.len() - 1 {
+                values.push(values[0].clone())
+            }
         }
+        assert_eq!(
+            values.len(),
+            columns.len(),
+            "given values should match the given columns in length"
+        );
+
+        let values_and_columns = (0..values.len())
+            .map(|i| {
+                // take only the columns we will use in a smaller dataframe
+                // make sure that we take the physical types for the column
+                let column = self
+                    .column(columns[i].as_str())?
+                    .to_physical_repr()
+                    .into_owned();
+                let values = self
+                    .column(values[i].as_str())?
+                    .to_physical_repr()
+                    .into_owned();
+
+                Ok(DataFrame::new_no_checks(vec![values, column]))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        // make sure that we make smaller dataframes then the take operations are cheaper
+        let mut index_df = self.select(index)?;
+
+        let im_result = POOL.install(|| {
+            groups
+                .par_iter()
+                .map(|indicator| {
+                    // Here we do a nested group by.
+                    // Everything we do here produces a single row in the final dataframe
+
+                    // nested group by keys
+
+                    // safety:
+                    // group tuples are in bounds
+                    // shape (1, len(keys)
+                    let sub_index_df = match indicator {
+                        GroupsIndicator::Idx(g) => unsafe {
+                            index_df.take_unchecked_slice(&g.1[..1])
+                        },
+                        GroupsIndicator::Slice([first, len]) => {
+                            index_df.slice(first as i64, len as usize)
+                        }
+                    };
+
+                    // in `im_result` we store the intermediate results
+                    // The first dataframe in the vec is the index dataframe (a single row)
+                    // The rest of the dataframes in `im_result` are the aggregation results (they still have to be pivoted)
+                    let mut im_result = Vec::with_capacity(columns.len());
+                    im_result.push(sub_index_df);
+
+                    // for every column we compute aggregates we do this branch
+                    for (i, column) in columns.iter().enumerate() {
+                        // Here we do another groupby where
+                        // - `columns` are the keys
+                        // - `values` are the aggregation results
+
+                        // this yields:
+                        // keys  | values
+                        // key_1  | agg_result_1
+                        // key_2  | agg_result_2
+                        // key_n  | agg_result_n
+
+                        // which later must be transposed to
+                        //
+                        // header: key_1, key_2, key_n
+                        //        agg_1, agg_2, agg_3
+
+                        // safety:
+                        // group tuples are in bounds
+                        let sub_vals_and_cols = match indicator {
+                            GroupsIndicator::Idx(g) => unsafe {
+                                values_and_columns[i].take_unchecked_slice(g.1)
+                            },
+                            GroupsIndicator::Slice([first, len]) => {
+                                values_and_columns[i].slice(first as i64, len as usize)
+                            }
+                        };
+
+                        let s = sub_vals_and_cols.column(column).unwrap().clone();
+                        let gb = sub_vals_and_cols
+                            .groupby_with_series(vec![s], false, false)
+                            .unwrap();
+
+                        use PivotAgg::*;
+                        let mut df_result = match agg_fn {
+                            Sum => gb.sum().unwrap(),
+                            Min => gb.min().unwrap(),
+                            Max => gb.max().unwrap(),
+                            Mean => gb.mean().unwrap(),
+                            Median => gb.median().unwrap(),
+                            First => gb.first().unwrap(),
+                            Count => gb.count().unwrap(),
+                            Last => gb.last().unwrap(),
+                        };
+
+                        // make sure we keep the original names
+                        df_result.columns[1].rename(&values[i]);
+
+                        // store the results and transpose them later
+                        im_result.push(df_result);
+                    }
+                    im_result
+                })
+                .collect::<Vec<_>>()
+        });
+        // Now we have a lot of small DataFrames with aggregation results
+        // we must map the results to the right column. This requires a hashmap
+
+        let columns_unique = columns
+            .iter()
+            .map(|name| self.column(name)?.to_physical_repr().unique())
+            .collect::<Result<Vec<_>>>()?;
+
+        // for every column where the values are aggregated
+        let df_cols = (0..columns.len())
+            .zip(columns_unique)
+            .flat_map(|(column_index, unique_vals)| {
+                // the values that will be the new headers
+
+                // Join every row with the unique column. This join is needed because some rows don't have all values and we want to have
+                // nulls there.
+                let result_columns = POOL.install(|| {
+                    im_result
+                        .par_iter()
+                        .map(|im_r| {
+                            // we offset 1 because the first is the group index (can be removed?)
+                            let current_result = &im_r[column_index + 1];
+                            let key = &current_result.get_columns()[0];
+                            let tuples = unique_vals.hash_join_left(key);
+                            let mut iter = tuples.iter().map(|t| t.1.map(|i| i as usize));
+
+                            let values = &current_result.get_columns()[1];
+                            // Safety
+                            // join tuples are in bounds
+                            unsafe { values.take_opt_iter_unchecked(&mut iter) }
+                        })
+                        .collect::<Vec<_>>()
+                });
+                let results = DataFrame::new_no_checks(result_columns);
+
+                let mut dtype = self
+                    .column(&values[column_index])
+                    .unwrap()
+                    .dtype()
+                    .to_physical();
+                match (dtype.clone(), &agg_fn) {
+                    (DataType::Float32, PivotAgg::Mean | PivotAgg::Median) => {}
+                    (_, PivotAgg::Mean | PivotAgg::Median) => dtype = DataType::Float64,
+                    (_, PivotAgg::Count) => dtype = DataType::UInt32,
+                    _ => {}
+                }
+                let mut out = results.transpose_from_dtype(&dtype).unwrap();
+
+                // add the headers based on the unique vals
+                let headers = unique_vals.cast(&DataType::Utf8).unwrap();
+                let headers = headers.utf8().unwrap();
+                out.get_columns_mut()
+                    .iter_mut()
+                    .zip(headers.into_iter())
+                    .for_each(|(s, name)| {
+                        match name {
+                            None => s.rename("null"),
+                            Some(name) => s.rename(name),
+                        };
+                    });
+
+                // make output predictable
+                sort_cols(out.get_columns_mut(), 0);
+
+                let column_name = &columns[column_index];
+                let values_name = &values[column_index];
+                let columns_s = self.column(column_name).unwrap();
+                let values_s = self.column(values_name).unwrap();
+                finish_logical_types(out, columns_s, values_s)
+                    .unwrap()
+                    .columns
+            })
+            .collect::<Vec<_>>();
+
+        index_df.columns.iter_mut().for_each(|s| {
+            *s = s.agg_first(groups);
+        });
+        index_df.hstack(&df_cols)
     }
 }
 
-impl Series {
-    pub(crate) fn as_groupable_iter<'a>(
-        // mutable reference is needed to put an owned cast to back to the callers location.
-        // this allows us to return a reference to 'a
-        // This still is quite hacky. This should probably be reimplemented.
-        &'a mut self,
-    ) -> Result<Box<dyn Iterator<Item = Option<Groupable>> + 'a + Send>> {
-        macro_rules! as_groupable_iter {
-            ($ca:expr, $variant:ident ) => {{
-                let bx = Box::new($ca.into_iter().map(|opt_b| opt_b.map(Groupable::$variant)));
-                Ok(bx)
-            }};
-        }
-
-        match self.dtype() {
-            DataType::Boolean => as_groupable_iter!(self.bool().unwrap(), Boolean),
-            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
-                let s = self.cast(&DataType::Int32)?;
-                *self = s;
-                self.as_groupable_iter()
-            }
-            DataType::UInt32 => as_groupable_iter!(self.u32().unwrap(), UInt32),
-            DataType::UInt64 => as_groupable_iter!(self.u64().unwrap(), UInt64),
-            DataType::Int32 => as_groupable_iter!(self.i32().unwrap(), Int32),
-            DataType::Int64 => as_groupable_iter!(self.i64().unwrap(), Int64),
-            DataType::Utf8 => as_groupable_iter!(self.utf8().unwrap(), Utf8),
-            DataType::Float32 => {
-                let s = self.f32()?.bit_repr_small().into_series();
-                *self = s;
-                self.as_groupable_iter()
-            }
-            DataType::Float64 => {
-                let s = self.f64()?.bit_repr_small().into_series();
-                *self = s;
-                self.as_groupable_iter()
-            }
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
-                let s = self.cast(&DataType::UInt32)?;
-                *self = s;
-                self.as_groupable_iter()
-            }
-            dt => Err(PolarsError::ComputeError(
-                format!("Column with dtype {:?} is not groupable", dt).into(),
-            )),
-        }
-    }
-}
-
-impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
+impl<'df> GroupBy<'df> {
     /// Pivot a column of the current `DataFrame` and perform one of the following aggregations:
     ///
     /// * first
+    /// * last
     /// * sum
     /// * min
     /// * max
@@ -104,13 +320,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// use polars_core::df;
     ///
     /// fn example() -> Result<DataFrame> {
-    ///     let df = df!("foo" => &["A", "A", "B", "B", "C"],
-    ///         "N" => &[1, 2, 2, 4, 2],
-    ///         "bar" => &["k", "l", "m", "n", "0"]
-    ///         )?;
+    ///     let df = df!["foo" => ["A", "A", "B", "B", "C"],
+    ///         "N" => [1, 2, 2, 4, 2],
+    ///         "bar" => ["k", "l", "m", "n", "0"]
+    ///         ]?;
     ///
-    ///     df.groupby("foo")?
-    ///     .pivot("bar", "N")
+    ///     df.groupby(["foo"])?
+    ///     .pivot(["bar"], ["N"])
     ///     .first()
     /// }
     /// ```
@@ -149,417 +365,157 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// | "C" | 2    | null | null | null | null |
     /// +-----+------+------+------+------+------+
     /// ```
-    #[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
-    pub fn pivot(
-        &mut self,
-        pivot_column: &'selection_str str,
-        values_column: &'selection_str str,
-    ) -> Pivot {
+    #[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
+    pub fn pivot(&mut self, columns: impl IntoVec<String>, values: impl IntoVec<String>) -> Pivot {
         // same as select method
-        self.selected_agg = Some(vec![pivot_column, values_column]);
+        let columns = columns.into_vec();
+        let values = values.into_vec();
 
         Pivot {
             gb: self,
-            pivot_column,
-            values_column,
+            columns,
+            values,
         }
     }
 }
 
 /// Intermediate structure when a `pivot` operation is applied.
 /// See [the pivot method for more information.](../group_by/struct.GroupBy.html#method.pivot)
-#[cfg_attr(docsrs, doc(cfg(feature = "pivot")))]
-pub struct Pivot<'df, 'selection_str> {
-    gb: &'df GroupBy<'df, 'selection_str>,
-    pivot_column: &'selection_str str,
-    values_column: &'selection_str str,
+#[cfg_attr(docsrs, doc(cfg(feature = "rows")))]
+pub struct Pivot<'df> {
+    gb: &'df GroupBy<'df>,
+    columns: Vec<String>,
+    values: Vec<String>,
 }
 
-pub(crate) trait ChunkPivot {
-    fn pivot<'a>(
-        &self,
-        _pivot_series: &'a Series,
-        _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
-        _agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "Pivot operation not implemented for this type".into(),
-        ))
-    }
-
-    fn pivot_count<'a>(
-        &self,
-        _pivot_series: &'a Series,
-        _keys: Vec<Series>,
-        _groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "Pivot count operation not implemented for this type".into(),
-        ))
-    }
-}
-
-/// Create a hashmap that maps column/keys names to values. This is not yet the result of the aggregation.
-fn create_column_values_map<'a, T>(
-    pivot_vec: &'a [Option<Groupable>],
-    size: usize,
-) -> HashMap<&'a Groupable<'a>, Vec<Option<T>>, RandomState> {
-    let mut columns_agg_map = HashMap::with_capacity_and_hasher(size, RandomState::new());
-
-    for column_name in pivot_vec.iter().flatten() {
-        columns_agg_map.entry(column_name).or_insert_with(Vec::new);
-    }
-
-    columns_agg_map
-}
-
-/// Create a hashmap that maps columns/keys to the result of the aggregation.
-fn create_new_column_builder_map<'a, T>(
-    pivot_vec: &'a [Option<Groupable>],
-    groups: &[(u32, Vec<u32>)],
-) -> PlHashMap<&'a Groupable<'a>, PrimitiveChunkedBuilder<T>>
-where
-    T: PolarsNumericType,
-{
-    // create a hash map that will be filled with the results of the aggregation.
-    let mut columns_agg_map_main = PlHashMap::new();
-    for column_name in pivot_vec.iter().flatten() {
-        columns_agg_map_main.entry(column_name).or_insert_with(|| {
-            PrimitiveChunkedBuilder::<T>::new(&format!("{:?}", column_name), groups.len())
-        });
-    }
-    columns_agg_map_main
-}
-
-impl<T> ChunkPivot for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: Copy + Num + NumCast + PartialOrd,
-    ChunkedArray<T>: IntoSeries,
-{
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        // TODO: save an allocation by creating a random access struct for the Groupable utility type.
-
-        // Note: we also create pivot_vec with unique values, otherwise we have quadratic behavior
-        let mut pivot_series = pivot_series.clone();
-        let mut pivot_unique = pivot_series.unique()?;
-        let iter = pivot_unique.as_groupable_iter()?;
-        let pivot_vec_unique: Vec<_> = iter.collect();
-        let iter = pivot_series.as_groupable_iter()?;
-        let pivot_vec: Vec<_> = iter.collect();
-        let values_taker = self.take_rand();
-        // create a hash map that will be filled with the results of the aggregation.
-        let mut columns_agg_map_main =
-            create_new_column_builder_map::<T>(&pivot_vec_unique, groups);
-
-        // iterate over the groups that need to be aggregated
-        // idxes are the indexes of the groups in the keys, pivot, and values columns
-        for (_first, idx) in groups {
-            // for every group do the aggregation by adding them to the vector belonging by that column
-            // the columns are hashed with the pivot values
-            let mut columns_agg_map_group =
-                create_column_values_map::<T::Native>(&pivot_vec_unique, idx.len());
-            for &i in idx {
-                let i = i as usize;
-                let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
-
-                if let Some(pivot_val) = opt_pivot_val {
-                    let values_val = values_taker.get(i);
-                    if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
-                        v.push(values_val)
-                    }
-                }
-            }
-
-            // After the vectors are filled we really do the aggregation and add the result to the main
-            // hash map, mapping pivot values as column to aggregate result.
-            for (k, v) in &mut columns_agg_map_group {
-                let main_builder = columns_agg_map_main.get_mut(k).unwrap();
-
-                match v.len() {
-                    0 => main_builder.append_null(),
-                    // NOTE: now we take first, but this is the place where all aggregations happen
-                    _ => match agg_type {
-                        PivotAgg::First => pivot_agg_first(main_builder, v),
-                        PivotAgg::Sum => pivot_agg_sum(main_builder, v),
-                        PivotAgg::Min => pivot_agg_min(main_builder, v),
-                        PivotAgg::Max => pivot_agg_max(main_builder, v),
-                        PivotAgg::Mean => pivot_agg_mean(main_builder, v),
-                        PivotAgg::Median => pivot_agg_median(main_builder, v),
-                    },
-                }
-            }
+fn sort_cols(cols: &mut [Series], offset: usize) {
+    (&mut cols[offset..]).sort_unstable_by(|s1, s2| {
+        if s1.name() > s2.name() {
+            Ordering::Greater
+        } else {
+            Ordering::Less
         }
-        // Finalize the pivot by creating a vec of all the columns and creating a DataFrame
-        let mut cols = keys;
-        cols.reserve_exact(columns_agg_map_main.len());
-
-        for (_, builder) in columns_agg_map_main {
-            let ca = builder.finish();
-            cols.push(ca.into_series());
-        }
-
-        DataFrame::new(cols)
-    }
-
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        pivot_count_impl(self, pivot_series, keys, groups)
-    }
+    });
 }
 
-fn pivot_count_impl<'a, CA: TakeRandom>(
-    ca: &CA,
-    pivot_series: &'a Series,
-    keys: Vec<Series>,
-    groups: &[(u32, Vec<u32>)],
+// Takes a `DataFrame` that only consists of the column aggregates that are pivoted by
+// the values in `columns`
+fn finish_logical_types(
+    mut out: DataFrame,
+    columns: &Series,
+    values: &Series,
 ) -> Result<DataFrame> {
-    let mut pivot_series = pivot_series.clone();
-    let mut pivot_unique = pivot_series.unique()?;
-    let iter = pivot_unique.as_groupable_iter()?;
-    let pivot_vec_unique: Vec<_> = iter.collect();
-    let iter = pivot_series.as_groupable_iter()?;
-    let pivot_vec: Vec<_> = iter.collect();
-    // create a hash map that will be filled with the results of the aggregation.
-    let mut columns_agg_map_main =
-        create_new_column_builder_map::<UInt32Type>(&pivot_vec_unique, groups);
-
-    // iterate over the groups that need to be aggregated
-    // idxes are the indexes of the groups in the keys, pivot, and values columns
-    for (_first, idx) in groups {
-        // for every group do the aggregation by adding them to the vector belonging by that column
-        // the columns are hashed with the pivot values
-        let mut columns_agg_map_group =
-            create_column_values_map::<CA::Item>(&pivot_vec_unique, idx.len());
-        for &i in idx {
-            let i = i as usize;
-            let opt_pivot_val = unsafe { pivot_vec.get_unchecked(i) };
-
-            if let Some(pivot_val) = opt_pivot_val {
-                let values_val = ca.get(i);
-                if let Some(v) = columns_agg_map_group.get_mut(&pivot_val) {
-                    v.push(values_val)
-                }
+    // We cast the column headers to another string repr
+    match columns.dtype() {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical => {
+            let piv = columns.categorical().unwrap();
+            let rev_map = piv.categorical_map.as_ref().unwrap().clone();
+            for s in out.columns.iter_mut() {
+                let category = s.name().parse::<u32>().unwrap();
+                let name = rev_map.get(category);
+                s.rename(name);
             }
         }
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, _) => {
+            let fun = match tu {
+                TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                TimeUnit::Milliseconds => timestamp_ms_to_datetime,
+            };
 
-        // After the vectors are filled we really do the aggregation and add the result to the main
-        // hash map, mapping pivot values as column to aggregate result.
-        for (k, v) in &mut columns_agg_map_group {
-            let main_builder = columns_agg_map_main.get_mut(k).unwrap();
-            main_builder.append_value(v.len() as u32)
-        }
-    }
-    // Finalize the pivot by creating a vec of all the columns and creating a DataFrame
-    let mut cols = keys;
-    cols.reserve_exact(columns_agg_map_main.len());
-
-    for (_, builder) in columns_agg_map_main {
-        let ca = builder.finish();
-        cols.push(ca.into_series());
-    }
-
-    DataFrame::new(cols)
-}
-
-impl ChunkPivot for BooleanChunked {
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        pivot_count_impl(self, pivot_series, keys, groups)
-    }
-}
-impl ChunkPivot for Utf8Chunked {
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        pivot_count_impl(&self, pivot_series, keys, groups)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkPivot for CategoricalChunked {
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.deref().pivot_count(pivot_series, keys, groups)
-    }
-}
-
-impl ChunkPivot for ListChunked {}
-#[cfg(feature = "object")]
-impl<T> ChunkPivot for ObjectChunked<T> {}
-
-pub enum PivotAgg {
-    First,
-    Sum,
-    Min,
-    Max,
-    Mean,
-    Median,
-}
-
-fn pivot_agg_first<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-where
-    T: PolarsNumericType,
-{
-    builder.append_option(v[0]);
-}
-
-fn pivot_agg_median<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &mut Vec<Option<T::Native>>)
-where
-    T: PolarsNumericType,
-    T::Native: PartialOrd,
-{
-    v.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    builder.append_option(v[v.len() / 2]);
-}
-
-fn pivot_agg_sum<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-where
-    T: PolarsNumericType,
-    T::Native: Num + Zero,
-{
-    builder.append_option(v.iter().copied().fold_options(Zero::zero(), Add::add));
-}
-
-fn pivot_agg_mean<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-where
-    T: PolarsNumericType,
-    T::Native: Num + Zero + NumCast,
-{
-    builder.append_option(
-        v.iter()
-            .copied()
-            .fold_options::<T::Native, T::Native, _>(Zero::zero(), Add::add)
-            .map(|sum_val| sum_val / NumCast::from(v.len()).unwrap()),
-    );
-}
-
-fn pivot_agg_min<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-where
-    T: PolarsNumericType,
-    T::Native: PartialOrd,
-{
-    let mut min = None;
-
-    for val in v.iter().flatten() {
-        match min {
-            None => min = Some(*val),
-            Some(minimum) => {
-                if val < &minimum {
-                    min = Some(*val)
-                }
+            for s in out.columns.iter_mut() {
+                let ts = s.name().parse::<i64>().unwrap();
+                let nd = fun(ts);
+                s.rename(&format!("{}", nd));
             }
         }
-    }
-
-    builder.append_option(min);
-}
-
-fn pivot_agg_max<T>(builder: &mut PrimitiveChunkedBuilder<T>, v: &[Option<T::Native>])
-where
-    T: PolarsNumericType,
-    T::Native: PartialOrd,
-{
-    let mut max = None;
-
-    for val in v.iter().flatten() {
-        match max {
-            None => max = Some(*val),
-            Some(maximum) => {
-                if val > &maximum {
-                    max = Some(*val)
-                }
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            for s in out.columns.iter_mut() {
+                let days = s.name().parse::<i32>().unwrap();
+                let nd = date32_to_date(days);
+                s.rename(&format!("{}", nd));
             }
         }
+        _ => {}
     }
 
-    builder.append_option(max);
+    let dtype = values.dtype();
+    match dtype {
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical => {
+            let piv = columns.categorical().unwrap();
+            let rev_map = piv.categorical_map.as_ref().cloned();
+
+            for s in out.columns.iter_mut() {
+                let s_ = s.cast(&DataType::Categorical).unwrap();
+                let mut ca = s_.categorical().unwrap().clone();
+                ca.categorical_map = rev_map.clone();
+                *s = ca.into_series();
+            }
+        }
+        DataType::Datetime(_, _) | DataType::Date | DataType::Time => {
+            for s in out.columns.iter_mut() {
+                *s = s.cast(dtype).unwrap();
+            }
+        }
+        _ => {}
+    }
+
+    Ok(out)
 }
 
-impl<'df, 'sel_str> Pivot<'df, 'sel_str> {
-    /// Aggregate the pivot results by taking the count the values.
+impl<'df> Pivot<'df> {
+    fn execute(&self, agg: PivotAgg) -> Result<DataFrame> {
+        let index = self
+            .gb
+            .selected_keys
+            .iter()
+            .map(|s| s.name().to_string())
+            .collect::<Vec<_>>();
+        self.gb
+            .df
+            .pivot_impl(&self.values, &index, &self.columns, &self.gb.groups, agg)
+    }
+
+    /// Aggregate the pivot results by taking the count values.
     pub fn count(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot_count(pivot_series, self.gb.keys(), &self.gb.groups)
+        self.execute(PivotAgg::Count)
     }
 
     /// Aggregate the pivot results by taking the first occurring value.
     pub fn first(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
-            pivot_series,
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::First,
-        )
+        self.execute(PivotAgg::First)
     }
 
     /// Aggregate the pivot results by taking the sum of all duplicates.
     pub fn sum(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Sum)
+        self.execute(PivotAgg::Sum)
     }
 
     /// Aggregate the pivot results by taking the minimal value of all duplicates.
     pub fn min(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Min)
+        self.execute(PivotAgg::Min)
     }
 
     /// Aggregate the pivot results by taking the maximum value of all duplicates.
     pub fn max(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(pivot_series, self.gb.keys(), &self.gb.groups, PivotAgg::Max)
+        self.execute(PivotAgg::Max)
     }
 
     /// Aggregate the pivot results by taking the mean value of all duplicates.
     pub fn mean(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
-            pivot_series,
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Mean,
-        )
+        self.execute(PivotAgg::Mean)
     }
     /// Aggregate the pivot results by taking the median value of all duplicates.
     pub fn median(&self) -> Result<DataFrame> {
-        let pivot_series = self.gb.df.column(self.pivot_column)?;
-        let values_series = self.gb.df.column(self.values_column)?;
-        values_series.pivot(
-            pivot_series,
-            self.gb.keys(),
-            &self.gb.groups,
-            PivotAgg::Median,
-        )
+        self.execute(PivotAgg::Median)
+    }
+
+    /// Aggregate the pivot results by taking the last value of all duplicates.
+    pub fn last(&self) -> Result<DataFrame> {
+        self.execute(PivotAgg::Last)
     }
 }
 
@@ -572,37 +528,143 @@ mod test {
         let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
         let s2 = Series::new("bar", ["k", "l", "m", "m", "l"].as_ref());
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-        println!("{:?}", df);
 
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").sum().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .sum()
+            .unwrap();
+        assert_eq!(pvt.get_column_names(), &["foo", "k", "l", "m"]);
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(6)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").min().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .min()
+            .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(2)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").max().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .max()
+            .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
             &[None, None, Some(4)]
         );
-        let pvt = df.groupby("foo").unwrap().pivot("bar", "N").mean().unwrap();
+        let pvt = df
+            .groupby(["foo"])
+            .unwrap()
+            .pivot(["bar"], ["N"])
+            .mean()
+            .unwrap();
         assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
-            &[None, None, Some(3)]
+            Vec::from(&pvt.column("m").unwrap().f64().unwrap().sort(false)),
+            &[None, None, Some(3.0)]
         );
         let pvt = df
-            .groupby("foo")
+            .groupby(["foo"])
             .unwrap()
-            .pivot("bar", "N")
+            .pivot(["bar"], ["N"])
             .count()
             .unwrap();
         assert_eq!(
             Vec::from(&pvt.column("m").unwrap().u32().unwrap().sort(false)),
-            &[Some(0), Some(0), Some(2)]
+            &[None, None, Some(2)]
         );
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_pivot_categorical() -> Result<()> {
+        let mut df = df![
+            "A" => [1, 1, 1, 1, 1, 1, 1, 1],
+            "B" => [8, 2, 3, 6, 3, 6, 2, 2],
+            "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
+        ]?;
+        df.try_apply("C", |s| s.cast(&DataType::Categorical))?;
+
+        let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
+        assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);
+
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-date")]
+    fn test_pivot_date() -> Result<()> {
+        let mut df = df![
+            "A" => [1, 1, 1, 1, 1, 1, 1, 1],
+            "B" => [8, 2, 3, 6, 3, 6, 2, 2],
+            "C" => [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]
+        ]?;
+        df.try_apply("C", |s| s.cast(&DataType::Date))?;
+
+        let out = df.groupby_stable(["B"])?.pivot(["C"], ["A"]).count()?;
+        let expected = df![
+            "B" => [8i32, 2, 3, 6],
+            "1972-09-27" => [1u32, 3, 2, 2]
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
+
+        let mut out = df.groupby_stable(["B"])?.pivot(["A"], ["C"]).first()?;
+        out.try_apply("1", |s| {
+            let ca = s.date()?;
+            Ok(ca.strftime("%Y-%d-%m"))
+        })?;
+
+        let expected = df![
+            "B" => [8i32, 2, 3, 6],
+            "1" => ["1972-27-09", "1972-27-09", "1972-27-09", "1972-27-09"]
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_pivot_new() -> Result<()> {
+        let df = df!["A"=> ["foo", "foo", "foo", "foo", "foo",
+            "bar", "bar", "bar", "bar"],
+            "B"=> ["one", "one", "one", "two", "two",
+            "one", "one", "two", "two"],
+            "C"=> ["small", "large", "large", "small",
+            "small", "large", "small", "small", "large"],
+            "breaky"=> ["jam", "egg", "egg", "egg",
+             "jam", "jam", "potato", "jam", "jam"],
+            "D"=> [1, 2, 2, 3, 3, 4, 5, 6, 7],
+            "E"=> [2, 4, 5, 5, 6, 6, 8, 9, 9]
+        ]?;
+
+        let out = (df.pivot_stable(["D"], ["A", "B"], ["C"], PivotAgg::Sum))?;
+        let expected = df![
+            "A" => ["foo", "foo", "bar", "bar"],
+            "B" => ["one", "two", "one", "two"],
+            "large" => [Some(4), None, Some(4), Some(7)],
+            "small" => [1, 6, 5, 6],
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
+
+        let out = df.pivot_stable(["D"], ["A", "B"], ["C", "breaky"], PivotAgg::Sum)?;
+        let expected = df![
+            "A" => ["foo", "foo", "bar", "bar"],
+            "B" => ["one", "two", "one", "two"],
+            "large" => [Some(4), None, Some(4), Some(7)],
+            "small" => [1, 6, 5, 6],
+            "egg" => [Some(4), Some(3), None, None],
+            "jam" => [1, 3, 4, 13],
+            "potato" => [None, None, Some(5), None]
+        ]?;
+        assert!(out.frame_equal_missing(&expected));
+
+        Ok(())
     }
 }

@@ -10,7 +10,7 @@ pub use crate::{
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        iterator::{IntoNoNullIterator, PolarsIterator},
+        iterator::PolarsIterator,
         ops::{aggregate::*, *},
         ChunkedArray,
     },
@@ -18,8 +18,8 @@ pub use crate::{
     datatypes::*,
     df,
     error::{PolarsError, Result},
-    frame::{hash_join::JoinType, DataFrame},
-    named_from::NamedFrom,
+    frame::{groupby::GroupsProxy, hash_join::JoinType, *},
+    named_from::{NamedFrom, NamedFromOwned},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, Series, SeriesTrait,
@@ -30,7 +30,7 @@ pub use crate::{
 };
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
-pub use polars_arrow::prelude::{AlignedVec, LargeListArray, LargeStringArray};
+pub use polars_arrow::prelude::{LargeListArray, LargeStringArray, QuantileInterpolOptions};
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use std::sync::Arc;
 
@@ -42,7 +42,12 @@ pub use crate::chunked_array::temporal::conversion::*;
 pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 
 #[cfg(feature = "rank")]
-pub use crate::chunked_array::ops::unique::rank::RankMethod;
+pub use crate::chunked_array::ops::unique::rank::{RankMethod, RankOptions};
 
 #[cfg(feature = "rolling_window")]
 pub use crate::chunked_array::ops::rolling_window::RollingOptions;
+
+#[cfg(feature = "ewma")]
+pub use polars_arrow::kernels::ewm::EWMOptions;
+
+pub(crate) use polars_arrow::export::*;

@@ -1,10 +1,10 @@
-pub use crate::prelude::ChunkCompare;
-use crate::prelude::*;
-use arrow::array::ArrayRef;
-
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
+pub use crate::prelude::ChunkCompare;
+use crate::prelude::*;
+use arrow::array::ArrayRef;
+use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
@@ -34,16 +34,15 @@ macro_rules! invalid_operation_panic {
 
 pub(crate) mod private {
     use super::*;
-    #[cfg(feature = "pivot")]
-    use crate::frame::groupby::pivot::PivotAgg;
-    use crate::frame::groupby::GroupTuples;
+    #[cfg(feature = "rows")]
+    use crate::frame::groupby::GroupsProxy;
 
     use crate::chunked_array::ops::compare_inner::{PartialEqInner, PartialOrdInner};
     use ahash::RandomState;
 
     pub trait PrivateSeriesNumeric {
         fn bit_repr_is_large(&self) -> bool {
-            unimplemented!()
+            false
         }
         fn bit_repr_large(&self) -> UInt64Chunked {
             unimplemented!()
@@ -54,6 +53,16 @@ pub(crate) mod private {
     }
 
     pub trait PrivateSeries {
+        #[cfg(feature = "object")]
+        fn get_list_builder(
+            &self,
+            _name: &str,
+            _values_capacity: usize,
+            _list_capacity: usize,
+        ) -> Box<dyn ListBuilderTrait> {
+            invalid_operation_panic!(self)
+        }
+
         /// Get field (used in schema)
         fn _field(&self) -> Cow<Field> {
             invalid_operation_panic!(self)
@@ -73,29 +82,45 @@ pub(crate) mod private {
         fn _rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling sum to a Series. See:
+        /// Apply a rolling sum to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling min to a Series. See:
+        /// Apply a rolling median to a Series.
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_median(&self, _options: RollingOptions) -> Result<Series> {
+            invalid_operation!(self)
+        }
+        /// Apply a rolling quantile to a Series.
+        #[cfg(feature = "rolling_window")]
+        fn _rolling_quantile(
+            &self,
+            _quantile: f64,
+            _interpolation: QuantileInterpolOptions,
+            _options: RollingOptions,
+        ) -> Result<Series> {
+            invalid_operation!(self)
+        }
+
+        /// Apply a rolling min to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
-        /// Apply a rolling max to a Series. See:
+        /// Apply a rolling max to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
 
-        /// Apply a rolling variance to a Series. See:
+        /// Apply a rolling variance to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
         }
 
-        /// Apply a rolling std_dev to a Series. See:
+        /// Apply a rolling std_dev to a Series.
         #[cfg(feature = "rolling_window")]
         fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
             invalid_operation!(self)
@@ -111,18 +136,6 @@ pub(crate) mod private {
         #[cfg(feature = "cum_agg")]
         fn _cummin(&self, _reverse: bool) -> Series {
             panic!("operation cummin not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumsum(&self, _reverse: bool) -> Series {
-            panic!("operation cumsum not supported for this dtype")
-        }
-
-        /// Get an array with the cumulative sum computed at every element
-        #[cfg(feature = "cum_agg")]
-        fn _cumprod(&self, _reverse: bool) -> Series {
-            panic!("operation cumprod not supported for this dtype")
         }
 
         #[cfg(feature = "asof_join")]
@@ -150,73 +163,45 @@ pub(crate) mod private {
         fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
             invalid_operation_panic!(self)
         }
-        fn vec_hash(&self, _build_hasher: RandomState) -> AlignedVec<u64> {
+        fn vec_hash(&self, _build_hasher: RandomState) -> Vec<u64> {
             invalid_operation_panic!(self)
         }
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_min(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_max(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_std(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_var(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_first(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_last(&self, _groups: &[(u32, Vec<u32>)]) -> Series {
-            invalid_operation_panic!(self)
-        }
-        fn agg_n_unique(&self, _groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
+        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-        fn agg_list(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            None
-        }
-        fn agg_quantile(&self, _groups: &[(u32, Vec<u32>)], _quantile: f64) -> Option<Series> {
-            None
-        }
-        fn agg_median(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            None
-        }
-        #[cfg(feature = "lazy")]
-        fn agg_valid_count(&self, _groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-            None
-        }
-        #[cfg(feature = "pivot")]
-        fn pivot<'a>(
+        fn agg_quantile(
             &self,
-            _pivot_series: &'a Series,
-            _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
-            _agg_type: PivotAgg,
-        ) -> Result<DataFrame> {
-            invalid_operation_panic!(self)
+            _groups: &GroupsProxy,
+            _quantile: f64,
+            _interpol: QuantileInterpolOptions,
+        ) -> Option<Series> {
+            None
         }
-
-        #[cfg(feature = "pivot")]
-        fn pivot_count<'a>(
-            &self,
-            _pivot_series: &'a Series,
-            _keys: Vec<Series>,
-            _groups: &[(u32, Vec<u32>)],
-        ) -> Result<DataFrame> {
-            invalid_operation_panic!(self)
+        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
+            None
         }
 
         fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
@@ -251,7 +236,7 @@ pub(crate) mod private {
         fn remainder(&self, _rhs: &Series) -> Result<Series> {
             invalid_operation_panic!(self)
         }
-        fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
             invalid_operation_panic!(self)
         }
         fn zip_with_same_type(&self, _mask: &BooleanChunked, _other: &Series) -> Result<Series> {
@@ -262,10 +247,6 @@ pub(crate) mod private {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))
-        }
-        /// Formatted string representation. Can used in formatting.
-        fn str_value(&self, _index: usize) -> Cow<str> {
-            invalid_operation_panic!(self)
         }
     }
 }
@@ -453,6 +434,13 @@ pub trait SeriesTrait:
         ))
     }
 
+    /// Unpack to ChunkedArray of dtype duration
+    fn duration(&self) -> Result<&DurationChunked> {
+        Err(PolarsError::SchemaMisMatch(
+            format!("Series dtype {:?} != duration", self.dtype()).into(),
+        ))
+    }
+
     /// Unpack to ChunkedArray of dtype list
     fn list(&self) -> Result<&ListChunked> {
         Err(PolarsError::SchemaMisMatch(
@@ -485,8 +473,13 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Append a Series of the same type in place.
+    #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> Result<()> {
+        invalid_operation_panic!(self)
+    }
+
+    #[doc(hidden)]
+    fn extend(&mut self, _other: &Series) -> Result<()> {
         invalid_operation_panic!(self)
     }
 
@@ -504,7 +497,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
         invalid_operation_panic!(self)
     }
@@ -521,7 +515,8 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     ///
-    /// This doesn't check any bounds.
+    /// - This doesn't check any bounds.
+    /// - Iterator must be TrustedLen
     unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
         invalid_operation_panic!(self)
     }
@@ -550,16 +545,6 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get the head of the Series.
-    fn head(&self, _length: Option<usize>) -> Series {
-        invalid_operation_panic!(self)
-    }
-
-    /// Get the tail of the Series.
-    fn tail(&self, _length: Option<usize>) -> Series {
         invalid_operation_panic!(self)
     }
 
@@ -797,10 +782,6 @@ pub trait SeriesTrait:
     fn min_as_series(&self) -> Series {
         invalid_operation_panic!(self)
     }
-    /// Get the mean of the Series as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
         invalid_operation_panic!(self)
@@ -814,7 +795,11 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
         invalid_operation_panic!(self)
     }
 
@@ -829,7 +814,7 @@ pub trait SeriesTrait:
     fn hour(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.hour()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.hour()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.hour()),
             _ => Err(PolarsError::InvalidOperation(
@@ -845,7 +830,7 @@ pub trait SeriesTrait:
     fn minute(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.minute()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.minute()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.minute()),
             _ => Err(PolarsError::InvalidOperation(
@@ -861,7 +846,7 @@ pub trait SeriesTrait:
     fn second(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.second()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.second()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.second()),
             _ => Err(PolarsError::InvalidOperation(
@@ -877,7 +862,7 @@ pub trait SeriesTrait:
     fn nanosecond(&self) -> Result<UInt32Chunked> {
         match self.dtype() {
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.nanosecond()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.nanosecond()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.nanosecond()),
             _ => Err(PolarsError::InvalidOperation(
@@ -897,7 +882,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.day()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.day()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.day()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -911,7 +896,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.weekday()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.weekday()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.weekday()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -927,7 +912,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.week()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.week()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.week()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -944,7 +929,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.ordinal()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.ordinal()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.ordinal()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -962,7 +947,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.month()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.month()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.month()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -978,7 +963,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.year()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.year()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.year()),
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -993,7 +978,7 @@ pub trait SeriesTrait:
             #[cfg(feature = "dtype-date")]
             DataType::Date => self.date().map(|ca| ca.strftime(fmt).into_series()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
+            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
             #[cfg(feature = "dtype-time")]
             DataType::Time => self.time().map(|ca| ca.strftime(fmt).into_series()),
             _ => Err(PolarsError::InvalidOperation(
@@ -1008,11 +993,18 @@ pub trait SeriesTrait:
     fn timestamp(&self) -> Result<Int64Chunked> {
         match self.dtype() {
             DataType::Date => self
-                .cast(&DataType::Int64)
+                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                 .unwrap()
                 .datetime()
-                .map(|ca| (ca.deref() * 1000)),
-            DataType::Datetime => self.datetime().map(|ca| ca.deref().clone()),
+                .map(|ca| (ca.deref().clone())),
+            DataType::Datetime(tu, tz) => {
+                use TimeUnit::*;
+                match (tu, tz) {
+                    (Nanoseconds, None) => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
+                    (Milliseconds, None) => self.datetime().map(|ca| ca.deref().clone()),
+                    _ => todo!(),
+                }
+            }
             _ => Err(PolarsError::InvalidOperation(
                 format!("operation not supported on dtype {:?}", self.dtype()).into(),
             )),
@@ -1023,16 +1015,6 @@ pub trait SeriesTrait:
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         invalid_operation_panic!(self)
     }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    /// Sample n datapoints from this Series.
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series>;
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    /// Sample a fraction between 0.0-1.0 of this Series.
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series>;
 
     #[cfg(feature = "object")]
     #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
@@ -1101,7 +1083,11 @@ pub trait SeriesTrait:
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     /// Apply a custom function over a rolling/ moving window of the array.
     /// This has quite some dynamic dispatch, so prefer rolling_min, max, mean, sum over this.
-    fn rolling_apply(&self, _window_size: usize, _f: &dyn Fn(&Series) -> Series) -> Result<Series> {
+    fn rolling_apply(
+        &self,
+        _f: &dyn Fn(&Series) -> Series,
+        _options: RollingOptions,
+    ) -> Result<Series> {
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }
     #[cfg(feature = "concat_str")]

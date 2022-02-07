@@ -707,14 +707,40 @@ macro_rules! impl_cmp_list {
                     (Some(_), None) => None,
                     (Some(left), Some(right)) => Some(left.$cmp_method(&right)),
                 })
-                .collect(),
+                .collect_trusted(),
         }
     }};
 }
 
 impl ChunkCompare<&ListChunked> for ListChunked {
     fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
-        impl_cmp_list!(self, rhs, series_equal_missing)
+        match (self.has_validity(), rhs.has_validity()) {
+            (false, false) => self
+                .into_no_null_iter()
+                .zip(rhs.into_no_null_iter())
+                .map(|(left, right)| left.eq(&right))
+                .collect_trusted(),
+            (false, _) => self
+                .into_no_null_iter()
+                .zip(rhs.into_iter())
+                .map(|(left, opt_right)| opt_right.map(|right| left.eq(&right)))
+                .collect_trusted(),
+            (_, false) => self
+                .into_iter()
+                .zip(rhs.into_no_null_iter())
+                .map(|(opt_left, right)| opt_left.map(|left| left.eq(&right)))
+                .collect_trusted(),
+            (_, _) => self
+                .into_iter()
+                .zip(rhs.into_iter())
+                .map(|(opt_left, opt_right)| match (opt_left, opt_right) {
+                    (None, None) => true,
+                    (None, Some(_)) => false,
+                    (Some(_), None) => false,
+                    (Some(left), Some(right)) => left.eq(&right),
+                })
+                .collect_trusted(),
+        }
     }
 
     fn equal(&self, rhs: &ListChunked) -> BooleanChunked {
@@ -767,22 +793,14 @@ impl Not for BooleanChunked {
 }
 
 impl BooleanChunked {
-    /// Check if all values are true
-    pub fn all_true(&self) -> bool {
-        match self.sum() {
-            None => false,
-            Some(n) => (n as usize) == self.len(),
-        }
+    /// Check if all values are `true`
+    pub fn all(&self) -> bool {
+        self.downcast_iter().all(compute::boolean::all)
     }
-}
 
-impl BooleanChunked {
-    /// Check if all values are false
-    pub fn all_false(&self) -> bool {
-        match self.sum() {
-            None => false,
-            Some(n) => (n as usize) == 0,
-        }
+    /// Check if any value is `true`
+    pub fn any(&self) -> bool {
+        self.downcast_iter().any(compute::boolean::any)
     }
 }
 
@@ -844,7 +862,6 @@ impl ChunkEqualElement for CategoricalChunked {
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
     use crate::prelude::*;
-    use itertools::Itertools;
     use std::iter::repeat;
 
     #[test]
@@ -861,52 +878,52 @@ mod test {
         let (a1, a2) = create_two_chunked();
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.equal(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a2.equal(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.not_equal(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a2.gt(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt_eq(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt_eq(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(6).collect_vec()
+            a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(6).collect_vec()
+            a2.lt(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(6).collect::<Vec<_>>()
         );
     }
 
@@ -916,52 +933,52 @@ mod test {
         let a2 = get_chunked_array();
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.equal(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a2.equal(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.not_equal(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a2.not_equal(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a2.gt(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.gt_eq(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a2.gt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt_eq(&a1).into_iter().collect_vec(),
-            repeat(Some(true)).take(3).collect_vec()
+            a2.lt_eq(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(true)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
         assert_eq!(
-            a2.lt(&a1).into_iter().collect_vec(),
-            repeat(Some(false)).take(3).collect_vec()
+            a2.lt(&a1).into_iter().collect::<Vec<_>>(),
+            repeat(Some(false)).take(3).collect::<Vec<_>>()
         );
     }
 
@@ -979,53 +996,53 @@ mod test {
         a2_2chunks.append(&(&[Some(3)]).iter().copied().collect());
 
         assert_eq!(
-            a1.equal(&a2).into_iter().collect_vec(),
-            a1.equal(&a2_2chunks).into_iter().collect_vec()
+            a1.equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.equal(&a2_2chunks).into_iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect_vec(),
-            a1.not_equal(&a2_2chunks).into_iter().collect_vec()
+            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            a1.not_equal(&a2_2chunks).into_iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.not_equal(&a2).into_iter().collect_vec(),
-            a2_2chunks.not_equal(&a1).into_iter().collect_vec()
-        );
-
-        assert_eq!(
-            a1.gt(&a2).into_iter().collect_vec(),
-            a1.gt(&a2_2chunks).into_iter().collect_vec()
-        );
-        assert_eq!(
-            a1.gt(&a2).into_iter().collect_vec(),
-            a2_2chunks.gt(&a1).into_iter().collect_vec()
+            a1.not_equal(&a2).into_iter().collect::<Vec<_>>(),
+            a2_2chunks.not_equal(&a1).into_iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect_vec(),
-            a1.gt_eq(&a2_2chunks).into_iter().collect_vec()
+            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt(&a2_2chunks).into_iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.gt_eq(&a2).into_iter().collect_vec(),
-            a2_2chunks.gt_eq(&a1).into_iter().collect_vec()
-        );
-
-        assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect_vec(),
-            a1.lt_eq(&a2_2chunks).into_iter().collect_vec()
-        );
-        assert_eq!(
-            a1.lt_eq(&a2).into_iter().collect_vec(),
-            a2_2chunks.lt_eq(&a1).into_iter().collect_vec()
+            a1.gt(&a2).into_iter().collect::<Vec<_>>(),
+            a2_2chunks.gt(&a1).into_iter().collect::<Vec<_>>()
         );
 
         assert_eq!(
-            a1.lt(&a2).into_iter().collect_vec(),
-            a1.lt(&a2_2chunks).into_iter().collect_vec()
+            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.gt_eq(&a2_2chunks).into_iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            a1.lt(&a2).into_iter().collect_vec(),
-            a2_2chunks.lt(&a1).into_iter().collect_vec()
+            a1.gt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a2_2chunks.gt_eq(&a1).into_iter().collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt_eq(&a2_2chunks).into_iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            a1.lt_eq(&a2).into_iter().collect::<Vec<_>>(),
+            a2_2chunks.lt_eq(&a1).into_iter().collect::<Vec<_>>()
+        );
+
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            a1.lt(&a2_2chunks).into_iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            a1.lt(&a2).into_iter().collect::<Vec<_>>(),
+            a2_2chunks.lt(&a1).into_iter().collect::<Vec<_>>()
         );
     }
 

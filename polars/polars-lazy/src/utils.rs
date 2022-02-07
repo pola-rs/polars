@@ -7,30 +7,6 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[cfg(feature = "private")]
-pub(crate) fn equal_aexprs(left: &[Node], right: &[Node], expr_arena: &Arena<AExpr>) -> bool {
-    left.iter()
-        .zip(right.iter())
-        .all(|(l, r)| AExpr::eq(*l, *r, expr_arena))
-}
-
-pub(crate) fn remove_duplicate_aexprs(exprs: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Node> {
-    let mut unique = HashSet::with_capacity_and_hasher(exprs.len(), RandomState::new());
-    let mut new = Vec::with_capacity(exprs.len());
-    for node in exprs {
-        let mut can_insert = false;
-        for name in aexpr_to_root_names(*node, expr_arena) {
-            if unique.insert(name) {
-                can_insert = true
-            }
-        }
-        if can_insert {
-            new.push(*node)
-        }
-    }
-    new
-}
-
 pub(crate) trait PushNode {
     fn push_node(&mut self, value: Node);
 }
@@ -81,11 +57,22 @@ impl PushNode for &mut [Option<Node>] {
     }
 }
 
+/// A projection that only takes a column or a column + alias.
+pub(crate) fn aexpr_is_simple_projection(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    arena
+        .iter(current_node)
+        .all(|(_node, e)| matches!(e, AExpr::Column(_) | AExpr::Alias(_, _)))
+}
+
 pub(crate) fn has_aexpr<F>(current_node: Node, arena: &Arena<AExpr>, matches: F) -> bool
 where
     F: Fn(&AExpr) -> bool,
 {
     arena.iter(current_node).any(|(_node, e)| matches(e))
+}
+
+pub(crate) fn has_window_aexpr(current_node: Node, arena: &Arena<AExpr>) -> bool {
+    has_aexpr(current_node, arena, |e| matches!(e, AExpr::Window { .. }))
 }
 
 /// Can check if an expression tree has a matching_expr. This
@@ -97,15 +84,22 @@ where
     current_expr.into_iter().any(matches)
 }
 
+/// Check if root expression is a literal
+pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
+    matches!(e.into_iter().last(), Some(Expr::Literal(_)))
+}
+
 // this one is used so much that it has its own function, to reduce inlining
 pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
 }
 
 /// output name of expr
-pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
+pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {
         match e {
+            // don't follow the partition by branch
+            Expr::Window { function, .. } => return expr_output_name(function),
             Expr::Column(name) => return Ok(name.clone()),
             Expr::Alias(_, name) => return Ok(name.clone()),
             _ => {}
@@ -113,7 +107,7 @@ pub(crate) fn output_name(expr: &Expr) -> Result<Arc<str>> {
     }
     Err(PolarsError::ComputeError(
         format!(
-            "No root column name could be found for expr {:?} in output name utillity",
+            "No root column name could be found for expr {:?} in output name utility",
             expr
         )
         .into(),
@@ -183,25 +177,41 @@ pub(crate) fn aexpr_to_root_nodes(root: Node, arena: &Arena<AExpr>) -> Vec<Node>
     out
 }
 
-pub(crate) fn rename_aexpr_root_name(
+/// Rename the roots of the expression to a single name.
+/// Most of the times used with columns that have a single root.
+/// In some cases we can have multiple roots.
+/// For instance in predicate pushdown the predicates are combined by their root column
+/// When combined they may be a binary expression with the same root columns
+pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_name: Arc<str>) {
+    let roots = aexpr_to_root_nodes(node, arena);
+
+    for node in roots {
+        arena.replace_with(node, |ae| match ae {
+            AExpr::Column(_) => AExpr::Column(new_name.clone()),
+            _ => panic!("should be only a column"),
+        });
+    }
+}
+
+/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
+/// Returns `Node` on first sucessful rename.
+pub(crate) fn aexpr_assign_renamed_root(
     node: Node,
     arena: &mut Arena<AExpr>,
-    new_name: Arc<str>,
-) -> Result<()> {
+    current: &str,
+    new_name: &str,
+) -> Node {
     let roots = aexpr_to_root_nodes(node, arena);
-    match roots.len() {
-        1 => {
-            let node = roots[0];
-            arena.replace_with(node, |ae| match ae {
-                AExpr::Column(_) => AExpr::Column(new_name),
-                _ => panic!("should be only a column"),
-            });
-            Ok(())
-        }
-        _ => {
-            panic!("had more than one root columns");
+
+    for node in roots {
+        match arena.get(node) {
+            AExpr::Column(name) if &**name == current => {
+                return arena.add(AExpr::Column(Arc::from(new_name)))
+            }
+            _ => {}
         }
     }
+    panic!("should be a root column that is renamed");
 }
 
 /// Get all root column expressions in the expression tree.
@@ -214,13 +224,6 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
         _ => {}
     });
     out
-}
-
-pub(crate) fn rename_expr_root_name(expr: &Expr, new_name: Arc<str>) -> Result<Expr> {
-    let mut arena = Arena::with_capacity(32);
-    let root = to_aexpr(expr.clone(), &mut arena);
-    rename_aexpr_root_name(root, &mut arena, new_name)?;
-    Ok(node_to_exp(root, &arena))
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
@@ -296,15 +299,9 @@ pub(crate) fn check_input_node(
     input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    // first determine output field, and then check if that output field could be selected
-    // on the input schema.
-    match expr_arena
-        .get(node)
-        .to_field(input_schema, Context::Default, expr_arena)
-    {
-        Ok(output_expr) => input_schema.field_with_name(output_expr.name()).is_ok(),
-        Err(_) => false,
-    }
+    aexpr_to_root_names(node, expr_arena)
+        .iter()
+        .all(|name| input_schema.index_of(name).is_ok())
 }
 
 pub(crate) fn aexprs_to_schema(

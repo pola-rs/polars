@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use std::borrow::Cow;
@@ -69,16 +69,39 @@ impl PhysicalExpr for LiteralExpr {
                 dt => {
                     return Err(PolarsError::InvalidOperation(
                         format!("datatype {:?} not supported as range", dt).into(),
-                    ))
+                    ));
                 }
             },
             Utf8(v) => Utf8Chunked::full("literal", v, 1).into_series(),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(ndt) => {
+            DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;
-                let timestamp = naive_datetime_to_datetime(ndt);
+                let timestamp = match tu {
+                    TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns(ndt),
+                    TimeUnit::Milliseconds => naive_datetime_to_datetime_ms(ndt),
+                };
                 Int64Chunked::full("literal", timestamp, 1)
-                    .into_date()
+                    .into_datetime(*tu, None)
+                    .into_series()
+            }
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            Duration(v, tu) => {
+                let duration = match tu {
+                    TimeUnit::Milliseconds => v.num_milliseconds(),
+                    TimeUnit::Nanoseconds => {
+                        match v.num_nanoseconds() {
+                            Some(v) => v,
+                            None => {
+                                // Overflow
+                                return Err(PolarsError::InvalidOperation(
+                                    format!("cannot represent {:?} as {:?}", v, tu).into(),
+                                ));
+                            }
+                        }
+                    }
+                };
+                Int64Chunked::full("literal", duration, 1)
+                    .into_duration(*tu)
                     .into_series()
             }
             Series(series) => series.deref().clone(),
@@ -90,11 +113,11 @@ impl PhysicalExpr for LiteralExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
+        Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
@@ -120,7 +143,9 @@ impl PhysicalExpr for LiteralExpr {
             Null => Field::new(name, DataType::Null),
             Range { data_type, .. } => Field::new(name, data_type.clone()),
             #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(_) => Field::new(name, DataType::Datetime),
+            DateTime(_, tu) => Field::new(name, DataType::Datetime(*tu, None)),
+            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+            Duration(_, tu) => Field::new(name, DataType::Duration(*tu)),
             Series(s) => s.field().into_owned(),
         };
         Ok(field)
@@ -135,7 +160,7 @@ impl PhysicalAggregation for LiteralExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        _groups: &GroupTuples,
+        _groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         PhysicalExpr::evaluate(self, df, state).map(Some)

@@ -78,9 +78,11 @@ Aggregation
     Expr.min
     Expr.sum
     Expr.mean
+    Expr.mean
     Expr.median
     Expr.first
     Expr.last
+    Expr.product
     Expr.list
     Expr.agg_groups
     Expr.count
@@ -106,6 +108,8 @@ Boolean
     Expr.is_duplicated
     Expr.is_between
     Expr.is_in
+    Expr.any
+    Expr.all
 
 
 Computations
@@ -134,10 +138,14 @@ Computations
     Expr.rolling_median
     Expr.rolling_quantile
     Expr.rolling_skew
+    Expr.ewm_mean
+    Expr.ewm_std
+    Expr.ewm_var
     Expr.hash
     Expr.abs
     Expr.rank
     Expr.diff
+    Expr.pct_change
     Expr.skew
     Expr.kurtosis
     Expr.sqrt
@@ -164,6 +172,7 @@ Manipulation/ selection
     Expr.repeat_by
     Expr.round
     Expr.floor
+    Expr.ceil
     Expr.cast
     Expr.sort
     Expr.arg_sort
@@ -177,6 +186,7 @@ Manipulation/ selection
     Expr.backward_fill
     Expr.reverse
     Expr.filter
+    Expr.where
     Expr.head
     Expr.tail
     Expr.reinterpret
@@ -186,17 +196,17 @@ Manipulation/ selection
     Expr.clip
     Expr.lower_bound
     Expr.upper_bound
-    Expr.str_concat
     Expr.reshape
+    Expr.to_physical
+    Expr.shuffle
+    Expr.extend_constant
+    Expr.extend
 
 Column names
 ------------
    Expressions that help renaming/ selecting columns by name.
 
-   A wildcard `col("*")` selects all columns in a DataFrame.
-
-   Examples
-   --------
+   A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
 
    >>> df.select(col("*"))
 
@@ -244,10 +254,19 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.minute
     ExprDateTimeNameSpace.second
     ExprDateTimeNameSpace.nanosecond
-    ExprDateTimeNameSpace.round
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
-    ExprDateTimeNameSpace.buckets
+    ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.epoch_days
+    ExprDateTimeNameSpace.epoch_milliseconds
+    ExprDateTimeNameSpace.epoch_seconds
+    ExprDateTimeNameSpace.and_time_unit
+    ExprDateTimeNameSpace.and_time_zone
+    ExprDateTimeNameSpace.days
+    ExprDateTimeNameSpace.hours
+    ExprDateTimeNameSpace.seconds
+    ExprDateTimeNameSpace.milliseconds
+    ExprDateTimeNameSpace.nanoseconds
 
 Strings
 -------
@@ -263,12 +282,19 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lengths
     ExprStringNameSpace.to_uppercase
     ExprStringNameSpace.to_lowercase
+    ExprStringNameSpace.concat
+    ExprStringNameSpace.strip
+    ExprStringNameSpace.lstrip
+    ExprStringNameSpace.rstrip
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
+    ExprStringNameSpace.split
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
+    ExprStringNameSpace.encode
+    ExprStringNameSpace.decode
 
 Lists
 -----
@@ -288,3 +314,8 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.sort
     ExprListNameSpace.reverse
     ExprListNameSpace.unique
+    ExprListNameSpace.get
+    ExprListNameSpace.first
+    ExprListNameSpace.last
+    ExprListNameSpace.contains
+    ExprListNameSpace.join

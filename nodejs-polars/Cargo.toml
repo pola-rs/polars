@@ -1,0 +1,85 @@
+[package]
+name = "nodejs-polars"
+version = "0.2.1"
+authors = ["Cory Grinstead"]
+documentation = "https://pola-rs.github.io/polars-book/"
+edition = "2021"
+exclude = ["libpolars.node"]
+homepage = "https://github.com/pola-rs/polars"
+license = "MIT"
+repository = "https://github.com/pola-rs/polars"
+
+[lib]
+crate-type = ["cdylib"]
+name = "nodejs_polars"
+
+[dependencies]
+ahash = "0.7"
+dirs = "4.0"
+napi-derive = "1"
+polars-core = { path = "../polars/polars-core", default-features = false }
+serde_json = { version = "1" }
+thiserror = "1.0.20"
+
+[dependencies.napi]
+features = [
+  "serde-json",
+  "napi6",
+]
+version = "1"
+
+[build-dependencies]
+napi-build = "1"
+
+[dependencies.polars]
+features = [
+  "abs",
+  "zip_with",
+  "simd",
+  "strings",
+  "is_in",
+  "temporal",
+  "random",
+  "object",
+  "csv-file",
+  "pretty_fmt",
+  "performant",
+  "dtype-full",
+  "rows",
+  "private",
+  "round_series",
+  "is_first",
+  "dot_product",
+  "concat_str",
+  "row_hash",
+  "reinterpret", # "decompress-fast",
+  "mode",
+  "extract_jsonpath",
+  "dot_diagram",
+  "json",
+  "lazy_regex",
+  "cum_agg",
+  "rolling_window",
+  "interpolate",
+  "list",
+  "rank",
+  "diff",
+  "moment",
+  "arange", # "true_div",
+  "diagonal_concat",
+  "serde", # "asof_join",  # "cross_join",
+  "lazy",
+  "repeat_by",
+  "horizontal_concat",
+  "dataframe_arithmetic",
+  "string_encoding",
+  "parquet",
+  "ipc",
+]
+path = "../polars"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+
+[workspace]

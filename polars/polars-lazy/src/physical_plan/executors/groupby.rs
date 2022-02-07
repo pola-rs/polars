@@ -1,7 +1,7 @@
 use super::*;
 use crate::logical_plan::Context;
 use crate::prelude::utils::as_aggregated;
-use crate::utils::rename_aexpr_root_name;
+use crate::utils::rename_aexpr_root_names;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -41,11 +41,7 @@ fn groupby_helper(
     state: &ExecutionState,
     maintain_order: bool,
 ) -> Result<DataFrame> {
-    let mut gb = df.groupby_with_series(keys, true)?;
-
-    if maintain_order {
-        gb.get_groups_mut().sort_unstable_by_key(|t| t.0)
-    }
+    let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
         return gb.apply(|df| f.call_udf(df));
@@ -109,6 +105,7 @@ pub struct PartitionGroupByExec {
     key: Arc<dyn PhysicalExpr>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Expr>,
+    maintain_order: bool,
 }
 
 impl PartitionGroupByExec {
@@ -117,12 +114,14 @@ impl PartitionGroupByExec {
         key: Arc<dyn PhysicalExpr>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Expr>,
+        maintain_order: bool,
     ) -> Self {
         Self {
             input,
             key,
             phys_aggs,
             aggs,
+            maintain_order,
         }
     }
 }
@@ -132,6 +131,7 @@ fn run_partitions(
     exec: &PartitionGroupByExec,
     state: &ExecutionState,
     n_threads: usize,
+    maintain_order: bool,
 ) -> Result<Vec<DataFrame>> {
     // We do a partitioned groupby.
     // Meaning that we first do the groupby operation arbitrarily
@@ -143,7 +143,7 @@ fn run_partitions(
             .map(|df| {
                 let key = exec.key.evaluate(&df, state)?;
                 let phys_aggs = &exec.phys_aggs;
-                let gb = df.groupby_with_series(vec![key], false)?;
+                let gb = df.groupby_with_series(vec![key], false, maintain_order)?;
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
@@ -164,7 +164,7 @@ fn run_partitions(
                         Ok(opt_agg)
                     }).collect::<Result<Vec<_>>>()?;
 
-                columns.extend(agg_columns.into_iter().flatten().map(|v| v.into_iter()).flatten());
+                columns.extend(agg_columns.into_iter().flatten().flat_map(|v| v.into_iter()));
 
                 let df = DataFrame::new_no_checks(columns);
                 Ok(df)
@@ -190,7 +190,7 @@ fn get_outer_agg_exprs(
             let out_field = e.to_field(&schema, Context::Aggregation)?;
             let out_name: Arc<str> = Arc::from(out_field.name().as_str());
             let node = to_aexpr(e.clone(), &mut expr_arena);
-            rename_aexpr_root_name(node, &mut expr_arena, out_name.clone())?;
+            rename_aexpr_root_names(node, &mut expr_arena, out_name.clone());
             Ok((node, out_name))
         })
         .collect::<Result<Vec<_>>>()?;
@@ -209,7 +209,7 @@ fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
     let offset = (key.len() / 2) as i64;
     let s = key.slice(offset, sample_size);
     // fast multi-threaded way to get unique.
-    s.group_tuples(true).len() as f32 / s.len() as f32
+    s.group_tuples(true, false).len() as f32 / s.len() as f32
 }
 
 impl Executor for PartitionGroupByExec {
@@ -287,14 +287,15 @@ impl Executor for PartitionGroupByExec {
 
         // Run the partitioned aggregations
         let n_threads = POOL.current_num_threads();
-        let dfs = run_partitions(&original_df, self, state, n_threads)?;
+        let dfs = run_partitions(&original_df, self, state, n_threads, self.maintain_order)?;
 
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
         let key = self.key.evaluate(&df, state)?;
 
-        let gb = df.groupby_with_series(vec![key], true)?;
+        // first get mutable access and optionally sort
+        let gb = df.groupby_with_series(vec![key], true, self.maintain_order)?;
         let groups = gb.get_groups();
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;

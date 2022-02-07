@@ -1,11 +1,14 @@
 #[cfg(feature = "extract_jsonpath")]
 mod json_path;
-use std::borrow::Cow;
+
+#[cfg(feature = "string_encoding")]
+mod encoding;
 
 use crate::prelude::*;
 use arrow::compute::substring::substring;
 use polars_arrow::kernels::string::*;
 use regex::Regex;
+use std::borrow::Cow;
 
 fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Option<Cow<'a, str>> {
     reg.captures(input)
@@ -52,16 +55,19 @@ impl Utf8Chunked {
     }
 
     /// Modify the strings to their lowercase equivalent
+    #[must_use]
     pub fn to_lowercase(&self) -> Utf8Chunked {
         self.apply(|s| str::to_lowercase(s).into())
     }
 
     /// Modify the strings to their uppercase equivalent
+    #[must_use]
     pub fn to_uppercase(&self) -> Utf8Chunked {
         self.apply(|s| str::to_uppercase(s).into())
     }
 
     /// Concat with the values from a second Utf8Chunked
+    #[must_use]
     pub fn concat(&self, other: &Utf8Chunked) -> Self {
         self + other
     }

@@ -8,20 +8,20 @@ use std::sync::Arc;
 fn process_with_columns(
     path: &Path,
     with_columns: &Option<Vec<String>>,
-    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
 ) {
     if let Some(with_columns) = &with_columns {
         let cols = columns
             .entry(path.to_owned())
             .or_insert_with(PlHashSet::new);
-        cols.extend(with_columns.iter().cloned());
+        cols.extend(with_columns.iter().enumerate().map(|t| (t.0, t.1.clone())));
     }
 }
 
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
-    columns: &mut PlHashMap<PathBuf, PlHashSet<String>>,
+    columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
@@ -31,10 +31,8 @@ pub(crate) fn agg_projection(
             process_with_columns(path, &options.with_columns, columns);
         }
         #[cfg(feature = "parquet")]
-        ParquetScan {
-            path, with_columns, ..
-        } => {
-            process_with_columns(path, with_columns, columns);
+        ParquetScan { path, options, .. } => {
+            process_with_columns(path, &options.with_columns, columns);
         }
         #[cfg(feature = "ipc")]
         IpcScan { path, options, .. } => {
@@ -53,7 +51,7 @@ pub(crate) fn agg_projection(
 /// Due to self joins there can be multiple Scans of the same file in a LP. We already cache the scans
 /// in the PhysicalPlan, but we need to make sure that the first scan has all the columns needed.
 pub struct AggScanProjection {
-    pub columns: PlHashMap<PathBuf, PlHashSet<String>>,
+    pub columns: PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
 }
 
 impl AggScanProjection {
@@ -106,12 +104,14 @@ impl OptimizationRule for AggScanProjection {
                     mut options,
                 } = lp
                 {
-                    let new_with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
+                    let with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
+                    });
                     // prevent infinite loop
-                    if options.with_columns == new_with_columns {
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::IpcScan {
                             path,
                             schema,
@@ -124,17 +124,16 @@ impl OptimizationRule for AggScanProjection {
                         return None;
                     }
 
-                    let with_columns = std::mem::take(&mut options.with_columns);
-                    options.with_columns = new_with_columns;
+                    options.with_columns = with_columns;
                     let lp = ALogicalPlan::IpcScan {
                         path: path.clone(),
                         schema,
                         output_schema,
                         predicate,
                         aggregate,
-                        options,
+                        options: options.clone(),
                     };
-                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
+                    Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, options.with_columns))
                 } else {
                     unreachable!()
                 }
@@ -148,40 +147,37 @@ impl OptimizationRule for AggScanProjection {
                     output_schema,
                     predicate,
                     aggregate,
-                    with_columns,
-                    stop_after_n_rows,
-                    cache,
+                    mut options,
                 } = lp
                 {
-                    let new_with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
+                    let mut with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
+                    });
                     // prevent infinite loop
-                    if with_columns == new_with_columns {
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::ParquetScan {
                             path,
                             schema,
                             output_schema,
                             predicate,
                             aggregate,
-                            with_columns,
-                            stop_after_n_rows,
-                            cache,
+                            options,
                         };
                         lp_arena.replace(node, lp);
                         return None;
                     }
+                    std::mem::swap(&mut options.with_columns, &mut with_columns);
 
                     let lp = ALogicalPlan::ParquetScan {
                         path: path.clone(),
                         schema,
                         output_schema,
-                        with_columns: new_with_columns,
                         predicate,
                         aggregate,
-                        stop_after_n_rows,
-                        cache,
+                        options,
                     };
                     Some(self.finish_rewrite(lp, expr_arena, lp_arena, &path, with_columns))
                 } else {
@@ -200,11 +196,13 @@ impl OptimizationRule for AggScanProjection {
                     aggregate,
                 } = lp
                 {
-                    let new_with_columns = self
-                        .columns
-                        .get(&path)
-                        .map(|agg| agg.iter().cloned().collect());
-                    if options.with_columns == new_with_columns {
+                    let with_columns = self.columns.get(&path).map(|agg| {
+                        let mut columns = agg.iter().cloned().collect::<Vec<_>>();
+                        // make sure that the columns are sorted because they come from a hashmap
+                        columns.sort_unstable_by_key(|k| k.0);
+                        columns.into_iter().map(|k| k.1).collect()
+                    });
+                    if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
                             path,
                             schema,
@@ -216,7 +214,7 @@ impl OptimizationRule for AggScanProjection {
                         lp_arena.replace(node, lp);
                         return None;
                     }
-                    options.with_columns = new_with_columns;
+                    options.with_columns = with_columns;
                     let lp = ALogicalPlan::CsvScan {
                         path: path.clone(),
                         schema,

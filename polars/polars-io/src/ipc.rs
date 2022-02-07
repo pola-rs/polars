@@ -32,9 +32,9 @@
 //! let df_read = IpcReader::new(buf).finish().unwrap();
 //! assert!(df.frame_equal(&df_read));
 //! ```
-use super::{finish_reader, ArrowReader, ArrowResult, RecordBatch};
+use super::{finish_reader, ArrowReader, ArrowResult};
+use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::{PhysicalIoExpr, ScanAggregation};
 use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
@@ -58,12 +58,13 @@ use std::sync::Arc;
 ///         .finish()
 /// }
 /// ```
+#[must_use]
 pub struct IpcReader<R> {
     /// File or Stream object
     reader: R,
     /// Aggregates chunks afterwards to a single chunk.
     rechunk: bool,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
 }
@@ -72,17 +73,17 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok((&**metadata.schema()).into())
+        Ok((&metadata.schema).into())
     }
 
-    /// Get arrow schema of the Ipc File, this is faster than a polars schema.
-    pub fn arrow_schema(&mut self) -> Result<Arc<ArrowSchema>> {
+    /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
+    pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok(metadata.schema().clone())
+        Ok(metadata.schema)
     }
     /// Stop reading when `n` rows are read.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -109,16 +110,21 @@ impl<R: Read + Seek> IpcReader<R> {
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let reader =
-            read::FileReader::new(&mut self.reader, metadata, projection.map(|x| x.to_vec()));
+        let projection = projection.map(|x| {
+            let mut x = x.to_vec();
+            x.sort_unstable();
+            x
+        });
 
-        finish_reader(
-            reader,
-            rechunk,
-            self.stop_after_n_rows,
-            predicate,
-            aggregate,
-        )
+        let schema = if let Some(projection) = &projection {
+            apply_projection(&metadata.schema, projection)
+        } else {
+            metadata.schema.clone()
+        };
+
+        let reader = read::FileReader::new(&mut self.reader, metadata, projection);
+
+        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
     }
 }
 
@@ -126,12 +132,8 @@ impl<R> ArrowReader for read::FileReader<R>
 where
     R: Read + Seek,
 {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
+    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
-    }
-
-    fn schema(&self) -> Arc<Schema> {
-        Arc::new((&**self.schema()).into())
     }
 }
 
@@ -143,7 +145,7 @@ where
         IpcReader {
             reader,
             rechunk: true,
-            stop_after_n_rows: None,
+            n_rows: None,
             columns: None,
             projection: None,
         }
@@ -157,26 +159,29 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let schema = metadata.schema();
+        let schema = &metadata.schema;
+
+        let err = |column: &str| {
+            let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
+            PolarsError::NotFound(format!(
+                "Unable to get field named \"{}\". Valid fields: {:?}",
+                column, valid_fields
+            ))
+        };
 
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
             if cols.len() > 100 {
-                let mut column_names = AHashMap::with_capacity(schema.fields().len());
-                schema.fields().iter().enumerate().for_each(|(i, c)| {
-                    column_names.insert(c.name(), i);
+                let mut column_names = AHashMap::with_capacity(schema.fields.len());
+                schema.fields.iter().enumerate().for_each(|(i, c)| {
+                    column_names.insert(c.name.as_str(), i);
                 });
 
                 for column in cols.iter() {
-                    if let Some(i) = column_names.get(&column) {
+                    if let Some(i) = column_names.get(column.as_str()) {
                         prj.push(*i);
                     } else {
-                        let valid_fields: Vec<String> =
-                            schema.fields().iter().map(|f| f.name().clone()).collect();
-                        return Err(PolarsError::NotFound(format!(
-                            "Unable to get field named \"{}\". Valid fields: {:?}",
-                            column, valid_fields
-                        )));
+                        return Err(err(column));
                     }
                 }
             } else {
@@ -191,8 +196,14 @@ where
             self.projection = Some(prj);
         }
 
+        let schema = if let Some(projection) = &self.projection {
+            apply_projection(&metadata.schema, projection)
+        } else {
+            metadata.schema.clone()
+        };
+
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
-        finish_reader(ipc_reader, rechunk, self.stop_after_n_rows, None, None)
+        finish_reader(ipc_reader, rechunk, self.n_rows, None, None, &schema)
     }
 }
 
@@ -214,16 +225,19 @@ where
 /// }
 ///
 /// ```
+#[must_use]
 pub struct IpcWriter<W> {
     writer: W,
     compression: Option<write::Compression>,
 }
 
+use crate::aggregations::ScanAggregation;
+use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 
 impl<W> IpcWriter<W>
 where
-    W: Write + Seek,
+    W: Write,
 {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
@@ -243,19 +257,20 @@ where
         }
     }
 
-    fn finish(mut self, df: &DataFrame) -> Result<()> {
+    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
+            None,
             WriteOptions {
                 compression: self.compression,
             },
         )?;
-
-        let iter = df.iter_record_batches();
+        df.rechunk();
+        let iter = df.iter_chunks();
 
         for batch in iter {
-            ipc_writer.write(&batch)?
+            ipc_writer.write(&batch, None)?
         }
         let _ = ipc_writer.finish()?;
         Ok(())
@@ -275,9 +290,11 @@ mod test {
         // Vec<T> : Write + Read
         // Cursor<Vec<_>>: Seek
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = create_df();
+        let mut df = create_df();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
 
         buf.set_position(0);
 
@@ -288,9 +305,11 @@ mod test {
     #[test]
     fn test_read_ipc_with_projection() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
@@ -305,9 +324,11 @@ mod test {
     #[test]
     fn test_read_ipc_with_columns() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
-        IpcWriter::new(&mut buf).finish(&df).expect("ipc writer");
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
         buf.set_position(0);
 
         let expected = df!("b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
@@ -321,7 +342,7 @@ mod test {
 
     #[test]
     fn test_write_with_compression() {
-        let df = create_df();
+        let mut df = create_df();
 
         let compressions = vec![
             None,
@@ -333,7 +354,7 @@ mod test {
             let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
             IpcWriter::new(&mut buf)
                 .with_compression(compression)
-                .finish(&df)
+                .finish(&mut df)
                 .expect("ipc writer");
             buf.set_position(0);
 

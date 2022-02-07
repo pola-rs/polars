@@ -1,14 +1,14 @@
 [package]
 name = "py-polars"
-version = "0.10.27"
+version = "0.12.22"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
-documentation = "https://pola-rs.github.io/polars-book/"
-edition = "2018"
+documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
+edition = "2021"
 homepage = "https://github.com/pola-rs/polars"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/pola-rs/polars"
-description = "Blazingly fast DataFrames"
+description = "Blazingly fast DataFrame library"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,7 +25,7 @@ numpy = "0.15"
 polars-core = { path = "../polars/polars-core", default-features = false }
 pyo3 = { version = "0.15", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
-thiserror = "1.0.20"
+thiserror = "^1.0"
 
 [patch.crates-io]
 pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
@@ -33,18 +33,17 @@ pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
 parquet = ["polars/parquet"]
-pivot = ["polars/pivot"]
 ipc = ["polars/ipc"]
-downsample = ["polars/downsample"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
 
-default = ["pivot", "json", "parquet", "downsample", "ipc", "is_in", "json", "polars/repeat_by"]
+default = ["json", "parquet", "ipc", "is_in", "json", "polars/repeat_by"]
 
 [dependencies.polars]
 path = "../polars"
 default-features = false
 features = [
+  "dynamic_groupby",
   "zip_with",
   "simd",
   "lazy",
@@ -76,12 +75,21 @@ features = [
   "list",
   "rank",
   "diff",
+  "pct_change",
   "moment",
   "arange",
   "true_div",
   "dtype-categorical",
   "diagonal_concat",
+  "horizontal_concat",
   "abs",
+  "ewma",
+  "dot_diagram",
+  "dataframe_arithmetic",
+  "json",
+  "string_encoding",
+  "product",
+  "ndarray",
 ]
 
 # [patch.crates-io]

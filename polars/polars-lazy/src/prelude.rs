@@ -1,11 +1,29 @@
-pub use polars_core::utils::{Arena, Node};
+pub(crate) use polars_utils::arena::{Arena, Node};
+
+#[cfg(feature = "temporal")]
+pub(crate) use polars_time::in_nanoseconds_window;
+#[cfg(feature = "dynamic_groupby")]
+pub(crate) use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
+
+#[cfg(not(feature = "dynamic_groupby"))]
+#[derive(Clone, Debug)]
+pub struct DynamicGroupOptions {
+    pub index_column: String,
+}
+#[cfg(not(feature = "dynamic_groupby"))]
+#[derive(Clone, Debug)]
+pub struct RollingGroupOptions {
+    pub index_column: String,
+}
 
 pub use crate::{
     dsl::*,
     frame::*,
+    functions::*,
     logical_plan::{
         optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
-        DataFrameUdf, LiteralValue, LogicalPlan, LogicalPlanBuilder,
+        options::*,
+        *,
     },
     physical_plan::{expressions::*, planner::DefaultPlanner, Executor, PhysicalPlanner},
 };
@@ -37,7 +55,6 @@ pub(crate) use crate::{
             aggregation::{AggQuantileExpr, AggregationExpr},
             alias::AliasExpr,
             apply::ApplyExpr,
-            binary_function::BinaryFunctionExpr,
             cast::CastExpr,
             column::ColumnExpr,
             filter::FilterExpr,

@@ -1,17 +1,18 @@
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
-use crate::datatypes::PyDataType;
 use crate::error::PyPolarsEr;
 use crate::list_construction::py_seq_to_list;
-use crate::utils::{downsample_str_to_rule, reinterpret, str_to_polarstype};
+use crate::utils::{reinterpret, str_to_polarstype};
 use crate::{
     arrow_interop,
     npy::{aligned_array, get_refcnt},
     prelude::*,
 };
 use numpy::PyArray1;
+use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::CustomIterTools;
+use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
@@ -360,9 +361,15 @@ impl PySeries {
         self.series.rename(name);
     }
 
-    pub fn dtype(&self) -> u8 {
-        let dt: PyDataType = self.series.dtype().into();
-        dt as u8
+    pub fn dtype(&self, py: Python) -> PyObject {
+        Wrap(self.series.dtype().clone()).to_object(py)
+    }
+
+    pub fn inner_dtype(&self, py: Python) -> Option<PyObject> {
+        self.series
+            .dtype()
+            .inner_dtype()
+            .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
     pub fn mean(&self) -> Option<f64> {
@@ -422,6 +429,13 @@ impl PySeries {
     pub fn append(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .append(&other.series)
+            .map_err(PyPolarsEr::from)?;
+        Ok(())
+    }
+
+    pub fn extend(&mut self, other: &PySeries) -> PyResult<()> {
+        self.series
+            .extend(&other.series)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -495,9 +509,9 @@ impl PySeries {
         self.series.arg_max()
     }
 
-    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::new_from_aligned_vec("", indices);
+        let indices = UInt32Chunked::from_vec("", indices);
 
         let take = self.series.take(&indices).map_err(PyPolarsEr::from)?;
         Ok(PySeries::new(take))
@@ -555,18 +569,18 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_n(n, with_replacement)
+            .sample_n(n, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let s = self
             .series
-            .sample_frac(frac, with_replacement)
+            .sample_frac(frac, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -680,7 +694,7 @@ impl PySeries {
                             v.append(python.None()).unwrap();
                         }
                         Some(s) => {
-                            let pylst = primitive_to_list(&inner_dtype, s.as_ref());
+                            let pylst = primitive_to_list(inner_dtype, s.as_ref());
                             v.append(pylst).unwrap();
                         }
                     }
@@ -691,7 +705,7 @@ impl PySeries {
                 let ca = series.date().unwrap();
                 return Wrap(ca).to_object(python);
             }
-            DataType::Datetime => {
+            DataType::Datetime(_, _) => {
                 let ca = series.datetime().unwrap();
                 return Wrap(ca).to_object(python);
             }
@@ -710,12 +724,22 @@ impl PySeries {
         }
     }
 
-    pub fn quantile(&self, quantile: f64) -> PyObject {
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyObject {
         let gil = Python::acquire_gil();
         let py = gil.python();
+
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+
         Wrap(
             self.series
-                .quantile_as_series(quantile)
+                .quantile_as_series(quantile, interpol)
                 .expect("invalid quantile")
                 .get(0),
         )
@@ -744,7 +768,8 @@ impl PySeries {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
-        arrow_interop::to_py::to_py_array(self.series.chunks()[0].clone(), py, pyarrow)
+
+        arrow_interop::to_py::to_py_array(self.series.to_arrow(0), py, pyarrow)
     }
 
     #[cfg(feature = "is_in")]
@@ -903,7 +928,7 @@ impl PySeries {
                 )?;
                 ca.into_date().into_series()
             }
-            Some(DataType::Datetime) => {
+            Some(DataType::Datetime(tu, tz)) => {
                 let ca: Int64Chunked = apply_method_all_arrow_series!(
                     series,
                     apply_lambda_with_primitive_out_type,
@@ -912,7 +937,7 @@ impl PySeries {
                     0,
                     None
                 )?;
-                ca.into_date().into_series()
+                ca.into_datetime(tu, tz).into_series()
             }
             Some(DataType::Utf8) => {
                 let ca: Utf8Chunked = apply_method_all_arrow_series!(
@@ -937,7 +962,7 @@ impl PySeries {
                 ca.into_series()
             }
             None => {
-                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda)
+                return apply_method_all_arrow_series!(series, apply_lambda_unknown, py, lambda);
             }
 
             _ => return apply_method_all_arrow_series!(series, apply_lambda, py, lambda),
@@ -1020,28 +1045,39 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_parse_date(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_date(fmt).map_err(PyPolarsEr::from)?;
-            Ok(PySeries::new(ca.into_series()))
-        } else {
-            Err(PyPolarsEr::Other("cannot parse Date expected utf8 type".into()).into())
-        }
-    }
-
-    pub fn str_parse_datetime(&self, fmt: Option<&str>) -> PyResult<Self> {
-        if let Ok(ca) = &self.series.utf8() {
-            let ca = ca.as_datetime(fmt).map_err(PyPolarsEr::from)?;
-            Ok(ca.into_series().into())
-        } else {
-            Err(PyPolarsEr::Other("cannot parse datetime expected utf8 type".into()).into())
-        }
-    }
-
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
         let s = ca
             .str_slice(start, length)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_hex_encode(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.hex_encode().into_series();
+        Ok(s.into())
+    }
+    pub fn str_hex_decode(&self, strict: Option<bool>) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .hex_decode(strict)
+            .map_err(PyPolarsEr::from)?
+            .into_series();
+
+        Ok(s.into())
+    }
+    pub fn str_base64_encode(&self) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca.base64_encode().into_series();
+        Ok(s.into())
+    }
+
+    pub fn str_base64_decode(&self, strict: Option<bool>) -> PyResult<Self> {
+        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let s = ca
+            .base64_decode(strict)
             .map_err(PyPolarsEr::from)?
             .into_series();
         Ok(s.into())
@@ -1111,6 +1147,51 @@ impl PySeries {
         let s = self
             .series
             .rolling_mean(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_median(
+        &self,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        let s = self
+            .series
+            .rolling_median(options)
+            .map_err(PyPolarsEr::from)?;
+        Ok(s.into())
+    }
+
+    pub fn rolling_quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+        window_size: usize,
+        weights: Option<Vec<f64>>,
+        min_periods: usize,
+        center: bool,
+    ) -> PyResult<Self> {
+        let options = RollingOptions {
+            window_size,
+            weights,
+            min_periods,
+            center,
+        };
+
+        let interpol = interpolation.0;
+        let s = self
+            .series
+            .rolling_quantile(quantile, interpol, options)
             .map_err(PyPolarsEr::from)?;
         Ok(s.into())
     }
@@ -1236,23 +1317,9 @@ impl PySeries {
         Ok(s.into_series().into())
     }
 
-    pub fn round_datetime(&self, rule: &str, n: u32) -> PyResult<Self> {
-        let rule = downsample_str_to_rule(rule, n)?;
-        match self.series.dtype() {
-            DataType::Date => Ok(self.series.date().unwrap().round(rule).into_series().into()),
-            DataType::Datetime => Ok(self
-                .series
-                .datetime()
-                .unwrap()
-                .round(rule)
-                .into_series()
-                .into()),
-            dt => Err(PyPolarsEr::Other(format!(
-                "type: {:?} is not a date. Please use Date or Datetime",
-                dt
-            ))
-            .into()),
-        }
+    pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
+        let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        Ok((ms / 1000).into_series().into())
     }
 
     pub fn peak_max(&self) -> Self {
@@ -1329,9 +1396,13 @@ impl PySeries {
         }
     }
 
-    pub fn rank(&self, method: &str) -> PyResult<Self> {
-        let method = str_to_rankmethod(method)?;
-        Ok(self.series.rank(method).into())
+    pub fn rank(&self, method: &str, reverse: bool) -> PyResult<Self> {
+        let method = str_to_rankmethod(method).unwrap();
+        let options = RankOptions {
+            method,
+            descending: reverse,
+        };
+        Ok(self.series.rank(options).into())
     }
 
     pub fn diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
@@ -1371,6 +1442,50 @@ impl PySeries {
     pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
         let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
         Ok(out.into())
+    }
+    pub fn shuffle(&self, seed: u64) -> Self {
+        self.series.shuffle(seed).into()
+    }
+    pub fn extend_constant(&self, value: Wrap<AnyValue>, n: usize) -> PyResult<Self> {
+        let value = value.0;
+        let out = self
+            .series
+            .extend_constant(value, n)
+            .map_err(PyPolarsEr::from)?;
+        Ok(out.into())
+    }
+
+    pub fn time_unit(&self) -> Option<&str> {
+        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
+            Some(match tu {
+                TimeUnit::Nanoseconds => "ns",
+                TimeUnit::Milliseconds => "ms",
+            })
+        } else {
+            None
+        }
+    }
+    pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
+        let unit = match tu {
+            "ns" => TimeUnit::Nanoseconds,
+            "ms" => TimeUnit::Milliseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
+        };
+        if let DataType::Duration(_) = self.series.dtype() {
+            let mut dt = self.series.duration().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        } else {
+            let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+            dt.set_time_unit(unit);
+            Ok(dt.into_series().into())
+        }
+    }
+
+    pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
+        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+        dt.set_time_zone(tz);
+        Ok(dt.into_series().into())
     }
 }
 
@@ -1528,6 +1643,7 @@ impl_get!(get_i64, i64, i64);
 impl_get!(get_str, utf8, &str);
 impl_get!(get_date, date, i32);
 impl_get!(get_datetime, datetime, i64);
+impl_get!(get_duration, duration, i64);
 
 macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
@@ -1548,6 +1664,8 @@ impl_arithmetic!(add_i8, i8, +);
 impl_arithmetic!(add_i16, i16, +);
 impl_arithmetic!(add_i32, i32, +);
 impl_arithmetic!(add_i64, i64, +);
+impl_arithmetic!(add_datetime, i64, +);
+impl_arithmetic!(add_duration, i64, +);
 impl_arithmetic!(add_f32, f32, +);
 impl_arithmetic!(add_f64, f64, +);
 impl_arithmetic!(sub_u8, u8, -);
@@ -1558,6 +1676,8 @@ impl_arithmetic!(sub_i8, i8, -);
 impl_arithmetic!(sub_i16, i16, -);
 impl_arithmetic!(sub_i32, i32, -);
 impl_arithmetic!(sub_i64, i64, -);
+impl_arithmetic!(sub_datetime, i64, -);
+impl_arithmetic!(sub_duration, i64, -);
 impl_arithmetic!(sub_f32, f32, -);
 impl_arithmetic!(sub_f64, f64, -);
 impl_arithmetic!(div_u8, u8, /);

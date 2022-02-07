@@ -1,5 +1,24 @@
-mod predicate_pushdown;
+mod aggregations;
+mod arity;
+#[cfg(feature = "parquet")]
+mod io;
+mod logical;
+mod optimization_checks;
+mod predicate_queries;
+mod projection_queries;
 mod queries;
+
+fn load_df() -> DataFrame {
+    df!("a" => &[1, 2, 3, 4, 5],
+                 "b" => &["a", "a", "b", "c", "c"],
+                 "c" => &[1, 2, 3, 4, 5]
+    )
+    .unwrap()
+}
+
+use optimization_checks::*;
+use std::sync::Mutex;
+
 use polars_core::prelude::*;
 use polars_io::prelude::*;
 use std::io::Cursor;
@@ -10,14 +29,74 @@ use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
 use crate::prelude::*;
 use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::df;
 #[cfg(feature = "temporal")]
-use polars_core::utils::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::{df, prelude::*};
+use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use polars_core::export::lazy_static::lazy_static;
 use std::iter::FromIterator;
 
+static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
+static GLOB_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
+static GLOB_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
+static FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+static FOODS_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.ipc";
+static FOODS_PARQUET: &str =
+    "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet";
+
+lazy_static! {
+    // needed prevent race conditions during test execution
+    // for example with env vars set for tests
+    // or global string cache resets.
+    pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
+}
+
 fn scan_foods_csv() -> LazyFrame {
-    let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-    LazyCsvReader::new(path.to_string()).finish().unwrap()
+    LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
+}
+
+fn scan_foods_ipc() -> LazyFrame {
+    LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default()).unwrap()
+}
+
+fn init_files() {
+    for path in &[
+        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
+        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
+    ] {
+        let out_path1 = path.replace(".csv", ".parquet");
+        let out_path2 = path.replace(".csv", ".ipc");
+
+        for out_path in [out_path1, out_path2] {
+            if std::fs::metadata(&out_path).is_err() {
+                let mut df = CsvReader::from_path(path).unwrap().finish().unwrap();
+
+                if out_path.ends_with("parquet") {
+                    let f = std::fs::File::create(&out_path).unwrap();
+                    ParquetWriter::new(f)
+                        .with_statistics(true)
+                        .finish(&df)
+                        .unwrap();
+                } else {
+                    let f = std::fs::File::create(&out_path).unwrap();
+                    IpcWriter::new(f).finish(&mut df).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "parquet")]
+fn scan_foods_parquet(parallel: bool) -> LazyFrame {
+    init_files();
+    let out_path = FOODS_PARQUET.to_string();
+
+    let args = ScanArgsParquet {
+        n_rows: None,
+        cache: false,
+        parallel,
+        rechunk: true,
+    };
+    LazyFrame::scan_parquet(out_path, args).unwrap()
 }
 
 pub(crate) fn fruits_cars() -> DataFrame {

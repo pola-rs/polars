@@ -1,17 +1,16 @@
 use self::hashing::*;
-use crate::chunked_array::builder::PrimitiveChunkedBuilder;
-use crate::frame::select::Selection;
 use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca, NoNull,
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
 use ahash::{CallHasher, RandomState};
 use hashbrown::HashMap;
 use num::NumCast;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -20,20 +19,23 @@ use std::ops::Deref;
 
 pub mod aggregations;
 pub(crate) mod hashing;
-#[cfg(feature = "pivot")]
+#[cfg(feature = "rows")]
 pub(crate) mod pivot;
-#[cfg(feature = "downsample")]
-pub mod resample;
+mod proxy;
 
-pub type GroupTuples = Vec<(u32, Vec<u32>)>;
+#[cfg(feature = "rows")]
+pub use pivot::PivotAgg;
+
+pub use proxy::*;
+
 pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
 
 /// Used to create the tuples for a groupby operation.
-pub trait IntoGroupTuples {
+pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
         unimplemented!()
     }
 }
@@ -43,7 +45,7 @@ fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000
 }
 
-fn num_group_tuples<T>(ca: &ChunkedArray<T>, multithreaded: bool) -> GroupTuples
+fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -64,76 +66,76 @@ where
         if ca.chunks.len() == 1 {
             if !ca.has_validity() {
                 let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions)
+                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
             } else {
                 let keys = ca
                     .downcast_iter()
                     .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions)
+                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
             }
             // use the polars-iterators
         } else if !ca.has_validity() {
             let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions)
+            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
         } else {
             let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions)
+            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
         }
     } else if !ca.has_validity() {
-        groupby(ca.into_no_null_iter())
+        groupby(ca.into_no_null_iter(), sorted)
     } else {
-        groupby(ca.into_iter())
+        groupby(ca.into_iter(), sorted)
     }
 }
 
-impl<T> IntoGroupTuples for ChunkedArray<T>
+impl<T> IntoGroupsProxy for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt64Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
             DataType::UInt32 => {
                 // convince the compiler that we are this type.
                 let ca: &UInt32Chunked = unsafe {
                     &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
                 };
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
             DataType::Int64 | DataType::Float64 => {
                 let ca = self.bit_repr_large();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded, sorted)
             }
             DataType::Int32 | DataType::Float32 => {
                 let ca = self.bit_repr_small();
-                num_group_tuples(&ca, multithreaded)
+                num_groups_proxy(&ca, multithreaded, sorted)
             }
             _ => {
                 let ca = self.cast(&DataType::UInt32).unwrap();
                 let ca = ca.u32().unwrap();
-                num_group_tuples(ca, multithreaded)
+                num_groups_proxy(ca, multithreaded, sorted)
             }
         }
     }
 }
-impl IntoGroupTuples for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for BooleanChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
-        ca.group_tuples(multithreaded)
+        ca.group_tuples(multithreaded, sorted)
     }
 }
 
-impl IntoGroupTuples for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
+impl IntoGroupsProxy for Utf8Chunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
@@ -158,7 +160,7 @@ impl IntoGroupTuples for Utf8Chunked {
                     })
                     .collect::<Vec<_>>()
             });
-            groupby_threaded_num(str_hashes, 0, n_partitions as u64)
+            groupby_threaded_num(str_hashes, 0, n_partitions as u64, sorted)
         } else {
             let str_hashes = self
                 .into_iter()
@@ -170,32 +172,32 @@ impl IntoGroupTuples for Utf8Chunked {
                     StrHash::new(opt_s, hash)
                 })
                 .collect::<Vec<_>>();
-            groupby(str_hashes.iter())
+            groupby(str_hashes.iter(), sorted)
         }
     }
 }
 
 #[cfg(feature = "dtype-categorical")]
-impl IntoGroupTuples for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        self.deref().group_tuples(multithreaded)
+impl IntoGroupsProxy for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        self.deref().group_tuples(multithreaded, sorted)
     }
 }
 
-impl IntoGroupTuples for ListChunked {
+impl IntoGroupsProxy for ListChunked {
     #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
-        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)))
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
+        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)), sorted)
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> IntoGroupTuples for ObjectChunked<T>
+impl<T> IntoGroupsProxy for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool) -> GroupTuples {
-        groupby(self.into_iter())
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
+        groupby(self.into_iter(), sorted)
     }
 }
 
@@ -305,7 +307,12 @@ fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
 }
 
 impl DataFrame {
-    pub fn groupby_with_series(&self, by: Vec<Series>, multithreaded: bool) -> Result<GroupBy> {
+    pub fn groupby_with_series(
+        &self,
+        by: Vec<Series>,
+        multithreaded: bool,
+        sorted: bool,
+    ) -> Result<GroupBy> {
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();
@@ -316,6 +323,7 @@ impl DataFrame {
                 // otherwise we use two bits of this byte to represent null values.
                 let split_0 = split_ca(&$ca0, n_partitions).unwrap();
                 let split_1 = split_ca(&$ca1, n_partitions).unwrap();
+
                 let keys = POOL.install(|| {
                     split_0
                         .into_par_iter()
@@ -324,7 +332,6 @@ impl DataFrame {
                             ca0.into_iter()
                                 .zip(ca1.into_iter())
                                 .map(|(l, r)| $pack_fn(l, r))
-                                .trust_my_length(ca0.len())
                                 .collect_trusted::<Vec<_>>()
                         })
                         .collect::<Vec<_>>()
@@ -333,7 +340,7 @@ impl DataFrame {
                 return Ok(GroupBy::new(
                     self,
                     by,
-                    groupby_threaded_num(keys, 0, n_partitions as u64),
+                    groupby_threaded_num(keys, 0, n_partitions as u64, sorted),
                     None,
                 ));
             }};
@@ -371,7 +378,7 @@ impl DataFrame {
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
-                series.group_tuples(multithreaded)
+                series.group_tuples(multithreaded, sorted)
             }
             _ => {
                 // multiple keys is always multi-threaded
@@ -409,7 +416,7 @@ impl DataFrame {
                 }
 
                 let n_partitions = set_partition_size();
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions)
+                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
             }
         };
         Ok(GroupBy::new(self, by, groups, None))
@@ -422,22 +429,29 @@ impl DataFrame {
     /// ```
     /// use polars_core::prelude::*;
     /// fn groupby_sum(df: &DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("column_name")?
-    ///     .select("agg_column_name")
+    ///     df.groupby(["column_name"])?
+    ///     .select(["agg_column_name"])
     ///     .sum()
     /// }
     /// ```
-    pub fn groupby<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
+    pub fn groupby<I, S>(&self, by: I) -> Result<GroupBy>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let selected_keys = self.select_series(by)?;
-        self.groupby_with_series(selected_keys, true)
+        self.groupby_with_series(selected_keys, true, false)
     }
 
     /// Group DataFrame using a Series column.
     /// The groups are ordered by their smallest row index.
-    pub fn groupby_stable<'g, J, S: Selection<'g, J>>(&self, by: S) -> Result<GroupBy> {
-        let mut gb = self.groupby(by)?;
-        gb.groups.sort_unstable_by_key(|t| t.0);
-        Ok(gb)
+    pub fn groupby_stable<I, S>(&self, by: I) -> Result<GroupBy>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let selected_keys = self.select_series(by)?;
+        self.groupby_with_series(selected_keys, true, true)
     }
 }
 
@@ -462,9 +476,9 @@ impl DataFrame {
 /// let s0 = DateChunked::parse_from_str_slice("date", dates, fmt)
 ///         .into_series();
 /// // create temperature series
-/// let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
+/// let s1 = Series::new("temp", [20, 10, 7, 9, 1]);
 /// // create rain series
-/// let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+/// let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01]);
 /// // create a new DataFrame
 /// let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 /// println!("{:?}", df);
@@ -491,21 +505,21 @@ impl DataFrame {
 /// ```
 ///
 #[derive(Debug, Clone)]
-pub struct GroupBy<'df, 'selection_str> {
+pub struct GroupBy<'df> {
     df: &'df DataFrame,
     pub(crate) selected_keys: Vec<Series>,
     // [first idx, [other idx]]
-    pub(crate) groups: GroupTuples,
+    pub(crate) groups: GroupsProxy,
     // columns selected for aggregation
-    pub(crate) selected_agg: Option<Vec<&'selection_str str>>,
+    pub(crate) selected_agg: Option<Vec<String>>,
 }
 
-impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
+impl<'df> GroupBy<'df> {
     pub fn new(
         df: &'df DataFrame,
         by: Vec<Series>,
-        groups: GroupTuples,
-        selected_agg: Option<Vec<&'selection_str str>>,
+        groups: GroupsProxy,
+        selected_agg: Option<Vec<String>>,
     ) -> Self {
         GroupBy {
             df,
@@ -520,11 +534,14 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///
     /// Note that making a selection with this method is not required. If you
     /// skip it all columns (except for the keys) will be selected for aggregation.
-    pub fn select<S, J>(mut self, selection: S) -> Self
-    where
-        S: Selection<'selection_str, J>,
-    {
-        self.selected_agg = Some(selection.to_selection_vec());
+    #[must_use]
+    pub fn select<I: IntoIterator<Item = S>, S: AsRef<str>>(mut self, selection: I) -> Self {
+        self.selected_agg = Some(
+            selection
+                .into_iter()
+                .map(|s| s.as_ref().to_string())
+                .collect(),
+        );
         self
     }
 
@@ -532,7 +549,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &GroupTuples {
+    pub fn get_groups(&self) -> &GroupsProxy {
         &self.groups
     }
 
@@ -540,8 +557,12 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// The Vec returned contains:
     ///     (first_idx, Vec<indexes>)
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups_mut(&mut self) -> &mut GroupTuples {
+    pub fn get_groups_mut(&mut self) -> &mut GroupsProxy {
         &mut self.groups
+    }
+
+    pub fn take_groups(self) -> GroupsProxy {
+        self.groups
     }
 
     pub fn keys(&self) -> Vec<Series> {
@@ -552,7 +573,9 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     // Safety
                     // groupby indexes are in bound.
                     unsafe {
-                        s.take_iter_unchecked(&mut self.groups.iter().map(|(idx, _)| *idx as usize))
+                        s.take_iter_unchecked(
+                            &mut self.groups.idx_ref().iter().map(|(idx, _)| idx as usize),
+                        )
                     }
                 })
                 .collect()
@@ -568,6 +591,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                     .get_column_names()
                     .into_iter()
                     .filter(|a| !by.contains(a))
+                    .map(|s| s.to_string())
                     .collect()
             }
         };
@@ -584,7 +608,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select(&["temp", "rain"]).mean()
+    ///     df.groupby(["date"])?.select(&["temp", "rain"]).mean()
     /// }
     /// ```
     /// Returns:
@@ -623,7 +647,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").sum()
+    ///     df.groupby(["date"])?.select(["temp"]).sum()
     /// }
     /// ```
     /// Returns:
@@ -662,7 +686,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").min()
+    ///     df.groupby(["date"])?.select(["temp"]).min()
     /// }
     /// ```
     /// Returns:
@@ -700,7 +724,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").max()
+    ///     df.groupby(["date"])?.select(["temp"]).max()
     /// }
     /// ```
     /// Returns:
@@ -738,7 +762,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").first()
+    ///     df.groupby(["date"])?.select(["temp"]).first()
     /// }
     /// ```
     /// Returns:
@@ -774,7 +798,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").last()
+    ///     df.groupby(["date"])?.select(["temp"]).last()
     /// }
     /// ```
     /// Returns:
@@ -810,7 +834,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").n_unique()
+    ///     df.groupby(["date"])?.select(["temp"]).n_unique()
     /// }
     /// ```
     /// Returns:
@@ -847,11 +871,13 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
+    /// # use polars_arrow::prelude::QuantileInterpolOptions;
+    ///
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").quantile(0.2)
+    ///     df.groupby(["date"])?.select(["temp"]).quantile(0.2, QuantileInterpolOptions::default())
     /// }
     /// ```
-    pub fn quantile(&self, quantile: f64) -> Result<DataFrame> {
+    pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<DataFrame> {
         if !(0.0..=1.0).contains(&quantile) {
             return Err(PolarsError::ComputeError(
                 "quantile should be within 0.0 and 1.0".into(),
@@ -859,8 +885,9 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         }
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
-            let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile));
-            let opt_agg = agg_col.agg_quantile(&self.groups, quantile);
+            let new_name =
+                fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile, interpol));
+            let opt_agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
             if let Some(mut agg) = opt_agg {
                 agg.rename(&new_name);
                 cols.push(agg.into_series());
@@ -876,7 +903,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").median()
+    ///     df.groupby(["date"])?.select(["temp"]).median()
     /// }
     /// ```
     pub fn median(&self) -> Result<DataFrame> {
@@ -927,7 +954,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.select("temp").count()
+    ///     df.groupby(["date"])?.select(["temp"]).count()
     /// }
     /// ```
     /// Returns:
@@ -947,15 +974,12 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```
     pub fn count(&self) -> Result<DataFrame> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
+
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Count);
-            let mut builder =
-                PrimitiveChunkedBuilder::<UInt32Type>::new(&new_name, self.groups.len());
-            for (_first, idx) in &self.groups {
-                builder.append_value(idx.len() as u32);
-            }
-            let ca = builder.finish();
-            cols.push(ca.into_series())
+            let mut ca = self.groups.group_count();
+            ca.rename(&new_name);
+            cols.push(ca.into_series());
         }
         DataFrame::new(cols)
     }
@@ -967,7 +991,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```rust
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
-    ///     df.groupby("date")?.groups()
+    ///     df.groupby(["date"])?.groups()
     /// }
     /// ```
     /// Returns:
@@ -987,15 +1011,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// ```
     pub fn groups(&self) -> Result<DataFrame> {
         let mut cols = self.keys();
-
-        let mut column: ListChunked = self
-            .groups
-            .iter()
-            .map(|(_first, idx)| {
-                let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                ca.into_inner().into_series()
-            })
-            .collect();
+        let mut column = self.groups.as_list_chunked();
         let new_name = fmt_groupby_column("", GroupByMethod::Groups);
         column.rename(&new_name);
         cols.push(column.into_series());
@@ -1020,7 +1036,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     ///  ```rust
     ///  # use polars_core::prelude::*;
     ///  fn example(df: DataFrame) -> Result<DataFrame> {
-    ///      df.groupby("date")?.agg(&[("temp", &["n_unique", "sum", "min"])])
+    ///      df.groupby(["date"])?.agg(&[("temp", &["n_unique", "sum", "min"])])
     ///  }
     ///  ```
     ///  Returns:
@@ -1090,14 +1106,8 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
                         "var" => finish_agg_opt!(self, "{}_var", agg_var, agg_col, cols),
                         "count" => {
                             let new_name = format!("{}_count", agg_col.name());
-                            let mut builder = PrimitiveChunkedBuilder::<UInt32Type>::new(
-                                &new_name,
-                                self.groups.len(),
-                            );
-                            for (_first, idx) in &self.groups {
-                                builder.append_value(idx.len() as u32);
-                            }
-                            let ca = builder.finish();
+                            let mut ca = self.groups.group_count();
+                            ca.rename(&new_name);
                             cols.push(ca.into_series());
                         }
                         a => panic!("aggregation: {:?} is not supported", a),
@@ -1116,7 +1126,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
     /// # use polars_core::prelude::*;
     /// fn example(df: DataFrame) -> Result<DataFrame> {
     ///     // GroupBy and aggregate to Lists
-    ///     df.groupby("date")?.select("temp").agg_list()
+    ///     df.groupby(["date"])?.select(["temp"]).agg_list()
     /// }
     /// ```
     /// Returns:
@@ -1170,6 +1180,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .par_iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1190,6 +1201,7 @@ impl<'df, 'selection_str> GroupBy<'df, 'selection_str> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
+            .idx_ref()
             .iter()
             .map(|t| {
                 let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
@@ -1214,7 +1226,7 @@ pub enum GroupByMethod {
     Sum,
     Groups,
     NUnique,
-    Quantile(f64),
+    Quantile(f64, QuantileInterpolOptions),
     Count,
     List,
     Std,
@@ -1236,7 +1248,7 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
         NUnique => format!("{}_n_unique", name),
         Count => format!("{}_count", name),
         List => format!("{}_agg_list", name),
-        Quantile(quantile) => format!("{}_quantile_{:.2}", name, quantile),
+        Quantile(quantile, _interpol) => format!("{}_quantile_{:.2}", name, quantile),
         Std => format!("{}_agg_std", name),
         Var => format!("{}_agg_var", name),
     }
@@ -1244,8 +1256,6 @@ pub fn fmt_groupby_column(name: &str, method: GroupByMethod) -> String {
 
 #[cfg(test)]
 mod test {
-    use itertools::Itertools;
-
     use crate::frame::groupby::{groupby, groupby_threaded_num};
     use crate::prelude::*;
     use crate::utils::split_ca;
@@ -1254,7 +1264,7 @@ mod test {
     #[test]
     #[cfg(feature = "dtype-date")]
     #[cfg_attr(miri, ignore)]
-    fn test_group_by() {
+    fn test_group_by() -> Result<()> {
         let s0 = DateChunked::parse_from_str_slice(
             "date",
             &[
@@ -1267,94 +1277,44 @@ mod test {
             "%Y-%m-%d",
         )
         .into_series();
-        let s1 = Series::new("temp", [20, 10, 7, 9, 1].as_ref());
-        let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+        let s1 = Series::new("temp", [20, 10, 7, 9, 1]);
+        let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01]);
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-        println!("{:?}", df);
 
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").count().unwrap()
+        let out = df.groupby_stable(["date"])?.select(["temp"]).count()?;
+        assert_eq!(
+            out.column("temp_count")?,
+            &Series::new("temp_count", [2u32, 2, 1])
         );
+
         // Select multiple
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select(&["temp", "rain"])
-                .mean()
-                .unwrap()
+        let out = df
+            .groupby_stable(["date"])?
+            .select(&["temp", "rain"])
+            .mean()?;
+        assert_eq!(
+            out.column("temp_mean")?,
+            &Series::new("temp_mean", [15.0f64, 4.0, 9.0])
         );
+
         // Group by multiple
-        println!(
-            "multiple keys {:?}",
-            df.groupby(&["date", "temp"])
-                .unwrap()
-                .select("rain")
-                .mean()
-                .unwrap()
+        let out = df
+            .groupby_stable(&["date", "temp"])?
+            .select(["rain"])
+            .mean()?;
+        assert!(out.column("rain_mean").is_ok());
+
+        let out = df.groupby_stable(["date"])?.select(["temp"]).sum()?;
+        assert_eq!(
+            out.column("temp_sum")?,
+            &Series::new("temp_sum", [30, 8, 9])
         );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").sum().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").min().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").max().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .agg_list()
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").first().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").last().unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .n_unique()
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .select("temp")
-                .quantile(0.2)
-                .unwrap()
-        );
-        println!(
-            "{:?}",
-            df.groupby("date").unwrap().select("temp").median().unwrap()
-        );
+
         // implicit select all and only aggregate on methods that support that aggregation
-        let gb = df.groupby("date").unwrap().n_unique().unwrap();
-        println!("{:?}", df.groupby("date").unwrap().n_unique().unwrap());
+        let gb = df.groupby(["date"]).unwrap().n_unique().unwrap();
         // check the group by column is filtered out.
         assert_eq!(gb.width(), 3);
-        println!(
-            "{:?}",
-            df.groupby("date")
-                .unwrap()
-                .agg(&[("temp", &["n_unique", "sum", "min"])])
-                .unwrap()
-        );
-        println!("{:?}", df.groupby("date").unwrap().groups().unwrap());
+        Ok(())
     }
 
     #[test]
@@ -1377,18 +1337,15 @@ mod test {
 
         let df =
             DataFrame::new(vec![s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12]).unwrap();
-        println!("{:?}", df);
 
         let adf = df
             .groupby(&[
                 "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9", "G10", "G11", "G12",
             ])
             .unwrap()
-            .select("N")
+            .select(["N"])
             .sum()
             .unwrap();
-
-        println!("{:?}", adf);
 
         assert_eq!(
             Vec::from(&adf.column("N_sum").unwrap().i32().unwrap().sort(false)),
@@ -1422,16 +1379,14 @@ mod test {
 
         // Creat the dataframe with the computed series.
         let df = DataFrame::new(series).unwrap();
-        println!("{:?}", df);
 
         // Compute the aggregated DataFrame by the 13 columns defined in `series_names`.
         let adf = df
             .groupby(&series_names)
             .unwrap()
-            .select("N")
+            .select(["N"])
             .sum()
             .unwrap();
-        println!("{:?}", adf);
 
         // Check that the results of the group-by are correct. The content of every column
         // is equal, then, the grouped columns shall be equal and in the same order.
@@ -1456,8 +1411,8 @@ mod test {
                     "val" => [1, 1, 1, 1, 1]
         }
         .unwrap();
-        let res = df.groupby("flt").unwrap().sum().unwrap();
-        let res = res.sort("flt", false).unwrap();
+        let res = df.groupby(["flt"]).unwrap().sum().unwrap();
+        let res = res.sort(["flt"], false).unwrap();
         assert_eq!(
             Vec::from(res.column("val_sum").unwrap().i32().unwrap()),
             &[Some(2), Some(2), Some(1)]
@@ -1479,9 +1434,9 @@ mod test {
 
         // check multiple keys and categorical
         let res = df
-            .groupby_stable(&["foo", "ham"])
+            .groupby_stable(["foo", "ham"])
             .unwrap()
-            .select("bar")
+            .select(["bar"])
             .sum()
             .unwrap();
 
@@ -1500,8 +1455,8 @@ mod test {
         }
         .unwrap();
 
-        let out = df.groupby("a").unwrap().apply(Ok).unwrap();
-        assert!(out.sort("b", false).unwrap().frame_equal(&df));
+        let out = df.groupby(["a"]).unwrap().apply(Ok).unwrap();
+        assert!(out.sort(["b"], false).unwrap().frame_equal(&df));
     }
 
     #[test]
@@ -1515,13 +1470,10 @@ mod test {
             let ca = UInt32Chunked::new("", slice);
             let split = split_ca(&ca, 4).unwrap();
 
-            let a = groupby(ca.into_iter()).into_iter().sorted().collect_vec();
+            let a = groupby(ca.into_iter(), true).into_idx();
 
             let keys = split.iter().map(|ca| ca.cont_slice().unwrap()).collect();
-            let b = groupby_threaded_num(keys, 0, split.len() as u64)
-                .into_iter()
-                .sorted()
-                .collect_vec();
+            let b = groupby_threaded_num(keys, 0, split.len() as u64, true).into_idx();
 
             assert_eq!(a, b);
         }
@@ -1534,7 +1486,7 @@ mod test {
             "a" => ["a", "a", "a", "b", "b"],
             "b" => [Some(1), Some(2), None, None, Some(1)]
         )?;
-        let out = df.groupby_stable("a")?.mean()?;
+        let out = df.groupby_stable(["a"])?.mean()?;
 
         assert_eq!(
             Vec::from(out.column("b_mean")?.f64()?),
@@ -1553,12 +1505,12 @@ mod test {
             "int" => [1, 2, 3]
         ]?;
 
-        let out = df.groupby("g")?.select("int").var()?;
+        let out = df.groupby(["g"])?.select(["int"]).var()?;
         assert_eq!(
             out.column("int_agg_var")?.f64()?.sort(false).get(0),
             Some(0.5)
         );
-        let out = df.groupby("g")?.select("int").std()?;
+        let out = df.groupby(["g"])?.select(["int"]).std()?;
         let val = out
             .column("int_agg_std")?
             .f64()?
@@ -1581,10 +1533,9 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.may_apply("g", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
 
-        let out = df.groupby("g")?.sum()?;
-        dbg!(out);
+        let _ = df.groupby(["g"])?.sum()?;
         Ok(())
     }
 }

@@ -4,6 +4,7 @@
 [![Build and test](https://github.com/pola-rs/polars/workflows/Build%20and%20test/badge.svg)](https://github.com/pola-rs/polars/actions)
 [![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
 [![PyPI Latest Release](https://img.shields.io/pypi/v/polars.svg)](https://pypi.org/project/polars/)
+[![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
 
 <p align="center">
   <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python Documentation</a>
@@ -18,7 +19,7 @@
 </p>
 
 
-## Blazingly fast DataFrames in Rust & Python
+## Blazingly fast DataFrames in Rust, Python & Node.js
 
 Polars is a blazingly fast DataFrames library implemented in Rust using
 [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html) as memory model.
@@ -117,7 +118,7 @@ polars = { git = "https://github.com/pola-rs/polars", rev = "<optional git tag>"
 
 #### Rust version
 
-Required Rust version `>=1.52`
+Required Rust version `>=1.58`
 
 
 ## Documentation
@@ -133,6 +134,12 @@ Want to know about all the features Polars supports? Read the docs!
 #### Rust
 
   * [Rust documentation (master branch)](https://pola-rs.github.io/polars/polars/index.html)
+  * [User guide](https://pola-rs.github.io/polars-book/)
+
+#### Node
+
+  * Installation guide: `$ yarn install nodejs-polars`
+  * [Node documentation](https://pola-rs.github.io/polars/nodejs-polars/html/index.html)
   * [User guide](https://pola-rs.github.io/polars-book/)
 
 

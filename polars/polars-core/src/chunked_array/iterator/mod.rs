@@ -37,10 +37,13 @@ where
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
         Box::new(
-            self.downcast_iter()
-                .flatten()
-                .map(|x| x.copied())
-                .trust_my_length(self.len()),
+            // we know that we only iterate over length == self.len()
+            unsafe {
+                self.downcast_iter()
+                    .flatten()
+                    .map(|x| x.copied())
+                    .trust_my_length(self.len())
+            },
         )
     }
 }
@@ -59,7 +62,8 @@ impl<'a> IntoIterator for &'a BooleanChunked {
     type Item = Option<bool>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
@@ -118,6 +122,7 @@ impl<'a> ExactSizeIterator for BoolIterNoNull<'a> {}
 
 impl BooleanChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = bool>
@@ -127,10 +132,12 @@ impl BooleanChunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(BoolIterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(BoolIterNoNull::new)
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -138,7 +145,8 @@ impl<'a> IntoIterator for &'a Utf8Chunked {
     type Item = Option<&'a str>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
@@ -196,6 +204,7 @@ impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
 
 impl Utf8Chunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter<'a>(
         &'a self,
     ) -> impl Iterator<Item = &'a str>
@@ -205,10 +214,12 @@ impl Utf8Chunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(Utf8IterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(Utf8IterNoNull::new)
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -216,13 +227,21 @@ impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(
-            self.downcast_iter()
-                .map(|arr| arr.iter())
-                .flatten()
-                .trust_my_length(self.len())
-                .map(|arr| arr.map(|arr| Series::try_from(("", arr)).unwrap())),
-        )
+        let dtype = self.inner_dtype().to_arrow();
+
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            Box::new(
+                self.downcast_iter()
+                    .flat_map(|arr| arr.iter())
+                    .trust_my_length(self.len())
+                    .map(move |arr| {
+                        arr.map(|arr| {
+                            Series::try_from_unchecked("", vec![Arc::from(arr)], &dtype).unwrap()
+                        })
+                    }),
+            )
+        }
     }
 }
 
@@ -282,6 +301,7 @@ impl<'a> ExactSizeIterator for ListIterNoNull<'a> {}
 
 impl ListChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = Series>
@@ -291,10 +311,12 @@ impl ListChunked {
            + ExactSizeIterator
            + DoubleEndedIterator
            + TrustedLen {
-        self.downcast_iter()
-            .map(ListIterNoNull::new)
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(ListIterNoNull::new)
+                .trust_my_length(self.len())
+        }
     }
 }
 
@@ -306,31 +328,26 @@ where
     type Item = Option<&'a T>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        Box::new(self.downcast_iter().flatten().trust_my_length(self.len()))
+        // we know that we only iterate over length == self.len()
+        unsafe { Box::new(self.downcast_iter().flatten().trust_my_length(self.len())) }
     }
 }
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ObjectChunked<T> {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
     {
-        self.downcast_iter()
-            .map(|arr| arr.values().iter())
-            .flatten()
-            .trust_my_length(self.len())
+        // we know that we only iterate over length == self.len()
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|arr| arr.values().iter())
+                .trust_my_length(self.len())
+        }
     }
-}
-
-/// Trait for ChunkedArrays that don't have null values.
-/// The result is the most efficient implementation `Iterator`, according to the number of chunks.
-pub trait IntoNoNullIterator {
-    type Item;
-    type IntoIter: Iterator<Item = Self::Item>;
-
-    fn into_no_null_iter(self) -> Self::IntoIter;
 }
 
 /// Wrapper struct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
@@ -366,8 +383,10 @@ where
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
 
 #[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
 impl CategoricalChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = u32>

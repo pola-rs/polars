@@ -20,7 +20,6 @@
 //! * [Joins](#joins)
 //! * [GroupBy](#groupby)
 //!     - [pivot](#pivot)
-//!     - [downsample](#downsample)
 //! * [Melt](#melt)
 //! * [Explode](#explode)
 //! * [IO](#IO)
@@ -270,10 +269,10 @@
 //!
 //!
 //! // coerce numbers to floats
-//! df.may_apply("number", |s: &Series| s.cast::<Float64Type>())?;
+//! df.try_apply("number", |s: &Series| s.cast::<Float64Type>())?;
 //!
 //! // transform letters to uppercase letters
-//! df.may_apply("letters", |s: &Series| {
+//! df.try_apply("letters", |s: &Series| {
 //!     Ok(s.utf8()?.to_uppercase())
 //! });
 //!
@@ -427,68 +426,6 @@
 //! # Ok(())
 //! # }
 //! ```
-//! ### Downsample
-//!
-//! Downsample the DataFrame given some frequency/ downsample rule
-//!
-//! ```
-//! use polars::prelude::*;
-//! use polars::df;
-//! use polars::frame::groupby::resample::SampleRule;
-//!
-//! # fn example(df: &DataFrame) -> Result<()> {
-//! // given an input dataframe
-//!
-//! // ╭─────────────────────┬─────╮
-//! // │ ms                  ┆ i   │
-//! // │ ---                 ┆ --- │
-//! // │ datetime(ms)        ┆ u8  │
-//! // ╞═════════════════════╪═════╡
-//! // │ 2000-01-01 00:00:00 ┆ 0   │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:01:00 ┆ 1   │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:02:00 ┆ 2   │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:03:00 ┆ 3   │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ ...                 ┆ ... │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:15:00 ┆ 15  │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:16:00 ┆ 16  │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:17:00 ┆ 17  │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:18:00 ┆ 18  │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌┤
-//! // │ 2000-01-01 00:19:00 ┆ 19  │
-//! // ╰─────────────────────┴─────╯
-//!
-//!
-//! let downsampled = df.downsample("datetime", SampleRule::Minute(5))?
-//!     .first()?
-//!     .sort("datetime", false)?;
-//!
-//! // downsampled:
-//!
-//! // ╭─────────────────────┬─────────╮
-//! // │ ms                  ┆ i_first │
-//! // │ ---                 ┆ ---     │
-//! // │ datetime(ms)        ┆ u8      │
-//! // ╞═════════════════════╪═════════╡
-//! // │ 2000-01-01 00:00:00 ┆ 0       │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-//! // │ 2000-01-01 00:05:00 ┆ 5       │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-//! // │ 2000-01-01 00:10:00 ┆ 10      │
-//! // ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
-//! // │ 2000-01-01 00:15:00 ┆ 15      │
-//! // ╰─────────────────────┴─────────╯
-//! # Ok(())
-//! # }
-//!
-//! ```
 //!
 //! ## Melt
 //!
@@ -606,7 +543,7 @@
 //!
 //! // write DataFrame to file
 //! CsvWriter::new(&mut file)
-//!     .has_headers(true)
+//!     .has_header(true)
 //!     .with_delimiter(b',')
 //!     .finish(df);
 //! # Ok(())
@@ -695,7 +632,7 @@
 //!     .unwrap();
 //!
 //!     for idx in 0..df.width() {
-//!         df.may_apply_at_idx(idx, |series| {
+//!         df.try_apply_at_idx(idx, |series| {
 //!             let mask = series.is_nan()?;
 //!             let ca = series.f64()?;
 //!             ca.set(&mask, None)

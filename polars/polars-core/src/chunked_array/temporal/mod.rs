@@ -4,9 +4,9 @@ pub mod conversion;
 mod date;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;
-pub mod timedelta;
 mod utf8;
 
 pub use self::conversion::*;

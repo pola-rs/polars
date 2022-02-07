@@ -10,8 +10,9 @@ import polars as pl
 
 def test_from_pandas_datetime() -> None:
     ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
-    s = pd.Series([ts, ts])
-    s = pl.from_pandas(s.to_frame("a"))["a"]
+    pl_s = pd.Series([ts, ts])
+    tmp = pl.from_pandas(pl_s.to_frame("a"))
+    s = tmp["a"]
     assert s.dt.hour()[0] == 20
     assert s.dt.minute()[0] == 20
     assert s.dt.second()[0] == 20
@@ -20,14 +21,8 @@ def test_from_pandas_datetime() -> None:
         "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
-    assert s[0] == 1624492800000
-    assert s[-1] == 1624525200000
-    # checks dispatch
-    s.dt.round("hour", 2)
-    s.dt.round("day", 5)
-
-    # checks lazy dispatch
-    pl.DataFrame([s.rename("foo")])[pl.col("foo").dt.round("hour", 2)]
+    assert s[0] == datetime.datetime(2021, 6, 24, 0, 0)
+    assert s[-1] == datetime.datetime(2021, 6, 24, 9, 0)
 
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -113,7 +108,7 @@ def test_from_arrow() -> None:
 
     # if not a PyArrow type, raise a ValueError
     with pytest.raises(ValueError):
-        _ = pl.from_arrow([1, 2])  # type: ignore
+        _ = pl.from_arrow([1, 2])
 
 
 def test_from_pandas_dataframe() -> None:
@@ -162,3 +157,44 @@ def test_upcast_pyarrow_dicts() -> None:
     tbl = pa.concat_tables(tbls, promote=True)
     out = pl.from_arrow(tbl)
     assert out.shape == (128, 1)
+
+
+def test_no_rechunk() -> None:
+    table = pa.Table.from_pydict({"x": pa.chunked_array([list("ab"), list("cd")])})
+    # table
+    assert pl.from_arrow(table, rechunk=False).n_chunks() == 2
+    # chunked array
+    assert pl.from_arrow(table["x"], rechunk=False).n_chunks() == 2
+
+
+def test_cat_to_pandas() -> None:
+    df = pl.DataFrame({"a": ["best", "test"]})
+    df = df.with_columns(pl.all().cast(pl.Categorical))
+    out = df.to_pandas()
+    assert "category" in str(out["a"].dtype)
+
+
+def test_numpy_to_lit() -> None:
+    out = pl.select(pl.lit(np.array([1, 2, 3]))).to_series().to_list()
+    assert out == [1, 2, 3]
+    out = pl.select(pl.lit(np.float32(0))).to_series().to_list()
+    assert out == [0.0]
+
+
+def test_from_empty_pandas() -> None:
+    pandas_df = pd.DataFrame(
+        {
+            "A": [],
+            "fruits": [],
+        }
+    )
+
+    polars_df = pl.from_pandas(pandas_df)
+    assert polars_df.columns == ["A", "fruits"]
+    assert polars_df.dtypes == [pl.Float64, pl.Float64]
+
+
+def test_from_empty_arrow() -> None:
+    df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
+    assert df.columns == ["a", "b"]  # type: ignore
+    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore

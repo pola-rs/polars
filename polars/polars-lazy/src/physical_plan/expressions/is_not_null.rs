@@ -1,6 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use std::sync::Arc;
 
@@ -31,11 +31,11 @@ impl PhysicalExpr for IsNotNullExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let s = ac.flat();
+        let s = ac.flat_naive();
         let s = s.is_not_null().into_series();
         ac.with_series(s, false);
 

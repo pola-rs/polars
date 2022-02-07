@@ -3,8 +3,6 @@ pub(crate) mod series;
 use crate::prelude::*;
 use crate::POOL;
 pub use arrow;
-#[cfg(feature = "temporal")]
-pub use chrono;
 pub use num_cpus;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
@@ -20,22 +18,6 @@ impl<T> Deref for Wrap<T> {
     type Target = T;
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
-    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
-}
-
-fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
-    debug_assert!(std::mem::size_of::<T>() > 0);
-    let ptr = item as *const T;
-    unsafe {
-        if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {
-            Some(index_of_unchecked(slice, item))
-        } else {
-            None
-        }
     }
 }
 
@@ -165,105 +147,6 @@ pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, us
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Node(pub usize);
-
-impl Default for Node {
-    fn default() -> Self {
-        Node(usize::MAX)
-    }
-}
-
-#[derive(Clone)]
-#[cfg(feature = "private")]
-pub struct Arena<T> {
-    items: Vec<T>,
-}
-
-impl<T> Default for Arena<T> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Simple Arena implementation
-/// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
-impl<T> Arena<T> {
-    pub fn add(&mut self, val: T) -> Node {
-        let idx = self.items.len();
-        self.items.push(val);
-        Node(idx)
-    }
-
-    pub fn pop(&mut self) -> Option<T> {
-        self.items.pop()
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-
-    pub fn new() -> Self {
-        Arena { items: vec![] }
-    }
-
-    pub fn with_capacity(cap: usize) -> Self {
-        Arena {
-            items: Vec::with_capacity(cap),
-        }
-    }
-
-    pub fn get_node(&self, val: &T) -> Option<Node> {
-        index_of(&self.items, val).map(Node)
-    }
-
-    #[inline]
-    pub fn get(&self, idx: Node) -> &T {
-        debug_assert!(idx.0 < self.items.len());
-        unsafe { self.items.get_unchecked(idx.0) }
-    }
-
-    #[inline]
-    pub fn get_mut(&mut self, idx: Node) -> &mut T {
-        debug_assert!(idx.0 < self.items.len());
-        unsafe { self.items.get_unchecked_mut(idx.0) }
-    }
-
-    #[inline]
-    pub fn replace(&mut self, idx: Node, val: T) {
-        let x = self.get_mut(idx);
-        *x = val;
-    }
-}
-
-impl<T: Default> Arena<T> {
-    #[inline]
-    pub fn take(&mut self, idx: Node) -> T {
-        std::mem::take(self.get_mut(idx))
-    }
-
-    pub fn replace_with<F>(&mut self, idx: Node, f: F)
-    where
-        F: FnOnce(T) -> T,
-    {
-        let val = self.take(idx);
-        self.replace(idx, f(val));
-    }
-
-    pub fn try_replace_with<F>(&mut self, idx: Node, mut f: F) -> Result<()>
-    where
-        F: FnMut(T) -> Result<T>,
-    {
-        let val = self.take(idx);
-        self.replace(idx, f(val)?);
-        Ok(())
-    }
-}
-
 /// Apply a macro on the Series
 #[macro_export]
 macro_rules! match_dtype_to_physical_apply_macro {
@@ -388,7 +271,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date => $self.date().unwrap().$method($($args),*),
-            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
@@ -418,7 +301,7 @@ macro_rules! apply_method_numeric_series {
             #[cfg(feature = "dtype-date")]
             DataType::Date => $self.date().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime=> $self.datetime().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             _ => unimplemented!(),
         }
     }
@@ -470,6 +353,15 @@ macro_rules! df {
         {
             DataFrame::new(vec![$(Series::new($col_name, $slice),)+])
         }
+    }
+}
+
+#[cfg(feature = "private")]
+pub fn get_time_units(l: &TimeUnit, r: &TimeUnit) -> TimeUnit {
+    if l == r {
+        *l
+    } else {
+        TimeUnit::Milliseconds
     }
 }
 
@@ -543,6 +435,12 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (UInt32, Float32) => Some(Float32),
         (UInt32, Float64) => Some(Float64),
         (UInt32, Boolean) => Some(UInt32),
+        #[cfg(feature = "dtype-date")]
+        (UInt32, Date) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
+        (UInt32, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (UInt32, Duration(_)) => Some(Int64),
 
         (UInt64, UInt8) => Some(UInt64),
         (UInt64, UInt16) => Some(UInt64),
@@ -577,7 +475,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Int32, Date) => Some(Int32),
         #[cfg(feature = "dtype-datetime")]
-        (Int32, Datetime) => Some(Int64),
+        (Int32, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Int32, Duration(_)) => Some(Int64),
         #[cfg(feature = "dtype-time")]
         (Int32, Time) => Some(Int64),
         (Int32, Boolean) => Some(Int32),
@@ -589,7 +489,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Int64, Float32) => Some(Float32),
         (Int64, Float64) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Int64, Datetime) => Some(Int64),
+        (Int64, Datetime(_, _)) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Int64, Duration(_)) => Some(Int64),
         #[cfg(feature = "dtype-date")]
         (Int64, Date) => Some(Int32),
         #[cfg(feature = "dtype-time")]
@@ -601,7 +503,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Float32, Date) => Some(Float32),
         #[cfg(feature = "dtype-datetime")]
-        (Float32, Datetime) => Some(Float64),
+        (Float32, Datetime(_, _)) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Float32, Duration(_)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float32, Time) => Some(Float64),
         (Float64, Float32) => Some(Float64),
@@ -609,11 +513,17 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-date")]
         (Float64, Date) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Float64, Datetime) => Some(Float64),
+        (Float64, Datetime(_, _)) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Float64, Duration(_)) => Some(Float64),
         #[cfg(feature = "dtype-time")]
         (Float64, Time) => Some(Float64),
         (Float64, Boolean) => Some(Float64),
 
+        #[cfg(feature = "dtype-datetime")]
+        (Date, UInt32) => Some(Int64),
+        #[cfg(feature = "dtype-datetime")]
+        (Date, UInt64) => Some(Int64),
         #[cfg(feature = "dtype-datetime")]
         (Date, Int32) => Some(Int32),
         #[cfg(feature = "dtype-datetime")]
@@ -623,18 +533,35 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         #[cfg(feature = "dtype-datetime")]
         (Date, Float64) => Some(Float64),
         #[cfg(feature = "dtype-datetime")]
-        (Date, Datetime) => Some(Datetime),
+        (Date, Datetime(tu, tz)) => Some(Datetime(*tu, tz.clone())),
 
         #[cfg(feature = "dtype-date")]
-        (Datetime, Int32) => Some(Int64),
+        (Datetime(_, _), UInt32) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Int64) => Some(Int64),
+        (Datetime(_, _), UInt64) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Float32) => Some(Float64),
+        (Datetime(_, _), Int32) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Float64) => Some(Float64),
+        (Datetime(_, _), Int64) => Some(Int64),
         #[cfg(feature = "dtype-date")]
-        (Datetime, Date) => Some(Datetime),
+        (Datetime(_, _), Float32) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
+        (Datetime(_, _), Float64) => Some(Float64),
+        #[cfg(feature = "dtype-date")]
+        (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
+
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), UInt32) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), UInt64) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Int32) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Int64) => Some(Int64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Float32) => Some(Float64),
+        #[cfg(feature = "dtype-duration")]
+        (Duration(_), Float64) => Some(Float64),
 
         #[cfg(feature = "dtype-time")]
         (Time, Int32) => Some(Int64),
@@ -646,9 +573,9 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         (Time, Float64) => Some(Float64),
 
         #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-        (Time, Datetime) => Some(Int64),
+        (Time, Datetime(_, _)) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
-        (Datetime, Time) => Some(Int64),
+        (Datetime(_, _), Time) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
         (Time, Date) => Some(Int64),
         #[cfg(all(feature = "dtype-time", feature = "dtype-date"))]
@@ -671,6 +598,53 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (dt, Null) => Some(dt.clone()),
         (Null, dt) => Some(dt.clone()),
+
+        (Duration(lu), Datetime(ru, Some(tz))) | (Datetime(lu, Some(tz)), Duration(ru)) => {
+            if tz.is_empty() {
+                Some(Datetime(get_time_units(lu, ru), None))
+            } else {
+                Some(Datetime(get_time_units(lu, ru), Some(tz.clone())))
+            }
+        }
+        (Duration(lu), Datetime(ru, None)) | (Datetime(lu, None), Duration(ru)) => {
+            Some(Datetime(get_time_units(lu, ru), None))
+        }
+        (Duration(_), Date) | (Date, Duration(_)) => Some(Datetime(TimeUnit::Milliseconds, None)),
+        (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
+        // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
+        | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        // None and Some("") timezones
+        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Nanoseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None))
+            if tz.as_deref() == Some("") =>
+        {
+            Some(Datetime(TimeUnit::Milliseconds, None))
+        }
+
+        (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
+        | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
+            match (tz_l.as_deref(), tz_r.as_deref()) {
+                (Some(""), None) | (None, Some("")) => Some(Datetime(TimeUnit::Milliseconds, None)),
+                _ => None,
+            }
+        }
 
         _ => None,
     }
@@ -840,15 +814,28 @@ pub trait IntoVec<T> {
     fn into_vec(self) -> Vec<T>;
 }
 
+pub trait Arg {}
+impl Arg for bool {}
+
 impl IntoVec<bool> for bool {
     fn into_vec(self) -> Vec<bool> {
         vec![self]
     }
 }
 
-impl<T> IntoVec<T> for Vec<T> {
+impl<T: Arg> IntoVec<T> for Vec<T> {
     fn into_vec(self) -> Self {
         self
+    }
+}
+
+impl<I, S> IntoVec<String> for I
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    fn into_vec(self) -> Vec<String> {
+        self.into_iter().map(|s| s.as_ref().to_string()).collect()
     }
 }
 

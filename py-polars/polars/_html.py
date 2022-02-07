@@ -1,10 +1,9 @@
 """
 Module for formatting output data in HTML.
 """
-import typing as tp
 from textwrap import dedent
 from types import TracebackType
-from typing import Dict, Iterable, Optional, Type
+from typing import Dict, Iterable, List, Optional, Type
 
 from polars.datatypes import Object, dtype_to_ffiname
 
@@ -12,7 +11,7 @@ from polars.datatypes import Object, dtype_to_ffiname
 class Tag:
     def __init__(
         self,
-        elements: tp.List[str],
+        elements: List[str],
         tag: str,
         attributes: Optional[Dict[str, str]] = None,
     ):
@@ -42,7 +41,7 @@ class Tag:
 class HTMLFormatter:
     def __init__(self, df: "DataFrame", max_cols: int = 75, max_rows: int = 40):  # type: ignore  # noqa
         self.df = df
-        self.elements: tp.List[str] = []
+        self.elements: List[str] = []
         self.max_cols = max_cols
         self.max_rows = max_rows
         self.row_idx: Iterable[int]
@@ -70,14 +69,21 @@ class HTMLFormatter:
         """
         with Tag(self.elements, "thead"):
             with Tag(self.elements, "tr"):
-                for col in self.df.columns:
+                columns = self.df.columns
+                for c in self.col_idx:
                     with Tag(self.elements, "th"):
-                        self.elements.append(col)
+                        if c == -1:
+                            self.elements.append("...")
+                        else:
+                            self.elements.append(columns[c])
             with Tag(self.elements, "tr"):
-                for dtype in self.df.dtypes:
-                    ffi_name = dtype_to_ffiname(dtype)
+                dtypes = self.df.dtypes
+                for c in self.col_idx:
                     with Tag(self.elements, "td"):
-                        self.elements.append(ffi_name)
+                        if c == -1:
+                            self.elements.append("...")
+                        else:
+                            self.elements.append(dtype_to_ffiname(dtypes[c]))
 
     def write_body(self) -> None:
         """
@@ -102,7 +108,7 @@ class HTMLFormatter:
     def write(self, inner: str) -> None:
         self.elements.append(inner)
 
-    def render(self) -> tp.List[str]:
+    def render(self) -> List[str]:
         with Tag(self.elements, "table", {"border": "1", "class": "dataframe"}):
             self.write_header()
             self.write_body()
@@ -139,7 +145,7 @@ class NotebookFormatter(HTMLFormatter):
         template = dedent("\n".join((template_first, template_mid, template_last)))
         self.write(template)
 
-    def render(self) -> tp.List[str]:
+    def render(self) -> List[str]:
         """
         Return the lines needed to render a HTML table.
         """

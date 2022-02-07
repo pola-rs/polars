@@ -3,9 +3,9 @@ use crate::chunked_array::kernels::temporal::{
     time_to_hour, time_to_minute, time_to_nanosecond, time_to_second,
 };
 use crate::prelude::*;
-use crate::utils::chrono::Timelike;
 use crate::utils::NoNull;
 use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
+use chrono::Timelike;
 
 pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
     time.second() as i64 * NANOSECONDS + time.nanosecond() as i64
@@ -13,13 +13,15 @@ pub(crate) fn time_to_time64ns(time: &NaiveTime) -> i64 {
 
 impl TimeChunked {
     pub fn as_time_iter(&self) -> impl Iterator<Item = Option<NaiveTime>> + TrustedLen + '_ {
-        self.downcast_iter()
-            .map(|iter| {
-                iter.into_iter()
-                    .map(|opt_v| opt_v.copied().map(time64ns_to_time))
-            })
-            .flatten()
-            .trust_my_length(self.len())
+        // we know the iterators len
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|iter| {
+                    iter.into_iter()
+                        .map(|opt_v| opt_v.copied().map(time64ns_to_time))
+                })
+                .trust_my_length(self.len())
+        }
     }
 
     /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).

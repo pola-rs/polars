@@ -1,0 +1,47 @@
+name: Create Python release windows macos
+
+on:
+  push:
+     # Sequence of patterns matched against refs/tags
+    tags:
+      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+jobs:
+  build:
+    name: Create Release
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ["macos-latest", "windows-latest"]
+        python-version: ["3.7"]
+    steps:
+        - uses: actions/checkout@v2
+        - name: Install latest Rust nightly
+          uses: actions-rs/toolchain@v1
+          with:
+            toolchain: nightly-2022-01-01
+            override: true
+            components: rustfmt, clippy
+        - name: Set up Python
+          uses: actions/setup-python@v2
+          with:
+            python-version: ${{ matrix.python-version }}
+        - name: Install dependencies
+          run: |
+            python -m pip install --upgrade pip
+            pip install maturin==0.12.1
+        - name: Publish wheel
+          shell: bash
+          env:
+            MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+          run: |
+            rm py-polars/README.md
+            cp README.md py-polars/README.md
+            cd py-polars
+            rustup override set nightly-2022-01-01
+            export RUSTFLAGS='-C target-feature=+fxsr,+sse,+sse2,+sse3'
+            maturin publish \
+            --no-sdist \
+            --skip-existing \
+            -o wheels \
+            -i python \
+            --username ritchie46 \

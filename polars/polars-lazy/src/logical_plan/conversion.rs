@@ -65,9 +65,14 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 AggExpr::Mean(expr) => AAggExpr::Mean(to_aexpr(*expr, arena)),
                 AggExpr::List(expr) => AAggExpr::List(to_aexpr(*expr, arena)),
                 AggExpr::Count(expr) => AAggExpr::Count(to_aexpr(*expr, arena)),
-                AggExpr::Quantile { expr, quantile } => AAggExpr::Quantile {
+                AggExpr::Quantile {
+                    expr,
+                    quantile,
+                    interpol,
+                } => AAggExpr::Quantile {
                     expr: to_aexpr(*expr, arena),
                     quantile,
+                    interpol,
                 },
                 AggExpr::Sum(expr) => AAggExpr::Sum(to_aexpr(*expr, arena)),
                 AggExpr::Std(expr) => AAggExpr::Std(to_aexpr(*expr, arena)),
@@ -101,17 +106,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             output_type,
             options,
         },
-        Expr::BinaryFunction {
-            input_a,
-            input_b,
-            function,
-            output_field,
-        } => AExpr::BinaryFunction {
-            input_a: to_aexpr(*input_a, arena),
-            input_b: to_aexpr(*input_b, arena),
-            function,
-            output_field,
-        },
         Expr::Shift { input, periods } => AExpr::Shift {
             input: to_aexpr(*input, arena),
             periods,
@@ -137,6 +131,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         },
         Expr::Wildcard => AExpr::Wildcard,
+        Expr::Count => AExpr::Count,
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
         Expr::SufPreFix { .. } => panic!("no `suffix/prefix` expected at this point"),
@@ -152,12 +147,12 @@ pub(crate) fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Node {
     let v = match lp {
-        LogicalPlan::Union { inputs } => {
+        LogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
                 .collect();
-            ALogicalPlan::Union { inputs }
+            ALogicalPlan::Union { inputs, options }
         }
         LogicalPlan::Selection { input, predicate } => {
             let i = to_alp(*input, expr_arena, lp_arena);
@@ -225,23 +220,19 @@ pub(crate) fn to_alp(
         LogicalPlan::ParquetScan {
             path,
             schema,
-            with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
-            cache,
+            options,
         } => ALogicalPlan::ParquetScan {
             path,
             schema,
             output_schema: None,
-            with_columns,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
             aggregate: aggregate
                 .into_iter()
                 .map(|expr| to_aexpr(expr, expr_arena))
                 .collect(),
-            stop_after_n_rows,
-            cache,
+            options,
         },
         LogicalPlan::DataFrameScan {
             df,
@@ -312,6 +303,7 @@ pub(crate) fn to_alp(
             schema,
             apply,
             maintain_order,
+            options,
         } => {
             let i = to_alp(*input, expr_arena, lp_arena);
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
@@ -327,6 +319,7 @@ pub(crate) fn to_alp(
                 schema,
                 apply,
                 maintain_order,
+                options,
             }
         }
         LogicalPlan::Join {
@@ -371,31 +364,21 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
-        LogicalPlan::Distinct {
-            input,
-            maintain_order,
-            subset,
-        } => {
+        LogicalPlan::Distinct { input, options } => {
             let i = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::Distinct {
-                input: i,
-                maintain_order,
-                subset,
-            }
+            ALogicalPlan::Distinct { input: i, options }
         }
         LogicalPlan::Udf {
             input,
             function,
-            projection_pd,
-            predicate_pd,
+            options,
             schema,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena);
             ALogicalPlan::Udf {
                 input,
                 function,
-                projection_pd,
-                predicate_pd,
+                options,
                 schema,
             }
         }
@@ -403,23 +386,24 @@ pub(crate) fn to_alp(
     lp_arena.add(v)
 }
 
-pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
+pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
     let expr = expr_arena.get(node).clone();
 
     match expr {
-        AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_exp(node, expr_arena))),
-        AExpr::IsUnique(node) => Expr::IsUnique(Box::new(node_to_exp(node, expr_arena))),
-        AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_exp(node, expr_arena))),
-        AExpr::Explode(node) => Expr::Explode(Box::new(node_to_exp(node, expr_arena))),
+        AExpr::Count => Expr::Count,
+        AExpr::Duplicated(node) => Expr::Duplicated(Box::new(node_to_expr(node, expr_arena))),
+        AExpr::IsUnique(node) => Expr::IsUnique(Box::new(node_to_expr(node, expr_arena))),
+        AExpr::Reverse(node) => Expr::Reverse(Box::new(node_to_expr(node, expr_arena))),
+        AExpr::Explode(node) => Expr::Explode(Box::new(node_to_expr(node, expr_arena))),
         AExpr::Alias(expr, name) => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::Alias(Box::new(exp), name)
         }
         AExpr::Column(a) => Expr::Column(a),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
-            let l = node_to_exp(left, expr_arena);
-            let r = node_to_exp(right, expr_arena);
+            let l = node_to_expr(left, expr_arena);
+            let r = node_to_expr(right, expr_arena);
             Expr::BinaryExpr {
                 left: Box::new(l),
                 op,
@@ -427,15 +411,15 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Not(expr) => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::Not(Box::new(exp))
         }
         AExpr::IsNotNull(expr) => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::IsNotNull(Box::new(exp))
         }
         AExpr::IsNull(expr) => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::IsNull(Box::new(exp))
         }
         AExpr::Cast {
@@ -443,7 +427,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             data_type,
             strict,
         } => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::Cast {
                 expr: Box::new(exp),
                 data_type,
@@ -451,25 +435,25 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Sort { expr, options } => {
-            let exp = node_to_exp(expr, expr_arena);
+            let exp = node_to_expr(expr, expr_arena);
             Expr::Sort {
                 expr: Box::new(exp),
                 options,
             }
         }
         AExpr::Take { expr, idx } => {
-            let expr = node_to_exp(expr, expr_arena);
-            let idx = node_to_exp(idx, expr_arena);
+            let expr = node_to_expr(expr, expr_arena);
+            let idx = node_to_expr(idx, expr_arena);
             Expr::Take {
                 expr: Box::new(expr),
                 idx: Box::new(idx),
             }
         }
         AExpr::SortBy { expr, by, reverse } => {
-            let expr = node_to_exp(expr, expr_arena);
+            let expr = node_to_expr(expr, expr_arena);
             let by = by
                 .iter()
-                .map(|node| node_to_exp(*node, expr_arena))
+                .map(|node| node_to_expr(*node, expr_arena))
                 .collect();
             Expr::SortBy {
                 expr: Box::new(expr),
@@ -478,8 +462,8 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             }
         }
         AExpr::Filter { input, by } => {
-            let input = node_to_exp(input, expr_arena);
-            let by = node_to_exp(by, expr_arena);
+            let input = node_to_expr(input, expr_arena);
+            let by = node_to_expr(by, expr_arena);
             Expr::Filter {
                 input: Box::new(input),
                 by: Box::new(by),
@@ -487,69 +471,74 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
         }
         AExpr::Agg(agg) => match agg {
             AAggExpr::Min(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Min(Box::new(exp)).into()
             }
             AAggExpr::Max(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Max(Box::new(exp)).into()
             }
 
             AAggExpr::Median(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Median(Box::new(exp)).into()
             }
             AAggExpr::NUnique(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::NUnique(Box::new(exp)).into()
             }
             AAggExpr::First(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::First(Box::new(exp)).into()
             }
             AAggExpr::Last(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Last(Box::new(exp)).into()
             }
             AAggExpr::Mean(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Mean(Box::new(exp)).into()
             }
             AAggExpr::List(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::List(Box::new(exp)).into()
             }
-            AAggExpr::Quantile { expr, quantile } => {
-                let exp = node_to_exp(expr, expr_arena);
+            AAggExpr::Quantile {
+                expr,
+                quantile,
+                interpol,
+            } => {
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Quantile {
                     expr: Box::new(exp),
                     quantile,
+                    interpol,
                 }
                 .into()
             }
             AAggExpr::Sum(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Box::new(exp)).into()
             }
             AAggExpr::Std(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Std(Box::new(exp)).into()
             }
             AAggExpr::Var(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Box::new(exp)).into()
             }
             AAggExpr::AggGroups(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::AggGroups(Box::new(exp)).into()
             }
             AAggExpr::Count(expr) => {
-                let exp = node_to_exp(expr, expr_arena);
+                let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Count(Box::new(exp)).into()
             }
         },
         AExpr::Shift { input, periods } => {
-            let e = node_to_exp(input, expr_arena);
+            let e = node_to_expr(input, expr_arena);
             Expr::Shift {
                 input: Box::new(e),
                 periods,
@@ -560,9 +549,9 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             truthy,
             falsy,
         } => {
-            let p = node_to_exp(predicate, expr_arena);
-            let t = node_to_exp(truthy, expr_arena);
-            let f = node_to_exp(falsy, expr_arena);
+            let p = node_to_expr(predicate, expr_arena);
+            let t = node_to_expr(truthy, expr_arena);
+            let f = node_to_expr(falsy, expr_arena);
 
             Expr::Ternary {
                 predicate: Box::new(p),
@@ -581,26 +570,15 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             output_type,
             options,
         },
-        AExpr::BinaryFunction {
-            input_a,
-            input_b,
-            function,
-            output_field,
-        } => Expr::BinaryFunction {
-            input_a: Box::new(node_to_exp(input_a, expr_arena)),
-            input_b: Box::new(node_to_exp(input_b, expr_arena)),
-            function,
-            output_field,
-        },
         AExpr::Window {
             function,
             partition_by,
             order_by,
             options,
         } => {
-            let function = Box::new(node_to_exp(function, expr_arena));
+            let function = Box::new(node_to_expr(function, expr_arena));
             let partition_by = nodes_to_exprs(&partition_by, expr_arena);
-            let order_by = order_by.map(|ob| Box::new(node_to_exp(ob, expr_arena)));
+            let order_by = order_by.map(|ob| Box::new(node_to_expr(ob, expr_arena)));
             Expr::Window {
                 function,
                 partition_by,
@@ -613,7 +591,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             offset,
             length,
         } => Expr::Slice {
-            input: Box::new(node_to_exp(input, expr_arena)),
+            input: Box::new(node_to_expr(input, expr_arena)),
             offset,
             length,
         },
@@ -622,7 +600,7 @@ pub(crate) fn node_to_exp(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
 }
 
 fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
-    nodes.iter().map(|n| node_to_exp(*n, expr_arena)).collect()
+    nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()
 }
 
 pub(crate) fn node_to_lp(
@@ -634,12 +612,12 @@ pub(crate) fn node_to_lp(
     let lp = std::mem::take(lp);
 
     match lp {
-        ALogicalPlan::Union { inputs } => {
+        ALogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|node| node_to_lp(node, expr_arena, lp_arena))
                 .collect();
-            LogicalPlan::Union { inputs }
+            LogicalPlan::Union { inputs, options }
         }
         ALogicalPlan::Slice { input, offset, len } => {
             let lp = node_to_lp(input, expr_arena, lp_arena);
@@ -651,7 +629,7 @@ pub(crate) fn node_to_lp(
         }
         ALogicalPlan::Selection { input, predicate } => {
             let lp = node_to_lp(input, expr_arena, lp_arena);
-            let p = node_to_exp(predicate, expr_arena);
+            let p = node_to_expr(predicate, expr_arena);
             LogicalPlan::Selection {
                 input: Box::new(lp),
                 predicate: p,
@@ -669,7 +647,7 @@ pub(crate) fn node_to_lp(
             path,
             schema,
             options,
-            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
         },
         #[cfg(feature = "ipc")]
@@ -683,7 +661,7 @@ pub(crate) fn node_to_lp(
         } => LogicalPlan::IpcScan {
             path,
             schema,
-            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
             options,
         },
@@ -692,19 +670,15 @@ pub(crate) fn node_to_lp(
             path,
             schema,
             output_schema: _,
-            with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
-            cache,
+            options,
         } => LogicalPlan::ParquetScan {
             path,
             schema,
-            with_columns,
-            predicate: predicate.map(|n| node_to_exp(n, expr_arena)),
+            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
             aggregate: nodes_to_exprs(&aggregate, expr_arena),
-            stop_after_n_rows,
-            cache,
+            options,
         },
         ALogicalPlan::DataFrameScan {
             df,
@@ -716,8 +690,8 @@ pub(crate) fn node_to_lp(
             schema,
             projection: projection
                 .as_ref()
-                .map(|nodes| nodes.iter().map(|n| node_to_exp(*n, expr_arena)).collect()),
-            selection: selection.map(|n| node_to_exp(n, expr_arena)),
+                .map(|nodes| nodes.iter().map(|n| node_to_expr(*n, expr_arena)).collect()),
+            selection: selection.map(|n| node_to_expr(n, expr_arena)),
         },
         ALogicalPlan::Projection {
             expr,
@@ -772,6 +746,7 @@ pub(crate) fn node_to_lp(
             schema,
             apply,
             maintain_order,
+            options: dynamic_options,
         } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
 
@@ -782,6 +757,7 @@ pub(crate) fn node_to_lp(
                 schema,
                 apply,
                 maintain_order,
+                options: dynamic_options,
             }
         }
         ALogicalPlan::Join {
@@ -817,16 +793,11 @@ pub(crate) fn node_to_lp(
                 schema,
             }
         }
-        ALogicalPlan::Distinct {
-            input,
-            maintain_order,
-            subset,
-        } => {
+        ALogicalPlan::Distinct { input, options } => {
             let i = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Distinct {
                 input: Box::new(i),
-                maintain_order,
-                subset,
+                options,
             }
         }
         ALogicalPlan::Melt {
@@ -846,16 +817,14 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::Udf {
             input,
             function,
-            predicate_pd,
-            projection_pd,
+            options,
             schema,
         } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Udf {
                 input,
                 function,
-                predicate_pd,
-                projection_pd,
+                options,
                 schema,
             }
         }

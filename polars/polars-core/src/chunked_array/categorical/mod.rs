@@ -96,13 +96,19 @@ pub struct CatIter<'a> {
     iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
 }
 
+unsafe impl<'a> TrustedLen for CatIter<'a> {}
+
 impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter
-            .next()
-            .map(|item| item.map(|idx| self.rev.get(idx)))
+        self.iter.next().map(|item| {
+            item.map(|idx| {
+                // Safety:
+                // all categories are in bound
+                unsafe { self.rev.get_unchecked(idx) }
+            })
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -185,10 +191,10 @@ mod test {
             .cast(&DataType::Categorical)
             .unwrap();
         let appended = s1.append(&s2).unwrap();
-        assert_eq!(appended.str_value(0), "\"a\"");
-        assert_eq!(appended.str_value(1), "\"b\"");
-        assert_eq!(appended.str_value(4), "\"x\"");
-        assert_eq!(appended.str_value(5), "\"y\"");
+        assert_eq!(appended.str_value(0), "a");
+        assert_eq!(appended.str_value(1), "b");
+        assert_eq!(appended.str_value(4), "x");
+        assert_eq!(appended.str_value(5), "y");
     }
 
     #[test]

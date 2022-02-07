@@ -1,8 +1,8 @@
 [package]
 name = "polars-lazy"
-version = "0.18.0"
+version = "0.19.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
 description = "Lazy query engine for the Polars DataFrame library"
@@ -11,15 +11,16 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [features]
 # make sure we don't compile unneeded things even though
-# this dependency gets activated
+# this depeadency gets activated
 compile = []
 default = ["compile"]
 parquet = ["polars-core/parquet", "polars-io/parquet"]
 ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
-temporal = ["polars-core/temporal"]
+temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposesses
 fmt = ["polars-core/plain_fmt"]
+strings = ["polars-core/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
@@ -27,6 +28,7 @@ dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime"]
+dtype-duration = ["polars-core/dtype-duration"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 object = ["polars-core/object"]
 # uncomment to have datafusion integration
@@ -50,14 +52,20 @@ interpolate = ["polars-core/interpolate"]
 rolling_window = ["polars-core/rolling_window"]
 rank = ["polars-core/rank"]
 diff = ["polars-core/diff"]
+pct_change = ["polars-core/pct_change"]
 moment = ["polars-core/moment"]
 list = ["polars-core/list"]
 abs = ["polars-core/abs"]
+random = ["polars-core/random"]
+dynamic_groupby = ["polars-core/dynamic_groupby"]
+ewma = ["polars-core/ewma"]
+dot_diagram = []
 
 # no guarantees whatsoever
 private = []
 
 test = [
+  "private",
   "rolling_window",
   "rank",
   "list",
@@ -68,17 +76,22 @@ test = [
   "regex",
   "polars-core/plain_fmt",
   "diff",
+  "abs",
+  "parquet",
+  "ipc",
 ]
 
 [dependencies]
 ahash = "0.7"
-itertools = "0.10"
+glob = "0.3"
 rayon = "1.5"
-regex = { version = "1.4", optional = true }
+regex = { version = "1.5", optional = true }
 
-polars-arrow = { version = "0.18.0", path = "../polars-arrow" }
-polars-core = { version = "0.18.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
-polars-io = { version = "0.18.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-arrow = { version = "0.19.1", path = "../polars-arrow" }
+polars-core = { version = "0.19.1", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }
+polars-io = { version = "0.19.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-time = { version = "0.1.1", path = "../polars-time", optional = true }
+polars-utils = { version = "0.1.0", path = "../polars-utils" }
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version
 # datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}

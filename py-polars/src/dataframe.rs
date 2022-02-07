@@ -1,23 +1,19 @@
-use std::convert::TryFrom;
-
+use numpy::IntoPyArray;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
-#[cfg(feature = "downsample")]
-use polars_core::frame::groupby::resample::SampleRule;
 
 use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
 use crate::conversion::{ObjectValue, Wrap};
-use crate::datatypes::PyDataType;
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
-use crate::utils::{downsample_str_to_rule, str_to_polarstype};
+use crate::utils::str_to_polarstype;
 use crate::{
     arrow_interop,
     error::PyPolarsEr,
@@ -25,6 +21,12 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars_core::export::arrow::datatypes::IntegerType;
+use polars_core::frame::groupby::PivotAgg;
+use polars_core::frame::ArrowChunk;
+use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::utils::arrow::compute::cast::CastOptions;
+use polars_core::utils::get_supertype;
 
 #[pyclass]
 #[repr(transparent)]
@@ -84,7 +86,7 @@ impl PyDataFrame {
         chunk_size: usize,
         has_header: bool,
         ignore_errors: bool,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
         skip_rows: usize,
         projection: Option<Vec<usize>>,
         sep: &str,
@@ -100,6 +102,7 @@ impl PyDataFrame {
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
+        skip_rows_after_header: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -149,7 +152,7 @@ impl PyDataFrame {
         let df = CsvReader::new(mmap_bytes_r)
             .infer_schema(infer_schema_length)
             .has_header(has_header)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .with_delimiter(sep.as_bytes()[0])
             .with_skip_rows(skip_rows)
             .with_ignore_parser_errors(ignore_errors)
@@ -167,6 +170,7 @@ impl PyDataFrame {
             .with_null_values(null_values)
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
+            .with_skip_rows_after_header(skip_rows_after_header)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
@@ -178,7 +182,8 @@ impl PyDataFrame {
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
+        parallel: bool,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -188,13 +193,15 @@ impl PyDataFrame {
                 ParquetReader::new(buf)
                     .with_projection(projection)
                     .with_columns(columns)
-                    .with_stop_after_n_rows(stop_after_n_rows)
+                    .read_parallel(parallel)
+                    .with_n_rows(n_rows)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
                 .with_projection(projection)
                 .with_columns(columns)
-                .with_stop_after_n_rows(stop_after_n_rows)
+                .read_parallel(parallel)
+                .with_n_rows(n_rows)
                 .finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;
@@ -207,13 +214,13 @@ impl PyDataFrame {
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
-        stop_after_n_rows: Option<usize>,
+        n_rows: Option<usize>,
     ) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let df = IpcReader::new(file)
             .with_projection(projection)
             .with_columns(columns)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
@@ -230,11 +237,27 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "json")]
-    pub fn to_json(&self, py_f: PyObject, pretty: bool) -> PyResult<()> {
+    pub fn to_json(
+        &mut self,
+        py_f: PyObject,
+        pretty: bool,
+        row_oriented: bool,
+        json_lines: bool,
+    ) -> PyResult<()> {
         let file = get_file_like(py_f, false)?;
-        let r = match pretty {
-            true => serde_json::to_writer_pretty(file, &self.df),
-            false => serde_json::to_writer(file, &self.df),
+
+        let r = match (pretty, row_oriented, json_lines) {
+            (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),
+            (_, _, true) => JsonWriter::new(file)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&mut self.df),
+            (_, true, false) => JsonWriter::new(file)
+                .with_json_format(JsonFormat::Json)
+                .finish(&mut self.df),
+            (true, _, _) => serde_json::to_writer_pretty(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
+            (false, _, _) => serde_json::to_writer(file, &self.df)
+                .map_err(|e| PolarsError::ComputeError(format!("{:?}", e).into())),
         };
         r.map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
         Ok(())
@@ -242,8 +265,7 @@ impl PyDataFrame {
 
     #[staticmethod]
     pub fn from_arrow_record_batches(rb: Vec<&PyAny>) -> PyResult<Self> {
-        let batches = arrow_interop::to_rust::to_rust_rb(&rb)?;
-        let df = DataFrame::try_from(batches).map_err(PyPolarsEr::from)?;
+        let df = arrow_interop::to_rust::to_rust_df(&rb)?;
         Ok(Self::from(df))
     }
 
@@ -264,18 +286,18 @@ impl PyDataFrame {
         Ok(pydf)
     }
 
-    pub fn to_csv(&self, py_f: PyObject, has_headers: bool, sep: u8) -> PyResult<()> {
+    pub fn to_csv(&mut self, py_f: PyObject, has_header: bool, sep: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
-            .has_header(has_headers)
+            .has_header(has_header)
             .with_delimiter(sep)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
 
     #[cfg(feature = "ipc")]
-    pub fn to_ipc(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn to_ipc(&mut self, py_f: PyObject, compression: &str) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => None,
             "lz4" => Some(IpcCompression::LZ4),
@@ -286,7 +308,7 @@ impl PyDataFrame {
 
         IpcWriter::new(&mut buf)
             .with_compression(compression)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -335,8 +357,50 @@ impl PyDataFrame {
         .into_py(py)
     }
 
+    pub fn to_numpy(&self, py: Python) -> Option<PyObject> {
+        let mut st = DataType::Int8;
+        for s in self.df.iter() {
+            let dt_i = s.dtype();
+            st = get_supertype(&st, dt_i).ok()?;
+        }
+
+        match st {
+            DataType::UInt32 => self
+                .df
+                .to_ndarray::<UInt32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::UInt64 => self
+                .df
+                .to_ndarray::<UInt64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int32 => self
+                .df
+                .to_ndarray::<Int32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Int64 => self
+                .df
+                .to_ndarray::<Int64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float32 => self
+                .df
+                .to_ndarray::<Float32Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            DataType::Float64 => self
+                .df
+                .to_ndarray::<Float64Type>()
+                .ok()
+                .map(|arr| arr.into_pyarray(py).into_py(py)),
+            _ => None,
+        }
+    }
+
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(&self, py_f: PyObject, compression: &str) -> PyResult<()> {
+    pub fn to_parquet(&self, py_f: PyObject, compression: &str, statistics: bool) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
@@ -351,20 +415,67 @@ impl PyDataFrame {
 
         ParquetWriter::new(buf)
             .with_compression(compression)
+            .with_statistics(statistics)
             .finish(&self.df)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
 
-    pub fn to_arrow(&self) -> PyResult<Vec<PyObject>> {
+    pub fn to_arrow(&mut self) -> PyResult<Vec<PyObject>> {
+        self.df.rechunk();
         let gil = Python::acquire_gil();
         let py = gil.python();
         let pyarrow = py.import("pyarrow")?;
+        let names = self.df.get_column_names();
 
         let rbs = self
             .df
-            .iter_record_batches()
-            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, py, pyarrow))
+            .iter_chunks()
+            .map(|rb| arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow))
+            .collect::<PyResult<_>>()?;
+        Ok(rbs)
+    }
+
+    pub fn to_pandas(&mut self) -> PyResult<Vec<PyObject>> {
+        self.df.rechunk();
+        let gil = Python::acquire_gil();
+        let py = gil.python();
+        let pyarrow = py.import("pyarrow")?;
+        let names = self.df.get_column_names();
+        let cat_columns = self
+            .df
+            .get_columns()
+            .iter()
+            .enumerate()
+            .filter(|(_i, s)| s.dtype() == &DataType::Categorical)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        use polars_core::export::arrow::array::ArrayRef;
+        let rbs = self
+            .df
+            .iter_chunks()
+            .map(|rb| {
+                let mut rb = rb.into_arrays();
+                for i in &cat_columns {
+                    let arr = rb.get_mut(*i).unwrap();
+                    let out = polars_core::export::arrow::compute::cast::cast(
+                        &**arr,
+                        &ArrowDataType::Dictionary(
+                            IntegerType::Int64,
+                            Box::new(ArrowDataType::LargeUtf8),
+                            false,
+                        ),
+                        CastOptions::default(),
+                    )
+                    .unwrap();
+                    let out = Arc::from(out) as ArrayRef;
+                    *arr = out;
+                }
+                let rb = ArrowChunk::new(rb);
+
+                arrow_interop::to_py::to_py_rb(&rb, &names, py, pyarrow)
+            })
             .collect::<PyResult<_>>()?;
         Ok(rbs)
     }
@@ -394,18 +505,43 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool) -> PyResult<Self> {
+    pub fn add_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df + &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sub_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df - &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn div_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df / &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn mul_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df * &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn rem_df(&self, s: &Self) -> PyResult<Self> {
+        let df = (&self.df % &s.df).map_err(PyPolarsEr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let df = self
             .df
-            .sample_n(n, with_replacement)
+            .sample_n(n, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool) -> PyResult<Self> {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement)
+            .sample_frac(frac, with_replacement, seed)
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
@@ -481,15 +617,12 @@ impl PyDataFrame {
     }
 
     /// Get datatypes
-    pub fn dtypes(&self) -> Vec<u8> {
-        self.df
-            .dtypes()
+    pub fn dtypes(&self, py: Python) -> PyObject {
+        let iter = self
+            .df
             .iter()
-            .map(|arrow_dtype| {
-                let dt: PyDataType = arrow_dtype.into();
-                dt as u8
-            })
-            .collect()
+            .map(|s| Wrap(s.dtype().clone()).to_object(py));
+        PyList::new(py, iter).to_object(py)
     }
 
     pub fn n_chunks(&self) -> PyResult<usize> {
@@ -519,6 +652,11 @@ impl PyDataFrame {
         let columns = to_series_collection(columns);
         let df = self.df.hstack(&columns).map_err(PyPolarsEr::from)?;
         Ok(df.into())
+    }
+
+    pub fn extend(&mut self, df: &PyDataFrame) -> PyResult<()> {
+        self.df.extend(&df.df).map_err(PyPolarsEr::from)?;
+        Ok(())
     }
 
     pub fn vstack_mut(&mut self, df: &PyDataFrame) -> PyResult<()> {
@@ -581,9 +719,9 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Wrap<AlignedVec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::new_from_aligned_vec("", indices);
+        let indices = UInt32Chunked::from_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -595,7 +733,10 @@ impl PyDataFrame {
     }
 
     pub fn sort(&self, by_column: &str, reverse: bool) -> PyResult<Self> {
-        let df = self.df.sort(by_column, reverse).map_err(PyPolarsEr::from)?;
+        let df = self
+            .df
+            .sort([by_column], reverse)
+            .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
@@ -670,38 +811,6 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    #[cfg(feature = "downsample")]
-    pub fn downsample_agg(
-        &self,
-        by: &str,
-        rule: &str,
-        n: u32,
-        column_to_agg: Vec<(&str, Vec<&str>)>,
-    ) -> PyResult<Self> {
-        let rule = downsample_str_to_rule(rule, n)?;
-        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
-        let df = gb.agg(&column_to_agg).map_err(PyPolarsEr::from)?;
-        let out = df.sort(by, false).map_err(PyPolarsEr::from)?;
-        Ok(out.into())
-    }
-
-    #[cfg(feature = "downsample")]
-    pub fn downsample(&self, by: &str, rule: &str, n: u32, agg: &str) -> PyResult<Self> {
-        let rule = match rule {
-            "second" => SampleRule::Second(n),
-            "minute" => SampleRule::Minute(n),
-            "day" => SampleRule::Day(n),
-            "hour" => SampleRule::Hour(n),
-            a => {
-                return Err(PyPolarsEr::Other(format!("rule {} not supported", a)).into());
-            }
-        };
-        let gb = self.df.downsample(by, rule).map_err(PyPolarsEr::from)?;
-        let df = finish_groupby(gb, agg)?;
-        let out = df.df.sort(by, false).map_err(PyPolarsEr::from)?;
-        Ok(out.into())
-    }
-
     pub fn groupby(&self, by: Vec<&str>, select: Option<Vec<String>>, agg: &str) -> PyResult<Self> {
         let gb = Python::with_gil(|py| py.allow_threads(|| self.df.groupby(&by)))
             .map_err(PyPolarsEr::from)?;
@@ -739,7 +848,7 @@ impl PyDataFrame {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py).to_string()),
+                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -764,20 +873,28 @@ impl PyDataFrame {
         by: Vec<&str>,
         select: Vec<String>,
         quantile: f64,
+        interpolation: &str,
     ) -> PyResult<Self> {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
         let gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
         let selection = gb.select(&select);
-        let df = selection.quantile(quantile);
+        let df = selection.quantile(quantile, interpol);
         let df = df.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
-    #[cfg(feature = "pivot")]
     pub fn pivot(
         &self,
         by: Vec<String>,
-        pivot_column: &str,
-        values_column: &str,
+        pivot_column: Vec<String>,
+        values_column: Vec<String>,
         agg: &str,
     ) -> PyResult<Self> {
         let mut gb = self.df.groupby(&by).map_err(PyPolarsEr::from)?;
@@ -790,6 +907,7 @@ impl PyDataFrame {
             "median" => pivot.median(),
             "sum" => pivot.sum(),
             "count" => pivot.count(),
+            "last" => pivot.last(),
             a => Err(PolarsError::ComputeError(
                 format!("agg fn {} does not exists", a).into(),
             )),
@@ -810,24 +928,41 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    pub fn pivot2(
+        &self,
+        values: Vec<String>,
+        index: Vec<String>,
+        columns: Vec<String>,
+        aggregate_fn: Wrap<PivotAgg>,
+        maintain_order: bool,
+    ) -> PyResult<Self> {
+        let fun = match maintain_order {
+            true => DataFrame::pivot,
+            false => DataFrame::pivot_stable,
+        };
+        let df = fun(&self.df, values, index, columns, aggregate_fn.0).map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
     pub fn shift(&self, periods: i64) -> Self {
         self.df.shift(periods).into()
     }
 
-    pub fn drop_duplicates(
+    pub fn distinct(
         &self,
+        py: Python,
         maintain_order: bool,
         subset: Option<Vec<String>>,
+        keep: Wrap<DistinctKeepStrategy>,
     ) -> PyResult<Self> {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-
-        let df = py
-            .allow_threads(|| {
-                self.df
-                    .drop_duplicates(maintain_order, subset.as_ref().map(|v| v.as_ref()))
-            })
-            .map_err(PyPolarsEr::from)?;
+        let df = py.allow_threads(|| {
+            let subset = subset.as_ref().map(|v| v.as_ref());
+            match maintain_order {
+                true => self.df.distinct_stable(subset, keep.0),
+                false => self.df.distinct(subset, keep.0),
+            }
+            .map_err(PyPolarsEr::from)
+        })?;
         Ok(df.into())
     }
 
@@ -885,8 +1020,19 @@ impl PyDataFrame {
         Ok(s.map(|s| s.into()))
     }
 
-    pub fn quantile(&self, quantile: f64) -> PyResult<Self> {
-        let df = self.df.quantile(quantile).map_err(PyPolarsEr::from)?;
+    pub fn quantile(&self, quantile: f64, interpolation: &str) -> PyResult<Self> {
+        let interpol = match interpolation {
+            "nearest" => QuantileInterpolOptions::Nearest,
+            "lower" => QuantileInterpolOptions::Lower,
+            "higher" => QuantileInterpolOptions::Higher,
+            "midpoint" => QuantileInterpolOptions::Midpoint,
+            "linear" => QuantileInterpolOptions::Linear,
+            _ => panic!("not supported"),
+        };
+        let df = self
+            .df
+            .quantile(quantile, interpol)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
@@ -900,7 +1046,12 @@ impl PyDataFrame {
         df.into()
     }
 
-    pub fn apply(&self, lambda: &PyAny, output_type: &PyAny) -> PyResult<PySeries> {
+    pub fn apply(
+        &self,
+        lambda: &PyAny,
+        output_type: &PyAny,
+        inference_size: usize,
+    ) -> PyResult<(PyObject, bool)> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let df = &self.df;
@@ -945,18 +1096,18 @@ impl PyDataFrame {
                     .into_date()
                     .into_series()
             }
-            Some(DataType::Datetime) => {
+            Some(DataType::Datetime(tu, tz)) => {
                 apply_lambda_with_primitive_out_type::<Int64Type>(df, py, lambda, 0, None)
-                    .into_date()
+                    .into_datetime(tu, tz)
                     .into_series()
             }
             Some(DataType::Utf8) => {
                 apply_lambda_with_utf8_out_type(df, py, lambda, 0, None).into_series()
             }
-            _ => apply_lambda_unknown(df, py, lambda)?,
+            _ => return apply_lambda_unknown(df, py, lambda, inference_size),
         };
 
-        Ok(out.into())
+        Ok((PySeries::from(out).into_py(py), false))
     }
 
     pub fn shrink_to_fit(&mut self) {
@@ -978,6 +1129,32 @@ impl PyDataFrame {
             df.insert_at_idx(0, s).unwrap();
         }
         Ok(df.into())
+    }
+    pub fn upsample(
+        &self,
+        by: Vec<String>,
+        index_column: &str,
+        every: &str,
+        offset: &str,
+        stable: bool,
+    ) -> PyResult<Self> {
+        let out = if stable {
+            self.df.upsample_stable(
+                by,
+                index_column,
+                Duration::parse(every),
+                Duration::parse(offset),
+            )
+        } else {
+            self.df.upsample(
+                by,
+                index_column,
+                Duration::parse(every),
+                Duration::parse(offset),
+            )
+        };
+        let out = out.map_err(PyPolarsEr::from)?;
+        Ok(out.into())
     }
 }
 

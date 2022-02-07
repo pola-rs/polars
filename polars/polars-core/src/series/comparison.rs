@@ -29,10 +29,15 @@ macro_rules! impl_compare {
             #[cfg(feature = "dtype-time")]
             DataType::Time => lhs.time().unwrap().$method(rhs.time().unwrap().deref()),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime => lhs
+            DataType::Datetime(_, _) => lhs
                 .datetime()
                 .unwrap()
                 .$method(rhs.datetime().unwrap().deref()),
+            #[cfg(feature = "dtype-duration")]
+            DataType::Duration(_) => lhs
+                .duration()
+                .unwrap()
+                .$method(rhs.duration().unwrap().deref()),
             DataType::List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => lhs

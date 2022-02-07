@@ -2,7 +2,7 @@ use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqI
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
@@ -31,32 +31,28 @@ impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
 {
+    fn get_list_builder(
+        &self,
+        _name: &str,
+        _values_capacity: usize,
+        _list_capacity: usize,
+    ) -> Box<dyn ListBuilderTrait> {
+        ObjectChunked::<T>::get_list_builder(_name, _values_capacity, _list_capacity)
+    }
+
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
     }
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_first(groups)
-    }
 
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
 
-    fn str_value(&self, index: usize) -> Cow<str> {
-        match (&self.0).get(index) {
-            None => Cow::Borrowed("null"),
-            Some(val) => Cow::Owned(format!("{}", val)),
-        }
-    }
     fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
         (&self.0).into_partial_eq_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         self.0.vec_hash(random_state)
     }
 
@@ -64,8 +60,8 @@ where
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 }
 #[cfg(feature = "object")]
@@ -118,6 +114,10 @@ where
         }
     }
 
+    fn extend(&mut self, _other: &Series) -> Result<()> {
+        panic!("extend not implemented for Object dtypes")
+    }
+
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
@@ -154,14 +154,6 @@ where
 
     fn rechunk(&self) -> Series {
         ChunkOps::rechunk(&self.0).into_series()
-    }
-
-    fn head(&self, length: Option<usize>) -> Series {
-        ObjectChunked::head(&self.0, length).into_series()
-    }
-
-    fn tail(&self, length: Option<usize>) -> Series {
-        ObjectChunked::tail(&self.0, length).into_series()
     }
 
     fn take_every(&self, n: usize) -> Series {
@@ -241,18 +233,6 @@ where
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
 
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_n(&self.0, n, with_replacement).map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        ObjectChunked::sample_frac(&self.0, frac, with_replacement).map(|ca| ca.into_series())
-    }
-
     fn get_object(&self, index: usize) -> Option<&dyn PolarsObjectSafe> {
         ObjectChunked::<T>::get_object(&self.0, index)
     }
@@ -268,9 +248,6 @@ where
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
     fn min_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn mean_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
     fn median_as_series(&self) -> Series {

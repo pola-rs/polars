@@ -6,10 +6,9 @@ use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::{GroupTuples, IntoGroupTuples};
+use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::utils::NoNull;
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::hash::Hash;
 #[cfg(feature = "dtype-categorical")]
@@ -51,13 +50,14 @@ pub(crate) fn is_unique_helper2(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupTuples,
+    groups: GroupsProxy,
     len: u32,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
     let idx = groups
+        .into_idx()
         .into_iter()
         .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
         .collect::<Vec<_>>();
@@ -111,12 +111,12 @@ where
     a.collect()
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> AlignedVec<u32>
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<u32>
 where
     T: Hash + Eq,
 {
     let mut set = PlHashSet::new();
-    let mut unique = AlignedVec::with_capacity(capacity);
+    let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
             unique.push(idx as u32)
@@ -129,12 +129,16 @@ where
 #[allow(clippy::needless_collect)]
 fn mode<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
-    ChunkedArray<T>: IntoGroupTuples + ChunkTake,
+    ChunkedArray<T>: IntoGroupsProxy + ChunkTake,
 {
     if ca.is_empty() {
         return ca.clone();
     }
-    let mut groups = ca.group_tuples(true);
+    let mut groups = ca
+        .group_tuples(true, false)
+        .into_idx()
+        .into_iter()
+        .collect_trusted::<Vec<_>>();
     groups.sort_unstable_by_key(|k| k.1.len());
     let first = &groups[0];
 
@@ -169,7 +173,7 @@ macro_rules! arg_unique_ca {
 
 macro_rules! impl_value_counts {
     ($self:expr) => {{
-        let group_tuples = $self.group_tuples(true);
+        let group_tuples = $self.group_tuples(true, false).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
         let mut counts: NoNull<UInt32Chunked> = group_tuples
@@ -179,7 +183,7 @@ macro_rules! impl_value_counts {
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
         let df = DataFrame::new_no_checks(cols);
-        df.sort("counts", true)
+        df.sort(&["counts"], true)
     }};
 }
 
@@ -195,10 +199,7 @@ where
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -209,12 +210,17 @@ where
         is_unique_duplicated!(self, true)
     }
 
+    // TODO! implement on series. Not worth the compile times here.
     fn value_counts(&self) -> Result<DataFrame> {
         impl_value_counts!(self)
     }
 
     fn n_unique(&self) -> Result<usize> {
-        Ok(fill_set(self.into_iter()).len())
+        if self.null_count() > 0 {
+            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+        } else {
+            Ok(fill_set(self.into_no_null_iter()).len())
+        }
     }
 
     #[cfg(feature = "mode")]
@@ -233,10 +239,7 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -251,7 +254,11 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 
     fn n_unique(&self) -> Result<usize> {
-        Ok(fill_set(self.into_iter()).len())
+        if self.null_count() > 0 {
+            Ok(fill_set(self.into_iter().flatten()).len() + 1)
+        } else {
+            Ok(fill_set(self.into_no_null_iter()).len())
+        }
     }
 
     #[cfg(feature = "mode")]
@@ -311,14 +318,14 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
 fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
-    let mut av: AlignedVec<_> = (0..len).map(|_| 0u8).collect();
+    let mut av: Vec<_> = (0..len).map(|_| 0u8).collect();
 
     for idx in groups {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
 
-    ChunkedArray::new_from_aligned_vec(name, av)
+    ChunkedArray::from_vec(name, av)
 }
 
 #[cfg(not(feature = "dtype-u8"))]
@@ -326,26 +333,24 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked 
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();
-    let mut av: AlignedVec<_> = (0..len).map(|_| 0i32).collect();
+    let mut av: Vec<_> = (0..len).map(|_| 0i32).collect();
 
     for idx in groups {
         let elem = unsafe { av.get_unchecked_mut(idx as usize) };
         *elem = 1;
     }
 
-    ChunkedArray::new_from_aligned_vec(name, av)
+    ChunkedArray::from_vec(name, av)
 }
 
-fn sort_columns(columns: Vec<Series>) -> Vec<Series> {
+fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
+    columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
     columns
-        .into_iter()
-        .sorted_by_key(|s| s.name().to_string())
-        .collect()
 }
 
 impl ToDummies<Utf8Type> for Utf8Chunked {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true, false).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
@@ -371,7 +376,7 @@ where
     ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
 {
     fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true);
+        let groups = self.group_tuples(true, false).into_idx();
         let col_name = self.name();
         let taker = self.take_rand();
 
@@ -411,10 +416,7 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::new_from_aligned_vec(
-            self.name(),
-            arg_unique_ca!(self),
-        ))
+        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -555,18 +557,21 @@ mod is_first {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use itertools::Itertools;
 
     #[test]
     fn unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
-            ca.unique().unwrap().sort(false).into_iter().collect_vec(),
+            ca.unique()
+                .unwrap()
+                .sort(false)
+                .into_iter()
+                .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
         let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
         assert_eq!(
-            ca.unique().unwrap().into_iter().collect_vec(),
+            ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(true), Some(false)]
         );
 
@@ -581,7 +586,7 @@ mod test {
     fn arg_unique() {
         let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
         assert_eq!(
-            ca.arg_unique().unwrap().into_iter().collect_vec(),
+            ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
     }

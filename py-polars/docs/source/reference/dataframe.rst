@@ -21,6 +21,7 @@ Attributes
     DataFrame.width
     DataFrame.columns
     DataFrame.dtypes
+    DataFrame.schema
 
 Conversion
 ----------
@@ -49,6 +50,7 @@ Aggregation
     DataFrame.var
     DataFrame.median
     DataFrame.quantile
+    DataFrame.product
 
 Descriptive stats
 -----------------
@@ -98,14 +100,17 @@ Manipulation/ selection
     DataFrame.fill_null
     DataFrame.fill_nan
     DataFrame.explode
+    DataFrame.pivot
     DataFrame.melt
     DataFrame.shift
     DataFrame.shift_and_fill
     DataFrame.with_column
     DataFrame.hstack
     DataFrame.vstack
+    DataFrame.extend
     DataFrame.groupby
-    DataFrame.downsample
+    DataFrame.groupby_dynamic
+    DataFrame.groupby_rolling
     DataFrame.select
     DataFrame.with_columns
     DataFrame.with_column_renamed
@@ -114,6 +119,7 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.to_dummies
     DataFrame.drop_duplicates
+    DataFrame.distinct
     DataFrame.shrink_to_fit
     DataFrame.rechunk
     DataFrame.pipe
@@ -175,6 +181,7 @@ This namespace comes available by calling `DataFrame.groupby(..).pivot`
    :toctree: api/
 
     PivotOps.first
+    PivotOps.last
     PivotOps.sum
     PivotOps.min
     PivotOps.max

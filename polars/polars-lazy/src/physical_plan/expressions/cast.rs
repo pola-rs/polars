@@ -1,6 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use std::sync::Arc;
 
@@ -19,7 +19,7 @@ impl CastExpr {
         // here we create a null array for the types we cannot cast to from a booleanarray
 
         if input.bool().is_ok() && input.null_count() == input.len() {
-            match self.data_type {
+            match &self.data_type {
                 DataType::List(_) => {
                     return Ok(ListChunked::full_null(input.name(), input.len()).into_series())
                 }
@@ -30,9 +30,15 @@ impl CastExpr {
                         .into_series())
                 }
                 #[cfg(feature = "dtype-datetime")]
-                DataType::Datetime => {
+                DataType::Datetime(tu, tz) => {
                     return Ok(Int64Chunked::full_null(input.name(), input.len())
-                        .into_date()
+                        .into_datetime(*tu, tz.clone())
+                        .into_series())
+                }
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(tu) => {
+                    return Ok(Int64Chunked::full_null(input.name(), input.len())
+                        .into_duration(*tu)
                         .into_series())
                 }
                 _ => {}
@@ -61,18 +67,21 @@ impl PhysicalExpr for CastExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let s = ac.flat();
+        let s = ac.flat_naive();
         let s = self.finish(s.as_ref())?;
         ac.with_series(s, false);
         Ok(ac)
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.input.to_field(input_schema)
+        self.input.to_field(input_schema).map(|mut fld| {
+            fld.coerce(self.data_type.clone());
+            fld
+        })
     }
 
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {

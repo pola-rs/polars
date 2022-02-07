@@ -120,7 +120,11 @@ impl ChunkFilter<ListType> for ListChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+
+        // inner type may be categorical or logical type so we clone the state.
+        let mut ca = self.clone();
+        ca.chunks = chunks;
+        Ok(ca)
     }
 }
 

@@ -2,6 +2,8 @@ use super::*;
 #[cfg(feature = "dtype-time")]
 use crate::chunked_array::temporal::time::time_to_time64ns;
 use crate::prelude::*;
+use chrono;
+use chrono::ParseError;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -17,16 +19,21 @@ where
     None
 }
 
-fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
+fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> result
 where
     F: Fn(&str, &str) -> chrono::ParseResult<K>,
 {
     for fmt in [
-        // 2021-12-31
-        "%Y-%m-%d",
-        // 31-12-2021
-        "%d-%m-%Y",
+        // 21/12/31 12:54:98
+        "%y/%m/%d %H:%M:%S",
+        // 2021-12-31 24:58:01
+        "%y-%m-%d %H:%M:%S",
+        // 21/12/31 24:58:01
+        "%y/%m/%d %H:%M:%S",
+        //210319 23:58:50
+        "%y%m%d %H:%M:%S",
+        // 2019-04-18T02:45:55
         // 2021/12/31 12:54:98
         "%Y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
@@ -35,18 +42,59 @@ where
         "%Y/%m/%d %H:%M:%S",
         // 20210319 23:58:50
         "%Y%m%d %H:%M:%S",
-        // 2021319 (2021-03-19)
-        "%Y%m%d",
         // 2019-04-18T02:45:55
         "%FT%H:%M:%S",
         // 2019-04-18T02:45:55.555000000
+        // microseconds
         "%FT%H:%M:%S.%6f",
+        // nanoseconds
+        "%FT%H:%M:%S.%9f",
     ] {
         if convert(val, fmt).is_ok() {
             return Some(fmt);
         }
     }
     None
+}
+
+fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
+// (string, fmt) -> result
+where
+    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+{
+    for fmt in [
+        // 2021-12-31
+        "%Y-%m-%d", // 31-12-2021
+        "%d-%m-%Y", // 2021319 (2021-03-19)
+        "%Y%m%d",
+    ] {
+        if convert(val, fmt).is_ok() {
+            return Some(fmt);
+        }
+    }
+    None
+}
+
+struct ParseErrorByteCopy(ParseErrorKind);
+
+impl From<ParseError> for ParseErrorByteCopy {
+    fn from(e: ParseError) -> Self {
+        // we need to do this until chrono ParseErrorKind is public
+        // blocked by https://github.com/chronotope/chrono/pull/588
+        unsafe { std::mem::transmute(e) }
+    }
+}
+
+#[allow(dead_code)]
+enum ParseErrorKind {
+    OutOfRange,
+    Impossible,
+    NotEnough,
+    Invalid,
+    /// The input string has been prematurely ended.
+    TooShort,
+    TooLong,
+    BadFormat,
 }
 
 impl Utf8Chunked {
@@ -66,7 +114,7 @@ impl Utf8Chunked {
     #[cfg(feature = "dtype-datetime")]
     fn sniff_fmt_datetime(&self) -> Result<&'static str> {
         let val = self.get_first_val()?;
-        if let Some(pattern) = date_pattern(val, NaiveDateTime::parse_from_str) {
+        if let Some(pattern) = datetime_pattern(val, NaiveDateTime::parse_from_str) {
             return Ok(pattern);
         }
         Err(PolarsError::ComputeError(
@@ -135,6 +183,96 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-date")]
+    pub fn as_date_not_exact(&self, fmt: Option<&str>) -> Result<DateChunked> {
+        let fmt = match fmt {
+            Some(fmt) => fmt,
+            None => self.sniff_fmt_date()?,
+        };
+        let mut ca: Int32Chunked = self
+            .into_iter()
+            .map(|opt_s| match opt_s {
+                None => None,
+                Some(mut s) => {
+                    let fmt_len = fmt.len();
+
+                    for i in 1..(s.len() - fmt_len) {
+                        if s.is_empty() {
+                            return None;
+                        }
+                        match NaiveDate::parse_from_str(s, fmt).map(naive_date_to_date) {
+                            Ok(nd) => return Some(nd),
+                            Err(e) => {
+                                let e: ParseErrorByteCopy = e.into();
+                                match e.0 {
+                                    ParseErrorKind::TooLong => {
+                                        s = &s[..s.len() - 1];
+                                    }
+                                    _ => {
+                                        s = &s[i..];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+            })
+            .collect_trusted();
+        ca.rename(self.name());
+        Ok(ca.into())
+    }
+
+    #[cfg(feature = "dtype-datetime")]
+    pub fn as_datetime_not_exact(
+        &self,
+        fmt: Option<&str>,
+        tu: TimeUnit,
+    ) -> Result<DatetimeChunked> {
+        let fmt = match fmt {
+            Some(fmt) => fmt,
+            None => self.sniff_fmt_datetime()?,
+        };
+
+        let func = match tu {
+            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
+            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+        };
+
+        let mut ca: Int64Chunked = self
+            .into_iter()
+            .map(|opt_s| match opt_s {
+                None => None,
+                Some(mut s) => {
+                    let fmt_len = fmt.len();
+
+                    for i in 1..(s.len() - fmt_len) {
+                        if s.is_empty() {
+                            return None;
+                        }
+                        match NaiveDateTime::parse_from_str(s, fmt).map(|dt| func(&dt)) {
+                            Ok(nd) => return Some(nd),
+                            Err(e) => {
+                                let e: ParseErrorByteCopy = e.into();
+                                match e.0 {
+                                    ParseErrorKind::TooLong => {
+                                        s = &s[..s.len() - 1];
+                                    }
+                                    _ => {
+                                        s = &s[i..];
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    None
+                }
+            })
+            .collect_trusted();
+        ca.rename(self.name());
+        Ok(ca.into_datetime(tu, None))
+    }
+
+    #[cfg(feature = "dtype-date")]
     pub fn as_date(&self, fmt: Option<&str>) -> Result<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
@@ -171,10 +309,15 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-datetime")]
-    pub fn as_datetime(&self, fmt: Option<&str>) -> Result<DatetimeChunked> {
+    pub fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
             None => self.sniff_fmt_datetime()?,
+        };
+
+        let func = match tu {
+            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
+            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
 
         let mut ca: Int64Chunked = match self.has_validity() {
@@ -183,7 +326,7 @@ impl Utf8Chunked {
                 .map(|s| {
                     NaiveDateTime::parse_from_str(s, fmt)
                         .ok()
-                        .map(|dt| naive_datetime_to_datetime(&dt))
+                        .map(|dt| func(&dt))
                 })
                 .collect_trusted(),
             _ => self
@@ -192,7 +335,7 @@ impl Utf8Chunked {
                     let opt_nd = opt_s.map(|s| {
                         NaiveDateTime::parse_from_str(s, fmt)
                             .ok()
-                            .map(|dt| naive_datetime_to_datetime(&dt))
+                            .map(|dt| func(&dt))
                     });
                     match opt_nd {
                         None => None,
@@ -203,6 +346,6 @@ impl Utf8Chunked {
                 .collect_trusted(),
         };
         ca.rename(self.name());
-        Ok(ca.into())
+        Ok(ca.into_datetime(tu, None))
     }
 }

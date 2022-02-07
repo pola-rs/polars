@@ -20,10 +20,10 @@
 //! {"a":1, "b":0.6, "c":false, "d":"text"}
 //! {"a":1, "b":2.0, "c":false, "d":"4"}
 //! {"a":1, "b":-3.5, "c":true, "d":"4"}
-//! {"a":100000000000000, "b":0.6, "c":false, "d":"text"}"#;
+//! {"a":1, "b":0.6, "c":false, "d":"text"}"#;
 //! let file = Cursor::new(basic_json);
 //! let df = JsonReader::new(file)
-//! .infer_schema(Some(3))
+//! .infer_schema_len(Some(3))
 //! .with_batch_size(3)
 //! .finish()
 //! .unwrap();
@@ -61,21 +61,30 @@
 //! ```
 //!
 use crate::prelude::*;
-use crate::{finish_reader, ArrowReader};
-pub use arrow::{
-    error::Result as ArrowResult,
-    io::json::{Reader as ArrowJsonReader, ReaderBuilder},
-    record_batch::RecordBatch,
-};
+pub use arrow::{error::Result as ArrowResult, io::json::read, io::json::write};
 use polars_core::prelude::*;
-use std::io::Write;
-use std::io::{Read, Seek};
-use std::sync::Arc;
+use polars_core::utils::accumulate_dataframes_vertical;
+use std::convert::TryFrom;
+use std::io::{BufRead, Seek, Write};
+
+pub enum JsonFormat {
+    Json,
+    JsonLines,
+}
 
 // Write a DataFrame to JSON
+#[must_use]
 pub struct JsonWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
+    json_format: JsonFormat,
+}
+
+impl<W: Write> JsonWriter<W> {
+    pub fn with_json_format(mut self, format: JsonFormat) -> Self {
+        self.json_format = format;
+        self
+    }
 }
 
 impl<W> SerWriter<W> for JsonWriter<W>
@@ -83,48 +92,62 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        JsonWriter { buffer }
+        JsonWriter {
+            buffer,
+            json_format: JsonFormat::JsonLines,
+        }
     }
 
-    fn finish(self, df: &DataFrame) -> Result<()> {
-        let mut json_writer = arrow::io::json::LineDelimitedWriter::new(self.buffer);
+    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+        df.rechunk();
+        let batches = df.iter_chunks().map(Ok);
+        let names = df.get_column_names_owned();
 
-        let batches = df.as_record_batches()?;
-        json_writer.write_batches(&batches)?;
-        json_writer.finish()?;
+        match self.json_format {
+            JsonFormat::JsonLines => {
+                let format = write::LineDelimited::default();
+
+                let blocks =
+                    write::Serializer::new(batches, names, Vec::with_capacity(1024), format);
+                write::write(&mut self.buffer, format, blocks)?;
+            }
+            JsonFormat::Json => {
+                let format = write::JsonArray::default();
+                let blocks =
+                    write::Serializer::new(batches, names, Vec::with_capacity(1024), format);
+                write::write(&mut self.buffer, format, blocks)?;
+            }
+        }
 
         Ok(())
     }
 }
 
-impl<R: Read> ArrowReader for ArrowJsonReader<R> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<RecordBatch>> {
-        self.next()
-    }
-
-    fn schema(&self) -> Arc<Schema> {
-        Arc::new((&**self.schema()).into())
-    }
-}
-
+#[must_use]
 pub struct JsonReader<R>
 where
-    R: Read + Seek,
+    R: BufRead + Seek,
 {
     reader: R,
-    reader_builder: ReaderBuilder,
     rechunk: bool,
+    infer_schema_len: Option<usize>,
+    batch_size: usize,
+    projection: Option<Vec<String>>,
+    schema: Option<ArrowSchema>,
 }
 
 impl<R> SerReader<R> for JsonReader<R>
 where
-    R: Read + Seek,
+    R: BufRead + Seek,
 {
     fn new(reader: R) -> Self {
         JsonReader {
             reader,
-            reader_builder: ReaderBuilder::new(),
             rechunk: true,
+            infer_schema_len: Some(100),
+            batch_size: 8192,
+            projection: None,
+            schema: None,
         }
     }
 
@@ -133,44 +156,88 @@ where
         self
     }
 
-    fn finish(self) -> Result<DataFrame> {
+    fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
-        finish_reader(
-            self.reader_builder.build(self.reader)?,
-            rechunk,
-            None,
-            None,
-            None,
-        )
+
+        let fields = if let Some(schema) = self.schema {
+            schema.fields
+        } else {
+            read::infer_and_reset(&mut self.reader, self.infer_schema_len)?
+        };
+        let projection = self
+            .projection
+            .map(|projection| {
+                projection
+                    .iter()
+                    .map(|name| {
+                        fields
+                            .iter()
+                            .position(|fld| &fld.name == name)
+                            .ok_or_else(|| PolarsError::NotFound(name.into()))
+                    })
+                    .collect::<Result<Vec<_>>>()
+            })
+            .transpose()?;
+
+        let mut dfs = vec![];
+
+        // at most  rows. This container can be re-used across batches.
+        let mut rows = vec![String::default(); self.batch_size];
+        loop {
+            let read = read::read_rows(&mut self.reader, &mut rows)?;
+            if read == 0 {
+                break;
+            }
+            let read_rows = &rows[..read];
+            let rb = read::deserialize(read_rows, &fields)?;
+            let df = DataFrame::try_from((rb, fields.as_slice()))?;
+            let cols = df.get_columns();
+
+            if let Some(projection) = &projection {
+                let cols = projection
+                    .iter()
+                    .map(|idx| cols[*idx].clone())
+                    .collect::<Vec<_>>();
+                dfs.push(DataFrame::new_no_checks(cols))
+            } else {
+                dfs.push(df)
+            }
+        }
+
+        let mut out = accumulate_dataframes_vertical(dfs.into_iter())?;
+        if rechunk {
+            out.rechunk();
+        }
+        Ok(out)
     }
 }
 
 impl<R> JsonReader<R>
 where
-    R: Read + Seek,
+    R: BufRead + Seek,
 {
     /// Set the JSON file's schema
     pub fn with_schema(mut self, schema: &Schema) -> Self {
-        self.reader_builder = self.reader_builder.with_schema(Arc::new(schema.to_arrow()));
+        self.schema = Some(schema.to_arrow());
         self
     }
 
     /// Set the JSON reader to infer the schema of the file
-    pub fn infer_schema(mut self, max_records: Option<usize>) -> Self {
-        self.reader_builder = self.reader_builder.infer_schema(max_records);
+    pub fn infer_schema_len(mut self, max_records: Option<usize>) -> Self {
+        self.infer_schema_len = max_records;
         self
     }
 
     /// Set the batch size (number of records to load at one time)
     /// This heavily influences loading time.
     pub fn with_batch_size(mut self, batch_size: usize) -> Self {
-        self.reader_builder = self.reader_builder.with_batch_size(batch_size);
+        self.batch_size = batch_size;
         self
     }
 
     /// Set the reader's column projection
-    pub fn with_projection(mut self, projection: Vec<String>) -> Self {
-        self.reader_builder = self.reader_builder.with_projection(projection);
+    pub fn with_projection(mut self, projection: Option<Vec<String>>) -> Self {
+        self.projection = projection;
         self
     }
 }
@@ -196,7 +263,7 @@ mod test {
 {"a":100000000000000, "b":0.6, "c":false, "d":"text"}"#;
         let file = Cursor::new(basic_json);
         let df = JsonReader::new(file)
-            .infer_schema(Some(3))
+            .infer_schema_len(Some(3))
             .with_batch_size(3)
             .finish()
             .unwrap();

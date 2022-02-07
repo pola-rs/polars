@@ -1,7 +1,7 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::{prelude::*, POOL};
 use std::convert::TryFrom;
@@ -46,7 +46,7 @@ pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Res
         Operator::TrueDivide => {
             use DataType::*;
             match left.dtype() {
-                Date | Datetime | Float32 | Float64 => Ok(left / right),
+                Date | Datetime(_, _) | Float32 | Float64 => Ok(left / right),
                 _ => Ok(&left.cast(&Float64)? / &right.cast(&Float64)?),
             }
         }
@@ -76,7 +76,7 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
@@ -100,7 +100,9 @@ impl PhysicalExpr for BinaryExpr {
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_)) if s.len() != df.height() => {
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
+                if s.len() != df.height() =>
+            {
                 // this is a flat series of len eq to group tuples
                 let l = ac_l.aggregated();
                 let l = l.as_ref();
@@ -111,6 +113,8 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_l.clone()])).unwrap();
+                // keep logical type info
+                let dummy = dummy.cast(l.dtype()).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
@@ -144,7 +148,9 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_), AggState::AggregatedFlat(s)) if s.len() != df.height() => {
+            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
+                if s.len() != df.height() =>
+            {
                 // this is now a list
                 let l = ac_l.aggregated();
                 let l = l.list().unwrap();
@@ -159,6 +165,8 @@ impl PhysicalExpr for BinaryExpr {
                 // so we can swap the ArrayRef during the hot loop
                 // this prevents a series Arc alloc and a vec alloc per iteration
                 let dummy = Series::try_from(("dummy", vec![arr_r.clone()])).unwrap();
+                // keep logical type info
+                let dummy = dummy.cast(r.dtype()).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
                 let mut ca: ListChunked = l
@@ -185,10 +193,32 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(ca.into_series(), true);
                 Ok(ac_l)
             }
+            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_))
+            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_)) => {
+                ac_l.sort_by_groups();
+                ac_r.sort_by_groups();
+
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
+
+                // we flattened the series, so that sorts by group
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                ac_l.with_series(out, false);
+                Ok(ac_l)
+            }
+
             // Both are or a flat series or aggregated into a list
             // so we can flatten the Series and apply the operators
             _ => {
-                let out = apply_operator(ac_l.flat().as_ref(), ac_r.flat().as_ref(), self.op)?;
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
+
                 ac_l.combine_groups(ac_r).with_series(out, false);
                 Ok(ac_l)
             }
@@ -202,13 +232,17 @@ impl PhysicalExpr for BinaryExpr {
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
         Ok(self)
     }
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        Some(self)
+    }
 }
 
 impl PhysicalAggregation for BinaryExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
@@ -233,6 +267,139 @@ impl PhysicalAggregation for BinaryExpr {
                 )
                 .into(),
             )),
+        }
+    }
+}
+
+#[cfg(feature = "parquet")]
+mod stats {
+    use super::*;
+    use polars_io::parquet::predicates::BatchStats;
+    use polars_io::predicates::StatsEvaluator;
+
+    fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
+        match op {
+            Operator::Gt => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt(min_max, literal).all()
+            }
+            Operator::GtEq => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt_eq(min_max, literal).all()
+            }
+            Operator::Lt => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt(min_max, literal).all()
+            }
+            Operator::LtEq => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt_eq(min_max, literal).all()
+            }
+            // default: read the file
+            _ => true,
+        }
+    }
+
+    fn apply_operator_stats_lhs_lit(literal: &Series, min_max: &Series, op: Operator) -> bool {
+        match op {
+            Operator::Gt => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt(literal, min_max).all()
+            }
+            Operator::GtEq => {
+                // literal is bigger than max value
+                // selection needs all rows
+                ChunkCompare::<&Series>::gt_eq(literal, min_max).all()
+            }
+            Operator::Lt => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt(literal, min_max).all()
+            }
+            Operator::LtEq => {
+                // literal is smaller than min value
+                // selection needs all rows
+                ChunkCompare::<&Series>::lt_eq(literal, min_max).all()
+            }
+            // default: read the file
+            _ => true,
+        }
+    }
+
+    impl BinaryExpr {
+        fn impl_should_read(&self, stats: &BatchStats) -> Result<bool> {
+            let schema = stats.schema();
+            let fld_l = self.left.to_field(schema)?;
+            let fld_r = self.right.to_field(schema)?;
+
+            assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
+
+            let dummy = DataFrame::new_no_checks(vec![]);
+            let state = ExecutionState::new();
+
+            let out = match (fld_l.name().as_str(), fld_r.name().as_str()) {
+                (_, "literal") => {
+                    let l = stats.get_stats(fld_l.name())?;
+                    match l.to_min_max() {
+                        None => Ok(true),
+                        Some(min_max_s) => {
+                            let lit_s = self.right.evaluate(&dummy, &state).unwrap();
+                            Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
+                        }
+                    }
+                }
+                ("literal", _) => {
+                    let r = stats.get_stats(fld_r.name())?;
+                    match r.to_min_max() {
+                        None => Ok(true),
+                        Some(min_max_s) => {
+                            let lit_s = self.left.evaluate(&dummy, &state).unwrap();
+                            Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
+                        }
+                    }
+                }
+                // default: read the file
+                _ => Ok(true),
+            };
+            out.map(|read| {
+                if state.verbose && read {
+                    eprintln!("parquet file must be read, statistics not sufficient to for predicate.")
+                } else if state.verbose && !read {
+                    eprintln!("parquet file can be skipped, the statistics were sufficient to apply the predicate.")
+                };
+                read
+            })
+        }
+    }
+
+    impl StatsEvaluator for BinaryExpr {
+        fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+            if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+                return Ok(true);
+            }
+
+            match (
+                self.left.as_stats_evaluator(),
+                self.right.as_stats_evaluator(),
+            ) {
+                (Some(l), Some(r)) => match self.op {
+                    Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
+                    Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
+                    _ => Ok(true),
+                },
+                // This branch is probably never hit
+                (Some(other), None) | (None, Some(other)) => match self.op {
+                    Operator::And => Ok(self.should_read(stats)? && other.should_read(stats)?),
+                    Operator::Or => Ok(self.should_read(stats)? || other.should_read(stats)?),
+                    _ => Ok(true),
+                },
+                _ => self.impl_should_read(stats),
+            }
         }
     }
 }

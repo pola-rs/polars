@@ -4,6 +4,35 @@
 //! Apache arrow provides very cache efficient columnar data structures and is becoming the defacto
 //! standard for columnar data.
 //!
+//! ## Quickstart
+//! We recommend to build your queries directly with polars-lazy. This allows you to combine
+//! expression into powerful aggregations and column selections. All expressions are evaluated
+//! in parallel and your queries are optimized just in time.
+//!
+//! ```rust no_run
+//! let lf1 = LazyFrame::scan_parquet("myfile_1.parquet".into(), Default::default())?
+//!     .groupby([col("ham")])
+//!     .agg([
+//!         // expressions can be combined into powerful aggregations
+//!         col("foo")
+//!             .sort_by([col("ham").rank(Default::default())], [false])
+//!             .last()
+//!             .alias("last_foo_ranked_by_ham"),
+//!         // every expression runs in parallel
+//!         col("foo").cummin(false).alias("cumulative_min_per_group"),
+//!         // every expression runs in parallel
+//!         col("foo").reverse().list().alias("reverse_group"),
+//!     ]);
+//!
+//! let lf2 = LazyFrame::scan_parquet("myfile_2.parquet".into(), Default::default())?
+//!     .select([col("ham"), col("spam")]);
+//!
+//! let df = lf1
+//!     .join(lf2, [col("reverse_group")], [col("foo")], JoinType::Left)
+//!     // now we finally materialize the result.
+//!     .collect()?;
+//! ```
+//!
 //! This means that Polars data structures can be shared zero copy with processes in many different
 //! languages.
 //!
@@ -58,10 +87,9 @@
 //! `feature = "simd"`, and requires a nightly compiler. If you don't need SIMD, **Polars runs on stable!**
 //!
 //! ## API
-//! Polars supports an eager and a lazy API, and strives to make them both equally capable.
-//! The eager API is similar to [pandas](https://pandas.pydata.org/) and is easy to get started.
-//! The lazy API is similar to [Spark](https://spark.apache.org/) and builds a query plan that will
-//! be optimized. This may be less intuitive but could improve performance.
+//! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
+//! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
+//! whenever you can.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -92,6 +120,7 @@
 //!
 //! * `lazy` - Lazy API
 //!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
+//!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
@@ -113,13 +142,18 @@
 //!                         * gzip
 //!
 //! * `DataFrame` operations:
+//!     - `dynamic_groupby` - Groupby based on a time window instead of predefined keys.
 //!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
-//!     - `downsample` - [downsample operation](crate::frame::DataFrame::downsample) on `DataFrame`s
+//!                And activates `pivot` and `transpose` operations
 //!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
+//!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
+//!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
+//!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
+//!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
@@ -133,17 +167,20 @@
 //!     - `reinterpret` - Utility to reinterpret bits to signed/unsigned
 //!     - `take_opt_iter` - Take from a Series with `Iterator<Item=Option<usize>>`
 //!     - `mode` - [Return the most occurring value(s)](crate::chunked_array::ops::ChunkUnique::mode)
-//!     - `cum_agg` - [cumsum, cummin, cummax aggregation](crate::chunked_array::ops::CumAgg)
-//!     - `rolling_window` [rolling window functions, like rolling_mean](crate::chunked_array::ops::ChunkWindow)
+//!     - `cum_agg` - cumsum, cummin, cummax aggregation.
+//!     - `rolling_window` - rolling window functions, like rolling_mean
 //!     - `interpolate` [interpolate None values](crate::chunked_array::ops::Interpolate)
 //!     - `extract_jsonpath` - [Run jsonpath queries on Utf8Chunked](https://goessner.net/articles/JsonPath/)
-//!     - `list` - [List utils](crate::chunked_array::list::namespace)
+//!     - `list` - List utils.
 //!     - `rank` - Ranking algorithms.
 //!     - `moment` - kurtosis and skew statistics
+//!     - `ewma` - Exponential moving average windows
+//!     - `abs` - Get absolute values of Series
+//!     - `arange` - Range operation on Series
+//!     - `product` - Compute the product of a Series.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `plain_fmt` - no overflowing (less compilation times)
 //!     - `pretty_fmt` - cell overflow (increased compilation times)
-//!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
@@ -158,13 +195,14 @@
 //!
 //! | data type               | feature flag      |
 //! |-------------------------|-------------------|
-//! | DateType                | dtype-date        |
-//! | DatetimeType            | dtype-datetime    |
-//! | TimeType                | dtype-time        |
-//! | Int8Type                | dtype-i8          |
-//! | Int16Type               | dtype-i16         |
-//! | UInt8Type               | dtype-u8          |
-//! | UInt16Type              | dtype-u16         |
+//! | Date                    | dtype-date        |
+//! | Datetime                | dtype-datetime    |
+//! | Time                    | dtype-time        |
+//! | Duration                | dtype-duration    |
+//! | Int8                    | dtype-i8          |
+//! | Int16                   | dtype-i16         |
+//! | UInt8                   | dtype-u8          |
+//! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
 //!
 //!
@@ -211,6 +249,7 @@
 //!                                          defaults to `0.005`, any higher cardinality will run default groupby.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
+//! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //!
 //!
 //! ## Compile for WASM
@@ -231,6 +270,8 @@ pub mod prelude;
 #[cfg(feature = "dtype-categorical")]
 pub use polars_core::toggle_string_cache;
 pub use polars_core::{chunked_array, datatypes, doc, error, frame, functions, series, testing};
+#[cfg(feature = "temporal")]
+pub use polars_time as time;
 
 pub use polars_core::apply_method_all_arrow_series;
 pub use polars_core::df;

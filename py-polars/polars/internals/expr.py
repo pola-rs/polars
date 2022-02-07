@@ -1,9 +1,10 @@
 import copy
-import typing as tp
 from datetime import date, datetime, timedelta
-from typing import Any, Callable, Optional, Sequence, Type, Union
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
+
+from polars.utils import _timedelta_to_pl_duration
 
 try:
     from polars.polars import PyExpr
@@ -18,23 +19,20 @@ from polars.datatypes import (
     Date,
     Datetime,
     Float64,
+    Int32,
     Object,
     UInt32,
     py_type_to_dtype,
 )
 
 
-def _selection_to_pyexpr_list(
-    exprs: Union[str, "Expr", Sequence[Union[str, "Expr"]], "pli.Series"]
-) -> tp.List["PyExpr"]:
-    pyexpr_list: tp.List[PyExpr]
-    if isinstance(exprs, Sequence) and not isinstance(exprs, str):
-        pyexpr_list = []
-        for expr in exprs:
-            pyexpr_list.append(expr_to_lit_or_expr(expr, str_to_lit=False)._pyexpr)
-    else:
-        pyexpr_list = [expr_to_lit_or_expr(exprs, str_to_lit=False)._pyexpr]
-    return pyexpr_list
+def selection_to_pyexpr_list(
+    exprs: Union[str, "Expr", Sequence[Union[str, "Expr", "pli.Series"]], "pli.Series"]
+) -> List["PyExpr"]:
+    if isinstance(exprs, (str, Expr, pli.Series)):
+        exprs = [exprs]
+
+    return [expr_to_lit_or_expr(e, str_to_lit=False)._pyexpr for e in exprs]
 
 
 def wrap_expr(pyexpr: "PyExpr") -> "Expr":
@@ -48,6 +46,12 @@ class Expr:
 
     def __init__(self) -> None:
         self._pyexpr: PyExpr  # pragma: no cover
+
+    def __str__(self) -> str:
+        return self._pyexpr.to_str()
+
+    def _repr_html_(self) -> str:
+        return self._pyexpr.to_str()
 
     @staticmethod
     def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
@@ -191,6 +195,37 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
+    def to_physical(self) -> "Expr":
+        """
+        Cast to physical representation of the logical dtype.
+
+        Date -> Int32
+        Datetime -> Int64
+        Time -> Int64
+        other -> other
+        """
+        return wrap_expr(self._pyexpr.to_physical())
+
+    def any(self) -> "Expr":
+        """
+        Check if any boolean value in the column is `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.any())
+
+    def all(self) -> "Expr":
+        """
+        Check if all boolean values in the column are `True`
+
+        Returns
+        -------
+        Boolean literal
+        """
+        return wrap_expr(self._pyexpr.all())
+
     def sqrt(self) -> "Expr":
         """
         Compute the square root of the elements
@@ -271,7 +306,10 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.alias(name))
 
-    def exclude(self, columns: Union[str, tp.List[str]]) -> "Expr":
+    def exclude(
+        self,
+        columns: Union[str, List[str], Type[DataType], Sequence[Type[DataType]]],
+    ) -> "Expr":
         """
         Exclude certain columns from a wildcard/regex selection.
 
@@ -280,7 +318,11 @@ class Expr:
         Parameters
         ----------
         columns
-            Column(s) to exclude from selection
+            Column(s) to exclude from selection.
+            This can be:
+            - a column name, or multiple names
+            - a regular expression starting with `^` and ending with `$`
+            - a dtype or multiple dtypes
 
         Examples
         --------
@@ -324,7 +366,23 @@ class Expr:
         """
         if isinstance(columns, str):
             columns = [columns]
-        return wrap_expr(self._pyexpr.exclude(columns))
+            return wrap_expr(self._pyexpr.exclude(columns))
+        elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
+            columns = [columns]  # type: ignore
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
+
+        if not all(
+            [
+                isinstance(a, str) or issubclass(a, DataType)
+                for a in columns  # type: ignore
+            ]
+        ):
+            raise ValueError("input should be all string or all DataType")
+
+        if isinstance(columns[0], str):  # type: ignore
+            return wrap_expr(self._pyexpr.exclude(columns))
+        else:
+            return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
     def keep_name(self) -> "Expr":
         """
@@ -685,6 +743,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.floor())
 
+    def ceil(self) -> "Expr":
+        """
+        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+
+        Only works on floating point Series
+        """
+        return wrap_expr(self._pyexpr.ceil())
+
     def round(self, decimals: int) -> "Expr":
         """
         Round underlying floating point data by `decimals` digits.
@@ -774,8 +840,8 @@ class Expr:
 
     def sort_by(
         self,
-        by: Union["Expr", str, tp.List[Union["Expr", str]]],
-        reverse: Union[bool, tp.List[bool]] = False,
+        by: Union["Expr", str, List[Union["Expr", str]]],
+        reverse: Union[bool, List[bool]] = False,
     ) -> "Expr":
         """
         Sort this column by the ordering of another column, or multiple other columns.
@@ -794,13 +860,11 @@ class Expr:
             by = [by]
         if not isinstance(reverse, list):
             reverse = [reverse]
-        by = _selection_to_pyexpr_list(by)
+        by = selection_to_pyexpr_list(by)
 
         return wrap_expr(self._pyexpr.sort_by(by, reverse))
 
-    def take(
-        self, index: Union[tp.List[int], "Expr", "pli.Series", np.ndarray]
-    ) -> "Expr":
+    def take(self, index: Union[List[int], "Expr", "pli.Series", np.ndarray]) -> "Expr":
         """
         Take values by index.
 
@@ -815,8 +879,6 @@ class Expr:
         """
         if isinstance(index, (list, np.ndarray)):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
-        elif isinstance(index, pli.Series):
-            index_lit = pli.lit(index)
         else:
             index_lit = pli.expr_to_lit_or_expr(index, str_to_lit=False)
         return pli.wrap_expr(self._pyexpr.take(index_lit._pyexpr))
@@ -882,7 +944,7 @@ class Expr:
 
     def fill_nan(self, fill_value: Union[str, int, float, bool, "Expr"]) -> "Expr":
         """
-        Fill none value with a fill value
+        Fill floating point NaN value with a fill value
         """
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
@@ -948,9 +1010,15 @@ class Expr:
 
     def median(self) -> "Expr":
         """
-        Get median value.
+        Get median value using linear interpolation.
         """
         return wrap_expr(self._pyexpr.median())
+
+    def product(self) -> "Expr":
+        """
+        Compute the product of an expression
+        """
+        return wrap_expr(self._pyexpr.product())
 
     def n_unique(self) -> "Expr":
         """Count unique values."""
@@ -982,7 +1050,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.list())
 
-    def over(self, expr: Union[str, "Expr", tp.List[Union["Expr", str]]]) -> "Expr":
+    def over(self, expr: Union[str, "Expr", List[Union["Expr", str]]]) -> "Expr":
         """
         Apply window function over a subgroup.
         This is similar to a groupby + aggregation + self join.
@@ -1027,8 +1095,6 @@ class Expr:
         ├╌╌╌╌╌╌╌╌┤
         │ ...    │
         ├╌╌╌╌╌╌╌╌┤
-        │ 4      │
-        ├╌╌╌╌╌╌╌╌┤
         │ 6      │
         ├╌╌╌╌╌╌╌╌┤
         │ 6      │
@@ -1040,7 +1106,7 @@ class Expr:
 
         """
 
-        pyexprs = _selection_to_pyexpr_list(expr)
+        pyexprs = selection_to_pyexpr_list(expr)
 
         return wrap_expr(self._pyexpr.over(pyexprs))
 
@@ -1066,11 +1132,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.is_duplicated())
 
-    def quantile(self, quantile: float) -> "Expr":
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> "Expr":
         """
         Get quantile value.
+
+
+        Parameters
+        ----------
+        quantile
+            quantile between 0.0 and 1.0
+
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
         """
-        return wrap_expr(self._pyexpr.quantile(quantile))
+        return wrap_expr(self._pyexpr.quantile(quantile, interpolation))
 
     def filter(self, predicate: "Expr") -> "Expr":
         """
@@ -1157,31 +1232,31 @@ class Expr:
         ... )
         >>> (
         ...     df.lazy()
-        ...     .groupby("b")
+        ...     .groupby("b", maintain_order=True)
         ...     .agg(
         ...         [
         ...             pl.col("a").apply(lambda x: x.sum()),
         ...         ]
         ...     )
         ...     .collect()
-        ... )  # doctest: +IGNORE_RESULT
+        ... )
         shape: (3, 2)
         ┌─────┬─────┐
         │ b   ┆ a   │
         │ --- ┆ --- │
         │ str ┆ i64 │
         ╞═════╪═════╡
-        │ c   ┆ 2   │
+        │ a   ┆ 1   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
         │ b   ┆ 2   │
         ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ a   ┆ 1   │
+        │ c   ┆ 2   │
         └─────┴─────┘
 
         """
 
         # input x: Series of type list containing the group values
-        def wrap_f(x: "pli.Series") -> "pli.Series":
+        def wrap_f(x: "pli.Series") -> "pli.Series":  # pragma: no cover
             return x.apply(f, return_dtype=return_dtype)
 
         return self.map(wrap_f, agg_list=True)
@@ -1233,7 +1308,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.pow(exponent))
 
-    def is_in(self, other: Union["Expr", tp.List[Any]]) -> "Expr":
+    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 
@@ -1245,6 +1320,26 @@ class Expr:
         Returns
         -------
         Expr that evaluates to a Boolean Series.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"sets": [[1, 2, 3], [1, 2], [9, 10]], "optional_members": [1, 2, 3]}
+        ... )
+        >>> df.select([pl.col("optional_members").is_in("sets").alias("contains")])
+        shape: (3, 1)
+        ┌──────────┐
+        │ contains │
+        │ ---      │
+        │ bool     │
+        ╞══════════╡
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ true     │
+        ├╌╌╌╌╌╌╌╌╌╌┤
+        │ false    │
+        └──────────┘
+
         """
         if isinstance(other, list):
             other = pli.lit(pli.Series(other))
@@ -1271,10 +1366,31 @@ class Expr:
         return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
 
     def is_between(
-        self, start: Union["Expr", datetime], end: Union["Expr", datetime]
+        self,
+        start: Union["Expr", datetime],
+        end: Union["Expr", datetime],
+        include_bounds: Union[bool, Sequence[bool]] = False,
     ) -> "Expr":
         """
         Check if this expression is between start and end.
+
+        Parameters
+        ----------
+        start
+            Lower bound as primitive type or datetime.
+        end
+            Upper bound as primitive type or datetime.
+        include_bounds
+           False:           Exclude both start and end (default).
+           True:            Include both start and end.
+           [False, False]:  Exclude start and exclude end.
+           [True, True]:    Include start and include end.
+           [False, True]:   Exclude start and include end.
+           [True, False]:   Include start and exclude end.
+
+        Returns
+        -------
+        Expr that evaluates to a Boolean Series.
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
@@ -1287,7 +1403,18 @@ class Expr:
             expr = self.cast(Datetime)
         else:
             expr = self
-        return ((expr > start) & (expr < end)).alias("is_between")
+        if include_bounds is False or include_bounds == [False, False]:
+            return ((expr > start) & (expr < end)).alias("is_between")
+        elif include_bounds is True or include_bounds == [True, True]:
+            return ((expr >= start) & (expr <= end)).alias("is_between")
+        elif include_bounds == [False, True]:
+            return ((expr > start) & (expr <= end)).alias("is_between")
+        elif include_bounds == [True, False]:
+            return ((expr >= start) & (expr < end)).alias("is_between")
+        else:
+            raise ValueError(
+                "include_bounds should be a boolean or [boolean, boolean]."
+            )
 
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
@@ -1350,7 +1477,7 @@ class Expr:
 
         """
 
-        def inspect(s: "pli.Series") -> "pli.Series":
+        def inspect(s: "pli.Series") -> "pli.Series":  # pragma: no cover
             print(fmt.format(s))
             return s
 
@@ -1365,14 +1492,14 @@ class Expr:
     def rolling_min(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
         """
         apply a rolling min (moving min) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1397,14 +1524,14 @@ class Expr:
     def rolling_max(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
         """
         Apply a rolling max (moving max) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1429,14 +1556,14 @@ class Expr:
     def rolling_mean(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
         """
         Apply a rolling mean (moving mean) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1490,14 +1617,14 @@ class Expr:
     def rolling_sum(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
         """
         Apply a rolling sum (moving sum) over the values in this array.
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1522,7 +1649,7 @@ class Expr:
     def rolling_std(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1530,7 +1657,7 @@ class Expr:
         Compute a rolling std dev
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1555,7 +1682,7 @@ class Expr:
     def rolling_var(
         self,
         window_size: int,
-        weights: Optional[tp.List[float]] = None,
+        weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
     ) -> "Expr":
@@ -1563,7 +1690,7 @@ class Expr:
         Compute a rolling variance.
 
         A window of length `window_size` will traverse the array. The values that fill this window
-        will (optionally) be multiplied with the weights given by the `weight` vector. The resultingParameters
+        will (optionally) be multiplied with the weights given by the `weight` vector. The resulting
         values will be aggregated to their sum.
 
         Parameters
@@ -1586,7 +1713,12 @@ class Expr:
         )
 
     def rolling_apply(
-        self, window_size: int, function: Callable[["pli.Series"], Any]
+        self,
+        function: Callable[["pli.Series"], Any],
+        window_size: int,
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
     ) -> "Expr":
         """
         Allows a custom rolling window function.
@@ -1601,11 +1733,18 @@ class Expr:
 
         Parameters
         ----------
-        window_size
-            Size of the rolling window
         function
             Aggregation function
-
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
 
         Examples
         --------
@@ -1617,7 +1756,7 @@ class Expr:
         ... )
         >>> df.select(
         ...     [
-        ...         pl.col("A").rolling_apply(3, lambda s: s.std()),
+        ...         pl.col("A").rolling_apply(lambda s: s.std(), window_size=3),
         ...     ]
         ... )
         shape: (5, 1)
@@ -1638,9 +1777,21 @@ class Expr:
         └────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.rolling_apply(window_size, function))
+        if min_periods is None:
+            min_periods = window_size
+        return wrap_expr(
+            self._pyexpr.rolling_apply(
+                function, window_size, weights, min_periods, center
+            )
+        )
 
-    def rolling_median(self, window_size: int) -> "Expr":
+    def rolling_median(
+        self,
+        window_size: int,
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+    ) -> "Expr":
         """
         Compute a rolling median
 
@@ -1648,21 +1799,53 @@ class Expr:
         ----------
         window_size
             Size of the rolling window
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
         """
-        return wrap_expr(self._pyexpr.rolling_median(window_size))
+        return wrap_expr(
+            self._pyexpr.rolling_median(window_size, weights, min_periods, center)
+        )
 
-    def rolling_quantile(self, window_size: int, quantile: float) -> "Expr":
+    def rolling_quantile(
+        self,
+        quantile: float,
+        interpolation: str = "nearest",
+        window_size: int = 2,
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+    ) -> "Expr":
         """
         Compute a rolling quantile
 
         Parameters
         ----------
-        window_size
-            Size of the rolling window
         quantile
             quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+        window_size
+            The length of the window.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
         """
-        return wrap_expr(self._pyexpr.rolling_quantile(window_size, quantile))
+        return wrap_expr(
+            self._pyexpr.rolling_quantile(
+                quantile, interpolation, window_size, weights, min_periods, center
+            )
+        )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Expr":
         """
@@ -1694,7 +1877,7 @@ class Expr:
         """
         return pli.argsort_by([self], [reverse])
 
-    def rank(self, method: str = "average") -> "Expr":
+    def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
         """
         Assign ranks to data, dealing with ties appropriately.
 
@@ -1704,22 +1887,24 @@ class Expr:
             {'average', 'min', 'max', 'dense', 'ordinal', 'random'}, optional
             The method used to assign ranks to tied elements.
             The following methods are available (default is 'average'):
-              * 'average': The average of the ranks that would have been assigned to
-                all the tied values is assigned to each value.
-              * 'min': The minimum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.  (This is also
-                referred to as "competition" ranking.)
-              * 'max': The maximum of the ranks that would have been assigned to all
-                the tied values is assigned to each value.
-              * 'dense': Like 'min', but the rank of the next highest element is
-                assigned the rank immediately after those assigned to the tied
-                elements.
-              * 'ordinal': All values are given a distinct rank, corresponding to
-                the order that the values occur in `a`.
-              * 'random': Like 'ordinal', but the rank for ties is not dependent
-                on the order that the values occur in `a`.
+            - 'average': The average of the ranks that would have been assigned to
+            all the tied values is assigned to each value.
+            - 'min': The minimum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.  (This is also
+            referred to as "competition" ranking.)
+            - 'max': The maximum of the ranks that would have been assigned to all
+            the tied values is assigned to each value.
+            - 'dense': Like 'min', but the rank of the next highest element is
+            assigned the rank immediately after those assigned to the tied
+            elements.
+            - 'ordinal': All values are given a distinct rank, corresponding to
+            the order that the values occur in `a`.
+            - 'random': Like 'ordinal', but the rank for ties is not dependent
+            on the order that the values occur in `a`.
+        reverse
+            reverse the operation
         """
-        return wrap_expr(self._pyexpr.rank(method))
+        return wrap_expr(self._pyexpr.rank(method, reverse))
 
     def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
         """
@@ -1733,6 +1918,20 @@ class Expr:
             {'ignore', 'drop'}
         """
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
+
+    def pct_change(self, n: int = 1) -> "Expr":
+        """
+        Percentage change (as fraction) between current element and most-recent
+        non-null element at least n period(s) before the current element.
+
+        Computes the change from the previous row by default.
+
+        Parameters
+        ----------
+        n
+            periods to shift for forming percent change.
+        """
+        return wrap_expr(self._pyexpr.pct_change(n))
 
     def skew(self, bias: bool = True) -> "Expr":
         r"""Compute the sample skewness of a data set.
@@ -1794,7 +1993,11 @@ class Expr:
 
     def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Expr":
         """
-        Clip (limit) the values in an array.
+        Clip (limit) the values in an array to any value that fits in 64 floating poitns range.
+
+        Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
+
+        If you want to clip other dtypes, consider writing a when -> then -> otherwise expression
 
         Parameters
         ----------
@@ -1803,16 +2006,7 @@ class Expr:
         max_val
             Maximum value.
         """
-        min_val_lit = pli.lit(min_val)
-        max_val_lit = pli.lit(max_val)
-
-        return (
-            pli.when(self < min_val_lit)
-            .then(min_val_lit)
-            .when(self > max_val_lit)
-            .then(max_val_lit)
-            .otherwise(self)
-        ).keep_name()
+        return wrap_expr(self._pyexpr.clip(min_val, max_val))
 
     def lower_bound(self) -> "Expr":
         """
@@ -1825,32 +2019,6 @@ class Expr:
         Returns a unit Series with the highest value possible for the dtype of this expression.
         """
         return wrap_expr(self._pyexpr.upper_bound())
-
-    def str_concat(self, delimiter: str = "-") -> "Expr":
-        """
-        Vertically concat the values in the Series to a single string value.
-
-        Returns
-        -------
-        Series of dtype Utf8
-
-        Examples
-        --------
-
-        >>> df = pl.DataFrame({"foo": [1, None, 2]})
-        >>> df = df.select(pl.col("foo").str_concat("-"))
-        >>> df
-        shape: (1, 1)
-        ┌──────────┐
-        │ foo      │
-        │ ---      │
-        │ str      │
-        ╞══════════╡
-        │ 1-null-2 │
-        └──────────┘
-
-        """
-        return wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def sin(self) -> "Expr":
         """
@@ -1914,15 +2082,15 @@ class Expr:
         --------
 
         >>> df = pl.DataFrame({"a": [1.0]})
-        >>> df.select(pl.col("a").tan())
+        >>> df.select(pl.col("a").tan().round(2))
         shape: (1, 1)
-        ┌────────────────────┐
-        │ a                  │
-        │ ---                │
-        │ f64                │
-        ╞════════════════════╡
-        │ 1.5574077246549023 │
-        └────────────────────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.56 │
+        └──────┘
 
         """
         return np.tan(self)  # type: ignore
@@ -1999,7 +2167,7 @@ class Expr:
         """
         return np.arctan(self)  # type: ignore
 
-    def reshape(self, dims: tp.Tuple[int, ...]) -> "Expr":
+    def reshape(self, dims: Tuple[int, ...]) -> "Expr":
         """
         Reshape this Expr to a flat series, shape: (len,)
         or a List series, shape: (rows, cols)
@@ -2016,6 +2184,150 @@ class Expr:
         Expr
         """
         return wrap_expr(self._pyexpr.reshape(dims))
+
+    def shuffle(self, seed: int = 0) -> "Expr":
+        """
+        Shuffle the contents of this expr.
+
+        Parameters
+        ----------
+        seed
+            Seed initialization
+        """
+        return wrap_expr(self._pyexpr.shuffle(seed))
+
+    def ewm_mean(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        half_life: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+        min_periods: int = 1,
+    ) -> "Expr":
+        r"""
+        Exponential moving average.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        half_life
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
+
+        """
+        alpha = _prepare_alpha(com, span, half_life, alpha)
+        return wrap_expr(self._pyexpr.ewm_mean(alpha, adjust, min_periods))
+
+    def ewm_std(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        half_life: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+        min_periods: int = 1,
+    ) -> "Expr":
+        r"""
+        Exponential moving standard deviation.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        half_life
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
+
+        """
+        alpha = _prepare_alpha(com, span, half_life, alpha)
+        return wrap_expr(self._pyexpr.ewm_std(alpha, adjust, min_periods))
+
+    def ewm_var(
+        self,
+        com: Optional[float] = None,
+        span: Optional[float] = None,
+        half_life: Optional[float] = None,
+        alpha: Optional[float] = None,
+        adjust: bool = True,
+        min_periods: int = 1,
+    ) -> "Expr":
+        r"""
+        Exponential moving standard deviation.
+
+        Parameters
+        ----------
+        com
+            Specify decay in terms of center of mass, :math:`alpha = 1/(1 + com) \;for\; com >= 0`.
+        span
+            Specify decay in terms of span, :math:`alpha = 2/(span + 1) \;for\; span >= 1`
+        half_life
+            Specify decay in terms of half-life, :math:`alpha = 1 - exp(-ln(2) / halflife) \;for\; halflife > 0`
+        alpha
+            Specify smoothing factor alpha directly, :math:`0 < alpha < 1`.
+        adjust
+            Divide by decaying adjustment factor in beginning periods to account for imbalance in relative weightings
+
+                - When adjust = True the EW function is calculated using weights :math:`w_i = (1 - alpha)^i`
+                - When adjust = False the EW function is calculated recursively.
+        min_periods
+            Minimum number of observations in window required to have a value (otherwise result is Null).
+
+        """
+        alpha = _prepare_alpha(com, span, half_life, alpha)
+        return wrap_expr(self._pyexpr.ewm_var(alpha, adjust, min_periods))
+
+    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Expr":
+        """
+        Extend the Series with given number of values.
+
+        Parameters
+        ----------
+        value
+            The value to extend the Series with. This value may be None to fill with nulls.
+        n
+            The number of values to extend.
+        """
+        return wrap_expr(self._pyexpr.extend_constant(value, n))
+
+    def extend_constant(
+        self, value: Optional[Union[int, float, str, bool]], n: int
+    ) -> "Expr":
+        """
+        Extend the Series with given number of values.
+
+        .. deprecated::0.12.21
+            use extend_constant
+
+        Parameters
+        ----------
+        value
+            The value to extend the Series with. This value may be None to fill with nulls.
+        n
+            The number of values to extend.
+        """
+        return self.extend_constant(value, n)
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
@@ -2080,7 +2392,7 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_mean())
 
-    def sort(self, reverse: bool) -> "Expr":
+    def sort(self, reverse: bool = False) -> "Expr":
         """
         Sort the arrays in the list
         """
@@ -2098,7 +2410,9 @@ class ExprListNameSpace:
         """
         return wrap_expr(self._pyexpr.lst_unique())
 
-    def concat(self, other: Union[tp.List[Union[Expr, str]], Expr, str]) -> "Expr":
+    def concat(
+        self, other: Union[List[Union[Expr, str]], Expr, str, "pli.Series", List[Any]]
+    ) -> "Expr":
         """
         Concat the arrays in a Series dtype List in linear time.
 
@@ -2107,13 +2421,77 @@ class ExprListNameSpace:
         other
             Columns to concat into a List Series
         """
-        other_list: tp.List[Union[Expr, str]]
+        if isinstance(other, list) and (
+            not isinstance(other[0], (Expr, str, pli.Series))
+        ):
+            return self.concat(pli.Series([other]))
+
+        other_list: List[Union[Expr, str, "pli.Series"]]
         if not isinstance(other, list):
             other_list = [other]
         else:
-            other_list = copy.copy(other)
+            other_list = copy.copy(other)  # type: ignore
+
         other_list.insert(0, wrap_expr(self._pyexpr))
         return pli.concat_list(other_list)
+
+    def get(self, index: int) -> "Expr":
+        """
+        Get the value by index in the sublists.
+        So index `0` would return the first item of every sublist
+        and index `-1` would return the last item of every sublist
+        if an index is out of bounds, it will return a `None`.
+
+        Parameters
+        ----------
+        index
+            Index to return per sublist
+        """
+        return wrap_expr(self._pyexpr.lst_get(index))
+
+    def first(self) -> "Expr":
+        """
+        Get the first value of the sublists.
+        """
+        return self.get(0)
+
+    def last(self) -> "Expr":
+        """
+        Get the last value of the sublists.
+        """
+        return self.get(-1)
+
+    def contains(self, item: Union[float, str, bool, int, date, datetime]) -> "Expr":
+        """
+        Check if sublists contain the given item.
+
+        Parameters
+        ----------
+        item
+            Item that will be checked for membership
+
+        Returns
+        -------
+        Boolean mask
+        """
+        return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
+
+    def join(self, separator: str) -> "Expr":
+        """
+        Join all string items in a sublist and place a separator between them.
+        This errors if inner type of list `!= Utf8`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Series of dtype Utf8
+        """
+
+        return wrap_expr(self._pyexpr.lst_join(separator))
 
 
 class ExprStringNameSpace:
@@ -2128,6 +2506,8 @@ class ExprStringNameSpace:
         self,
         datatype: Union[Type[Date], Type[Datetime]],
         fmt: Optional[str] = None,
+        strict: bool = True,
+        exact: bool = True,
     ) -> Expr:
         """
         Parse utf8 expression as a Date/Datetimetype.
@@ -2137,20 +2517,60 @@ class ExprStringNameSpace:
         datatype
             Date | Datetime.
         fmt
-            "yyyy-mm-dd".
+            format to use, see the following link for examples:
+            https://docs.rs/chrono/latest/chrono/format/strftime/index.html
+
+            example: "%y-%m-%d".
+        strict
+            raise an error if any conversion fails
+        exact
+            - If True, require an exact format match.
+            - If False, allow the format to match anywhere in the target string.
         """
+        if not issubclass(datatype, DataType):
+            raise ValueError(
+                f"expected: {DataType} got: {datatype}"
+            )  # pragma: no cover
         if datatype == Date:
-            return wrap_expr(self._pyexpr.str_parse_date(fmt))
+            return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
-            return wrap_expr(self._pyexpr.str_parse_datetime(fmt))
+            return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
         else:
-            raise NotImplementedError
+            raise ValueError(
+                "dtype should be of type {Date, Datetime}"
+            )  # pragma: no cover
 
     def lengths(self) -> Expr:
         """
         Get the length of the Strings as UInt32.
         """
         return wrap_expr(self._pyexpr.str_lengths())
+
+    def concat(self, delimiter: str = "-") -> "Expr":
+        """
+        Vertically concat the values in the Series to a single string value.
+
+        Returns
+        -------
+        Series of dtype Utf8
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, None, 2]})
+        >>> df = df.select(pl.col("foo").str.concat("-"))
+        >>> df
+        shape: (1, 1)
+        ┌──────────┐
+        │ foo      │
+        │ ---      │
+        │ str      │
+        ╞══════════╡
+        │ 1-null-2 │
+        └──────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_concat(delimiter))
 
     def to_uppercase(self) -> Expr:
         """
@@ -2163,6 +2583,24 @@ class ExprStringNameSpace:
         Transform to lowercase variant.
         """
         return wrap_expr(self._pyexpr.str_to_lowercase())
+
+    def strip(self) -> Expr:
+        """
+        Remove leading and trailing whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_strip())
+
+    def lstrip(self) -> Expr:
+        """
+        Remove leading whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_lstrip())
+
+    def rstrip(self) -> Expr:
+        """
+        Remove trailing whitespace.
+        """
+        return wrap_expr(self._pyexpr.str_rstrip())
 
     def contains(self, pattern: str) -> Expr:
         """
@@ -2218,6 +2656,80 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_json_path_match(json_path))
 
+    def decode(self, encoding: str, strict: bool = False) -> Expr:
+        """
+        Decodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+        strict
+            how to handle invalid inputs
+            - True: method will throw error if unable to decode a value
+            - False: unhandled values will be replaced with `None`
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"encoded": ["666f6f", "626172", None]})
+        >>> df.select(pl.col("encoded").str.decode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ encoded │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ foo     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ bar     │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_decode(strict))
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_decode(strict))
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
+    def encode(self, encoding: str) -> Expr:
+        """
+        Encodes a value using the provided encoding
+
+        Parameters
+        ----------
+        encoding
+            'hex' or 'base64'
+
+        Returns
+        -------
+        Utf8 array with values encoded using provided encoding
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"strings": ["foo", "bar", None]})
+        >>> df.select(pl.col("strings").str.encode("hex"))
+        shape: (3, 1)
+        ┌─────────┐
+        │ strings │
+        │ ---     │
+        │ str     │
+        ╞═════════╡
+        │ 666f6f  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ 626172  │
+        ├╌╌╌╌╌╌╌╌╌┤
+        │ null    │
+        └─────────┘
+        """
+        if encoding == "hex":
+            return wrap_expr(self._pyexpr.str_hex_encode())
+        elif encoding == "base64":
+            return wrap_expr(self._pyexpr.str_base64_encode())
+        else:
+            raise ValueError("supported encodings are 'hex' and 'base64'")
+
     def extract(self, pattern: str, group_index: int = 1) -> Expr:
         r"""
         Extract the target capture group from provided patterns.
@@ -2267,6 +2779,22 @@ class ExprStringNameSpace:
 
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
+
+    def split(self, by: str, inclusive: bool = False) -> Expr:
+        """
+        Split the string by a substring.
+        The return type will by of type List<Utf8>
+
+        Parameters
+        ----------
+        by
+            substring
+        inclusive
+            Include the split character/string in the results
+        """
+        if inclusive:
+            return wrap_expr(self._pyexpr.str_split_inclusive(by))
+        return wrap_expr(self._pyexpr.str_split(by))
 
     def replace(self, pattern: str, value: str) -> Expr:
         """
@@ -2320,15 +2848,40 @@ class ExprDateTimeNameSpace:
     def __init__(self, expr: Expr):
         self._pyexpr = expr._pyexpr
 
-    def buckets(self, interval: timedelta) -> Expr:
+    def truncate(
+        self,
+        every: Union[str, timedelta],
+        offset: Optional[Union[str, timedelta]] = None,
+    ) -> Expr:
         """
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
+
         Divide the date/ datetime range into buckets.
-        Data will be sorted by this operation.
+        Data must be sorted, if not the output does not make sense.
+
+        The `every` and `offset` arguments are created with
+        the following string language:
+
+        1ns # 1 nanosecond
+        1us # 1 microsecond
+        1ms # 1 millisecond
+        1s  # 1 second
+        1m  # 1 minute
+        1h  # 1 hour
+        1d  # 1 day
+        1w  # 1 week
+        1mo # 1 calendar month
+        1y  # 1 calendar year
+
+        3d12h4m25s # 3 days, 12 hours, 4 minutes, and 25 seconds
 
         Parameters
         ----------
-        interval
-            python timedelta to indicate bucket size
+        every
+            Every interval start and period length
+        offset
+            Offset the window
 
         Returns
         -------
@@ -2336,59 +2889,81 @@ class ExprDateTimeNameSpace:
 
         Examples
         --------
-        >>> from datetime import datetime, timedelta
-        >>> date_range = pl.date_range(
-        ...     low=datetime(year=2000, month=10, day=1, hour=23, minute=30),
-        ...     high=datetime(year=2000, month=10, day=2, hour=0, minute=30),
-        ...     interval=timedelta(minutes=8),
-        ...     name="date_range",
-        ... )
-        >>> date_range.dt.buckets(timedelta(minutes=8))
-        shape: (8,)
-        Series: 'date_range' [datetime]
+
+        >>> from datetime import timedelta, datetime
+        >>> start = datetime(2001, 1, 1)
+        >>> stop = datetime(2001, 1, 2)
+        >>> s = pl.date_range(start, stop, timedelta(minutes=30), name="dates")
+        >>> s
+        shape: (49,)
+        Series: 'dates' [datetime[ns]]
         [
-            2000-10-01 23:30:00
-            2000-10-01 23:30:00
-            2000-10-01 23:38:00
-            2000-10-01 23:46:00
-            2000-10-01 23:54:00
-            2000-10-02 00:02:00
-            2000-10-02 00:10:00
-            2000-10-02 00:18:00
+            2001-01-01 00:00:00
+            2001-01-01 00:30:00
+            2001-01-01 01:00:00
+            2001-01-01 01:30:00
+            2001-01-01 02:00:00
+            2001-01-01 02:30:00
+            2001-01-01 03:00:00
+            2001-01-01 03:30:00
+            2001-01-01 04:00:00
+            2001-01-01 04:30:00
+            2001-01-01 05:00:00
+            2001-01-01 05:30:00
+            ...
+            2001-01-01 18:30:00
+            2001-01-01 19:00:00
+            2001-01-01 19:30:00
+            2001-01-01 20:00:00
+            2001-01-01 20:30:00
+            2001-01-01 21:00:00
+            2001-01-01 21:30:00
+            2001-01-01 22:00:00
+            2001-01-01 22:30:00
+            2001-01-01 23:00:00
+            2001-01-01 23:30:00
+            2001-01-02 00:00:00
         ]
-
-        Can be used to perform a downsample operation:
-
-        >>> (
-        ...     date_range.to_frame()
-        ...     .groupby(
-        ...         pl.col("date_range").dt.buckets(timedelta(minutes=16)),
-        ...         maintain_order=True,
-        ...     )
-        ...     .agg(pl.col("date_range").count())
-        ... )
-        shape: (4, 2)
-        ┌─────────────────────┬──────────────────┐
-        │ date_range          ┆ date_range_count │
-        │ ---                 ┆ ---              │
-        │ datetime            ┆ u32              │
-        ╞═════════════════════╪══════════════════╡
-        │ 2000-10-01 23:30:00 ┆ 3                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-01 23:46:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:02:00 ┆ 2                │
-        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ 2000-10-02 00:18:00 ┆ 1                │
-        └─────────────────────┴──────────────────┘
+        >>> s.dt.truncate("1h")
+        shape: (49,)
+        Series: 'dates' [datetime[ns]]
+        [
+            2001-01-01 00:00:00
+            2001-01-01 00:00:00
+            2001-01-01 01:00:00
+            2001-01-01 01:00:00
+            2001-01-01 02:00:00
+            2001-01-01 02:00:00
+            2001-01-01 03:00:00
+            2001-01-01 03:00:00
+            2001-01-01 04:00:00
+            2001-01-01 04:00:00
+            2001-01-01 05:00:00
+            2001-01-01 05:00:00
+            ...
+            2001-01-01 18:00:00
+            2001-01-01 19:00:00
+            2001-01-01 19:00:00
+            2001-01-01 20:00:00
+            2001-01-01 20:00:00
+            2001-01-01 21:00:00
+            2001-01-01 21:00:00
+            2001-01-01 22:00:00
+            2001-01-01 22:00:00
+            2001-01-01 23:00:00
+            2001-01-01 23:00:00
+            2001-01-02 00:00:00
+        ]
+        >>> assert s.dt.truncate("1h") == s.dt.truncate(timedelta(hours=1))
 
         """
-
-        return wrap_expr(
-            self._pyexpr.date_buckets(
-                interval.days, interval.seconds, interval.microseconds
-            )
-        )
+        if offset is None:
+            offset = "0ns"
+        if isinstance(every, timedelta):
+            every = _timedelta_to_pl_duration(every)
+        if isinstance(offset, timedelta):
+            offset = _timedelta_to_pl_duration(offset)
+        return wrap_expr(self._pyexpr.date_truncate(every, offset))
 
     def strftime(self, fmt: str) -> Expr:
         """
@@ -2531,28 +3106,6 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.nanosecond())
 
-    def round(self, rule: str, n: int) -> Expr:
-        """
-        Round the datetime.
-
-        Parameters
-        ----------
-        rule
-            Units of the downscaling operation.
-
-            Any of:
-                - "month"
-                - "week"
-                - "day"
-                - "hour"
-                - "minute"
-                - "second"
-
-        n
-            Number of units (e.g. 5 "day", 15 "minute".
-        """
-        return wrap_expr(self._pyexpr).map(lambda s: s.dt.round(rule, n), None)
-
     def to_python_datetime(self) -> Expr:
         """
         Go from Date/Datetime to python DateTime objects
@@ -2561,13 +3114,125 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
+    def epoch_days(self) -> Expr:
+        """
+        Get the number of days since the unix EPOCH.
+        If the date is before the unix EPOCH, the number of days will be negative.
+
+        Returns
+        -------
+        Days as Int32
+        """
+        return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+
+    def epoch_milliseconds(self) -> Expr:
+        """
+        Get the number of milliseconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of milliseconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return self.timestamp()
+
+    def epoch_seconds(self) -> Expr:
+        """
+        Get the number of seconds since the unix EPOCH
+        If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        Returns
+        -------
+        Milliseconds as Int64
+        """
+        return wrap_expr(self._pyexpr.dt_epoch_seconds())
+
     def timestamp(self) -> Expr:
-        """Return timestamp in ms as Int64 type."""
+        """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
+
+    def and_time_unit(self, tu: str, dtype: Type[DataType] = Datetime) -> Expr:
+        """
+        Set time unit a Series of type Datetime
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+        dtype
+            Output data type.
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_unit(tu), return_dtype=dtype
+        )
+
+    def and_time_zone(self, tz: Optional[str]) -> Expr:
+        """
+        Set time zone a Series of type Datetime
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
+        )
+
+    def days(self) -> Expr:
+        """
+        Extract the days from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_days())
+
+    def hours(self) -> Expr:
+        """
+        Extract the hours from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_hours())
+
+    def seconds(self) -> Expr:
+        """
+        Extract the seconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_seconds())
+
+    def milliseconds(self) -> Expr:
+        """
+        Extract the milliseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_milliseconds())
+
+    def nanoseconds(self) -> Expr:
+        """
+        Extract the nanoseconds from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_nanoseconds())
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, tp.List[Expr], tp.List[str], "pli.Series"],
+    expr: Union[Expr, bool, int, float, str, "pli.Series"],
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -2591,7 +3256,29 @@ def expr_to_lit_or_expr(
         isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
     ):
         return pli.lit(expr)
-    elif isinstance(expr, list):
-        return [expr_to_lit_or_expr(e, str_to_lit=str_to_lit) for e in expr]  # type: ignore[return-value]
-    else:
+    elif isinstance(expr, Expr):
         return expr
+    else:
+        raise ValueError(
+            f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
+        )
+
+
+def _prepare_alpha(
+    com: Optional[float] = None,
+    span: Optional[float] = None,
+    half_life: Optional[float] = None,
+    alpha: Optional[float] = None,
+) -> float:
+    if com is not None and alpha is None:
+        assert com >= 0.0
+        alpha = 1.0 / (1.0 + com)
+    if span is not None and alpha is None:
+        assert span >= 1.0
+        alpha = 2.0 / (span + 1.0)
+    if half_life is not None and alpha is None:
+        assert half_life > 0.0
+        alpha = 1.0 - np.exp(-np.log(2.0) / half_life)
+    if alpha is None:
+        raise ValueError("at least one of {com, span, half_life, alpha} should be set")
+    return alpha

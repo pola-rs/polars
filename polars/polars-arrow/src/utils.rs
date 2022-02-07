@@ -1,7 +1,10 @@
 use crate::trusted_len::{FromIteratorReversed, PushUnchecked, TrustedLen};
+use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
+use arrow::types::NativeType;
 use std::ops::BitAnd;
 
+#[derive(Clone)]
 pub struct TrustMyLength<I: Iterator<Item = J>, J> {
     iter: I,
     len: usize,
@@ -65,7 +68,11 @@ pub trait CustomIterTools: Iterator {
         Some(self.fold(first, f))
     }
 
-    fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
+    /// Turn any iterator in a trusted length iterator
+    ///
+    /// # Safety
+    /// The given length must be correct.
+    unsafe fn trust_my_length(self, length: usize) -> TrustMyLength<Self, Self::Item>
     where
         Self: Sized,
     {
@@ -84,6 +91,31 @@ pub trait CustomIterTools: Iterator {
         Self: Sized + TrustedLen,
     {
         FromIteratorReversed::from_trusted_len_iter_rev(self)
+    }
+
+    fn all_equal(&mut self) -> bool
+    where
+        Self: Sized,
+        Self::Item: PartialEq,
+    {
+        match self.next() {
+            None => true,
+            Some(a) => self.all(|x| a == x),
+        }
+    }
+
+    fn fold_options<A, B, F>(&mut self, mut start: B, mut f: F) -> Option<B>
+    where
+        Self: Iterator<Item = Option<A>>,
+        F: FnMut(B, A) -> B,
+    {
+        for elt in self {
+            match elt {
+                Some(v) => start = f(start, v),
+                None => return None,
+            }
+        }
+        Some(start)
     }
 }
 
@@ -109,3 +141,47 @@ impl<T> FromTrustedLenIterator<T> for Vec<T> {
         v
     }
 }
+
+impl<T: NativeType> FromTrustedLenIterator<Option<T>> for PrimitiveArray<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<T>>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        unsafe { PrimitiveArray::from_trusted_len_iter_unchecked(iter) }
+    }
+}
+
+impl<T: NativeType> FromTrustedLenIterator<T> for PrimitiveArray<T> {
+    fn from_iter_trusted_length<I: IntoIterator<Item = T>>(iter: I) -> Self
+    where
+        I::IntoIter: TrustedLen,
+    {
+        let iter = iter.into_iter();
+        unsafe { PrimitiveArray::from_trusted_len_values_iter_unchecked(iter) }
+    }
+}
+
+macro_rules! with_match_primitive_type {(
+    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
+) => ({
+    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
+    use arrow::datatypes::PrimitiveType::*;
+    use arrow::types::{days_ms, months_days_ns};
+    match $key_type {
+        Int8 => __with_ty__! { i8 },
+        Int16 => __with_ty__! { i16 },
+        Int32 => __with_ty__! { i32 },
+        Int64 => __with_ty__! { i64 },
+        Int128 => __with_ty__! { i128 },
+        DaysMs => __with_ty__! { days_ms },
+        MonthDayNano => __with_ty__! { months_days_ns },
+        UInt8 => __with_ty__! { u8 },
+        UInt16 => __with_ty__! { u16 },
+        UInt32 => __with_ty__! { u32 },
+        UInt64 => __with_ty__! { u64 },
+        Float32 => __with_ty__! { f32 },
+        Float64 => __with_ty__! { f64 },
+    }
+})}
+pub(crate) use with_match_primitive_type;

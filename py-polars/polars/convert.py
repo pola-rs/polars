@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union, overload
 
 import numpy as np
 
@@ -66,6 +66,8 @@ def from_records(
 ) -> DataFrame:
     """
     Construct a DataFrame from a numpy ndarray or sequence of sequences.
+
+    Note that this is slower than creating from columnar memory.
 
     Parameters
     ----------
@@ -142,6 +144,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     return DataFrame._from_dicts(dicts)
 
 
+# Note that we cannot overload because pyarrow has no stubs :(
 def from_arrow(
     a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
 ) -> Union[DataFrame, Series]:
@@ -205,9 +208,27 @@ def from_arrow(
     if isinstance(a, pa.Table):
         return DataFrame._from_arrow(a, rechunk=rechunk)
     elif isinstance(a, (pa.Array, pa.ChunkedArray)):
-        return Series._from_arrow("", a)
+        return Series._from_arrow("", a, rechunk)
     else:
         raise ValueError(f"Expected Arrow Table or Array, got {type(a)}.")
+
+
+@overload
+def from_pandas(
+    df: "pd.DataFrame",
+    rechunk: bool = True,
+    nan_to_none: bool = True,
+) -> DataFrame:
+    ...
+
+
+@overload
+def from_pandas(
+    df: Union["pd.Series", "pd.DatetimeIndex"],
+    rechunk: bool = True,
+    nan_to_none: bool = True,
+) -> Series:
+    ...
 
 
 def from_pandas(

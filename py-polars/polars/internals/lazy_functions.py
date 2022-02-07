@@ -1,12 +1,17 @@
-import typing as tp
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta
 from inspect import isclass
-from typing import Any, Callable, Optional, Sequence, Type, Union
+from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import DataType, Date, Datetime
+from polars.datatypes import DataType, Date, Datetime, Duration
+from polars.utils import (
+    _datetime_to_pl_timestamp,
+    _timedelta_to_pl_timedelta,
+    in_nanoseconds_window,
+    timedelta_in_nanoseconds_window,
+)
 
 try:
     from polars.polars import arange as pyarange
@@ -17,11 +22,14 @@ try:
     from polars.polars import cols as pycols
     from polars.polars import concat_lst as _concat_lst
     from polars.polars import concat_str as _concat_str
+    from polars.polars import count as _count
     from polars.polars import cov as pycov
     from polars.polars import dtype_cols as _dtype_cols
     from polars.polars import fold as pyfold
     from polars.polars import lit as pylit
     from polars.polars import map_mul as _map_mul
+    from polars.polars import max_exprs as _max_exprs
+    from polars.polars import min_exprs as _min_exprs
     from polars.polars import pearson_corr as pypearson_corr
     from polars.polars import py_datetime
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
@@ -32,20 +40,19 @@ except ImportError:  # pragma: no cover
 
 
 def col(
-    name: Union[
-        str, tp.List[str], tp.List[Type[DataType]], "pli.Series", Type[DataType]
-    ]
+    name: Union[str, List[str], List[Type[DataType]], "pli.Series", Type[DataType]]
 ) -> "pli.Expr":
     """
     A column in a DataFrame.
     Can be used to select:
 
-     * a single column by name
-     * all columns by using a wildcard `"*"`
-     * column by regular expression if the regex starts with `^` and ends with `$`
+    - a single column by name
+    - all columns by using a wildcard `"*"`
+    - column by regular expression if the regex starts with `^` and ends with `$`
 
     Parameters
-    col
+    ----------
+    name
         A string that holds the name of the column
 
     Examples
@@ -128,8 +135,11 @@ def col(
     if isinstance(name, pli.Series):
         name = name.to_list()  # type: ignore
 
-    if isclass(name) and issubclass(name, DataType):  # type: ignore
-        name = [name]  # type: ignore
+    # note: we need the typing.cast call here twice to make mypy happy under Python 3.7
+    # On Python 3.10, it is not needed. We use cast as it works across versions, ignoring
+    # the typing error would lead to unneeded ignores under Python 3.10.
+    if isclass(name) and issubclass(cast(type, name), DataType):
+        name = [cast(type, name)]
 
     if isinstance(name, list):
         if len(name) == 0 or isinstance(name[0], str):
@@ -141,20 +151,36 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
-@tp.overload
+@overload
 def count(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def count(column: "pli.Series") -> int:
     ...
 
 
-def count(column: Union[str, "pli.Series"] = "") -> Union["pli.Expr", int]:
+@overload
+def count(column: None = None) -> "pli.Expr":
+    ...
+
+
+def count(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr", int]:
     """
-    Count the number of values in this column.
+    Count the number of values in this column/context.
+
+    Parameters
+    ----------
+    column
+        If dtype is:
+            pl.Series -> count the values in the series
+            str -> count the values in this column
+            None -> count the number of values in this context
     """
+    if column is None:
+        return pli.wrap_expr(_count())
+
     if isinstance(column, pli.Series):
         return column.len()
     return col(column).count()
@@ -169,12 +195,12 @@ def to_list(name: str) -> "pli.Expr":
     return col(name).list()
 
 
-@tp.overload
+@overload
 def std(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def std(column: "pli.Series") -> Optional[float]:
     ...
 
@@ -188,12 +214,12 @@ def std(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
     return col(column).std()
 
 
-@tp.overload
+@overload
 def var(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def var(column: "pli.Series") -> Optional[float]:
     ...
 
@@ -207,18 +233,18 @@ def var(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Optional[float]]:
     return col(column).var()
 
 
-@tp.overload
-def max(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def max(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def max(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def max(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the maximum value. Can be used horizontally or vertically.
@@ -228,37 +254,30 @@ def max(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the maximum value of that column.
-            - tp.List[Expr] -> aggregate the maximum value horizontally.
+        - Union[str, Series] -> aggregate the maximum value of that column.
+        - List[Expr] -> aggregate the maximum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.max()
     elif isinstance(column, list):
-
-        def max_(acc: "pli.Series", val: "pli.Series") -> "pli.Series":
-            mask = acc > val
-            return acc.zip_with(mask, val)
-
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, max_, column[1:]).alias("max")
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_max_exprs(exprs))
     else:
         return col(column).max()
 
 
-@tp.overload
-def min(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def min(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def min(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def min(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the minimum value.
@@ -266,37 +285,30 @@ def min(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the sum value of that column.
-            - tp.List[Expr] -> aggregate the sum value horizontally.
+        - Union[str, Series] -> aggregate the sum value of that column.
+        - List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.min()
     elif isinstance(column, list):
-
-        def min_(acc: "pli.Series", val: "pli.Series") -> "pli.Series":
-            mask = acc < val
-            return acc.zip_with(mask, val)
-
-        first = column[0]
-        if isinstance(first, str):
-            first = col(first)
-        return fold(first, min_, column[1:]).alias("min")
+        exprs = pli.selection_to_pyexpr_list(column)
+        return pli.wrap_expr(_min_exprs(exprs))
     else:
         return col(column).min()
 
 
-@tp.overload
-def sum(column: Union[str, tp.List[Union["pli.Expr", str]]]) -> "pli.Expr":
+@overload
+def sum(column: Union[str, List[Union["pli.Expr", str]]]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def sum(column: "pli.Series") -> Union[int, float]:
     ...
 
 
 def sum(
-    column: Union[str, tp.List[Union["pli.Expr", str]], "pli.Series"]
+    column: Union[str, List[Union["pli.Expr", str]], "pli.Series"]
 ) -> Union["pli.Expr", Any]:
     """
     Get the sum value.
@@ -304,8 +316,8 @@ def sum(
     column
         Column(s) to be used in aggregation. Will lead to different behavior based on the input.
         input:
-            - Union[str, Series] -> aggregate the sum value of that column.
-            - tp.List[Expr] -> aggregate the sum value horizontally.
+        - Union[str, Series] -> aggregate the sum value of that column.
+        - List[Expr] -> aggregate the sum value horizontally.
     """
     if isinstance(column, pli.Series):
         return column.sum()
@@ -318,12 +330,12 @@ def sum(
         return col(column).sum()
 
 
-@tp.overload
+@overload
 def mean(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def mean(column: "pli.Series") -> float:
     ...
 
@@ -337,12 +349,12 @@ def mean(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
     return col(column).mean()
 
 
-@tp.overload
+@overload
 def avg(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def avg(column: "pli.Series") -> float:
     ...
 
@@ -354,12 +366,12 @@ def avg(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float]:
     return mean(column)
 
 
-@tp.overload
+@overload
 def median(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def median(column: "pli.Series") -> Union[float, int]:
     ...
 
@@ -373,12 +385,12 @@ def median(column: Union[str, "pli.Series"]) -> Union["pli.Expr", float, int]:
     return col(column).median()
 
 
-@tp.overload
+@overload
 def n_unique(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def n_unique(column: "pli.Series") -> int:
     ...
 
@@ -390,12 +402,12 @@ def n_unique(column: Union[str, "pli.Series"]) -> Union["pli.Expr", int]:
     return col(column).n_unique()
 
 
-@tp.overload
+@overload
 def first(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def first(column: "pli.Series") -> Any:
     ...
 
@@ -412,12 +424,12 @@ def first(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Any]:
     return col(column).first()
 
 
-@tp.overload
+@overload
 def last(column: str) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def last(column: "pli.Series") -> Any:
     ...
 
@@ -434,12 +446,12 @@ def last(column: Union[str, "pli.Series"]) -> "pli.Expr":
     return col(column).last()
 
 
-@tp.overload
+@overload
 def head(column: str, n: Optional[int]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def head(column: "pli.Series", n: Optional[int]) -> "pli.Series":
     ...
 
@@ -462,12 +474,12 @@ def head(
     return col(column).head(n)
 
 
-@tp.overload
+@overload
 def tail(column: str, n: Optional[int]) -> "pli.Expr":
     ...
 
 
-@tp.overload
+@overload
 def tail(column: "pli.Series", n: Optional[int]) -> "pli.Series":
     ...
 
@@ -491,7 +503,9 @@ def tail(
 
 
 def lit(
-    value: Optional[Union[float, int, str, date, datetime, "pli.Series"]],
+    value: Optional[
+        Union[float, int, str, date, datetime, "pli.Series", np.ndarray, Any]
+    ],
     dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -530,22 +544,46 @@ def lit(
 
     """
     if isinstance(value, datetime):
-        return lit(int((value.replace(tzinfo=timezone.utc)).timestamp() * 1e3)).cast(
-            Datetime
+        if in_nanoseconds_window(value):
+            tu = "ns"
+        else:
+            tu = "ms"
+        return (
+            lit(_datetime_to_pl_timestamp(value, tu))
+            .cast(Datetime)
+            .dt.and_time_unit(tu)
         )
+    if isinstance(value, timedelta):
+        if timedelta_in_nanoseconds_window(value):
+            tu = "ns"
+        else:
+            tu = "ms"
+        return (
+            lit(_timedelta_to_pl_timedelta(value, tu))
+            .cast(Duration)
+            .dt.and_time_unit(tu, dtype=Duration)
+        )
+
     if isinstance(value, date):
         return lit(datetime(value.year, value.month, value.day)).cast(Date)
 
     if isinstance(value, pli.Series):
         name = value.name
         value = value._s
-        return pli.wrap_expr(pylit(value)).alias(name)
+        e = pli.wrap_expr(pylit(value))
+        if name == "":
+            return e
+        return e.alias(name)
 
     if isinstance(value, np.ndarray):
         return lit(pli.Series("", value))
 
     if dtype:
         return pli.wrap_expr(pylit(value)).cast(dtype)
+    # numpy literals like np.float32(0)
+    # have an item
+    if hasattr(value, "item"):
+        value = value.item()  # type: ignore
     return pli.wrap_expr(pylit(value))
 
 
@@ -613,8 +651,8 @@ def cov(
 
 
 def map(
-    exprs: Union[tp.List[str], tp.List["pli.Expr"]],
-    f: Callable[[tp.List["pli.Series"]], "pli.Series"],
+    exprs: Union[List[str], List["pli.Expr"]],
+    f: Callable[[List["pli.Series"]], "pli.Series"],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -633,13 +671,13 @@ def map(
     -------
     Expr
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=False))
 
 
 def apply(
-    exprs: tp.List[Union[str, "pli.Expr"]],
-    f: Callable[[tp.List["pli.Series"]], "pli.Series"],
+    exprs: List[Union[str, "pli.Expr"]],
+    f: Callable[[List["pli.Series"]], Union["pli.Series", Any]],
     return_dtype: Optional[Type[DataType]] = None,
 ) -> "pli.Expr":
     """
@@ -668,7 +706,7 @@ def apply(
     -------
     Expr
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_map_mul(exprs, f, return_dtype, apply_groups=True))
 
 
@@ -704,7 +742,7 @@ def map_binary(
 def fold(
     acc: "pli.Expr",
     f: Callable[["pli.Series", "pli.Series"], "pli.Series"],
-    exprs: Union[tp.Sequence[Union["pli.Expr", str]], "pli.Expr"],
+    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"],
 ) -> "pli.Expr":
     """
     Accumulate over multiple columns horizontally/ row wise with a left fold.
@@ -726,11 +764,11 @@ def fold(
     if isinstance(exprs, pli.Expr):
         exprs = [exprs]
 
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyfold(acc._pyexpr, f, exprs))
 
 
-def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
+def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     """
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
@@ -739,7 +777,7 @@ def any(name: Union[str, tp.List["pli.Expr"]]) -> "pli.Expr":
     return col(name).sum() > 0
 
 
-def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
+def exclude(columns: Union[str, List[str]]) -> "pli.Expr":
     """
     Exclude certain columns from a wildcard expression.
 
@@ -795,7 +833,7 @@ def exclude(columns: Union[str, tp.List[str]]) -> "pli.Expr":
     return col("*").exclude(columns)
 
 
-def all(name: Optional[Union[str, tp.List["pli.Expr"]]] = None) -> "pli.Expr":
+def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
     """
     This function is two things
 
@@ -841,11 +879,13 @@ def groups(column: str) -> "pli.Expr":
     return col(column).agg_groups()
 
 
-def quantile(column: str, quantile: float) -> "pli.Expr":
+def quantile(
+    column: str, quantile: float, interpolation: str = "nearest"
+) -> "pli.Expr":
     """
     Syntactic sugar for `pl.col("foo").quantile(..)`.
     """
-    return col(column).quantile(quantile)
+    return col(column).quantile(quantile, interpolation)
 
 
 def arange(
@@ -884,7 +924,7 @@ def arange(
 
 
 def argsort_by(
-    exprs: tp.List[Union["pli.Expr", str]], reverse: Union[tp.List[bool], bool] = False
+    exprs: List[Union["pli.Expr", str]], reverse: Union[List[bool], bool] = False
 ) -> "pli.Expr":
     """
     Find the indexes that would sort the columns.
@@ -902,7 +942,7 @@ def argsort_by(
     """
     if not isinstance(reverse, list):
         reverse = [reverse] * len(exprs)
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
 
 
@@ -945,13 +985,13 @@ def _datetime(
     day_expr = pli.expr_to_lit_or_expr(day, str_to_lit=False)
 
     if hour is not None:
-        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr  # type: ignore
+        hour = pli.expr_to_lit_or_expr(hour, str_to_lit=False)._pyexpr
     if minute is not None:
-        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr  # type: ignore
+        minute = pli.expr_to_lit_or_expr(minute, str_to_lit=False)._pyexpr
     if second is not None:
-        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr  # type: ignore
+        second = pli.expr_to_lit_or_expr(second, str_to_lit=False)._pyexpr
     if millisecond is not None:
-        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr  # type: ignore
+        millisecond = pli.expr_to_lit_or_expr(millisecond, str_to_lit=False)._pyexpr
     return pli.wrap_expr(
         py_datetime(
             year_expr._pyexpr,
@@ -989,9 +1029,9 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(exprs: tp.Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
+def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
     """
-    Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
+    Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
     Parameters
     ----------
@@ -1000,7 +1040,7 @@ def concat_str(exprs: tp.Sequence[Union["pli.Expr", str]], sep: str = "") -> "pl
     sep
         String value that will be used to separate the values.
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_str(exprs, sep))
 
 
@@ -1061,7 +1101,7 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: tp.List[Union[str, "pli.Expr"]]) -> "pli.Expr":
+def concat_list(exprs: Sequence[Union[str, "pli.Expr", "pli.Series"]]) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1069,20 +1109,60 @@ def concat_list(exprs: tp.List[Union[str, "pli.Expr"]]) -> "pli.Expr":
     ----------
     exprs
         Columns to concat into a List Series
+
+    Examples
+    --------
+
+    Create lagged columns and collect them into a list. This mimics a rolling window.
+
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "A": [1.0, 2.0, 9.0, 2.0, 13.0],
+    ...     }
+    ... )
+    >>> (
+    ...     df.with_columns(
+    ...         [pl.col("A").shift(i).alias(f"A_lag_{i}") for i in range(3)]
+    ...     ).select(
+    ...         [
+    ...             pl.concat_list([f"A_lag_{i}" for i in range(3)][::-1]).alias(
+    ...                 "A_rolling"
+    ...             )
+    ...         ]
+    ...     )
+    ... )
+    shape: (5, 1)
+    ┌─────────────────┐
+    │ A_rolling       │
+    │ ---             │
+    │ list [f64]      │
+    ╞═════════════════╡
+    │ [null, null, 1] │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [null, 1, 2]    │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [1, 2, 9]       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [2, 9, 2]       │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ [9, 2, 13]      │
+    └─────────────────┘
+
     """
-    exprs = pli._selection_to_pyexpr_list(exprs)
+    exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_concat_lst(exprs))
 
 
 def collect_all(
-    lazy_frames: "tp.List[pli.LazyFrame]",
+    lazy_frames: "List[pli.LazyFrame]",
     type_coercion: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
     string_cache: bool = False,
     no_optimization: bool = False,
-) -> "tp.List[pli.DataFrame]":
+    slice_pushdown: bool = False,
+) -> "List[pli.DataFrame]":
     """
     Collect multiple LazyFrames at the same time. This runs all the computation graphs in parallel on
     Polars threadpool.
@@ -1106,6 +1186,8 @@ def collect_all(
             global cache when the query is finished.
     no_optimization
         Turn off optimizations.
+    slice_pushdown
+        Slice pushdown optimization.
 
     Returns
     -------
@@ -1114,6 +1196,7 @@ def collect_all(
     if no_optimization:
         predicate_pushdown = False
         projection_pushdown = False
+        slice_pushdown = False
 
     prepared = []
 
@@ -1124,16 +1207,14 @@ def collect_all(
             projection_pushdown,
             simplify_expression,
             string_cache,
+            slice_pushdown,
         )
         prepared.append(ldf)
 
     out = _collect_all(prepared)
 
     # wrap the pydataframes into dataframe
-
-    result = []
-    for pydf in out:
-        result.append(pli.wrap_df(pydf))
+    result = [pli.wrap_df(pydf) for pydf in out]
 
     return result
 

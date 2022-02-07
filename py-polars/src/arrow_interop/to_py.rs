@@ -1,5 +1,6 @@
 use polars::prelude::ArrowField;
-use polars_core::utils::arrow::{array::ArrayRef, ffi, record_batch::RecordBatch};
+use polars_core::frame::ArrowChunk;
+use polars_core::utils::arrow::{array::ArrayRef, ffi};
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 
@@ -33,20 +34,22 @@ pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> Py
 }
 
 /// RecordBatch to Python.
-pub(crate) fn to_py_rb(rb: &RecordBatch, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
-    let mut arrays = Vec::with_capacity(rb.num_columns());
-    let mut names = Vec::with_capacity(rb.num_columns());
+pub(crate) fn to_py_rb(
+    rb: &ArrowChunk,
+    names: &Vec<&str>,
+    py: Python,
+    pyarrow: &PyModule,
+) -> PyResult<PyObject> {
+    let mut arrays = Vec::with_capacity(rb.len());
 
-    let schema = rb.schema();
-    for (array, field) in rb.columns().iter().zip(schema.fields()) {
+    for array in rb.columns() {
         let array_object = to_py_array(array.clone(), py, pyarrow)?;
         arrays.push(array_object);
-        names.push(field.name());
     }
 
     let record = pyarrow
         .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names))?;
+        .call_method1("from_arrays", (arrays, names.clone()))?;
 
     Ok(record.to_object(py))
 }

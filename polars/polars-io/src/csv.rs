@@ -41,13 +41,17 @@
 //! }
 //! ```
 //!
-use crate::csv_core::csv::CoreReader;
+use crate::aggregations::ScanAggregation;
+use crate::csv_core::csv::{cast_columns, CoreReader};
 use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
+use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
-use crate::{PhysicalIoExpr, ScanAggregation, SerReader, SerWriter};
+use crate::{SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
+#[cfg(feature = "temporal")]
+use rayon::prelude::*;
 #[cfg(feature = "temporal")]
 use std::borrow::Cow;
 use std::fs::File;
@@ -55,6 +59,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 /// Write a DataFrame to csv.
+#[must_use]
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
@@ -70,13 +75,10 @@ where
     W: Write,
 {
     fn new(buffer: W) -> Self {
-        // 6f because our precision is milliseconds
-        // no need for 3 traling zeros
+        // 9f: all nanoseconds
         let options = write::SerializeOptions {
-            // 9f: all nanoseconds
             time64_format: Some("%T%.9f".to_string()),
-            // 6f: all milliseconds
-            timestamp_format: Some("%FT%H:%M:%S.%6f".to_string()),
+            timestamp_format: Some("%FT%H:%M:%S.%9f".to_string()),
             ..Default::default()
         };
 
@@ -88,14 +90,16 @@ where
         }
     }
 
-    fn finish(self, df: &DataFrame) -> Result<()> {
+    fn finish(self, df: &mut DataFrame) -> Result<()> {
+        df.rechunk();
         let mut writer = self.writer_builder.from_writer(self.buffer);
-        let iter = df.iter_record_batches();
+        let names = df.get_column_names();
+        let iter = df.iter_chunks();
         if self.header {
-            write::write_header(&mut writer, &df.schema().to_arrow())?;
+            write::write_header(&mut writer, &names)?;
         }
         for batch in iter {
-            write::write_batch(&mut writer, &batch, &self.options)?;
+            write::write_chunk(&mut writer, &batch, &self.options)?;
         }
         Ok(())
     }
@@ -190,6 +194,7 @@ impl NullValues {
 ///             .finish()
 /// }
 /// ```
+#[must_use]
 pub struct CsvReader<'a, R>
 where
     R: MmapBytesReader,
@@ -199,7 +204,7 @@ where
     /// Aggregates chunk afterwards to a single chunk.
     rechunk: bool,
     /// Stop reading from the csv after this number of rows is reached
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     // used by error ignore logic
     max_records: Option<usize>,
     skip_rows: usize,
@@ -224,6 +229,7 @@ where
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
     quote_char: Option<u8>,
+    skip_rows_after_header: usize,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
 }
@@ -232,6 +238,12 @@ impl<'a, R> CsvReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
+    /// Skip these rows after the header
+    pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
+        self.skip_rows_after_header = offset;
+        self
+    }
+
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
         self.chunk_size = chunk_size;
@@ -246,8 +258,8 @@ where
 
     /// Try to stop parsing when `n` rows are parsed. During multithreaded parsing the upper bound `n` cannot
     /// be guaranteed.
-    pub fn with_stop_after_n_rows(mut self, num_rows: Option<usize>) -> Self {
-        self.stop_after_n_rows = num_rows;
+    pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
+        self.n_rows = num_rows;
         self
     }
 
@@ -266,7 +278,7 @@ where
         self
     }
 
-    /// Skip the first `n` rows during parsing.
+    /// Skip the first `n` rows during parsing. The header will be parsed an `n` lines.
     pub fn with_skip_rows(mut self, skip_rows: usize) -> Self {
         self.skip_rows = skip_rows;
         self
@@ -415,7 +427,7 @@ where
         CsvReader {
             reader,
             rechunk: true,
-            stop_after_n_rows: None,
+            n_rows: None,
             max_records: Some(128),
             skip_rows: 0,
             projection: None,
@@ -437,6 +449,7 @@ where
             predicate: None,
             aggregate: None,
             quote_char: Some(b'"'),
+            skip_rows_after_header: 0,
             #[cfg(feature = "temporal")]
             parse_dates: false,
         }
@@ -445,6 +458,8 @@ where
     /// Read the file and create the DataFrame.
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
+        // we cannot append categorical under local string cache, so we cast them later.
+        let mut to_cast_local = vec![];
 
         let mut df = if let Some(schema) = self.schema_overwrite {
             // This branch we check if there are dtypes we cannot parse.
@@ -459,10 +474,10 @@ where
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
                         Categorical => {
-                            to_cast.push(fld);
+                            to_cast_local.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
-                        Date | Datetime => {
+                        Date | Datetime(_, _) => {
                             to_cast.push(fld);
                             // let inference decide the column type
                             None
@@ -490,7 +505,7 @@ where
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
-                self.stop_after_n_rows,
+                self.n_rows,
                 self.skip_rows,
                 self.projection,
                 self.max_records,
@@ -511,19 +526,15 @@ where
                 self.null_values,
                 self.predicate,
                 self.aggregate,
+                &to_cast,
+                self.skip_rows_after_header,
             )?;
-            let mut df = csv_reader.as_df()?;
-
-            // cast to the original dtypes in the schema
-            for fld in to_cast {
-                df.may_apply(fld.name(), |s| s.cast(fld.data_type()))?;
-            }
-            df
+            csv_reader.as_df()?
         } else {
             let reader_bytes = get_reader_bytes(&mut self.reader)?;
             let mut csv_reader = CoreReader::new(
                 reader_bytes,
-                self.stop_after_n_rows,
+                self.n_rows,
                 self.skip_rows,
                 self.projection,
                 self.max_records,
@@ -544,6 +555,8 @@ where
                 self.null_values,
                 self.predicate,
                 self.aggregate,
+                &[],
+                self.skip_rows_after_header,
             )?;
             csv_reader.as_df()?
         };
@@ -575,41 +588,46 @@ where
             };
             df = parse_dates(df, &*fixed_schema)
         }
+
+        cast_columns(&mut df, &to_cast_local, true)?;
         Ok(df)
     }
 }
 
 #[cfg(feature = "temporal")]
 fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let mut cols: Vec<Series> = df.into();
+    let cols = df
+        .get_columns()
+        .par_iter()
+        .map(|s| {
+            if let Ok(ca) = s.utf8() {
+                // don't change columns that are in the fixed schema.
+                if fixed_schema.column_with_name(s.name()).is_some() {
+                    return s.clone();
+                }
 
-    for s in cols.iter_mut() {
-        if let Ok(ca) = s.utf8() {
-            // don't change columns that are in the fixed schema.
-            if fixed_schema.column_with_name(s.name()).is_some() {
-                continue;
+                #[cfg(feature = "dtype-time")]
+                if let Ok(ca) = ca.as_time(None) {
+                    return ca.into_series();
+                }
+                if let Ok(ca) = ca.as_date(None) {
+                    ca.into_series()
+                } else if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
+                    ca.into_series()
+                } else {
+                    s.clone()
+                }
+            } else {
+                s.clone()
             }
-
-            #[cfg(feature = "dtype-time")]
-            if let Ok(ca) = ca.as_time(None) {
-                *s = ca.into_series();
-                continue;
-            }
-            // the order is important. A datetime can always be parsed as date.
-            if let Ok(ca) = ca.as_datetime(None) {
-                *s = ca.into_series()
-            } else if let Ok(ca) = ca.as_date(None) {
-                *s = ca.into_series()
-            }
-        }
-    }
+        })
+        .collect::<Vec<_>>();
 
     DataFrame::new_no_checks(cols)
 }
 
 #[cfg(test)]
 mod test {
-    use crate::csv_core::utils::get_file_chunks;
     use crate::prelude::*;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;
@@ -618,11 +636,11 @@ mod test {
     #[test]
     fn write_csv() {
         let mut buf: Vec<u8> = Vec::new();
-        let df = create_df();
+        let mut df = create_df();
 
         CsvWriter::new(&mut buf)
             .has_header(true)
-            .finish(&df)
+            .finish(&mut df)
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("days,temp\n0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
@@ -630,7 +648,7 @@ mod test {
         let mut buf: Vec<u8> = Vec::new();
         CsvWriter::new(&mut buf)
             .has_header(false)
-            .finish(&df)
+            .finish(&mut df)
             .expect("csv written");
         let csv = std::str::from_utf8(&buf).unwrap();
         assert_eq!("0,22.1\n1,19.9\n2,7.0\n3,2.0\n4,3.0\n", csv);
@@ -723,6 +741,19 @@ mod test {
 
         assert_eq!("head_1", df.get_columns()[0].name());
         assert_eq!(df.shape(), (3, 2));
+
+        // test windows line ending with 1 byte char column and no line endings for last line.
+        let s = "head_1\r\n1\r\n2\r\n3";
+
+        let file = Cursor::new(s);
+        let df = CsvReader::new(file)
+            .infer_schema(Some(100))
+            .has_header(true)
+            .finish()
+            .unwrap();
+
+        assert_eq!("head_1", df.get_columns()[0].name());
+        assert_eq!(df.shape(), (3, 1));
     }
 
     #[test]
@@ -1007,7 +1038,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             .has_header(true)
             .with_dtypes(Some(&Schema::new(vec![Field::new(
                 "b",
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
             )])))
             .finish()?;
 
@@ -1015,7 +1046,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
             df.dtypes(),
             &[
                 DataType::Utf8,
-                DataType::Datetime,
+                DataType::Datetime(TimeUnit::Nanoseconds, None),
                 DataType::Float64,
                 DataType::Float64,
                 DataType::Int64
@@ -1177,7 +1208,10 @@ bar,bar";
         let df = CsvReader::new(file).with_parse_dates(true).finish()?;
 
         let ts = df.column("timestamp")?;
-        assert_eq!(ts.dtype(), &DataType::Datetime);
+        assert_eq!(
+            ts.dtype(),
+            &DataType::Datetime(TimeUnit::Milliseconds, None)
+        );
         assert_eq!(ts.null_count(), 0);
 
         Ok(())
@@ -1370,6 +1404,100 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         let a = df.column("foo")?;
         let a = a.utf8()?;
         assert_eq!(a.get(0), Some(""));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_null_values_infer_schema() -> Result<()> {
+        let csv = r#"a,b
+1,2
+3,NA
+5,6"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_null_values(Some(NullValues::AllColumns("NA".into())))
+            .finish()?;
+        let expected = &[DataType::Int64, DataType::Int64];
+        assert_eq!(df.dtypes(), expected);
+        Ok(())
+    }
+
+    #[test]
+    fn test_comma_separated_field_in_tsv() -> Result<()> {
+        let csv = "first\tsecond\n1\t2.3,2.4\n3\t4.5,4.6\n";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).with_delimiter(b'\t').finish()?;
+        assert_eq!(df.dtypes(), &[DataType::Int64, DataType::Utf8]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_quoted_projection() -> Result<()> {
+        let csv = r#"c1,c2,c3,c4,c5
+a,"b",c,d,1
+a,"b",c,d,1
+a,b,c,d,1"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file)
+            .with_projection(Some(vec![1, 4]))
+            .finish()?;
+        assert_eq!(df.shape(), (3, 2));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_last_line_incomplete() -> Result<()> {
+        // test a last line that is incomplete and not finishes with a new line char
+        let csv = "b5bbf310dffe3372fd5d37a18339fea5,6a2752ffad059badb5f1f3c7b9e4905d,-2,0.033191,811.619 0.487341,16,GGTGTGAAATTTCACACC,TTTAATTATAATTAAG,+
+b5bbf310dffe3372fd5d37a18339fea5,e3fd7b95be3453a34361da84f815687d,-2,0.0335936,821.465 0.490834,1";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(false).finish()?;
+        assert_eq!(df.shape(), (2, 9));
+        Ok(())
+    }
+
+    #[test]
+    fn test_quoted_bool_ints() -> Result<()> {
+        let csv = r#"foo,bar,baz
+1,"4","false"
+3,"5","false"
+5,"6","true"
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+        let expected = df![
+            "foo" => [1, 3, 5],
+            "bar" => [4, 5, 6],
+            "baz" => [false, false, true],
+        ]?;
+        assert!(df.frame_equal_missing(&expected));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_skip_inference() -> Result<()> {
+        let csv = r#"metadata
+line
+foo,bar
+1,2
+3,4
+5,6
+"#;
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file.clone()).with_skip_rows(2).finish()?;
+        assert_eq!(df.get_column_names(), &["foo", "bar"]);
+        assert_eq!(df.shape(), (3, 2));
+        let df = CsvReader::new(file.clone())
+            .with_skip_rows(2)
+            .with_skip_rows_after_header(2)
+            .finish()?;
+        assert_eq!(df.get_column_names(), &["foo", "bar"]);
+        assert_eq!(df.shape(), (1, 2));
+        let df = CsvReader::new(file).finish()?;
+        assert_eq!(df.shape(), (5, 1));
 
         Ok(())
     }

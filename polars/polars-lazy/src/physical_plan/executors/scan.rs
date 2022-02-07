@@ -1,10 +1,9 @@
 use super::*;
-use crate::logical_plan::CsvParserOptions;
-#[cfg(feature = "ipc")]
-use crate::logical_plan::IpcOptions;
+use crate::prelude::*;
 use crate::utils::try_path_to_str;
+use polars_io::aggregations::ScanAggregation;
+use polars_io::csv::CsvEncoding;
 use polars_io::prelude::*;
-use polars_io::{csv::CsvEncoding, ScanAggregation};
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use std::fs::File;
 use std::mem;
@@ -39,7 +38,7 @@ fn prepare_scan_args<'a>(
     predicate: &Option<Arc<dyn PhysicalExpr>>,
     with_columns: &mut Option<Vec<String>>,
     schema: &mut SchemaRef,
-    stop_after_n_rows: Option<usize>,
+    n_rows: Option<usize>,
     aggregate: &'a [ScanAggregation],
 ) -> (File, Projection, StopNRows, Aggregation<'a>, Predicate) {
     let file = std::fs::File::open(&path).unwrap();
@@ -54,7 +53,7 @@ fn prepare_scan_args<'a>(
             .collect()
     });
 
-    let stop_after_n_rows = set_n_rows(stop_after_n_rows);
+    let n_rows = set_n_rows(n_rows);
     let aggregate = if aggregate.is_empty() {
         None
     } else {
@@ -64,7 +63,7 @@ fn prepare_scan_args<'a>(
         .clone()
         .map(|expr| Arc::new(PhysicalIoHelper { expr }) as Arc<dyn PhysicalIoExpr>);
 
-    (file, projection, stop_after_n_rows, aggregate, predicate)
+    (file, projection, n_rows, aggregate, predicate)
 }
 
 #[cfg(feature = "ipc")]
@@ -73,7 +72,7 @@ pub struct IpcExec {
     pub(crate) schema: SchemaRef,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) aggregate: Vec<ScanAggregation>,
-    pub(crate) options: IpcOptions,
+    pub(crate) options: LpScanOptions,
 }
 
 #[cfg(feature = "ipc")]
@@ -83,16 +82,16 @@ impl Executor for IpcExec {
         if let Some(df) = cached {
             return Ok(df);
         }
-        let (file, projection, stop_after_n_rows, aggregate, predicate) = prepare_scan_args(
+        let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
             &mut self.options.with_columns,
             &mut self.schema,
-            self.options.stop_after_n_rows,
+            self.options.n_rows,
             &self.aggregate,
         );
         let df = IpcReader::new(file)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .finish_with_scan_ops(
                 predicate,
                 aggregate,
@@ -114,11 +113,9 @@ impl Executor for IpcExec {
 pub struct ParquetExec {
     path: PathBuf,
     schema: SchemaRef,
-    with_columns: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     aggregate: Vec<ScanAggregation>,
-    stop_after_n_rows: Option<usize>,
-    cache: bool,
+    options: ParquetOptions,
 }
 
 #[cfg(feature = "parquet")]
@@ -126,20 +123,16 @@ impl ParquetExec {
     pub(crate) fn new(
         path: PathBuf,
         schema: SchemaRef,
-        with_columns: Option<Vec<String>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         aggregate: Vec<ScanAggregation>,
-        stop_after_n_rows: Option<usize>,
-        cache: bool,
+        options: ParquetOptions,
     ) -> Self {
         ParquetExec {
             path,
             schema,
-            with_columns,
             predicate,
             aggregate,
-            stop_after_n_rows,
-            cache,
+            options,
         }
     }
 }
@@ -151,24 +144,25 @@ impl Executor for ParquetExec {
         if let Some(df) = cached {
             return Ok(df);
         }
-        let (file, projection, stop_after_n_rows, aggregate, predicate) = prepare_scan_args(
+        let (file, projection, n_rows, aggregate, predicate) = prepare_scan_args(
             &self.path,
             &self.predicate,
-            &mut self.with_columns,
+            &mut self.options.with_columns,
             &mut self.schema,
-            self.stop_after_n_rows,
+            self.options.n_rows,
             &self.aggregate,
         );
 
         let df = ParquetReader::new(file)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
+            .read_parallel(self.options.parallel)
             .finish_with_scan_ops(
                 predicate,
                 aggregate,
                 projection.as_ref().map(|v| v.as_ref()),
             )?;
 
-        if self.cache {
+        if self.options.cache {
             state.store_cache(cache_key, df.clone())
         }
         if state.verbose {
@@ -208,7 +202,7 @@ impl Executor for CsvExec {
         if projected_len == 0 {
             with_columns = None;
         }
-        let stop_after_n_rows = set_n_rows(self.options.stop_after_n_rows);
+        let n_rows = set_n_rows(self.options.n_rows);
         let predicate = self
             .predicate
             .clone()
@@ -227,7 +221,7 @@ impl Executor for CsvExec {
             .with_delimiter(self.options.delimiter)
             .with_ignore_parser_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
-            .with_stop_after_n_rows(stop_after_n_rows)
+            .with_n_rows(n_rows)
             .with_columns(with_columns)
             .low_memory(self.options.low_memory)
             .with_null_values(self.options.null_values.clone())
@@ -236,6 +230,7 @@ impl Executor for CsvExec {
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
             .with_quote_char(self.options.quote_char)
+            .with_rechunk(self.options.rechunk)
             .finish()?;
 
         if self.options.cache {
@@ -251,23 +246,10 @@ impl Executor for CsvExec {
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
-    df: Arc<DataFrame>,
-    projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
-    selection: Option<Arc<dyn PhysicalExpr>>,
-}
-
-impl DataFrameExec {
-    pub(crate) fn new(
-        df: Arc<DataFrame>,
-        projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
-        selection: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Self {
-        DataFrameExec {
-            df,
-            projection,
-            selection,
-        }
-    }
+    pub(crate) df: Arc<DataFrame>,
+    pub(crate) projection: Option<Vec<Arc<dyn PhysicalExpr>>>,
+    pub(crate) selection: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) has_windows: bool,
 }
 
 impl Executor for DataFrameExec {
@@ -278,7 +260,7 @@ impl Executor for DataFrameExec {
         // projection should be before selection as those are free
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
-            df = evaluate_physical_expressions(&df, projection, state)?;
+            df = evaluate_physical_expressions(&df, projection, state, self.has_windows)?;
         }
 
         if let Some(selection) = &self.selection {

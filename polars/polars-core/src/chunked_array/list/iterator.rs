@@ -2,13 +2,14 @@ use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
+use std::convert::TryFrom;
 use std::marker::PhantomData;
-use std::pin::Pin;
 use std::ptr::NonNull;
 
 #[cfg(feature = "private")]
 pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
-    series_container: Pin<Box<Series>>,
+    len: usize,
+    series_container: Box<Series>,
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
@@ -32,8 +33,14 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
             })
         })
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.len, Some(self.len))
+    }
 }
 
+// # Safety
+// we correctly implemented size_hint
 #[cfg(feature = "private")]
 unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
 
@@ -56,29 +63,26 @@ impl ListChunked {
     /// that Series.
     #[cfg(feature = "private")]
     pub fn amortized_iter(&self) -> AmortizedListIter<impl Iterator<Item = Option<ArrayBox>> + '_> {
-        let series_container = if self.is_empty() {
-            // in case of no data, the actual Series does not matter
-            Box::pin(Series::new("", &[true]))
-        } else {
-            Box::pin(self.get(0).unwrap())
-        };
+        // we create the series container from the inner array
+        // so that the container has the proper dtype.
+        let arr = self.downcast_iter().next().unwrap();
+        let inner_values = arr.values();
+        let series_container = Box::new(Series::try_from(("", inner_values.clone())).unwrap());
 
         let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
 
         AmortizedListIter {
+            len: self.len(),
             series_container,
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
-            iter: self
-                .downcast_iter()
-                .map(|arr| arr.iter())
-                .flatten()
-                .trust_my_length(self.len()),
+            iter: self.downcast_iter().flat_map(|arr| arr.iter()),
         }
     }
 
     /// Apply a closure `F` elementwise.
     #[cfg(feature = "private")]
+    #[must_use]
     pub fn apply_amortized<'a, F>(&'a self, mut f: F) -> Self
     where
         F: FnMut(UnstableSeries<'a>) -> Series,

@@ -17,11 +17,13 @@ Attributes
    :toctree: api/
 
    Series.dtype
+   Series.inner_dtype
    Series.name
    Series.shape
-   Series.skew
+   Series.arr
    Series.dt
    Series.str
+   Series.time_unit
 
 Conversion
 ----------
@@ -48,6 +50,7 @@ Aggregation
     Series.var
     Series.median
     Series.quantile
+    Series.product
     Series.mode
     Series.arg_min
     Series.arg_max
@@ -76,11 +79,18 @@ Descriptive stats
     Series.is_float
     Series.is_boolean
     Series.is_utf8
-    Series.is_datetime
+    Series.is_datelike
     Series.len
     Series.n_unique
     Series.has_validity
 
+Boolean
+-------
+.. autosummary::
+   :toctree: api/
+
+    Series.any
+    Series.all
 
 Computations
 ------------
@@ -91,7 +101,6 @@ Computations
     Series.cummin
     Series.cummax
     Series.cumprod
-    Series.arg_sort
     Series.arg_true
     Series.arg_unique
     Series.unique
@@ -105,6 +114,9 @@ Computations
     Series.rolling_median
     Series.rolling_quantile
     Series.rolling_skew
+    Series.ewm_mean
+    Series.ewm_std
+    Series.ewm_var
     Series.hash
     Series.peak_max
     Series.peak_min
@@ -112,6 +124,7 @@ Computations
     Series.abs
     Series.rank
     Series.diff
+    Series.pct_change
     Series.skew
     Series.kurtosis
     Series.sqrt
@@ -155,14 +168,18 @@ Manipulation/ selection
     Series.cast
     Series.round
     Series.floor
+    Series.ceil
     Series.set_at_idx
     Series.fill_null
+    Series.fill_nan
     Series.zip_with
     Series.interpolate
     Series.clip
-    Series.str_concat
     Series.reshape
     Series.to_dummies
+    Series.shuffle
+    Series.extend_constant
+    Series.extend
 
 Various
 --------
@@ -202,8 +219,17 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.max
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
-    DateTimeNameSpace.round
-    DateTimeNameSpace.buckets
+    DateTimeNameSpace.truncate
+    DateTimeNameSpace.epoch_days
+    DateTimeNameSpace.epoch_milliseconds
+    DateTimeNameSpace.epoch_seconds
+    DateTimeNameSpace.and_time_unit
+    DateTimeNameSpace.and_time_zone
+    DateTimeNameSpace.days
+    DateTimeNameSpace.hours
+    DateTimeNameSpace.seconds
+    DateTimeNameSpace.milliseconds
+    DateTimeNameSpace.nanoseconds
 
 
 Strings
@@ -218,16 +244,21 @@ The following methods are available under the `Series.str` attribute.
 
     StringNameSpace.strptime
     StringNameSpace.lengths
+    StringNameSpace.concat
     StringNameSpace.contains
     StringNameSpace.json_path_match
     StringNameSpace.extract
+    StringNameSpace.split
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase
     StringNameSpace.to_uppercase
+    StringNameSpace.strip
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.slice
+    StringNameSpace.encode
+    StringNameSpace.decode
 
 Lists
 -----
@@ -248,3 +279,8 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.sort
     ListNameSpace.reverse
     ListNameSpace.unique
+    ListNameSpace.get
+    ListNameSpace.first
+    ListNameSpace.last
+    ListNameSpace.contains
+    ListNameSpace.join

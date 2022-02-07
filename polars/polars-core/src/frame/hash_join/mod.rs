@@ -1,10 +1,10 @@
 pub(crate) mod multiple_keys;
+
 use polars_arrow::utils::CustomIterTools;
 
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
-use crate::frame::select::Selection;
 use crate::prelude::*;
 use crate::utils::{set_partition_size, split_ca};
 use crate::vector_hasher::{
@@ -15,7 +15,6 @@ use crate::{datatypes::PlHashMap, POOL};
 use ahash::RandomState;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
-use itertools::Itertools;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
@@ -505,12 +504,12 @@ where
     let splitted_a = split_ca(a, n_threads).unwrap();
     let splitted_b = split_ca(b, n_threads).unwrap();
     match (
-        left.has_validity(),
-        right.has_validity(),
+        left.null_count() == 0,
+        right.null_count() == 0,
         left.chunks.len(),
         right.chunks.len(),
     ) {
-        (false, false, 1, 1) => {
+        (true, true, 1, 1) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.cont_slice().unwrap())
@@ -521,7 +520,7 @@ where
                 .collect::<Vec<_>>();
             hash_join_tuples_inner(keys_a, keys_b, swap)
         }
-        (false, false, _, _) => {
+        (true, true, _, _) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
@@ -537,8 +536,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
+                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
@@ -547,8 +545,7 @@ where
                 .iter()
                 .map(|ca| {
                     ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
+                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
                         .collect::<Vec<_>>()
                 })
                 .collect::<Vec<_>>();
@@ -581,12 +578,12 @@ where
     let splitted_a = split_ca(left, n_threads).unwrap();
     let splitted_b = split_ca(right, n_threads).unwrap();
     match (
-        left.has_validity(),
-        right.has_validity(),
+        left.null_count(),
+        right.null_count(),
         left.chunks.len(),
         right.chunks.len(),
     ) {
-        (false, false, 1, 1) => {
+        (0, 0, 1, 1) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.cont_slice().unwrap())
@@ -597,7 +594,7 @@ where
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
         }
-        (false, false, _, _) => {
+        (0, 0, _, _) => {
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
@@ -612,22 +609,26 @@ where
             let keys_a = splitted_a
                 .iter()
                 .map(|ca| {
-                    ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
-                        .trust_my_length(ca.len())
-                        .collect_trusted::<Vec<_>>()
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
                 })
                 .collect::<Vec<_>>();
 
             let keys_b = splitted_b
                 .iter()
                 .map(|ca| {
-                    ca.downcast_iter()
-                        .map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .flatten()
-                        .trust_my_length(ca.len())
-                        .collect_trusted::<Vec<_>>()
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
                 })
                 .collect::<Vec<_>>();
             hash_join_tuples_left(keys_a, keys_b)
@@ -750,21 +751,27 @@ where
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
-        match (a.has_validity(), b.has_validity()) {
-            (false, false) => {
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
         }
@@ -795,21 +802,27 @@ impl HashJoin<BooleanType> for BooleanChunked {
         let splitted_a = split_ca(a, n_partitions).unwrap();
         let splitted_b = split_ca(b, n_partitions).unwrap();
 
-        match (a.has_validity(), b.has_validity()) {
-            (false, false) => {
+        match (a.null_count(), b.null_count()) {
+            (0, 0) => {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
-                let iters_a = splitted_a.iter().map(|ca| ca.into_iter()).collect_vec();
-                let iters_b = splitted_b.iter().map(|ca| ca.into_iter()).collect_vec();
+                let iters_a = splitted_a
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
+                let iters_b = splitted_b
+                    .iter()
+                    .map(|ca| ca.into_iter())
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
         }
@@ -873,11 +886,11 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                 let iters_a = splitted_a
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 let iters_b = splitted_b
                     .iter()
                     .map(|ca| ca.into_no_null_iter())
-                    .collect_vec();
+                    .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
             }
             _ => {
@@ -1042,56 +1055,14 @@ impl DataFrame {
         }
     }
 
-    /// Generic join method. Can be used to join on multiple columns.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// # use polars_core::prelude::*;
-    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
-    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
-    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
-    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
-    ///
-    /// let df3: DataFrame = df1.join(&df2, "Fruit", "Name", JoinType::Inner, None)?;
-    /// assert_eq!(df3.shape(), (3, 3));
-    /// println!("{}", df3);
-    /// # Ok::<(), PolarsError>(())
-    /// ```
-    ///
-    /// Output:
-    ///
-    /// ```text
-    /// shape: (3, 3)
-    /// +--------+----------------------+---------------------+
-    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
-    /// | ---    | ---                  | ---                 |
-    /// | str    | i32                  | i32                 |
-    /// +========+======================+=====================+
-    /// | Apple  | 11                   | 107                 |
-    /// +--------+----------------------+---------------------+
-    /// | Banana | 22                   | 358                 |
-    /// +--------+----------------------+---------------------+
-    /// | Pear   | 12                   | 115                 |
-    /// +--------+----------------------+---------------------+
-    /// ```
-    pub fn join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
+    fn join_impl(
         &self,
         other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
+        selected_left: Vec<Series>,
+        selected_right: Vec<Series>,
         how: JoinType,
         suffix: Option<String>,
     ) -> Result<DataFrame> {
-        #[cfg(feature = "cross_join")]
-        if let JoinType::Cross = how {
-            return self.cross_join(other);
-        }
-
-        #[allow(unused_mut)]
-        let mut selected_left = self.select_series(left_on)?;
-        #[allow(unused_mut)]
-        let mut selected_right = other.select_series(right_on)?;
         if selected_right.len() != selected_left.len() {
             return Err(PolarsError::ValueError(
                 "the number of columns given as join key should be equal".into(),
@@ -1230,6 +1201,63 @@ impl DataFrame {
         }
     }
 
+    /// Generic join method. Can be used to join on multiple columns.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("Fruit" => &["Apple", "Banana", "Pear"],
+    ///                          "Phosphorus (mg/100g)" => &[11, 22, 12])?;
+    /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
+    ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
+    ///
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinType::Inner, None)?;
+    /// assert_eq!(df3.shape(), (3, 3));
+    /// println!("{}", df3);
+    /// # Ok::<(), PolarsError>(())
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (3, 3)
+    /// +--------+----------------------+---------------------+
+    /// | Fruit  | Phosphorus (mg/100g) | Potassium (mg/100g) |
+    /// | ---    | ---                  | ---                 |
+    /// | str    | i32                  | i32                 |
+    /// +========+======================+=====================+
+    /// | Apple  | 11                   | 107                 |
+    /// +--------+----------------------+---------------------+
+    /// | Banana | 22                   | 358                 |
+    /// +--------+----------------------+---------------------+
+    /// | Pear   | 12                   | 115                 |
+    /// +--------+----------------------+---------------------+
+    /// ```
+    pub fn join<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: I,
+        right_on: I,
+        how: JoinType,
+        suffix: Option<String>,
+    ) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        #[cfg(feature = "cross_join")]
+        if let JoinType::Cross = how {
+            return self.cross_join(other);
+        }
+
+        #[allow(unused_mut)]
+        let mut selected_left = self.select_series(left_on)?;
+        #[allow(unused_mut)]
+        let mut selected_right = other.select_series(right_on)?;
+        self.join_impl(other, selected_left, selected_right, how, suffix)
+    }
+
     /// Perform an inner join on two DataFrames.
     ///
     /// # Example
@@ -1237,15 +1265,14 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
-    ///     left.inner_join(right, "join_column_left", "join_column_right")
+    ///     left.inner_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn inner_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn inner_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Inner, None)
     }
 
@@ -1281,7 +1308,7 @@ impl DataFrame {
     /// let df2: DataFrame = df!("Color" => &["Blue", "Yellow", "Red"],
     ///                          "Wavelength nm" => &[480.0, 577.0, 650.0])?;
     ///
-    /// let df3: DataFrame = df1.left_join(&df2, "Wavelength (nm)", "Wavelength nm")?;
+    /// let df3: DataFrame = df1.left_join(&df2, ["Wavelength (nm)"], ["Wavelength nm"])?;
     /// println!("{:?}", df3);
     /// # Ok::<(), PolarsError>(())
     /// ```
@@ -1306,12 +1333,11 @@ impl DataFrame {
     /// | 100             | null   |
     /// +-----------------+--------+
     /// ```
-    pub fn left_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn left_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
@@ -1345,15 +1371,14 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn join_dfs(left: &DataFrame, right: &DataFrame) -> Result<DataFrame> {
-    ///     left.outer_join(right, "join_column_left", "join_column_right")
+    ///     left.outer_join(right, ["join_column_left"], ["join_column_right"])
     /// }
     /// ```
-    pub fn outer_join<'a, J, S1: Selection<'a, J>, S2: Selection<'a, J>>(
-        &self,
-        other: &DataFrame,
-        left_on: S1,
-        right_on: S2,
-    ) -> Result<DataFrame> {
+    pub fn outer_join<I, S>(&self, other: &DataFrame, left_on: I, right_on: I) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         self.join(other, left_on, right_on, JoinType::Outer, None)
     }
     pub(crate) fn outer_join_from_series(
@@ -1365,6 +1390,10 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left, s_right)?;
+
+        // store this so that we can keep original column order.
+        let join_column_index = self.iter().position(|s| s.name() == s_left.name()).unwrap();
+
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
 
@@ -1385,9 +1414,27 @@ impl DataFrame {
                 )
             },
         );
-        let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+        let mut s = s_left
+            .to_physical_repr()
+            .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
         s.rename(s_left.name());
-        df_left.hstack_mut(&[s])?;
+        let s = match s_left.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical => {
+                let ca_or = s_left.categorical().unwrap();
+                let ca_new = s.cast(&DataType::Categorical).unwrap();
+                let mut ca_new = ca_new.categorical().unwrap().clone();
+                ca_new.categorical_map = ca_or.categorical_map.clone();
+                ca_new.into_series()
+            }
+            dt @ DataType::Datetime(_, _)
+            | dt @ DataType::Time
+            | dt @ DataType::Date
+            | dt @ DataType::Duration(_) => s.cast(dt).unwrap(),
+            _ => s,
+        };
+
+        df_left.get_columns_mut().insert(join_column_index, s);
         self.finish_join(df_left, df_right, suffix)
     }
 }
@@ -1416,7 +1463,7 @@ mod test {
 
         for i in 1..8 {
             std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
-            let joined = temp.inner_join(&rain, "days", "days").unwrap();
+            let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
             let join_col_days = Series::new("days", &[1, 2, 1]);
             let join_col_temp = Series::new("temp", &[19.9, 7., 19.9]);
@@ -1448,7 +1495,7 @@ mod test {
             let s0 = Series::new("days", &[1, 2]);
             let s1 = Series::new("rain", &[0.1, 0.2]);
             let rain = DataFrame::new(vec![s0, s1]).unwrap();
-            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
             println!("{}", &joined);
             assert_eq!(
                 (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
@@ -1464,7 +1511,7 @@ mod test {
             let s0 = Series::new("days", &["tue", "wed"]);
             let s1 = Series::new("rain", &[0.1, 0.2]);
             let rain = DataFrame::new(vec![s0, s1]).unwrap();
-            let joined = temp.left_join(&rain, "days", "days").unwrap();
+            let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
             println!("{}", &joined);
             assert_eq!(
                 (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
@@ -1478,7 +1525,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_outer_join() -> Result<()> {
         let (temp, rain) = create_frames();
-        let joined = temp.outer_join(&rain, "days", "days")?;
+        let joined = temp.outer_join(&rain, ["days"], ["days"])?;
         println!("{:?}", &joined);
         assert_eq!(joined.height(), 5);
         assert_eq!(joined.column("days")?.sum::<i32>(), Some(7));
@@ -1494,7 +1541,7 @@ mod test {
                 "c"=> [1, 0, 2, 1]
         )?;
 
-        let out = df_left.outer_join(&df_right, "a", "a")?;
+        let out = df_left.outer_join(&df_right, ["a"], ["a"])?;
         assert_eq!(out.column("c_right")?.null_count(), 1);
 
         Ok(())
@@ -1514,7 +1561,7 @@ mod test {
         ])
         .unwrap();
 
-        let joined = df.left_join(&df2, "date", "date").unwrap();
+        let joined = df.left_join(&df2, ["date"], ["date"]).unwrap();
         assert_eq!(
             joined
                 .column("val2")
@@ -1571,7 +1618,7 @@ mod test {
         s.rename("dummy");
         df_b.with_column(s).unwrap();
 
-        let joined = df_a.left_join(&df_b, "dummy", "dummy").unwrap();
+        let joined = df_a.left_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let ham_col = joined.column("ham").unwrap();
         let ca = ham_col.utf8().unwrap();
 
@@ -1588,14 +1635,14 @@ mod test {
 
         // now check the join with multiple columns
         let joined = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Left, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left, None)
             .unwrap();
         let ca = joined.column("ham").unwrap().utf8().unwrap();
         dbg!(&df_a, &df_b);
         assert_eq!(Vec::from(ca), correct_ham);
-        let joined_inner_hack = df_a.inner_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let joined_inner = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Inner, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner, None)
             .unwrap();
 
         dbg!(&joined_inner_hack, &joined_inner);
@@ -1604,9 +1651,9 @@ mod test {
             .unwrap()
             .series_equal_missing(joined_inner.column("ham").unwrap()));
 
-        let joined_outer_hack = df_a.outer_join(&df_b, "dummy", "dummy").unwrap();
+        let joined_outer_hack = df_a.outer_join(&df_b, ["dummy"], ["dummy"]).unwrap();
         let joined_outer = df_a
-            .join(&df_b, &["a", "b"], &["foo", "bar"], JoinType::Outer, None)
+            .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Outer, None)
             .unwrap();
         assert!(joined_outer_hack
             .column("ham")
@@ -1624,12 +1671,14 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
 
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None).unwrap();
+        let out = df_a
+            .join(&df_b, ["b"], ["bar"], JoinType::Left, None)
+            .unwrap();
         assert_eq!(out.shape(), (6, 5));
         let correct_ham = &[
             Some("let"),
@@ -1644,18 +1693,25 @@ mod test {
 
         assert_eq!(Vec::from(ca), correct_ham);
 
-        // Test an error when joining on different string cache
+        // test dispatch
+        for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
+            let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
+            let out = out.column("b").unwrap();
+            assert_eq!(out.dtype(), &DataType::Categorical);
+        }
+
+        // Test error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.may_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.may_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
             .unwrap();
-        let out = df_a.join(&df_b, "b", "bar", JoinType::Left, None);
-        assert!(out.is_err())
+        let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
+        assert!(out.is_err());
     }
 
     #[test]
@@ -1674,15 +1730,15 @@ mod test {
         ])
         .unwrap();
 
-        let out = empty_df.inner_join(&df, "key", "key").unwrap();
+        let out = empty_df.inner_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 0);
-        let out = empty_df.left_join(&df, "key", "key").unwrap();
+        let out = empty_df.left_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 0);
-        let out = empty_df.outer_join(&df, "key", "key").unwrap();
+        let out = empty_df.outer_join(&df, ["key"], ["key"]).unwrap();
         assert_eq!(out.height(), 1);
-        df.left_join(&empty_df, "key", "key")?;
-        df.inner_join(&empty_df, "key", "key")?;
-        df.outer_join(&empty_df, "key", "key")?;
+        df.left_join(&empty_df, ["key"], ["key"])?;
+        df.inner_join(&empty_df, ["key"], ["key"])?;
+        df.outer_join(&empty_df, ["key"], ["key"])?;
 
         let empty: Vec<String> = vec![];
         let _empty_df = DataFrame::new(vec![
@@ -1704,7 +1760,7 @@ mod test {
             Series::new("2val", &empty),
         ])?;
 
-        let out = df.left_join(&empty_df, "key", "key")?;
+        let out = df.left_join(&empty_df, ["key"], ["key"])?;
         assert_eq!(out.shape(), (2, 4));
 
         Ok(())
@@ -1723,7 +1779,7 @@ mod test {
             "b" => [Some(1), None, Some(3), Some(4)]
         ]?;
 
-        let out = df1.left_join(&df2, "a", "a")?;
+        let out = df1.left_join(&df2, ["a"], ["a"])?;
         let expected = df![
             "a" => [1],
             "b" => [2],
@@ -1774,22 +1830,33 @@ mod test {
         ]
         .unwrap();
 
-        let df_inner_join = df_left.inner_join(&df_right, "col1", "join_col1").unwrap();
+        let df_inner_join = df_left
+            .inner_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
         assert_eq!(df_inner_join.height(), 10);
         assert_eq!(df_inner_join.column("col1")?.null_count(), 0);
         assert_eq!(df_inner_join.column("int_col")?.null_count(), 0);
         assert_eq!(df_inner_join.column("dbl_col")?.null_count(), 0);
 
-        let df_left_join = df_left.left_join(&df_right, "col1", "join_col1").unwrap();
+        let df_left_join = df_left
+            .left_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
         assert_eq!(df_left_join.height(), 11);
         assert_eq!(df_left_join.column("col1")?.null_count(), 0);
         assert_eq!(df_left_join.column("int_col")?.null_count(), 0);
         assert_eq!(df_left_join.column("dbl_col")?.null_count(), 1);
 
-        let df_outer_join = df_left.outer_join(&df_right, "col1", "join_col1").unwrap();
+        let df_outer_join = df_left
+            .outer_join(&df_right, ["col1"], ["join_col1"])
+            .unwrap();
 
+        // ensure the column names don't get swapped by the drop we do
+        assert_eq!(
+            df_outer_join.get_column_names(),
+            &["col1", "int_col", "dbl_col"]
+        );
         assert_eq!(df_outer_join.height(), 12);
         assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
         assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
@@ -1925,7 +1992,7 @@ mod test {
             "a" => [Some(1), None, None, None, None]
         ]?;
 
-        let out = a.inner_join(&b, "a", "a")?;
+        let out = a.inner_join(&b, ["a"], ["a"])?;
 
         assert_eq!(out.shape(), (9, 1));
         Ok(())

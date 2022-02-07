@@ -18,7 +18,6 @@ where
             }
             None => Some(*previous),
         })
-        .trust_my_length(ca.len())
         .collect_trusted()
 }
 
@@ -32,7 +31,6 @@ macro_rules! impl_fill_forward {
                 }
                 None => Some(*previous),
             })
-            .trust_my_length($ca.len())
             .collect_trusted()
     }};
 }
@@ -50,7 +48,6 @@ where
             }
             None => Some(*previous),
         })
-        .trust_my_length(ca.len())
         .collect_reversed()
 }
 
@@ -66,7 +63,6 @@ macro_rules! impl_fill_backward {
                 }
                 None => Some(*previous),
             })
-            .trust_my_length($ca.len())
             .collect_trusted();
         ca.into_iter().rev().collect_trusted()
     }};

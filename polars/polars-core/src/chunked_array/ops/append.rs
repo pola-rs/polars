@@ -13,19 +13,23 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    /// Append in place.
+    /// Append in place. This is done by adding the chunks of `other` to this [`ChunkedArray`].
+    ///
+    /// See also [`extend`](Self::extend) for appends to the underlying memory
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }
 
+#[doc(hidden)]
 impl BooleanChunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         new_chunks(&mut self.chunks, &other.chunks, len);
     }
 }
+#[doc(hidden)]
 impl Utf8Chunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
@@ -33,6 +37,7 @@ impl Utf8Chunked {
     }
 }
 
+#[doc(hidden)]
 impl ListChunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
@@ -40,6 +45,7 @@ impl ListChunked {
     }
 }
 #[cfg(feature = "object")]
+#[doc(hidden)]
 impl<T: PolarsObject> ObjectChunked<T> {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
@@ -47,6 +53,7 @@ impl<T: PolarsObject> ObjectChunked<T> {
     }
 }
 #[cfg(feature = "dtype-categorical")]
+#[doc(hidden)]
 impl CategoricalChunked {
     pub fn append(&mut self, other: &Self) {
         if let (Some(rev_map_l), Some(rev_map_r)) = (

@@ -6,7 +6,6 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use crate::utils::{get_iter_capacity, CustomIterTools};
 use arrow::array::{BooleanArray, PrimitiveArray, Utf8Array};
-use arrow::buffer::MutableBuffer;
 use polars_arrow::utils::TrustMyLength;
 use rayon::iter::{FromParallelIterator, IntoParallelIterator};
 use rayon::prelude::*;
@@ -68,12 +67,12 @@ impl<T> FromIterator<T::Native> for NoNull<ChunkedArray<T>>
 where
     T: PolarsNumericType,
 {
-    // We use AlignedVec because it is way faster than Arrows builder. We can do this because we
+    // We use Vec because it is way faster than Arrows builder. We can do this because we
     // know we don't have null values.
     fn from_iter<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         // 2021-02-07: aligned vec was ~2x faster than arrow collect.
-        let av = iter.into_iter().collect::<AlignedVec<T::Native>>();
-        NoNull::new(ChunkedArray::new_from_aligned_vec("", av))
+        let av = iter.into_iter().collect::<Vec<T::Native>>();
+        NoNull::new(ChunkedArray::from_vec("", av))
     }
 }
 
@@ -154,14 +153,46 @@ where
     }
 }
 
+fn primitive_series_collect<Ptr, Iter, Lb>(
+    mut nulls_so_far: usize,
+    iter: Iter,
+    s: &Series,
+    builder: &mut Lb,
+) -> ListChunked
+where
+    Ptr: Borrow<Series>,
+    Iter: Iterator<Item = Option<Ptr>>,
+    Lb: ?Sized + ListBuilderTrait,
+{
+    // first fill all None's we encountered
+    while nulls_so_far > 0 {
+        builder.append_null();
+        nulls_so_far -= 1;
+    }
+
+    // now the first non None
+    builder.append_series(s);
+
+    // now we have added all Nones, we can consume the rest of the iterator.
+    for opt_s in iter {
+        match opt_s {
+            Some(s) => builder.append_series(s.borrow()),
+            None => builder.append_null(),
+        }
+    }
+
+    builder.finish()
+}
+
 impl<Ptr> FromIterator<Option<Ptr>> for ListChunked
 where
     Ptr: Borrow<Series>,
 {
     fn from_iter<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+        // first pull all `None` values so that we can determine the inner `dtype`
         let mut it = iter.into_iter();
-        let owned_v;
-        let mut cnt = 0;
+        let owned_s;
+        let mut nulls_so_far = 0;
 
         loop {
             let opt_v = it.next();
@@ -169,10 +200,10 @@ where
             match opt_v {
                 Some(opt_v) => match opt_v {
                     Some(val) => {
-                        owned_v = val;
+                        owned_s = val;
                         break;
                     }
-                    None => cnt += 1,
+                    None => nulls_so_far += 1,
                 },
                 // end of iterator
                 None => {
@@ -181,28 +212,93 @@ where
                 }
             }
         }
-        let v = owned_v.borrow();
+        let s: &Series = owned_s.borrow();
         let capacity = get_iter_capacity(&it);
-        let mut builder = get_list_builder(v.dtype(), capacity * 5, capacity, "collected");
-
-        // first fill all None's we encountered
-        while cnt > 0 {
-            builder.append_opt_series(None);
-            cnt -= 1;
-        }
-
-        // now the first non None
-        builder.append_series(v);
-
-        // now we have added all Nones, we can consume the rest of the iterator.
-        for opt_s in it {
-            match opt_s {
-                Some(s) => builder.append_series(s.borrow()),
-                None => builder.append_null(),
+        let estimated_s_size = std::cmp::min(s.len(), 1 << 18);
+        // use specialized builder for most common types
+        match s.dtype() {
+            DataType::UInt32 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<u32>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            DataType::Int32 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<i32>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            DataType::UInt64 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<u64>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            DataType::Int64 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<i64>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            DataType::Float32 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<f32>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            DataType::Float64 => primitive_series_collect(
+                nulls_so_far,
+                it,
+                s,
+                &mut ListPrimitiveChunkedBuilder::<f64>::new(
+                    "collected",
+                    capacity,
+                    capacity * estimated_s_size,
+                    s.dtype().clone(),
+                ),
+            ),
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                let mut builder =
+                    s.get_list_builder("collected", capacity * estimated_s_size, capacity);
+                primitive_series_collect(nulls_so_far, it, s, &mut builder)
+            }
+            _ => {
+                let mut builder = get_list_builder(
+                    s.dtype(),
+                    capacity * estimated_s_size,
+                    capacity,
+                    "collected",
+                );
+                primitive_series_collect(nulls_so_far, it, s, &mut builder)
             }
         }
-
-        builder.finish()
     }
 }
 
@@ -294,7 +390,7 @@ where
         let vectors = collect_into_linked_list(iter);
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        let mut av = MutableBuffer::<T::Native>::with_capacity(capacity);
+        let mut av = Vec::<T::Native>::with_capacity(capacity);
         for v in vectors {
             av.extend_from_slice(&v)
         }
@@ -326,14 +422,11 @@ impl FromParallelIterator<bool> for BooleanChunked {
 
         let capacity: usize = get_capacity_from_par_results(&vectors);
 
-        // 2021-02-07: this was ~70% faster than with the builder, even with the extra Option<T> added.
-        let arr = BooleanArray::from_iter(
-            vectors
-                .into_iter()
-                .flatten()
-                .trust_my_length(capacity)
-                .map(Some),
-        );
+        let arr = unsafe {
+            BooleanArray::from_trusted_len_values_iter(
+                vectors.into_iter().flatten().trust_my_length(capacity),
+            )
+        };
         Self::new_from_chunks("", vec![Arc::new(arr)])
     }
 }

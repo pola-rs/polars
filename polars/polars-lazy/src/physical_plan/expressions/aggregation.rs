@@ -1,9 +1,9 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
-use polars_arrow::arrow::{array::*, buffer::MutableBuffer, compute::concatenate::concatenate};
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupTuples};
-use polars_core::utils::NoNull;
+use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
+use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod, GroupsProxy};
 use polars_core::{prelude::*, POOL};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -31,7 +31,7 @@ impl PhysicalExpr for AggregationExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
@@ -62,7 +62,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
@@ -70,43 +70,42 @@ impl PhysicalAggregation for AggregationExpr {
 
         match self.agg_type {
             GroupByMethod::Min => {
-                let agg_s = ac.flat().into_owned().agg_min(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Max => {
-                let agg_s = ac.flat().into_owned().agg_max(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Median => {
-                let agg_s = ac.flat().into_owned().agg_median(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Mean => {
-                let agg_s = ac.flat().into_owned().agg_mean(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Sum => {
-                let agg_s = ac.flat().into_owned().agg_sum(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Count => {
-                let mut ca: NoNull<UInt32Chunked> =
-                    ac.groups().iter().map(|(_, g)| g.len() as u32).collect();
+                let mut ca = ac.groups.group_count();
                 ca.rename(&new_name);
-                Ok(Some(ca.into_inner().into_series()))
+                Ok(Some(ca.into_series()))
             }
             GroupByMethod::First => {
-                let mut agg_s = ac.flat().into_owned().agg_first(ac.groups());
+                let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::Last => {
-                let mut agg_s = ac.flat().into_owned().agg_last(ac.groups());
+                let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
                 agg_s.rename(&new_name);
                 Ok(Some(agg_s))
             }
             GroupByMethod::NUnique => {
-                let opt_agg = ac.flat().into_owned().agg_n_unique(ac.groups());
+                let opt_agg = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
                 let opt_agg = opt_agg.map(|mut agg| {
                     agg.rename(&new_name);
                     agg.into_series()
@@ -114,31 +113,23 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(opt_agg)
             }
             GroupByMethod::List => {
-                let agg = ac.aggregated().into_owned();
+                let agg = ac.aggregated();
                 Ok(rename_option_series(Some(agg), &new_name))
             }
             GroupByMethod::Groups => {
-                let mut column: ListChunked = ac
-                    .groups()
-                    .iter()
-                    .map(|(_first, idx)| {
-                        let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
-                        ca.into_inner().into_series()
-                    })
-                    .collect();
-
+                let mut column: ListChunked = ac.groups().as_list_chunked();
                 column.rename(&new_name);
                 Ok(Some(column.into_series()))
             }
             GroupByMethod::Std => {
-                let agg_s = ac.flat().into_owned().agg_std(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
             GroupByMethod::Var => {
-                let agg_s = ac.flat().into_owned().agg_var(ac.groups());
+                let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
                 Ok(rename_option_series(agg_s, &new_name))
             }
-            GroupByMethod::Quantile(_) => {
+            GroupByMethod::Quantile(_, _) => {
                 // implemented explicitly in AggQuantile struct
                 unimplemented!()
             }
@@ -148,7 +139,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         match self.agg_type {
@@ -189,7 +180,7 @@ impl PhysicalAggregation for AggregationExpr {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         match self.agg_type {
@@ -214,11 +205,11 @@ impl PhysicalAggregation for AggregationExpr {
                 let mut values = Vec::with_capacity(groups.len());
                 let mut can_fast_explode = true;
 
-                let mut offsets = MutableBuffer::<i64>::with_capacity(groups.len() + 1);
+                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                for (_, idx) in groups {
+                for (_, idx) in groups.idx_ref() {
                     let ca = unsafe {
                         // Safety
                         // The indexes of the groupby operation are never out of bounds
@@ -258,12 +249,15 @@ impl PhysicalAggregation for AggQuantileExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let series = self.expr.evaluate(df, state)?;
-        let new_name = fmt_groupby_column(series.name(), GroupByMethod::Quantile(self.quantile));
-        let opt_agg = series.agg_quantile(groups, self.quantile);
+        let new_name = fmt_groupby_column(
+            series.name(),
+            GroupByMethod::Quantile(self.quantile, self.interpol),
+        );
+        let opt_agg = series.agg_quantile(groups, self.quantile, self.interpol);
 
         let opt_agg = opt_agg.map(|mut agg| {
             agg.rename(&new_name);
@@ -277,7 +271,7 @@ impl PhysicalAggregation for CastExpr {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let agg_expr = self.input.as_agg_expr()?;
@@ -289,11 +283,20 @@ impl PhysicalAggregation for CastExpr {
 pub struct AggQuantileExpr {
     pub(crate) expr: Arc<dyn PhysicalExpr>,
     pub(crate) quantile: f64,
+    pub(crate) interpol: QuantileInterpolOptions,
 }
 
 impl AggQuantileExpr {
-    pub fn new(expr: Arc<dyn PhysicalExpr>, quantile: f64) -> Self {
-        Self { expr, quantile }
+    pub fn new(
+        expr: Arc<dyn PhysicalExpr>,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Self {
+        Self {
+            expr,
+            quantile,
+            interpol,
+        }
     }
 }
 
@@ -309,7 +312,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupTuples,
+        _groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         unimplemented!()
@@ -317,7 +320,10 @@ impl PhysicalExpr for AggQuantileExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = self.expr.to_field(input_schema)?;
-        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Quantile(self.quantile));
+        let new_name = fmt_groupby_column(
+            field.name(),
+            GroupByMethod::Quantile(self.quantile, self.interpol),
+        );
         Ok(Field::new(&new_name, field.data_type().clone()))
     }
 

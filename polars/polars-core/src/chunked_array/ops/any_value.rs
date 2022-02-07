@@ -7,11 +7,11 @@ use std::convert::TryFrom;
 
 #[inline]
 #[allow(unused_variables)]
-unsafe fn arr_to_any_value<'a>(
+pub(crate) unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
     categorical_map: &'a Option<Arc<RevMapping>>,
-    dtype: &DataType,
+    dtype: &'a DataType,
 ) -> AnyValue<'a> {
     if arr.is_null(idx) {
         return AnyValue::Null;
@@ -47,17 +47,33 @@ unsafe fn arr_to_any_value<'a>(
         #[cfg(feature = "dtype-date")]
         DataType::Date => downcast_and_pack!(Int32Array, Date),
         #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime => downcast_and_pack!(Int64Array, Datetime),
+        DataType::Datetime(tu, tz) => {
+            let ts: i64 = downcast!(Int64Array);
+            AnyValue::Datetime(ts, *tu, tz)
+        }
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => {
+            let delta: i64 = downcast!(Int64Array);
+            AnyValue::Duration(delta, *tu)
+        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
 
-            if let DataType::Categorical = **dt {
-                let mut s_new = s.cast(&DataType::Categorical).unwrap();
-                let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
-                ca.categorical_map = categorical_map.clone();
-                s = s_new;
+            match **dt {
+                DataType::Categorical => {
+                    let mut s_new = s.cast(&DataType::Categorical).unwrap();
+                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
+                    ca.categorical_map = categorical_map.clone();
+                    s = s_new;
+                }
+                DataType::Date
+                | DataType::Datetime(_, _)
+                | DataType::Time
+                | DataType::Duration(_) => s = s.cast(dt).unwrap(),
+                _ => {}
             }
+
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-categorical")]

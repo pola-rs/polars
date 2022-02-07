@@ -1,9 +1,11 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
-use polars_core::utils::{get_supertype, Arena, Node};
+use polars_core::utils::{get_supertype, get_time_units};
+use polars_utils::arena::{Arena, Node};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -16,7 +18,11 @@ pub enum AAggExpr {
     Last(Node),
     Mean(Node),
     List(Node),
-    Quantile { expr: Node, quantile: f64 },
+    Quantile {
+        expr: Node,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    },
     Sum(Node),
     Count(Node),
     Std(Node),
@@ -92,13 +98,7 @@ pub enum AExpr {
         offset: i64,
         length: usize,
     },
-    BinaryFunction {
-        input_a: Node,
-        input_b: Node,
-        function: NoEq<Arc<dyn SeriesBinaryUdf>>,
-        /// Delays output type evaluation until input schema is known.
-        output_field: NoEq<Arc<dyn BinaryUdfOutputField>>,
-    },
+    Count,
 }
 
 impl Default for AExpr {
@@ -127,6 +127,7 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
+            Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
 
@@ -170,6 +171,8 @@ impl AExpr {
             }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
+                use DataType::*;
+
                 let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
                 let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
 
@@ -182,6 +185,14 @@ impl AExpr {
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
+                    Operator::Minus => match (left_type, right_type) {
+                        // T - T != T if T is a datetime / date
+                        (Datetime(tul, _), Datetime(tur, _)) => {
+                            Duration(get_time_units(&tul, &tur))
+                        }
+                        (Date, Date) => Duration(TimeUnit::Milliseconds),
+                        (left, right) => get_supertype(&left, &right)?,
+                    },
                     _ => get_supertype(&left_type, &right_type)?,
                 };
 
@@ -296,11 +307,15 @@ impl AExpr {
                         let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
                         Field::new(&new_name, DataType::List(DataType::UInt32.into()))
                     }
-                    Quantile { expr, quantile } => {
+                    Quantile {
+                        expr,
+                        quantile,
+                        interpol,
+                    } => {
                         let mut field = field_by_context(
                             arena.get(*expr).to_field(schema, ctxt, arena)?,
                             ctxt,
-                            GroupByMethod::Quantile(*quantile),
+                            GroupByMethod::Quantile(*quantile, *interpol),
                         );
                         field.coerce(DataType::Float64);
                         field
@@ -335,63 +350,10 @@ impl AExpr {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
             }
-            BinaryFunction {
-                input_a,
-                input_b,
-                output_field,
-                ..
-            } => {
-                let field_a = arena.get(*input_a).to_field(schema, ctxt, arena)?;
-                let field_b = arena.get(*input_b).to_field(schema, ctxt, arena)?;
-                let out = output_field.get_field(schema, ctxt, &field_a, &field_b);
-                // TODO: remove Option?
-                Ok(out.expect("field should be set"))
-            }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
         }
-    }
-
-    /// Check if AExpr equality. The nodes may differ.
-    ///
-    /// For instance: there can be two columns "foo" in the memory arena. These are equal,
-    /// but would have different node values.
-    #[cfg(feature = "private")]
-    pub(crate) fn eq(node_left: Node, node_right: Node, expr_arena: &Arena<AExpr>) -> bool {
-        use crate::logical_plan::iterator::ArenaExprIter;
-        let cmp = |(node_left, node_right)| {
-            use AExpr::*;
-            match (expr_arena.get(node_left), expr_arena.get(node_right)) {
-                (Alias(_, name_l), Alias(_, name_r)) => name_l == name_r,
-                (Column(name_l), Column(name_r)) => name_l == name_r,
-                (Literal(left), Literal(right)) => left == right,
-                (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
-                (Cast { data_type: l, .. }, Cast { data_type: r, .. }) => l == r,
-                (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-                (SortBy { reverse: l, .. }, SortBy { reverse: r, .. }) => l == r,
-                (Shift { periods: l, .. }, Shift { periods: r, .. }) => l == r,
-                (
-                    Slice {
-                        offset: offset_l,
-                        length: length_l,
-                        ..
-                    },
-                    Slice {
-                        offset: offset_r,
-                        length: length_r,
-                        ..
-                    },
-                ) => offset_l == offset_r && length_l == length_r,
-                (a, b) => std::mem::discriminant(a) == std::mem::discriminant(b),
-            }
-        };
-
-        expr_arena
-            .iter(node_left)
-            .zip(expr_arena.iter(node_right))
-            .map(|(tpll, tplr)| (tpll.0, tplr.0))
-            .all(cmp)
     }
 }
 

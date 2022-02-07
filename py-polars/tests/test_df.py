@@ -1,9 +1,9 @@
 # flake8: noqa: W191,E101
 import sys
-import typing as tp
 from builtins import range
 from datetime import datetime
 from io import BytesIO
+from typing import Any, Iterator
 from unittest.mock import patch
 
 import numpy as np
@@ -12,6 +12,7 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars import testing
 
 
 def test_version() -> None:
@@ -65,8 +66,10 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
     assert df.frame_equal(truth)
 
-    df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="row")
-    truth = pl.DataFrame({"column_0": [1, 3], "column_1": [2, 4]})
+    df = pl.DataFrame([[1, 2.0, "a"], [None, None, None]], orient="row")
+    truth = pl.DataFrame(
+        {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
+    )
     assert df.frame_equal(truth)
 
     # TODO: Uncomment tests below when removing deprecation warning
@@ -310,6 +313,11 @@ def test_sort() -> None:
     df.sort("a", in_place=True)
     assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
+    # test in-place + passing a list
+    df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
+    df.sort(["a", "b"], in_place=True)
+    assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
+
 
 def test_replace() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
@@ -338,15 +346,55 @@ def test_null_count() -> None:
     assert df.null_count().shape == (1, 2)
 
 
-def test_head_tail() -> None:
+def test_head_tail_limit() -> None:
     df = pl.DataFrame({"a": range(10), "b": range(10)})
     assert df.head(5).height == 5
+    assert df.limit(5).height == 5
     assert df.tail(5).height == 5
 
     assert not df.head(5).frame_equal(df.tail(5))
     # check if it doesn't fail when out of bounds
     assert df.head(100).height == 10
+    assert df.limit(100).height == 10
     assert df.tail(100).height == 10
+
+    # limit is an alias of head
+    assert df.head(5).frame_equal(df.limit(5))
+
+
+def test_drop_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, None, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+
+    result = df.drop_nulls()
+    expected = pl.DataFrame(
+        {
+            "foo": [1, 3],
+            "bar": [6, 8],
+            "ham": ["a", "c"],
+        }
+    )
+    assert result.frame_equal(expected)
+
+    # below we only drop entries if they are null in the column 'foo'
+    result = df.drop_nulls("foo")
+    assert result.frame_equal(df)
+
+
+def test_pipe() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _multiply(data: pl.DataFrame, mul: int) -> pl.DataFrame:
+        return data * mul
+
+    result = df.pipe(_multiply, mul=3)
+
+    assert result.frame_equal(df * 3)
 
 
 def test_explode() -> None:
@@ -408,6 +456,54 @@ def test_groupby() -> None:
     # check if this query runs and thus column names propagate
     df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
 
+    # get a specific column
+    result = df.groupby("b")["a"].count()
+    assert result.shape == (2, 2)
+    assert result.columns == ["b", "a_count"]
+
+    # make sure all the methods below run
+    assert df.groupby("b").first().shape == (2, 3)
+    assert df.groupby("b").last().shape == (2, 3)
+    assert df.groupby("b").max().shape == (2, 3)
+    assert df.groupby("b").min().shape == (2, 3)
+    assert df.groupby("b").count().shape == (2, 3)
+    assert df.groupby("b").mean().shape == (2, 3)
+    assert df.groupby("b").n_unique().shape == (2, 3)
+    assert df.groupby("b").median().shape == (2, 3)
+    # assert df.groupby("b").quantile(0.5).shape == (2, 3)
+    assert df.groupby("b").agg_list().shape == (2, 3)
+
+
+def test_pivot() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": ["a", "a", "b", "b", "b"],
+            "c": [None, 1, None, 1, None],
+        }
+    )
+    gb = df.groupby("b").pivot("a", "c")
+    assert gb.first().shape == (2, 6)
+    assert gb.max().shape == (2, 6)
+    assert gb.mean().shape == (2, 6)
+    assert gb.count().shape == (2, 6)
+    assert gb.median().shape == (2, 6)
+
+    for agg_fn in ["sum", "min", "max", "mean", "count", "median", "mean"]:
+        out = df.pivot(values="c", index="b", columns="a", aggregate_fn=agg_fn)
+        assert out.shape == (2, 6)
+
+    # example in polars-book
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "n", "o"],
+        }
+    )
+    out = df.groupby("foo").pivot(pivot_column="bar", values_column="N").first()
+    assert out.shape == (3, 6)
+
 
 def test_join() -> None:
     df_left = pl.DataFrame(
@@ -436,6 +532,14 @@ def test_join() -> None:
     assert joined["b"].null_count() == 1
     assert joined["k"].null_count() == 1
     assert joined["a"].null_count() == 0
+
+    # we need to pass in a column to join on, either by supplying `on`, or both `left_on` and `right_on`
+    with pytest.raises(ValueError):
+        df_left.join(df_right)
+    with pytest.raises(ValueError):
+        df_left.join(df_right, right_on="a")
+    with pytest.raises(ValueError):
+        df_left.join(df_right, left_on="a")
 
     df_a = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
     df_b = pl.DataFrame(
@@ -476,11 +580,108 @@ def test_joins_dispatch() -> None:
         dfa.join(dfa, on=["date"], how=how)
 
 
-def test_hstack() -> None:
+@pytest.mark.parametrize(
+    "stack,exp_shape,exp_columns",
+    [
+        ([pl.Series("stacked", [-1, -1, -1])], (3, 3), ["a", "b", "stacked"]),
+        (
+            [pl.Series("stacked2", [-1, -1, -1]), pl.Series("stacked3", [-1, -1, -1])],
+            (3, 4),
+            ["a", "b", "stacked2", "stacked3"],
+        ),
+    ],
+)
+@pytest.mark.parametrize("in_place", [True, False])
+def test_hstack_list_of_series(
+    stack: list, exp_shape: tuple, exp_columns: list, in_place: bool
+) -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
-    df.hstack([pl.Series("stacked", [-1, -1, -1])], in_place=True)
-    assert df.shape == (3, 3)
-    assert df.columns == ["a", "b", "stacked"]
+    df_out = df.hstack(stack, in_place=in_place)
+    if in_place:
+        assert df.shape == exp_shape
+        assert df.columns == exp_columns
+    else:
+        assert df_out.shape == exp_shape  # type: ignore
+        assert df_out.columns == exp_columns  # type: ignore
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_hstack_dataframe(in_place: bool) -> None:
+    df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"]})
+    df2 = pl.DataFrame({"c": [2, 1, 3], "d": ["a", "b", "c"]})
+    df_out = df.hstack(df2, in_place=in_place)
+    expected = pl.DataFrame(
+        {"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [2, 1, 3], "d": ["a", "b", "c"]}
+    )
+    if in_place:
+        assert df.frame_equal(expected)
+    else:
+        assert df_out.frame_equal(expected)  # type: ignore
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_vstack(in_place: bool) -> None:
+    df1 = pl.DataFrame({"foo": [1, 2], "bar": [6, 7], "ham": ["a", "b"]})
+    df2 = pl.DataFrame({"foo": [3, 4], "bar": [8, 9], "ham": ["c", "d"]})
+
+    expected = pl.DataFrame(
+        {"foo": [1, 2, 3, 4], "bar": [6, 7, 8, 9], "ham": ["a", "b", "c", "d"]}
+    )
+
+    out = df1.vstack(df2, in_place=in_place)
+    if in_place:
+        assert df1.frame_equal(expected)
+    else:
+        assert out.frame_equal(expected)  # type: ignore
+
+
+def test_extend() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            {
+                "foo": [1, 2],
+                "bar": [True, False],
+                "ham": ["a", "b"],
+                "cat": ["A", "B"],
+                "dates": [datetime(2021, 1, 1), datetime(2021, 2, 1)],
+            }
+        ).with_columns(
+            [
+                pl.col("cat").cast(pl.Categorical),
+            ]
+        )
+        df2 = pl.DataFrame(
+            {
+                "foo": [3, 4],
+                "bar": [True, None],
+                "ham": ["c", "d"],
+                "cat": ["C", "B"],
+                "dates": [datetime(2022, 9, 1), datetime(2021, 2, 1)],
+            }
+        ).with_columns(
+            [
+                pl.col("cat").cast(pl.Categorical),
+            ]
+        )
+
+    df1.extend(df2)
+    expected = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4],
+            "bar": [True, False, True, None],
+            "ham": ["a", "b", "c", "d"],
+            "cat": ["A", "B", "C", "B"],
+            "dates": [
+                datetime(2021, 1, 1),
+                datetime(2021, 2, 1),
+                datetime(2022, 9, 1),
+                datetime(2021, 2, 1),
+            ],
+        }
+    ).with_column(
+        pl.col("cat").cast(pl.Categorical),
+    )
+    assert df1.frame_equal(expected)
 
 
 def test_drop() -> None:
@@ -496,13 +697,15 @@ def test_file_buffer() -> None:
     f = BytesIO()
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_headers=False)
+    df = pl.read_csv(f, has_header=False)
     assert df.shape == (2, 6)
-    f.seek(0)
 
+    f = BytesIO()
+    f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
+    f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
     with pytest.raises(RuntimeError) as e:
-        df.read_parquet(f)
+        pl.read_parquet(f)
     assert "Invalid Parquet file" in str(e.value)
 
 
@@ -514,11 +717,20 @@ def test_set() -> None:
     df["new"] = np.random.rand(10)
     df[df["new"] > 0.5, "new"] = 1
 
+    # set 2D
     df = pl.DataFrame({"b": [0, 0]})
-    df[["A", "B"]] = [[1, 2], [1, 2]]  # type: ignore
+    df[["A", "B"]] = [[1, 2], [1, 2]]
     assert df["A"] == [1, 1]
     assert df["B"] == [2, 2]
 
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = 1
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [1, 1]
+    with pytest.raises(ValueError):
+        df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
+
+    # set tuple
     df = pl.DataFrame({"b": [0, 0]})
     df[0, "b"] = 1
     assert df[0, "b"] == 1
@@ -526,11 +738,28 @@ def test_set() -> None:
     df[0, 0] = 2
     assert df[0, "b"] == 2
 
+    # row and col selection have to be int or str
+    with pytest.raises(ValueError):
+        df[:, [1]] = 1  # type: ignore
+    with pytest.raises(ValueError):
+        df[True, :] = 1  # type: ignore
+
+    # needs to be a 2 element tuple
+    with pytest.raises(ValueError):
+        df[(1, 2, 3)] = 1  # type: ignore
+
+    # we cannot index with any type, such as bool
+    with pytest.raises(NotImplementedError):
+        df[True] = 1  # type: ignore
+
 
 def test_melt() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5], "C": [2, 4, 6]})
     melted = df.melt(id_vars="A", value_vars=["B", "C"])
-    assert melted["value"] == [1, 3, 4, 2, 4, 6]
+    assert all(melted["value"] == [1, 3, 5, 2, 4, 6])
+
+    melted = df.melt(id_vars="A", value_vars="B")
+    assert all(melted["value"] == [1, 3, 5])
 
 
 def test_shift() -> None:
@@ -585,8 +814,8 @@ def test_from_pandas_nan_to_none() -> None:
     out_true = pl.from_pandas(df)
     out_false = pl.from_pandas(df, nan_to_none=False)
     df.loc[2, "nulls"] = pd.NA
-    assert [val is None for val in out_true["nulls"]]
-    assert [np.isnan(val) for val in out_false["nulls"][1:]]
+    assert all(val is None for val in out_true["nulls"])
+    assert all(np.isnan(val) for val in out_false["nulls"][1:])
     with pytest.raises(ArrowInvalid, match="Could not convert"):
         pl.from_pandas(df, nan_to_none=False)
 
@@ -622,6 +851,12 @@ def test_concat() -> None:
     a = pl.from_records(((1, 2), (1, 2)))
     _ = pl.concat([a, a, a])
     assert a.shape == (2, 2)
+
+    with pytest.raises(ValueError):
+        _ = pl.concat([])
+
+    with pytest.raises(ValueError):
+        pl.concat([df, df], how="rubbish")
 
 
 def test_arg_where() -> None:
@@ -666,7 +901,7 @@ def test_df_stats(df: pl.DataFrame) -> None:
     df.sum()
     df.mean()
     df.median()
-    df.quantile(0.4)
+    df.quantile(0.4, "nearest")
 
 
 def test_df_fold() -> None:
@@ -688,6 +923,9 @@ def test_df_fold() -> None:
     assert len(df.min(axis=1)) == 3
     assert len(df.max(axis=1)) == 3
 
+    df_width_one = df[["a"]]
+    assert df_width_one.fold(lambda s1, s2: s1).series_equal(df["a"])
+
 
 def test_row_tuple() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
@@ -700,13 +938,13 @@ def test_read_csv_categorical() -> None:
     f = BytesIO()
     f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
     f.seek(0)
-    df = pl.DataFrame.read_csv(f, has_headers=True, dtype={"col1": pl.Categorical})
+    df = pl.read_csv(f, has_header=True, dtypes={"col1": pl.Categorical})
     assert df["col1"].dtype == pl.Categorical
 
 
 def test_df_apply() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df.apply(lambda x: len(x), None)
+    out = df.apply(lambda x: len(x), None).to_series()
     assert out.sum() == 9
 
 
@@ -742,10 +980,10 @@ def test_lazy_functions() -> None:
     ]
     expected = 1.0
     assert np.isclose(out.select_at_idx(0), expected)
-    assert np.isclose(pl.var(df["b"]), expected)
+    assert np.isclose(pl.var(df["b"]), expected)  # type: ignore
     expected = 1.0
     assert np.isclose(out.select_at_idx(1), expected)
-    assert np.isclose(pl.std(df["b"]), expected)
+    assert np.isclose(pl.std(df["b"]), expected)  # type: ignore
     expected = 3
     assert np.isclose(out.select_at_idx(2), expected)
     assert np.isclose(pl.max(df["b"]), expected)
@@ -889,10 +1127,38 @@ def test_rename(df: pl.DataFrame) -> None:
 def test_to_json(df: pl.DataFrame) -> None:
     # text based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s: str = df.to_json(to_string=True)  # type: ignore
-    # TODO add overload on to_json()
+    s = df.to_json(to_string=True)
     out = pl.read_json(s)
     assert df.frame_equal(out, null_equal=True)
+
+    file = BytesIO()
+    df.to_json(file)
+    file.seek(0)
+    s = file.read().decode("utf8")
+    out = pl.read_json(s)
+    assert df.frame_equal(out, null_equal=True)
+
+
+def test_to_csv() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3, 4, 5],
+            "bar": [6, 7, 8, 9, 10],
+            "ham": ["a", "b", "c", "d", "e"],
+        }
+    )
+    expected = "foo,bar,ham\n1,6,a\n2,7,b\n3,8,c\n4,9,d\n5,10,e\n"
+
+    # if no file argument is supplied, to_csv() will return the string
+    s = df.to_csv()
+    assert s == expected
+
+    # otherwise it will write to the file/iobuffer
+    file = BytesIO()
+    df.to_csv(file)
+    file.seek(0)
+    s = file.read().decode("utf8")
+    assert s == expected
 
 
 def test_from_rows() -> None:
@@ -925,7 +1191,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
-        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))  # type: ignore
+        .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )
 
@@ -1023,9 +1289,15 @@ def test_panic() -> None:
 def test_h_agg() -> None:
     df = pl.DataFrame({"a": [1, None, 3], "b": [1, 2, 3]})
 
-    assert df.sum(axis=1, null_strategy="ignore").to_list() == [2, 2, 6]
-    assert df.sum(axis=1, null_strategy="propagate").to_list() == [2, None, 6]
-    assert df.mean(axis=1, null_strategy="propagate")[1] is None
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="ignore"), pl.Series("a", [2, 2, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.sum(axis=1, null_strategy="propagate"), pl.Series("a", [2, None, 6])
+    )
+    pl.testing.assert_series_equal(
+        df.mean(axis=1, null_strategy="propagate"), pl.Series("a", [1.0, None, 3.0])
+    )
 
 
 def test_slicing() -> None:
@@ -1047,8 +1319,23 @@ def test_slicing() -> None:
 
 def test_apply_list_return() -> None:
     df = pl.DataFrame({"start": [1, 2], "end": [3, 5]})
-    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1)))  # type: ignore
+    out = df.apply(lambda r: pl.Series(range(r[0], r[1] + 1))).to_series()
     assert out.to_list() == [[1, 2, 3], [2, 3, 4, 5]]
+
+
+def test_apply_dataframe_return() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["c", "d", None]})
+
+    out = df.apply(lambda row: (row[0] * 10, "foo", True, row[-1]))
+    expected = pl.DataFrame(
+        {
+            "column_0": [10, 20, 30],
+            "column_1": ["foo", "foo", "foo"],
+            "column_2": [True, True, True],
+            "column_3": ["c", "d", None],
+        }
+    )
+    assert out.frame_equal(expected, null_equal=True)
 
 
 def test_groupby_cat_list() -> None:  # noqa: W191,E101
@@ -1139,7 +1426,7 @@ AAPL""".split(
 
     out = trades.join(quotes, on="dates", how="asof")
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
-    assert out["dates"].cast(int).to_list() == [
+    assert (out["dates"].cast(int)).to_list() == [
         1464183000023,
         1464183000038,
         1464183000048,
@@ -1202,24 +1489,6 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
-def test_diag_concat() -> None:
-    a = pl.DataFrame({"a": [1, 2]})
-    b = pl.DataFrame({"b": ["a", "b"], "c": [1, 2]})
-    c = pl.DataFrame({"a": [5, 7], "c": [1, 2], "d": [1, 2]})
-
-    out = pl.concat([a, b, c], how="diagonal")
-    expected = pl.DataFrame(
-        {
-            "a": [1, 2, None, None, 5, 7],
-            "b": [None, None, "a", "b", None, None],
-            "c": [None, None, 1, 2, 1, 2],
-            "d": [None, None, None, None, 1, 2],
-        }
-    )
-
-    assert out.frame_equal(expected, null_equal=True)
-
-
 def test_transpose() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     expected = pl.DataFrame(
@@ -1256,7 +1525,7 @@ def test_transpose() -> None:
     )
     assert expected.frame_equal(out)
 
-    def name_generator() -> tp.Iterator[str]:
+    def name_generator() -> Iterator[str]:
         base_name = "my_column_"
         count = 0
         while True:
@@ -1310,6 +1579,22 @@ def test_extension() -> None:
     assert sys.getrefcount(foos[0]) == base_count
 
 
+def test_groupby_order_dispatch() -> None:
+    df = pl.DataFrame({"x": list("bab"), "y": range(3)})
+    expected = pl.DataFrame({"x": ["b", "a"], "y_count": [2, 1]})
+    assert df.groupby("x", maintain_order=True).count().frame_equal(expected)
+    expected = pl.DataFrame({"x": ["b", "a"], "y_agg_list": [[0, 2], [1]]})
+    assert df.groupby("x", maintain_order=True).agg_list().frame_equal(expected)
+
+
+def test_partitioned_groupby_order() -> None:
+    # check if group ordering is maintained.
+    # we only have 30 groups, so this triggers a partitioned group by
+    df = pl.DataFrame({"x": [chr(v) for v in range(33, 63)], "y": range(30)})
+    out = df.groupby("x", maintain_order=True).agg(pl.all().list())
+    assert out["x"] == df["x"]
+
+
 def test_schema() -> None:
     df = pl.DataFrame(
         {"foo": [1, 2, 3], "bar": [6.0, 7.0, 8.0], "ham": ["a", "b", "c"]}
@@ -1325,3 +1610,252 @@ def test_df_schema_unique() -> None:
 
     with pytest.raises(Exception):
         df.rename({"b": "a"})
+
+
+def test_empty_projection() -> None:
+    assert pl.DataFrame({"a": [1, 2], "b": [3, 4]}).select([]).shape == (0, 0)
+
+
+def test_with_column_renamed() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    result = df.with_column_renamed("b", "c")
+    expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
+    assert result.frame_equal(expected)
+
+
+def test_fill_null() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
+    assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert df.fill_null("max").frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 3]}))
+
+
+def test_fill_nan() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
+    assert df.fill_nan(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
+    assert df["b"].fill_nan(5.0).to_list() == [3.0, 5.0]
+
+
+def test_shift_and_fill() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    result = df.shift_and_fill(periods=1, fill_value=0)
+    expected = pl.DataFrame(
+        {
+            "foo": [0, 1, 2],
+            "bar": [0, 6, 7],
+            "ham": ["0", "a", "b"],
+        }
+    )
+    assert result.frame_equal(expected)
+
+
+def test_is_duplicated() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
+    assert df.is_duplicated().series_equal(pl.Series("", [False, True, True]))
+
+
+def test_is_unique() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 2], "bar": [6, 7, 7]})
+    assert df.is_unique().series_equal(pl.Series("", [True, False, False]))
+
+
+def test_sample() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+    assert df.sample(n=2).shape == (2, 3)
+    assert df.sample(frac=0.4).shape == (1, 3)
+
+
+@pytest.mark.parametrize("in_place", [True, False])
+def test_shrink_to_fit(in_place: bool) -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
+
+    if in_place:
+        assert df.shrink_to_fit(in_place) is None
+    else:
+        assert df.shrink_to_fit(in_place).frame_equal(df)  # type: ignore
+
+
+def test_arithmetic() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
+
+    df_mul = df * 2
+    expected = pl.DataFrame({"a": [2, 4], "b": [6, 8]})
+    assert df_mul.frame_equal(expected)
+
+    df_div = df / 2
+    expected = pl.DataFrame({"a": [0.5, 1.0], "b": [1.5, 2.0]})
+    assert df_div.frame_equal(expected)
+
+    df_plus = df + 2
+    expected = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+    assert df_plus.frame_equal(expected)
+
+    df_minus = df - 2
+    expected = pl.DataFrame({"a": [-1, 0], "b": [1, 2]})
+    assert df_minus.frame_equal(expected)
+
+    df_mod = df % 2
+    expected = pl.DataFrame({"a": [1.0, 0.0], "b": [1.0, 0.0]})
+    assert df_mod.frame_equal(expected)
+
+    df2 = pl.DataFrame({"c": [10]})
+
+    out = df + df2
+    expected = pl.DataFrame({"a": [11.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df - df2
+    expected = pl.DataFrame({"a": [-9.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df / df2
+    expected = pl.DataFrame({"a": [0.1, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df * df2
+    expected = pl.DataFrame({"a": [10.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    out = df % df2
+    expected = pl.DataFrame({"a": [1.0, None], "b": [None, None]}).with_column(
+        pl.col("b").cast(pl.Float64)
+    )
+    assert out.frame_equal(expected, null_equal=True)
+
+    # cannot do arithmetics with a sequence
+    with pytest.raises(ValueError, match="Operation not supported"):
+        _ = df + [1]  # type: ignore
+
+
+def test_add_string() -> None:
+    df = pl.DataFrame({"a": ["hi", "there"], "b": ["hello", "world"]})
+    result = df + " hello"
+    expected = pl.DataFrame(
+        {"a": ["hi hello", "there hello"], "b": ["hello hello", "world hello"]}
+    )
+    assert result.frame_equal(expected)
+
+
+def test_getattr() -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0]})
+    testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
+
+    with pytest.raises(AttributeError):
+        _ = df.b
+
+
+def test_get_item() -> None:
+    """test all the methods to use [] on a dataframe"""
+    df = pl.DataFrame({"a": [1.0, 2.0], "b": [3, 4]})
+
+    # expression
+    assert df[pl.col("a")].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+
+    # numpy array
+    assert df[np.array([True, False])].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # tuple. The first element refers to the rows, the second element to columns
+    assert df[:, :].frame_equal(df)
+
+    # str, always refers to a column name
+    assert df["a"].series_equal(pl.Series("a", [1.0, 2.0]))
+
+    # int, always refers to a row index (zero-based): index=1 => second row
+    assert df[1].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
+
+    # range, refers to rows
+    assert df[range(1)].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # slice. Below an example of taking every second row
+    assert df[::2].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # numpy array; assumed to be row indices if integers, or columns if strings
+    # TODO: add boolean mask support
+    df[np.array([1])].frame_equal(pl.DataFrame({"a": [2.0], "b": [4]}))
+    df[np.array(["a"])].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    # note that we cannot use floats (even if they could be casted to integer without loss)
+    with pytest.raises(NotImplementedError):
+        _ = df[np.array([1.0])]
+
+    # sequences (lists or tuples; tuple only if length != 2)
+    # if strings or list of expressions, assumed to be column names
+    # if bools, assumed to be a row mask
+    # if integers, assumed to be row indices
+    assert df[["a", "b"]].frame_equal(df)
+    assert df[[pl.col("a"), pl.col("b")]].frame_equal(df)
+    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+
+    # pl.Series: like sequences, but only for rows
+    df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
+    with pytest.raises(NotImplementedError):
+        _ = df[pl.Series("", ["hello Im a string"])]
+
+
+def test_pivot_list() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 1], [2, 2], [3, 3]]})
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "1": [[1, 1], None, None],
+            "2": [None, [2, 2], None],
+            "3": [None, None, [3, 3]],
+        }
+    )
+
+    out = df.groupby("a").pivot("a", "b").first()["a", "1", "2", "3"].sort("a")
+    assert out.frame_equal(expected, null_equal=True)
+
+
+@pytest.mark.parametrize("as_series,inner_dtype", [(True, pl.Series), (False, list)])
+def test_to_dict(as_series: bool, inner_dtype: Any) -> None:
+    df = pl.DataFrame(
+        {
+            "A": [1, 2, 3, 4, 5],
+            "fruits": ["banana", "banana", "apple", "apple", "banana"],
+            "B": [5, 4, 3, 2, 1],
+            "cars": ["beetle", "audi", "beetle", "beetle", "beetle"],
+            "optional": [28, 300, None, 2, -30],
+        }
+    )
+
+    s = df.to_dict(as_series=as_series)
+    assert isinstance(s, dict)
+    for v in s.values():
+        assert isinstance(v, inner_dtype)
+        assert len(v) == len(df)
+
+
+def test_df_broadcast() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    out = df.with_column(pl.Series([[1, 2]]))
+    assert out.shape == (3, 2)
+
+
+def test_product() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "flt": [-1.0, 12.0, 9.0],
+            "bool_0": [True, False, True],
+            "bool_1": [True, True, True],
+        }
+    )
+    out = df.product()
+    expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
+    assert out.frame_equal(expected)

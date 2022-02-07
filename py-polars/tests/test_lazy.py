@@ -93,13 +93,21 @@ def test_binary_function() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     out = (
         df.lazy()
-        .with_column(map_binary(col("a"), col("b"), lambda a, b: a + b))
+        .with_column(
+            (map_binary(col("a"), col("b"), lambda a, b: a + b)).alias(
+                "binary_function"
+            )
+        )
         .collect()
     )
     assert out["binary_function"] == (out.a + out.b)
 
     # we can also avoid pl.col and insert column names directly
-    out = df.lazy().with_column(map_binary("a", "b", lambda a, b: a + b)).collect()
+    out = (
+        df.lazy()
+        .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
+        .collect()
+    )
     assert out["binary_function"] == (out.a + out.b)
 
 
@@ -528,9 +536,11 @@ def test_regex_selection() -> None:
 
 
 def test_exclude_selection() -> None:
-    df = pl.DataFrame({"a": [1], "b": [1], "c": [1]}).lazy()
+    df = pl.DataFrame({"a": [1], "b": [1], "c": [True]}).lazy()
 
     assert df.select([pl.exclude("a")]).columns == ["b", "c"]
+    assert df.select(pl.all().exclude(pl.Boolean)).columns == ["a", "b"]
+    assert df.select(pl.all().exclude([pl.Boolean])).columns == ["a", "b"]
 
 
 def test_col_series_selection() -> None:
@@ -589,7 +599,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
     with pytest.raises(RuntimeError):
         (
             df.sort("fruits").select(
-                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]  # type: ignore
+                [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
             )
         )
 
@@ -600,6 +610,12 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
 
         assert out[0, "B"] == [2, 3]
         assert out[4, "B"] == [1, 4]
+
+    out = df.sort("fruits").select(
+        [col("B").reverse().take(pl.lit(1)).list().over("fruits"), "fruits"]
+    )
+    assert out[0, "B"] == 3
+    assert out[4, "B"] == 4
 
 
 def test_select_by_col_list(fruits_cars: pl.DataFrame) -> None:
@@ -622,16 +638,10 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
             pl.col("A").rolling_sum(3, min_periods=1).alias("4"),
             pl.col("A").rolling_sum(3).alias("4b"),
             # below we use .round purely for the ability to do .frame_equal()
-            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
-            pl.col("A").rolling_std(3).alias("std2"),
-            pl.col("A").rolling_var(3, min_periods=1).round(decimals=4).alias("var"),
-            pl.col("A").rolling_var(3).alias("var2"),
+            pl.col("A").rolling_std(3).round(1).alias("std"),
+            pl.col("A").rolling_var(3).round(1).alias("var"),
         ]
     )
-
-    # TODO: rolling_std & rolling_var return nan instead of null if it cant compute
-    out[0, "std"] = None
-    out[0, "var"] = None
 
     assert out.frame_equal(
         pl.DataFrame(
@@ -644,27 +654,109 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
                 "3b": [None, None, 3, 4, 5],
                 "4": [1, 3, 6, 9, 12],
                 "4b": [None, None, 6, 9, 12],
-                "std": [None, 0.7071, 1, 1, 1],
-                "std2": [None, None, 1, 1, 1],
-                "var": [None, 0.5, 1, 1, 1],
-                "var2": [None, None, 1, 1, 1],
+                "std": [None, None, 1.0, 1.0, 1.0],
+                "var": [None, None, 1.0, 1.0, 1.0],
             }
         )
     )
 
+    out_nan = df.select(
+        [
+            pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
+            pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
+        ]
+    )
+
+    assert out_nan[0, "std"] != out_nan[0, "std"]  # true if value is NaN
+    assert out_nan[0, "var"] != out_nan[0, "var"]  # true if value is NaN
+
 
 def test_rolling_apply() -> None:
-    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0])
-    out = s.rolling_apply(window_size=3, function=lambda s: s.std())
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
+    out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
     assert out[0] is None
     assert out[1] is None
     assert out[2] == 4.358898943540674
+    assert out.dtype is pl.Float64
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
+    out = s.rolling_apply(function=lambda s: s.std(), window_size=3)
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 4.358899116516113
+    assert out.dtype is pl.Float32
+
+    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
+    out = s.rolling_apply(function=lambda s: s.sum(), window_size=3)
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 12
+    assert out.dtype is pl.Int32
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float64)
+    out = s.rolling_apply(
+        function=lambda s: s.std(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 14.224392195567912
+    assert out.dtype is pl.Float64
+
+    s = pl.Series("A", [1.0, 2.0, 9.0, 2.0, 13.0], dtype=pl.Float32)
+    out = s.rolling_apply(
+        function=lambda s: s.std(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 14.22439193725586
+    assert out.dtype is pl.Float32
+
+    s = pl.Series("A", [1, 2, 9, None, 13], dtype=pl.Int32)
+    out = s.rolling_apply(
+        function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
+    )
+    assert out[0] is None
+    assert out[1] is None
+    assert out[2] == 32.0
+    assert out.dtype is pl.Float64
+    s = pl.Series("A", [1, 2, 9, 2, 10])
+
+    # compare rolling_apply to specific rolling functions
+    s = pl.Series("A", list(range(5)), dtype=pl.Float64)
+    roll_app_sum = s.rolling_apply(
+        function=lambda s: s.sum(),
+        window_size=3,
+        weights=[1.0, 2.1, 3.2],
+        min_periods=2,
+        center=True,
+    )
+
+    roll_sum = s.rolling_sum(
+        window_size=3, weights=[1.0, 2.1, 3.2], min_periods=2, center=True
+    )
+
+    assert (roll_app_sum - roll_sum).abs().sum() < 0.0001
+
+    s = pl.Series("A", list(range(6)), dtype=pl.Float64)
+    roll_app_std = s.rolling_apply(
+        function=lambda s: s.std(),
+        window_size=4,
+        weights=[1.0, 2.0, 3.0, 0.1],
+        min_periods=3,
+        center=False,
+    )
+
+    roll_std = s.rolling_std(
+        window_size=4, weights=[1.0, 2.0, 3.0, 0.1], min_periods=3, center=False
+    )
+
+    assert (roll_app_std - roll_std).abs().sum() < 0.0001
 
 
 def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
     out = df.select(
-        [  # type: ignore
+        [
             "fruits",
             col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
             col("B").min().over("fruits").alias("B_by_fruits_min2"),
@@ -753,7 +845,7 @@ def test_clip() -> None:
 
 
 def test_argminmax() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 1, 2, 2, 2]})
     out = df.select(
         [
             pl.col("a").arg_min().alias("min"),
@@ -761,6 +853,12 @@ def test_argminmax() -> None:
         ]
     )
     assert out["max"][0] == 4
+    assert out["min"][0] == 0
+
+    out = df.groupby("b", maintain_order=True).agg(
+        [pl.col("a").arg_min().alias("min"), pl.col("a").arg_max().alias("max")]
+    )
+    assert out["max"][0] == 1
     assert out["min"][0] == 0
 
 
@@ -789,8 +887,7 @@ def test_is_in() -> None:
 def test_rename() -> None:
     lf = pl.DataFrame({"a": [1], "b": [2], "c": [3]}).lazy()
     out = lf.rename({"a": "foo", "b": "bar"}).collect()
-    # todo: preserve column order
-    assert out.columns == ["c", "foo", "bar"]
+    assert out.columns == ["foo", "bar", "c"]
 
 
 def test_drop_columns() -> None:
@@ -860,14 +957,15 @@ def test_join_suffix() -> None:
 
 def test_str_concat() -> None:
     df = pl.DataFrame({"foo": [1, None, 2]})
-    df = df.select(pl.col("foo").str_concat("-"))
+    df = df.select(pl.col("foo").str.concat("-"))
     assert df[0, 0] == "1-null-2"
 
 
-def test_collect_all(df: pl.DataFrame) -> None:
+@pytest.mark.parametrize("no_optimization", [False, True])
+def test_collect_all(df: pl.DataFrame, no_optimization: bool) -> None:
     lf1 = df.lazy().select(pl.col("int").sum())
     lf2 = df.lazy().select((pl.col("floats") * 2).sum())
-    out = pl.collect_all([lf1, lf2])
+    out = pl.collect_all([lf1, lf2], no_optimization=no_optimization)
     assert out[0][0, 0] == 6
     assert out[1][0, 0] == 12.0
 
@@ -955,13 +1053,43 @@ def test_median(fruits_cars: pl.DataFrame) -> None:
 
 
 def test_quantile(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.lazy().quantile(0.25).collect()["A"][0] == 2
-    assert fruits_cars.select(pl.col("A").quantile(0.25))["A"][0] == 2
+    assert fruits_cars.lazy().quantile(0.25, "nearest").collect()["A"][0] == 2
+    assert fruits_cars.select(pl.col("A").quantile(0.25, "nearest"))["A"][0] == 2
+
+    assert fruits_cars.lazy().quantile(0.24, "lower").collect()["A"][0] == 1
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "lower"))["A"][0] == 1
+
+    assert fruits_cars.lazy().quantile(0.26, "higher").collect()["A"][0] == 3
+    assert fruits_cars.select(pl.col("A").quantile(0.26, "higher"))["A"][0] == 3
+
+    assert fruits_cars.lazy().quantile(0.24, "midpoint").collect()["A"][0] == 1.5
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "midpoint"))["A"][0] == 1.5
+
+    assert fruits_cars.lazy().quantile(0.24, "linear").collect()["A"][0] == 1.96
+    assert fruits_cars.select(pl.col("A").quantile(0.24, "linear"))["A"][0] == 1.96
 
 
 def test_is_between(fruits_cars: pl.DataFrame) -> None:
     assert fruits_cars.select(pl.col("A").is_between(2, 4))["is_between"].series_equal(  # type: ignore
         pl.Series("is_between", [False, False, True, False, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, False))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, False, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, False]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, False, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, True))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, True]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [False, True]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, False, True, True, False])
+    )
+    assert fruits_cars.select(pl.col("A").is_between(2, 4, [True, False]))["is_between"].series_equal(  # type: ignore
+        pl.Series("is_between", [False, True, True, False, False])
     )
 
 
@@ -1018,3 +1146,10 @@ def test_lower_bound_upper_bound(fruits_cars: pl.DataFrame) -> None:
     assert res_expr["A"][0] < -10_000_000
     res_expr = fruits_cars.select(pl.col("A").upper_bound())
     assert res_expr["A"][0] > 10_000_000
+
+
+def test_nested_min_max() -> None:
+    df = pl.DataFrame({"a": [1], "b": [2], "c": [3], "d": [4]})
+    out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
+    assert out.shape == (1, 5)
+    assert out["t"][0] == 3

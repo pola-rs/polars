@@ -155,10 +155,10 @@ fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &
 
 // schema is not used if regex not activated
 #[allow(unused_variables)]
-fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
+fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>> {
     let mut exclude = vec![];
     expr.into_iter().for_each(|e| {
-        if let Expr::Exclude(_, names) = e {
+        if let Expr::Exclude(_, to_exclude) = e {
             #[cfg(feature = "regex")]
             {
                 // instead of matching the names for regex patterns
@@ -166,28 +166,68 @@ fn prepare_excluded(expr: &Expr, schema: &Schema) -> Vec<Arc<str>> {
                 // reuse the `replace_regex` function. This is a bit
                 // slower but DRY.
                 let mut buf = vec![];
-                for name in names {
-                    let e = Expr::Column(name.clone());
-                    replace_regex(&e, &mut buf, schema);
-                    for col in buf.drain(..) {
-                        if let Expr::Column(name) = col {
-                            exclude.push(name)
+                for to_exclude_single in to_exclude {
+                    match to_exclude_single {
+                        Excluded::Name(name) => {
+                            let e = Expr::Column(name.clone());
+                            replace_regex(&e, &mut buf, schema);
+                            for col in buf.drain(..) {
+                                if let Expr::Column(name) = col {
+                                    exclude.push(name)
+                                }
+                            }
+                        }
+                        Excluded::Dtype(dt) => {
+                            for fld in schema.fields() {
+                                if fld.data_type() == dt {
+                                    exclude.push(Arc::from(fld.name().as_ref()))
+                                }
+                            }
                         }
                     }
                 }
             }
+
             #[cfg(not(feature = "regex"))]
             {
-                exclude.extend_from_slice(names)
+                for to_exclude_single in to_exclude {
+                    match to_exclude_single {
+                        Excluded::Name(name) => exclude.push(name.clone()),
+                        Excluded::Dtype(dt) => {
+                            for fld in schema.fields() {
+                                if matches!(fld.data_type(), dt) {
+                                    exclude.push(Arc::from(fld.name().as_ref()))
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     });
+    for mut expr in keys.iter() {
+        // Allow a number of aliases of a column expression, still exclude column from aggregation
+        loop {
+            match expr {
+                Expr::Column(name) => {
+                    exclude.push(name.clone());
+                    break;
+                }
+                Expr::Alias(e, _) => {
+                    expr = e;
+                }
+                _ => {
+                    break;
+                }
+            }
+        }
+    }
     exclude
 }
 
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
-pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr> {
+pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
 
     for mut expr in exprs {
@@ -206,22 +246,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema) -> Vec<Expr
 
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
-            let exclude = prepare_excluded(&expr, schema);
-
-            // if count wildcard. count one column
-            if has_expr(&expr, |e| matches!(e, Expr::Agg(AggExpr::Count(_)))) {
-                let new_name = Arc::from(schema.field(0).unwrap().name().as_str());
-                let expr = rename_expr_root_name(&expr, new_name).unwrap();
-
-                let expr = if let Expr::Alias(_, _) = &expr {
-                    expr
-                } else {
-                    Expr::Alias(Box::new(expr), Arc::from("count"))
-                };
-                result.push(expr);
-
-                continue;
-            }
+            let exclude = prepare_excluded(&expr, schema, keys);
             // this path prepares the wildcard as input for the Function Expr
             if has_expr(
                 &expr,

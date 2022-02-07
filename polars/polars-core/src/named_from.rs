@@ -1,4 +1,4 @@
-use crate::chunked_array::builder::get_list_builder;
+use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
 use crate::prelude::*;
 use std::borrow::Cow;
 
@@ -6,7 +6,37 @@ pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
     fn new(name: &str, _: T) -> Self;
 }
-//
+
+pub trait NamedFromOwned<T> {
+    /// Initialize by name and values.
+    fn from_vec(name: &str, _: T) -> Self;
+}
+
+macro_rules! impl_named_from_owned {
+    ($type:ty, $polars_type:ident) => {
+        impl NamedFromOwned<$type> for Series {
+            fn from_vec(name: &str, v: $type) -> Self {
+                ChunkedArray::<$polars_type>::from_vec(name, v).into_series()
+            }
+        }
+    };
+}
+
+#[cfg(feature = "dtype-i8")]
+impl_named_from_owned!(Vec<i8>, Int8Type);
+#[cfg(feature = "dtype-i16")]
+impl_named_from_owned!(Vec<i16>, Int16Type);
+impl_named_from_owned!(Vec<i32>, Int32Type);
+impl_named_from_owned!(Vec<i64>, Int64Type);
+#[cfg(feature = "dtype-u8")]
+impl_named_from_owned!(Vec<u8>, UInt8Type);
+#[cfg(feature = "dtype-u16")]
+impl_named_from_owned!(Vec<u16>, UInt16Type);
+impl_named_from_owned!(Vec<u32>, UInt32Type);
+impl_named_from_owned!(Vec<u64>, UInt64Type);
+impl_named_from_owned!(Vec<f32>, Float32Type);
+impl_named_from_owned!(Vec<f64>, Float64Type);
+
 macro_rules! impl_named_from {
     ($type:ty, $polars_type:ident, $method:ident) => {
         impl<T: AsRef<$type>> NamedFrom<T, $type> for Series {
@@ -58,14 +88,26 @@ impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();
-        let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+        let list_cap = series_slice.len();
 
         let dt = series_slice[0].dtype();
-        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
-        for series in series_slice {
-            builder.append_series(series)
+
+        // inner type is also list so we need the anonymous builder
+        if matches!(dt, DataType::List(_)) {
+            let mut builder = AnonymousListBuilder::new(name, list_cap);
+            for s in series_slice {
+                builder.append_series(s)
+            }
+            builder.finish().into_series()
+        } else {
+            let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
+
+            let mut builder = get_list_builder(dt, values_cap, list_cap, name);
+            for series in series_slice {
+                builder.append_series(series)
+            }
+            builder.finish().into_series()
         }
-        builder.finish().into_series()
     }
 }
 
@@ -93,6 +135,14 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     fn new(name: &str, v: T) -> Self {
         Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
+    }
+}
+
+impl NamedFrom<&Series, str> for Series {
+    fn new(name: &str, s: &Series) -> Self {
+        let mut s = s.clone();
+        s.rename(name);
+        s
     }
 }
 
@@ -155,5 +205,13 @@ impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
 impl<T: PolarsObject, S: AsRef<[Option<T>]>> NamedFrom<S, [Option<T>]> for ObjectChunked<T> {
     fn new(name: &str, v: S) -> Self {
         ObjectChunked::new_from_opt_slice(name, v.as_ref())
+    }
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// Specialization that prevents an allocation
+    /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
+    pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
+        ChunkedArray::from_vec(name, v)
     }
 }

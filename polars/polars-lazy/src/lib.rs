@@ -92,6 +92,7 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
+//! use polars_arrow::prelude::QuantileInterpolOptions;
 //!
 //! fn example() -> Result<DataFrame> {
 //!     let df = df!(
@@ -105,7 +106,7 @@
 //!     .agg([
 //!         col("rain").min(),
 //!         col("rain").sum(),
-//!         col("rain").quantile(0.5).alias("median_rain"),
+//!         col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
 //!     ])
 //!     .sort("date", false)
 //!     .collect()
@@ -185,14 +186,16 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
-#[cfg(all(feature = "datafusion", feature = "compile"))]
-mod datafusion;
+#[cfg(all(feature = "dot_diagram", feature = "compile"))]
+mod dot;
 #[cfg(feature = "compile")]
 pub mod dsl;
 #[cfg(feature = "compile")]
 mod dummies;
 #[cfg(feature = "compile")]
 pub mod frame;
+#[cfg(feature = "compile")]
+mod from;
 #[cfg(feature = "compile")]
 pub mod functions;
 #[cfg(feature = "compile")]

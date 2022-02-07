@@ -30,3 +30,5 @@ sphinxcontrib-napoleon
 commonmark==0.9.1
 numpydoc==1.1.0
 
+# Stub files
+pandas-stubs==1.2.0.39

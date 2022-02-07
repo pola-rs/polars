@@ -10,16 +10,13 @@ use crate::chunked_array::{
     AsSinglePtr, ChunkIdIter,
 };
 use crate::fmt::FmtList;
-#[cfg(feature = "pivot")]
-use crate::frame::groupby::pivot::*;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
-#[cfg(feature = "object")]
-use std::any::Any;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
 use std::ops::{BitAnd, BitOr, BitXor};
 
@@ -60,7 +57,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         (&self.0).into_partial_ord_inner()
     }
 
-    fn vec_hash(&self, random_state: RandomState) -> AlignedVec<u64> {
+    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
         self.0.vec_hash(random_state)
     }
 
@@ -68,65 +65,20 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_min(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_min(groups)
     }
 
-    fn agg_max(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_max(groups)
     }
 
-    fn agg_sum(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_sum(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_sum(groups)
     }
 
-    fn agg_first(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_first(groups)
-    }
-
-    fn agg_last(&self, groups: &[(u32, Vec<u32>)]) -> Series {
-        self.0.agg_last(groups)
-    }
-
-    fn agg_n_unique(&self, groups: &[(u32, Vec<u32>)]) -> Option<UInt32Chunked> {
-        self.0.agg_n_unique(groups)
-    }
-
-    fn agg_list(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
-    }
-
-    fn agg_quantile(&self, groups: &[(u32, Vec<u32>)], quantile: f64) -> Option<Series> {
-        self.0.agg_quantile(groups, quantile)
-    }
-
-    fn agg_median(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_median(groups)
-    }
-    #[cfg(feature = "lazy")]
-    fn agg_valid_count(&self, groups: &[(u32, Vec<u32>)]) -> Option<Series> {
-        self.0.agg_valid_count(groups)
-    }
-
-    #[cfg(feature = "pivot")]
-    fn pivot<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-        agg_type: PivotAgg,
-    ) -> Result<DataFrame> {
-        self.0.pivot(pivot_series, keys, groups, agg_type)
-    }
-
-    #[cfg(feature = "pivot")]
-    fn pivot_count<'a>(
-        &self,
-        pivot_series: &'a Series,
-        keys: Vec<Series>,
-        groups: &[(u32, Vec<u32>)],
-    ) -> Result<DataFrame> {
-        self.0.pivot_count(pivot_series, keys, groups)
     }
     fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
         HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
@@ -144,18 +96,13 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
-    fn group_tuples(&self, multithreaded: bool) -> GroupTuples {
-        IntoGroupTuples::group_tuples(&self.0, multithreaded)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 
     #[cfg(feature = "sort_multiple")]
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
         self.0.argsort_multiple(by, reverse)
-    }
-
-    fn str_value(&self, index: usize) -> Cow<str> {
-        // get AnyValue
-        Cow::Owned(format!("{}", self.get(index)))
     }
 }
 
@@ -212,12 +159,22 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            // todo! add object
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
             ))
         }
     }
@@ -228,10 +185,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn mean(&self) -> Option<f64> {
         self.0.mean()
-    }
-
-    fn median(&self) -> Option<f64> {
-        self.0.median()
     }
 
     fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
@@ -279,14 +232,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn rechunk(&self) -> Series {
         ChunkOps::rechunk(&self.0).into_series()
-    }
-
-    fn head(&self, length: Option<usize>) -> Series {
-        self.0.head(length).into_series()
-    }
-
-    fn tail(&self, length: Option<usize>) -> Series {
-        self.0.tail(length).into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
@@ -388,11 +333,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
     }
-    fn mean_as_series(&self) -> Series {
-        ChunkAggSeries::mean_as_series(&self.0)
-    }
     fn median_as_series(&self) -> Series {
-        ChunkAggSeries::median_as_series(&self.0)
+        QuantileAggSeries::median_as_series(&self.0)
     }
     fn var_as_series(&self) -> Series {
         VarAggSeries::var_as_series(&self.0)
@@ -400,8 +342,12 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn std_as_series(&self) -> Series {
         VarAggSeries::std_as_series(&self.0)
     }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        ChunkAggSeries::quantile_as_series(&self.0, quantile)
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        QuantileAggSeries::quantile_as_series(&self.0, quantile, interpol)
     }
 
     fn fmt_list(&self) -> String {
@@ -409,22 +355,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_n(&self, n: usize, with_replacement: bool) -> Result<Series> {
-        self.0
-            .sample_n(n, with_replacement)
-            .map(|ca| ca.into_series())
-    }
-
-    #[cfg(feature = "random")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
-    fn sample_frac(&self, frac: f64, with_replacement: bool) -> Result<Series> {
-        self.0
-            .sample_frac(frac, with_replacement)
-            .map(|ca| ca.into_series())
     }
 
     #[cfg(feature = "is_in")]
@@ -436,10 +366,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         RepeatBy::repeat_by(&self.0, by)
     }
 
-    #[cfg(feature = "object")]
-    fn as_any(&self) -> &dyn Any {
-        &self.0
-    }
     #[cfg(feature = "mode")]
     fn mode(&self) -> Result<Series> {
         Ok(self.0.mode()?.into_series())

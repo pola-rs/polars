@@ -10,13 +10,15 @@ pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
 
 impl DateChunked {
     pub fn as_date_iter(&self) -> impl Iterator<Item = Option<NaiveDate>> + TrustedLen + '_ {
-        self.downcast_iter()
-            .map(|iter| {
-                iter.into_iter()
-                    .map(|opt_v| opt_v.copied().map(date32_to_date))
-            })
-            .flatten()
-            .trust_my_length(self.len())
+        // safety: we know the iterators len
+        unsafe {
+            self.downcast_iter()
+                .flat_map(|iter| {
+                    iter.into_iter()
+                        .map(|opt_v| opt_v.copied().map(date32_to_date))
+                })
+                .trust_my_length(self.len())
+        }
     }
 
     /// Extract month from underlying NaiveDate representation.
@@ -74,11 +76,8 @@ impl DateChunked {
     }
 
     pub fn new_from_naive_date(name: &str, v: &[NaiveDate]) -> Self {
-        let unit = v
-            .iter()
-            .map(|v| naive_date_to_date(*v))
-            .collect::<AlignedVec<_>>();
-        Int32Chunked::new_from_aligned_vec(name, unit).into()
+        let unit = v.iter().map(|v| naive_date_to_date(*v)).collect::<Vec<_>>();
+        Int32Chunked::from_vec(name, unit).into()
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
@@ -92,30 +91,5 @@ impl DateChunked {
             }),
         )
         .into()
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::prelude::*;
-    use chrono::NaiveDateTime;
-
-    #[test]
-    fn from_datetime() {
-        let datetimes: Vec<_> = [
-            "1988-08-25 00:00:16",
-            "2015-09-05 23:56:04",
-            "2012-12-21 00:00:00",
-        ]
-        .iter()
-        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
-        .collect();
-
-        // NOTE: the values are checked and correct.
-        let dt = DatetimeChunked::new_from_naive_datetime("name", &datetimes);
-        assert_eq!(
-            [588470416000, 1441497364000, 1356048000000],
-            dt.cont_slice().unwrap()
-        );
     }
 }

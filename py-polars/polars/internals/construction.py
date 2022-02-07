@@ -1,5 +1,5 @@
 import warnings
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Union
 
 import numpy as np
@@ -10,6 +10,7 @@ from polars.datatypes import (
     DataType,
     Date,
     Datetime,
+    Duration,
     Float32,
     Time,
     py_type_to_arrow_type,
@@ -57,11 +58,26 @@ def series_to_pyseries(
     return values.inner()
 
 
-def arrow_to_pyseries(name: str, values: "pa.Array") -> "PySeries":
+def arrow_to_pyseries(
+    name: str, values: "pa.Array", rechunk: bool = True
+) -> "PySeries":
     """
     Construct a PySeries from an Arrow array.
     """
     array = coerce_arrow(values)
+    if hasattr(array, "num_chunks"):
+        if array.num_chunks > 1:
+            it = array.iterchunks()
+            pys = PySeries.from_arrow(name, next(it))
+            for a in it:
+                pys.append(PySeries.from_arrow(name, a))
+        else:
+            pys = PySeries.from_arrow(name, array.combine_chunks())
+
+        if rechunk:
+            pys.rechunk(in_place=True)
+
+        return pys
     return PySeries.from_arrow(name, array)
 
 
@@ -111,7 +127,7 @@ def sequence_to_pyseries(
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
 
-        if dtype in (Date, Datetime, Time, Categorical):
+        if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(str(dtype), True)
 
         return pyseries
@@ -120,16 +136,30 @@ def sequence_to_pyseries(
         value = _get_first_non_none(values)
         dtype_ = type(value) if value is not None else float
 
-        if dtype_ == date or dtype_ == datetime:
+        if dtype_ in {date, datetime, timedelta}:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
                 )
+            # let arrow infer dtype if not timedelta
+            # arrow uses microsecond durations by default, not supported yet.
             return arrow_to_pyseries(name, pa.array(values))
 
         elif dtype_ == list or dtype_ == tuple:
             nested_value = _get_first_non_none(value)
             nested_dtype = type(nested_value) if value is not None else float
+
+            # recursively call Series constructor
+            if nested_dtype == list:
+                return sequence_to_pyseries(
+                    name=name,
+                    values=[
+                        sequence_to_pyseries(name, seq, dtype=None, strict=strict)
+                        for seq in values
+                    ],
+                    dtype=None,
+                    strict=strict,
+                )
 
             # logs will show a panic if we infer wrong dtype
             # and its hard to error from rust side
@@ -166,6 +196,8 @@ def sequence_to_pyseries(
 
         elif dtype_ == pli.Series:
             return PySeries.new_series_list(name, [v.inner() for v in values], strict)
+        elif dtype_ == PySeries:
+            return PySeries.new_series_list(name, values, strict)
 
         else:
             constructor = py_type_to_constructor(dtype_)
@@ -203,11 +235,11 @@ def _pandas_series_to_arrow(
         arr = pa.compute.cast(arr, pa.int64())
         return pa.compute.cast(arr, pa.timestamp("ms"))
     elif dtype == "object" and len(values) > 0:
-        if isinstance(values.iloc[0], str):
+        if isinstance(values.values[0], str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
 
         # array is null array, we set to a float64 array
-        if values.iloc[0] is None and min_len is not None:
+        if values.values[0] is None and min_len is not None:
             return pa.nulls(min_len, pa.float64())
         else:
             return pa.array(values, from_pandas=nan_to_none)
@@ -385,20 +417,44 @@ def arrow_to_pydf(
             ) from e
 
     data_dict = {}
+    # dictionaries cannot be build in different batches (categorical does not allow that)
+    # so we rechunk them and create them separate.
+    dictionary_cols = {}
+    names = []
     for i, column in enumerate(data):
         # extract the name before casting
         if column._name is None:
             name = f"column_{i}"
         else:
             name = column._name
+        names.append(name)
 
         column = coerce_arrow(column)
-        data_dict[name] = column
+        if pa.types.is_dictionary(column.type):
+            ps = arrow_to_pyseries(name, column, rechunk)
+            dictionary_cols[i] = pli.wrap_s(ps)
+        else:
+            data_dict[name] = column
 
-    batches = pa.table(data_dict).to_batches()
-    pydf = PyDataFrame.from_arrow_record_batches(batches)
+    if len(data_dict) > 0:
+        tbl = pa.table(data_dict)
+
+        # path for table without rows that keeps datatype
+        if tbl.shape[0] == 0:
+            pydf = pli.DataFrame._from_pandas(tbl.to_pandas())._df
+        else:
+            pydf = PyDataFrame.from_arrow_record_batches(tbl.to_batches())
+    else:
+        pydf = pli.DataFrame([])._df
     if rechunk:
         pydf = pydf.rechunk()
+
+    if len(dictionary_cols) > 0:
+        df = pli.wrap_df(pydf)
+        for i, s in dictionary_cols.items():
+            df[s.name] = s
+        df = df[names]
+        pydf = df._df
     return pydf
 
 
@@ -438,39 +494,20 @@ def pandas_to_pydf(
     return arrow_to_pydf(arrow_table, columns=columns, rechunk=rechunk)
 
 
-def coerce_arrow(array: "pa.Array") -> "pa.Array":
-    # also coerces timezone to naive representation
-    # units are accounted for by pyarrow
-    if isinstance(array, pa.TimestampArray):
-        if array.type.tz is not None:
-            warnings.warn(
-                "Conversion of timezone aware to naive datetimes. TZ information may be lost",
-            )
-        ts_ms = pa.compute.cast(array, pa.timestamp("ms"), safe=False)
-        ms = pa.compute.cast(ts_ms, pa.int64())
-        del ts_ms
-        array = pa.compute.cast(ms, pa.timestamp("ms"))
-        del ms
+def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
+    if isinstance(array, pa.TimestampArray) and array.type.tz is not None:
+        warnings.warn(
+            "Conversion of timezone aware to naive datetimes. TZ information may be lost",
+        )
+
     # note: Decimal256 could not be cast to float
-    elif isinstance(array.type, pa.Decimal128Type):
+    if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
 
-    if hasattr(array, "num_chunks") and array.num_chunks > 1:
-        # we have to coerce before combining chunks, because pyarrow panics if
-        # offsets overflow
-        if pa.types.is_string(array.type):
-            array = pa.compute.cast(array, pa.large_utf8())
-        elif pa.types.is_list(array.type):
-            # pyarrow does not seem to support casting from list to largelist
-            # so we use convert to large list ourselves and do the re-alloc on polars/arrow side
-            chunks = []
-            for arr in array.iterchunks():
-                chunks.append(pli.Series._from_arrow("", arr).to_arrow())
-            array = pa.chunked_array(chunks)
-
+    if hasattr(array, "num_chunks") and array.num_chunks > 1 and rechunk:
         # small integer keys can often not be combined, so let's already cast
         # to the uint32 used by polars
-        elif pa.types.is_dictionary(array.type) and (
+        if pa.types.is_dictionary(array.type) and (
             pa.types.is_int8(array.type.index_type)
             or pa.types.is_uint8(array.type.index_type)
             or pa.types.is_int16(array.type.index_type)
@@ -479,7 +516,5 @@ def coerce_arrow(array: "pa.Array") -> "pa.Array":
         ):
             array = pa.compute.cast(
                 array, pa.dictionary(pa.uint32(), pa.large_string())
-            )
-
-        array = array.combine_chunks()
+            ).combine_chunks()
     return array

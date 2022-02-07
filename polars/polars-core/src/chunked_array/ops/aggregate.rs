@@ -5,7 +5,9 @@ use crate::datatypes::BooleanChunked;
 use crate::{datatypes::PolarsNumericType, prelude::*, utils::CustomIterTools};
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::{NumCast, ToPrimitive};
+use num::Float;
+use num::ToPrimitive;
+use polars_arrow::prelude::QuantileInterpolOptions;
 use std::ops::Add;
 
 /// Aggregations that return Series of unit length. Those can be used in broadcasting operations.
@@ -22,16 +24,8 @@ pub trait ChunkAggSeries {
     fn min_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the mean of the ChunkedArray as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the median of the ChunkedArray as a new Series of length 1.
-    fn median_as_series(&self) -> Series {
-        unimplemented!()
-    }
-    /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
+    /// Get the product of the ChunkedArray as a new Series of length 1.
+    fn prod_as_series(&self) -> Series {
         unimplemented!()
     }
 }
@@ -41,6 +35,17 @@ pub trait VarAggSeries {
     fn var_as_series(&self) -> Series;
     /// Get the standard deviation of the ChunkedArray as a new Series of length 1.
     fn std_as_series(&self) -> Series;
+}
+
+pub trait QuantileAggSeries {
+    /// Get the median of the ChunkedArray as a new Series of length 1.
+    fn median_as_series(&self) -> Series;
+    /// Get the quantile of the ChunkedArray as a new Series of length 1.
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series>;
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
@@ -75,50 +80,309 @@ where
     }
 
     fn mean(&self) -> Option<f64> {
-        let len = (self.len() - self.null_count()) as f64;
-        self.sum().map(|v| v.to_f64().unwrap() / len)
-    }
-
-    fn median(&self) -> Option<f64> {
-        let null_count = self.null_count();
-        let value_len = self.len() - null_count;
-        match value_len {
-            0 => None,
+        match self.dtype() {
+            DataType::Float64 => {
+                let len = (self.len() - self.null_count()) as f64;
+                self.sum().map(|v| v.to_f64().unwrap() / len)
+            }
             _ => {
-                let sorted = ChunkSort::sort(self, false);
-
-                // After sorting the nulls are at the start of the array.
-                let mid = value_len / 2 + null_count;
-                if value_len % 2 == 0 {
-                    NumCast::from(sorted.get(mid - 1).unwrap() + sorted.get(mid).unwrap())
-                        .map(|v: f64| v / 2.0)
+                let null_count = self.null_count();
+                let len = self.len();
+                if null_count == len {
+                    None
                 } else {
-                    sorted.get(mid).map(|v| NumCast::from(v).unwrap())
+                    let mut acc = 0.0;
+                    let len = (len - null_count) as f64;
+
+                    for arr in self.downcast_iter() {
+                        if arr.null_count() > 0 {
+                            for v in arr.into_iter().flatten() {
+                                // safety
+                                // all these types can be coerced to f64
+                                unsafe {
+                                    let val = v.to_f64().unwrap_unchecked();
+                                    acc += val
+                                }
+                            }
+                        } else {
+                            for v in arr.values().as_slice() {
+                                // safety
+                                // all these types can be coerced to f64
+                                unsafe {
+                                    let val = v.to_f64().unwrap_unchecked();
+                                    acc += val
+                                }
+                            }
+                        }
+                    }
+                    Some(acc / len)
                 }
             }
         }
     }
+}
 
-    fn quantile(&self, quantile: f64) -> Result<Option<T::Native>> {
-        if !(0.0..=1.0).contains(&quantile) {
-            Err(PolarsError::ValueError(
-                "quantile should be between 0.0 and 1.0".into(),
-            ))
-        } else {
-            let null_count = self.null_count();
-            let opt = ChunkSort::sort(self, false)
-                .slice(
-                    (((self.len() - null_count) as f64) * quantile + null_count as f64) as i64,
-                    1,
-                )
-                .into_iter()
-                .next()
-                .flatten();
-
-            Ok(opt)
+/// helper
+fn quantile_idx(
+    quantile: f64,
+    length: usize,
+    null_count: usize,
+    interpol: QuantileInterpolOptions,
+) -> (i64, f64, i64) {
+    let mut base_idx = match interpol {
+        QuantileInterpolOptions::Nearest => {
+            (((length - null_count) as f64) * quantile + null_count as f64) as i64
         }
+        QuantileInterpolOptions::Lower
+        | QuantileInterpolOptions::Midpoint
+        | QuantileInterpolOptions::Linear => {
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64) as i64
+        }
+        QuantileInterpolOptions::Higher => {
+            (((length - null_count) as f64 - 1.0) * quantile + null_count as f64).ceil() as i64
+        }
+    };
+
+    base_idx = std::cmp::min(std::cmp::max(base_idx, 0), (length - 1) as i64);
+    let float_idx = ((length - null_count) as f64 - 1.0) * quantile + null_count as f64;
+    let top_idx = f64::ceil(float_idx) as i64;
+
+    (base_idx, float_idx, top_idx)
+}
+
+/// helper
+fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> Option<T> {
+    if bounds[0] == bounds[1] {
+        Some(bounds[0].unwrap())
+    } else {
+        let proportion: T = T::from(float_idx).unwrap() - T::from(idx).unwrap();
+        Some(proportion * (bounds[1].unwrap() - bounds[0].unwrap()) + bounds[0].unwrap())
     }
 }
+
+impl<T> ChunkQuantile<f64> for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+{
+    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+        if !(0.0..=1.0).contains(&quantile) {
+            return Err(PolarsError::ValueError(
+                "quantile should be between 0.0 and 1.0".into(),
+            ));
+        }
+
+        let null_count = self.null_count();
+        let length = self.len();
+
+        if null_count == length {
+            return Ok(None);
+        }
+
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
+
+        let opt = match interpol {
+            QuantileInterpolOptions::Midpoint => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f64>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    Some((bounds[0].unwrap() + bounds[1].unwrap()) / 2.0f64)
+                }
+            }
+            QuantileInterpolOptions::Linear => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f64>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    linear_interpol(&bounds, idx, float_idx)
+                }
+            }
+            _ => ChunkSort::sort(self, false)
+                .slice(idx, 1)
+                .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                .into_iter()
+                .next()
+                .flatten(),
+        };
+
+        Ok(opt)
+    }
+
+    fn median(&self) -> Option<f64> {
+        self.quantile(0.5, QuantileInterpolOptions::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
+impl ChunkQuantile<f32> for Float32Chunked {
+    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
+        if !(0.0..=1.0).contains(&quantile) {
+            return Err(PolarsError::ValueError(
+                "quantile should be between 0.0 and 1.0".into(),
+            ));
+        }
+
+        let null_count = self.null_count();
+        let length = self.len();
+
+        if null_count == length {
+            return Ok(None);
+        }
+
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
+
+        let opt = match interpol {
+            QuantileInterpolOptions::Midpoint => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float32Type>(|value| value.to_f32().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f32>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float32Type>(|value| value.to_f32().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    Some((bounds[0].unwrap() + bounds[1].unwrap()) / 2.0f32)
+                }
+            }
+            QuantileInterpolOptions::Linear => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float32Type>(|value| value.to_f32().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f32>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float32Type>(|value| value.to_f32().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    linear_interpol(&bounds, idx, float_idx)
+                }
+            }
+            _ => ChunkSort::sort(self, false)
+                .slice(idx, 1)
+                .apply_cast_numeric::<_, Float32Type>(|value| value.to_f32().unwrap())
+                .into_iter()
+                .next()
+                .flatten(),
+        };
+
+        Ok(opt)
+    }
+
+    fn median(&self) -> Option<f32> {
+        self.quantile(0.5, QuantileInterpolOptions::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
+impl ChunkQuantile<f64> for Float64Chunked {
+    fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
+        if !(0.0..=1.0).contains(&quantile) {
+            return Err(PolarsError::ValueError(
+                "quantile should be between 0.0 and 1.0".into(),
+            ));
+        }
+
+        let null_count = self.null_count();
+        let length = self.len();
+
+        if null_count == length {
+            return Ok(None);
+        }
+
+        let (idx, float_idx, top_idx) = quantile_idx(quantile, length, null_count, interpol);
+
+        let opt = match interpol {
+            QuantileInterpolOptions::Midpoint => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f64>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    Some((bounds[0].unwrap() + bounds[1].unwrap()) / 2.0f64)
+                }
+            }
+            QuantileInterpolOptions::Linear => {
+                if top_idx == idx {
+                    ChunkSort::sort(self, false)
+                        .slice(idx, 1)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .next()
+                        .flatten()
+                } else {
+                    let bounds: Vec<Option<f64>> = ChunkSort::sort(self, false)
+                        .slice(idx, 2)
+                        .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                        .into_iter()
+                        .collect();
+
+                    linear_interpol(&bounds, idx, float_idx)
+                }
+            }
+            _ => ChunkSort::sort(self, false)
+                .slice(idx, 1)
+                .apply_cast_numeric::<_, Float64Type>(|value| value.to_f64().unwrap())
+                .into_iter()
+                .next()
+                .flatten(),
+        };
+
+        Ok(opt)
+    }
+
+    fn median(&self) -> Option<f64> {
+        self.quantile(0.5, QuantileInterpolOptions::Linear).unwrap() // unwrap fine since quantile in range
+    }
+}
+
+impl ChunkQuantile<String> for Utf8Chunked {}
+impl ChunkQuantile<Series> for ListChunked {}
+#[cfg(feature = "dtype-categorical")]
+impl ChunkQuantile<u32> for CategoricalChunked {}
+#[cfg(feature = "object")]
+impl<T> ChunkQuantile<Series> for ObjectChunked<T> {}
+impl ChunkQuantile<bool> for BooleanChunked {}
 
 impl<T> ChunkVar<f64> for ChunkedArray<T>
 where
@@ -254,19 +518,17 @@ where
         ca.rename(self.name());
         ca.into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        let val = [self.mean()];
-        Series::new(self.name(), val)
-    }
-    fn median_as_series(&self) -> Series {
-        let val = [self.median()];
-        Series::new(self.name(), val)
-    }
-    fn quantile_as_series(&self, quantile: f64) -> Result<Series> {
-        let v = self.quantile(quantile)?;
-        let mut ca: ChunkedArray<T> = [v].iter().copied().collect();
-        ca.rename(self.name());
-        Ok(ca.into_series())
+
+    fn prod_as_series(&self) -> Series {
+        let mut prod = None;
+        for opt_v in self.into_iter() {
+            match (prod, opt_v) {
+                (_, None) => return Self::full_null(self.name(), 1).into_series(),
+                (None, Some(v)) => prod = Some(v),
+                (Some(p), Some(v)) => prod = Some(p * v),
+            }
+        }
+        Self::new_from_opt_slice(self.name(), &[prod]).into_series()
     }
 }
 
@@ -363,6 +625,131 @@ impl VarAggSeries for Utf8Chunked {
     }
 }
 
+macro_rules! impl_quantile_as_series {
+    ($self:expr, $agg:ident, $ty: ty, $qtl:expr, $opt:expr) => {{
+        let v = $self.$agg($qtl, $opt)?;
+        let mut ca: $ty = [v].iter().copied().collect();
+        ca.rename($self.name());
+        Ok(ca.into_series())
+    }};
+}
+
+impl<T> QuantileAggSeries for ChunkedArray<T>
+where
+    T: PolarsIntegerType,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+{
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+    }
+
+    fn median_as_series(&self) -> Series {
+        impl_as_series!(self, median, Float64Chunked)
+    }
+}
+
+impl QuantileAggSeries for Float32Chunked {
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        impl_quantile_as_series!(self, quantile, Float32Chunked, quantile, interpol)
+    }
+
+    fn median_as_series(&self) -> Series {
+        impl_as_series!(self, median, Float32Chunked)
+    }
+}
+
+impl QuantileAggSeries for Float64Chunked {
+    fn quantile_as_series(
+        &self,
+        quantile: f64,
+        interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        impl_quantile_as_series!(self, quantile, Float64Chunked, quantile, interpol)
+    }
+
+    fn median_as_series(&self) -> Series {
+        impl_as_series!(self, median, Float64Chunked)
+    }
+}
+
+impl QuantileAggSeries for BooleanChunked {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        Ok(Self::full_null(self.name(), 1).into_series())
+    }
+
+    fn median_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
+#[cfg(feature = "dtype-categorical")]
+impl QuantileAggSeries for CategoricalChunked {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn median_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+impl QuantileAggSeries for ListChunked {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        Ok(Self::full_null(self.name(), 1).into_series())
+    }
+
+    fn median_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
+#[cfg(feature = "object")]
+impl<T> QuantileAggSeries for ObjectChunked<T> {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        unimplemented!()
+    }
+
+    fn median_as_series(&self) -> Series {
+        unimplemented!()
+    }
+}
+impl QuantileAggSeries for Utf8Chunked {
+    fn quantile_as_series(
+        &self,
+        _quantile: f64,
+        _interpol: QuantileInterpolOptions,
+    ) -> Result<Series> {
+        Ok(Self::full_null(self.name(), 1).into_series())
+    }
+
+    fn median_as_series(&self) -> Series {
+        Self::full_null(self.name(), 1).into_series()
+    }
+}
+
 impl ChunkAggSeries for BooleanChunked {
     fn sum_as_series(&self) -> Series {
         let v = ChunkAgg::sum(self);
@@ -381,15 +768,6 @@ impl ChunkAggSeries for BooleanChunked {
         let mut ca: UInt32Chunked = [v].iter().copied().collect();
         ca.rename(self.name());
         ca.into_series()
-    }
-    fn mean_as_series(&self) -> Series {
-        BooleanChunked::full_null(self.name(), 1).into_series()
-    }
-    fn median_as_series(&self) -> Series {
-        BooleanChunked::full_null(self.name(), 1).into_series()
-    }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(BooleanChunked::full_null(self.name(), 1).into_series())
     }
 }
 
@@ -410,15 +788,6 @@ impl ChunkAggSeries for Utf8Chunked {
     }
     fn min_as_series(&self) -> Series {
         one_null_utf8!(self)
-    }
-    fn mean_as_series(&self) -> Series {
-        one_null_utf8!(self)
-    }
-    fn median_as_series(&self) -> Series {
-        one_null_utf8!(self)
-    }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(one_null_utf8!(self))
     }
 }
 
@@ -442,15 +811,6 @@ impl ChunkAggSeries for ListChunked {
     }
     fn min_as_series(&self) -> Series {
         one_null_list!(self)
-    }
-    fn mean_as_series(&self) -> Series {
-        one_null_list!(self)
-    }
-    fn median_as_series(&self) -> Series {
-        one_null_list!(self)
-    }
-    fn quantile_as_series(&self, _quantile: f64) -> Result<Series> {
-        Ok(one_null_list!(self))
     }
 }
 
@@ -487,6 +847,7 @@ impl<T> ArgAgg for ObjectChunked<T> {}
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use polars_arrow::prelude::QuantileInterpolOptions;
 
     #[test]
     fn test_var() {
@@ -591,17 +952,439 @@ mod test {
         let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         // all mean_as_series are cast to f64.
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
+        assert_eq!(
+            ca.into_series()
+                .mean_as_series()
+                .f64()
+                .unwrap()
+                .get(0)
+                .unwrap(),
+            1.5
+        );
         // all null values case
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0), None);
+        assert_eq!(
+            ca.into_series().mean_as_series().f64().unwrap().get(0),
+            None
+        );
     }
 
     #[test]
     fn test_quantile_all_null() {
-        let ca = Float32Chunked::new("", &[None, None, None]);
-        let out = ca.quantile(0.9).unwrap();
-        assert_eq!(out, None)
+        let test_f32 = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let test_i32 = Int32Chunked::new_from_opt_slice("", &[None, None, None]);
+        let test_f64 = Float64Chunked::new_from_opt_slice("", &[None, None, None]);
+        let test_i64 = Int64Chunked::new_from_opt_slice("", &[None, None, None]);
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
+        ];
+
+        for interpol in interpol_options {
+            assert_eq!(test_f32.quantile(0.9, interpol).unwrap(), None);
+            assert_eq!(test_i32.quantile(0.9, interpol).unwrap(), None);
+            assert_eq!(test_f64.quantile(0.9, interpol).unwrap(), None);
+            assert_eq!(test_i64.quantile(0.9, interpol).unwrap(), None);
+        }
+    }
+
+    #[test]
+    fn test_quantile_single_value() {
+        let test_f32 = Float32Chunked::new_from_opt_slice("", &[Some(1.0)]);
+        let test_i32 = Int32Chunked::new_from_opt_slice("", &[Some(1)]);
+        let test_f64 = Float64Chunked::new_from_opt_slice("", &[Some(1.0)]);
+        let test_i64 = Int64Chunked::new_from_opt_slice("", &[Some(1)]);
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
+        ];
+
+        for interpol in interpol_options {
+            assert_eq!(test_f32.quantile(0.5, interpol).unwrap(), Some(1.0));
+            assert_eq!(test_i32.quantile(0.5, interpol).unwrap(), Some(1.0));
+            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), Some(1.0));
+            assert_eq!(test_i64.quantile(0.5, interpol).unwrap(), Some(1.0));
+        }
+    }
+
+    #[test]
+    fn test_quantile_min_max() {
+        let test_f32 =
+            Float32Chunked::new_from_opt_slice("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
+        let test_i32 =
+            Int32Chunked::new_from_opt_slice("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
+        let test_f64 =
+            Float64Chunked::new_from_opt_slice("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
+        let test_i64 =
+            Int64Chunked::new_from_opt_slice("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
+
+        let interpol_options = vec![
+            QuantileInterpolOptions::Nearest,
+            QuantileInterpolOptions::Lower,
+            QuantileInterpolOptions::Higher,
+            QuantileInterpolOptions::Midpoint,
+            QuantileInterpolOptions::Linear,
+        ];
+
+        for interpol in interpol_options {
+            assert_eq!(test_f32.quantile(0.0, interpol).unwrap(), test_f32.min());
+            assert_eq!(test_f32.quantile(1.0, interpol).unwrap(), test_f32.max());
+
+            assert_eq!(
+                test_i32.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i32.min().unwrap() as f64
+            );
+            assert_eq!(
+                test_i32.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i32.max().unwrap() as f64
+            );
+
+            assert_eq!(test_f64.quantile(0.0, interpol).unwrap(), test_f64.min());
+            assert_eq!(test_f64.quantile(1.0, interpol).unwrap(), test_f64.max());
+            assert_eq!(test_f64.quantile(0.5, interpol).unwrap(), test_f64.median());
+
+            assert_eq!(
+                test_i64.quantile(0.0, interpol).unwrap().unwrap(),
+                test_i64.min().unwrap() as f64
+            );
+            assert_eq!(
+                test_i64.quantile(1.0, interpol).unwrap().unwrap(),
+                test_i64.max().unwrap() as f64
+            );
+        }
+    }
+
+    #[test]
+    fn test_quantile() {
+        let ca = UInt32Chunked::new(
+            "a",
+            &[Some(2), Some(1), None, Some(3), Some(5), None, Some(4)],
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(5.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(4.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Lower).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Lower).unwrap(),
+            Some(4.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Lower).unwrap(),
+            Some(3.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Higher).unwrap(),
+            Some(2.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Higher).unwrap(),
+            Some(5.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Higher).unwrap(),
+            Some(4.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(1.5)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(4.5)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(3.5)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Linear).unwrap(),
+            Some(1.4)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Linear).unwrap(),
+            Some(4.6)
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Linear)
+                .unwrap()
+                .unwrap()
+                - 3.4)
+                .abs()
+                < 0.0000001
+        );
+
+        let ca = UInt32Chunked::new(
+            "a",
+            &[
+                None,
+                Some(7),
+                Some(6),
+                Some(2),
+                Some(1),
+                None,
+                Some(3),
+                Some(5),
+                None,
+                Some(4),
+            ],
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(7.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Nearest).unwrap(),
+            Some(5.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Lower).unwrap(),
+            Some(1.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Lower).unwrap(),
+            Some(6.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Lower).unwrap(),
+            Some(4.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Higher).unwrap(),
+            Some(2.0)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Higher).unwrap(),
+            Some(7.0)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Higher).unwrap(),
+            Some(5.0)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(1.5)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(6.5)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Midpoint).unwrap(),
+            Some(4.5)
+        );
+
+        assert_eq!(
+            ca.quantile(0.1, QuantileInterpolOptions::Linear).unwrap(),
+            Some(1.6)
+        );
+        assert_eq!(
+            ca.quantile(0.9, QuantileInterpolOptions::Linear).unwrap(),
+            Some(6.4)
+        );
+        assert_eq!(
+            ca.quantile(0.6, QuantileInterpolOptions::Linear).unwrap(),
+            Some(4.6)
+        );
+
+        let ca = Float32Chunked::new_from_slice(
+            "",
+            &[
+                0.166189,
+                0.166559,
+                0.168517,
+                0.169393,
+                0.175272,
+                0.23316699999999999,
+                0.238787,
+                0.266562,
+                0.26903,
+                0.285792,
+                0.292801,
+                0.29342899999999994,
+                0.30170600000000003,
+                0.308534,
+                0.331489,
+                0.346095,
+                0.36764399999999997,
+                0.36993899999999996,
+                0.37207399999999996,
+                0.41014000000000006,
+                0.415789,
+                0.421781,
+                0.4277250000000001,
+                0.46536299999999997,
+                0.500208,
+                2.6217269999999995,
+                2.803311,
+                3.868526,
+            ],
+        );
+
+        assert!(
+            (ca.quantile(0.1, QuantileInterpolOptions::Nearest)
+                .unwrap()
+                .unwrap()
+                - 0.168517)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.9, QuantileInterpolOptions::Nearest)
+                .unwrap()
+                .unwrap()
+                - 2.621727)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Nearest)
+                .unwrap()
+                .unwrap()
+                - 0.367644)
+                .abs()
+                < 0.00001
+        );
+
+        assert!(
+            (ca.quantile(0.1, QuantileInterpolOptions::Lower)
+                .unwrap()
+                .unwrap()
+                - 0.168517)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.9, QuantileInterpolOptions::Lower)
+                .unwrap()
+                .unwrap()
+                - 0.500208)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Lower)
+                .unwrap()
+                .unwrap()
+                - 0.367644)
+                .abs()
+                < 0.00001
+        );
+
+        assert!(
+            (ca.quantile(0.1, QuantileInterpolOptions::Higher)
+                .unwrap()
+                .unwrap()
+                - 0.169393)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.9, QuantileInterpolOptions::Higher)
+                .unwrap()
+                .unwrap()
+                - 2.621727)
+                .abs()
+                < 0.00001
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Higher)
+                .unwrap()
+                .unwrap()
+                - 0.369939)
+                .abs()
+                < 0.00001
+        );
+
+        assert!(
+            (ca.quantile(0.1, QuantileInterpolOptions::Midpoint)
+                .unwrap()
+                .unwrap()
+                - 0.168955)
+                .abs()
+                < 0.0001
+        );
+        assert!(
+            (ca.quantile(0.9, QuantileInterpolOptions::Midpoint)
+                .unwrap()
+                .unwrap()
+                - 1.560967)
+                .abs()
+                < 0.0001
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Midpoint)
+                .unwrap()
+                .unwrap()
+                - 0.368791)
+                .abs()
+                < 0.0001
+        );
+
+        assert!(
+            (ca.quantile(0.1, QuantileInterpolOptions::Linear)
+                .unwrap()
+                .unwrap()
+                - 0.169130)
+                .abs()
+                < 0.0001
+        );
+        assert!(
+            (ca.quantile(0.9, QuantileInterpolOptions::Linear)
+                .unwrap()
+                .unwrap()
+                - 1.136664)
+                .abs()
+                < 0.0001
+        );
+        assert!(
+            (ca.quantile(0.6, QuantileInterpolOptions::Linear)
+                .unwrap()
+                .unwrap()
+                - 0.368103)
+                .abs()
+                < 0.0001
+        );
+    }
+
+    #[test]
+    fn test_median_floats() {
+        let a = Series::new("a", &[1.0f64, 2.0, 3.0]);
+        let expected = Series::new("a", [2.0f64]);
+        assert!(a.median_as_series().series_equal_missing(&expected));
+        assert_eq!(a.median(), Some(2.0f64))
     }
 }

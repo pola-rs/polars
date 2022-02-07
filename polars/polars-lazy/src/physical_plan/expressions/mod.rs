@@ -2,9 +2,9 @@ pub(crate) mod aggregation;
 pub(crate) mod alias;
 pub(crate) mod apply;
 pub(crate) mod binary;
-pub(crate) mod binary_function;
 pub(crate) mod cast;
 pub(crate) mod column;
+pub(crate) mod count;
 pub(crate) mod filter;
 pub(crate) mod is_not_null;
 pub(crate) mod is_null;
@@ -18,15 +18,18 @@ pub(crate) mod take;
 pub(crate) mod ternary;
 pub(crate) mod utils;
 pub(crate) mod window;
+// pub(crate) mod unique;
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
-use polars_io::PhysicalIoExpr;
+use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
 
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples` is called
     /// and produced a `Series` of dtype `List`
@@ -36,10 +39,28 @@ pub(crate) enum AggState {
     AggregatedFlat(Series),
     /// Not yet aggregated: `agg_list` still has to be called.
     NotAggregated(Series),
-    None,
+    Literal(Series),
+}
+
+impl AggState {
+    // Literal series are not safe to aggregate
+    fn safe_to_agg(&self, groups: &GroupsProxy) -> bool {
+        match self {
+            AggState::NotAggregated(s) => {
+                !(s.len() == 1
+                    // or more then one group
+                    && (groups.len() > 1
+                    // or single groups with more than one index
+                    || !groups.is_empty()
+                    && groups.get(0).len() > 1))
+            }
+            _ => true,
+        }
+    }
 }
 
 // lazy update strategy
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
@@ -53,17 +74,18 @@ pub(crate) enum UpdateGroups {
 
 impl Default for AggState {
     fn default() -> Self {
-        AggState::None
+        AggState::Literal(Series::default())
     }
 }
 
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AggregationContext<'a> {
     /// Can be in one of two states
     /// 1. already aggregated as list
     /// 2. flat (still needs the grouptuples to aggregate)
-    series: AggState,
+    state: AggState,
     /// group tuples for AggState
-    groups: Cow<'a, GroupTuples>,
+    groups: Cow<'a, GroupsProxy>,
     /// if the group tuples are already used in a level above
     /// and the series is exploded, the group tuples are sorted
     /// e.g. the exploded Series is grouped per group.
@@ -72,13 +94,18 @@ pub struct AggregationContext<'a> {
     /// into a sorted groups. We do this lazily, so that this work only is
     /// done when the groups are needed
     update_groups: UpdateGroups,
-    /// This is true when the Series and GroupTuples still have all
+    /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
+    all_unit_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
-    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupTuples> {
+    pub(crate) fn with_all_unit_len(&mut self, toggle: bool) {
+        self.all_unit_len = toggle
+    }
+
+    pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
             UpdateGroups::No => {}
             UpdateGroups::WithGroupsLen => {
@@ -86,37 +113,74 @@ impl<'a> AggregationContext<'a> {
                 // and the series is aggregated with this groups
                 // so we need to recreate new grouptuples that
                 // match the exploded Series
-                let mut count = 0u32;
-                let groups: GroupTuples = self
-                    .groups
-                    .iter()
-                    .map(|g| {
-                        let add = g.1.len() as u32;
-                        let new_count = count + add;
-                        let out = (count, (count..new_count).collect::<Vec<_>>());
-                        count = new_count;
-                        out
-                    })
-                    .collect();
-                self.groups = Cow::Owned(groups);
+                let mut offset = 0u32;
+
+                match self.groups.as_ref() {
+                    GroupsProxy::Idx(groups) => {
+                        let groups = groups
+                            .iter()
+                            .map(|g| {
+                                let len = g.1.len() as u32;
+                                let new_offset = offset + len;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            })
+                            .collect();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups))
+                    }
+                    // sliced groups are already in correct order
+                    GroupsProxy::Slice(_) => {}
+                }
                 self.update_groups = UpdateGroups::No;
             }
             UpdateGroups::WithSeriesLen => {
-                let mut count = 0u32;
-                let groups: GroupTuples = self
+                let mut offset = 0u32;
+                let list = self
                     .series()
                     .list()
-                    .expect("impl error, should be a list at this point")
-                    .into_no_null_iter()
-                    .map(|s| {
-                        let add = s.len() as u32;
-                        let new_count = count + add;
-                        let out = (count, (count..new_count).collect::<Vec<_>>());
-                        count = new_count;
-                        out
-                    })
-                    .collect();
-                self.groups = Cow::Owned(groups);
+                    .expect("impl error, should be a list at this point");
+
+                match list.chunks().len() {
+                    1 => {
+                        let arr = list.downcast_iter().next().unwrap();
+                        let offsets = arr.offsets().as_slice();
+
+                        let mut previous = 0i64;
+                        let groups = offsets[1..]
+                            .iter()
+                            .map(|&o| {
+                                let len = (o - previous) as u32;
+                                let new_offset = offset + len;
+                                previous = o;
+                                let out = [offset, len];
+                                offset = new_offset;
+                                out
+                            })
+                            .collect_trusted();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                    }
+                    _ => {
+                        let groups = self
+                            .series()
+                            .list()
+                            .expect("impl error, should be a list at this point")
+                            .amortized_iter()
+                            .map(|s| {
+                                if let Some(s) = s {
+                                    let len = s.as_ref().len() as u32;
+                                    let new_offset = offset + len;
+                                    let out = [offset, len];
+                                    offset = new_offset;
+                                    out
+                                } else {
+                                    [offset, 0]
+                                }
+                            })
+                            .collect_trusted();
+                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                    }
+                }
                 self.update_groups = UpdateGroups::No;
             }
         }
@@ -128,7 +192,7 @@ impl<'a> AggregationContext<'a> {
         match (
             &self.groups,
             self.sorted,
-            self.original_len,
+            self.is_original_len(),
             &other.groups,
             other.sorted,
             other.original_len,
@@ -147,20 +211,20 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn series(&self) -> &Series {
-        match &self.series {
+        match &self.state {
             AggState::NotAggregated(s)
             | AggState::AggregatedFlat(s)
             | AggState::AggregatedList(s) => s,
-            AggState::None => unreachable!(),
+            AggState::Literal(s) => s,
         }
     }
 
     pub(crate) fn agg_state(&self) -> &AggState {
-        &self.series
+        &self.state
     }
 
     pub(crate) fn is_not_aggregated(&self) -> bool {
-        matches!(&self.series, AggState::NotAggregated(_))
+        matches!(&self.state, AggState::NotAggregated(_))
     }
 
     pub(crate) fn is_aggregated(&self) -> bool {
@@ -177,9 +241,9 @@ impl<'a> AggregationContext<'a> {
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     /// the columns dtype)
-    pub(crate) fn new(
+    fn new(
         series: Series,
-        groups: Cow<'a, GroupTuples>,
+        groups: Cow<'a, GroupsProxy>,
         aggregated: bool,
     ) -> AggregationContext<'a> {
         let series = match (aggregated, series.dtype()) {
@@ -195,12 +259,28 @@ impl<'a> AggregationContext<'a> {
         };
 
         Self {
-            series,
+            state: series,
             groups,
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
+            all_unit_len: false,
         }
+    }
+
+    fn from_literal(lit: Series, groups: Cow<'a, GroupsProxy>) -> AggregationContext<'a> {
+        Self {
+            state: AggState::Literal(lit),
+            groups,
+            sorted: false,
+            update_groups: UpdateGroups::No,
+            original_len: true,
+            all_unit_len: false,
+        }
+    }
+
+    pub(crate) fn is_original_len(&self) -> bool {
+        self.original_len
     }
 
     pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
@@ -213,56 +293,74 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
+    /// In a binary expression one state can be aggregated and the other not.
+    /// If both would be flattened naively one would be sorted and the other not.
+    /// Calling this function will ensure both are sortened. This will be a no-op
+    /// if already aggregated.
+    pub(crate) fn sort_by_groups(&mut self) {
+        match &self.state {
+            AggState::NotAggregated(s) => {
+                // We should not aggregate literals!!
+                if self.state.safe_to_agg(&self.groups) {
+                    let agg = s.agg_list(&self.groups).unwrap();
+                    self.update_groups = UpdateGroups::WithGroupsLen;
+                    self.state = AggState::AggregatedList(agg);
+                }
+            }
+            AggState::AggregatedFlat(_) => {}
+            AggState::AggregatedList(_) => {}
+            AggState::Literal(_) => {}
+        }
+    }
+
     /// # Arguments
     /// - `aggregated` sets if the Series is a list due to aggregation (could also be a list because its
     /// the columns dtype)
     pub(crate) fn with_series(&mut self, series: Series, aggregated: bool) -> &mut Self {
-        self.series = match (aggregated, series.dtype()) {
+        self.state = match (aggregated, series.dtype()) {
             (true, &DataType::List(_)) => {
                 assert_eq!(series.len(), self.groups.len());
                 AggState::AggregatedList(series)
             }
-            _ => AggState::NotAggregated(series),
+            (true, _) => AggState::AggregatedFlat(series),
+            _ => {
+                // already aggregated to sum, min even this series was flattened it never could
+                // retrieve the length before grouping, so it stays  in this state.
+                if let AggState::AggregatedFlat(_) = self.state {
+                    AggState::AggregatedFlat(series)
+                } else {
+                    AggState::NotAggregated(series)
+                }
+            }
         };
         self
     }
 
-    pub(crate) fn with_groups(&mut self, groups: GroupTuples) -> &mut Self {
+    /// Update the group tuples
+    pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
-        self.with_series(self.flat().into_owned(), false);
+        self.with_series(self.flat_naive().into_owned(), false);
         self.groups = Cow::Owned(groups);
+        // make sure that previous setting is not used
+        self.update_groups = UpdateGroups::No;
         self
     }
 
-    pub(crate) fn aggregated(&mut self) -> Cow<'_, Series> {
-        // we do this here instead of the pattern match because of mutable borrow overlaps.
-        //
-        // The groups are determined lazily and in case of a flat/non-aggregated
-        // series we use the groups to aggregate the list
-        // because this is lazy, we first must to update the groups
-        // by calling .groups()
-        self.groups();
-        match &self.series {
+    /// Get the aggregated version of the series.
+    pub(crate) fn aggregated(&mut self) -> Series {
+        // we clone, because we only want to call `self.groups()` if needed.
+        // self groups may instantiate new groups and thus can be expensive.
+        match self.state.clone() {
             AggState::NotAggregated(s) => {
-                // literal series
-                // the literal series needs to be expanded to the number of indices in the groups
-                let s = if s.len() == 1
-                    // or more then one group
-                    && (self.groups.len() > 1
-                    // or single groups with more than on index
-                    || !self.groups.as_ref().is_empty()
-                    && self.groups[0].1.len() > 1)
-                {
-                    // todo! optimize this, we don't have to call agg_list, create the list directly.
-                    Cow::Owned(s.expand_at_index(0, self.groups.iter().map(|g| g.1.len()).sum()))
-                } else {
-                    Cow::Borrowed(s)
-                };
+                // The groups are determined lazily and in case of a flat/non-aggregated
+                // series we use the groups to aggregate the list
+                // because this is lazy, we first must to update the groups
+                // by calling .groups()
+                self.groups();
 
-                let out = Cow::Owned(
-                    s.agg_list(&self.groups)
-                        .expect("should be able to aggregate this to list"),
-                );
+                let out = s
+                    .agg_list(&self.groups)
+                    .expect("should be able to aggregate this to list");
 
                 if !self.sorted {
                     self.sorted = true;
@@ -270,26 +368,36 @@ impl<'a> AggregationContext<'a> {
                 };
                 out
             }
-            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => Cow::Borrowed(s),
-            AggState::None => unreachable!(),
+            AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
+            AggState::Literal(s) => {
+                self.groups();
+                // todo! optimize this, we don't have to call agg_list, create the list directly.
+                let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
+                s.agg_list(&self.groups).unwrap()
+            }
         }
     }
 
-    pub(crate) fn flat(&self) -> Cow<'_, Series> {
-        match &self.series {
+    /// Get the not-aggregated version of the series.
+    /// Note that we call it naive, because if a previous expr
+    /// has filtered or sorted this, this information is in the
+    /// group tuples not the flattened series.
+    pub(crate) fn flat_naive(&self) -> Cow<'_, Series> {
+        match &self.state {
             AggState::NotAggregated(s) => Cow::Borrowed(s),
             AggState::AggregatedList(s) => Cow::Owned(s.explode().unwrap()),
             AggState::AggregatedFlat(s) => Cow::Borrowed(s),
-            AggState::None => unreachable!(),
+            AggState::Literal(s) => Cow::Borrowed(s),
         }
     }
 
+    /// Take the series.
     pub(crate) fn take(&mut self) -> Series {
-        match std::mem::take(&mut self.series) {
+        match std::mem::take(&mut self.state) {
             AggState::NotAggregated(s)
             | AggState::AggregatedFlat(s)
             | AggState::AggregatedList(s) => s,
-            AggState::None => panic!("implementation error"),
+            AggState::Literal(s) => s,
         }
     }
 }
@@ -328,7 +436,7 @@ pub trait PhysicalExpr: Send + Sync {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>>;
 
@@ -346,6 +454,14 @@ pub trait PhysicalExpr: Send + Sync {
             format!("{:?} is not an agg expression", e).into(),
         ))
     }
+
+    /// Can take &dyn Statistics and determine of a file should be
+    /// read -> `true`
+    /// or not -> `false`
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        None
+    }
 }
 
 /// Wrapper struct that allow us to use a PhysicalExpr in polars-io.
@@ -359,6 +475,11 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     fn evaluate(&self, df: &DataFrame) -> Result<Series> {
         self.expr.evaluate(df, &Default::default())
     }
+
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        self.expr.as_stats_evaluator()
+    }
 }
 
 pub trait PhysicalAggregation: Send + Sync {
@@ -368,7 +489,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn aggregate(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>>;
 
@@ -383,7 +504,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Vec<Series>>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
@@ -396,7 +517,7 @@ pub trait PhysicalAggregation: Send + Sync {
     fn evaluate_partitioned_final(
         &self,
         final_df: &DataFrame,
-        groups: &GroupTuples,
+        groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         self.aggregate(final_df, groups, state)

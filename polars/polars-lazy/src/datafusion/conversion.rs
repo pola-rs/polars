@@ -291,7 +291,7 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
             delimiter,
             ignore_errors,
             skip_rows,
-            stop_after_n_rows,
+            n_rows,
             ..
         } => {
             let schema = schema.to_arrow();
@@ -300,24 +300,20 @@ pub fn to_datafusion_lp(lp: LogicalPlan) -> Result<DLogicalPlan> {
                 .delimiter(delimiter)
                 .schema(&schema);
             if ignore_errors || skip_rows > 0 {
-                return Err(PolarsError::ComputeError("DataFusion does not support `ignore_errors`, `skip_rows`, `stop_after_n_rows`, `with_columns`".into()));
+                return Err(PolarsError::ComputeError("DataFusion does not support `ignore_errors`, `skip_rows`, `n_rows`, `with_columns`".into()));
             }
             let builder =
                 LogicalPlanBuilder::scan_csv(try_path_to_str(&path)?, options, None).unwrap();
-            match stop_after_n_rows {
+            match n_rows {
                 Some(n) => builder.limit(n).unwrap().build().unwrap(),
                 None => builder.build().unwrap(),
             }
         }
         #[cfg(feature = "parquet")]
-        ParquetScan {
-            path,
-            stop_after_n_rows,
-            ..
-        } => {
+        ParquetScan { path, n_rows, .. } => {
             let builder =
                 LogicalPlanBuilder::scan_parquet(try_path_to_str(&path)?, None, 8).unwrap();
-            match stop_after_n_rows {
+            match n_rows {
                 Some(n) => builder.limit(n).unwrap().build().unwrap(),
                 None => builder.build().unwrap(),
             }

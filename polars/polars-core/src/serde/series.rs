@@ -28,6 +28,10 @@ impl Serialize for Series {
         } else if let Ok(ca) = self.date() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.datetime() {
+            let ca = ca
+                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                .unwrap();
+            let ca = ca.datetime().unwrap();
             ca.serialize(serializer)
         } else if let Ok(ca) = self.utf8() {
             ca.serialize(serializer)
@@ -143,7 +147,7 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::Datetime => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Datetime)
+                            .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                             .unwrap())
                     }
                     DeDataType::Boolean => {

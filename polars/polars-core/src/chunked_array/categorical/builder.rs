@@ -49,6 +49,7 @@ pub enum RevMapping {
 
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
+    /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
         match self {
             Self::Global(_, a, _) => a.len(),
@@ -64,6 +65,20 @@ impl RevMapping {
                 a.value(idx as usize)
             }
             Self::Local(a) => a.value(idx as usize),
+        }
+    }
+
+    /// Categorical to str
+    ///
+    /// # Safety:
+    /// This doesn't do any bound checking
+    pub unsafe fn get_unchecked(&self, idx: u32) -> &str {
+        match self {
+            Self::Global(map, a, _) => {
+                let idx = *map.get(&idx).unwrap();
+                a.value_unchecked(idx as usize)
+            }
+            Self::Local(a) => a.value_unchecked(idx as usize),
         }
     }
     /// Check if the categoricals are created under the same global string cache.
@@ -118,7 +133,7 @@ impl CategoricalChunkedBuilder {
 }
 impl CategoricalChunkedBuilder {
     /// Appends all the values in a single lock of the global string cache.
-    pub fn from_iter<'a, I>(&mut self, i: I)
+    pub fn drain_iter<'a, I>(&mut self, i: I)
     where
         I: IntoIterator<Item = Option<&'a str>>,
     {
@@ -245,18 +260,18 @@ mod test {
             // does not interfere with the index mapping
             let mut builder1 = CategoricalChunkedBuilder::new("foo", 10);
             let mut builder2 = CategoricalChunkedBuilder::new("foo", 10);
-            builder1.from_iter(vec![None, Some("hello"), Some("vietnam")]);
-            builder2.from_iter(vec![Some("hello"), None, Some("world")].into_iter());
+            builder1.drain_iter(vec![None, Some("hello"), Some("vietnam")]);
+            builder2.drain_iter(vec![Some("hello"), None, Some("world")].into_iter());
 
             let s = builder1.finish().into_series();
             assert_eq!(s.str_value(0), "null");
-            assert_eq!(s.str_value(1), "\"hello\"");
-            assert_eq!(s.str_value(2), "\"vietnam\"");
+            assert_eq!(s.str_value(1), "hello");
+            assert_eq!(s.str_value(2), "vietnam");
 
             let s = builder2.finish().into_series();
-            assert_eq!(s.str_value(0), "\"hello\"");
+            assert_eq!(s.str_value(0), "hello");
             assert_eq!(s.str_value(1), "null");
-            assert_eq!(s.str_value(2), "\"world\"");
+            assert_eq!(s.str_value(2), "world");
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_core::frame::groupby::GroupTuples;
+use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::series::unstable::UnstableSeries;
 use polars_core::POOL;
@@ -33,7 +33,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupTuples,
+        groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let required_height = df.height();
@@ -48,10 +48,10 @@ impl PhysicalExpr for TernaryExpr {
         let mut ac_truthy = ac_truthy?;
         let mut ac_falsy = ac_falsy?;
 
-        let mask_s = ac_mask.flat();
+        let mask_s = ac_mask.flat_naive();
 
         assert!(
-            !(mask_s.len() != required_height),
+            (mask_s.len() == required_height),
             "The predicate is of a different length than the groups.\
 The predicate produced {} values. Where the original DataFrame has {} values",
             mask_s.len(),
@@ -65,7 +65,9 @@ The predicate produced {} values. Where the original DataFrame has {} values",
 
         match (ac_truthy.agg_state(), ac_falsy.agg_state()) {
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_)) if s.len() != df.height() => {
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
+                if s.len() != df.height() =>
+            {
                 // this is a flat series of len eq to group tuples
                 let truthy = ac_truthy.aggregated();
                 let truthy = truthy.as_ref();
@@ -122,7 +124,9 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 Ok(ac_truthy)
             }
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_), AggState::AggregatedFlat(s)) if s.len() != df.height() => {
+            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
+                if s.len() != df.height() =>
+            {
                 // this is now a list
                 let truthy = ac_truthy.aggregated();
                 let truthy = truthy.as_ref();
@@ -182,9 +186,11 @@ The predicate produced {} values. Where the original DataFrame has {} values",
             // so we can flatten the Series an apply the operators
             _ => {
                 let mask = mask_s.bool()?;
-                let out = ac_truthy.flat().zip_with(mask, ac_falsy.flat().as_ref())?;
+                let out = ac_truthy
+                    .flat_naive()
+                    .zip_with(mask, ac_falsy.flat_naive().as_ref())?;
 
-                assert!(!(out.len() != required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
+                assert!((out.len() == required_height), "The output of the `when -> then -> otherwise-expr` is of a different length than the groups.\
 The expr produced {} values. Where the original DataFrame has {} values",
                         out.len(),
                         required_height);

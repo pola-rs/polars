@@ -1,8 +1,9 @@
 mod date;
 mod datetime;
+mod duration;
 mod time;
 
-pub use {date::*, datetime::*, time::*};
+pub use {date::*, datetime::*, duration::*, time::*};
 
 use crate::prelude::*;
 use std::marker::PhantomData;
@@ -10,11 +11,17 @@ use std::ops::{Deref, DerefMut};
 
 /// Maps a logical type to a a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
-pub struct Logical<K: PolarsDataType, T: PolarsDataType>(pub ChunkedArray<T>, PhantomData<K>);
+pub struct Logical<K: PolarsDataType, T: PolarsDataType>(
+    pub ChunkedArray<T>,
+    PhantomData<K>,
+    pub Option<DataType>,
+);
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
-        Logical::<K, _>::new(self.0.clone())
+        let mut new = Logical::<K, _>::new(self.0.clone());
+        new.2 = self.2.clone();
+        new
     }
 }
 
@@ -34,13 +41,13 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
     pub fn new<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
-        Logical(ca, PhantomData)
+        Logical(ca, PhantomData, None)
     }
 }
 
 pub trait LogicalType {
     /// Get data type of ChunkedArray.
-    fn dtype(&self) -> &'static DataType;
+    fn dtype(&self) -> &DataType;
 
     fn get_any_value(&self, _i: usize) -> AnyValue<'_> {
         unimplemented!()

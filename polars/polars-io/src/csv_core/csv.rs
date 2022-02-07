@@ -1,9 +1,9 @@
+use crate::aggregations::ScanAggregation;
 use crate::csv::{CsvEncoding, NullValues};
 use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
-use crate::PhysicalIoExpr;
-use crate::ScanAggregation;
+use crate::predicates::PhysicalIoExpr;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
@@ -13,6 +13,43 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
+
+pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field], parallel: bool) -> Result<()> {
+    use DataType::*;
+
+    let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
+        #[cfg(feature = "temporal")]
+        (Utf8, Date) => s.utf8().unwrap().as_date(None).map(|ca| ca.into_series()),
+        #[cfg(feature = "temporal")]
+        (Utf8, Datetime(tu, _)) => s
+            .utf8()
+            .unwrap()
+            .as_datetime(None, *tu)
+            .map(|ca| ca.into_series()),
+        (_, dt) => s.cast(dt),
+    };
+
+    if parallel {
+        let cols = df
+            .get_columns()
+            .iter()
+            .map(|s| {
+                if let Some(fld) = to_cast.iter().find(|fld| fld.name().as_str() == s.name()) {
+                    cast_fn(s, fld)
+                } else {
+                    Ok(s.clone())
+                }
+            })
+            .collect::<Result<Vec<_>>>()?;
+        *df = DataFrame::new_no_checks(cols)
+    } else {
+        // cast to the original dtypes in the schema
+        for fld in to_cast {
+            df.try_apply(fld.name(), |s| cast_fn(s, fld))?;
+        }
+    }
+    Ok(())
+}
 
 /// CSV file reader
 pub(crate) struct CoreReader<'a> {
@@ -38,6 +75,7 @@ pub(crate) struct CoreReader<'a> {
     null_values: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
+    to_cast: &'a [&'a Field],
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -123,6 +161,8 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
+        to_cast: &'a [&'a Field],
+        skip_rows_after_header: usize,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -156,6 +196,7 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        null_values.as_ref(),
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -170,11 +211,13 @@ impl<'a> CoreReader<'a> {
                         &mut skip_rows,
                         comment_char,
                         quote_char,
+                        null_values.as_ref(),
                     )?;
                     Cow::Owned(inferred_schema)
                 }
             }
         };
+        skip_rows += skip_rows_after_header;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
             let fields = s.fields_mut();
@@ -215,6 +258,7 @@ impl<'a> CoreReader<'a> {
             null_values,
             predicate,
             aggregate,
+            to_cast,
         })
     }
 
@@ -478,7 +522,11 @@ impl<'a> CoreReader<'a> {
                             }
                         }
 
-                        Ok(df)
+                        df.map(|mut df| {
+                            cast_columns(&mut df, self.to_cast, false)?;
+                            Ok(df)
+                        })
+                        .transpose()
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
@@ -545,12 +593,16 @@ impl<'a> CoreReader<'a> {
                                 usize::MAX,
                             )?;
                         }
-                        Ok(DataFrame::new_no_checks(
+
+                        let mut df = DataFrame::new_no_checks(
                             buffers
                                 .into_iter()
                                 .map(|buf| buf.into_series())
                                 .collect::<Result<_>>()?,
-                        ))
+                        );
+
+                        cast_columns(&mut df, self.to_cast, false)?;
+                        Ok(df)
                     })
                     .collect::<Result<Vec<_>>>()
             })?;

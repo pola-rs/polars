@@ -1,9 +1,7 @@
 use crate::prelude::compare_inner::PartialOrdInner;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
-use arrow::buffer::MutableBuffer;
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
-use itertools::Itertools;
 use polars_arrow::array::default_arrays::FromDataUtf8;
 use polars_arrow::prelude::ValueSize;
 use polars_arrow::trusted_len::PushUnchecked;
@@ -11,8 +9,6 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::hint::unreachable_unchecked;
 use std::iter::FromIterator;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 /// # Safety
 /// only may produce true, for f32/f64::NaN
@@ -146,23 +142,16 @@ macro_rules! argsort {
     }};
 }
 
-fn memcpy_values<T>(ca: &ChunkedArray<T>) -> AlignedVec<T::Native>
+fn memcpy_values<T>(ca: &ChunkedArray<T>) -> Vec<T::Native>
 where
     T: PolarsNumericType,
 {
     let len = ca.len();
-    let mut vals = AlignedVec::with_capacity(len);
-    // Safety:
-    // only primitives so no drop calls when writing
-    unsafe { vals.set_len(len) }
-    let vals_slice = vals.as_mut_slice();
+    let mut vals = Vec::with_capacity(len);
 
-    let mut offset = 0;
     ca.downcast_iter().for_each(|arr| {
         let values = arr.values().as_slice();
-        let len = values.len();
-        (vals_slice[offset..offset + len]).copy_from_slice(values);
-        offset += len;
+        vals.extend_from_slice(values);
     });
     vals
 }
@@ -221,7 +210,7 @@ where
                 );
             }
 
-            ChunkedArray::new_from_aligned_vec(self.name(), vals)
+            ChunkedArray::from_vec(self.name(), vals)
         } else {
             let null_count = self.null_count();
             let len = self.len();
@@ -233,10 +222,12 @@ where
             }
 
             self.downcast_iter().for_each(|arr| {
-                let iter = arr
-                    .iter()
-                    .filter_map(|v| v.copied())
-                    .trust_my_length(len - null_count);
+                // safety: we know the iterators len
+                let iter = unsafe {
+                    arr.iter()
+                        .filter_map(|v| v.copied())
+                        .trust_my_length(len - null_count)
+                };
                 vals.extend_trusted_len(iter);
             });
             let mut_slice = if options.nulls_last {
@@ -375,7 +366,7 @@ where
                 nulls_idx
             };
 
-            let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from_vec(idx), None);
+            let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from(idx), None);
             UInt32Chunked::new_from_chunks(self.name(), vec![Arc::new(arr)])
         }
     }
@@ -458,22 +449,6 @@ fn ordering_other_columns<'a>(
     Ordering::Equal
 }
 
-macro_rules! sort {
-    ($self:ident, $reverse:expr) => {{
-        if $reverse {
-            $self
-                .into_iter()
-                .sorted_by(|a, b| b.cmp(a))
-                .collect_trusted()
-        } else {
-            $self
-                .into_iter()
-                .sorted_by(|a, b| a.cmp(b))
-                .collect_trusted()
-        }
-    }};
-}
-
 impl ChunkSort<Utf8Type> for Utf8Chunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<Utf8Type> {
         sort_with_fast_path!(self, options);
@@ -490,8 +465,8 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             order_reverse,
         );
 
-        let mut values = MutableBuffer::<u8>::with_capacity(self.get_values_size());
-        let mut offsets = MutableBuffer::<i64>::with_capacity(self.len() + 1);
+        let mut values = Vec::<u8>::with_capacity(self.get_values_size());
+        let mut offsets = Vec::<i64>::with_capacity(self.len() + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
 
@@ -520,7 +495,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(len - null_count, true);
                 validity.extend_constant(null_count, false);
-                offsets.extend_constant(null_count, length_so_far);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 // Safety:
                 // we pass valid utf8
@@ -537,7 +512,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 let mut validity = MutableBitmap::with_capacity(len);
                 validity.extend_constant(null_count, false);
                 validity.extend_constant(len - null_count, true);
-                offsets.extend_constant(null_count, length_so_far);
+                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
 
                 for val in v {
                     values.extend_from_slice(val.as_bytes());
@@ -629,15 +604,57 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
 #[cfg(feature = "dtype-categorical")]
 impl ChunkSort<CategoricalType> for CategoricalChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<CategoricalType> {
-        self.deref().sort_with(options).into()
+        assert!(
+            !options.nulls_last,
+            "null last not yet supported for categorical dtype"
+        );
+        let mut vals = self
+            .into_iter()
+            .zip(self.iter_str())
+            .collect_trusted::<Vec<_>>();
+
+        argsort_branch(
+            vals.as_mut_slice(),
+            options.descending,
+            |(_, a), (_, b)| order_default_null(a, b),
+            |(_, a), (_, b)| order_reverse_null(a, b),
+        );
+        let arr: UInt32Array = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let mut ca = self.clone();
+        ca.chunks = vec![Arc::new(arr)];
+
+        ca
     }
 
     fn sort(&self, reverse: bool) -> Self {
-        self.deref().sort(reverse).into()
+        self.sort_with(SortOptions {
+            nulls_last: false,
+            descending: reverse,
+        })
     }
 
     fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        self.deref().argsort(reverse)
+        let mut count: u32 = 0;
+        // safety: we know the iterators len
+        let mut vals = self
+            .iter_str()
+            .map(|s| {
+                let i = count;
+                count += 1;
+                (i, s)
+            })
+            .collect_trusted::<Vec<_>>();
+
+        argsort_branch(
+            vals.as_mut_slice(),
+            reverse,
+            |(_, a), (_, b)| order_default_null(a, b),
+            |(_, a), (_, b)| order_reverse_null(a, b),
+        );
+        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let mut ca = ca.into_inner();
+        ca.rename(self.name());
+        ca
     }
 }
 
@@ -648,7 +665,17 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             !options.nulls_last,
             "null last not yet supported for bool dtype"
         );
-        sort!(self, options.descending)
+        let mut vals = self.into_iter().collect::<Vec<_>>();
+
+        if options.descending {
+            vals.sort_by(|a, b| b.cmp(a))
+        } else {
+            vals.sort()
+        }
+
+        let mut ca: BooleanChunked = vals.into_iter().collect_trusted();
+        ca.rename(self.name());
+        ca
     }
 
     fn sort(&self, reverse: bool) -> BooleanChunked {
@@ -882,5 +909,20 @@ mod test {
         let out = ca.sort(true);
         let expected = &[Some("c"), Some("b"), Some("a")];
         assert_eq!(Vec::from(&out), expected);
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-categorical")]
+    fn test_sort_categorical() {
+        let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
+        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.categorical().unwrap();
+        let out = ca.sort_with(SortOptions {
+            descending: false,
+            nulls_last: false,
+        });
+        let out = out.iter_str().collect::<Vec<_>>();
+        let expected = &[None, None, Some("a"), Some("b"), Some("c")];
+        assert_eq!(out, expected);
     }
 }
