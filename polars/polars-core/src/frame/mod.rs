@@ -275,7 +275,7 @@ impl DataFrame {
     /// let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     /// assert_eq!(df1.shape(), (4, 1));
     ///
-    /// let df2: DataFrame = df1.with_row_count("Id")?;
+    /// let df2: DataFrame = df1.with_row_count("Id", None)?;
     /// assert_eq!(df2.shape(), (4, 2));
     /// println!("{}", df2);
     ///
@@ -300,10 +300,13 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str) -> Result<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
-        columns
-            .push(UInt32Chunked::from_vec(name, (0..self.height() as u32).collect()).into_series());
+        let offset = offset.unwrap_or(0);
+        columns.push(
+            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
+                .into_series(),
+        );
 
         self.columns.iter().for_each(|s| columns.push(s.clone()));
         DataFrame::new(columns)
