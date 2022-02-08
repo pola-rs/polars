@@ -1,11 +1,9 @@
-use super::{ArrowReader, ArrowResult};
 use crate::aggregations::ScanAggregation;
 use crate::mmap::MmapBytesReader;
-use crate::parquet::read_impl::{parallel_read, read_parquet};
+use crate::parquet::read_impl::read_parquet;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
 use arrow::io::parquet::read;
-use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
 use std::sync::Arc;
@@ -32,15 +30,10 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     ) -> Result<DataFrame> {
         // this path takes predicates and parallelism into account
         let metadata = read::read_metadata(&mut self.reader)?;
-        let schema = read::schema::get_schema(&metadata)?;
-
-        let f = match self.parallel {
-            true => parallel_read,
-            false => read_parquet,
-        };
+        let schema = read::schema::infer_schema(&metadata)?;
 
         let rechunk = self.rechunk;
-        f(
+        read_parquet(
             self.reader,
             self.n_rows.unwrap_or(usize::MAX),
             projection,
@@ -48,6 +41,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             Some(metadata),
             predicate,
             aggregate,
+            self.parallel,
         )
         .map(|mut df| {
             if rechunk {
@@ -86,14 +80,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
     pub fn schema(mut self) -> Result<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
-        let schema = read::get_schema(&metadata)?;
+        let schema = read::infer_schema(&metadata)?;
         Ok(schema.into())
-    }
-}
-
-impl<R: Read + Seek> ArrowReader for read::RecordReader<R> {
-    fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
-        self.next().map_or(Ok(None), |v| v.map(Some))
     }
 }
 
@@ -116,7 +104,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
     fn finish(mut self) -> Result<DataFrame> {
         let metadata = read::read_metadata(&mut self.reader)?;
-        let schema = read::schema::get_schema(&metadata)?;
+        let schema = read::schema::infer_schema(&metadata)?;
 
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -128,26 +116,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection = Some(prj);
         }
 
-        if self.parallel {
-            let rechunk = self.rechunk;
-            return parallel_read(
-                self.reader,
-                self.n_rows.unwrap_or(usize::MAX),
-                self.projection.as_deref(),
-                &schema,
-                Some(metadata),
-                None,
-                None,
-            )
-            .map(|mut df| {
-                if rechunk {
-                    df.rechunk();
-                };
-                df
-            });
-        }
-
-        let mut df = read_parquet(
+        read_parquet(
             self.reader,
             self.n_rows.unwrap_or(usize::MAX),
             self.projection.as_deref(),
@@ -155,11 +124,13 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             Some(metadata),
             None,
             None,
-        )?;
-        if self.rechunk {
-            df.rechunk();
-        }
-
-        Ok(df)
+            self.parallel,
+        )
+        .map(|mut df| {
+            if self.rechunk {
+                df.rechunk();
+            }
+            df
+        })
     }
 }

@@ -991,7 +991,7 @@ impl LazyFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
-    pub fn with_row_count(self, name: &str) -> LazyFrame {
+    pub fn with_row_count(self, name: &str, offset: Option<u32>) -> LazyFrame {
         let schema = self.schema();
 
         let mut fields = schema.fields().clone();
@@ -1000,9 +1000,15 @@ impl LazyFrame {
 
         let name = name.to_owned();
 
+        let opt = AllowedOptimizations {
+            slice_pushdown: false,
+            predicate_pushdown: false,
+            ..Default::default()
+        };
+
         self.map(
-            move |df: DataFrame| df.with_row_count(&name),
-            Some(AllowedOptimizations::default()),
+            move |df: DataFrame| df.with_row_count(&name, offset),
+            Some(opt),
             Some(new_schema),
             Some("WITH ROW COUNT"),
         )

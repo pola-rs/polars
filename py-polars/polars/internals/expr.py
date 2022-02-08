@@ -47,6 +47,12 @@ class Expr:
     def __init__(self) -> None:
         self._pyexpr: PyExpr  # pragma: no cover
 
+    def __str__(self) -> str:
+        return self._pyexpr.to_str()
+
+    def _repr_html_(self) -> str:
+        return self._pyexpr.to_str()
+
     @staticmethod
     def _from_pyexpr(pyexpr: "PyExpr") -> "Expr":
         self = Expr.__new__(Expr)
