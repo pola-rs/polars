@@ -159,6 +159,8 @@ def read_csv(
     use_pyarrow: bool = False,
     storage_options: Optional[Dict] = None,
     skip_rows_after_header: int = 0,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -245,6 +247,10 @@ def read_csv(
         e.g. host, port, username, password, etc.
     skip_rows_after_header
         Skip these number of rows when the header is parsed
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
 
     Returns
     -------
@@ -407,6 +413,8 @@ def read_csv(
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
+            row_count_name=row_count_name,
+            row_count_offset=row_count_offset,
         )
 
     if new_columns:
@@ -432,6 +440,8 @@ def scan_csv(
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -494,6 +504,10 @@ def scan_csv(
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip these number of rows when the header is parsed
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
 
     Examples
     --------
@@ -561,6 +575,8 @@ def scan_csv(
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
         encoding=encoding,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
     )
 
 

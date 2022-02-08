@@ -6,6 +6,25 @@ fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
     (expr_arena, lp_arena)
 }
 
+pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    (&lp_arena).iter(lp).any(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            CsvScan {
+                options:
+                    CsvParserOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
+            } => true,
+            _ => false,
+        }
+    })
+}
+
 pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();

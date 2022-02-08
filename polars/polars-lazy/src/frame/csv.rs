@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::csv_core::utils::get_reader_bytes;
 use polars_io::csv_core::utils::infer_file_schema;
+use polars_io::RowCount;
 
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
@@ -25,6 +26,7 @@ pub struct LazyCsvReader<'a> {
     rechunk: bool,
     skip_rows_after_header: usize,
     encoding: CsvEncoding,
+    row_count: Option<RowCount>,
 }
 
 #[cfg(feature = "csv-file")]
@@ -49,6 +51,7 @@ impl<'a> LazyCsvReader<'a> {
             rechunk: true,
             skip_rows_after_header: 0,
             encoding: CsvEncoding::Utf8,
+            row_count: None,
         }
     }
 
@@ -56,6 +59,13 @@ impl<'a> LazyCsvReader<'a> {
     #[must_use]
     pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
         self.skip_rows_after_header = offset;
+        self
+    }
+
+    /// Add a `row_count` column.
+    #[must_use]
+    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
+        self.row_count = rc;
         self
     }
 
@@ -213,6 +223,7 @@ impl<'a> LazyCsvReader<'a> {
             self.rechunk,
             self.skip_rows_after_header,
             self.encoding,
+            self.row_count,
         )?
         .build()
         .into();

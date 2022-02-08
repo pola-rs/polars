@@ -42,6 +42,7 @@ use crate::prelude::{
 use crate::logical_plan::FETCH_ROWS;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
 pub struct JoinOptions {
@@ -991,27 +992,39 @@ impl LazyFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
-    pub fn with_row_count(self, name: &str, offset: Option<u32>) -> LazyFrame {
-        let schema = self.schema();
+    pub fn with_row_count(mut self, name: &str, offset: Option<u32>) -> LazyFrame {
+        match &mut self.logical_plan {
+            // Do the row count at scan
+            #[cfg(feature = "csv-file")]
+            LogicalPlan::CsvScan { options, .. } => {
+                options.row_count = Some(RowCount {
+                    name: name.to_string(),
+                    offset: offset.unwrap_or(0),
+                });
+                self
+            }
+            _ => {
+                let schema = self.schema();
 
-        let mut fields = schema.fields().clone();
-        fields.insert(0, Field::new(name, DataType::UInt32));
-        let new_schema = Schema::new(fields);
+                let mut fields = schema.fields().clone();
+                fields.insert(0, Field::new(name, DataType::UInt32));
+                let new_schema = Schema::new(fields);
 
-        let name = name.to_owned();
+                let name = name.to_owned();
 
-        let opt = AllowedOptimizations {
-            slice_pushdown: false,
-            predicate_pushdown: false,
-            ..Default::default()
-        };
-
-        self.map(
-            move |df: DataFrame| df.with_row_count(&name, offset),
-            Some(opt),
-            Some(new_schema),
-            Some("WITH ROW COUNT"),
-        )
+                let opt = AllowedOptimizations {
+                    slice_pushdown: false,
+                    predicate_pushdown: false,
+                    ..Default::default()
+                };
+                self.map(
+                    move |df: DataFrame| df.with_row_count(&name, offset),
+                    Some(opt),
+                    Some(new_schema),
+                    Some("WITH ROW COUNT"),
+                )
+            }
+        }
     }
 }
 

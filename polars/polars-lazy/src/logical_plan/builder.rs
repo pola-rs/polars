@@ -11,6 +11,7 @@ use polars_io::csv_core::utils::infer_file_schema;
 use polars_io::ipc::IpcReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
     csv::NullValues,
@@ -103,6 +104,7 @@ impl LogicalPlanBuilder {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
+        row_count: Option<RowCount>,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -149,6 +151,7 @@ impl LogicalPlanBuilder {
                 null_values,
                 rechunk,
                 encoding,
+                row_count,
             },
             predicate: None,
             aggregate: vec![],

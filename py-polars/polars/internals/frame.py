@@ -389,83 +389,11 @@ class DataFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
-        Read a CSV file into a Dataframe.
-
-        Parameters
-        ----------
-        file
-            Path to a file or file like object.
-        has_header
-            Indicate if the first row of dataset is a header or not.
-            If set to False, column names will be autogenrated in the
-            following format: ``column_x``, with ``x`` being an
-            enumeration over every column in the dataset starting at 1.
-        columns
-            Columns to select. Accepts a list of column indices (starting
-            at zero) or a list of column names.
-        sep
-            Character to use as delimiter in the file.
-        comment_char
-            Character that indicates the start of a comment line, for
-            instance ``#``.
-        quote_char
-            Single byte character used for csv quoting, default = ''.
-            Set to None to turn off special handling and escaping of quotes.
-        skip_rows
-            Start reading after ``skip_rows`` lines. The header is also inferred at
-            this offset
-        dtypes
-            Overwrite dtypes during inference.
-        null_values
-            Values to interpret as null values. You can provide a:
-              - ``str``: All values equal to this string will be null.
-              - ``List[str]``: A null value per column.
-              - ``Dict[str, str]``: A dictionary that maps column name to a
-                                    null value string.
-        ignore_errors
-            Try to keep reading lines if some lines yield errors.
-            First try ``infer_schema_length=0`` to read all columns as
-            ``pl.Utf8`` to check which values might cause an issue.
-        parse_dates
-            Try to automatically parse dates. If this does not succeed,
-            the column remains of data type ``pl.Utf8``.
-        n_threads
-            Number of threads to use in csv parsing.
-            Defaults to the number of physical cpu's of your system.
-        infer_schema_length
-            Maximum number of lines to read to infer schema.
-            If set to 0, all columns will be read as ``pl.Utf8``.
-            If set to ``None``, a full table scan will be done (slow).
-        batch_size
-            Number of lines to read into the buffer at once.
-            Modify this to change performance.
-        n_rows
-            Stop reading from CSV file after reading ``n_rows``.
-            During multi-threaded parsing, an upper bound of ``n_rows``
-            rows cannot be guaranteed.
-        encoding
-            Allowed encodings: ``utf8`` or ``utf8-lossy``.
-            Lossy means that invalid utf8 values are replaced with ``�``
-            characters.
-        low_memory
-            Reduce memory usage at expense of performance.
-        rechunk
-            Make sure that all columns are contiguous in memory by
-            aggregating the chunks into a single array.
-        skip_rows_after_header
-            These number of rows will be skipped when the header is parsed.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-
-        >>> df = pl.read_csv("file.csv", sep=";", n_rows=25)  # doctest: +SKIP
-
+        see pl.read_csv
         """
         self = DataFrame.__new__(DataFrame)
 
@@ -518,6 +446,8 @@ class DataFrame:
                 low_memory=low_memory,
                 rechunk=rechunk,
                 skip_rows_after_header=skip_rows_after_header,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
             )
             if columns is None:
                 return scan.collect()
@@ -529,6 +459,12 @@ class DataFrame:
                 )
 
         projection, columns = handle_projection_columns(columns)
+
+        row_count: Optional[Tuple[str, int]]
+        if row_count_name is not None:
+            row_count = (row_count_name, row_count_offset)
+        else:
+            row_count = None
 
         self._df = PyDataFrame.read_csv(
             file,
@@ -553,6 +489,7 @@ class DataFrame:
             processed_null_values,
             parse_dates,
             skip_rows_after_header,
+            row_count,
         )
         return self
 

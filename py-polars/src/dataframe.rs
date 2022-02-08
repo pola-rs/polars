@@ -21,6 +21,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars::io::RowCount;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::groupby::PivotAgg;
 use polars_core::frame::ArrowChunk;
@@ -103,9 +104,12 @@ impl PyDataFrame {
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
         skip_rows_after_header: usize,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
@@ -171,6 +175,7 @@ impl PyDataFrame {
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
             .with_skip_rows_after_header(skip_rows_after_header)
+            .with_row_count(row_count)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
