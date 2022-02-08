@@ -308,7 +308,7 @@ impl DataFrame {
                 .into_series(),
         );
 
-        self.columns.iter().for_each(|s| columns.push(s.clone()));
+        columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
     }
 
