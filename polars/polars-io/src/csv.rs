@@ -246,12 +246,8 @@ where
     }
 
     /// Add a `row_count` column.
-    pub fn with_row_count(mut self, name: Option<&str>, offset: u32) -> Self {
-        let rc = RowCount {
-            name: name.unwrap_or("row_count").to_string(),
-            offset,
-        };
-        self.row_count = Some(rc);
+    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
+        self.row_count = rc;
         self
     }
 
@@ -453,7 +449,7 @@ where
             schema_overwrite: None,
             dtype_overwrite: None,
             sample_size: 1024,
-            chunk_size: 1 << 16,
+            chunk_size: 1 << 18,
             low_memory: false,
             comment_char: None,
             null_values: None,
@@ -643,6 +639,7 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::RowCount;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;
     use std::io::Cursor;
@@ -1519,7 +1516,10 @@ foo,bar
     #[test]
     fn test_with_row_count() -> Result<()> {
         let df = CsvReader::from_path(FOODS_CSV)?
-            .with_row_count(Some("rc"), 0)
+            .with_row_count(Some(RowCount {
+                name: "rc".into(),
+                offset: 0,
+            }))
             .finish()?;
         let rc = df.column("rc")?;
         assert_eq!(
@@ -1527,7 +1527,10 @@ foo,bar
             (0u32..27).collect::<Vec<_>>()
         );
         let df = CsvReader::from_path(FOODS_CSV)?
-            .with_row_count(Some("rc_2"), 10)
+            .with_row_count(Some(RowCount {
+                name: "rc_2".into(),
+                offset: 10,
+            }))
             .finish()?;
         let rc = df.column("rc_2")?;
         assert_eq!(

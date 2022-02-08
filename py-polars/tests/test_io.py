@@ -591,3 +591,22 @@ def test_from_different_chunks() -> None:
     out = df.to_pandas()
     assert list(out.columns) == ["a", "b"]
     assert out.shape == (5, 2)
+
+
+def test_row_count(foods_csv: str) -> None:
+    df = pl.read_csv(foods_csv, row_count_name="row_count")
+    assert df["row_count"].to_list() == list(range(27))
+    df = (
+        pl.scan_csv(foods_csv, row_count_name="row_count")
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .collect()
+    )
+    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+    # make sure that row count is correct even though predicate is pushed down
+    df = (
+        pl.scan_csv(foods_csv)
+        .with_row_count("foo", 10)
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .collect()
+    )
+    assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]

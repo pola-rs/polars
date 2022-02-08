@@ -446,7 +446,7 @@ impl<'a> CoreReader<'a> {
                         let projection = &projection;
 
                         let mut read = bytes_offset_thread;
-                        let mut df: Option<DataFrame> = None;
+                        let mut dfs = Vec::with_capacity(256);
 
                         let mut last_read = usize::MAX;
                         loop {
@@ -486,6 +486,11 @@ impl<'a> CoreReader<'a> {
                                     .map(|buf| buf.into_series())
                                     .collect::<Result<_>>()?,
                             );
+                            let current_row_count = local_df.height() as u32;
+                            if let Some(rc) = &self.row_count {
+                                local_df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            };
+
                             if let Some(predicate) = predicate {
                                 let s = predicate.evaluate(&local_df)?;
                                 let mask =
@@ -519,23 +524,18 @@ impl<'a> CoreReader<'a> {
                                     }
                                 }
                             }
-                            match &mut df {
-                                None => df = Some(local_df),
-                                Some(df) => {
-                                    df.vstack_mut(&local_df).unwrap();
-                                }
-                            }
+                            cast_columns(&mut local_df, self.to_cast, false)?;
+                            dfs.push((local_df, current_row_count));
                         }
-
-                        df.map(|mut df| {
-                            cast_columns(&mut df, self.to_cast, false)?;
-                            Ok(df)
-                        })
-                        .transpose()
+                        Ok(dfs)
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            accumulate_dataframes_vertical(dfs.into_iter().flatten())
+            let mut dfs = dfs.into_iter().flatten().collect::<Vec<_>>();
+            if self.row_count.is_some() {
+                update_row_counts(&mut dfs)
+            }
+            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
         } else {
             // let exponential growth solve the needed size. This leads to less memory overhead
             // in the later rechunk. Because we have large chunks they are easier reused for the
@@ -608,7 +608,7 @@ impl<'a> CoreReader<'a> {
 
                         cast_columns(&mut df, self.to_cast, false)?;
                         if let Some(rc) = &self.row_count {
-                            df = df.with_row_count(&rc.name, Some(rc.offset)).unwrap()
+                            df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
                         let n_read = df.height() as u32;
                         Ok((df, n_read))

@@ -312,6 +312,17 @@ impl DataFrame {
         DataFrame::new(columns)
     }
 
+    /// Add a row count in place.
+    pub fn with_row_count_mut(&mut self, name: &str, offset: Option<u32>) -> &mut Self {
+        let offset = offset.unwrap_or(0);
+        self.columns.insert(
+            0,
+            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
+                .into_series(),
+        );
+        self
+    }
+
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
     ///
     /// It is advised to use [Series::new](Series::new) in favor of this method.

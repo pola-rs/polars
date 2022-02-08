@@ -4,6 +4,7 @@ use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
+use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
@@ -108,11 +109,14 @@ impl PyLazyFrame {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: &str,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
+
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let encoding = match encoding {
             "utf8" => CsvEncoding::Utf8,
@@ -150,6 +154,7 @@ impl PyLazyFrame {
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding)
+            .with_row_count(row_count)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {

@@ -232,6 +232,7 @@ impl Executor for CsvExec {
             .with_quote_char(self.options.quote_char)
             .with_encoding(self.options.encoding)
             .with_rechunk(self.options.rechunk)
+            .with_row_count(std::mem::take(&mut self.options.row_count))
             .finish()?;
 
         if self.options.cache {

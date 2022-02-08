@@ -74,6 +74,8 @@ class LazyFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -84,6 +86,12 @@ class LazyFrame:
             for k, v in dtypes.items():
                 dtype_list.append((k, py_type_to_dtype(v)))
         processed_null_values = _process_null_values(null_values)
+
+        row_count: Optional[Tuple[str, int]]
+        if row_count_name is not None:
+            row_count = (row_count_name, row_count_offset)
+        else:
+            row_count = None
 
         self = LazyFrame.__new__(LazyFrame)
         self._ldf = PyLazyFrame.new_from_csv(
@@ -104,6 +112,7 @@ class LazyFrame:
             rechunk,
             skip_rows_after_header,
             encoding,
+            row_count,
         )
         return self
 
