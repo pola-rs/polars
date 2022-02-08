@@ -91,11 +91,11 @@ impl<T> NewChunkedArray<ObjectType<T>, T> for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn new_from_slice(name: &str, v: &[T]) -> Self {
-        Self::new_from_iter(name, v.iter().cloned())
+    fn from_slice(name: &str, v: &[T]) -> Self {
+        Self::from_iter_values(name, v.iter().cloned())
     }
 
-    fn new_from_opt_slice(name: &str, opt_v: &[Option<T>]) -> Self {
+    fn from_slice_options(name: &str, opt_v: &[Option<T>]) -> Self {
         let mut builder = ObjectChunkedBuilder::<T>::new(name, opt_v.len());
         opt_v
             .iter()
@@ -104,14 +104,14 @@ where
         builder.finish()
     }
 
-    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked<T> {
+    fn from_iter_options(name: &str, it: impl Iterator<Item = Option<T>>) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|opt| builder.append_option(opt));
         builder.finish()
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked<T> {
+    fn from_iter_values(name: &str, it: impl Iterator<Item = T>) -> ObjectChunked<T> {
         let mut builder = ObjectChunkedBuilder::new(name, get_iter_capacity(&it));
         it.for_each(|v| builder.append_value(v));
         builder.finish()

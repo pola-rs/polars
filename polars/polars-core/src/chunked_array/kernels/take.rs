@@ -45,7 +45,7 @@ pub(crate) unsafe fn take_list_unchecked(
     // tmp series so that we can take primitives from it
     let s = Series::try_from(("", values.values().clone() as ArrayRef)).unwrap();
     let taken = s
-        .take_unchecked(&UInt32Chunked::new_from_chunks(
+        .take_unchecked(&UInt32Chunked::from_chunks(
             "",
             vec![Arc::new(list_indices) as ArrayRef],
         ))

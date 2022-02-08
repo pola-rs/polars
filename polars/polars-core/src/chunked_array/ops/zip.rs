@@ -88,7 +88,7 @@ where
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -110,7 +110,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -131,7 +131,7 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -152,7 +152,7 @@ impl ChunkZip<ListType> for ListChunked {
                 Ok(arr)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 

@@ -16,7 +16,7 @@ impl Series {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical => {
                 let ca = self.categorical().unwrap();
-                let mut new = CategoricalChunked::new_from_chunks(
+                let mut new = CategoricalChunked::from_chunks(
                     ca.name(),
                     vec![ca.chunks()[chunk_idx].clone()],
                 );

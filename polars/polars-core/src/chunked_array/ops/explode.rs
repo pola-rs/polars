@@ -376,7 +376,7 @@ mod test {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
         builder.append_series(&Series::new("", &[1i32, 2]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[3i32]));
 
         let ca = builder.finish();
@@ -389,9 +389,9 @@ mod test {
         // more primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
         builder.append_series(&Series::new("", &[1i32]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[2i32]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[3, 4i32]));
 
         let ca = builder.finish();
@@ -405,18 +405,15 @@ mod test {
         let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a");
         builder.append_series(&Series::new("", &["abc"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["de"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["fg"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
 
         let ca = builder.finish();
@@ -429,9 +426,9 @@ mod test {
         // boolean
         let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a");
         builder.append_series(&Series::new("", &[true]));
-        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[false]));
-        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[true, true]));
 
         let ca = builder.finish();

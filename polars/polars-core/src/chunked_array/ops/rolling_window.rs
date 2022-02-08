@@ -320,7 +320,7 @@ mod inner_mod {
             let len = self.len();
             let arr = ca.downcast_iter().next().unwrap();
             let series_container =
-                ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]).into_series();
+                ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
             let array_ptr = &series_container.chunks()[0];
             let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
@@ -417,7 +417,7 @@ mod inner_mod {
             let ca = self.rechunk();
             let arr = ca.downcast_iter().next().unwrap();
 
-            let arr_container = ChunkedArray::<T>::new_from_slice("", &[T::Native::zero()]);
+            let arr_container = ChunkedArray::<T>::from_slice("", &[T::Native::zero()]);
             let array_ptr = &arr_container.chunks()[0];
             let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
 
@@ -451,7 +451,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
+            Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]))
         }
 
         /// Apply a rolling var (moving var) over the values in this array.
@@ -568,7 +568,7 @@ mod test {
 
     #[test]
     fn test_rolling_min_periods() {
-        let ca = Int32Chunked::new_from_slice("foo", &[1, 2, 3, 2, 1]);
+        let ca = Int32Chunked::from_slice("foo", &[1, 2, 3, 2, 1]);
         let a = ca
             .rolling_max(RollingOptions {
                 window_size: 2,
@@ -651,7 +651,7 @@ mod test {
         );
 
         // integers
-        let ca = Int32Chunked::new_from_slice("", &[1, 8, 6, 2, 16, 10]);
+        let ca = Int32Chunked::from_slice("", &[1, 8, 6, 2, 16, 10]);
         let out = ca
             .into_series()
             .rolling_mean(RollingOptions {
@@ -753,7 +753,7 @@ mod test {
             &[None, None, Some(1), None, None, None, None,]
         );
 
-        let ca = Float64Chunked::new_from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]);
+        let ca = Float64Chunked::from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]);
         let out = ca
             .rolling_var(options)
             .unwrap()

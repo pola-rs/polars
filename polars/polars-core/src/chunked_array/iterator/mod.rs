@@ -406,8 +406,8 @@ mod test {
 
     #[test]
     fn out_of_bounds() {
-        let mut a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let b = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let mut a = UInt32Chunked::from_slice("a", &[1, 2, 3]);
+        let b = UInt32Chunked::from_slice("a", &[1, 2, 3]);
         a.append(&b);
 
         let v = a.into_iter().collect::<Vec<_>>();
@@ -432,7 +432,7 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -572,8 +572,8 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new_from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
+                let a_b = <$ca_type>::from_slice("", &[$third_val]);
                 a.append(&a_b);
 
                 // normal iterator
@@ -716,7 +716,7 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
 
                 // normal iterator
                 let mut it = a.into_no_null_iter();
@@ -789,8 +789,8 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new_from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
+                let a_b = <$ca_type>::from_slice("", &[$third_val]);
                 a.append(&a_b);
 
                 // normal iterator
@@ -896,7 +896,7 @@ mod test {
     }
 
     impl_test_iter_skip!(utf8_iter_single_chunk_skip, 8, Some("0"), Some("9"), {
-        Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
+        Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(
@@ -908,8 +908,8 @@ mod test {
     );
 
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
-        let mut a = Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let a_b = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });
@@ -937,7 +937,7 @@ mod test {
     }
 
     impl_test_iter_skip!(bool_iter_single_chunk_skip, 8, Some(true), Some(false), {
-        BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE))
+        BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(bool_iter_single_chunk_null_check_skip, 8, None, None, {
@@ -945,9 +945,8 @@ mod test {
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
-        let mut a =
-            BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
-        let a_b = BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let mut a = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let a_b = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });

@@ -528,7 +528,7 @@ where
                 (Some(p), Some(v)) => prod = Some(p * v),
             }
         }
-        Self::new_from_opt_slice(self.name(), &[prod]).into_series()
+        Self::from_slice_options(self.name(), &[prod]).into_series()
     }
 }
 
@@ -882,7 +882,7 @@ mod test {
         let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
-        let ca2 = Float64Chunked::new_from_slice("b", &[f64::NAN, 1.0]);
+        let ca2 = Float64Chunked::from_slice("b", &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
     }
@@ -911,7 +911,7 @@ mod test {
         );
         assert_eq!(ca.median(), Some(4.0));
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,
@@ -972,10 +972,10 @@ mod test {
 
     #[test]
     fn test_quantile_all_null() {
-        let test_f32 = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_i32 = Int32Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_f64 = Float64Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_i64 = Int64Chunked::new_from_opt_slice("", &[None, None, None]);
+        let test_f32 = Float32Chunked::from_slice_options("", &[None, None, None]);
+        let test_i32 = Int32Chunked::from_slice_options("", &[None, None, None]);
+        let test_f64 = Float64Chunked::from_slice_options("", &[None, None, None]);
+        let test_i64 = Int64Chunked::from_slice_options("", &[None, None, None]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -995,10 +995,10 @@ mod test {
 
     #[test]
     fn test_quantile_single_value() {
-        let test_f32 = Float32Chunked::new_from_opt_slice("", &[Some(1.0)]);
-        let test_i32 = Int32Chunked::new_from_opt_slice("", &[Some(1)]);
-        let test_f64 = Float64Chunked::new_from_opt_slice("", &[Some(1.0)]);
-        let test_i64 = Int64Chunked::new_from_opt_slice("", &[Some(1)]);
+        let test_f32 = Float32Chunked::from_slice_options("", &[Some(1.0)]);
+        let test_i32 = Int32Chunked::from_slice_options("", &[Some(1)]);
+        let test_f64 = Float64Chunked::from_slice_options("", &[Some(1.0)]);
+        let test_i64 = Int64Chunked::from_slice_options("", &[Some(1)]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -1019,13 +1019,13 @@ mod test {
     #[test]
     fn test_quantile_min_max() {
         let test_f32 =
-            Float32Chunked::new_from_opt_slice("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
+            Float32Chunked::from_slice_options("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
         let test_i32 =
-            Int32Chunked::new_from_opt_slice("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
+            Int32Chunked::from_slice_options("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
         let test_f64 =
-            Float64Chunked::new_from_opt_slice("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
+            Float64Chunked::from_slice_options("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
         let test_i64 =
-            Int64Chunked::new_from_opt_slice("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
+            Int64Chunked::from_slice_options("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -1220,7 +1220,7 @@ mod test {
             Some(4.6)
         );
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,

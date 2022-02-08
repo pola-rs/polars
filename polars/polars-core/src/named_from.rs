@@ -52,38 +52,38 @@ macro_rules! impl_named_from {
     };
 }
 
-impl_named_from!([String], Utf8Type, new_from_slice);
-impl_named_from!([bool], BooleanType, new_from_slice);
+impl_named_from!([String], Utf8Type, from_slice);
+impl_named_from!([bool], BooleanType, from_slice);
 #[cfg(feature = "dtype-u8")]
-impl_named_from!([u8], UInt8Type, new_from_slice);
+impl_named_from!([u8], UInt8Type, from_slice);
 #[cfg(feature = "dtype-u16")]
-impl_named_from!([u16], UInt16Type, new_from_slice);
-impl_named_from!([u32], UInt32Type, new_from_slice);
-impl_named_from!([u64], UInt64Type, new_from_slice);
+impl_named_from!([u16], UInt16Type, from_slice);
+impl_named_from!([u32], UInt32Type, from_slice);
+impl_named_from!([u64], UInt64Type, from_slice);
 #[cfg(feature = "dtype-i8")]
-impl_named_from!([i8], Int8Type, new_from_slice);
+impl_named_from!([i8], Int8Type, from_slice);
 #[cfg(feature = "dtype-i16")]
-impl_named_from!([i16], Int16Type, new_from_slice);
-impl_named_from!([i32], Int32Type, new_from_slice);
-impl_named_from!([i64], Int64Type, new_from_slice);
-impl_named_from!([f32], Float32Type, new_from_slice);
-impl_named_from!([f64], Float64Type, new_from_slice);
-impl_named_from!([Option<String>], Utf8Type, new_from_opt_slice);
-impl_named_from!([Option<bool>], BooleanType, new_from_opt_slice);
+impl_named_from!([i16], Int16Type, from_slice);
+impl_named_from!([i32], Int32Type, from_slice);
+impl_named_from!([i64], Int64Type, from_slice);
+impl_named_from!([f32], Float32Type, from_slice);
+impl_named_from!([f64], Float64Type, from_slice);
+impl_named_from!([Option<String>], Utf8Type, from_slice_options);
+impl_named_from!([Option<bool>], BooleanType, from_slice_options);
 #[cfg(feature = "dtype-u8")]
-impl_named_from!([Option<u8>], UInt8Type, new_from_opt_slice);
+impl_named_from!([Option<u8>], UInt8Type, from_slice_options);
 #[cfg(feature = "dtype-u16")]
-impl_named_from!([Option<u16>], UInt16Type, new_from_opt_slice);
-impl_named_from!([Option<u32>], UInt32Type, new_from_opt_slice);
-impl_named_from!([Option<u64>], UInt64Type, new_from_opt_slice);
+impl_named_from!([Option<u16>], UInt16Type, from_slice_options);
+impl_named_from!([Option<u32>], UInt32Type, from_slice_options);
+impl_named_from!([Option<u64>], UInt64Type, from_slice_options);
 #[cfg(feature = "dtype-i8")]
-impl_named_from!([Option<i8>], Int8Type, new_from_opt_slice);
+impl_named_from!([Option<i8>], Int8Type, from_slice_options);
 #[cfg(feature = "dtype-i16")]
-impl_named_from!([Option<i16>], Int16Type, new_from_opt_slice);
-impl_named_from!([Option<i32>], Int32Type, new_from_opt_slice);
-impl_named_from!([Option<i64>], Int64Type, new_from_opt_slice);
-impl_named_from!([Option<f32>], Float32Type, new_from_opt_slice);
-impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
+impl_named_from!([Option<i16>], Int16Type, from_slice_options);
+impl_named_from!([Option<i32>], Int32Type, from_slice_options);
+impl_named_from!([Option<i64>], Int64Type, from_slice_options);
+impl_named_from!([Option<f32>], Float32Type, from_slice_options);
+impl_named_from!([Option<f64>], Float64Type, from_slice_options);
 
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
@@ -134,7 +134,7 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
 }
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
+        Utf8Chunked::from_slice(name, v.as_ref()).into_series()
     }
 }
 
@@ -148,32 +148,32 @@ impl NamedFrom<&Series, str> for Series {
 
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_slice(name, v.as_ref())
+        Utf8Chunked::from_slice(name, v.as_ref())
     }
 }
 
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
+        Utf8Chunked::from_slice_options(name, v.as_ref()).into_series()
     }
 }
 
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, v.as_ref())
+        Utf8Chunked::from_slice_options(name, v.as_ref())
     }
 }
 
 impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+        Utf8Chunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
             .into_series()
     }
 }
 
 impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+        Utf8Chunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
     }
 }
 
@@ -185,7 +185,7 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
 
 impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_iter(
+        Utf8Chunked::from_iter_options(
             name,
             v.as_ref()
                 .iter()
@@ -197,14 +197,14 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
     fn new(name: &str, v: &[T]) -> Self {
-        ObjectChunked::new_from_slice(name, v)
+        ObjectChunked::from_slice(name, v)
     }
 }
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject, S: AsRef<[Option<T>]>> NamedFrom<S, [Option<T>]> for ObjectChunked<T> {
     fn new(name: &str, v: S) -> Self {
-        ObjectChunked::new_from_opt_slice(name, v.as_ref())
+        ObjectChunked::from_slice_options(name, v.as_ref())
     }
 }
 

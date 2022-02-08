@@ -69,7 +69,7 @@ impl PolarsExtension {
                 })
             });
 
-            let ca = ObjectChunked::<T>::new_from_opt_iter(name, iter);
+            let ca = ObjectChunked::<T>::from_iter_options(name, iter);
             ca.into_series()
         });
         self.with_sentinel(move |sent| {

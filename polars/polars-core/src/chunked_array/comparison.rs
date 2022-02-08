@@ -32,7 +32,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks("", chunks)
+        ChunkedArray::from_chunks("", chunks)
     }
 }
 
@@ -223,7 +223,7 @@ fn compare_bools(
         .map(|(l, r)| Arc::new(f(l, r)) as ArrayRef)
         .collect();
 
-    BooleanChunked::new_from_chunks(lhs.name(), chunks)
+    BooleanChunked::from_chunks(lhs.name(), chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
@@ -442,7 +442,7 @@ impl Utf8Chunked {
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks("", chunks)
+        ChunkedArray::from_chunks("", chunks)
     }
 }
 
@@ -780,7 +780,7 @@ impl Not for &BooleanChunked {
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -1074,8 +1074,8 @@ mod test {
     #[test]
     fn test_kleene() {
         let a = BooleanChunked::new("", &[Some(true), Some(false), None]);
-        let trues = BooleanChunked::new_from_slice("", &[true, true, true]);
-        let falses = BooleanChunked::new_from_slice("", &[false, false, false]);
+        let trues = BooleanChunked::from_slice("", &[true, true, true]);
+        let falses = BooleanChunked::from_slice("", &[false, false, false]);
 
         let c = &a | &trues;
         assert_eq!(Vec::from(&c), &[Some(true), Some(true), Some(true)]);
@@ -1086,9 +1086,9 @@ mod test {
 
     #[test]
     fn test_broadcasting_bools() {
-        let a = BooleanChunked::new_from_slice("", &[true, false, true]);
-        let true_ = BooleanChunked::new_from_slice("", &[true]);
-        let false_ = BooleanChunked::new_from_slice("", &[false]);
+        let a = BooleanChunked::from_slice("", &[true, false, true]);
+        let true_ = BooleanChunked::from_slice("", &[true]);
+        let false_ = BooleanChunked::from_slice("", &[false]);
 
         let out = a.equal(&true_);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
@@ -1147,9 +1147,9 @@ mod test {
 
     #[test]
     fn test_broadcasting_numeric() {
-        let a = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let one = Int32Chunked::new_from_slice("", &[1]);
-        let three = Int32Chunked::new_from_slice("", &[3]);
+        let a = Int32Chunked::from_slice("", &[1, 2, 3]);
+        let one = Int32Chunked::from_slice("", &[1]);
+        let three = Int32Chunked::from_slice("", &[3]);
 
         let out = a.equal(&one);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);

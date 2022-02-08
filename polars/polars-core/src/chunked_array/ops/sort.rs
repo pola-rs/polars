@@ -367,7 +367,7 @@ where
             };
 
             let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from(idx), None);
-            UInt32Chunked::new_from_chunks(self.name(), vec![Arc::new(arr)])
+            UInt32Chunked::from_chunks(self.name(), vec![Arc::new(arr)])
         }
     }
 
