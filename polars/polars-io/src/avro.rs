@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 
 use arrow::io::avro::read;
 
+#[must_use]
 pub struct AvroReader<R> {
     reader: R,
     rechunk: bool,
