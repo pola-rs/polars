@@ -47,13 +47,13 @@ where
 
 pub trait NewChunkedArray<T, N> {
     fn from_slice(name: &str, v: &[N]) -> Self;
-    fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
+    fn from_slice_options(name: &str, opt_v: &[Option<N>]) -> Self;
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<N>>) -> Self;
+    fn from_iter_options(name: &str, it: impl Iterator<Item = Option<N>>) -> Self;
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = N>) -> Self;
+    fn from_iter_values(name: &str, it: impl Iterator<Item = N>) -> Self;
 }
 
 impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
@@ -65,11 +65,11 @@ where
         ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
 
-    fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {
-        Self::new_from_opt_iter(name, opt_v.iter().copied())
+    fn from_slice_options(name: &str, opt_v: &[Option<T::Native>]) -> Self {
+        Self::from_iter_options(name, opt_v.iter().copied())
     }
 
-    fn new_from_opt_iter(
+    fn from_iter_options(
         name: &str,
         it: impl Iterator<Item = Option<T::Native>>,
     ) -> ChunkedArray<T> {
@@ -79,7 +79,7 @@ where
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
+    fn from_iter_values(name: &str, it: impl Iterator<Item = T::Native>) -> ChunkedArray<T> {
         let ca: NoNull<ChunkedArray<_>> = it.collect();
         let mut ca = ca.into_inner();
         ca.rename(name);
@@ -89,14 +89,14 @@ where
 
 impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
     fn from_slice(name: &str, v: &[bool]) -> Self {
-        Self::new_from_iter(name, v.iter().copied())
+        Self::from_iter_values(name, v.iter().copied())
     }
 
-    fn new_from_opt_slice(name: &str, opt_v: &[Option<bool>]) -> Self {
-        Self::new_from_opt_iter(name, opt_v.iter().copied())
+    fn from_slice_options(name: &str, opt_v: &[Option<bool>]) -> Self {
+        Self::from_iter_options(name, opt_v.iter().copied())
     }
 
-    fn new_from_opt_iter(
+    fn from_iter_options(
         name: &str,
         it: impl Iterator<Item = Option<bool>>,
     ) -> ChunkedArray<BooleanType> {
@@ -106,7 +106,7 @@ impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = bool>) -> ChunkedArray<BooleanType> {
+    fn from_iter_values(name: &str, it: impl Iterator<Item = bool>) -> ChunkedArray<BooleanType> {
         let mut ca: ChunkedArray<_> = it.collect();
         ca.rename(name);
         ca
@@ -121,9 +121,7 @@ where
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
         let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
-        v.iter().for_each(|val| {
-            builder.push(Some(val.as_ref()));
-        });
+        builder.extend_trusted_len_values(v.iter().map(|s| s.as_ref()));
 
         let field = Arc::new(Field::new(name, DataType::Utf8));
 
@@ -136,21 +134,26 @@ where
         }
     }
 
-    fn new_from_opt_slice(name: &str, opt_v: &[Option<S>]) -> Self {
+    fn from_slice_options(name: &str, opt_v: &[Option<S>]) -> Self {
         let values_size = opt_v.iter().fold(0, |acc, s| match s {
             Some(s) => acc + s.as_ref().len(),
             None => acc,
         });
-        let mut builder = Utf8ChunkedBuilder::new(name, opt_v.len(), values_size);
+        let mut builder = MutableUtf8Array::<i64>::with_capacities(opt_v.len(), values_size);
+        builder.extend_trusted_len(opt_v.iter().map(|s| s.as_ref()));
 
-        opt_v.iter().for_each(|opt| match opt {
-            Some(v) => builder.append_value(v.as_ref()),
-            None => builder.append_null(),
-        });
-        builder.finish()
+        let field = Arc::new(Field::new(name, DataType::Utf8));
+
+        ChunkedArray {
+            field,
+            chunks: vec![builder.into_arc()],
+            phantom: PhantomData,
+            categorical_map: None,
+            ..Default::default()
+        }
     }
 
-    fn new_from_opt_iter(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
+    fn from_iter_options(name: &str, it: impl Iterator<Item = Option<S>>) -> Self {
         let cap = get_iter_capacity(&it);
         let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|opt| builder.append_option(opt));
@@ -158,7 +161,7 @@ where
     }
 
     /// Create a new ChunkedArray from an iterator.
-    fn new_from_iter(name: &str, it: impl Iterator<Item = S>) -> Self {
+    fn from_iter_values(name: &str, it: impl Iterator<Item = S>) -> Self {
         let cap = get_iter_capacity(&it);
         let mut builder = Utf8ChunkedBuilder::new(name, cap, cap * 5);
         it.for_each(|v| builder.append_value(v));

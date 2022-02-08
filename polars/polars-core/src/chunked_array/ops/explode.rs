@@ -405,18 +405,15 @@ mod test {
         let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a");
         builder.append_series(&Series::new("", &["abc"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["de"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["fg"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
 
         let ca = builder.finish();

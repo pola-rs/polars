@@ -1126,9 +1126,11 @@ impl PyDataFrame {
     pub fn transpose(&self, include_header: bool, names: &str) -> PyResult<Self> {
         let mut df = self.df.transpose().map_err(PyPolarsEr::from)?;
         if include_header {
-            let s =
-                Utf8Chunked::new_from_iter(names, self.df.get_columns().iter().map(|s| s.name()))
-                    .into_series();
+            let s = Utf8Chunked::from_iter_values(
+                names,
+                self.df.get_columns().iter().map(|s| s.name()),
+            )
+            .into_series();
             df.insert_at_idx(0, s).unwrap();
         }
         Ok(df.into())

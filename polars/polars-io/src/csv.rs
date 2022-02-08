@@ -141,8 +141,7 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
-#[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Copy, Clone, Debug)]
 pub enum CsvEncoding {
     /// Utf8 encoding
     Utf8,

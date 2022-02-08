@@ -82,7 +82,7 @@ impl DateChunked {
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
-        Int32Chunked::new_from_opt_iter(
+        Int32Chunked::from_iter_options(
             name,
             v.iter().map(|s| {
                 NaiveDate::parse_from_str(s, fmt)

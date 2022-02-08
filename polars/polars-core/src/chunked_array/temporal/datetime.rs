@@ -189,7 +189,7 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
         };
 
-        Int64Chunked::new_from_opt_iter(
+        Int64Chunked::from_iter_options(
             name,
             v.iter().map(|s| {
                 NaiveDateTime::parse_from_str(s, fmt)

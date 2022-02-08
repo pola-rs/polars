@@ -388,8 +388,7 @@ mod test {
     impl_par_iter_return_unwrapped_filter_test!(
         utf8_par_iter_many_chunk_return_unwrapped_filter,
         {
-            let mut a =
-                Utf8Chunked::from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
+            let mut a = Utf8Chunked::from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
             let a_b = Utf8Chunked::from_slice("a", &generate_utf8_vec(UTF8_CHUNKED_ARRAY_SIZE));
             a.append(&a_b);
             a

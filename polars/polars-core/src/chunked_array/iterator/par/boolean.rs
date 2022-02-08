@@ -393,14 +393,10 @@ mod test {
     impl_par_iter_return_unwrapped_filter_test!(
         boolean_par_iter_many_chunk_return_unwrapped_filter,
         {
-            let mut a = BooleanChunked::from_slice(
-                "a",
-                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
-            );
-            let a_b = BooleanChunked::from_slice(
-                "a",
-                &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE),
-            );
+            let mut a =
+                BooleanChunked::from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
+            let a_b =
+                BooleanChunked::from_slice("a", &generate_boolean_vec(BOOLEAN_CHUNKED_ARRAY_SIZE));
             a.append(&a_b);
             a
         }

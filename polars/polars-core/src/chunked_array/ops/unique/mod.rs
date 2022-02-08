@@ -195,7 +195,7 @@ where
 {
     fn unique(&self) -> Result<Self> {
         let set = fill_set(self.into_iter());
-        Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
+        Ok(Self::from_iter_options(self.name(), set.iter().copied()))
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
@@ -232,7 +232,7 @@ where
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Result<Self> {
         let set = fill_set(self.into_iter());
-        Ok(Utf8Chunked::new_from_opt_iter(
+        Ok(Utf8Chunked::from_iter_options(
             self.name(),
             set.iter().copied(),
         ))
@@ -274,10 +274,10 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         let mut ca = if self.can_fast_unique() {
             match &**cat_map {
                 RevMapping::Local(a) => {
-                    UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32))
+                    UInt32Chunked::from_iter_values(self.name(), 0..(a.len() as u32))
                 }
                 RevMapping::Global(map, _, _) => {
-                    UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+                    UInt32Chunked::from_iter_values(self.name(), map.keys().copied())
                 }
             }
         } else {

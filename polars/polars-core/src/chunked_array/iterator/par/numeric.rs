@@ -981,28 +981,22 @@ mod test {
 
     // Many Chunk Parallel Iterator Tests.
     impl_par_iter_return_option_map_test!(uint32_par_iter_many_chunk_return_option_map, {
-        let mut a =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_filter_test!(uint32_par_iter_many_chunk_return_option_filter, {
-        let mut a =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
 
     impl_par_iter_return_option_fold_test!(uint32_par_iter_many_chunk_return_option_fold, {
-        let mut a =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
@@ -1148,10 +1142,8 @@ mod test {
 
     // Many Chunk Return Unwrapped
     impl_par_iter_return_unwrapped_map_test!(uint32_par_iter_many_chunk_return_unwrapped_map, {
-        let mut a =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });
@@ -1169,10 +1161,8 @@ mod test {
     );
 
     impl_par_iter_return_unwrapped_fold_test!(uint32_par_iter_many_chunk_return_unwrapped_fold, {
-        let mut a =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
-        let a_b =
-            UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let mut a = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
+        let a_b = UInt32Chunked::from_slice("a", &generate_uint32_vec(UINT32_CHUNKED_ARRAY_SIZE));
         a.append(&a_b);
         a
     });

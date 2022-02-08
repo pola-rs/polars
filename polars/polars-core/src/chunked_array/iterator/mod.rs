@@ -945,8 +945,7 @@ mod test {
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
-        let mut a =
-            BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let mut a = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
         let a_b = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
