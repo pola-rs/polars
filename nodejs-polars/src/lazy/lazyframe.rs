@@ -467,7 +467,7 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let name: String = params.get_as("name")?;
 
-    ldf.with_row_count(&name).try_into_js(&cx)
+    ldf.with_row_count(&name, None).try_into_js(&cx)
 }
 
 #[js_function(1)]

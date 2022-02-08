@@ -531,7 +531,7 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let name = params.get_as::<&str>("name")?;
-    df.with_row_count(name)
+    df.with_row_count(name, None)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
