@@ -1,6 +1,6 @@
 [package]
 name = "nodejs-polars"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Cory Grinstead"]
 documentation = "https://pola-rs.github.io/polars-book/"
 edition = "2021"
