@@ -5,7 +5,7 @@ pub type DurationChunked = Logical<DurationType, Int64Type>;
 
 impl Int64Chunked {
     pub fn into_duration(self, timeunit: TimeUnit) -> DurationChunked {
-        let mut dt = DurationChunked::new(self);
+        let mut dt = DurationChunked::new_logical(self);
         dt.2 = Some(DataType::Duration(timeunit));
         dt
     }

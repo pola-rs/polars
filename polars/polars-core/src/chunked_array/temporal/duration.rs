@@ -32,6 +32,20 @@ impl DurationChunked {
         Int64Chunked::from_vec(name, vals).into_duration(tu)
     }
 
+    /// Construct a new [`DurationChunked`] from an iterator over optional [`ChronoDuration`].
+    pub fn from_duration_options<I: IntoIterator<Item = Option<ChronoDuration>>>(
+        name: &str,
+        v: I,
+        tu: TimeUnit,
+    ) -> Self {
+        let func = match tu {
+            TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
+            TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
+        };
+        let vals = v.into_iter().map(|opt| opt.map(func));
+        Int64Chunked::from_iter_options(name, vals).into_duration(tu)
+    }
+
     /// Extract the hours from a `Duration`
     pub fn hours(&self) -> Int64Chunked {
         match self.time_unit() {

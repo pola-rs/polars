@@ -19,7 +19,7 @@ pub struct Logical<K: PolarsDataType, T: PolarsDataType>(
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {
-        let mut new = Logical::<K, _>::new(self.0.clone());
+        let mut new = Logical::<K, _>::new_logical(self.0.clone());
         new.2 = self.2.clone();
         new
     }
@@ -40,7 +40,7 @@ impl<K: PolarsDataType, T: PolarsDataType> DerefMut for Logical<K, T> {
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T> {
-    pub fn new<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
+    pub fn new_logical<J: PolarsDataType>(ca: ChunkedArray<T>) -> Logical<J, T> {
         Logical(ca, PhantomData, None)
     }
 }

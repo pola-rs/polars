@@ -3,7 +3,6 @@ use crate::chunked_array::kernels::temporal::{
     time_to_hour, time_to_minute, time_to_nanosecond, time_to_second,
 };
 use crate::prelude::*;
-use crate::utils::NoNull;
 use arrow::temporal_conversions::{time64ns_to_time, NANOSECONDS};
 use chrono::Timelike;
 
@@ -63,11 +62,21 @@ impl TimeChunked {
     }
 
     /// Construct a new [`TimeChunked`] from an iterator over [`NaiveTime`].
-    pub fn from_naive_time(name: &str, v: &[NaiveTime]) -> Self {
-        let ca: NoNull<Int64Chunked> = v.iter().map(time_to_time64ns).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.rename(name);
-        ca.into()
+    pub fn from_naive_time<I: IntoIterator<Item = NaiveTime>>(name: &str, v: I) -> Self {
+        let vals = v
+            .into_iter()
+            .map(|nt| time_to_time64ns(&nt))
+            .collect::<Vec<_>>();
+        Int64Chunked::from_vec(name, vals).into_time()
+    }
+
+    /// Construct a new [`TimeChunked`] from an iterator over optional [`NaiveTime`].
+    pub fn from_naive_time_options<I: IntoIterator<Item = Option<NaiveTime>>>(
+        name: &str,
+        v: I,
+    ) -> Self {
+        let vals = v.into_iter().map(|opt| opt.map(|nt| time_to_time64ns(&nt)));
+        Int64Chunked::from_iter_options(name, vals).into_time()
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {

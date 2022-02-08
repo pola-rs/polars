@@ -1,5 +1,13 @@
 use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
 use crate::prelude::*;
+#[cfg(feature = "dtype-duration")]
+use chrono::Duration as ChronoDuration;
+#[cfg(feature = "dtype-date")]
+use chrono::NaiveDate;
+#[cfg(feature = "dtype-datetime")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "dtype-time")]
+use chrono::NaiveTime;
 use std::borrow::Cow;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
@@ -194,6 +202,132 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
     }
 }
 
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[NaiveDate]>> NamedFrom<T, [NaiveDate]> for DateChunked {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::from_naive_date(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[NaiveDate]>> NamedFrom<T, [NaiveDate]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[Option<NaiveDate>]>> NamedFrom<T, [Option<NaiveDate>]> for DateChunked {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::from_naive_date_options(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[Option<NaiveDate>]>> NamedFrom<T, [Option<NaiveDate>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[NaiveDateTime]>> NamedFrom<T, [NaiveDateTime]> for DatetimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::from_naive_datetime(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Milliseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[NaiveDateTime]>> NamedFrom<T, [NaiveDateTime]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[Option<NaiveDateTime>]>> NamedFrom<T, [Option<NaiveDateTime>]> for DatetimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::from_naive_datetime_options(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Milliseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[Option<NaiveDateTime>]>> NamedFrom<T, [Option<NaiveDateTime>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[ChronoDuration]>> NamedFrom<T, [ChronoDuration]> for DurationChunked {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::from_duration(name, v.as_ref().iter().copied(), TimeUnit::Nanoseconds)
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[ChronoDuration]>> NamedFrom<T, [ChronoDuration]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[Option<ChronoDuration>]>> NamedFrom<T, [Option<ChronoDuration>]>
+    for DurationChunked
+{
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::from_duration_options(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Nanoseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[Option<ChronoDuration>]>> NamedFrom<T, [Option<ChronoDuration>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[NaiveTime]>> NamedFrom<T, [NaiveTime]> for TimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::from_naive_time(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[NaiveTime]>> NamedFrom<T, [NaiveTime]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[Option<NaiveTime>]>> NamedFrom<T, [Option<NaiveTime>]> for TimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::from_naive_time_options(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[Option<NaiveTime>]>> NamedFrom<T, [Option<NaiveTime>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::new(name, v).into_series()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
     fn new(name: &str, v: &[T]) -> Self {
@@ -213,5 +347,31 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
     pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
         ChunkedArray::from_vec(name, v)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[cfg(all(
+        feature = "dtype-datetime",
+        feature = "dtype-duration",
+        feature = "dtype-date",
+        feature = "dtype-time"
+    ))]
+    #[test]
+    fn test_temporal_df_construction() {
+        // check if we can construct.
+        let _df = df![
+            "date" => [NaiveDate::from_ymd(2021, 1, 1)],
+            "datetime" => [NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0)],
+            "optional_date" => [Some(NaiveDate::from_ymd(2021, 1, 1))],
+            "optional_datetime" => [Some(NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0))],
+            "time" => [NaiveTime::from_hms(23, 23, 23)],
+            "optional_time" => [Some(NaiveTime::from_hms(23, 23, 23))],
+            "duration" => [ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap()],
+            "optional_duration" => [Some(ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap())],
+        ].unwrap();
     }
 }

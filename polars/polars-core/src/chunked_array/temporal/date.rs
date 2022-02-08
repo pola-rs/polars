@@ -81,6 +81,15 @@ impl DateChunked {
         Int32Chunked::from_vec(name, unit).into()
     }
 
+    /// Construct a new [`DateChunked`] from an iterator over optional [`NaiveDate`].
+    pub fn from_naive_date_options<I: IntoIterator<Item = Option<NaiveDate>>>(
+        name: &str,
+        v: I,
+    ) -> Self {
+        let unit = v.into_iter().map(|opt| opt.map(naive_date_to_date));
+        Int32Chunked::from_iter_options(name, unit).into()
+    }
+
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str) -> Self {
         Int32Chunked::from_iter_options(
             name,
