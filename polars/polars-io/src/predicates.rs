@@ -29,7 +29,7 @@ pub(crate) fn arrow_schema_to_empty_df(schema: &ArrowSchema) -> DataFrame {
     DataFrame::new_no_checks(columns)
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "json",))]
 pub(crate) fn apply_predicate(
     df: &mut DataFrame,
     predicate: Option<&dyn PhysicalIoExpr>,
