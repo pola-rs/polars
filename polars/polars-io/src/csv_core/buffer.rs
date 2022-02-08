@@ -354,7 +354,7 @@ impl Buffer {
                     v.data.into(),
                     Some(v.validity.into()),
                 );
-                let ca = Utf8Chunked::new_from_chunks(&v.name, vec![Arc::new(arr)]);
+                let ca = Utf8Chunked::from_chunks(&v.name, vec![Arc::new(arr)]);
                 ca.into_series()
             },
         };

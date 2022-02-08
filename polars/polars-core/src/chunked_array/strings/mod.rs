@@ -81,6 +81,6 @@ impl Utf8Chunked {
             .map(|c| Ok(substring(c, start, &length)?.into()))
             .collect::<arrow::error::Result<_>>()?;
 
-        Ok(Self::new_from_chunks(self.name(), chunks))
+        Ok(Self::from_chunks(self.name(), chunks))
     }
 }

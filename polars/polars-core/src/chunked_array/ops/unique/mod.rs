@@ -500,7 +500,7 @@ mod is_first {
             })
             .collect();
 
-        BooleanChunked::new_from_chunks(ca.name(), chunks)
+        BooleanChunked::from_chunks(ca.name(), chunks)
     }
 
     impl<T> IsFirst<T> for ChunkedArray<T>
@@ -549,7 +549,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::new_from_chunks(self.name(), chunks))
+            Ok(BooleanChunked::from_chunks(self.name(), chunks))
         }
     }
 }

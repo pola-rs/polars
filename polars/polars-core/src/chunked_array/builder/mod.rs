@@ -41,7 +41,7 @@ where
         for (values, opt_buffer) in iter {
             chunks.push(to_array::<T>(values, opt_buffer))
         }
-        ChunkedArray::new_from_chunks("from_iter", chunks)
+        ChunkedArray::from_chunks("from_iter", chunks)
     }
 }
 
@@ -62,7 +62,7 @@ where
 {
     fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
-        ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
+        ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
 
     fn new_from_opt_slice(name: &str, opt_v: &[Option<T::Native>]) -> Self {

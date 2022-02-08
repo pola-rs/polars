@@ -28,6 +28,6 @@ where
             .downcast_iter()
             .map(|arr| Arc::new(set_at_nulls(arr, T::Native::nan())) as ArrayRef)
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }

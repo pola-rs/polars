@@ -816,7 +816,7 @@ where
                         return Some(builder.finish().into_series());
                     }
                 };
-                let mut ca = ListChunked::new_from_chunks(self.name(), vec![Arc::new(arr)]);
+                let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -873,7 +873,7 @@ where
                         return Some(builder.finish().into_series());
                     }
                 };
-                let mut ca = ListChunked::new_from_chunks(self.name(), vec![Arc::new(arr)]);
+                let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }
@@ -966,7 +966,7 @@ fn agg_list_list<F: Fn(&ListChunked, bool, &mut Vec<i64>, &mut i64, &mut Vec<Arr
         list_values,
         None,
     )) as ArrayRef;
-    let mut listarr = ListChunked::new_from_chunks(ca.name(), vec![arr]);
+    let mut listarr = ListChunked::from_chunks(ca.name(), vec![arr]);
     if can_fast_explode {
         listarr.set_fast_explode()
     }
@@ -1043,7 +1043,7 @@ impl AggList for CategoricalChunked {
             None => None,
             Some(s) => {
                 let ca = s.list().unwrap();
-                let mut out = ListChunked::new_from_chunks(ca.name(), ca.chunks.clone());
+                let mut out = ListChunked::from_chunks(ca.name(), ca.chunks.clone());
                 out.field = Arc::new(Field::new(
                     ca.name(),
                     DataType::List(Box::new(DataType::Categorical)),
@@ -1116,7 +1116,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
             None,
         )) as ArrayRef;
 
-        let mut listarr = ListChunked::new_from_chunks(self.name(), vec![arr]);
+        let mut listarr = ListChunked::from_chunks(self.name(), vec![arr]);
         if can_fast_explode {
             listarr.set_fast_explode()
         }

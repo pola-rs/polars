@@ -400,6 +400,6 @@ impl<'a> AnonymousListBuilder<'a> {
 
     pub fn finish(self) -> ListChunked {
         let arr = self.builder.finish().unwrap();
-        ListChunked::new_from_chunks(&self.name, vec![Arc::new(arr)])
+        ListChunked::from_chunks(&self.name, vec![Arc::new(arr)])
     }
 }

@@ -33,7 +33,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -66,7 +66,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -99,7 +99,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -141,7 +141,7 @@ impl BitOr for &BooleanChunked {
                     as ArrayRef
             })
             .collect();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 }
 
@@ -209,7 +209,7 @@ impl BitXor for &BooleanChunked {
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -255,7 +255,7 @@ impl BitAnd for &BooleanChunked {
                     as ArrayRef
             })
             .collect();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 }
 

@@ -71,7 +71,7 @@ where
                         value,
                         T::get_dtype().to_arrow(),
                     )?;
-                    return Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]));
+                    return Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]));
                 }
                 // Other fast path. Slightly slower as it does not do a memcpy
                 else {
@@ -120,7 +120,7 @@ where
                     Arc::new(a) as ArrayRef
                 })
                 .collect();
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         } else {
             // slow path, could be optimized.
             let ca = mask
@@ -190,7 +190,7 @@ impl<'a> ChunkSet<'a, bool, bool> for BooleanChunked {
         }
         let arr = BooleanArray::from_data_default(values.into(), Some(validity.into()));
 
-        Ok(BooleanChunked::new_from_chunks(
+        Ok(BooleanChunked::from_chunks(
             self.name(),
             vec![Arc::new(arr)],
         ))

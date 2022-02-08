@@ -17,7 +17,7 @@ where
         let arr = unsafe {
             PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow())
         };
-        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -33,7 +33,7 @@ where
         let values = unsafe { Buffer::from_trusted_len_iter_unchecked(iter) };
         let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), values, None);
 
-        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+        NoNull::new(ChunkedArray::from_chunks("", vec![Arc::new(arr)]))
     }
 }
 
@@ -73,7 +73,7 @@ where
             vals.into(),
             Some(validity.into()),
         );
-        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -96,7 +96,7 @@ where
             vals.set_len(size)
         }
         let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), vals.into(), None);
-        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+        NoNull::new(ChunkedArray::from_chunks("", vec![Arc::new(arr)]))
     }
 }
 
@@ -128,7 +128,7 @@ impl FromTrustedLenIterator<Option<bool>> for ChunkedArray<BooleanType> {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
 
-        Self::new_from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -140,7 +140,7 @@ impl FromTrustedLenIterator<bool> for BooleanChunked {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
 
-        Self::new_from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Arc::new(arr)])
     }
 }
 

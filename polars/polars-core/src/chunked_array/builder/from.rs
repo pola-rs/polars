@@ -7,7 +7,7 @@ impl<T: PolarsNumericType> From<(&str, PrimitiveArray<T::Native>)> for ChunkedAr
         let name = tpl.0;
         let arr = tpl.1;
 
-        ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
+        ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
 }
 
@@ -22,13 +22,13 @@ impl From<(&str, BooleanArray)> for BooleanChunked {
         let name = tpl.0;
         let arr = tpl.1;
 
-        ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
+        ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
 }
 
 impl From<BooleanArray> for BooleanChunked {
     fn from(arr: BooleanArray) -> Self {
-        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -37,6 +37,6 @@ impl From<(&str, Utf8Array<i64>)> for Utf8Chunked {
         let name = tpl.0;
         let arr = tpl.1;
 
-        ChunkedArray::new_from_chunks(name, vec![Arc::new(arr)])
+        ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
 }

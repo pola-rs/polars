@@ -451,7 +451,7 @@ mod inner_mod {
                 values.into(),
                 Some(validity.into()),
             );
-            Ok(Self::new_from_chunks(self.name(), vec![Arc::new(arr)]))
+            Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]))
         }
 
         /// Apply a rolling var (moving var) over the values in this array.

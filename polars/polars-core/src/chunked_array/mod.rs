@@ -346,7 +346,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 
     /// Get a mask of the valid values.
@@ -365,7 +365,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 
     /// Get data type of ChunkedArray.
@@ -415,7 +415,7 @@ where
                 })
                 .collect();
 
-            Self::new_from_chunks(self.name(), chunks)
+            Self::from_chunks(self.name(), chunks)
         };
 
         if self.chunks.len() != 1 {
@@ -432,7 +432,7 @@ where
     T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+    pub fn from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         // prevent List<Null> if the inner list type is known.
         let datatype = if matches!(T::get_dtype(), DataType::List(_)) {
             if let Some(arr) = chunks.get(0) {
@@ -461,7 +461,7 @@ where
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
-        Self::new_from_chunks(name, vec![arr])
+        Self::from_chunks(name, vec![arr])
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -612,7 +612,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::new_from_chunks("", vec![Arc::new(a)])
+        ChunkedArray::from_chunks("", vec![Arc::new(a)])
     }
 }
 

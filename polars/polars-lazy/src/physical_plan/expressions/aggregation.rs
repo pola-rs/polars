@@ -234,7 +234,7 @@ impl PhysicalAggregation for AggregationExpr {
                     values,
                     None,
                 )) as ArrayRef;
-                let mut ca = ListChunked::new_from_chunks(&new_name, vec![arr]);
+                let mut ca = ListChunked::from_chunks(&new_name, vec![arr]);
                 if can_fast_explode {
                     ca.set_fast_explode()
                 }

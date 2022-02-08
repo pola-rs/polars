@@ -32,7 +32,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks("", chunks)
+        ChunkedArray::from_chunks("", chunks)
     }
 }
 
@@ -223,7 +223,7 @@ fn compare_bools(
         .map(|(l, r)| Arc::new(f(l, r)) as ArrayRef)
         .collect();
 
-    BooleanChunked::new_from_chunks(lhs.name(), chunks)
+    BooleanChunked::from_chunks(lhs.name(), chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
@@ -442,7 +442,7 @@ impl Utf8Chunked {
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks("", chunks)
+        ChunkedArray::from_chunks("", chunks)
     }
 }
 
@@ -780,7 +780,7 @@ impl Not for &BooleanChunked {
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 

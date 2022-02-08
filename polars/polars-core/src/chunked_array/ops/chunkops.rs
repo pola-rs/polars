@@ -65,7 +65,7 @@ where
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
@@ -88,7 +88,7 @@ impl ChunkOps for BooleanChunked {
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
@@ -111,7 +111,7 @@ impl ChunkOps for Utf8Chunked {
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
@@ -153,7 +153,7 @@ impl ChunkOps for ListChunked {
             )
             .unwrap()
             .into()];
-            let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+            let mut ca = ListChunked::from_chunks(self.name(), chunks);
             if self.can_fast_explode() {
                 ca.set_fast_explode()
             }
