@@ -2950,7 +2950,7 @@ mod test {
         let s1 = Series::new("", &[true, false, true]);
         let ll: ListChunked = [&s1].iter().copied().collect();
 
-        let mask = BooleanChunked::new_from_slice("", &[false]);
+        let mask = BooleanChunked::from_slice("", &[false]);
         let new = ll.filter(&mask).unwrap();
 
         assert_eq!(new.chunks.len(), 1);

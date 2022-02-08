@@ -91,7 +91,7 @@ impl<T> NewChunkedArray<ObjectType<T>, T> for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn new_from_slice(name: &str, v: &[T]) -> Self {
+    fn from_slice(name: &str, v: &[T]) -> Self {
         Self::new_from_iter(name, v.iter().cloned())
     }
 

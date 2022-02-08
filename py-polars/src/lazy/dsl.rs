@@ -728,81 +728,81 @@ impl PyExpr {
                         UInt8 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt8Chunked::new_from_slice("", &[v as u8]).into_series())
+                                Ok(UInt8Chunked::from_slice("", &[v as u8]).into_series())
                             } else {
                                 obj.extract::<u8>(py)
-                                    .map(|v| UInt8Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt16 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt16Chunked::new_from_slice("", &[v as u16]).into_series())
+                                Ok(UInt16Chunked::from_slice("", &[v as u16]).into_series())
                             } else {
                                 obj.extract::<u16>(py)
-                                    .map(|v| UInt16Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt32 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt32Chunked::new_from_slice("", &[v as u32]).into_series())
+                                Ok(UInt32Chunked::from_slice("", &[v as u32]).into_series())
                             } else {
                                 obj.extract::<u32>(py)
-                                    .map(|v| UInt32Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt64 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt64Chunked::new_from_slice("", &[v as u64]).into_series())
+                                Ok(UInt64Chunked::from_slice("", &[v as u64]).into_series())
                             } else {
                                 obj.extract::<u64>(py)
-                                    .map(|v| UInt64Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int8 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int8Chunked::new_from_slice("", &[v as i8]).into_series())
+                                Ok(Int8Chunked::from_slice("", &[v as i8]).into_series())
                             } else {
                                 obj.extract::<i8>(py)
-                                    .map(|v| Int8Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int16 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int16Chunked::new_from_slice("", &[v as i16]).into_series())
+                                Ok(Int16Chunked::from_slice("", &[v as i16]).into_series())
                             } else {
                                 obj.extract::<i16>(py)
-                                    .map(|v| Int16Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int32 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int32Chunked::new_from_slice("", &[v as i32]).into_series())
+                                Ok(Int32Chunked::from_slice("", &[v as i32]).into_series())
                             } else {
                                 obj.extract::<i32>(py)
-                                    .map(|v| Int32Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int64 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int64Chunked::new_from_slice("", &[v as i64]).into_series())
+                                Ok(Int64Chunked::from_slice("", &[v as i64]).into_series())
                             } else {
                                 obj.extract::<i64>(py)
-                                    .map(|v| Int64Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Float32 => obj
                             .extract::<f32>(py)
-                            .map(|v| Float32Chunked::new_from_slice("", &[v]).into_series()),
+                            .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
                         Float64 => obj
                             .extract::<f64>(py)
-                            .map(|v| Float64Chunked::new_from_slice("", &[v]).into_series()),
+                            .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
                         dt => panic!("{:?} not implemented", dt),
                     };
 

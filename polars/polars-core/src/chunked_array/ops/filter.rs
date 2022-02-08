@@ -36,7 +36,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);
@@ -57,7 +57,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);

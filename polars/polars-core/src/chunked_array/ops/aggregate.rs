@@ -882,7 +882,7 @@ mod test {
         let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
-        let ca2 = Float64Chunked::new_from_slice("b", &[f64::NAN, 1.0]);
+        let ca2 = Float64Chunked::from_slice("b", &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
     }
@@ -911,7 +911,7 @@ mod test {
         );
         assert_eq!(ca.median(), Some(4.0));
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,
@@ -1220,7 +1220,7 @@ mod test {
             Some(4.6)
         );
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,

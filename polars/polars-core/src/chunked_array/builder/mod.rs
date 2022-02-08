@@ -46,7 +46,7 @@ where
 }
 
 pub trait NewChunkedArray<T, N> {
-    fn new_from_slice(name: &str, v: &[N]) -> Self;
+    fn from_slice(name: &str, v: &[N]) -> Self;
     fn new_from_opt_slice(name: &str, opt_v: &[Option<N>]) -> Self;
 
     /// Create a new ChunkedArray from an iterator.
@@ -60,7 +60,7 @@ impl<T> NewChunkedArray<T, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn new_from_slice(name: &str, v: &[T::Native]) -> Self {
+    fn from_slice(name: &str, v: &[T::Native]) -> Self {
         let arr = PrimitiveArray::<T::Native>::from_slice(v).to(T::get_dtype().to_arrow());
         ChunkedArray::from_chunks(name, vec![Arc::new(arr)])
     }
@@ -88,7 +88,7 @@ where
 }
 
 impl NewChunkedArray<BooleanType, bool> for BooleanChunked {
-    fn new_from_slice(name: &str, v: &[bool]) -> Self {
+    fn from_slice(name: &str, v: &[bool]) -> Self {
         Self::new_from_iter(name, v.iter().copied())
     }
 
@@ -117,7 +117,7 @@ impl<S> NewChunkedArray<Utf8Type, S> for Utf8Chunked
 where
     S: AsRef<str>,
 {
-    fn new_from_slice(name: &str, v: &[S]) -> Self {
+    fn from_slice(name: &str, v: &[S]) -> Self {
         let values_size = v.iter().fold(0, |acc, s| acc + s.as_ref().len());
 
         let mut builder = MutableUtf8Array::<i64>::with_capacities(v.len(), values_size);
@@ -186,8 +186,8 @@ mod test {
         let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("a", 10, 5, DataType::Int32);
 
         // create a series containing two chunks
-        let mut s1 = Int32Chunked::new_from_slice("a", &[1, 2, 3]).into_series();
-        let s2 = Int32Chunked::new_from_slice("b", &[4, 5, 6]).into_series();
+        let mut s1 = Int32Chunked::from_slice("a", &[1, 2, 3]).into_series();
+        let s2 = Int32Chunked::from_slice("b", &[4, 5, 6]).into_series();
         s1.append(&s2).unwrap();
 
         builder.append_series(&s1);

@@ -560,7 +560,7 @@ mod test {
 
     #[test]
     fn unique() {
-        let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
+        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
             ca.unique()
                 .unwrap()
@@ -569,7 +569,7 @@ mod test {
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
-        let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
+        let ca = BooleanChunked::from_slice("a", &[true, false, true]);
         assert_eq!(
             ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(true), Some(false)]
@@ -584,7 +584,7 @@ mod test {
 
     #[test]
     fn arg_unique() {
-        let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
+        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
@@ -593,7 +593,7 @@ mod test {
 
     #[test]
     fn is_unique() {
-        let ca = Float32Chunked::new_from_slice("a", &[1., 2., 1., 1., 3.]);
+        let ca = Float32Chunked::from_slice("a", &[1., 2., 1., 1., 3.]);
         assert_eq!(
             Vec::from(&ca.is_unique().unwrap()),
             &[

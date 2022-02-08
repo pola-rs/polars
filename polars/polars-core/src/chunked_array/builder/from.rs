@@ -13,7 +13,7 @@ impl<T: PolarsNumericType> From<(&str, PrimitiveArray<T::Native>)> for ChunkedAr
 
 impl<T: PolarsNumericType> From<&[T::Native]> for ChunkedArray<T> {
     fn from(slice: &[T::Native]) -> Self {
-        ChunkedArray::new_from_slice("", slice)
+        ChunkedArray::from_slice("", slice)
     }
 }
 
