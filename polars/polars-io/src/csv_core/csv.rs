@@ -4,6 +4,8 @@ use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
+use crate::utils::update_row_counts;
+use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
@@ -76,6 +78,7 @@ pub(crate) struct CoreReader<'a> {
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
     to_cast: &'a [&'a Field],
+    row_count: Option<RowCount>,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -163,6 +166,7 @@ impl<'a> CoreReader<'a> {
         aggregate: Option<&'a [ScanAggregation]>,
         to_cast: &'a [&'a Field],
         skip_rows_after_header: usize,
+        row_count: Option<RowCount>,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -259,6 +263,7 @@ impl<'a> CoreReader<'a> {
             predicate,
             aggregate,
             to_cast,
+            row_count,
         })
     }
 
@@ -550,7 +555,7 @@ impl<'a> CoreReader<'a> {
                 .map(|_| RunningSize::new(init_str_bytes))
                 .collect();
 
-            let dfs = pool.install(|| {
+            let mut dfs = pool.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -602,11 +607,18 @@ impl<'a> CoreReader<'a> {
                         );
 
                         cast_columns(&mut df, self.to_cast, false)?;
-                        Ok(df)
+                        if let Some(rc) = &self.row_count {
+                            df = df.with_row_count(&rc.name, Some(rc.offset)).unwrap()
+                        }
+                        let n_read = df.height() as u32;
+                        Ok((df, n_read))
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            accumulate_dataframes_vertical(dfs.into_iter())
+            if self.row_count.is_some() {
+                update_row_counts(&mut dfs)
+            }
+            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
         }
     }
 

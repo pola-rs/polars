@@ -1,6 +1,8 @@
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use crate::ArrowSchema;
+use crate::RowCount;
 use dirs::home_dir;
+use polars_core::frame::DataFrame;
 use std::path::{Path, PathBuf};
 
 // used by python polars
@@ -23,6 +25,18 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
         .map(|idx| fields[*idx].clone())
         .collect::<Vec<_>>();
     ArrowSchema::from(fields)
+}
+
+/// Because of threading every row starts from `0` or from `offset`.
+/// We must correct that so that they are monotonically increasing.
+pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, u32)]) {
+    if !dfs.is_empty() {
+        let mut previous = dfs[0].1;
+        for (df, n_read) in &mut dfs[1..] {
+            df.get_columns_mut().get_mut(0).map(|s| *s = &*s + previous);
+            previous = *n_read;
+        }
+    }
 }
 
 #[cfg(test)]

@@ -47,7 +47,7 @@ use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
-use crate::{SerReader, SerWriter};
+use crate::{RowCount, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
@@ -232,6 +232,7 @@ where
     skip_rows_after_header: usize,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
+    row_count: Option<RowCount>,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -241,6 +242,16 @@ where
     /// Skip these rows after the header
     pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
         self.skip_rows_after_header = offset;
+        self
+    }
+
+    /// Add a `row_count` column.
+    pub fn with_row_count(mut self, name: Option<&str>, offset: u32) -> Self {
+        let rc = RowCount {
+            name: name.unwrap_or("row_count").to_string(),
+            offset,
+        };
+        self.row_count = Some(rc);
         self
     }
 
@@ -452,6 +463,7 @@ where
             skip_rows_after_header: 0,
             #[cfg(feature = "temporal")]
             parse_dates: false,
+            row_count: None,
         }
     }
 
@@ -528,6 +540,7 @@ where
                 self.aggregate,
                 &to_cast,
                 self.skip_rows_after_header,
+                self.row_count,
             )?;
             csv_reader.as_df()?
         } else {
@@ -557,6 +570,7 @@ where
                 self.aggregate,
                 &[],
                 self.skip_rows_after_header,
+                self.row_count,
             )?;
             csv_reader.as_df()?
         };
@@ -633,6 +647,8 @@ mod test {
     use polars_core::prelude::*;
     use std::io::Cursor;
 
+    const FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+
     #[test]
     fn write_csv() {
         let mut buf: Vec<u8> = Vec::new();
@@ -656,10 +672,9 @@ mod test {
 
     #[test]
     fn test_read_csv_file() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let file = std::fs::File::open(path).unwrap();
+        let file = std::fs::File::open(FOODS_CSV).unwrap();
         let df = CsvReader::new(file)
-            .with_path(Some(path.to_string()))
+            .with_path(Some(FOODS_CSV.to_string()))
             .finish()
             .unwrap();
         dbg!(df);
@@ -782,8 +797,7 @@ mod test {
 
     #[test]
     fn test_projection() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let df = CsvReader::from_path(path)
+        let df = CsvReader::from_path(FOODS_CSV)
             .unwrap()
             .with_projection(Some(vec![0, 2]))
             .finish()
@@ -1499,6 +1513,27 @@ foo,bar
         let df = CsvReader::new(file).finish()?;
         assert_eq!(df.shape(), (5, 1));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_row_count() -> Result<()> {
+        let df = CsvReader::from_path(FOODS_CSV)?
+            .with_row_count(Some("rc"), 0)
+            .finish()?;
+        let rc = df.column("rc")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (0u32..27).collect::<Vec<_>>()
+        );
+        let df = CsvReader::from_path(FOODS_CSV)?
+            .with_row_count(Some("rc_2"), 10)
+            .finish()?;
+        let rc = df.column("rc_2")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (10u32..37).collect::<Vec<_>>()
+        );
         Ok(())
     }
 }
