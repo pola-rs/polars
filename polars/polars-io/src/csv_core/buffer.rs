@@ -323,24 +323,30 @@ impl Buffer {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
+                let mut valid_utf8 = true;
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    let mut valid_utf8 = true;
+                    // check whole buffer for utf8
+                    // this alone is not enough
+                    // we must also check byte starts
+                    // see: https://github.com/jorgecarleitao/arrow2/pull/823
+                    simdutf8::basic::from_utf8(&v.data).map_err(|_| {
+                        PolarsError::ComputeError("invalid utf8 data in csv".into())
+                    })?;
 
-                    // ascii checking is a lot cheaper
-                    if !v.data.is_ascii() {
-                        const SIMD_CHUNK_SIZE: usize = 64;
-                        let mut start = 0usize;
-                        // create substrings and check utf8 validity
-                        for &end in &v.offsets[1..] {
-                            let slice = v.data.get_unchecked(start..end as usize);
-                            start = end as usize;
+                    for i in (0..v.offsets.len() - 1).step_by(2) {
+                        // Safety:
+                        // we iterate over offsets.len()
+                        let start = *v.offsets.get_unchecked(i) as usize;
 
-                            // fast ascii check per item
-                            if slice.len() < SIMD_CHUNK_SIZE && slice.is_ascii() {
-                                continue;
+                        let first = v.data.get(start);
+
+                        // A valid code-point iff it does not start with 0b10xxxxxx
+                        // Bit-magic taken from `std::str::is_char_boundary`
+                        if let Some(&b) = first {
+                            if (b as i8) < -0x40 {
+                                valid_utf8 = false;
+                                break;
                             }
-
-                            valid_utf8 &= simdutf8::basic::from_utf8(slice).is_ok();
                         }
                     }
 
