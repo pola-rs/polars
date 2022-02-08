@@ -5,6 +5,9 @@ pub mod aggregations;
 #[cfg(not(feature = "private"))]
 pub(crate) mod aggregations;
 
+#[cfg(feature = "avro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
+pub mod avro;
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
@@ -34,9 +37,19 @@ pub(crate) mod utils;
 
 use arrow::error::Result as ArrowResult;
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 use crate::aggregations::{apply_aggregations, ScanAggregation};
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 use crate::predicates::PhysicalIoExpr;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
@@ -73,7 +86,12 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
