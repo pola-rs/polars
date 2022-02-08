@@ -183,6 +183,19 @@ impl DatetimeChunked {
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
 
+    pub fn from_naive_datetime_options<I: IntoIterator<Item = Option<NaiveDateTime>>>(
+        name: &str,
+        v: I,
+        tu: TimeUnit,
+    ) -> Self {
+        let func = match tu {
+            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
+            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+        };
+        let vals = v.into_iter().map(|opt_nd| opt_nd.map(|nd| (func(&nd))));
+        Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
+    }
+
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> Self {
         let func = match tu {
             TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
