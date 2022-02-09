@@ -747,7 +747,7 @@ impl PyDataFrame {
 
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> PyResult<()> {
         self.df
-            .sort_in_place(by_column, reverse)
+            .sort_in_place([by_column], reverse)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
