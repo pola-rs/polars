@@ -189,9 +189,11 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
@@ -200,6 +202,7 @@ impl PyDataFrame {
                     .with_columns(columns)
                     .read_parallel(parallel)
                     .with_n_rows(n_rows)
+                    .with_row_count(row_count)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
@@ -207,6 +210,7 @@ impl PyDataFrame {
                 .with_columns(columns)
                 .read_parallel(parallel)
                 .with_n_rows(n_rows)
+                .with_row_count(row_count)
                 .finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;
@@ -220,12 +224,15 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let file = get_file_like(py_f, false)?;
         let df = IpcReader::new(file)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
+            .with_row_count(row_count)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))

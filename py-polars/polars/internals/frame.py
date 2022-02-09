@@ -59,6 +59,7 @@ except ImportError:  # pragma: no cover
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, UInt32, py_type_to_dtype
 from polars.utils import (
+    _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
     is_int_sequence,
@@ -460,12 +461,6 @@ class DataFrame:
 
         projection, columns = handle_projection_columns(columns)
 
-        row_count: Optional[Tuple[str, int]]
-        if row_count_name is not None:
-            row_count = (row_count_name, row_count_offset)
-        else:
-            row_count = None
-
         self._df = PyDataFrame.read_csv(
             file,
             infer_schema_length,
@@ -489,7 +484,7 @@ class DataFrame:
             processed_null_values,
             parse_dates,
             skip_rows_after_header,
-            row_count,
+            _prepare_row_count_args(row_count_name, row_count_offset),
         )
         return self
 
@@ -499,6 +494,8 @@ class DataFrame:
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         parallel: bool = True,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -517,7 +514,14 @@ class DataFrame:
         if isinstance(file, str) and "*" in file:
             from polars import scan_parquet
 
-            scan = scan_parquet(file, n_rows=n_rows, rechunk=True, parallel=parallel)
+            scan = scan_parquet(
+                file,
+                n_rows=n_rows,
+                rechunk=True,
+                parallel=parallel,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+            )
 
             if columns is None:
                 return scan.collect()
@@ -530,7 +534,14 @@ class DataFrame:
 
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows, parallel)
+        self._df = PyDataFrame.read_parquet(
+            file,
+            columns,
+            projection,
+            n_rows,
+            parallel,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     @staticmethod
@@ -538,6 +549,8 @@ class DataFrame:
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
@@ -559,7 +572,13 @@ class DataFrame:
         if isinstance(file, str) and "*" in file:
             from polars import scan_ipc
 
-            scan = scan_ipc(file, n_rows=n_rows, rechunk=True)
+            scan = scan_ipc(
+                file,
+                n_rows=n_rows,
+                rechunk=True,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+            )
             if columns is None:
                 scan.collect()
             elif is_str_sequence(columns, False):
@@ -571,7 +590,13 @@ class DataFrame:
 
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
+        self._df = PyDataFrame.read_ipc(
+            file,
+            columns,
+            projection,
+            n_rows,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     @staticmethod

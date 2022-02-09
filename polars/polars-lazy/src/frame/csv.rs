@@ -64,8 +64,8 @@ impl<'a> LazyCsvReader<'a> {
 
     /// Add a `row_count` column.
     #[must_use]
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
-        self.row_count = rc;
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
         self
     }
 

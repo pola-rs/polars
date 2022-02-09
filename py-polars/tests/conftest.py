@@ -4,20 +4,53 @@ import pytest
 
 import polars as pl
 
+EXAMPLES_DIR = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "examples",
+        "aggregate_multiple_files_in_chunks",
+        "datasets",
+    )
+)
+
+FOODS_CSV = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.csv",
+)
+
+FOODS_PARQUET = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.parquet",
+)
+
+FOODS_IPC = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.ipc",
+)
+
 
 @pytest.fixture
 def foods_csv() -> str:
-    return os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "..",
-            "examples",
-            "aggregate_multiple_files_in_chunks",
-            "datasets",
-            "foods1.csv",
-        )
-    )
+    return FOODS_CSV
+
+
+if not os.path.isfile(FOODS_PARQUET):
+    pl.read_csv(FOODS_CSV).to_parquet(FOODS_PARQUET)
+
+if not os.path.isfile(FOODS_IPC):
+    pl.read_csv(FOODS_CSV).to_ipc(FOODS_IPC)
+
+
+@pytest.fixture
+def foods_ipc() -> str:
+    return FOODS_IPC
+
+
+@pytest.fixture
+def foods_parquet() -> str:
+    return FOODS_PARQUET
 
 
 @pytest.fixture

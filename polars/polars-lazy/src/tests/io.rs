@@ -155,6 +155,7 @@ fn test_parquet_globbing() -> Result<()> {
             cache: true,
             parallel: true,
             rechunk: false,
+            row_count: None,
         },
     )?
     .collect()?;
@@ -178,6 +179,7 @@ fn test_ipc_globbing() -> Result<()> {
             n_rows: None,
             cache: true,
             rechunk: false,
+            row_count: None,
         },
     )?
     .collect()?;
@@ -333,25 +335,58 @@ fn skip_rows_and_slice() -> Result<()> {
 #[test]
 fn test_row_count() -> Result<()> {
     for offset in [0u32, 10] {
-        let df = LazyCsvReader::new(FOODS_CSV.to_string())
+        let lf = LazyCsvReader::new(FOODS_CSV.to_string())
             .with_row_count(Some(RowCount {
                 name: "rc".into(),
-                offset: offset,
+                offset,
             }))
-            .finish()?
-            .collect()?;
+            .finish()?;
 
+        assert!(row_count_at_scan(lf.clone()));
+        let df = lf.collect()?;
+        let rc = df.column("rc")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (offset..27 + offset).collect::<Vec<_>>()
+        );
+
+        let lf = LazyFrame::scan_parquet(
+            FOODS_PARQUET.to_string(),
+            ScanArgsParquet {
+                row_count: Some(RowCount {
+                    name: "rc".into(),
+                    offset,
+                }),
+                ..Default::default()
+            },
+        )?;
+        assert!(row_count_at_scan(lf.clone()));
+        let df = lf.collect()?;
+        let rc = df.column("rc")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (offset..27 + offset).collect::<Vec<_>>()
+        );
+
+        let lf = LazyFrame::scan_ipc(
+            FOODS_IPC.to_string(),
+            ScanArgsIpc {
+                row_count: Some(RowCount {
+                    name: "rc".into(),
+                    offset,
+                }),
+                ..Default::default()
+            },
+        )?;
+
+        assert!(row_count_at_scan(lf.clone()));
+        let df = lf.collect()?;
         let rc = df.column("rc")?;
         assert_eq!(
             rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
     }
-
-    let lf = LazyCsvReader::new(FOODS_CSV.to_string())
-        .finish()?
-        .with_row_count("foo", None);
-    assert!(row_count_at_scan(lf));
 
     Ok(())
 }

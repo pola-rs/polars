@@ -149,6 +149,17 @@ def _to_python_timedelta(
         raise ValueError(f"time unit: {tu} not expected")
 
 
+def _prepare_row_count_args(
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
+) -> Optional[Tuple[str, int]]:
+
+    if row_count_name is not None:
+        return (row_count_name, row_count_offset)
+    else:
+        return None
+
+
 def _to_python_datetime(
     value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
 ) -> Union[date, datetime]:

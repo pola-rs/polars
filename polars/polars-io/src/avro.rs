@@ -72,7 +72,7 @@ where
             schema.clone().fields,
         );
 
-        finish_reader(avro_reader, rechunk, None, None, None, &schema)
+        finish_reader(avro_reader, rechunk, None, None, None, &schema, None)
     }
 }
 
