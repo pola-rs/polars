@@ -21,7 +21,6 @@ use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
-use std::ops::Deref;
 
 impl IntoSeries for CategoricalChunked {
     fn into_series(self) -> Series {
@@ -86,11 +85,20 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         right_column: &Series,
         opt_join_tuples: &[(Option<u32>, Option<u32>)],
     ) -> Series {
-        let ca = self.0.deref();
+        let categorical_map_out = Some(
+            self.0
+                .merge_categorical_map(right_column.categorical().unwrap()),
+        );
+        let s_left = self.0.cast(&DataType::UInt32).unwrap();
+        let ca = s_left.u32().unwrap();
+
         let right = right_column.cast(&DataType::UInt32).unwrap();
-        ZipOuterJoinColumn::zip_outer_join_column(ca, &right, opt_join_tuples)
+        let out = ZipOuterJoinColumn::zip_outer_join_column(ca, &right, opt_join_tuples)
             .cast(&DataType::Categorical)
-            .unwrap()
+            .unwrap();
+        let mut out = out.categorical().unwrap().clone();
+        out.categorical_map = categorical_map_out;
+        out.into_series()
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
