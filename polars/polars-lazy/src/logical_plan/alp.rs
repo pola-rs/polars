@@ -533,6 +533,19 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
+    pub(crate) fn from_lp(
+        lp: ALogicalPlan,
+        expr_arena: &'a mut Arena<AExpr>,
+        lp_arena: &'a mut Arena<ALogicalPlan>,
+    ) -> Self {
+        let root = lp_arena.add(lp);
+        ALogicalPlanBuilder {
+            root,
+            expr_arena,
+            lp_arena,
+        }
+    }
+
     pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
         let schema = det_melt_schema(&value_vars, self.schema());
 

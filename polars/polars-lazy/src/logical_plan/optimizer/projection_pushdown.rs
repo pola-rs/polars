@@ -153,7 +153,7 @@ impl ProjectionPushDown {
         pushed_at_least_one
     }
 
-    /// Helper method. This pushes down current node and assigns the result to this node.
+    /// This pushes down current node and assigns the result to this node.
     fn pushdown_and_assign(
         &self,
         input: Node,
@@ -174,6 +174,34 @@ impl ProjectionPushDown {
         )?;
         lp_arena.replace(input, lp);
         Ok(())
+    }
+
+    /// This pushes down the projection that are validated
+    /// that they can be done successful at the schema above
+    /// The result is assigned to this node.
+    fn pushdown_and_assign_check_schema(
+        &self,
+        input: Node,
+        acc_projections: Vec<Node>,
+        projections_seen: usize,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<Vec<Node>> {
+        let alp = lp_arena.take(input);
+        let down_schema = alp.schema(lp_arena);
+        let (acc_projections, local_projections, names) =
+            split_acc_projections(acc_projections, down_schema, expr_arena);
+
+        let lp = self.push_down(
+            alp,
+            acc_projections,
+            names,
+            projections_seen,
+            lp_arena,
+            expr_arena,
+        )?;
+        lp_arena.replace(input, lp);
+        Ok(local_projections)
     }
 
     /// Projection pushdown optimizer
@@ -833,22 +861,30 @@ impl ProjectionPushDown {
                 options,
                 schema,
             } => {
-                if options.projection_pd {
-                    self.pushdown_and_assign(
-                        input,
-                        acc_projections,
-                        projected_names,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                    )?;
-                }
-                Ok(Udf {
+                let lp = Udf {
                     input,
                     function,
                     options,
                     schema,
-                })
+                };
+                if options.projection_pd {
+                    let local_projections = self.pushdown_and_assign_check_schema(
+                        input,
+                        acc_projections,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    if local_projections.is_empty() {
+                        Ok(lp)
+                    } else {
+                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                            .project(local_projections)
+                            .build())
+                    }
+                } else {
+                    Ok(lp)
+                }
             }
             // Slice and Cache have only inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } => {
