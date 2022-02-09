@@ -275,7 +275,7 @@ impl DataFrame {
     /// let df1: DataFrame = df!("Name" => &["James", "Mary", "John", "Patricia"])?;
     /// assert_eq!(df1.shape(), (4, 1));
     ///
-    /// let df2: DataFrame = df1.with_row_count("Id")?;
+    /// let df2: DataFrame = df1.with_row_count("Id", None)?;
     /// assert_eq!(df2.shape(), (4, 2));
     /// println!("{}", df2);
     ///
@@ -300,13 +300,27 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str) -> Result<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
-        columns
-            .push(UInt32Chunked::from_vec(name, (0..self.height() as u32).collect()).into_series());
+        let offset = offset.unwrap_or(0);
+        columns.push(
+            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
+                .into_series(),
+        );
 
-        self.columns.iter().for_each(|s| columns.push(s.clone()));
+        columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
+    }
+
+    /// Add a row count in place.
+    pub fn with_row_count_mut(&mut self, name: &str, offset: Option<u32>) -> &mut Self {
+        let offset = offset.unwrap_or(0);
+        self.columns.insert(
+            0,
+            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
+                .into_series(),
+        );
+        self
     }
 
     /// Create a new `DataFrame` but does not check the length or duplicate occurrence of the `Series`.
@@ -831,6 +845,16 @@ impl DataFrame {
                 Ok(())
             })?;
         Ok(self)
+    }
+
+    /// Does not check if schema is correct
+    pub(crate) fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
+        self.columns
+            .iter_mut()
+            .zip(other.columns.iter())
+            .for_each(|(left, right)| {
+                left.append(right).expect("should not fail");
+            });
     }
 
     /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
@@ -1572,7 +1596,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| PolarsError::NotFound(name.into()))
+            .ok_or_else(|| PolarsError::NotFound(column.into()))
             .map(|s| s.rename(name))?;
 
         let unique_names: AHashSet<&str, ahash::RandomState> =
@@ -1586,8 +1610,16 @@ impl DataFrame {
     }
 
     /// Sort `DataFrame` in place by a column.
-    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
-        self.columns = self.sort(&[by_column], reverse)?.columns;
+    pub fn sort_in_place(
+        &mut self,
+        by_column: impl IntoVec<String>,
+        reverse: impl IntoVec<bool>,
+    ) -> Result<&mut Self> {
+        // a lot of indirection in both sorting and take
+        self.rechunk();
+        let by_column = self.select_series(by_column)?;
+        let reverse = reverse.into_vec();
+        self.columns = self.sort_impl(by_column, reverse)?.columns;
         Ok(self)
     }
 
@@ -1656,10 +1688,9 @@ impl DataFrame {
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
     ) -> Result<Self> {
-        // we do this heap allocation and dispatch to reduce monomorphization bloat
-        let by_column = self.select_series(by_column)?;
-        let reverse = reverse.into_vec();
-        self.sort_impl(by_column, reverse)
+        let mut df = self.clone();
+        df.sort_in_place(by_column, reverse)?;
+        Ok(df)
     }
 
     /// Replace a column with a `Series`.
@@ -2947,7 +2978,7 @@ mod test {
         let s1 = Series::new("", &[true, false, true]);
         let ll: ListChunked = [&s1].iter().copied().collect();
 
-        let mask = BooleanChunked::new_from_slice("", &[false]);
+        let mask = BooleanChunked::from_slice("", &[false]);
         let new = ll.filter(&mask).unwrap();
 
         assert_eq!(new.chunks.len(), 1);
@@ -2958,7 +2989,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_sort() {
         let mut df = create_frame();
-        df.sort_in_place("temp", false).unwrap();
+        df.sort_in_place(["temp"], false).unwrap();
         println!("{:?}", df);
     }
 

@@ -533,12 +533,12 @@ mod test {
 
     #[test]
     fn test_take_random() {
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let ca = Int32Chunked::from_slice("a", &[1, 2, 3]);
         assert_eq!(ca.get(0), Some(1));
         assert_eq!(ca.get(1), Some(2));
         assert_eq!(ca.get(2), Some(3));
 
-        let ca = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
+        let ca = Utf8Chunked::from_slice("a", &["a", "b", "c"]);
         assert_eq!(ca.get(0), Some("a"));
         assert_eq!(ca.get(1), Some("b"));
         assert_eq!(ca.get(2), Some("c"));

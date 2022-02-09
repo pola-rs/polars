@@ -527,5 +527,5 @@ pub(crate) fn df_rows_to_hashes(
         hashes.into(),
         None,
     )) as ArrayRef];
-    (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
+    (UInt64Chunked::from_chunks("", chunks), build_hasher)
 }

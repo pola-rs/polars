@@ -5,6 +5,9 @@ pub mod aggregations;
 #[cfg(not(feature = "private"))]
 pub(crate) mod aggregations;
 
+#[cfg(feature = "avro")]
+#[cfg_attr(docsrs, doc(cfg(feature = "avro")))]
+pub mod avro;
 #[cfg(feature = "csv-file")]
 #[cfg_attr(docsrs, doc(cfg(feature = "csv-file")))]
 pub mod csv;
@@ -20,6 +23,7 @@ pub mod ipc;
 pub mod json;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 pub mod mmap;
+mod options;
 #[cfg(feature = "parquet")]
 #[cfg_attr(docsrs, doc(cfg(feature = "feature")))]
 pub mod parquet;
@@ -32,11 +36,23 @@ pub mod prelude;
 mod tests;
 pub(crate) mod utils;
 
+pub use options::*;
+
 use arrow::error::Result as ArrowResult;
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 use crate::aggregations::{apply_aggregations, ScanAggregation};
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 use crate::predicates::PhysicalIoExpr;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
@@ -73,7 +89,12 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,
@@ -81,6 +102,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
     arrow_schema: &ArrowSchema,
+    row_count: Option<RowCount>,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
@@ -88,9 +110,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
+        let current_num_rows = num_rows as u32;
         num_rows += batch.len();
-
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
+
+        if let Some(rc) = &row_count {
+            df.with_row_count_mut(&rc.name, Some(current_num_rows + rc.offset));
+        }
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate(&df)?;
@@ -101,6 +127,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         apply_aggregations(&mut df, aggregate)?;
 
         parsed_dfs.push(df);
+
         if let Some(n) = n_rows {
             if num_rows >= n {
                 break;

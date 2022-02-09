@@ -19,7 +19,7 @@ impl Series {
         let arr = ListArray::from_data(data_type, offsets.into(), values.clone(), None);
         let name = self.name();
 
-        let mut ca = ListChunked::new_from_chunks(name, vec![Arc::new(arr)]);
+        let mut ca = ListChunked::from_chunks(name, vec![Arc::new(arr)]);
         if self.dtype() != &self.dtype().to_physical() {
             ca.to_logical(inner_type.clone())
         }
@@ -80,7 +80,7 @@ impl Series {
                         .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
                         .collect::<Vec<_>>();
 
-                    let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+                    let mut ca = ListChunked::from_chunks(self.name(), chunks);
                     ca.set_fast_explode();
                     return Ok(ca.into_series());
                 }

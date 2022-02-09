@@ -47,7 +47,7 @@ use crate::csv_core::utils::get_reader_bytes;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
-use crate::{SerReader, SerWriter};
+use crate::{RowCount, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
@@ -141,7 +141,7 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum CsvEncoding {
     /// Utf8 encoding
     Utf8,
@@ -232,6 +232,7 @@ where
     skip_rows_after_header: usize,
     #[cfg(feature = "temporal")]
     parse_dates: bool,
+    row_count: Option<RowCount>,
 }
 
 impl<'a, R> CsvReader<'a, R>
@@ -244,13 +245,19 @@ where
         self
     }
 
+    /// Add a `row_count` column.
+    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
+        self.row_count = rc;
+        self
+    }
+
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
         self.chunk_size = chunk_size;
         self
     }
 
-    /// Sets the CsvEncoding
+    /// Set  [`CsvEncoding`]
     pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
         self.encoding = enc;
         self
@@ -442,7 +449,7 @@ where
             schema_overwrite: None,
             dtype_overwrite: None,
             sample_size: 1024,
-            chunk_size: 1 << 16,
+            chunk_size: 1 << 18,
             low_memory: false,
             comment_char: None,
             null_values: None,
@@ -452,6 +459,7 @@ where
             skip_rows_after_header: 0,
             #[cfg(feature = "temporal")]
             parse_dates: false,
+            row_count: None,
         }
     }
 
@@ -528,6 +536,7 @@ where
                 self.aggregate,
                 &to_cast,
                 self.skip_rows_after_header,
+                self.row_count,
             )?;
             csv_reader.as_df()?
         } else {
@@ -557,6 +566,7 @@ where
                 self.aggregate,
                 &[],
                 self.skip_rows_after_header,
+                self.row_count,
             )?;
             csv_reader.as_df()?
         };
@@ -629,9 +639,12 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::RowCount;
     use polars_core::datatypes::AnyValue;
     use polars_core::prelude::*;
     use std::io::Cursor;
+
+    const FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
 
     #[test]
     fn write_csv() {
@@ -656,10 +669,9 @@ mod test {
 
     #[test]
     fn test_read_csv_file() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let file = std::fs::File::open(path).unwrap();
+        let file = std::fs::File::open(FOODS_CSV).unwrap();
         let df = CsvReader::new(file)
-            .with_path(Some(path.to_string()))
+            .with_path(Some(FOODS_CSV.to_string()))
             .finish()
             .unwrap();
         dbg!(df);
@@ -782,8 +794,7 @@ mod test {
 
     #[test]
     fn test_projection() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-        let df = CsvReader::from_path(path)
+        let df = CsvReader::from_path(FOODS_CSV)
             .unwrap()
             .with_projection(Some(vec![0, 2]))
             .finish()
@@ -1499,6 +1510,33 @@ foo,bar
         let df = CsvReader::new(file).finish()?;
         assert_eq!(df.shape(), (5, 1));
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_row_count() -> Result<()> {
+        let df = CsvReader::from_path(FOODS_CSV)?
+            .with_row_count(Some(RowCount {
+                name: "rc".into(),
+                offset: 0,
+            }))
+            .finish()?;
+        let rc = df.column("rc")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (0u32..27).collect::<Vec<_>>()
+        );
+        let df = CsvReader::from_path(FOODS_CSV)?
+            .with_row_count(Some(RowCount {
+                name: "rc_2".into(),
+                offset: 10,
+            }))
+            .finish()?;
+        let rc = df.column("rc_2")?;
+        assert_eq!(
+            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            (10u32..37).collect::<Vec<_>>()
+        );
         Ok(())
     }
 }

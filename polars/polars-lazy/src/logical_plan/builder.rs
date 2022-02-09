@@ -4,12 +4,14 @@ use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use ahash::RandomState;
 use polars_core::prelude::*;
+use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
 #[cfg(feature = "ipc")]
 use polars_io::ipc::IpcReader;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::ParquetReader;
+use polars_io::RowCount;
 #[cfg(feature = "csv-file")]
 use polars_io::{
     csv::NullValues,
@@ -41,6 +43,7 @@ impl LogicalPlanBuilder {
         n_rows: Option<usize>,
         cache: bool,
         parallel: bool,
+        row_count: Option<RowCount>,
     ) -> Result<Self> {
         use polars_io::SerReader as _;
 
@@ -58,6 +61,7 @@ impl LogicalPlanBuilder {
                 with_columns: None,
                 cache,
                 parallel,
+                row_count,
             },
         }
         .into())
@@ -65,7 +69,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: LpScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> Result<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();
@@ -101,6 +105,8 @@ impl LogicalPlanBuilder {
         infer_schema_length: Option<usize>,
         rechunk: bool,
         skip_rows_after_header: usize,
+        encoding: CsvEncoding,
+        row_count: Option<RowCount>,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -146,6 +152,8 @@ impl LogicalPlanBuilder {
                 quote_char,
                 null_values,
                 rechunk,
+                encoding,
+                row_count,
             },
             predicate: None,
             aggregate: vec![],

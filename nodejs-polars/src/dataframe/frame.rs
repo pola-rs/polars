@@ -748,7 +748,7 @@ pub fn transpose(cx: CallContext) -> JsResult<JsExternal> {
     if include_header {
         let name: String = params.get_or("headerName", "column".to_owned())?;
         let column_names = df.get_columns().iter().map(|s| s.name());
-        let s = Utf8Chunked::new_from_iter(&name, column_names).into_series();
+        let s = Utf8Chunked::from_iter_values(&name, column_names).into_series();
         new_df.insert_at_idx(0, s).unwrap();
     }
     new_df.try_into_js(&cx)

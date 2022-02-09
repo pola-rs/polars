@@ -4,9 +4,10 @@ use crate::error::PyPolarsEr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
+use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
-use polars::prelude::{ClosedWindow, DataFrame, Field, JoinType, Schema};
+use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
 use polars_core::prelude::QuantileInterpolOptions;
@@ -107,11 +108,25 @@ impl PyLazyFrame {
         with_schema_modify: Option<PyObject>,
         rechunk: bool,
         skip_rows_after_header: usize,
+        encoding: &str,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
         let quote_char = quote_char.map(|s| s.as_bytes()[0]);
         let delimiter = sep.as_bytes()[0];
+
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
+
+        let encoding = match encoding {
+            "utf8" => CsvEncoding::Utf8,
+            "utf8-lossy" => CsvEncoding::LossyUtf8,
+            e => {
+                return Err(
+                    PyPolarsEr::Other(format!("encoding not {} not implemented.", e)).into(),
+                )
+            }
+        };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype
@@ -138,6 +153,8 @@ impl PyLazyFrame {
             .with_quote_char(quote_char)
             .with_rechunk(rechunk)
             .with_skip_rows_after_header(skip_rows_after_header)
+            .with_encoding(encoding)
+            .with_row_count(row_count)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
@@ -176,12 +193,15 @@ impl PyLazyFrame {
         cache: bool,
         parallel: bool,
         rechunk: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
             n_rows,
             cache,
             parallel,
             rechunk,
+            row_count,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
@@ -193,11 +213,14 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
+            row_count,
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
@@ -529,9 +552,9 @@ impl PyLazyFrame {
         ldf.melt(id_vars, value_vars).into()
     }
 
-    pub fn with_row_count(&self, name: &str) -> Self {
+    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
         let ldf = self.ldf.clone();
-        ldf.with_row_count(name).into()
+        ldf.with_row_count(name, offset).into()
     }
 
     pub fn map(&self, lambda: PyObject, predicate_pd: bool, projection_pd: bool) -> Self {

@@ -159,6 +159,8 @@ def read_csv(
     use_pyarrow: bool = False,
     storage_options: Optional[Dict] = None,
     skip_rows_after_header: int = 0,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -245,6 +247,10 @@ def read_csv(
         e.g. host, port, username, password, etc.
     skip_rows_after_header
         Skip these number of rows when the header is parsed
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
 
     Returns
     -------
@@ -407,6 +413,8 @@ def read_csv(
             low_memory=low_memory,
             rechunk=rechunk,
             skip_rows_after_header=skip_rows_after_header,
+            row_count_name=row_count_name,
+            row_count_offset=row_count_offset,
         )
 
     if new_columns:
@@ -428,9 +436,12 @@ def scan_csv(
     with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
     infer_schema_length: Optional[int] = 100,
     n_rows: Optional[int] = None,
+    encoding: str = "utf8",
     low_memory: bool = False,
     rechunk: bool = True,
     skip_rows_after_header: int = 0,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -483,12 +494,20 @@ def scan_csv(
         If set to ``None``, a full table scan will be done (slow).
     n_rows
         Stop reading from CSV file after reading ``n_rows``.
+    encoding
+        Allowed encodings: ``utf8`` or ``utf8-lossy``.
+        Lossy means that invalid utf8 values are replaced with ``�``
+        characters.
     low_memory
         Reduce memory usage in expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     skip_rows_after_header
         Skip these number of rows when the header is parsed
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
 
     Examples
     --------
@@ -555,6 +574,9 @@ def scan_csv(
         low_memory=low_memory,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
+        encoding=encoding,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
     )
 
 
@@ -563,6 +585,8 @@ def scan_ipc(
     n_rows: Optional[int] = None,
     cache: bool = True,
     rechunk: bool = True,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -581,6 +605,10 @@ def scan_ipc(
         Cache the result after reading.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -589,7 +617,14 @@ def scan_ipc(
     if isinstance(file, Path):
         file = str(file)
 
-    return LazyFrame.scan_ipc(file=file, n_rows=n_rows, cache=cache, rechunk=rechunk)
+    return LazyFrame.scan_ipc(
+        file=file,
+        n_rows=n_rows,
+        cache=cache,
+        rechunk=rechunk,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
+    )
 
 
 def scan_parquet(
@@ -598,6 +633,8 @@ def scan_parquet(
     cache: bool = True,
     parallel: bool = True,
     rechunk: bool = True,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -618,6 +655,10 @@ def scan_parquet(
         Read the parquet file in parallel. The single threaded reader consumes less memory.
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -627,7 +668,13 @@ def scan_parquet(
         file = str(file)
 
     return LazyFrame.scan_parquet(
-        file=file, n_rows=n_rows, cache=cache, parallel=parallel, rechunk=rechunk
+        file=file,
+        n_rows=n_rows,
+        cache=cache,
+        parallel=parallel,
+        rechunk=rechunk,
+        row_count_name=row_count_name,
+        row_count_offset=row_count_offset,
     )
 
 
@@ -656,6 +703,8 @@ def read_ipc(
     use_pyarrow: bool = _PYARROW_AVAILABLE,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -678,6 +727,10 @@ def read_ipc(
         Only used when ``use_pyarrow=True``.
     storage_options
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
 
     Returns
     -------
@@ -691,6 +744,10 @@ def read_ipc(
         columns = kwargs.pop("projection", None)
 
     if use_pyarrow:
+        if row_count_name is not None:
+            raise ValueError(
+                "``row_count_name`` cannot be used with ``use_pyarrow=True``."
+            )
         if n_rows:
             raise ValueError("``n_rows`` cannot be used with ``use_pyarrow=True``.")
 
@@ -709,6 +766,8 @@ def read_ipc(
             data,
             columns=columns,
             n_rows=n_rows,
+            row_count_name=row_count_name,
+            row_count_offset=row_count_offset,
         )
 
 
@@ -720,6 +779,8 @@ def read_parquet(
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
     parallel: bool = True,
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -745,6 +806,10 @@ def read_parquet(
         Extra options that make sense for ``fsspec.open()`` or a particular storage connection, e.g. host, port, username, password, etc.
     parallel
         Read the parquet file in parallel. The single threaded reader consumes less memory.
+    row_count_name
+        If not None, this will insert a row count column with give name into the DataFrame
+    row_count_offset
+        Offset to start the row_count column (only use if the name is set)
     **kwargs
         kwargs for [pyarrow.parquet.read_table](https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html)
 
@@ -781,7 +846,12 @@ def read_parquet(
             )
 
         return DataFrame._read_parquet(
-            source_prep, columns=columns, n_rows=n_rows, parallel=parallel
+            source_prep,
+            columns=columns,
+            n_rows=n_rows,
+            parallel=parallel,
+            row_count_name=row_count_name,
+            row_count_offset=row_count_offset,
         )
 
 

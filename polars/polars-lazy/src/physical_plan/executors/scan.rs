@@ -72,7 +72,7 @@ pub struct IpcExec {
     pub(crate) schema: SchemaRef,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) aggregate: Vec<ScanAggregation>,
-    pub(crate) options: LpScanOptions,
+    pub(crate) options: IpcScanOptions,
 }
 
 #[cfg(feature = "ipc")]
@@ -92,6 +92,7 @@ impl Executor for IpcExec {
         );
         let df = IpcReader::new(file)
             .with_n_rows(n_rows)
+            .with_row_count(std::mem::take(&mut self.options.row_count))
             .finish_with_scan_ops(
                 predicate,
                 aggregate,
@@ -156,6 +157,7 @@ impl Executor for ParquetExec {
         let df = ParquetReader::new(file)
             .with_n_rows(n_rows)
             .read_parallel(self.options.parallel)
+            .with_row_count(std::mem::take(&mut self.options.row_count))
             .finish_with_scan_ops(
                 predicate,
                 aggregate,
@@ -230,7 +232,9 @@ impl Executor for CsvExec {
             .with_encoding(CsvEncoding::LossyUtf8)
             .with_comment_char(self.options.comment_char)
             .with_quote_char(self.options.quote_char)
+            .with_encoding(self.options.encoding)
             .with_rechunk(self.options.rechunk)
+            .with_row_count(std::mem::take(&mut self.options.row_count))
             .finish()?;
 
         if self.options.cache {

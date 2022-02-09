@@ -477,8 +477,7 @@ where
                     validity,
                 );
                 let name = format!("column_{}", i);
-                ChunkedArray::<T>::new_from_chunks(&name, vec![Arc::new(arr) as ArrayRef])
-                    .into_series()
+                ChunkedArray::<T>::from_chunks(&name, vec![Arc::new(arr) as ArrayRef]).into_series()
             })
             .collect()
     });

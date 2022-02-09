@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::csv::NullValues;
+use polars_io::csv::{CsvEncoding, NullValues};
+use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
 pub struct CsvParserOptions {
@@ -16,6 +17,8 @@ pub struct CsvParserOptions {
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
     pub(crate) rechunk: bool,
+    pub(crate) encoding: CsvEncoding,
+    pub(crate) row_count: Option<RowCount>,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
@@ -24,13 +27,15 @@ pub struct ParquetOptions {
     pub(crate) with_columns: Option<Vec<String>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
+    pub(crate) row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug)]
-pub struct LpScanOptions {
+pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,
+    pub row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug, Copy, Default)]

@@ -59,6 +59,7 @@ except ImportError:  # pragma: no cover
 from polars._html import NotebookFormatter
 from polars.datatypes import Boolean, DataType, UInt32, py_type_to_dtype
 from polars.utils import (
+    _prepare_row_count_args,
     _process_null_values,
     handle_projection_columns,
     is_int_sequence,
@@ -389,83 +390,11 @@ class DataFrame:
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
-        Read a CSV file into a Dataframe.
-
-        Parameters
-        ----------
-        file
-            Path to a file or file like object.
-        has_header
-            Indicate if the first row of dataset is a header or not.
-            If set to False, column names will be autogenrated in the
-            following format: ``column_x``, with ``x`` being an
-            enumeration over every column in the dataset starting at 1.
-        columns
-            Columns to select. Accepts a list of column indices (starting
-            at zero) or a list of column names.
-        sep
-            Character to use as delimiter in the file.
-        comment_char
-            Character that indicates the start of a comment line, for
-            instance ``#``.
-        quote_char
-            Single byte character used for csv quoting, default = ''.
-            Set to None to turn off special handling and escaping of quotes.
-        skip_rows
-            Start reading after ``skip_rows`` lines. The header is also inferred at
-            this offset
-        dtypes
-            Overwrite dtypes during inference.
-        null_values
-            Values to interpret as null values. You can provide a:
-              - ``str``: All values equal to this string will be null.
-              - ``List[str]``: A null value per column.
-              - ``Dict[str, str]``: A dictionary that maps column name to a
-                                    null value string.
-        ignore_errors
-            Try to keep reading lines if some lines yield errors.
-            First try ``infer_schema_length=0`` to read all columns as
-            ``pl.Utf8`` to check which values might cause an issue.
-        parse_dates
-            Try to automatically parse dates. If this does not succeed,
-            the column remains of data type ``pl.Utf8``.
-        n_threads
-            Number of threads to use in csv parsing.
-            Defaults to the number of physical cpu's of your system.
-        infer_schema_length
-            Maximum number of lines to read to infer schema.
-            If set to 0, all columns will be read as ``pl.Utf8``.
-            If set to ``None``, a full table scan will be done (slow).
-        batch_size
-            Number of lines to read into the buffer at once.
-            Modify this to change performance.
-        n_rows
-            Stop reading from CSV file after reading ``n_rows``.
-            During multi-threaded parsing, an upper bound of ``n_rows``
-            rows cannot be guaranteed.
-        encoding
-            Allowed encodings: ``utf8`` or ``utf8-lossy``.
-            Lossy means that invalid utf8 values are replaced with ``�``
-            characters.
-        low_memory
-            Reduce memory usage at expense of performance.
-        rechunk
-            Make sure that all columns are contiguous in memory by
-            aggregating the chunks into a single array.
-        skip_rows_after_header
-            These number of rows will be skipped when the header is parsed.
-
-        Returns
-        -------
-        DataFrame
-
-        Examples
-        --------
-
-        >>> df = pl.read_csv("file.csv", sep=";", n_rows=25)  # doctest: +SKIP
-
+        see pl.read_csv
         """
         self = DataFrame.__new__(DataFrame)
 
@@ -518,6 +447,8 @@ class DataFrame:
                 low_memory=low_memory,
                 rechunk=rechunk,
                 skip_rows_after_header=skip_rows_after_header,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
             )
             if columns is None:
                 return scan.collect()
@@ -553,6 +484,7 @@ class DataFrame:
             processed_null_values,
             parse_dates,
             skip_rows_after_header,
+            _prepare_row_count_args(row_count_name, row_count_offset),
         )
         return self
 
@@ -562,6 +494,8 @@ class DataFrame:
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         parallel: bool = True,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
         Read into a DataFrame from a parquet file.
@@ -580,7 +514,14 @@ class DataFrame:
         if isinstance(file, str) and "*" in file:
             from polars import scan_parquet
 
-            scan = scan_parquet(file, n_rows=n_rows, rechunk=True, parallel=parallel)
+            scan = scan_parquet(
+                file,
+                n_rows=n_rows,
+                rechunk=True,
+                parallel=parallel,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+            )
 
             if columns is None:
                 return scan.collect()
@@ -593,7 +534,14 @@ class DataFrame:
 
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_parquet(file, columns, projection, n_rows, parallel)
+        self._df = PyDataFrame.read_parquet(
+            file,
+            columns,
+            projection,
+            n_rows,
+            parallel,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     @staticmethod
@@ -601,6 +549,8 @@ class DataFrame:
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "DataFrame":
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
@@ -622,7 +572,13 @@ class DataFrame:
         if isinstance(file, str) and "*" in file:
             from polars import scan_ipc
 
-            scan = scan_ipc(file, n_rows=n_rows, rechunk=True)
+            scan = scan_ipc(
+                file,
+                n_rows=n_rows,
+                rechunk=True,
+                row_count_name=row_count_name,
+                row_count_offset=row_count_offset,
+            )
             if columns is None:
                 scan.collect()
             elif is_str_sequence(columns, False):
@@ -634,7 +590,13 @@ class DataFrame:
 
         projection, columns = handle_projection_columns(columns)
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_ipc(file, columns, projection, n_rows)
+        self._df = PyDataFrame.read_ipc(
+            file,
+            columns,
+            projection,
+            n_rows,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     @staticmethod
@@ -2288,7 +2250,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def with_row_count(self, name: str = "row_nr") -> "DataFrame":
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> "DataFrame":
         """
         Add a column at index 0 that counts the rows.
 
@@ -2296,8 +2258,10 @@ class DataFrame:
         ----------
         name
             Name of the column to add.
+        offset
+            Start the row count at this offset. Default = 0
         """
-        return wrap_df(self._df.with_row_count(name))
+        return wrap_df(self._df.with_row_count(name, offset))
 
     def groupby(
         self,
@@ -4885,7 +4849,7 @@ class GroupBy:
         """
         Count the number of values in each group.
         """
-        return self.agg(pli.all().count())
+        return self.agg(pli.lazy_functions.count())
 
     def mean(self) -> DataFrame:
         """

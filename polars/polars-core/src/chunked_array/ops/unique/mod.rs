@@ -195,7 +195,7 @@ where
 {
     fn unique(&self) -> Result<Self> {
         let set = fill_set(self.into_iter());
-        Ok(Self::new_from_opt_iter(self.name(), set.iter().copied()))
+        Ok(Self::from_iter_options(self.name(), set.iter().copied()))
     }
 
     fn arg_unique(&self) -> Result<UInt32Chunked> {
@@ -232,7 +232,7 @@ where
 impl ChunkUnique<Utf8Type> for Utf8Chunked {
     fn unique(&self) -> Result<Self> {
         let set = fill_set(self.into_iter());
-        Ok(Utf8Chunked::new_from_opt_iter(
+        Ok(Utf8Chunked::from_iter_options(
             self.name(),
             set.iter().copied(),
         ))
@@ -274,10 +274,10 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         let mut ca = if self.can_fast_unique() {
             match &**cat_map {
                 RevMapping::Local(a) => {
-                    UInt32Chunked::new_from_iter(self.name(), 0..(a.len() as u32))
+                    UInt32Chunked::from_iter_values(self.name(), 0..(a.len() as u32))
                 }
                 RevMapping::Global(map, _, _) => {
-                    UInt32Chunked::new_from_iter(self.name(), map.keys().copied())
+                    UInt32Chunked::from_iter_values(self.name(), map.keys().copied())
                 }
             }
         } else {
@@ -500,7 +500,7 @@ mod is_first {
             })
             .collect();
 
-        BooleanChunked::new_from_chunks(ca.name(), chunks)
+        BooleanChunked::from_chunks(ca.name(), chunks)
     }
 
     impl<T> IsFirst<T> for ChunkedArray<T>
@@ -549,7 +549,7 @@ mod is_first {
                 })
                 .collect();
 
-            Ok(BooleanChunked::new_from_chunks(self.name(), chunks))
+            Ok(BooleanChunked::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -560,7 +560,7 @@ mod test {
 
     #[test]
     fn unique() {
-        let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 3, 2, 1]);
+        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 3, 2, 1]);
         assert_eq!(
             ca.unique()
                 .unwrap()
@@ -569,7 +569,7 @@ mod test {
                 .collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
-        let ca = BooleanChunked::new_from_slice("a", &[true, false, true]);
+        let ca = BooleanChunked::from_slice("a", &[true, false, true]);
         assert_eq!(
             ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(true), Some(false)]
@@ -584,7 +584,7 @@ mod test {
 
     #[test]
     fn arg_unique() {
-        let ca = ChunkedArray::<Int32Type>::new_from_slice("a", &[1, 2, 1, 1, 3]);
+        let ca = ChunkedArray::<Int32Type>::from_slice("a", &[1, 2, 1, 1, 3]);
         assert_eq!(
             ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
@@ -593,7 +593,7 @@ mod test {
 
     #[test]
     fn is_unique() {
-        let ca = Float32Chunked::new_from_slice("a", &[1., 2., 1., 1., 3.]);
+        let ca = Float32Chunked::from_slice("a", &[1., 2., 1., 1., 3.]);
         assert_eq!(
             Vec::from(&ca.is_unique().unwrap()),
             &[

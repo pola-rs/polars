@@ -36,7 +36,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);
@@ -47,7 +47,7 @@ where
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -57,7 +57,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);
@@ -68,7 +68,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -89,7 +89,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -141,7 +141,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ObjectChunked::new_from_chunks(self.name(), vec![])),
+                _ => Ok(ObjectChunked::from_chunks(self.name(), vec![])),
             };
         }
         if self.is_empty() {

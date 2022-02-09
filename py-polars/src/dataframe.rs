@@ -21,6 +21,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars::io::RowCount;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::groupby::PivotAgg;
 use polars_core::frame::ArrowChunk;
@@ -103,9 +104,12 @@ impl PyDataFrame {
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
         skip_rows_after_header: usize,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
 
         let quote_char = if let Some(s) = quote_char {
             if s.is_empty() {
@@ -171,6 +175,7 @@ impl PyDataFrame {
             .with_parse_dates(parse_dates)
             .with_quote_char(quote_char)
             .with_skip_rows_after_header(skip_rows_after_header)
+            .with_row_count(row_count)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(df.into())
@@ -184,9 +189,11 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let result = match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = f.as_buffer();
@@ -195,6 +202,7 @@ impl PyDataFrame {
                     .with_columns(columns)
                     .read_parallel(parallel)
                     .with_n_rows(n_rows)
+                    .with_row_count(row_count)
                     .finish()
             }
             Rust(f) => ParquetReader::new(f)
@@ -202,6 +210,7 @@ impl PyDataFrame {
                 .with_columns(columns)
                 .read_parallel(parallel)
                 .with_n_rows(n_rows)
+                .with_row_count(row_count)
                 .finish(),
         };
         let df = result.map_err(PyPolarsEr::from)?;
@@ -215,12 +224,15 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let file = get_file_like(py_f, false)?;
         let df = IpcReader::new(file)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
+            .with_row_count(row_count)
             .finish()
             .map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
@@ -742,7 +754,7 @@ impl PyDataFrame {
 
     pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> PyResult<()> {
         self.df
-            .sort_in_place(by_column, reverse)
+            .sort_in_place([by_column], reverse)
             .map_err(PyPolarsEr::from)?;
         Ok(())
     }
@@ -806,8 +818,11 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str) -> PyResult<Self> {
-        let df = self.df.with_row_count(name).map_err(PyPolarsEr::from)?;
+    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> PyResult<Self> {
+        let df = self
+            .df
+            .with_row_count(name, offset)
+            .map_err(PyPolarsEr::from)?;
         Ok(df.into())
     }
 
@@ -1123,9 +1138,11 @@ impl PyDataFrame {
     pub fn transpose(&self, include_header: bool, names: &str) -> PyResult<Self> {
         let mut df = self.df.transpose().map_err(PyPolarsEr::from)?;
         if include_header {
-            let s =
-                Utf8Chunked::new_from_iter(names, self.df.get_columns().iter().map(|s| s.name()))
-                    .into_series();
+            let s = Utf8Chunked::from_iter_values(
+                names,
+                self.df.get_columns().iter().map(|s| s.name()),
+            )
+            .into_series();
             df.insert_at_idx(0, s).unwrap();
         }
         Ok(df.into())

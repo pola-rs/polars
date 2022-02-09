@@ -54,7 +54,7 @@ impl ChunkCast for CategoricalChunked {
                 Ok(ca.into_series())
             }
             DataType::UInt32 => {
-                let ca = UInt32Chunked::new_from_chunks(self.name(), self.chunks.clone());
+                let ca = UInt32Chunked::from_chunks(self.name(), self.chunks.clone());
                 Ok(ca.into_series())
             }
             #[cfg(feature = "dtype-categorical")]
@@ -73,7 +73,7 @@ where
             #[cfg(feature = "dtype-categorical")]
             (DataType::UInt32, DataType::Categorical)
             | (DataType::Categorical, DataType::Categorical) => {
-                let ca = CategoricalChunked::new_from_chunks(self.name(), self.chunks.clone())
+                let ca = CategoricalChunked::from_chunks(self.name(), self.chunks.clone())
                     .set_state(self);
                 Ok(ca.into_series())
             }
@@ -140,7 +140,7 @@ impl ChunkCast for ListChunked {
                     .downcast_iter()
                     .map(|list| cast_inner_list_type(list, &**child_type))
                     .collect::<Result<_>>()?;
-                let ca = ListChunked::new_from_chunks(self.name(), chunks);
+                let ca = ListChunked::from_chunks(self.name(), chunks);
                 Ok(ca.into_series())
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),

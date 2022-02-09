@@ -5,13 +5,13 @@ pub type DateChunked = Logical<DateType, Int32Type>;
 
 impl From<Int32Chunked> for DateChunked {
     fn from(ca: Int32Chunked) -> Self {
-        DateChunked::new(ca)
+        DateChunked::new_logical(ca)
     }
 }
 
 impl Int32Chunked {
     pub fn into_date(self) -> DateChunked {
-        DateChunked::new(self)
+        DateChunked::new_logical(self)
     }
 }
 

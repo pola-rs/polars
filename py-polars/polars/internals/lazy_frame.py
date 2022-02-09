@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
-from polars.utils import _in_notebook, _process_null_values
+from polars.utils import _in_notebook, _prepare_row_count_args, _process_null_values
 
 
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
@@ -70,9 +70,12 @@ class LazyFrame:
         with_column_names: Optional[Callable[[List[str]], List[str]]] = None,
         infer_schema_length: Optional[int] = 100,
         n_rows: Optional[int] = None,
+        encoding: str = "utf8",
         low_memory: bool = False,
         rechunk: bool = True,
         skip_rows_after_header: int = 0,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_csv`
@@ -102,6 +105,8 @@ class LazyFrame:
             with_column_names,
             rechunk,
             skip_rows_after_header,
+            encoding,
+            _prepare_row_count_args(row_count_name, row_count_offset),
         )
         return self
 
@@ -112,13 +117,22 @@ class LazyFrame:
         cache: bool = True,
         parallel: bool = True,
         rechunk: bool = True,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_parquet`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_parquet(file, n_rows, cache, parallel, rechunk)
+        self._ldf = PyLazyFrame.new_from_parquet(
+            file,
+            n_rows,
+            cache,
+            parallel,
+            rechunk,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     @staticmethod
@@ -127,13 +141,21 @@ class LazyFrame:
         n_rows: Optional[int] = None,
         cache: bool = True,
         rechunk: bool = True,
+        row_count_name: Optional[str] = None,
+        row_count_offset: int = 0,
     ) -> "LazyFrame":
         """
         See Also: `pl.scan_ipc`
         """
 
         self = LazyFrame.__new__(LazyFrame)
-        self._ldf = PyLazyFrame.new_from_ipc(file, n_rows, cache, rechunk)
+        self._ldf = PyLazyFrame.new_from_ipc(
+            file,
+            n_rows,
+            cache,
+            rechunk,
+            _prepare_row_count_args(row_count_name, row_count_offset),
+        )
         return self
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -1080,16 +1102,22 @@ class LazyFrame:
         """
         return self.slice(0, 1)
 
-    def with_row_count(self, name: str = "row_nr") -> "LazyFrame":
+    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> "LazyFrame":
         """
         Add a column at index 0 that counts the rows.
+
+        ..warning::
+            This can have a negative effect on query performance.
+            This may for instance block predicate pushdown optimization.
 
         Parameters
         ----------
         name
             Name of the column to add.
+        offset
+            Start the row count at this offset
         """
-        return wrap_ldf(self._ldf.with_row_count(name))
+        return wrap_ldf(self._ldf.with_row_count(name, offset))
 
     def fill_null(self, fill_value: Union[int, str, "pli.Expr"]) -> "LazyFrame":
         """

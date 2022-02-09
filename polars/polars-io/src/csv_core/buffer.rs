@@ -122,8 +122,11 @@ impl Utf8Field {
     }
 }
 
+/// We delay validation if we expect utf8 and no errors
+/// In case of `ignore-error`
+#[inline]
 fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
-    !matches!((encoding, ignore_errors), (CsvEncoding::LossyUtf8, true))
+    !(matches!(encoding, CsvEncoding::LossyUtf8) || ignore_errors)
 }
 
 impl ParsedBuffer<Utf8Type> for Utf8Field {
@@ -149,6 +152,8 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             self.data
                 .reserve(std::cmp::max(self.data.capacity(), bytes.len()))
         }
+
+        // note that one branch writes without updating the length, so we must do that later.
         let n_written = if needs_escaping {
             // Safety:
             // we just allocated enough capacity and data_len is correct.
@@ -168,11 +173,20 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             }
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
-                    let s = String::from_utf8_lossy(
-                        &self.data.as_slice()[data_len..data_len + n_written],
-                    )
-                    .into_owned();
+                    // Safety:
+                    // we extended to data_len + n_writen
+                    // so the bytes are initialized
+                    debug_assert!(self.data.capacity() >= data_len + n_written);
+                    let slice = unsafe {
+                        self.data
+                            .as_slice()
+                            .get_unchecked(data_len..data_len + n_written)
+                    };
+                    let s = String::from_utf8_lossy(slice).into_owned();
                     let b = s.as_bytes();
+                    // Make sure that we extend at the proper location,
+                    // otherwise we append valid bytes to invalid utf8 bytes.
+                    unsafe { self.data.set_len(data_len) }
                     self.data.extend_from_slice(b);
                     self.offsets.push(self.data.len() as i64);
                     self.validity.push(true);
@@ -315,24 +329,30 @@ impl Buffer {
                 v.offsets.shrink_to_fit();
                 v.data.shrink_to_fit();
 
+                let mut valid_utf8 = true;
                 if delay_utf8_validation(v.encoding, v.ignore_errors) {
-                    let mut valid_utf8 = true;
+                    // check whole buffer for utf8
+                    // this alone is not enough
+                    // we must also check byte starts
+                    // see: https://github.com/jorgecarleitao/arrow2/pull/823
+                    simdutf8::basic::from_utf8(&v.data).map_err(|_| {
+                        PolarsError::ComputeError("invalid utf8 data in csv".into())
+                    })?;
 
-                    // ascii checking is a lot cheaper
-                    if !v.data.is_ascii() {
-                        const SIMD_CHUNK_SIZE: usize = 64;
-                        let mut start = 0usize;
-                        // create substrings and check utf8 validity
-                        for &end in &v.offsets[1..] {
-                            let slice = v.data.get_unchecked(start..end as usize);
-                            start = end as usize;
+                    for i in (0..v.offsets.len() - 1).step_by(2) {
+                        // Safety:
+                        // we iterate over offsets.len()
+                        let start = *v.offsets.get_unchecked(i) as usize;
 
-                            // fast ascii check per item
-                            if slice.len() < SIMD_CHUNK_SIZE && slice.is_ascii() {
-                                continue;
+                        let first = v.data.get(start);
+
+                        // A valid code-point iff it does not start with 0b10xxxxxx
+                        // Bit-magic taken from `std::str::is_char_boundary`
+                        if let Some(&b) = first {
+                            if (b as i8) < -0x40 {
+                                valid_utf8 = false;
+                                break;
                             }
-
-                            valid_utf8 &= simdutf8::basic::from_utf8(slice).is_ok();
                         }
                     }
 
@@ -346,7 +366,7 @@ impl Buffer {
                     v.data.into(),
                     Some(v.validity.into()),
                 );
-                let ca = Utf8Chunked::new_from_chunks(&v.name, vec![Arc::new(arr)]);
+                let ca = Utf8Chunked::from_chunks(&v.name, vec![Arc::new(arr)]);
                 ca.into_series()
             },
         };

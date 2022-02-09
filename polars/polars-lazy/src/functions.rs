@@ -211,9 +211,12 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 .ok_or_else(|| PolarsError::NoData("no data in `high` evaluation".into()))?;
 
             if step > 1 {
-                Ok(Int64Chunked::new_from_iter("arange", (low..high).step_by(step)).into_series())
+                Ok(
+                    Int64Chunked::from_iter_values("arange", (low..high).step_by(step))
+                        .into_series(),
+                )
             } else {
-                Ok(Int64Chunked::new_from_iter("arange", low..high).into_series())
+                Ok(Int64Chunked::from_iter_values("arange", low..high).into_series())
             }
         };
         map_binary(

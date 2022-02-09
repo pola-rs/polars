@@ -42,8 +42,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         }
         0 => {
             return match method {
-                Average => Float32Chunked::new_from_slice(s.name(), &[]).into_series(),
-                _ => UInt32Chunked::new_from_slice(s.name(), &[]).into_series(),
+                Average => Float32Chunked::from_slice(s.name(), &[]).into_series(),
+                _ => UInt32Chunked::from_slice(s.name(), &[]).into_series(),
             };
         }
         _ => {}
@@ -372,7 +372,7 @@ mod test {
 
     #[test]
     fn test_rank_empty() {
-        let s = UInt32Chunked::new_from_slice("", &[]).into_series();
+        let s = UInt32Chunked::from_slice("", &[]).into_series();
         let out = rank(&s, RankMethod::Average, false);
         assert_eq!(out.dtype(), &DataType::Float32);
         let out = rank(&s, RankMethod::Max, false);

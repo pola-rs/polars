@@ -446,9 +446,9 @@ fn test_lazy_query_9() -> Result<()> {
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
     let date = NaiveDate::from_ymd(2021, 3, 5);
-    let x: Series = DatetimeChunked::new_from_naive_datetime(
+    let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
-        &*vec![
+        [
             NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(13, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(14, 0, 0)),
@@ -456,9 +456,9 @@ fn test_lazy_query_10() {
         TimeUnit::Nanoseconds,
     )
     .into();
-    let y: Series = DatetimeChunked::new_from_naive_datetime(
+    let y: Series = DatetimeChunked::from_naive_datetime(
         "y",
-        &*vec![
+        [
             NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(11, 0, 0)),
@@ -472,9 +472,9 @@ fn test_lazy_query_10() {
         .select(&[(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
-    let z: Series = DurationChunked::new_from_duration(
+    let z: Series = DurationChunked::from_duration(
         "z",
-        &*vec![
+        [
             ChronoDuration::hours(1),
             ChronoDuration::hours(2),
             ChronoDuration::hours(3),
@@ -483,9 +483,9 @@ fn test_lazy_query_10() {
     )
     .into();
     assert!(out.column("z").unwrap().series_equal(&z));
-    let x: Series = DatetimeChunked::new_from_naive_datetime(
+    let x: Series = DatetimeChunked::from_naive_datetime(
         "x",
-        &*vec![
+        [
             NaiveDateTime::new(date, NaiveTime::from_hms(2, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(3, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(4, 0, 0)),
@@ -493,9 +493,9 @@ fn test_lazy_query_10() {
         TimeUnit::Milliseconds,
     )
     .into();
-    let y: Series = DatetimeChunked::new_from_naive_datetime(
+    let y: Series = DatetimeChunked::from_naive_datetime(
         "y",
-        &*vec![
+        [
             NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
             NaiveDateTime::new(date, NaiveTime::from_hms(1, 0, 0)),
@@ -523,7 +523,7 @@ fn test_lazy_query_10() {
 ))]
 fn test_lazy_query_7() {
     let date = NaiveDate::from_ymd(2021, 3, 5);
-    let dates = vec![
+    let dates = [
         NaiveDateTime::new(date, NaiveTime::from_hms(12, 0, 0)),
         NaiveDateTime::new(date, NaiveTime::from_hms(12, 1, 0)),
         NaiveDateTime::new(date, NaiveTime::from_hms(12, 2, 0)),
@@ -533,7 +533,7 @@ fn test_lazy_query_7() {
     ];
     let data = vec![Some(1.), Some(2.), Some(3.), Some(4.), None, None];
     let df = DataFrame::new(vec![
-        DatetimeChunked::new_from_naive_datetime("date", &*dates, TimeUnit::Nanoseconds).into(),
+        DatetimeChunked::from_naive_datetime("date", dates, TimeUnit::Nanoseconds).into(),
         Series::new("data", data),
     ])
     .unwrap();

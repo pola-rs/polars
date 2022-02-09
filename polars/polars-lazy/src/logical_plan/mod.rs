@@ -71,7 +71,7 @@ pub enum LogicalPlan {
     IpcScan {
         path: PathBuf,
         schema: SchemaRef,
-        options: LpScanOptions,
+        options: IpcScanOptions,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
     },

@@ -854,7 +854,7 @@ impl DefaultPlanner {
                                 let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     s.n_unique().map(|count| {
-                                        UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                        UInt32Chunked::from_slice(s.name(), &[count as u32])
                                             .into_series()
                                     })
                                 })
@@ -916,7 +916,7 @@ impl DefaultPlanner {
                                 let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
                                     let s = std::mem::take(&mut s[0]);
                                     let count = s.len();
-                                    Ok(UInt32Chunked::new_from_slice(s.name(), &[count as u32])
+                                    Ok(UInt32Chunked::from_slice(s.name(), &[count as u32])
                                         .into_series())
                                 })
                                     as Arc<dyn SeriesUdf>);

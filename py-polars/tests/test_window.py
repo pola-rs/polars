@@ -54,3 +54,40 @@ def test_issue_2529() -> None:
         ]
     )
     assert out["out1"].to_list() == out["out2"].to_list()
+
+
+def test_window_function_cache() -> None:
+    # ensures that the cache runs the flattened first (that are the sorted groups)
+    # otherwise the flattened results are not ordered correctly
+    out = pl.DataFrame(
+        {
+            "groups": ["A", "A", "B", "B", "B"],
+            "groups_not_sorted": ["A", "B", "A", "B", "A"],
+            "values": range(5),
+        }
+    ).with_columns(
+        [
+            pl.col("values")
+            .over("groups")
+            .alias("values_list"),  # aggregation to list + join
+            pl.col("values")
+            .over("groups")
+            .flatten()
+            .alias("values_flat"),  # aggregation to list + explode and concat back
+            pl.col("values")
+            .reverse()
+            .over("groups")
+            .flatten()
+            .alias("values_rev"),  # use flatten to reverse within a group
+        ]
+    )
+
+    assert out["values_list"].to_list() == [
+        [0, 1],
+        [0, 1],
+        [2, 3, 4],
+        [2, 3, 4],
+        [2, 3, 4],
+    ]
+    assert out["values_flat"].to_list() == [0, 1, 2, 3, 4]
+    assert out["values_rev"].to_list() == [1, 0, 4, 3, 2]

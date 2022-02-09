@@ -28,7 +28,7 @@ where
                     )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
-            UInt64Chunked::new_from_chunks(self.name(), chunks)
+            UInt64Chunked::from_chunks(self.name(), chunks)
         } else {
             unreachable!()
         }
@@ -50,7 +50,7 @@ where
                     )) as Arc<dyn Array>
                 })
                 .collect::<Vec<_>>();
-            UInt32Chunked::new_from_chunks(self.name(), chunks)
+            UInt32Chunked::from_chunks(self.name(), chunks)
         } else {
             unreachable!()
         }
@@ -90,7 +90,7 @@ impl Reinterpret for UInt64Chunked {
                 )) as Arc<dyn Array>
             })
             .collect::<Vec<_>>();
-        Int64Chunked::new_from_chunks(self.name(), chunks).into_series()
+        Int64Chunked::from_chunks(self.name(), chunks).into_series()
     }
 
     fn reinterpret_unsigned(&self) -> Series {
@@ -124,7 +124,7 @@ impl UInt64Chunked {
                 )) as Arc<dyn Array>
             })
             .collect::<Vec<_>>();
-        Float64Chunked::new_from_chunks(self.name(), chunks).into()
+        Float64Chunked::from_chunks(self.name(), chunks).into()
     }
 }
 impl UInt32Chunked {
@@ -143,7 +143,7 @@ impl UInt32Chunked {
                 )) as Arc<dyn Array>
             })
             .collect::<Vec<_>>();
-        Float32Chunked::new_from_chunks(self.name(), chunks).into()
+        Float32Chunked::from_chunks(self.name(), chunks).into()
     }
 }
 

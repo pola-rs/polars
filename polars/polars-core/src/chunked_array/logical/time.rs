@@ -5,13 +5,13 @@ pub type TimeChunked = Logical<TimeType, Int64Type>;
 
 impl From<Int64Chunked> for TimeChunked {
     fn from(ca: Int64Chunked) -> Self {
-        TimeChunked::new(ca)
+        TimeChunked::new_logical(ca)
     }
 }
 
 impl Int64Chunked {
     pub fn into_time(self) -> TimeChunked {
-        TimeChunked::new(self)
+        TimeChunked::new_logical(self)
     }
 }
 

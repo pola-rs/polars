@@ -3,6 +3,7 @@ use crate::mmap::MmapBytesReader;
 use crate::parquet::read_impl::read_parquet;
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
+use crate::RowCount;
 use arrow::io::parquet::read;
 use polars_core::prelude::*;
 use std::io::{Read, Seek};
@@ -17,6 +18,7 @@ pub struct ParquetReader<R: Read + Seek> {
     columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
     parallel: bool,
+    row_count: Option<RowCount>,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -42,6 +44,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
             predicate,
             aggregate,
             self.parallel,
+            self.row_count,
         )
         .map(|mut df| {
             if rechunk {
@@ -77,6 +80,12 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
+    /// Add a `row_count` column.
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
+        self
+    }
+
     pub fn schema(mut self) -> Result<Schema> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
@@ -94,6 +103,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             columns: None,
             projection: None,
             parallel: true,
+            row_count: None,
         }
     }
 
@@ -125,6 +135,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             None,
             None,
             self.parallel,
+            self.row_count,
         )
         .map(|mut df| {
             if self.rechunk {

@@ -25,7 +25,12 @@ pub enum ScanAggregation {
 
 impl ScanAggregation {
     /// Evaluate the aggregations per batch.
-    #[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+    #[cfg(any(
+        feature = "ipc",
+        feature = "parquet",
+        feature = "json",
+        feature = "avro"
+    ))]
     pub(crate) fn evaluate_batch(&self, df: &DataFrame) -> Result<Series> {
         use ScanAggregation::*;
         let s = match self {
@@ -81,7 +86,12 @@ impl ScanAggregation {
     }
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet", feature = "json"))]
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "json",
+    feature = "avro"
+))]
 pub(crate) fn apply_aggregations(
     df: &mut DataFrame,
     aggregate: Option<&[ScanAggregation]>,
