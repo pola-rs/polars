@@ -95,6 +95,7 @@ fn scan_foods_parquet(parallel: bool) -> LazyFrame {
         cache: false,
         parallel,
         rechunk: true,
+        row_count: None,
     };
     LazyFrame::scan_parquet(out_path, args).unwrap()
 }

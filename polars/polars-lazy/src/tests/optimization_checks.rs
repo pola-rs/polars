@@ -19,6 +19,20 @@ pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
                         row_count: Some(_), ..
                     },
                 ..
+            }
+            | ParquetScan {
+                options:
+                    ParquetOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
+            }
+            | IpcScan {
+                options:
+                    IpcScanOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
             } => true,
             _ => false,
         }

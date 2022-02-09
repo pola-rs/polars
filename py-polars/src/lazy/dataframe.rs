@@ -193,12 +193,15 @@ impl PyLazyFrame {
         cache: bool,
         parallel: bool,
         rechunk: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
             n_rows,
             cache,
             parallel,
             rechunk,
+            row_count,
         };
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())
@@ -210,11 +213,14 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
+        row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
+        let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
             n_rows,
             cache,
             rechunk,
+            row_count,
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
         Ok(lf.into())

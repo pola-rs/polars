@@ -67,6 +67,7 @@ pub struct IpcReader<R> {
     n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
+    row_count: Option<RowCount>,
 }
 
 impl<R: Read + Seek> IpcReader<R> {
@@ -90,6 +91,12 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
         self.columns = columns;
+        self
+    }
+
+    /// Add a `row_count` column.
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
         self
     }
 
@@ -124,7 +131,15 @@ impl<R: Read + Seek> IpcReader<R> {
 
         let reader = read::FileReader::new(&mut self.reader, metadata, projection);
 
-        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
+        finish_reader(
+            reader,
+            rechunk,
+            self.n_rows,
+            predicate,
+            aggregate,
+            &schema,
+            self.row_count,
+        )
     }
 }
 
@@ -148,6 +163,7 @@ where
             n_rows: None,
             columns: None,
             projection: None,
+            row_count: None,
         }
     }
 
@@ -203,7 +219,15 @@ where
         };
 
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
-        finish_reader(ipc_reader, rechunk, self.n_rows, None, None, &schema)
+        finish_reader(
+            ipc_reader,
+            rechunk,
+            self.n_rows,
+            None,
+            None,
+            &schema,
+            self.row_count,
+        )
     }
 }
 
@@ -232,6 +256,7 @@ pub struct IpcWriter<W> {
 }
 
 use crate::aggregations::ScanAggregation;
+use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 

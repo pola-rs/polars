@@ -43,6 +43,7 @@ impl LogicalPlanBuilder {
         n_rows: Option<usize>,
         cache: bool,
         parallel: bool,
+        row_count: Option<RowCount>,
     ) -> Result<Self> {
         use polars_io::SerReader as _;
 
@@ -60,6 +61,7 @@ impl LogicalPlanBuilder {
                 with_columns: None,
                 cache,
                 parallel,
+                row_count,
             },
         }
         .into())
@@ -67,7 +69,7 @@ impl LogicalPlanBuilder {
 
     #[cfg(feature = "ipc")]
     #[cfg_attr(docsrs, doc(cfg(feature = "ipc")))]
-    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: LpScanOptions) -> Result<Self> {
+    pub fn scan_ipc<P: Into<PathBuf>>(path: P, options: IpcScanOptions) -> Result<Self> {
         use polars_io::SerReader as _;
 
         let path = path.into();

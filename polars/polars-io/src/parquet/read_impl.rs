@@ -3,6 +3,7 @@ use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::predicates::collect_statistics;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::apply_projection;
+use crate::RowCount;
 use arrow::io::parquet::read;
 use arrow::io::parquet::read::{to_deserializer, FileMetaData};
 use polars_core::prelude::*;
@@ -25,6 +26,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
     parallel: bool,
+    row_count: Option<RowCount>,
 ) -> Result<DataFrame> {
     let reader = ReaderBytes::from(&reader);
     let bytes = reader.deref();
@@ -43,14 +45,17 @@ pub fn read_parquet<R: MmapBytesReader>(
 
     let mut remaining_rows = limit;
 
+    let mut previous_row_count = 0;
     for rg in 0..row_group_len {
         let md = &file_metadata.row_groups[rg];
+        let current_row_count = md.num_rows() as u32;
         if let Some(pred) = &predicate {
             if let Some(pred) = pred.as_stats_evaluator() {
                 if let Some(stats) = collect_statistics(md.columns(), schema)? {
                     let should_read = pred.should_read(&stats);
                     // a parquet file may not have statistics of all columns
                     if matches!(should_read, Ok(false)) {
+                        previous_row_count += current_row_count;
                         continue;
                     } else if !matches!(should_read, Err(PolarsError::NotFound(_))) {
                         let _ = should_read?;
@@ -102,10 +107,14 @@ pub fn read_parquet<R: MmapBytesReader>(
         remaining_rows = file_metadata.row_groups[rg].num_rows() as usize;
 
         let mut df = DataFrame::new_no_checks(columns);
+        if let Some(rc) = &row_count {
+            df.with_row_count_mut(&rc.name, Some(previous_row_count + rc.offset));
+        }
 
         apply_predicate(&mut df, predicate.as_deref())?;
         apply_aggregations(&mut df, aggregate)?;
 
+        previous_row_count += current_row_count;
         dfs.push(df)
     }
 

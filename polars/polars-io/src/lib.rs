@@ -102,6 +102,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&[ScanAggregation]>,
     arrow_schema: &ArrowSchema,
+    row_count: Option<RowCount>,
 ) -> Result<DataFrame> {
     use polars_core::utils::accumulate_dataframes_vertical;
 
@@ -109,9 +110,13 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
+        let current_num_rows = num_rows as u32;
         num_rows += batch.len();
-
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
+
+        if let Some(rc) = &row_count {
+            df.with_row_count_mut(&rc.name, Some(current_num_rows + rc.offset));
+        }
 
         if let Some(predicate) = &predicate {
             let s = predicate.evaluate(&df)?;
@@ -122,6 +127,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
         apply_aggregations(&mut df, aggregate)?;
 
         parsed_dfs.push(df);
+
         if let Some(n) = n_rows {
             if num_rows >= n {
                 break;
