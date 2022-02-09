@@ -1596,7 +1596,7 @@ impl DataFrame {
     /// ```
     pub fn rename(&mut self, column: &str, name: &str) -> Result<&mut Self> {
         self.select_mut(column)
-            .ok_or_else(|| PolarsError::NotFound(name.into()))
+            .ok_or_else(|| PolarsError::NotFound(column.into()))
             .map(|s| s.rename(name))?;
 
         let unique_names: AHashSet<&str, ahash::RandomState> =
