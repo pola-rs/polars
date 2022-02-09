@@ -1868,3 +1868,27 @@ def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
 
     out = df.select(pl.last())
     assert out.columns == ["cars"]
+
+
+def test_categorical_outer_join() -> None:
+    with pl.StringCache():
+        df1 = pl.DataFrame(
+            [
+                pl.Series("key1", [42]),
+                pl.Series("key2", ["bar"], dtype=pl.Categorical),
+                pl.Series("val1", [1]),
+            ]
+        ).lazy()
+
+        df2 = pl.DataFrame(
+            [
+                pl.Series("key1", [42]),
+                pl.Series("key2", ["bar"], dtype=pl.Categorical),
+                pl.Series("val2", [2]),
+            ]
+        ).lazy()
+
+    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
+    expected = pl.DataFrame({"val1": [1], "key1": [42], "key2": ["bar"], "val2": [2]})
+
+    assert out.frame_equal(expected)
