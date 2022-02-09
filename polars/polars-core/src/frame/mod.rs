@@ -847,6 +847,16 @@ impl DataFrame {
         Ok(self)
     }
 
+    /// Does not check if schema is correct
+    pub(crate) fn vstack_mut_unchecked(&mut self, other: &DataFrame) {
+        self.columns
+            .iter_mut()
+            .zip(other.columns.iter())
+            .for_each(|(left, right)| {
+                left.append(right).expect("should not fail");
+            });
+    }
+
     /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
     ///
     /// Different from [`vstack`](Self::vstack) which adds the chunks from `other` to the chunks of this [`DataFrame`]
@@ -1600,8 +1610,16 @@ impl DataFrame {
     }
 
     /// Sort `DataFrame` in place by a column.
-    pub fn sort_in_place(&mut self, by_column: &str, reverse: bool) -> Result<&mut Self> {
-        self.columns = self.sort(&[by_column], reverse)?.columns;
+    pub fn sort_in_place(
+        &mut self,
+        by_column: impl IntoVec<String>,
+        reverse: impl IntoVec<bool>,
+    ) -> Result<&mut Self> {
+        // a lot of indirection in both sorting and take
+        self.rechunk();
+        let by_column = self.select_series(by_column)?;
+        let reverse = reverse.into_vec();
+        self.columns = self.sort_impl(by_column, reverse)?.columns;
         Ok(self)
     }
 
@@ -1670,10 +1688,9 @@ impl DataFrame {
         by_column: impl IntoVec<String>,
         reverse: impl IntoVec<bool>,
     ) -> Result<Self> {
-        // we do this heap allocation and dispatch to reduce monomorphization bloat
-        let by_column = self.select_series(by_column)?;
-        let reverse = reverse.into_vec();
-        self.sort_impl(by_column, reverse)
+        let mut df = self.clone();
+        df.sort_in_place(by_column, reverse)?;
+        Ok(df)
     }
 
     /// Replace a column with a `Series`.
@@ -2972,7 +2989,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_sort() {
         let mut df = create_frame();
-        df.sort_in_place("temp", false).unwrap();
+        df.sort_in_place(["temp"], false).unwrap();
         println!("{:?}", df);
     }
 

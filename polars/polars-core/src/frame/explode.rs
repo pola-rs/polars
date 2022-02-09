@@ -1,7 +1,7 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
+use crate::utils::accumulate_dataframes_vertical_unchecked;
 use arrow::buffer::Buffer;
-use std::collections::VecDeque;
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
@@ -191,7 +191,7 @@ impl DataFrame {
 
         let value_vars = value_vars.into_iter();
 
-        let mut dataframe_chunks = VecDeque::with_capacity(value_vars.size_hint().0);
+        let mut dataframe_chunks = Vec::with_capacity(value_vars.size_hint().0);
 
         for value_column_name in value_vars {
             let value_column_name = value_column_name.as_ref();
@@ -201,17 +201,12 @@ impl DataFrame {
 
             let mut df_chunk = ids.clone();
             df_chunk.hstack_mut(&[variable_col, value_col])?;
-            dataframe_chunks.push_back(df_chunk)
+            dataframe_chunks.push(df_chunk)
         }
 
-        let mut main_df = dataframe_chunks
-            .pop_front()
-            .ok_or_else(|| PolarsError::NoData("No data in melt operation".into()))?;
-
-        while let Some(df) = dataframe_chunks.pop_front() {
-            main_df.vstack_mut(&df)?;
-        }
-        Ok(main_df)
+        let mut df = accumulate_dataframes_vertical_unchecked(dataframe_chunks)?;
+        df.rechunk();
+        Ok(df)
     }
 }
 

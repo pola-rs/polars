@@ -702,9 +702,7 @@ pub(crate) fn prepare_argsort(
         .map(|s| {
             use DataType::*;
             match s.dtype() {
-                Categorical | Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => {
-                    s.clone()
-                }
+                Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
                 _ => {
                     // small integers i8, u8 etc are casted to reduce compiler bloat
                     // not that we don't expect any logical types at this point
