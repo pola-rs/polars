@@ -914,17 +914,18 @@ class Expr:
 
     def fill_null(self, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
         """
-        Fill none value with a fill value or strategy
+        Fill none value with a value or strategy.
 
         fill_value
-            Fill null strategy or a value
-                   * "backward"
-                   * "forward"
-                   * "min"
-                   * "max"
-                   * "mean"
-                   * "one"
-                   * "zero"
+            Named fill strategy...
+                * "backward"
+                * "forward"
+                * "min"
+                * "max"
+                * "mean"
+                * "one"
+                * "zero"
+            ...literal value, or Expr
         """
         # we first must check if it is not an expr, as expr does not implement __bool__
         # and thus leads to a value error in the second comparisson.

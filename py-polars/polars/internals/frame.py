@@ -3332,7 +3332,7 @@ class DataFrame:
 
     def fill_null(self, strategy: Union[str, "pli.Expr", Any]) -> "DataFrame":
         """
-        Fill None/missing values by a filling strategy or an Expression evaluation.
+        Fill null values using a filling strategy, literal, or an Expression evaluation.
 
         Parameters
         ----------

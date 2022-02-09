@@ -2176,7 +2176,7 @@ class Series:
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
         """
-        Fill null values with a filling strategy.
+        Fill null values using a filling strategy, literal, or an Expression evaluation.
 
         Examples
         --------
@@ -2199,19 +2199,28 @@ class Series:
                 3
                 1
         ]
+        >>> s = pl.Series("b", ["x",None,"z"])
+        >>> s.fill_null(pl.lit(""))
+        shape: (3,)
+        Series: 'b' [str]
+        [
+            "x"
+            ""
+            "z"
+        ]
 
         Parameters
         ----------
         strategy
-
-        Fill null strategy or a value
-               * "backward"
-               * "forward"
-               * "min"
-               * "max"
-               * "mean"
-               * "one"
-               * "zero"
+            Named fill strategy...
+                * "backward"
+                * "forward"
+                * "min"
+                * "max"
+                * "mean"
+                * "one"
+                * "zero"
+            ...literal value, or Expr
         """
         if not isinstance(strategy, str):
             return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
