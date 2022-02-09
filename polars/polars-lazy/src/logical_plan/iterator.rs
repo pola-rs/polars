@@ -4,7 +4,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
@@ -155,7 +155,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Column(_) | Literal(_) | Wildcard | Count => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
             Alias(e, _) => push(e),
             Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {

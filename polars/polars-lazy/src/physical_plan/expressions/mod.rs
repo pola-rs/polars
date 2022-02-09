@@ -10,6 +10,7 @@ pub(crate) mod is_not_null;
 pub(crate) mod is_null;
 pub(crate) mod literal;
 pub(crate) mod not;
+pub(crate) mod nth;
 pub(crate) mod shift;
 pub(crate) mod slice;
 pub(crate) mod sort;

@@ -1292,6 +1292,14 @@ pub fn count() -> PyExpr {
     dsl::count().into()
 }
 
+pub fn first() -> PyExpr {
+    dsl::first().into()
+}
+
+pub fn last() -> PyExpr {
+    dsl::last().into()
+}
+
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }

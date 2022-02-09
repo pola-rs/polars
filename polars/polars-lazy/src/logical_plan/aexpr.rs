@@ -1,6 +1,7 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
+use polars_arrow::index::IndexToUsize;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
@@ -99,6 +100,7 @@ pub enum AExpr {
         length: usize,
     },
     Count,
+    Nth(i64),
 }
 
 impl Default for AExpr {
@@ -127,6 +129,12 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
+            Nth(idx) => {
+                let idx = (*idx).negative_to_usize(schema.len()).ok_or_else(|| {
+                    PolarsError::NoData("cannot take nth from empty dataframe".into())
+                })?;
+                Ok(schema.field(idx).cloned().unwrap())
+            }
             Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
