@@ -99,6 +99,7 @@ pub enum AExpr {
         length: usize,
     },
     Count,
+    Nth(i64),
 }
 
 impl Default for AExpr {
@@ -353,6 +354,7 @@ impl AExpr {
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
+            Nth(_) => panic!("should be no nth at this point"),
         }
     }
 }

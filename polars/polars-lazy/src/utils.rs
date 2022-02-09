@@ -94,6 +94,10 @@ pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
 }
 
+pub(crate) fn has_nth(current_expr: &Expr) -> bool {
+    has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
+}
+
 /// output name of expr
 pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     for e in expr {

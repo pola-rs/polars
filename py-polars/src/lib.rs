@@ -56,6 +56,16 @@ fn count() -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn first() -> dsl::PyExpr {
+    dsl::first()
+}
+
+#[pyfunction]
+fn last() -> dsl::PyExpr {
+    dsl::last()
+}
+
+#[pyfunction]
 fn cols(names: Vec<String>) -> dsl::PyExpr {
     dsl::cols(names)
 }
@@ -350,6 +360,8 @@ fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(first)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();

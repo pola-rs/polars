@@ -173,6 +173,7 @@ impl fmt::Debug for Expr {
                 partition_by,
                 ..
             } => write!(f, "{:?}.over({:?})", function, partition_by),
+            Nth(i) => write!(f, "nth({})", i),
             Count => write!(f, "count()"),
             IsUnique(expr) => write!(f, "{:?}.unique()", expr),
             Explode(expr) => write!(f, "{:?}.explode()", expr),

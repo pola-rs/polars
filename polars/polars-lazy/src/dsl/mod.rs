@@ -332,8 +332,10 @@ pub enum Expr {
         value: String,
         expr: Box<Expr>,
     },
-    /// Special case without that does not need columns
+    /// Special case that does not need columns
     Count,
+    /// Take the nth column in the `DataFrame`
+    Nth(i64),
 }
 
 impl Default for Expr {
@@ -2195,6 +2197,16 @@ where
 /// Count expression
 pub fn count() -> Expr {
     Expr::Count
+}
+
+/// First column in DataFrame
+pub fn first() -> Expr {
+    Expr::Nth(0)
+}
+
+/// Last column in DataFrame
+pub fn last() -> Expr {
+    Expr::Nth(-1)
 }
 
 #[cfg(test)]

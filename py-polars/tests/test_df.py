@@ -1859,3 +1859,12 @@ def test_product() -> None:
     out = df.product()
     expected = pl.DataFrame({"int": [6], "flt": [-108.0], "bool_0": [0], "bool_1": [1]})
     assert out.frame_equal(expected)
+
+
+def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
+    df = fruits_cars
+    out = df.select(pl.first())
+    assert out.columns == ["A"]
+
+    out = df.select(pl.last())
+    assert out.columns == ["cars"]

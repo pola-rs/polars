@@ -1389,7 +1389,7 @@ class Series:
         """
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, List[int]]) -> "Series":
+    def take(self, indices: Union[np.ndarray, List[int], "pli.Expr"]) -> "Series":
         """
         Take values by index.
 
@@ -1410,6 +1410,8 @@ class Series:
         ]
 
         """
+        if isinstance(indices, pli.Expr):
+            return pli.select(pli.lit(self).take(indices)).to_series()
         if isinstance(indices, list):
             indices = np.array(indices)
         return wrap_s(self._s.take(indices))
