@@ -6,7 +6,6 @@ use crate::physical_plan::executors::groupby_rolling::GroupByRollingExec;
 use crate::physical_plan::executors::scan::IpcExec;
 use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::count::CountExpr;
-use crate::prelude::nth::NthExpr;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
 use crate::utils::{expr_to_root_column_name, has_window_aexpr};
@@ -488,6 +487,7 @@ impl DefaultPlanner {
         use AExpr::*;
 
         match expr_arena.get(expression).clone() {
+            Count => Ok(Arc::new(CountExpr::new())),
             Window {
                 mut function,
                 partition_by,
@@ -506,9 +506,7 @@ impl DefaultPlanner {
                 apply_columns.dedup();
 
                 if apply_columns.is_empty() {
-                    if has_aexpr(function, expr_arena, |e| {
-                        matches!(e, AExpr::Literal(_) | AExpr::Nth(_))
-                    }) {
+                    if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                         apply_columns.push(Arc::from("literal"))
                     } else {
                         let e = node_to_expr(function, expr_arena);
@@ -1055,9 +1053,8 @@ impl DefaultPlanner {
                     auto_explode: false,
                 }))
             }
-            Count => Ok(Arc::new(CountExpr::new())),
-            Nth(i) => Ok(Arc::new(NthExpr::new(i))),
             Wildcard => panic!("should be no wildcard at this point"),
+            Nth(_) => panic!("should be no nth at this point"),
         }
     }
 }

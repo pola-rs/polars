@@ -427,7 +427,7 @@ def first(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr"
 
     input:
 
-    - None -> expression to take first column of a context. Warning! optimization may change which column that is!
+    - None -> expression to take first column of a context.
     - str -> syntactic sugar for `pl.col(..).first()`
     - Series -> Take first value in `Series`
 
@@ -467,7 +467,7 @@ def last(column: Optional[Union[str, "pli.Series"]] = None) -> "pli.Expr":
 
     input:
 
-    - None -> expression to take last column of a context. Warning! optimization may change which column that is!
+    - None -> expression to take last column of a context.
     - str -> syntactic sugar for `pl.col(..).last()`
     - Series -> Take last value in `Series`
     """

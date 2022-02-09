@@ -1,7 +1,6 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use crate::utils::rename_field;
-use polars_arrow::index::IndexToUsize;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
@@ -129,12 +128,6 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
-            Nth(idx) => {
-                let idx = (*idx).negative_to_usize(schema.len()).ok_or_else(|| {
-                    PolarsError::NoData("cannot take nth from empty dataframe".into())
-                })?;
-                Ok(schema.field(idx).cloned().unwrap())
-            }
             Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
@@ -361,6 +354,7 @@ impl AExpr {
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
+            Nth(_) => panic!("should be no nth at this point"),
         }
     }
 }
