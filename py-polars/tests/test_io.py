@@ -81,6 +81,13 @@ def test_compressed_to_ipc() -> None:
         assert df_read.frame_equal(df)
 
 
+def test_read_avro() -> None:
+    small_avro = Path(__file__).parent / "files" / "small.avro"
+    expected = pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "utf8": ["a", "b"]})
+    df_read = pl.read_avro(str(small_avro))
+    assert df_read.frame_equal(expected)
+
+
 def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)

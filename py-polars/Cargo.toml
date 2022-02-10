@@ -32,12 +32,13 @@ pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
+avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
 
-default = ["json", "parquet", "ipc", "is_in", "json", "polars/repeat_by"]
+default = ["json", "parquet", "ipc", "avro", "is_in", "json", "polars/repeat_by"]
 
 [dependencies.polars]
 path = "../polars"

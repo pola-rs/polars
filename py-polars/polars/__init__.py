@@ -98,6 +98,7 @@ from polars.internals.series import (  # flake8: noqa # TODO: remove need for wr
 )
 from polars.internals.whenthen import when
 from polars.io import (
+    read_avro,
     read_csv,
     read_ipc,
     read_ipc_schema,

@@ -239,6 +239,19 @@ impl PyDataFrame {
     }
 
     #[staticmethod]
+    #[cfg(feature = "avro")]
+    pub fn read_avro(py_f: PyObject, n_rows: Option<usize>) -> PyResult<Self> {
+        use polars::io::avro::AvroReader;
+
+        let file = get_file_like(py_f, false)?;
+        let df = AvroReader::new(file)
+            .with_n_rows(n_rows)
+            .finish()
+            .map_err(PyPolarsEr::from)?;
+        Ok(PyDataFrame::new(df))
+    }
+
+    #[staticmethod]
     #[cfg(feature = "json")]
     pub fn read_json(json: &str) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160

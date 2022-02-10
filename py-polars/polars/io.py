@@ -696,6 +696,24 @@ def read_ipc_schema(
     return _ipc_schema(file)
 
 
+def read_avro(file: Union[str, BinaryIO], n_rows: Optional[int] = None) -> DataFrame:
+    """
+    Read into a DataFrame from Appache Avro format.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file like object.
+    n_rows
+        Stop reading from Appache Avro file after reading ``n_rows``.
+
+    Returns
+    -------
+    DataFrame
+    """
+    return DataFrame._read_avro(file, n_rows=n_rows)
+
+
 def read_ipc(
     file: Union[str, BinaryIO, BytesIO, Path, bytes],
     columns: Optional[Union[List[int], List[str]]] = None,

@@ -545,6 +545,28 @@ class DataFrame:
         return self
 
     @staticmethod
+    def _read_avro(
+        file: Union[str, BinaryIO], n_rows: Optional[int] = None
+    ) -> "DataFrame":
+        """
+        Read into a DataFrame from Appache Avro format.
+
+        Parameters
+        ----------
+        file
+            Path to a file or a file like object.
+        n_rows
+            Stop reading from Appache Avro file after reading ``n_rows``.
+
+        Returns
+        -------
+        DataFrame
+        """
+        self = DataFrame.__new__(DataFrame)
+        self._df = PyDataFrame.read_avro(file, n_rows)
+        return self
+
+    @staticmethod
     def _read_ipc(
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,

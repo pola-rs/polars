@@ -6,6 +6,22 @@ use polars_core::prelude::*;
 
 use arrow::io::avro::read;
 
+/// Read Appache Avro format into a DataFrame
+///
+/// # Example
+/// ```
+/// use std::fs::File;
+/// use polars_core::prelude::*;
+/// use polars_io::avro::AvroReader;
+/// use polars_io::SerReader;
+///
+/// fn example() -> Result<DataFrame> {
+///     let file = File::open("file.avro").expect("file not found");
+///     
+///     AvroReader::new(file)
+///             .finish()
+/// }
+/// ```
 #[must_use]
 pub struct AvroReader<R> {
     reader: R,
@@ -20,7 +36,7 @@ impl<R: Read + Seek> AvroReader<R> {
         Ok(schema.into())
     }
 
-    /// Get arrow schema of the Ipc File, this is faster than a polars schema.
+    /// Get arrow schema of the avro File, this is faster than a polars schema.
     pub fn arrow_schema(&mut self) -> Result<ArrowSchema> {
         let (_, schema, _, _) = read::read_metadata(&mut self.reader)?;
         Ok(schema)
