@@ -268,27 +268,22 @@ impl OptimizationRule for SimplifyExprRule {
     ) -> Option<AExpr> {
         let expr = expr_arena.get(expr_node);
         match expr {
-            // Null propagation
-            AExpr::BinaryExpr { left, right, .. }
-                if matches!(expr_arena.get(*left), AExpr::Literal(LiteralValue::Null))
-                    || matches!(expr_arena.get(*right), AExpr::Literal(LiteralValue::Null)) =>
-            {
-                Some(AExpr::Literal(LiteralValue::Null))
-            }
-
             // lit(left) + lit(right) => lit(left + right)
+            // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
-                let left = expr_arena.get(*left);
-                let right = expr_arena.get(*right);
+                let left_aexpr = expr_arena.get(*left);
+                let right_aexpr = expr_arena.get(*right);
 
-                match op {
-                    Operator::Plus => eval_binary_same_type!(left, +, right),
-                    Operator::Minus => eval_binary_same_type!(left, -, right),
-                    Operator::Multiply => eval_binary_same_type!(left, *, right),
-                    Operator::Divide => eval_binary_same_type!(left, /, right),
+                // lit(left) + lit(right) => lit(left + right)
+                let out = match op {
+                    Operator::Plus => eval_binary_same_type!(left_aexpr, +, right_aexpr),
+                    Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
+                    Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
+                    Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
                     #[cfg(feature = "true_div")]
                     Operator::TrueDivide => {
-                        if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = (left, right)
+                        if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
+                            (left_aexpr, right_aexpr)
                         {
                             return match (lit_left, lit_right) {
                                 (LiteralValue::Float32(x), LiteralValue::Float32(y)) => {
@@ -330,16 +325,37 @@ impl OptimizationRule for SimplifyExprRule {
                         }
                         None
                     }
-                    Operator::Modulus => eval_binary_same_type!(left, %, right),
-                    Operator::Lt => eval_binary_bool_type!(left, <, right),
-                    Operator::Gt => eval_binary_bool_type!(left, >, right),
-                    Operator::Eq => eval_binary_bool_type!(left, ==, right),
-                    Operator::NotEq => eval_binary_bool_type!(left, !=, right),
-                    Operator::GtEq => eval_binary_bool_type!(left, >=, right),
-                    Operator::LtEq => eval_binary_bool_type!(left, >=, right),
-                    Operator::And => eval_bitwise(left, right, |l, r| l & r),
-                    Operator::Or => eval_bitwise(left, right, |l, r| l | r),
-                    Operator::Xor => eval_bitwise(left, right, |l, r| l ^ r),
+                    Operator::Modulus => eval_binary_same_type!(left_aexpr, %, right_aexpr),
+                    Operator::Lt => eval_binary_bool_type!(left_aexpr, <, right_aexpr),
+                    Operator::Gt => eval_binary_bool_type!(left_aexpr, >, right_aexpr),
+                    Operator::Eq => eval_binary_bool_type!(left_aexpr, ==, right_aexpr),
+                    Operator::NotEq => eval_binary_bool_type!(left_aexpr, !=, right_aexpr),
+                    Operator::GtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
+                    Operator::LtEq => eval_binary_bool_type!(left_aexpr, >=, right_aexpr),
+                    Operator::And => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
+                    Operator::Or => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
+                    Operator::Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
+                };
+                if out.is_some() {
+                    return out;
+                }
+
+                // Null propagation.
+                let left_is_null = matches!(left_aexpr, AExpr::Literal(LiteralValue::Null));
+                let right_is_null = matches!(right_aexpr, AExpr::Literal(LiteralValue::Null));
+                use Operator::*;
+                match (left_is_null, op, right_is_null) {
+                    // all null operation null -> null
+                    (true, _, true) => Some(AExpr::Literal(LiteralValue::Null)),
+                    // null == column -> column.is_null()
+                    (true, Eq, false) => Some(AExpr::IsNull(*right)),
+                    // column == null -> column.is_null()
+                    (false, Eq, true) => Some(AExpr::IsNull(*left)),
+                    // null != column -> column.is_not_null()
+                    (true, NotEq, false) => Some(AExpr::IsNotNull(*right)),
+                    // column != null -> column.is_not_null()
+                    (false, NotEq, true) => Some(AExpr::IsNotNull(*left)),
+                    _ => None,
                 }
             }
             AExpr::Reverse(expr) => {

@@ -66,7 +66,6 @@ pub enum JoinType {
     Outer,
     #[cfg(feature = "asof_join")]
     AsOf,
-    #[cfg(feature = "cross_join")]
     Cross,
 }
 
@@ -1093,7 +1092,6 @@ impl DataFrame {
                 JoinType::AsOf => {
                     self.join_asof(other, selected_left[0].name(), selected_right[0].name())
                 }
-                #[cfg(feature = "cross_join")]
                 JoinType::Cross => {
                     unreachable!()
                 }
@@ -1194,7 +1192,6 @@ impl DataFrame {
             JoinType::AsOf => Err(PolarsError::ValueError(
                 "asof join not supported for join on multiple keys".into(),
             )),
-            #[cfg(feature = "cross_join")]
             JoinType::Cross => {
                 unreachable!()
             }
