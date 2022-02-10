@@ -58,6 +58,14 @@ describe("read:csv", () => {
     expect(df.getColumn("a")[0]).toBeNull();
     expect(df.getColumn("b")[1]).toBeNull();
   });
+  test("csv with rowcount", () => {
+    const df = pl.readCSV(csvpath, {rowCount: {name: "rc", offset: 11}});
+    const expectedMaxRowCount = df.height + 10;
+
+    const maxRowCount = df.getColumn("rc").max();
+    expect(expectedMaxRowCount).toStrictEqual(maxRowCount);
+
+  });
   it.todo("can read from a stream");
 });
 

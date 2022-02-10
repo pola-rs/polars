@@ -39,6 +39,7 @@ pub fn scan_csv(cx: CallContext) -> JsResult<JsExternal> {
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
     let quote_char = quote_char.as_bytes()[0];
     let delimiter = sep.as_bytes()[0];
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
 
     LazyCsvReader::new(path)
         .with_infer_schema_length(Some(infer_schema_length))
@@ -52,6 +53,7 @@ pub fn scan_csv(cx: CallContext) -> JsResult<JsExternal> {
         .with_comment_char(comment_char)
         .with_quote_char(Some(quote_char))
         .with_null_values(null_values)
+        .with_row_count(row_count)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
