@@ -545,7 +545,9 @@ class DataFrame:
         return self
 
     @staticmethod
-    def _read_avro(file: Union[str, BinaryIO], n_rows: Optional[int] = None) -> "DataFrame":
+    def _read_avro(
+        file: Union[str, BinaryIO], n_rows: Optional[int] = None
+    ) -> "DataFrame":
         """
         Read into a DataFrame from Appache Avro format.
 
