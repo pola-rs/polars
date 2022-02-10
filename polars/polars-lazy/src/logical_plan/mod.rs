@@ -287,7 +287,7 @@ mod test {
             .agg([col("sepal.width").min()])
             .logical_plan;
         println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("sepal.width_min").is_ok());
+        assert!(lp.schema().field_with_name("sepal.width").is_ok());
     }
 
     #[test]

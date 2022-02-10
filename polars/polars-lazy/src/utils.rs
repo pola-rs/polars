@@ -118,10 +118,6 @@ pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
     ))
 }
 
-pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
-    Field::new(name, field.data_type().clone())
-}
-
 /// This function should be used to find the name of the start of an expression
 /// Normal iteration would just return the first root column it found
 pub(crate) fn get_single_root(expr: &Expr) -> Result<Arc<str>> {

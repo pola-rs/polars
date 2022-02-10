@@ -1,8 +1,6 @@
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::rename_field;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_time_units};
 use polars_utils::arena::{Arena, Node};
@@ -214,115 +212,58 @@ impl AExpr {
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
-                let field = match agg {
-                    Min(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Min,
-                    ),
-                    Max(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Max,
-                    ),
+                match agg {
+                    Max(expr) | Sum(expr) | Min(expr) | First(expr) | Last(expr) => {
+                        arena.get(*expr).to_field(schema, ctxt, arena)
+                    }
                     Median(expr) => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Median,
-                        );
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         if field.data_type() != &DataType::Utf8 {
                             field.coerce(DataType::Float64);
                         }
-                        field
+                        Ok(field)
                     }
                     Mean(expr) => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Mean,
-                        );
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
-                    First(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::First,
-                    ),
-                    Last(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Last,
-                    ),
-                    List(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::List,
-                    ),
+                    List(expr) => {
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::List(field.data_type().clone().into()));
+                        Ok(field)
+                    }
                     Std(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::Float64);
-                        let mut field = field_by_context(field, ctxt, GroupByMethod::Std);
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
                     Var(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::Float64);
-                        let mut field = field_by_context(field, ctxt, GroupByMethod::Var);
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
                     NUnique(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::UInt32);
-                        match ctxt {
-                            Context::Default => field,
-                            Context::Aggregation => {
-                                let new_name =
-                                    fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                                rename_field(&field, &new_name)
-                            }
-                        }
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::UInt32);
+                        Ok(field)
                     }
-                    Sum(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Sum,
-                    ),
                     Count(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::UInt32);
-                        match ctxt {
-                            Context::Default => field,
-                            Context::Aggregation => {
-                                let new_name =
-                                    fmt_groupby_column(field.name(), GroupByMethod::Count);
-                                rename_field(&field, &new_name)
-                            }
-                        }
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::UInt32);
+                        Ok(field)
                     }
                     AggGroups(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        Field::new(&new_name, DataType::List(DataType::UInt32.into()))
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::List(DataType::UInt32.into()));
+                        Ok(field)
                     }
-                    Quantile {
-                        expr,
-                        quantile,
-                        interpol,
-                    } => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Quantile(*quantile, *interpol),
-                        );
+                    Quantile { expr, .. } => {
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
-                };
-                Ok(field)
+                }
             }
             Cast {
                 expr, data_type, ..
@@ -355,24 +296,6 @@ impl AExpr {
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
             Nth(_) => panic!("should be no nth at this point"),
-        }
-    }
-}
-
-pub(crate) fn field_by_context(
-    mut field: Field,
-    ctxt: Context,
-    groupby_method: GroupByMethod,
-) -> Field {
-    if &DataType::Boolean == field.data_type() {
-        field = Field::new(field.name(), DataType::UInt32)
-    }
-
-    match ctxt {
-        Context::Default => field,
-        Context::Aggregation => {
-            let new_name = fmt_groupby_column(field.name(), groupby_method);
-            rename_field(&field, &new_name)
         }
     }
 }
