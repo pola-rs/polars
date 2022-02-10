@@ -77,7 +77,6 @@ pub(crate) fn read_csv_buffer(cx: CallContext) -> JsResult<JsExternal> {
         "utf8-lossy" => CsvEncoding::LossyUtf8,
         e => return Err(JsPolarsEr::Other(format!("encoding not {} not implemented.", e)).into()),
     };
-    println!("rowCount={:#?}", row_count);
 
     CsvReader::new(cursor)
         .infer_schema(infer_schema_length)
@@ -128,7 +127,6 @@ pub(crate) fn read_csv_path(cx: CallContext) -> JsResult<JsExternal> {
     let null_values = null_values.map(|w| w.0);
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
     let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
-    println!("rowCount={:#?}", row_count);
 
     let quote_char = if let Some(s) = quote_char {
         if s.is_empty() {
