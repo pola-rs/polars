@@ -4,6 +4,8 @@ use napi::{
     JsBigint, JsBoolean, JsDate, JsNumber, JsObject, JsString, JsUnknown, Result, ValueType,
 };
 use polars::prelude::*;
+use polars::io::RowCount;
+
 
 pub trait FromJsUnknown: Sized + Send {
     fn from_js(obj: JsUnknown) -> Result<Self>;
@@ -15,6 +17,7 @@ impl FromJsUnknown for String {
         s.into_utf8()?.into_owned()
     }
 }
+
 impl FromJsUnknown for QuantileInterpolOptions {
     fn from_js(val: JsUnknown) -> Result<Self> {
         let s = String::from_js(val)?;
@@ -26,6 +29,28 @@ impl FromJsUnknown for QuantileInterpolOptions {
             "linear" => Ok(QuantileInterpolOptions::Linear),
             s => panic!("quantile interpolation option {} is not supported", s),
         }
+    }
+}
+
+impl FromJsUnknown for RowCount {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        let obj: JsObject = match val.get_type()? {
+            ValueType::Object => unsafe { val.cast() },
+            dt => {
+                return Err(JsPolarsEr::Other(format!(
+                    "Invalid cast, unable to cast {} to object",
+                    dt
+                ))
+                .into())
+            }
+        };
+        let name: JsUnknown = obj.get_named_property("name")?;
+        let name: String = String::from_js(name)?;
+
+        let offset: JsUnknown = obj.get_named_property("name")?;
+        let offset: u32 = u32::from_js(offset)?;
+
+        Ok(RowCount { name, offset })
     }
 }
 

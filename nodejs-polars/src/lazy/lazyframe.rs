@@ -5,6 +5,7 @@ use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::NullValues;
 use polars::prelude::*;
+use polars::io::RowCount;
 
 impl IntoJs<JsExternal> for LazyFrame {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
@@ -65,11 +66,14 @@ pub fn scan_parquet(cx: CallContext) -> JsResult<JsExternal> {
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
 
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+
     let args = ScanArgsParquet {
         n_rows,
         cache,
         parallel,
         rechunk,
+        row_count,
     };
 
     LazyFrame::scan_parquet(path, args)
@@ -85,11 +89,13 @@ pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
     let n_rows: Option<usize> = params.get_as("numRows")?;
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
-
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+    
     let args = ScanArgsIpc {
         n_rows,
         cache,
         rechunk,
+        row_count,
     };
 
     LazyFrame::scan_ipc(path, args)
@@ -466,8 +472,9 @@ pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let name: String = params.get_as("name")?;
+    let offset: Option<u32> = params.get_as("offset")?;
 
-    ldf.with_row_count(&name).try_into_js(&cx)
+    ldf.with_row_count(&name, offset).try_into_js(&cx)
 }
 
 #[js_function(1)]
