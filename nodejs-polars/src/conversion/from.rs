@@ -38,7 +38,7 @@ impl FromJsUnknown for RowCount {
             ValueType::Object => unsafe { val.cast() },
             dt => {
                 return Err(JsPolarsEr::Other(format!(
-                    "Invalid cast, unable to cast {} to array",
+                    "Invalid cast, unable to cast {} to object",
                     dt
                 ))
                 .into())
