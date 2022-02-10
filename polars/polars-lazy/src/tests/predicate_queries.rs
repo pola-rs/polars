@@ -196,3 +196,25 @@ fn test_filter_nulls_created_by_join() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_filter_null_creation_by_cast() -> Result<()> {
+    let df = df![
+        "int" => [1, 2, 3],
+        "empty" => ["", "", ""]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_column(col("empty").cast(DataType::Int32).alias("empty"))
+        .filter(col("empty").is_null().and(col("int").eq(lit(3i32))))
+        .collect()?;
+
+    let expected = df![
+        "int" => [3],
+        "empty" => &[None, Some(1i32)][..1]
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
