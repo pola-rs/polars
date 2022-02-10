@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=d8093bfe58e3fac435813ce2faed95a41375d393#d8093bfe58e3fac435813ce2faed95a41375d393"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=2c4dbb21daa4f258fd707a3f3c2cbe5abb374f6b#2c4dbb21daa4f258fd707a3f3c2cbe5abb374f6b"
 dependencies = [
  "arrow-format",
  "avro-schema",
