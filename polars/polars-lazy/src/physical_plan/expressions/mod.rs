@@ -28,8 +28,7 @@ use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
 
-#[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples` is called
     /// and produced a `Series` of dtype `List`

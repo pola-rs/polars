@@ -93,8 +93,8 @@ impl WindowExpr {
             (false, false, AggState::AggregatedList(_)) => {
                 Ok(MapStrategy::Map)
             }
-            (false, false, agg_state) => {
-                panic!("expected aggregation, got {:?}", agg_state)
+            (false, false, _) => {
+                panic!("expected aggregation, got {:?}", self.expr)
             }
         }
     }
