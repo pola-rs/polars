@@ -77,7 +77,31 @@ fn test_row_count_pd() -> Result<()> {
         .select([col("row_count"), col("x") * lit(3i32)])
         .collect()?;
 
-    dbg!(df);
+    let expected = df![
+        "row_count" => [0u32, 1, 2],
+        "x" => [3i32, 6, 9]
+    ]?;
 
+    assert!(df.frame_equal(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn scan_join_same_file() -> Result<()> {
+    let lf = LazyCsvReader::new(FOODS_CSV.to_string()).finish()?;
+
+    let partial = lf.clone().select([col("category")]).limit(5);
+    let lf = lf.join(
+        partial,
+        [col("category")],
+        [col("category")],
+        JoinType::Inner,
+    );
+    let out = lf.collect()?;
+    assert_eq!(
+        out.get_column_names(),
+        &["category", "calories", "fats_g", "sugars_g"]
+    );
     Ok(())
 }

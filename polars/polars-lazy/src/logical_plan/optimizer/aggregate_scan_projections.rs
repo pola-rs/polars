@@ -2,6 +2,7 @@ use crate::logical_plan::optimizer::stack_opt::OptimizationRule;
 use crate::logical_plan::ALogicalPlanBuilder;
 use crate::prelude::*;
 use polars_core::datatypes::{PlHashMap, PlHashSet};
+use polars_core::prelude::Schema;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,34 +10,65 @@ fn process_with_columns(
     path: &Path,
     with_columns: &Option<Vec<String>>,
     columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
+    schema: &Schema,
 ) {
-    if let Some(with_columns) = &with_columns {
-        let cols = columns
-            .entry(path.to_owned())
-            .or_insert_with(PlHashSet::new);
-        cols.extend(with_columns.iter().enumerate().map(|t| (t.0, t.1.clone())));
+    let cols = columns
+        .entry(path.to_owned())
+        .or_insert_with(PlHashSet::new);
+
+    match with_columns {
+        // add only the projected columns
+        Some(with_columns) => {
+            cols.extend(with_columns.iter().enumerate().map(|t| (t.0, t.1.clone())));
+        }
+        // no projection, so we must take all columns
+        None => {
+            cols.extend(
+                schema
+                    .fields()
+                    .iter()
+                    .enumerate()
+                    .map(|t| (t.0, t.1.name().to_string())),
+            );
+        }
     }
 }
 
 /// Aggregate all the projections in an LP
 pub(crate) fn agg_projection(
     root: Node,
+    // The hashmap maps files to a hashset over column names. (There is a usize to be able to sort them later)
     columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     use ALogicalPlan::*;
     match lp_arena.get(root) {
         #[cfg(feature = "csv-file")]
-        CsvScan { path, options, .. } => {
-            process_with_columns(path, &options.with_columns, columns);
+        CsvScan {
+            path,
+            options,
+            schema,
+            ..
+        } => {
+            process_with_columns(path, &options.with_columns, columns, schema);
         }
         #[cfg(feature = "parquet")]
-        ParquetScan { path, options, .. } => {
-            process_with_columns(path, &options.with_columns, columns);
+        ParquetScan {
+            path,
+            options,
+            schema,
+            ..
+        } => {
+            process_with_columns(path, &options.with_columns, columns, schema);
         }
         #[cfg(feature = "ipc")]
-        IpcScan { path, options, .. } => {
-            process_with_columns(path, &options.with_columns, columns);
+        IpcScan {
+            path,
+            options,
+            schema,
+            ..
+        } => {
+            process_with_columns(path, &options.with_columns, columns, schema);
         }
         DataFrameScan { .. } => (),
         lp => {
