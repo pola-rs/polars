@@ -82,7 +82,7 @@ out = (
     x.groupby("id6")
     .agg(
         [
-            pl.sum("v1").alias("v1_mean"),
+            pl.sum("v1").alias("v1_sum"),
             pl.sum("v2").alias("v2_sum"),
             pl.sum("v3").alias("v3_sum"),
         ]
@@ -175,7 +175,7 @@ t0 = time.time()
 print("q3")
 out = (
     x.groupby("id3")
-    .agg([pl.sum("v1".alias("v1_sum")), pl.mean("v3").alias("v3_mean")])
+    .agg([pl.sum("v1").alias("v1_sum"), pl.mean("v3").alias("v3_mean")])
     .collect()
 )
 print(time.time() - t0)
@@ -190,7 +190,7 @@ out = (
     .agg(
         [
             pl.mean("v1").alias("v1_mean"),
-            pl.mean("v2".alias("v2_mean")),
+            pl.mean("v2").alias("v2_mean"),
             pl.mean("v3").alias("v3_mean"),
         ]
     )
@@ -208,7 +208,7 @@ out = (
     x.groupby("id6")
     .agg(
         [
-            pl.sum("v1".alias("v1_sum")),
+            pl.sum("v1").alias("v1_sum"),
             pl.sum("v2").alias("v2_sum"),
             pl.sum("v3").alias("v3_sum"),
         ]
