@@ -554,7 +554,7 @@ class DataFrame:
         file
             Path to a file or a file like object.
         n_rows
-            Stop reading from IPC file after reading ``n_rows``.
+            Stop reading from Appache Avro file after reading ``n_rows``.
 
         Returns
         -------
