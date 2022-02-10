@@ -47,7 +47,7 @@ impl FromJsUnknown for RowCount {
         let name: JsUnknown = obj.get_named_property("name")?;
         let name: String = String::from_js(name)?;
 
-        let offset: JsUnknown = obj.get_named_property("name")?;
+        let offset: JsUnknown = obj.get_named_property("offset")?;
         let offset: u32 = u32::from_js(offset)?;
 
         Ok(RowCount { name, offset })

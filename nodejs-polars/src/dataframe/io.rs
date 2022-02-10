@@ -8,6 +8,7 @@ use polars::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
+use polars::io::RowCount;
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -58,6 +59,7 @@ pub(crate) fn read_csv_buffer(cx: CallContext) -> JsResult<JsExternal> {
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
     let buff = params.get::<napi::JsBuffer>("buff")?;
     let buffer_value = buff.into_value()?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
 
     let cursor = Cursor::new(buffer_value.as_ref());
 
@@ -75,6 +77,7 @@ pub(crate) fn read_csv_buffer(cx: CallContext) -> JsResult<JsExternal> {
         "utf8-lossy" => CsvEncoding::LossyUtf8,
         e => return Err(JsPolarsEr::Other(format!("encoding not {} not implemented.", e)).into()),
     };
+    println!("rowCount={:#?}", row_count);
 
     CsvReader::new(cursor)
         .infer_schema(infer_schema_length)
@@ -94,6 +97,7 @@ pub(crate) fn read_csv_buffer(cx: CallContext) -> JsResult<JsExternal> {
         .with_null_values(null_values)
         .with_parse_dates(parse_dates)
         .with_quote_char(quote_char)
+        .with_row_count(row_count)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
@@ -123,6 +127,8 @@ pub(crate) fn read_csv_path(cx: CallContext) -> JsResult<JsExternal> {
     let stop_after_n_rows: Option<usize> = params.get_as("endRows")?;
     let null_values = null_values.map(|w| w.0);
     let comment_char = comment_char.map(|s| s.as_bytes()[0]);
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+    println!("rowCount={:#?}", row_count);
 
     let quote_char = if let Some(s) = quote_char {
         if s.is_empty() {
@@ -158,6 +164,7 @@ pub(crate) fn read_csv_path(cx: CallContext) -> JsResult<JsExternal> {
         .with_null_values(null_values)
         .with_parse_dates(parse_dates)
         .with_quote_char(quote_char)
+        .with_row_count(row_count)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
@@ -220,6 +227,7 @@ pub(crate) fn read_parquet_path(cx: CallContext) -> JsResult<JsExternal> {
     let n_rows: Option<usize> = params.get_as("numRows")?;
     let parallel: bool = params.get_or("parallel", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
 
     let f = File::open(&path)?;
 
@@ -228,6 +236,7 @@ pub(crate) fn read_parquet_path(cx: CallContext) -> JsResult<JsExternal> {
         .with_columns(columns)
         .read_parallel(parallel)
         .with_n_rows(n_rows)
+        .with_row_count(row_count)
         .set_rechunk(rechunk)
         .finish()
         .map_err(JsPolarsEr::from)?
@@ -242,6 +251,8 @@ pub(crate) fn read_parquet_buffer(cx: CallContext) -> JsResult<JsExternal> {
     let n_rows: Option<usize> = params.get_as("numRows")?;
     let parallel: bool = params.get_or("parallel", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+
     let buff = params.get::<napi::JsBuffer>("buff")?;
     let buffer_value = buff.into_value()?;
 
@@ -252,6 +263,7 @@ pub(crate) fn read_parquet_buffer(cx: CallContext) -> JsResult<JsExternal> {
         .with_columns(columns)
         .read_parallel(parallel)
         .with_n_rows(n_rows)
+        .with_row_count(row_count)
         .set_rechunk(rechunk)
         .finish()
         .map_err(JsPolarsEr::from)?
@@ -324,6 +336,7 @@ pub(crate) fn read_ipc_path(cx: CallContext) -> JsResult<JsExternal> {
     let columns: Option<Vec<String>> = params.get_as("columns")?;
     let projection: Option<Vec<usize>> = params.get_as("projection")?;
     let n_rows: Option<usize> = params.get_as("numRows")?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
 
     let f = File::open(&path)?;
 
@@ -331,6 +344,7 @@ pub(crate) fn read_ipc_path(cx: CallContext) -> JsResult<JsExternal> {
         .with_projection(projection)
         .with_columns(columns)
         .with_n_rows(n_rows)
+        .with_row_count(row_count)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
@@ -342,6 +356,8 @@ pub(crate) fn read_ipc_buffer(cx: CallContext) -> JsResult<JsExternal> {
     let columns: Option<Vec<String>> = params.get_as("columns")?;
     let projection: Option<Vec<usize>> = params.get_as("projection")?;
     let n_rows: Option<usize> = params.get_as("numRows")?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+
     let buff = params.get::<napi::JsBuffer>("buff")?;
     let buffer_value = buff.into_value()?;
 
@@ -351,6 +367,7 @@ pub(crate) fn read_ipc_buffer(cx: CallContext) -> JsResult<JsExternal> {
         .with_projection(projection)
         .with_columns(columns)
         .with_n_rows(n_rows)
+        .with_row_count(row_count)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)

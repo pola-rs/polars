@@ -18,6 +18,11 @@ type ScanParquetOptions = {
   parallel?: boolean;
   cache?: boolean;
   rechunk?: boolean;
+  rowCount?: RowCount
+}
+type RowCount = {
+  name: string;
+  offset?: number
 }
 
 type ReadCsvOptions = {
@@ -38,6 +43,7 @@ type ReadCsvOptions = {
   rechunk?: boolean;
   sep?: string;
   startRows?: number;
+  rowCount?: RowCount
 };
 
 type ReadJsonOptions = {
@@ -51,12 +57,15 @@ type ReadParquetOptions = {
   numRows?: number;
   parallel?: boolean;
   rechunk?: boolean;
+  rowCount?: RowCount
+
 }
 
 type ReadIPCOptions = {
   columns?: string[];
   projection?: number[];
   numRows?: number;
+  rowCount?: RowCount
 }
 
 
@@ -130,6 +139,7 @@ function readCSVBuffer(buff, options) {
   return dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
 }
 function readCSVPath(path, options) {
+
   return dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
 }
 function readJSONBuffer(buff, options) {
