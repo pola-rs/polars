@@ -66,7 +66,7 @@ pub fn scan_parquet(cx: CallContext) -> JsResult<JsExternal> {
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
 
-    let row_count: Option<RowCount> = params.get_or("rowCount", None)?;
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
 
     let args = ScanArgsParquet {
         n_rows,
@@ -89,8 +89,8 @@ pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
     let n_rows: Option<usize> = params.get_as("numRows")?;
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
-    let row_count: Option<RowCount> = params.get_or("rowCount", None)?;
-
+    let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
+    
     let args = ScanArgsIpc {
         n_rows,
         cache,
