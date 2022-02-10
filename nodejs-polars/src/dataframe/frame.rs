@@ -421,7 +421,8 @@ pub fn sort_in_place(cx: CallContext) -> JsResult<JsUndefined> {
     let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let by_column = params.get_as::<&str>("by")?;
     let reverse = params.get_as::<bool>("reverse")?;
-    df.sort_in_place(by_column, reverse)
+    
+    df.sort_in_place([by_column], reverse)
         .map_err(JsPolarsEr::from)?;
 
     cx.env.get_undefined()
@@ -530,8 +531,10 @@ pub fn frame_equal(cx: CallContext) -> JsResult<JsBoolean> {
 pub fn with_row_count(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
-    let name = params.get_as::<&str>("name")?;
-    df.with_row_count(name)
+    let name = params.get_as::<String>("name")?;
+    let offset: Option<u32> = params.get_as("offset")?;
+
+    df.with_row_count(&name, offset)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }

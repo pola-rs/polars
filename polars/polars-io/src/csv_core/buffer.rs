@@ -173,10 +173,16 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
             }
             false => {
                 if matches!(self.encoding, CsvEncoding::LossyUtf8) {
-                    let s = String::from_utf8_lossy(
-                        &self.data.as_slice()[data_len..data_len + n_written],
-                    )
-                    .into_owned();
+                    // Safety:
+                    // we extended to data_len + n_writen
+                    // so the bytes are initialized
+                    debug_assert!(self.data.capacity() >= data_len + n_written);
+                    let slice = unsafe {
+                        self.data
+                            .as_slice()
+                            .get_unchecked(data_len..data_len + n_written)
+                    };
+                    let s = String::from_utf8_lossy(slice).into_owned();
                     let b = s.as_bytes();
                     // Make sure that we extend at the proper location,
                     // otherwise we append valid bytes to invalid utf8 bytes.

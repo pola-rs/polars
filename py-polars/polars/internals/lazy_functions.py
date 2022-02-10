@@ -25,7 +25,9 @@ try:
     from polars.polars import count as _count
     from polars.polars import cov as pycov
     from polars.polars import dtype_cols as _dtype_cols
+    from polars.polars import first as _first
     from polars.polars import fold as pyfold
+    from polars.polars import last as _last
     from polars.polars import lit as pylit
     from polars.polars import map_mul as _map_mul
     from polars.polars import max_exprs as _max_exprs
@@ -412,10 +414,28 @@ def first(column: "pli.Series") -> Any:
     ...
 
 
-def first(column: Union[str, "pli.Series"]) -> Union["pli.Expr", Any]:
+@overload
+def first(column: None = None) -> "pli.Expr":
+    ...
+
+
+def first(column: Optional[Union[str, "pli.Series"]] = None) -> Union["pli.Expr", Any]:
     """
     Get the first value.
+
+    Depending on the input type this function does different things:
+
+    input:
+
+    - None -> expression to take first column of a context.
+    - str -> syntactic sugar for `pl.col(..).first()`
+    - Series -> Take first value in `Series`
+
     """
+
+    if column is None:
+        return pli.wrap_expr(_first())
+
     if isinstance(column, pli.Series):
         if column.len() > 0:
             return column[0]
@@ -434,10 +454,27 @@ def last(column: "pli.Series") -> Any:
     ...
 
 
-def last(column: Union[str, "pli.Series"]) -> "pli.Expr":
+@overload
+def last(column: None = None) -> "pli.Expr":
+    ...
+
+
+def last(column: Optional[Union[str, "pli.Series"]] = None) -> "pli.Expr":
     """
     Get the last value.
+
+    Depending on the input type this function does different things:
+
+    input:
+
+    - None -> expression to take last column of a context.
+    - str -> syntactic sugar for `pl.col(..).last()`
+    - Series -> Take last value in `Series`
     """
+
+    if column is None:
+        return pli.wrap_expr(_last())
+
     if isinstance(column, pli.Series):
         if column.len() > 0:
             return column[-1]

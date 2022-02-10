@@ -63,3 +63,21 @@ fn test_cross_join_pd() -> Result<()> {
     assert!(out.frame_equal(&expected));
     Ok(())
 }
+
+#[test]
+fn test_row_count_pd() -> Result<()> {
+    let df = df![
+        "x" => [1, 2, 3],
+        "y" => [3, 2, 1],
+    ]?;
+
+    let df = df
+        .lazy()
+        .with_row_count("row_count", None)
+        .select([col("row_count"), col("x") * lit(3i32)])
+        .collect()?;
+
+    dbg!(df);
+
+    Ok(())
+}

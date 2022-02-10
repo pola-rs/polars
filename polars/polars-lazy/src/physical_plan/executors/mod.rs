@@ -44,7 +44,11 @@ fn execute_projection_cached_window_fns(
     // the partitioning messes with column order, so we also store the idx
     // and use those to restore the original projection order
     #[allow(clippy::type_complexity)]
-    let mut windows: Vec<(String, Vec<(u32, Arc<dyn PhysicalExpr>)>)> = vec![];
+    // String: partion_name,
+    // u32: index,
+    // bool: flatten (we must run those first because they need a sorted group tuples.
+    //       if we cache the group tuples we must ensure we cast the sorted onces.
+    let mut windows: Vec<(String, Vec<(u32, bool, Arc<dyn PhysicalExpr>)>)> = vec![];
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -56,13 +60,17 @@ fn execute_projection_cached_window_fns(
 
         let mut is_window = false;
         for e in e.into_iter() {
-            if let Expr::Window { partition_by, .. } = e {
+            if let Expr::Window {
+                partition_by,
+                options,
+                ..
+            } = e
+            {
                 let groupby = format!("{:?}", partition_by.as_slice());
-                // *windows.entry(groupby).or_insert(0) += 1;
                 if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == groupby) {
-                    tpl.1.push((index, phys.clone()))
+                    tpl.1.push((index, options.explode, phys.clone()))
                 } else {
-                    windows.push((groupby, vec![(index, phys.clone())]))
+                    windows.push((groupby, vec![(index, options.explode, phys.clone())]))
                 }
                 is_window = true;
                 break;
@@ -80,7 +88,7 @@ fn execute_projection_cached_window_fns(
             .collect::<Result<Vec<_>>>()
     })?;
 
-    for partition in windows {
+    for mut partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.clone();
         state.clear_expr_cache();
@@ -92,7 +100,13 @@ fn execute_projection_cached_window_fns(
             state.cache_window = true;
         }
 
-        for (index, e) in partition.1 {
+        partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
+            // negate as `false` will be first and we want the exploded
+            // e.g. the sorted groups cd to be the first to fill the cache.
+            !explode
+        });
+
+        for (index, _, e) in partition.1 {
             // caching more than one window expression is a complicated topic for another day
             // see issue #2523
             state.cache_window = e

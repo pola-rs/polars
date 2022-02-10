@@ -141,3 +141,20 @@ fn test_strptime_block_predicate() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_strict_cast_predicate_pushdown() -> Result<()> {
+    let df = df![
+        "a" => ["a", "b", "c"]
+    ]?;
+
+    let lf = df
+        .lazy()
+        .with_column(col("a").cast(DataType::Int32))
+        .filter(col("a").is_null());
+
+    assert!(!predicate_at_scan(lf.clone()));
+    let out = lf.collect()?;
+    assert_eq!(out.shape(), (3, 1));
+    Ok(())
+}

@@ -1,4 +1,4 @@
-pub(crate) trait IndexToUsize {
+pub trait IndexToUsize {
     /// Translate the negative index to an offset.
     fn negative_to_usize(self, index: usize) -> Option<usize>;
 }

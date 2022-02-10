@@ -1,5 +1,7 @@
 //! this contains code used for rewriting projections, expanding wildcards, regex selection etc.
 use super::*;
+use crate::utils::has_nth;
+use polars_arrow::index::IndexToUsize;
 
 /// This replace the wilcard Expr with a Column Expr. It also removes the Exclude Expr from the
 /// expression chain.
@@ -67,6 +69,25 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], sc
             result.push(new_expr)
         }
     }
+}
+
+fn replace_nth(expr: &mut Expr, schema: &Schema) {
+    expr.mutate().apply(|e| match e {
+        Expr::Nth(i) => {
+            match i.negative_to_usize(schema.len()) {
+                None => {
+                    let name = if *i == 0 { "first" } else { "last" };
+                    *e = Expr::Column(Arc::from(name));
+                }
+                Some(idx) => {
+                    let fld = schema.field(idx).unwrap();
+                    *e = Expr::Column(Arc::from(&**fld.name()))
+                }
+            }
+            true
+        }
+        _ => true,
+    })
 }
 
 #[cfg(feature = "regex")]
@@ -244,6 +265,10 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
             continue;
         }
 
+        if has_nth(&expr) {
+            replace_nth(&mut expr, schema);
+        }
+
         if has_wildcard(&expr) {
             // keep track of column excluded from the wildcard
             let exclude = prepare_excluded(&expr, schema, keys);
@@ -268,7 +293,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                                 {
                                     new_inputs.push(e.clone())
                                 }
-                            }
+                            };
                         });
 
                         *input = new_inputs;

@@ -27,13 +27,15 @@ pub struct ParquetOptions {
     pub(crate) with_columns: Option<Vec<String>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
+    pub(crate) row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug)]
-pub struct LpScanOptions {
+pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,
+    pub row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug, Copy, Default)]

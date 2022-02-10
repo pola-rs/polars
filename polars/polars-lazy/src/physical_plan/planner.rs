@@ -1054,6 +1054,7 @@ impl DefaultPlanner {
                 }))
             }
             Wildcard => panic!("should be no wildcard at this point"),
+            Nth(_) => panic!("should be no nth at this point"),
         }
     }
 }

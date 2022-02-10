@@ -992,11 +992,31 @@ impl LazyFrame {
     }
 
     /// Add a new column at index 0 that counts the rows.
+    ///
+    /// # Warning
+    /// This can have a negative effect on query performance.
+    /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<u32>) -> LazyFrame {
         match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv-file")]
             LogicalPlan::CsvScan { options, .. } => {
+                options.row_count = Some(RowCount {
+                    name: name.to_string(),
+                    offset: offset.unwrap_or(0),
+                });
+                self
+            }
+            #[cfg(feature = "ipc")]
+            LogicalPlan::IpcScan { options, .. } => {
+                options.row_count = Some(RowCount {
+                    name: name.to_string(),
+                    offset: offset.unwrap_or(0),
+                });
+                self
+            }
+            #[cfg(feature = "parquet")]
+            LogicalPlan::ParquetScan { options, .. } => {
                 options.row_count = Some(RowCount {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),

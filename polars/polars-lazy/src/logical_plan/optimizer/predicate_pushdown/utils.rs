@@ -144,7 +144,10 @@ pub(super) fn predicate_column_is_pushdown_boundary(node: Node, expr_arena: &Are
             // everything that works on groups likely changes to order of elements w/r/t the other columns
             | AExpr::Function {..}
             | AExpr::BinaryExpr {..}
-            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
+            // cast may change precision.
+            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
+            // cast may create nulls
+            | AExpr::Cast {strict: false, ..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
