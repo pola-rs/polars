@@ -149,7 +149,7 @@ def test_apply_custom_function() -> None:
             [
                 pl.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
                 pl.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
-                pl.count("cars"),
+                pl.count("cars").alias("cars_count"),
             ]
         )
         .sort("custom_1", reverse=True)
@@ -169,7 +169,7 @@ def test_apply_custom_function() -> None:
 def test_groupby() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
 
-    expected = pl.DataFrame({"groups": ["a", "b"], "a_mean": [1.0, 3.5]})
+    expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
 
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
     assert out.sort(by="groups").frame_equal(expected)

@@ -1457,7 +1457,7 @@ def test_groupby_agg_n_unique_floats() -> None:
         out = df.groupby("a", maintain_order=True).agg(
             [pl.col("b").cast(dtype).n_unique()]
         )
-        assert out["b_n_unique"].to_list() == [2, 1]
+        assert out["b"].to_list() == [2, 1]
 
 
 def test_select_by_dtype(df: pl.DataFrame) -> None:
@@ -1583,7 +1583,7 @@ def test_groupby_order_dispatch() -> None:
     df = pl.DataFrame({"x": list("bab"), "y": range(3)})
     expected = pl.DataFrame({"x": ["b", "a"], "count": [2, 1]})
     assert df.groupby("x", maintain_order=True).count().frame_equal(expected)
-    expected = pl.DataFrame({"x": ["b", "a"], "y_agg_list": [[0, 2], [1]]})
+    expected = pl.DataFrame({"x": ["b", "a"], "y": [[0, 2], [1]]})
     assert df.groupby("x", maintain_order=True).agg_list().frame_equal(expected)
 
 

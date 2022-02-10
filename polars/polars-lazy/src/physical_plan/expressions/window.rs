@@ -19,6 +19,23 @@ pub struct WindowExpr {
     pub(crate) expr: Expr,
 }
 
+impl WindowExpr {
+    fn run_aggregation(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+        gb: &GroupBy,
+    ) -> Result<DataFrame> {
+        let mut acc = self
+            .phys_function
+            .evaluate_on_groups(df, gb.get_groups(), state)?;
+        let mut cols = gb.keys();
+        let out = acc.aggregated();
+        cols.push(out);
+        Ok(DataFrame::new_no_checks(cols))
+    }
+}
+
 impl PhysicalExpr for WindowExpr {
     // Note: this was first implemented with expression evaluation but this performed really bad.
     // Therefore we choose the groupby -> apply -> self join approach
@@ -74,32 +91,8 @@ impl PhysicalExpr for WindowExpr {
             .collect();
         let mut gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
-        let out = match self.phys_function.as_agg_expr() {
-            // this branch catches all aggregation expressions
-            // this is list, sum, etc. but also binary functions that are evaluated on groups
-            Ok(agg_expr) => match agg_expr.aggregate(df, gb.get_groups(), state)? {
-                Some(mut s) => {
-                    s.rename(&self.apply_columns[0]);
-                    let mut cols = gb.keys();
-                    cols.push(s);
-                    Ok(DataFrame::new_no_checks(cols))
-                }
-                None => Err(PolarsError::ComputeError(
-                    "aggregation did not return a column".into(),
-                )),
-            },
-            // if we have a function that is not a final aggregation, we can always evaluate the
-            // function in groupby context and aggregate the result to a list
-            Err(_) => {
-                let mut acc = self
-                    .phys_function
-                    .evaluate_on_groups(df, gb.get_groups(), state)?;
-                let mut cols = gb.keys();
-                let out = acc.aggregated();
-                cols.push(out);
-                Ok(DataFrame::new_no_checks(cols))
-            }
-        }?;
+        let out = self.run_aggregation(df, state, &gb)?;
+
         if state.cache_window {
             let groups = std::mem::take(gb.get_groups_mut());
             let mut gt_map = state.group_tuples.lock().unwrap();
