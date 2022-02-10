@@ -86,6 +86,7 @@ where
             ),
             avro_schema,
             schema.clone().fields,
+            None,
         );
 
         finish_reader(avro_reader, rechunk, None, None, None, &schema, None)
