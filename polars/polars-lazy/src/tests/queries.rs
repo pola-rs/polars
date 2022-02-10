@@ -1220,7 +1220,7 @@ fn test_fill_forward() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill().over([col("a")])])
+        .select([col("b").forward_fill().list().over([col("a")])])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1425,6 +1425,7 @@ fn test_exploded_window_function() -> Result<()> {
             col("fruits"),
             col("B")
                 .shift(1)
+                .list()
                 .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
@@ -1445,6 +1446,7 @@ fn test_exploded_window_function() -> Result<()> {
             col("fruits"),
             col("B")
                 .shift_and_fill(1, lit(-1.0f32))
+                .list()
                 .over([col("fruits")])
                 .explode()
                 .alias("shifted"),
@@ -1463,10 +1465,12 @@ fn test_reverse_in_groups() -> Result<()> {
     let df = fruits_cars();
 
     let out = df
+        .clone()
         .lazy()
         .sort("fruits", false)
         .select([col("B")
             .reverse()
+            .list()
             .over([col("fruits")])
             .explode()
             .alias("rev")])
@@ -1476,6 +1480,25 @@ fn test_reverse_in_groups() -> Result<()> {
         Vec::from(out.column("rev")?.i32()?),
         &[Some(2), Some(3), Some(1), Some(4), Some(5)]
     );
+
+    // mapping path
+    let out = df
+        .lazy()
+        .select([
+            col("fruits"),
+            col("B"),
+            col("B").reverse().over([col("fruits")]).alias("B_rev"),
+        ])
+        .collect()?;
+
+    let expected = df![
+        "fruits" => ["banana", "banana", "apple", "apple", "banana"],
+        "B" => [5, 4, 3, 2, 1],
+        "B_rev" => [1, 4, 2, 3, 5],
+    ]?;
+    dbg!(&out);
+    assert!(out.frame_equal(&expected));
+
     Ok(())
 }
 
@@ -1491,6 +1514,7 @@ fn test_sort_by_in_groups() -> Result<()> {
             col("cars"),
             col("A")
                 .sort_by([col("B")], [false])
+                .list()
                 .over([col("cars")])
                 .explode()
                 .alias("sorted_A_by_B"),
@@ -1565,11 +1589,11 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
+                .list()
                 .over([col("fruits")])
                 .alias("filtered"),
         ])
         .collect()?;
-    dbg!(out.column("filtered")?);
 
     assert_eq!(
         out.column("filtered")?
@@ -1710,6 +1734,7 @@ fn test_sort_by_suffix() -> Result<()> {
         .lazy()
         .select([col("*")
             .sort_by([col("A")], [false])
+            .list()
             .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])
@@ -2004,7 +2029,7 @@ fn test_single_group_result() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("a").arg_sort(false).over([col("a")]).flatten()])
+        .select([col("a").arg_sort(false).list().over([col("a")]).flatten()])
         .collect()?;
 
     let a = out.column("a")?.u32()?;
@@ -2021,7 +2046,11 @@ fn test_literal_window_fn() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([lit(1).cumsum(false).over([col("chars")]).alias("foo")])
+        .select([lit(1)
+            .cumsum(false)
+            .list()
+            .over([col("chars")])
+            .alias("foo")])
         .collect()?;
 
     let out = out.column("foo")?;
@@ -2050,6 +2079,7 @@ fn test_single_ranked_group() -> Result<()> {
                 method: RankMethod::Average,
                 ..Default::default()
             })
+            .list()
             .over([col("group")])])
         .collect()?;
 
