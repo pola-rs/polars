@@ -158,3 +158,41 @@ fn test_strict_cast_predicate_pushdown() -> Result<()> {
     assert_eq!(out.shape(), (3, 1));
     Ok(())
 }
+
+#[test]
+fn test_filter_nulls_created_by_join() -> Result<()> {
+    // #2602
+    let a = df![
+        "key" => ["foo", "bar"],
+        "bar" => [1, 2]
+    ]?;
+
+    let b = df![
+        "key"=> ["bar"]
+    ]?
+    .lazy()
+    .with_column(lit(true).alias("flag"));
+
+    let out = a
+        .clone()
+        .lazy()
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .filter(col("flag").is_null())
+        .collect()?;
+    let expected = df![
+        "key" => ["foo"],
+        "bar" => [1],
+        "flag" => &[None, Some(true)][0..1]
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+
+    let out = a
+        .lazy()
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .filter(col("flag").eq(lit(NULL)))
+        .with_predicate_pushdown(false)
+        .collect()?;
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}

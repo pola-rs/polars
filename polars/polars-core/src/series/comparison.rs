@@ -124,7 +124,7 @@ impl ChunkCompare<&Series> for Series {
     fn equal(&self, rhs: &Series) -> BooleanChunked {
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
-        match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
+        let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
             (Categorical, Utf8, _, 1) => {
                 return compare_cat_to_str_series(
@@ -148,14 +148,16 @@ impl ChunkCompare<&Series> for Series {
             _ => {
                 impl_compare!(self, rhs, equal)
             }
-        }
+        };
+        out.rename(self.name());
+        out
     }
 
     /// Create a boolean mask by checking for inequality.
     fn not_equal(&self, rhs: &Series) -> BooleanChunked {
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
-        match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
+        let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
             (Categorical, Utf8, _, 1) => {
                 return compare_cat_to_str_series(
@@ -179,27 +181,37 @@ impl ChunkCompare<&Series> for Series {
             _ => {
                 impl_compare!(self, rhs, not_equal)
             }
-        }
+        };
+        out.rename(self.name());
+        out
     }
 
     /// Create a boolean mask by checking if self > rhs.
     fn gt(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, gt)
+        let mut out = impl_compare!(self, rhs, gt);
+        out.rename(self.name());
+        out
     }
 
     /// Create a boolean mask by checking if self >= rhs.
     fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, gt_eq)
+        let mut out = impl_compare!(self, rhs, gt_eq);
+        out.rename(self.name());
+        out
     }
 
     /// Create a boolean mask by checking if self < rhs.
     fn lt(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, lt)
+        let mut out = impl_compare!(self, rhs, lt);
+        out.rename(self.name());
+        out
     }
 
     /// Create a boolean mask by checking if self <= rhs.
     fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
-        impl_compare!(self, rhs, lt_eq)
+        let mut out = impl_compare!(self, rhs, lt_eq);
+        out.rename(self.name());
+        out
     }
 }
 
