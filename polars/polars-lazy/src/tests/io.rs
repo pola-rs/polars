@@ -390,3 +390,17 @@ fn test_row_count() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn scan_predicate_on_set_null_values() -> Result<()> {
+    let df = LazyCsvReader::new(FOODS_CSV.into())
+        .with_null_values(Some(NullValues::Named(vec![("fats_g".into(), "0".into())])))
+        .with_infer_schema_length(Some(0))
+        .finish()?
+        .select([col("category"), col("fats_g")])
+        .filter((col("fats_g").is_null()))
+        .collect()?;
+
+    assert_eq!(df.shape(), (12, 2));
+    Ok(())
+}
