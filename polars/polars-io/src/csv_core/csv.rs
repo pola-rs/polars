@@ -231,7 +231,8 @@ impl<'a> CoreReader<'a> {
             schema = Cow::Owned(s);
         }
 
-        let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
+        // create a null value for every column
+        let mut null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
@@ -239,6 +240,14 @@ impl<'a> CoreReader<'a> {
                 let i = schema.index_of(&col)?;
                 prj.push(i);
             }
+
+            // update null values with projection
+            null_values = null_values.map(|mut nv| {
+                prj.iter()
+                    .map(|i| std::mem::take(&mut nv[*i]))
+                    .collect::<Vec<_>>()
+            });
+
             projection = Some(prj);
         }
 

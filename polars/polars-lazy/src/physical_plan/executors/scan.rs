@@ -226,7 +226,7 @@ impl Executor for CsvExec {
             .with_n_rows(n_rows)
             .with_columns(with_columns)
             .low_memory(self.options.low_memory)
-            .with_null_values(self.options.null_values.clone())
+            .with_null_values(std::mem::take(&mut self.options.null_values))
             .with_predicate(predicate)
             .with_aggregate(aggregate)
             .with_encoding(CsvEncoding::LossyUtf8)
