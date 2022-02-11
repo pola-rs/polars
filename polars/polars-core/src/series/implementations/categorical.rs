@@ -1,6 +1,7 @@
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
+use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
     ops::{
@@ -111,6 +112,16 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<CategoricalChunked> {
+    fn is_sorted(&self) -> IsSorted {
+        if self.0.is_sorted() {
+            IsSorted::Ascending
+        } else if self.0.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.interpolate().into_series()

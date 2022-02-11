@@ -3043,7 +3043,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn drop_duplicates() {
+    fn distinct() {
         let df = df! {
             "flt" => [1., 1., 2., 2., 3., 3.],
             "int" => [1, 1, 2, 2, 3, 3, ],
@@ -3052,7 +3052,7 @@ mod test {
         .unwrap();
         dbg!(&df);
         let df = df
-            .drop_duplicates(true, None)
+            .distinct_stable(None, DistinctKeepStrategy::First)
             .unwrap()
             .sort(["flt"], false)
             .unwrap();

@@ -12,6 +12,13 @@ use std::borrow::Cow;
 use std::ops::Deref;
 use std::sync::Arc;
 
+#[derive(Debug, Copy, Clone)]
+pub enum IsSorted {
+    Ascending,
+    Descending,
+    Not,
+}
+
 macro_rules! invalid_operation {
     ($s:expr) => {
         Err(PolarsError::InvalidOperation(
@@ -254,6 +261,11 @@ pub(crate) mod private {
 pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
+    /// Check if [`Series`] is sorted.
+    fn is_sorted(&self) -> IsSorted {
+        IsSorted::Not
+    }
+
     #[cfg(feature = "interpolate")]
     #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     fn interpolate(&self) -> Series;

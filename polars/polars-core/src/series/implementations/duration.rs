@@ -2,6 +2,7 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
+use super::*;
 use crate::chunked_array::{
     comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
 };
@@ -236,6 +237,16 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
+    fn is_sorted(&self) -> IsSorted {
+        if self.0.is_sorted() {
+            IsSorted::Ascending
+        } else if self.0.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0

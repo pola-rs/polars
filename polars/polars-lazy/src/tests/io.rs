@@ -398,7 +398,7 @@ fn scan_predicate_on_set_null_values() -> Result<()> {
         .with_infer_schema_length(Some(0))
         .finish()?
         .select([col("category"), col("fats_g")])
-        .filter((col("fats_g").is_null()))
+        .filter(col("fats_g").is_null())
         .collect()?;
 
     assert_eq!(df.shape(), (12, 2));
