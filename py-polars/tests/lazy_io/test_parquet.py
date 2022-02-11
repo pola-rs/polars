@@ -33,3 +33,10 @@ def test_categorical_parquet_statistics() -> None:
             .collect()
         )
     assert df.shape == (4, 3)
+
+
+def test_null_parquet() -> None:
+    df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
+    df.to_parquet("null.parquet")
+    out = pl.read_parquet("null.parquet")
+    assert out.frame_equal(df)

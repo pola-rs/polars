@@ -4,6 +4,7 @@ use crate::parquet::predicates::collect_statistics;
 use crate::predicates::{apply_predicate, arrow_schema_to_empty_df, PhysicalIoExpr};
 use crate::utils::apply_projection;
 use crate::RowCount;
+use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
 use arrow::io::parquet::read::{to_deserializer, FileMetaData};
 use polars_core::prelude::*;
@@ -85,8 +86,11 @@ pub fn read_parquet<R: MmapBytesReader>(
                             remaining_rows,
                             Some(chunk_size),
                         )?;
-
-                        Series::try_from((field.name.as_str(), iter.next().unwrap()?))
+                        let arr = match iter.next() {
+                            Some(arr) => arr?,
+                            None => Arc::from(new_empty_array(field.data_type.clone())),
+                        };
+                        Series::try_from((field.name.as_str(), arr))
                     })
                     .collect::<Result<Vec<_>>>()
             })?
@@ -99,7 +103,11 @@ pub fn read_parquet<R: MmapBytesReader>(
                     let mut iter =
                         to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
-                    Series::try_from((field.name.as_str(), iter.next().unwrap()?))
+                    let arr = match iter.next() {
+                        Some(arr) => arr?,
+                        None => Arc::from(new_empty_array(field.data_type.clone())),
+                    };
+                    Series::try_from((field.name.as_str(), arr))
                 })
                 .collect::<Result<Vec<_>>>()?
         };
