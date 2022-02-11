@@ -31,7 +31,7 @@ fn test_agg_unique_first() -> Result<()> {
         .lazy()
         .groupby_stable([col("g")])
         .agg([
-            col("v").unique().first(),
+            col("v").unique().first().alias("v_first"),
             col("v").unique().sort(false).first().alias("true_first"),
             col("v").unique().list(),
         ])

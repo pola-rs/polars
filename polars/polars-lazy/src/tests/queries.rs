@@ -175,18 +175,16 @@ fn test_lazy_agg() {
         .lazy()
         .groupby([col("date")])
         .agg([
-            col("rain").min(),
-            col("rain").sum(),
+            col("rain").min().alias("min"),
+            col("rain").sum().alias("sum"),
             col("rain")
                 .quantile(0.5, QuantileInterpolOptions::default())
                 .alias("median_rain"),
         ])
         .sort("date", false);
 
-    println!("{:?}", lf.describe_plan());
-    println!("{:?}", lf.describe_optimized_plan());
     let new = lf.collect().unwrap();
-    println!("{:?}", new);
+    dbg!(new);
 }
 
 #[test]
@@ -264,7 +262,7 @@ fn test_lazy_query_1() {
         .filter(col("a").lt(lit(2)))
         .groupby([col("b")])
         .agg([col("b").first(), col("c").first()])
-        .select([col("b"), col("c_first")])
+        .select([col("b"), col("c")])
         .collect()
         .unwrap();
 }
@@ -758,7 +756,7 @@ fn test_lazy_partition_agg() {
         .unwrap();
 
     assert_eq!(
-        Vec::from(out.column("bar_mean").unwrap().f64().unwrap()),
+        Vec::from(out.column("bar").unwrap().f64().unwrap()),
         &[Some(1.0), Some(2.0), Some(3.0)]
     );
 
@@ -843,14 +841,11 @@ fn test_lazy_groupby() {
         .lazy()
         .groupby([col("groups")])
         .agg([col("a").mean()])
-        .sort("a_mean", false)
+        .sort("a", false)
         .collect()
         .unwrap();
 
-    assert_eq!(
-        out.column("a_mean").unwrap().f64().unwrap().get(0),
-        Some(1.0)
-    );
+    assert_eq!(out.column("a").unwrap().f64().unwrap().get(0), Some(1.0));
 }
 
 #[test]
@@ -883,7 +878,7 @@ fn test_lazy_groupby_sort() {
         .unwrap();
 
     assert_eq!(
-        Vec::from(out.column("b_first").unwrap().i32().unwrap()),
+        Vec::from(out.column("b").unwrap().i32().unwrap()),
         [Some(1), Some(2), Some(6)]
     );
 
@@ -897,7 +892,7 @@ fn test_lazy_groupby_sort() {
         .unwrap();
 
     assert_eq!(
-        Vec::from(out.column("b_last").unwrap().i32().unwrap()),
+        Vec::from(out.column("b").unwrap().i32().unwrap()),
         [Some(3), Some(5), Some(6)]
     );
 }
@@ -921,7 +916,7 @@ fn test_lazy_groupby_sort_by() {
         .unwrap();
 
     assert_eq!(
-        Vec::from(out.column("b_first").unwrap().i32().unwrap()),
+        Vec::from(out.column("b").unwrap().i32().unwrap()),
         [Some(1), Some(4), Some(6)]
     );
 }
@@ -963,7 +958,7 @@ fn test_lazy_groupby_binary_expr() {
         .collect()
         .unwrap();
     assert_eq!(
-        Vec::from(out.column("b_mean").unwrap().f64().unwrap()),
+        Vec::from(out.column("b").unwrap().f64().unwrap()),
         [Some(4.0), Some(9.0), Some(12.0)]
     );
 }
@@ -982,10 +977,19 @@ fn test_lazy_groupby_filter() -> Result<()> {
         .lazy()
         .groupby([col("a")])
         .agg([
-            col("b").filter(col("a").eq(lit("a"))).sum(),
-            col("b").filter(col("a").eq(lit("a"))).first(),
-            col("b").filter(col("a").eq(lit("e"))).mean(),
-            col("b").filter(col("a").eq(lit("a"))).last(),
+            col("b").filter(col("a").eq(lit("a"))).sum().alias("b_sum"),
+            col("b")
+                .filter(col("a").eq(lit("a")))
+                .first()
+                .alias("b_first"),
+            col("b")
+                .filter(col("a").eq(lit("e")))
+                .mean()
+                .alias("b_mean"),
+            col("b")
+                .filter(col("a").eq(lit("a")))
+                .last()
+                .alias("b_last"),
         ])
         .sort("a", false)
         .collect()?;
@@ -1355,7 +1359,9 @@ fn test_filter_in_groupby_agg() -> Result<()> {
         .clone()
         .lazy()
         .groupby([col("a")])
-        .agg([(col("b").filter(col("b").eq(lit(100))) * lit(2)).mean()])
+        .agg([(col("b").filter(col("b").eq(lit(100))) * lit(2))
+            .mean()
+            .alias("b_mean")])
         .collect()?;
 
     assert_eq!(out.column("b_mean")?.null_count(), 2);
@@ -1366,7 +1372,8 @@ fn test_filter_in_groupby_agg() -> Result<()> {
         .agg([(col("b")
             .filter(col("b").eq(lit(100)))
             .map(Ok, GetOutput::same_type()))
-        .mean()])
+        .mean()
+        .alias("b_mean")])
         .collect()?;
     assert_eq!(out.column("b_mean")?.null_count(), 2);
 
@@ -1538,7 +1545,7 @@ fn test_sort_by() -> Result<()> {
         .agg([col("a").sort_by([col("b"), col("c")], [false]).list()])
         .collect()?;
 
-    let a = out.column("a_agg_list")?.explode()?;
+    let a = out.column("a")?.explode()?;
     assert_eq!(
         Vec::from(a.i32().unwrap()),
         &[Some(3), Some(1), Some(2), Some(5), Some(4)]
@@ -1968,7 +1975,7 @@ fn test_groupby_on_lists() -> Result<()> {
         .collect()?;
 
     assert_eq!(
-        out.column("arrays_first")?.dtype(),
+        out.column("arrays")?.dtype(),
         &DataType::List(Box::new(DataType::Int32))
     );
 
@@ -1980,7 +1987,7 @@ fn test_groupby_on_lists() -> Result<()> {
         .collect()?;
 
     assert_eq!(
-        out.column("arrays_agg_list")?.dtype(),
+        out.column("arrays")?.dtype(),
         &DataType::List(Box::new(DataType::List(Box::new(DataType::Int32))))
     );
 
@@ -2087,7 +2094,7 @@ fn test_apply_flatten() -> Result<()> {
     let out = df
         .lazy()
         .groupby_stable([col("B")])
-        .agg([col("A").abs().sum()])
+        .agg([col("A").abs().sum().alias("A_sum")])
         .collect()?;
 
     let out = out.column("A_sum")?;

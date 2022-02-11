@@ -2587,7 +2587,10 @@ class DataFrame:
 
         >>> (
         ...     df.groupby_dynamic("time", every="1h").agg(
-        ...         [pl.col("time").min(), pl.col("time").max()]
+        ...         [
+        ...             pl.col("time").min().alias("time_min"),
+        ...             pl.col("time").max().alias("time_max"),
+        ...         ]
         ...     )
         ... )
         shape: (3, 3)
@@ -2607,7 +2610,7 @@ class DataFrame:
 
         >>> (
         ...     df.groupby_dynamic("time", every="1h", include_boundaries=True).agg(
-        ...         [pl.col("time").count()]
+        ...         [pl.col("time").count().alias("time_count")]
         ...     )
         ... )
         shape: (3, 4)
@@ -2627,7 +2630,10 @@ class DataFrame:
 
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="left").agg(
-        ...         [pl.col("time").count(), pl.col("time").list()]
+        ...         [
+        ...             pl.col("time").count().alias("time_count"),
+        ...             pl.col("time").list().alias("time_agg_list"),
+        ...         ]
         ...     )
         ... )
         shape: (4, 3)
@@ -2649,7 +2655,7 @@ class DataFrame:
 
         >>> (
         ...     df.groupby_dynamic("time", every="1h", closed="both").agg(
-        ...         [pl.col("time").count()]
+        ...         [pl.col("time").count().alias("time_count")]
         ...     )
         ... )
         shape: (4, 2)
@@ -2707,7 +2713,7 @@ class DataFrame:
         ...         closed="both",
         ...         by="groups",
         ...         include_boundaries=True,
-        ...     ).agg([pl.col("time").count()])
+        ...     ).agg([pl.col("time").count().alias("time_count")])
         ... )
         shape: (6, 5)
         ┌────────┬─────────────────────┬─────────────────────┬─────────────────────┬────────────┐
@@ -2742,7 +2748,7 @@ class DataFrame:
         ...         every="2i",
         ...         period="3i",
         ...         include_boundaries=True,
-        ...     ).agg(pl.col("A").list())
+        ...     ).agg(pl.col("A").list().alias("A_agg_list"))
         ... )
 
         shape: (3, 4)

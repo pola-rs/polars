@@ -32,7 +32,7 @@ x = df.lazy()
 t00 = time.time()
 t0 = time.time()
 print("q1")
-out = x.groupby("id1").agg(pl.sum("v1")).collect()
+out = x.groupby("id1").agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["v1_sum"].sum()', out["v1_sum"].sum())
@@ -40,14 +40,18 @@ print('out["v1_sum"].sum()', out["v1_sum"].sum())
 t0easy = time.time()
 t0 = time.time()
 print("q2")
-out = x.groupby(["id1", "id2"]).agg(pl.sum("v1")).collect()
+out = x.groupby(["id1", "id2"]).agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["v1_sum"].sum()', out["v1_sum"].sum())
 
 t0 = time.time()
 print("q3")
-out = x.groupby("id3").agg([pl.sum("v1"), pl.mean("v3")]).collect()
+out = (
+    x.groupby("id3")
+    .agg([pl.sum("v1").alias("v1_sum"), pl.mean("v3").alias("v3_mean")])
+    .collect()
+)
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["v1_sum"].sum()', out["v1_sum"].sum())
@@ -55,7 +59,17 @@ print('out["v3_mean"].sum()', out["v3_mean"].sum())
 
 t0 = time.time()
 print("q4")
-out = x.groupby("id4").agg([pl.mean("v1"), pl.mean("v2"), pl.mean("v3")]).collect()
+out = (
+    x.groupby("id4")
+    .agg(
+        [
+            pl.mean("v1").alias("v1_mean"),
+            pl.mean("v2").alias("v2_mean"),
+            pl.mean("v3").alias("v3_mean"),
+        ]
+    )
+    .collect()
+)
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["v1_mean"].sum()', out["v1_mean"].sum())
@@ -64,7 +78,17 @@ print('out["v3_mean"].sum()', out["v3_mean"].sum())
 
 t0 = time.time()
 print("q5")
-out = x.groupby("id6").agg([pl.sum("v1"), pl.sum("v2"), pl.sum("v3")]).collect()
+out = (
+    x.groupby("id6")
+    .agg(
+        [
+            pl.sum("v1").alias("v1_sum"),
+            pl.sum("v2").alias("v2_sum"),
+            pl.sum("v3").alias("v3_sum"),
+        ]
+    )
+    .collect()
+)
 print(time.time() - t0)
 print("out.shape", out.shape)
 print('out["v1_sum"].sum()', out["v1_sum"].sum())
@@ -134,7 +158,7 @@ print("total took:", time.time() - t00, "s")
 t00 = time.time()
 t0 = time.time()
 print("q1")
-out = x.groupby("id1").agg(pl.sum("v1")).collect()
+out = x.groupby("id1").agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 assert out.shape == (96, 2)
 assert out["v1_sum"].sum() == 28501451
@@ -142,14 +166,18 @@ assert out["v1_sum"].sum() == 28501451
 t0easy = time.time()
 t0 = time.time()
 print("q2")
-out = x.groupby(["id1", "id2"]).agg(pl.sum("v1")).collect()
+out = x.groupby(["id1", "id2"]).agg(pl.sum("v1").alias("v1_sum")).collect()
 print(time.time() - t0)
 assert out.shape == (9216, 3)
 assert out["v1_sum"].sum() == 28501451
 
 t0 = time.time()
 print("q3")
-out = x.groupby("id3").agg([pl.sum("v1"), pl.mean("v3")]).collect()
+out = (
+    x.groupby("id3")
+    .agg([pl.sum("v1").alias("v1_sum"), pl.mean("v3").alias("v3_mean")])
+    .collect()
+)
 print(time.time() - t0)
 assert out.shape == (95001, 3)
 assert out["v1_sum"].sum() == 28501451
@@ -157,7 +185,17 @@ assert np.isclose(out["v3_mean"].sum(), 4751358.825104358)
 
 t0 = time.time()
 print("q4")
-out = x.groupby("id4").agg([pl.mean("v1"), pl.mean("v2"), pl.mean("v3")]).collect()
+out = (
+    x.groupby("id4")
+    .agg(
+        [
+            pl.mean("v1").alias("v1_mean"),
+            pl.mean("v2").alias("v2_mean"),
+            pl.mean("v3").alias("v3_mean"),
+        ]
+    )
+    .collect()
+)
 print(time.time() - t0)
 assert out.shape == (96, 4)
 assert np.isclose(out["v1_mean"].sum(), 288.0192364601018)
@@ -166,7 +204,17 @@ assert np.isclose(out["v3_mean"].sum(), 4801.784316931509)
 
 t0 = time.time()
 print("q5")
-out = x.groupby("id6").agg([pl.sum("v1"), pl.sum("v2"), pl.sum("v3")]).collect()
+out = (
+    x.groupby("id6")
+    .agg(
+        [
+            pl.sum("v1").alias("v1_sum"),
+            pl.sum("v2").alias("v2_sum"),
+            pl.sum("v3").alias("v3_sum"),
+        ]
+    )
+    .collect()
+)
 print(time.time() - t0)
 assert out.shape == (95001, 4)
 assert out["v1_sum"].sum() == 28501451
@@ -189,7 +237,15 @@ assert np.isclose(out["v3_std"].sum(), 266052.20492321637)
 t0 = time.time()
 print("q7")
 out = (
-    x.groupby("id3").agg([(pl.max("v1") - pl.min("v2")).alias("range_v1_v2")]).collect()
+    x.groupby("id3")
+    .agg(
+        [
+            (pl.max("v1").alias("v1_max") - pl.min("v2").alias("v2_mean")).alias(
+                "range_v1_v2"
+            )
+        ]
+    )
+    .collect()
 )
 print(time.time() - t0)
 assert out.shape == (95001, 2)
