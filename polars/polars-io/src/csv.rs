@@ -35,7 +35,6 @@
 //! fn example() -> Result<DataFrame> {
 //!     // always prefer `from_path` as that is fastest.
 //!     CsvReader::from_path("iris_csv")?
-//!             .infer_schema(None)
 //!             .has_header(true)
 //!             .finish()
 //! }
@@ -189,7 +188,6 @@ impl NullValues {
 ///
 /// fn example() -> Result<DataFrame> {
 ///     CsvReader::from_path("iris_csv")?
-///             .infer_schema(None)
 ///             .has_header(true)
 ///             .finish()
 /// }

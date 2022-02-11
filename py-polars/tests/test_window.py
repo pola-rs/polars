@@ -68,14 +68,17 @@ def test_window_function_cache() -> None:
     ).with_columns(
         [
             pl.col("values")
+            .list()
             .over("groups")
             .alias("values_list"),  # aggregation to list + join
             pl.col("values")
+            .list()
             .over("groups")
             .flatten()
             .alias("values_flat"),  # aggregation to list + explode and concat back
             pl.col("values")
             .reverse()
+            .list()
             .over("groups")
             .flatten()
             .alias("values_rev"),  # use flatten to reverse within a group

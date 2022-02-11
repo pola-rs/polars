@@ -28,8 +28,7 @@ use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
 use std::borrow::Cow;
 
-#[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum AggState {
     /// Already aggregated: `.agg_list(group_tuples` is called
     /// and produced a `Series` of dtype `List`
@@ -70,12 +69,6 @@ pub(crate) enum UpdateGroups {
     /// this one should be used when the length has changed. Note that
     /// the series should be aggregated state or else it will panic.
     WithSeriesLen,
-}
-
-impl Default for AggState {
-    fn default() -> Self {
-        AggState::Literal(Series::default())
-    }
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -224,7 +217,10 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn is_not_aggregated(&self) -> bool {
-        matches!(&self.state, AggState::NotAggregated(_))
+        matches!(
+            &self.state,
+            AggState::NotAggregated(_) | AggState::Literal(_)
+        )
     }
 
     pub(crate) fn is_aggregated(&self) -> bool {
@@ -393,12 +389,13 @@ impl<'a> AggregationContext<'a> {
 
     /// Take the series.
     pub(crate) fn take(&mut self) -> Series {
-        match std::mem::take(&mut self.state) {
+        let s = match &mut self.state {
             AggState::NotAggregated(s)
             | AggState::AggregatedFlat(s)
             | AggState::AggregatedList(s) => s,
             AggState::Literal(s) => s,
-        }
+        };
+        std::mem::take(s)
     }
 }
 

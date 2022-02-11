@@ -660,43 +660,6 @@ fn test_lazy_fill_null() {
 }
 
 #[test]
-fn test_lazy_window_functions() {
-    let df = df! {
-        "groups" => &[1, 1, 2, 2, 1, 2, 3, 3, 1],
-        "values" => &[1, 2, 3, 4, 5, 6, 7, 8, 8]
-    }
-    .unwrap();
-
-    // sums
-    // 1 => 16
-    // 2 => 13
-    // 3 => 15
-    let correct = [16, 16, 13, 13, 16, 13, 15, 15, 16]
-        .iter()
-        .copied()
-        .map(Some)
-        .collect::<Vec<_>>();
-
-    // test if groups is available after projection pushdown.
-    let _ = df
-        .clone()
-        .lazy()
-        .select(&[avg("values").over([col("groups")]).alias("part")])
-        .collect()
-        .unwrap();
-    // test if partition aggregation is correct
-    let out = df
-        .lazy()
-        .select([col("groups"), sum("values").over([col("groups")])])
-        .collect()
-        .unwrap();
-    assert_eq!(
-        Vec::from(out.select_at_idx(1).unwrap().i32().unwrap()),
-        correct
-    );
-}
-
-#[test]
 fn test_lazy_double_projection() {
     let df = df! {
         "foo" => &[1, 2, 3]
@@ -1220,7 +1183,7 @@ fn test_fill_forward() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill().over([col("a")])])
+        .select([col("b").forward_fill().list().over([col("a")])])
         .collect()?;
     let agg = out.column("b")?.list()?;
 
@@ -1381,130 +1344,6 @@ fn test_filter_in_groupby_agg() -> Result<()> {
 }
 
 #[test]
-fn test_shift_and_fill_window_function() -> Result<()> {
-    let df = fruits_cars();
-
-    // a ternary expression with a final list aggregation
-    let out1 = df
-        .clone()
-        .lazy()
-        .select([
-            col("fruits"),
-            col("B").shift_and_fill(-1, lit(-1)).over([col("fruits")]),
-        ])
-        .collect()?;
-
-    // same expression, no final list aggregation
-    let out2 = df
-        .lazy()
-        .select([
-            col("fruits"),
-            col("B")
-                .shift_and_fill(-1, lit(-1))
-                .list()
-                .over([col("fruits")]),
-        ])
-        .collect()?;
-
-    dbg!(&out1, &out2);
-
-    assert!(out1.frame_equal(&out2));
-
-    Ok(())
-}
-
-#[test]
-fn test_exploded_window_function() -> Result<()> {
-    let df = fruits_cars();
-
-    let out = df
-        .clone()
-        .lazy()
-        .sort("fruits", false)
-        .select([
-            col("fruits"),
-            col("B")
-                .shift(1)
-                .over([col("fruits")])
-                .explode()
-                .alias("shifted"),
-        ])
-        .collect()?;
-
-    assert_eq!(
-        Vec::from(out.column("shifted")?.i32()?),
-        &[None, Some(3), None, Some(5), Some(4)]
-    );
-
-    // this tests if cast succeeds in aggregation context
-    // we implicitly also test that a literal does not upcast a column
-    let out = df
-        .lazy()
-        .sort("fruits", false)
-        .select([
-            col("fruits"),
-            col("B")
-                .shift_and_fill(1, lit(-1.0f32))
-                .over([col("fruits")])
-                .explode()
-                .alias("shifted"),
-        ])
-        .collect()?;
-
-    assert_eq!(
-        Vec::from(out.column("shifted")?.f32()?),
-        &[Some(-1.0), Some(3.0), Some(-1.0), Some(5.0), Some(4.0)]
-    );
-    Ok(())
-}
-
-#[test]
-fn test_reverse_in_groups() -> Result<()> {
-    let df = fruits_cars();
-
-    let out = df
-        .lazy()
-        .sort("fruits", false)
-        .select([col("B")
-            .reverse()
-            .over([col("fruits")])
-            .explode()
-            .alias("rev")])
-        .collect()?;
-
-    assert_eq!(
-        Vec::from(out.column("rev")?.i32()?),
-        &[Some(2), Some(3), Some(1), Some(4), Some(5)]
-    );
-    Ok(())
-}
-
-#[test]
-fn test_sort_by_in_groups() -> Result<()> {
-    let df = fruits_cars();
-
-    let out = df
-        .lazy()
-        .sort("cars", false)
-        .select([
-            col("fruits"),
-            col("cars"),
-            col("A")
-                .sort_by([col("B")], [false])
-                .over([col("cars")])
-                .explode()
-                .alias("sorted_A_by_B"),
-        ])
-        .collect()?;
-
-    assert_eq!(
-        Vec::from(out.column("sorted_A_by_B")?.i32()?),
-        &[Some(2), Some(5), Some(4), Some(3), Some(1)]
-    );
-    Ok(())
-}
-
-#[test]
 fn test_sort_by() -> Result<()> {
     let df = df![
         "a" => [1, 2, 3, 4, 5],
@@ -1565,11 +1404,11 @@ fn test_filter_after_shift_in_groups() -> Result<()> {
             col("B")
                 .shift(1)
                 .filter(col("B").shift(1).gt(lit(4)))
+                .list()
                 .over([col("fruits")])
                 .alias("filtered"),
         ])
         .collect()?;
-    dbg!(out.column("filtered")?);
 
     assert_eq!(
         out.column("filtered")?
@@ -1710,6 +1549,7 @@ fn test_sort_by_suffix() -> Result<()> {
         .lazy()
         .select([col("*")
             .sort_by([col("A")], [false])
+            .list()
             .over([col("fruits")])
             .flatten()
             .suffix("_sorted")])
@@ -2004,34 +1844,11 @@ fn test_single_group_result() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("a").arg_sort(false).over([col("a")]).flatten()])
+        .select([col("a").arg_sort(false).list().over([col("a")]).flatten()])
         .collect()?;
 
     let a = out.column("a")?.u32()?;
     assert_eq!(Vec::from(a), &[Some(0), Some(0)]);
-
-    Ok(())
-}
-
-#[test]
-fn test_literal_window_fn() -> Result<()> {
-    let df = df![
-        "chars" => ["a", "a", "b"]
-    ]?;
-
-    let out = df
-        .lazy()
-        .select([lit(1).cumsum(false).over([col("chars")]).alias("foo")])
-        .collect()?;
-
-    let out = out.column("foo")?;
-    assert!(matches!(out.dtype(), DataType::List(_)));
-    let flat = out.explode()?;
-    let flat = flat.i32()?;
-    assert_eq!(
-        Vec::from(flat),
-        &[Some(1), Some(2), Some(1), Some(2), Some(1)]
-    );
 
     Ok(())
 }
@@ -2050,6 +1867,7 @@ fn test_single_ranked_group() -> Result<()> {
                 method: RankMethod::Average,
                 ..Default::default()
             })
+            .list()
             .over([col("group")])])
         .collect()?;
 

@@ -100,6 +100,20 @@ fn sort_branch<T, Fd, Fr>(
     }
 }
 
+#[cfg(feature = "private")]
+pub fn argsort_no_nulls<Idx, T>(slice: &mut [(Idx, T)], reverse: bool)
+where
+    T: PartialOrd + Send,
+    Idx: PartialOrd + Send,
+{
+    argsort_branch(
+        slice,
+        reverse,
+        |(_, a), (_, b)| order_default(a, b),
+        |(_, a), (_, b)| order_reverse(a, b),
+    );
+}
+
 fn argsort_branch<T, Fd, Fr>(
     slice: &mut [T],
     reverse: bool,
@@ -304,12 +318,7 @@ where
                 vals.extend_trusted_len(iter);
             });
 
-            argsort_branch(
-                vals.as_mut_slice(),
-                reverse,
-                |(_, a), (_, b)| order_default(a, b),
-                |(_, a), (_, b)| order_reverse(a, b),
-            );
+            argsort_no_nulls(vals.as_mut_slice(), reverse);
 
             let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
             let mut ca = ca.into_inner();

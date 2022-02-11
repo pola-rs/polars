@@ -11,6 +11,9 @@ use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
 
+#[cfg(feature = "private")]
+pub use crate::chunked_array::ops::sort::argsort_no_nulls;
+
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
 

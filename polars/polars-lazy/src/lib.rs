@@ -186,6 +186,8 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
+extern crate core;
+
 #[cfg(all(feature = "dot_diagram", feature = "compile"))]
 mod dot;
 #[cfg(feature = "compile")]
