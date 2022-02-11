@@ -1387,13 +1387,13 @@ def test_ewm_std_var() -> None:
     assert (a.ewm_std(alpha=0.5) ** 2).to_list() == a.ewm_var(alpha=0.5).to_list()
 
 
-def test_extend() -> None:
+def test_extend_constant() -> None:
     a = pl.Series("a", [1, 2, 3])
     expected = pl.Series("a", [1, 2, 3, 1, 1, 1])
-    verify_series_and_expr_api(a, expected, "extend", 1, 3)
+    verify_series_and_expr_api(a, expected, "extend_constant", 1, 3)
 
     expected = pl.Series("a", [1, 2, 3, None, None, None])
-    verify_series_and_expr_api(a, expected, "extend", None, 3)
+    verify_series_and_expr_api(a, expected, "extend_constant", None, 3)
 
 
 def test_any_all() -> None:
