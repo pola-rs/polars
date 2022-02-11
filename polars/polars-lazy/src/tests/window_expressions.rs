@@ -227,6 +227,8 @@ fn test_window_mapping() -> Result<()> {
         .lazy()
         .select([
             col("fruits"),
+            col("B"),
+            col("A"),
             (col("B").sum() + col("A"))
                 .alias("foo")
                 .over([col("fruits")]),

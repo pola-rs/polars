@@ -277,6 +277,12 @@ impl PhysicalExpr for WindowExpr {
 
                 let mut original_idx = original_idx.into_iter();
                 let flattened = out_column.explode()?;
+                if flattened.len() != df.height() {
+                    return Err(PolarsError::ComputeError(
+                        "the length of the window expression did not match that of the group"
+                            .into(),
+                    ));
+                }
 
                 // idx (new-idx, original-idx)
                 let mut idx_mapping = Vec::with_capacity(out_column.len());
@@ -287,21 +293,12 @@ impl PhysicalExpr for WindowExpr {
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             for g in groups.all() {
-                                idx_mapping.extend(
-                                    g.iter()
-                                        .copied()
-                                        .zip(&mut iter)
-                                        .map(|(val, old_idx)| (old_idx, val)),
-                                );
+                                idx_mapping.extend(g.iter().copied().zip(&mut iter));
                             }
                         }
                         GroupsProxy::Slice(groups) => {
                             for g in groups {
-                                idx_mapping.extend(
-                                    (g[0]..g[0] + g[1])
-                                        .zip(&mut original_idx)
-                                        .map(|(val, old_idx)| (old_idx, val)),
-                                );
+                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
                             }
                         }
                     }
@@ -322,14 +319,16 @@ impl PhysicalExpr for WindowExpr {
                         }
                     }
                 }
-
                 cache_gb(gb);
                 argsort_no_nulls(&mut idx_mapping, false);
 
+                // Safety:
+                // groups should always be in bounds.
                 let out = unsafe {
-                    flattened.take_iter_unchecked(
-                        &mut idx_mapping.into_iter().map(|(idx, _)| idx as usize),
-                    )
+                    flattened.take_iter_unchecked(&mut idx_mapping.into_iter().map(|(idx, _)| {
+                        debug_assert!((idx as usize) < flattened.len());
+                        idx as usize
+                    }))
                 };
 
                 Ok(out)

@@ -103,6 +103,7 @@ impl PhysicalExpr for BinaryExpr {
             (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
                 if s.len() != df.height() =>
             {
+                dbg!("HIER");
                 // this is a flat series of len eq to group tuples
                 let l = ac_l.aggregated();
                 let l = l.as_ref();
@@ -145,6 +146,7 @@ impl PhysicalExpr for BinaryExpr {
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
             // if the groups_len == df.len we can just apply all flat.
@@ -191,6 +193,7 @@ impl PhysicalExpr for BinaryExpr {
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
             (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_))
@@ -209,8 +212,19 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(out, false);
                 Ok(ac_l)
             }
+            // flatten the Series and apply the operators
+            (AggState::AggregatedList(_), AggState::AggregatedList(_)) => {
+                let out = apply_operator(
+                    ac_l.flat_naive().as_ref(),
+                    ac_r.flat_naive().as_ref(),
+                    self.op,
+                )?;
 
-            // Both are or a flat series or aggregated into a list
+                ac_l.combine_groups(ac_r).with_series(out, false);
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                Ok(ac_l)
+            }
+            // Both are or a flat series
             // so we can flatten the Series and apply the operators
             _ => {
                 let out = apply_operator(
