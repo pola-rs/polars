@@ -2398,9 +2398,6 @@ class DataFrame:
         - **"1i"      # length 1**
         - **"10i"     # length 10**
 
-        .. warning::
-            This API is experimental and may change without it being considered a breaking change.
-
         Parameters
         ----------
         index_column
@@ -2516,9 +2513,6 @@ class DataFrame:
 
         - "1i"      # length 1
         - "10i"     # length 10
-
-        .. warning::
-            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
@@ -2788,9 +2782,6 @@ class DataFrame:
     ) -> "DataFrame":
         """
         Upsample a DataFrame at a regular frequency.
-
-        .. warning::
-            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
@@ -3064,37 +3055,6 @@ class DataFrame:
             return self.with_columns([column])
         else:
             return wrap_df(self._df.with_column(column._s))
-
-    def with_column_renamed(self, existing_name: str, new_name: str) -> "DataFrame":
-        """
-        Return a new DataFrame with the column renamed.
-
-        Parameters
-        ----------
-        existing_name
-        new_name
-
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-        >>> df.with_column_renamed("b", "c")
-        shape: (2, 2)
-        ┌─────┬─────┐
-        │ a   ┆ c   │
-        │ --- ┆ --- │
-        │ i64 ┆ i64 │
-        ╞═════╪═════╡
-        │ 1   ┆ 3   │
-        ├╌╌╌╌╌┼╌╌╌╌╌┤
-        │ 2   ┆ 4   │
-        └─────┴─────┘
-
-        """
-        return (
-            self.lazy()
-            .with_column_renamed(existing_name, new_name)
-            .collect(no_optimization=True, string_cache=False)
-        )
 
     def hstack(
         self, columns: Union[List["pli.Series"], "DataFrame"], in_place: bool = False
@@ -4080,21 +4040,6 @@ class DataFrame:
 
         """
         return wrap_df(self._df.to_dummies())
-
-    def drop_duplicates(
-        self,
-        maintain_order: bool = True,
-        subset: Optional[Union[str, List[str]]] = None,
-    ) -> "DataFrame":
-        """
-
-        .. deprecated:: 0.12.18
-            Use :func:`DataFrame.distinct`
-
-        Drop duplicate rows from this DataFrame.
-        Note that this fails if there is a column of type `List` in the DataFrame.
-        """
-        return self.distinct(maintain_order, subset, "first")
 
     def distinct(
         self,

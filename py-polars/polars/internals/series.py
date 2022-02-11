@@ -3424,22 +3424,6 @@ class Series:
         """
         return wrap_s(self._s.extend_constant(value, n))
 
-    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
-        """
-        Extend the Series with given number of values.
-
-        .. deprecated::0.12.21
-            use extend_constant
-
-        Parameters
-        ----------
-        value
-            The value to extend the Series with. This value may be None to fill with nulls.
-        n
-            The number of values to extend.
-        """
-        return self.extend_constant(value, n)
-
     @property
     def time_unit(self) -> Optional[str]:
         """

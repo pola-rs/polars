@@ -617,9 +617,6 @@ class LazyFrame:
         - "1i"      # length 1
         - "10i"     # length 10
 
-        .. warning::
-            This API is experimental and may change without it being considered a breaking change.
-
         Parameters
         ----------
         index_column
@@ -743,9 +740,6 @@ class LazyFrame:
 
         - "1i"      # length 1
         - "10i"     # length 10
-
-        .. warning::
-            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------
@@ -979,15 +973,6 @@ class LazyFrame:
         if isinstance(columns, str):
             columns = [columns]
         return wrap_ldf(self._ldf.drop_columns(columns))
-
-    def with_column_renamed(self, existing_name: str, new_name: str) -> "LazyFrame":
-        """
-        .. deprecated:: 0.12.13
-            Use :func:rename instead
-
-        Rename a column in the DataFrame
-        """
-        return wrap_ldf(self._ldf.with_column_renamed(existing_name, new_name))
 
     def rename(self, mapping: Dict[str, str]) -> "LazyFrame":
         """
@@ -1262,21 +1247,6 @@ class LazyFrame:
         """
         columns = pli.selection_to_pyexpr_list(columns)
         return wrap_ldf(self._ldf.explode(columns))
-
-    def drop_duplicates(
-        self,
-        maintain_order: bool = False,
-        subset: Optional[Union[List[str], str]] = None,
-    ) -> "LazyFrame":
-        """
-
-        .. deprecated:: 0.12.18
-            Use :func:`DataFrame.distinct`
-
-        Drop duplicate rows from this DataFrame.
-        Note that this fails if there is a column of type `List` in the DataFrame.
-        """
-        return self.distinct(maintain_order, subset, "first")
 
     def distinct(
         self,

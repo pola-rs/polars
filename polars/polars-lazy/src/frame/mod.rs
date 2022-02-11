@@ -281,12 +281,6 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    /// Rename a column in the DataFrame
-    #[deprecated(note = "use rename")]
-    pub fn with_column_renamed(self, existing_name: &str, new_name: &str) -> Self {
-        self.rename([existing_name], [new_name])
-    }
-
     /// Rename columns in the DataFrame.
     pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
     where
@@ -871,15 +865,6 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)
-    }
-
-    /// Drop duplicate rows. [See eager](polars_core::prelude::DataFrame::drop_duplicates).
-    #[deprecated(note = "use distinct")]
-    pub fn drop_duplicates(self, maintain_order: bool, subset: Option<Vec<String>>) -> LazyFrame {
-        match maintain_order {
-            true => self.distinct_stable(subset, DistinctKeepStrategy::First),
-            false => self.distinct(subset, DistinctKeepStrategy::First),
-        }
     }
 
     /// Keep unique rows and maintain order

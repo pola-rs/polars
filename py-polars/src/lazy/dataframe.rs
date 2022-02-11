@@ -432,11 +432,6 @@ impl PyLazyFrame {
         ldf.rename(existing, new).into()
     }
 
-    pub fn with_column_renamed(&mut self, existing: &str, new: &str) -> PyLazyFrame {
-        let ldf = self.ldf.clone();
-        ldf.with_column_renamed(existing, new).into()
-    }
-
     pub fn reverse(&self) -> Self {
         let ldf = self.ldf.clone();
         ldf.reverse().into()

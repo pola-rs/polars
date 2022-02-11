@@ -1267,12 +1267,12 @@ def test_hashing_on_python_objects() -> None:
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
     df = df.with_column(pl.col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
-    assert df.drop_duplicates().shape == (3, 3)
+    assert df.distinct().shape == (3, 3)
 
 
-def test_drop_duplicates_unit_rows() -> None:
+def test_distinct_unit_rows() -> None:
     # simply test if we don't panic.
-    pl.DataFrame({"a": [1], "b": [None]}).drop_duplicates(subset="a")
+    pl.DataFrame({"a": [1], "b": [None]}).distinct(subset="a")
 
 
 def test_panic() -> None:
@@ -1618,7 +1618,7 @@ def test_empty_projection() -> None:
 
 def test_with_column_renamed() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
-    result = df.with_column_renamed("b", "c")
+    result = df.rename({"b": "c"})
     expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
     assert result.frame_equal(expected)
 

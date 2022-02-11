@@ -113,12 +113,10 @@ Manipulation/ selection
     DataFrame.groupby_rolling
     DataFrame.select
     DataFrame.with_columns
-    DataFrame.with_column_renamed
     DataFrame.sample
     DataFrame.row
     DataFrame.rows
     DataFrame.to_dummies
-    DataFrame.drop_duplicates
     DataFrame.distinct
     DataFrame.shrink_to_fit
     DataFrame.rechunk

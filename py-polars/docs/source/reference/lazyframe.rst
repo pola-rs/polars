@@ -41,7 +41,6 @@ Manipulation/ selection
     LazyFrame.join
     LazyFrame.with_columns
     LazyFrame.with_column
-    LazyFrame.with_column_renamed
     LazyFrame.drop
     LazyFrame.rename
     LazyFrame.reverse
@@ -56,7 +55,6 @@ Manipulation/ selection
     LazyFrame.fill_null
     LazyFrame.fill_nan
     LazyFrame.explode
-    LazyFrame.drop_duplicates
     LazyFrame.distinct
     LazyFrame.drop_nulls
     LazyFrame.sort

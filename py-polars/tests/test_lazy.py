@@ -899,7 +899,7 @@ def test_drop_columns() -> None:
 
 
 def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().with_column_renamed("A", "C").collect()
+    res = fruits_cars.lazy().rename({"A": "C"}).collect()
     assert res.columns[0] == "C"
 
 
@@ -1093,18 +1093,16 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
-def test_drop_duplicates() -> None:
+def test_distinct() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert (
-        df.lazy().drop_duplicates(maintain_order=True).collect().frame_equal(expected)
-    )
+    assert df.lazy().distinct(maintain_order=True).collect().frame_equal(expected)
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
     assert (
         df.lazy()
-        .drop_duplicates(subset="b", maintain_order=True)
+        .distinct(subset="b", maintain_order=True)
         .collect()
         .frame_equal(expected)
     )
