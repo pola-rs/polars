@@ -25,6 +25,7 @@ enum MapStrategy {
     Join,
     Explode,
     Map,
+    Nothing,
 }
 
 impl WindowExpr {
@@ -33,14 +34,11 @@ impl WindowExpr {
         df: &DataFrame,
         state: &ExecutionState,
         gb: &'a GroupBy,
-    ) -> Result<(DataFrame, AggregationContext<'a>)> {
-        let mut ac = self
+    ) -> Result<AggregationContext<'a>> {
+        let ac = self
             .phys_function
             .evaluate_on_groups(df, gb.get_groups(), state)?;
-        let mut cols = gb.keys();
-        let out = ac.aggregated();
-        cols.push(out);
-        Ok((DataFrame::new_no_checks(cols), ac))
+        Ok(ac)
     }
 
     fn determine_map_strategy(&self, agg_state: &AggState) -> Result<MapStrategy> {
@@ -85,7 +83,7 @@ impl WindowExpr {
             }
             // aggregations
             //`sum("foo").over("groups")`
-            (false, false, AggState::AggregatedFlat(_) | AggState::NotAggregated(_)) => {
+            (false, false, AggState::AggregatedFlat(_)) => {
                 Ok(MapStrategy::Join)
             }
             // no explicit aggregations, map over the groups
@@ -93,8 +91,38 @@ impl WindowExpr {
             (false, false, AggState::AggregatedList(_)) => {
                 Ok(MapStrategy::Map)
             }
-            (false, false, _) => {
-                panic!("expected aggregation, got {:?}", self.expr)
+            // no aggregations, just return column
+            // or an aggregation that has been flattened
+            // we have to check which one
+            //`col("foo").over("groups")`
+            (false, false, AggState::NotAggregated(_)) => {
+                // col()
+                // or col().alias()
+                let mut simple_col = false;
+                for e in &self.expr {
+                    if let Expr::Window { function, .. } = e {
+                        // or list().alias
+                        for e in &**function {
+                            match e {
+                                Expr::Column(_) => {
+                                    simple_col = true;
+                                }
+                                Expr::Alias(_, _) => {}
+                                _ => break,
+                            }
+                        }
+                    }
+                }
+                if simple_col {
+                    Ok(MapStrategy::Nothing)
+                } else {
+                    Ok(MapStrategy::Map)
+                }
+
+            }
+            // literals, do nothing and let broadcast
+            (false, false, AggState::Literal(_)) => {
+                Ok(MapStrategy::Nothing)
             }
         }
     }
@@ -173,10 +201,7 @@ impl PhysicalExpr for WindowExpr {
             .collect();
         let gb = GroupBy::new(df, groupby_columns.clone(), groups, Some(apply_columns));
 
-        let (out, mut ac) = self.run_aggregation(df, state, &gb)?;
-
-        // 3. get the join tuples and use them to take the new Series
-        let out_column = out.select_at_idx(out.width() - 1).unwrap();
+        let mut ac = self.run_aggregation(df, state, &gb)?;
 
         let cache_gb = |mut gb: GroupBy| {
             if state.cache_window {
@@ -191,9 +216,17 @@ impl PhysicalExpr for WindowExpr {
 
         use MapStrategy::*;
         match self.determine_map_strategy(ac.agg_state())? {
-            Explode => {
+            Nothing => {
+                let mut out = ac.flat_naive().into_owned();
                 cache_gb(gb);
-                let mut out = out_column.clone();
+                if let Some(name) = &self.out_name {
+                    out.rename(name.as_ref());
+                }
+                Ok(out)
+            }
+            Explode => {
+                let mut out = ac.aggregated();
+                cache_gb(gb);
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
                 }
@@ -227,6 +260,7 @@ impl PhysicalExpr for WindowExpr {
                 //
                 // take by argsorted indexes and voila groups mapped
                 // [0, 1, 2, 3]
+                let out_column = ac.aggregated();
                 let mut original_idx = Vec::with_capacity(out_column.len());
                 match gb.get_groups() {
                     GroupsProxy::Idx(groups) => {
@@ -245,39 +279,73 @@ impl PhysicalExpr for WindowExpr {
                 let flattened = out_column.explode()?;
 
                 // idx (new-idx, original-idx)
-                let mut idx = Vec::with_capacity(out_column.len());
-                match ac.groups().as_ref() {
-                    GroupsProxy::Idx(groups) => {
-                        for g in groups.all() {
-                            idx.extend(g.iter().copied().zip(&mut original_idx));
+                let mut idx_mapping = Vec::with_capacity(out_column.len());
+
+                // groups are not changed, we can map by doing a standard argsort.
+                if std::ptr::eq(ac.groups.as_ref(), gb.get_groups()) {
+                    let mut iter = 0..flattened.len() as u32;
+                    match ac.groups().as_ref() {
+                        GroupsProxy::Idx(groups) => {
+                            for g in groups.all() {
+                                idx_mapping.extend(
+                                    g.iter()
+                                        .copied()
+                                        .zip(&mut iter)
+                                        .map(|(val, old_idx)| (old_idx, val)),
+                                );
+                            }
                         }
-                    }
-                    GroupsProxy::Slice(groups) => {
-                        for g in groups {
-                            idx.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                        GroupsProxy::Slice(groups) => {
+                            for g in groups {
+                                idx_mapping.extend(
+                                    (g[0]..g[0] + g[1])
+                                        .zip(&mut original_idx)
+                                        .map(|(val, old_idx)| (old_idx, val)),
+                                );
+                            }
                         }
                     }
                 }
-                cache_gb(gb);
+                // groups are changed, we use the new group indexes as arguments of the argsort
+                // and sort by the old indexes
+                else {
+                    match ac.groups().as_ref() {
+                        GroupsProxy::Idx(groups) => {
+                            for g in groups.all() {
+                                idx_mapping.extend(g.iter().copied().zip(&mut original_idx));
+                            }
+                        }
+                        GroupsProxy::Slice(groups) => {
+                            for g in groups {
+                                idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
+                            }
+                        }
+                    }
+                }
 
-                argsort_no_nulls(&mut idx, false);
+                cache_gb(gb);
+                argsort_no_nulls(&mut idx_mapping, false);
+
                 let out = unsafe {
-                    flattened.take_iter_unchecked(&mut idx.into_iter().map(|(idx, _)| idx as usize))
+                    flattened.take_iter_unchecked(
+                        &mut idx_mapping.into_iter().map(|(idx, _)| idx as usize),
+                    )
                 };
 
                 Ok(out)
             }
             Join => {
+                let out_column = ac.aggregated();
+                let keys = gb.keys();
                 cache_gb(gb);
 
                 let get_join_tuples = || {
                     if groupby_columns.len() == 1 {
                         // group key from right column
-                        let right = out.select_at_idx(0).unwrap();
+                        let right = &keys[0];
                         groupby_columns[0].hash_join_left(right)
                     } else {
-                        let df_right =
-                            DataFrame::new_no_checks(out.get_columns()[..out.width() - 1].to_vec());
+                        let df_right = DataFrame::new_no_checks(keys);
                         let df_left = DataFrame::new_no_checks(groupby_columns);
                         private_left_join_multiple_keys(&df_left, &df_right)
                     }

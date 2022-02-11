@@ -71,12 +71,6 @@ pub(crate) enum UpdateGroups {
     WithSeriesLen,
 }
 
-impl Default for AggState {
-    fn default() -> Self {
-        AggState::Literal(Series::default())
-    }
-}
-
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct AggregationContext<'a> {
     /// Can be in one of two states
@@ -223,7 +217,10 @@ impl<'a> AggregationContext<'a> {
     }
 
     pub(crate) fn is_not_aggregated(&self) -> bool {
-        matches!(&self.state, AggState::NotAggregated(_))
+        matches!(
+            &self.state,
+            AggState::NotAggregated(_) | AggState::Literal(_)
+        )
     }
 
     pub(crate) fn is_aggregated(&self) -> bool {
@@ -392,12 +389,13 @@ impl<'a> AggregationContext<'a> {
 
     /// Take the series.
     pub(crate) fn take(&mut self) -> Series {
-        match std::mem::take(&mut self.state) {
+        let s = match &mut self.state {
             AggState::NotAggregated(s)
             | AggState::AggregatedFlat(s)
             | AggState::AggregatedList(s) => s,
             AggState::Literal(s) => s,
-        }
+        };
+        std::mem::take(s)
     }
 }
 
