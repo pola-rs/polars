@@ -112,6 +112,7 @@ where
 /// }
 ///
 /// ```
+#[must_use]
 pub struct AvroWriter<W> {
     writer: W,
     compression: Option<write::Compression>,
