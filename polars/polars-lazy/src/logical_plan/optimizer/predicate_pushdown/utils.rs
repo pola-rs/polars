@@ -119,6 +119,8 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
             | AExpr::BinaryExpr {..}
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
+            // cast may create nulls
+            | AExpr::Cast {strict: false, ..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation

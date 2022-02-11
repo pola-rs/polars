@@ -348,7 +348,12 @@ impl PredicatePushDown {
                     // unique and duplicated can be caused by joins
                     let matches =
                         |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
-                    if has_aexpr(predicate, expr_arena, matches) {
+
+                    let checks_nulls =
+                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
+                    if has_aexpr(predicate, expr_arena, matches)
+                        // join might create null values.
+                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
                         local_predicates.push(predicate);
                         continue;
                     }

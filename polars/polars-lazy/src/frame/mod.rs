@@ -422,13 +422,24 @@ impl LazyFrame {
         let logical_plan = self.get_plan_builder().build();
 
         // gradually fill the rules passed to the optimizer
+        let opt = StackOptimizer {};
         let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
+
+        if simplify_expr {
+            rules.push(Box::new(SimplifyExprRule {}));
+            rules.push(Box::new(SimplifyBooleanRule {}));
+        }
 
         // during debug we check if the optimizations have not modified the final schema
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
 
         let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena);
+
+        // simplify expression is valuable for projection and predicate pushdown optimizers, so we
+        // run that first
+        // this optimization will run twice because optimizer may create dumb expressions
+        lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
 
         if projection_pushdown {
             let projection_pushdown_opt = ProjectionPushDown {};
@@ -462,10 +473,6 @@ impl LazyFrame {
             rules.push(Box::new(TypeCoercionRule {}))
         }
 
-        if simplify_expr {
-            rules.push(Box::new(SimplifyExprRule {}));
-            rules.push(Box::new(SimplifyBooleanRule {}));
-        }
         if aggregate_pushdown {
             rules.push(Box::new(AggregatePushdown::new()))
         }
@@ -484,7 +491,6 @@ impl LazyFrame {
         rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(ReplaceDropNulls {}));
 
-        let opt = StackOptimizer {};
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
 
         // during debug we check if the optimizations have not modified the final schema
