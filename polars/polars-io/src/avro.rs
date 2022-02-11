@@ -1,10 +1,11 @@
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
+use lazy_static::__Deref;
 use polars_core::prelude::*;
 
-use arrow::io::avro::read;
+use arrow::io::avro::{read, write};
 
 /// Read Appache Avro format into a DataFrame
 ///
@@ -93,69 +94,129 @@ where
     }
 }
 
+/// Write a DataFrame to Appache Avro format
+///
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_io::avro::AvroWriter;
+/// use std::fs::File;
+/// use polars_io::SerWriter;
+///
+/// fn example(df: &mut DataFrame) -> Result<()> {
+///     let mut file = File::create("file.avro").expect("could not create file");
+///
+///     AvroWriter::new(&mut file)
+///         .finish(df)
+/// }
+///
+/// ```
+#[must_use]
+pub struct AvroWriter<W> {
+    writer: W,
+    compression: Option<write::Compression>,
+}
+
+impl<W> AvroWriter<W>
+where
+    W: Write,
+{
+    /// Set the compression used. Defaults to None.
+    pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
+        self.compression = compression;
+        self
+    }
+}
+
+impl<W> SerWriter<W> for AvroWriter<W>
+where
+    W: Write,
+{
+    fn new(writer: W) -> Self {
+        Self {
+            writer,
+            compression: None,
+        }
+    }
+
+    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+        let schema = df.schema().to_arrow();
+        let avro_fields = write::to_avro_schema(&schema)?;
+
+        for chunk in df.iter_chunks() {
+            let mut serializers = chunk
+                .iter()
+                .zip(avro_fields.iter())
+                .map(|(array, field)| write::new_serializer(array.deref(), &field.schema))
+                .collect::<Vec<_>>();
+
+            let mut block = write::Block::new(chunk.len(), vec![]);
+            let mut compressed_block = write::CompressedBlock::default();
+
+            write::serialize(&mut serializers, &mut block);
+            let _was_compressed =
+                write::compress(&mut block, &mut compressed_block, self.compression)?;
+
+            write::write_metadata(&mut self.writer, avro_fields.clone(), self.compression)?;
+
+            write::write_block(&mut self.writer, &compressed_block)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::avro::AvroReader;
-    use crate::SerReader;
-    use arrow::array::Array;
+    use super::{write, AvroReader, AvroWriter};
+    use crate::prelude::*;
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
-
-    fn write_avro(buf: &mut Cursor<Vec<u8>>) {
-        use arrow::array::{Float64Array, Int64Array, Utf8Array};
-        use arrow::datatypes::{Field, Schema};
-        use arrow::io::avro::write;
-
-        let i64_array = Int64Array::from(&[Some(1), Some(2)]);
-        let f64_array = Float64Array::from(&[Some(0.1), Some(0.2)]);
-        let utf8_array = Utf8Array::<i32>::from(&[Some("a"), Some("b")]);
-        let i64_field = Field::new("i64", i64_array.data_type().clone(), true);
-        let f64_field = Field::new("f64", f64_array.data_type().clone(), true);
-        let utf8_field = Field::new("utf8", utf8_array.data_type().clone(), true);
-        let schema = Schema::from(vec![i64_field, f64_field, utf8_field]);
-        let arrays = vec![
-            &i64_array as &dyn Array,
-            &f64_array as &dyn Array,
-            &utf8_array as &dyn Array,
-        ];
-        let avro_fields = write::to_avro_schema(&schema).unwrap();
-
-        let mut serializers = arrays
-            .iter()
-            .zip(avro_fields.iter())
-            .map(|(array, field)| write::new_serializer(*array, &field.schema))
-            .collect::<Vec<_>>();
-        let mut block = write::Block::new(arrays[0].len(), vec![]);
-
-        write::serialize(&mut serializers, &mut block);
-
-        let mut compressed_block = write::CompressedBlock::default();
-
-        let _was_compressed = write::compress(&mut block, &mut compressed_block, None).unwrap();
-
-        write::write_metadata(buf, avro_fields.clone(), None).unwrap();
-
-        write::write_block(buf, &compressed_block).unwrap();
-    }
-
     #[test]
-    fn write_and_read_avro_naive() {
+    fn write_and_read_avro() -> Result<()> {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        write_avro(&mut buf);
-        buf.set_position(0);
-
-        let df = AvroReader::new(buf).finish();
-        assert!(df.is_ok());
-        let df = df.unwrap();
-
-        let expected = df!(
+        let mut write_df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
             "utf8" => &["a", "b"]
-        )
-        .unwrap();
-        assert_eq!(df.shape(), expected.shape());
-        assert!(df.frame_equal(&expected));
+        )?;
+
+        AvroWriter::new(&mut buf).finish(&mut write_df)?;
+        buf.set_position(0);
+
+        let read_df = AvroReader::new(buf).finish()?;
+        assert_eq!(write_df, read_df);
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_and_read_with_compression() -> Result<()> {
+        let mut write_df = df!(
+            "i64" => &[1, 2],
+            "f64" => &[0.1, 0.2],
+            "utf8" => &["a", "b"]
+        )?;
+
+        let compressions = vec![
+            None,
+            Some(write::Compression::Deflate),
+            Some(write::Compression::Snappy),
+        ];
+
+        for compression in compressions.into_iter() {
+            let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+            AvroWriter::new(&mut buf)
+                .with_compression(compression)
+                .finish(&mut write_df)?;
+            buf.set_position(0);
+
+            let read_df = AvroReader::new(buf).finish()?;
+            assert_eq!(write_df, read_df);
+        }
+
+        Ok(())
     }
 }
