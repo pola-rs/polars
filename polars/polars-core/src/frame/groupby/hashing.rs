@@ -17,7 +17,9 @@ fn finish_group_order(out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {
         let mut out = out.into_iter().flatten().collect::<Vec<_>>();
         out.sort_unstable_by_key(|g| g.0);
-        GroupsProxy::Idx(GroupsIdx::from_iter(out.into_iter()))
+        let mut idx = GroupsIdx::from_iter(out.into_iter());
+        idx.sorted = true;
+        GroupsProxy::Idx(idx)
     } else {
         GroupsProxy::Idx(GroupsIdx::from(out))
     }
@@ -54,7 +56,9 @@ where
             .map(|(_k, v)| v)
             .collect_trusted::<Vec<_>>();
         groups.sort_unstable_by_key(|g| g.0);
-        GroupsProxy::Idx(groups.into_iter().collect())
+        let mut idx: GroupsIdx = groups.into_iter().collect();
+        idx.sorted = true;
+        GroupsProxy::Idx(idx)
     } else {
         GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, v)| v).collect())
     }

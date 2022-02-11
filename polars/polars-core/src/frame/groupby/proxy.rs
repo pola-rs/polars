@@ -9,6 +9,7 @@ use rayon::prelude::*;
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
+    pub(crate) sorted: bool,
     first: Vec<u32>,
     all: Vec<Vec<u32>>,
 }
@@ -69,7 +70,12 @@ impl GroupsIdx {
         let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
+        self.sorted = true
     }
+    pub fn is_sorted(&self) -> bool {
+        self.sorted
+    }
+
     pub fn iter(
         &self,
     ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<u32>>, std::slice::Iter<Vec<u32>>> {
@@ -98,7 +104,11 @@ impl GroupsIdx {
 impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
         let (first, all) = iter.into_iter().unzip();
-        GroupsIdx { first, all }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 
@@ -131,7 +141,11 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
         I: IntoParallelIterator<Item = IdxItem>,
     {
         let (first, all) = par_iter.into_par_iter().unzip();
-        GroupsIdx { first, all }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 

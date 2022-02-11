@@ -11,6 +11,7 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
+use super::*;
 use crate::chunked_array::{
     comparison::*,
     ops::{explode::ExplodeByOffsets, ToBitRepr},
@@ -226,6 +227,16 @@ macro_rules! impl_dyn_series {
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
+            fn is_sorted(&self) -> IsSorted {
+                if self.0.is_sorted() {
+                    IsSorted::Ascending
+                } else if self.0.is_sorted_reverse() {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Not
+                }
+            }
+
             #[cfg(feature = "interpolate")]
             fn interpolate(&self) -> Series {
                 self.0.interpolate().$into_logical().into_series()

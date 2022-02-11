@@ -125,12 +125,11 @@ fn test_reverse_in_groups() -> Result<()> {
     let out = df
         .lazy()
         .sort("fruits", false)
-        .select([col("B")
-            .reverse()
-            .over([col("fruits")])
-            .list()
-            .explode()
-            .alias("rev")])
+        .select([
+            col("B"),
+            col("fruits"),
+            col("B").reverse().over([col("fruits")]).alias("rev"),
+        ])
         .collect()?;
 
     assert_eq!(
@@ -250,6 +249,50 @@ fn test_window_mapping() -> Result<()> {
         ])
         .collect()?;
     let expected = Series::new("foo", [None, Some(3), None, Some(-1), Some(-1)]);
+    assert!(out.column("foo")?.series_equal_missing(&expected));
+
+    // now sorted
+    // this will tragger a fast path
+    let df = df.sort(["fruits"], vec![false])?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .select([(lit(10) + col("A")).alias("foo").over([col("fruits")])])
+        .collect()?;
+    let expected = Series::new("foo", [13, 14, 11, 12, 15]);
+    assert!(out.column("foo")?.series_equal(&expected));
+
+    let out = df
+        .clone()
+        .lazy()
+        .select([
+            col("fruits"),
+            col("B"),
+            col("A"),
+            (col("B").sum() + col("A"))
+                .alias("foo")
+                .over([col("fruits")]),
+        ])
+        .collect()?;
+
+    let expected = Series::new("foo", [8, 9, 11, 12, 15]);
+    assert!(out.column("foo")?.series_equal(&expected));
+
+    let out = df
+        .clone()
+        .lazy()
+        .select([
+            col("fruits"),
+            col("A"),
+            col("B"),
+            (col("B").shift(1) - col("A"))
+                .alias("foo")
+                .over([col("fruits")]),
+        ])
+        .collect()?;
+
+    let expected = Series::new("foo", [None, Some(-1), None, Some(3), Some(-1)]);
     assert!(out.column("foo")?.series_equal_missing(&expected));
 
     Ok(())

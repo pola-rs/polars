@@ -4,6 +4,7 @@ use crate::prelude::*;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::argsort_no_nulls;
 use std::sync::Arc;
 
@@ -23,7 +24,10 @@ pub struct WindowExpr {
 #[derive(Debug)]
 enum MapStrategy {
     Join,
+    // explode now
     Explode,
+    // will be exploded by subsequent `.flatten()` call
+    ExplodeLater,
     Map,
     Nothing,
 }
@@ -41,7 +45,7 @@ impl WindowExpr {
         Ok(ac)
     }
 
-    fn determine_map_strategy(&self, agg_state: &AggState) -> Result<MapStrategy> {
+    fn is_explicit_list_agg(&self) -> bool {
         // col("foo").list()
         // col("foo").list().alias()
         // ..
@@ -68,10 +72,62 @@ impl WindowExpr {
                 explicit_list = finishes_list;
             }
         }
+        explicit_list
+    }
+
+    fn is_simple_column_expr(&self) -> bool {
+        // col()
+        // or col().alias()
+        let mut simple_col = false;
+        for e in &self.expr {
+            if let Expr::Window { function, .. } = e {
+                // or list().alias
+                for e in &**function {
+                    match e {
+                        Expr::Column(_) => {
+                            simple_col = true;
+                        }
+                        Expr::Alias(_, _) => {}
+                        _ => break,
+                    }
+                }
+            }
+        }
+        simple_col
+    }
+
+    fn is_aggregation(&self) -> bool {
+        // col()
+        // or col().agg()
+        let mut agg_col = false;
+        for e in &self.expr {
+            if let Expr::Window { function, .. } = e {
+                // or list().alias
+                for e in &**function {
+                    match e {
+                        Expr::Agg(_) => {
+                            agg_col = true;
+                        }
+                        Expr::Alias(_, _) => {}
+                        _ => break,
+                    }
+                }
+            }
+        }
+        agg_col
+    }
+
+    fn determine_map_strategy(
+        &self,
+        agg_state: &AggState,
+        sorted_keys: bool,
+        explicit_list: bool,
+        gb: &GroupBy,
+    ) -> Result<MapStrategy> {
         match (self.options.explode, explicit_list, agg_state) {
             // Explode
             // `(col("x").sum() * col("y")).list().over("groups").flatten()`
-            (true, true, _) => Ok(MapStrategy::Explode),
+            (true, true, _) => Ok(MapStrategy::ExplodeLater),
             // Explode all the aggregated lists. Maybe add later?
             (true, false, _) => {
                 Err(PolarsError::ComputeError("This operation is likely not what you want. Please open an issue if you really want to do this".into()))
@@ -89,7 +145,18 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (false, false, AggState::AggregatedList(_)) => {
-                Ok(MapStrategy::Map)
+                if sorted_keys  {
+                    if let GroupsProxy::Idx(g) = gb.get_groups() {
+                        debug_assert!(g.is_sorted())
+                    }
+                    else {
+                        debug_assert!(false)
+                    }
+                    // Note that group columns must be sorted for this to make sense!!!
+                    Ok(MapStrategy::Explode)
+                } else {
+                    Ok(MapStrategy::Map)
+                }
             }
             // no aggregations, just return column
             // or an aggregation that has been flattened
@@ -98,22 +165,7 @@ impl WindowExpr {
             (false, false, AggState::NotAggregated(_)) => {
                 // col()
                 // or col().alias()
-                let mut simple_col = false;
-                for e in &self.expr {
-                    if let Expr::Window { function, .. } = e {
-                        // or list().alias
-                        for e in &**function {
-                            match e {
-                                Expr::Column(_) => {
-                                    simple_col = true;
-                                }
-                                Expr::Alias(_, _) => {}
-                                _ => break,
-                            }
-                        }
-                    }
-                }
-                if simple_col {
+                if self.is_simple_column_expr() {
                     Ok(MapStrategy::Nothing)
                 } else {
                     Ok(MapStrategy::Map)
@@ -165,9 +217,24 @@ impl PhysicalExpr for WindowExpr {
             .map(|e| e.evaluate(df, state))
             .collect::<Result<Vec<_>>>()?;
 
+        // if the keys are sorted
+        let sorted_keys = groupby_columns
+            .iter()
+            .all(|s| matches!(s.is_sorted(), IsSorted::Ascending | IsSorted::Descending));
+        let explicit_list_agg = self.is_explicit_list_agg();
+
         let create_groups = || {
             // if we flatten this column we need to make sure the groups are sorted.
-            let sorted = self.options.explode;
+            let sorted = self.options.explode ||
+            // if not
+            //      `col().over()`
+            // and not
+            //      `col().list().over`
+            // and not
+            //      `col().sum()`
+            // and keys are sorted
+            //  we may optimize with explode call
+            (!self.is_simple_column_expr() && !explicit_list_agg && sorted_keys && !self.is_aggregation());
             let mut gb = df.groupby_with_series(groupby_columns.clone(), true, sorted)?;
             let out: Result<GroupsProxy> = Ok(std::mem::take(gb.get_groups_mut()));
             out
@@ -215,7 +282,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         use MapStrategy::*;
-        match self.determine_map_strategy(ac.agg_state())? {
+        match self.determine_map_strategy(ac.agg_state(), sorted_keys, explicit_list_agg, &gb)? {
             Nothing => {
                 let mut out = ac.flat_naive().into_owned();
                 cache_gb(gb);
@@ -225,6 +292,14 @@ impl PhysicalExpr for WindowExpr {
                 Ok(out)
             }
             Explode => {
+                let mut out = ac.aggregated().explode()?;
+                cache_gb(gb);
+                if let Some(name) = &self.out_name {
+                    out.rename(name.as_ref());
+                }
+                Ok(out)
+            }
+            ExplodeLater => {
                 let mut out = ac.aggregated();
                 cache_gb(gb);
                 if let Some(name) = &self.out_name {

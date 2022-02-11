@@ -103,7 +103,6 @@ impl PhysicalExpr for BinaryExpr {
             (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
                 if s.len() != df.height() =>
             {
-                dbg!("HIER");
                 // this is a flat series of len eq to group tuples
                 let l = ac_l.aggregated();
                 let l = l.as_ref();
