@@ -758,14 +758,14 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     out = df.select(
         [
             "fruits",
-            col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
-            col("B").min().over("fruits").alias("B_by_fruits_min2"),
-            col("B").over("fruits").arr.max().alias("B_by_fruits_max1"),
-            col("B").max().over("fruits").alias("B_by_fruits_max2"),
-            col("B").over("fruits").arr.sum().alias("B_by_fruits_sum1"),
-            col("B").sum().over("fruits").alias("B_by_fruits_sum2"),
-            col("B").over("fruits").arr.mean().alias("B_by_fruits_mean1"),
-            col("B").mean().over("fruits").alias("B_by_fruits_mean2"),
+            pl.col("B").list().over("fruits").arr.min().alias("B_by_fruits_min1"),
+            pl.col("B").min().list().over("fruits").alias("B_by_fruits_min2"),
+            pl.col("B").list().over("fruits").arr.max().alias("B_by_fruits_max1"),
+            pl.col("B").max().list().over("fruits").alias("B_by_fruits_max2"),
+            pl.col("B").list().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
+            pl.col("B").sum().list().over("fruits").alias("B_by_fruits_sum2"),
+            pl.col("B").list().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
+            pl.col("B").mean().list().over("fruits").alias("B_by_fruits_mean2"),
         ]
     )
     expected = pl.DataFrame(
