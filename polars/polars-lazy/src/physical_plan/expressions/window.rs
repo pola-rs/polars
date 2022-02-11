@@ -5,7 +5,8 @@ use polars_core::frame::groupby::{GroupBy, GroupsProxy};
 use polars_core::frame::hash_join::private_left_join_multiple_keys;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::argsort_no_nulls;
+use polars_core::POOL;
+use polars_utils::sort::perfect_sort;
 use std::sync::Arc;
 
 pub struct WindowExpr {
@@ -395,18 +396,14 @@ impl PhysicalExpr for WindowExpr {
                     }
                 }
                 cache_gb(gb);
-                argsort_no_nulls(&mut idx_mapping, false);
+                // Safety:
+                // we only have unique indices ranging from 0..len
+                let idx = unsafe { perfect_sort(&POOL, &idx_mapping) };
+                let idx = UInt32Chunked::from_vec("", idx);
 
                 // Safety:
                 // groups should always be in bounds.
-                let out = unsafe {
-                    flattened.take_iter_unchecked(&mut idx_mapping.into_iter().map(|(idx, _)| {
-                        debug_assert!((idx as usize) < flattened.len());
-                        idx as usize
-                    }))
-                };
-
-                Ok(out)
+                unsafe { flattened.take_unchecked(&idx) }
             }
             Join => {
                 let out_column = ac.aggregated();
