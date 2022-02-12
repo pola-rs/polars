@@ -235,6 +235,7 @@ impl Utf8Chunked {
 
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
@@ -317,6 +318,7 @@ impl Utf8Chunked {
 
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Microseconds => datetime_to_timestamp_us,
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 

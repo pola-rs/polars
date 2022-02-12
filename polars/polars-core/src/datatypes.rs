@@ -248,7 +248,7 @@ pub enum AnyValue<'a> {
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
-    // A 64-bit integer representing difference between date-times in nanoseconds or milliseconds
+    // A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
     Duration(i64, TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
@@ -552,16 +552,16 @@ impl PartialOrd for AnyValue<'_> {
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TimeUnit {
     Nanoseconds,
+    Microseconds,
     Milliseconds,
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {
     fn from(tu: &ArrowTimeUnit) -> Self {
         match tu {
-            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
             ArrowTimeUnit::Nanosecond => TimeUnit::Nanoseconds,
-            // will be cast
-            ArrowTimeUnit::Microsecond => TimeUnit::Nanoseconds,
+            ArrowTimeUnit::Microsecond => TimeUnit::Microseconds,
+            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
             // will be cast
             ArrowTimeUnit::Second => TimeUnit::Milliseconds,
         }
@@ -574,6 +574,9 @@ impl Display for TimeUnit {
             TimeUnit::Nanoseconds => {
                 write!(f, "ns")
             }
+            TimeUnit::Microseconds => {
+                write!(f, "μs")
+            }
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
             }
@@ -585,6 +588,7 @@ impl TimeUnit {
     pub fn to_arrow(self) -> ArrowTimeUnit {
         match self {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
         }
     }
@@ -1049,7 +1053,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Microsecond, None),
-                DataType::Datetime(TimeUnit::Nanoseconds, None),
+                DataType::Datetime(TimeUnit::Microseconds, None),
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Millisecond, None),

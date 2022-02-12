@@ -1459,6 +1459,7 @@ impl PySeries {
         if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
             Some(match tu {
                 TimeUnit::Nanoseconds => "ns",
+                TimeUnit::Microseconds => "us",
                 TimeUnit::Milliseconds => "ms",
             })
         } else {
@@ -1468,6 +1469,7 @@ impl PySeries {
     pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
         let unit = match tu {
             "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
             "ms" => TimeUnit::Milliseconds,
             _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
         };

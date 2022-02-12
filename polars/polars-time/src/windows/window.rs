@@ -21,18 +21,24 @@ impl Window {
         }
     }
 
-    #[inline]
     pub fn truncate_ns(&self, t: i64) -> i64 {
         let t = self.every.truncate_ns(t);
         self.offset.add_ns(t)
     }
 
-    #[inline]
+    pub fn truncate_us(&self, t: i64) -> i64 {
+        let t = self.every.truncate_us(t);
+        self.offset.add_us(t)
+    }
+
     pub fn truncate_no_offset_ns(&self, t: i64) -> i64 {
         self.every.truncate_ns(t)
     }
 
-    #[inline]
+    pub fn truncate_no_offset_us(&self, t: i64) -> i64 {
+        self.every.truncate_us(t)
+    }
+
     pub fn truncate_ms(&self, t: i64) -> i64 {
         let t = self.every.truncate_ms(t);
         self.offset.add_ms(t)
@@ -55,6 +61,15 @@ impl Window {
         Bounds::new_checked(start, stop)
     }
 
+    pub fn get_earliest_bounds_us(&self, t: i64) -> Bounds {
+        // original code translates offset here
+        // we don't. Seems unintuitive to me.
+        let start = self.truncate_us(t);
+        let stop = self.period.add_us(start);
+
+        Bounds::new_checked(start, stop)
+    }
+
     pub fn get_earliest_bounds_ms(&self, t: i64) -> Bounds {
         let start = self.truncate_ms(t);
         let stop = self.period.add_ms(start);
@@ -65,6 +80,11 @@ impl Window {
     pub(crate) fn estimate_overlapping_bounds_ns(&self, boundary: Bounds) -> usize {
         (boundary.duration() / self.every.duration_ns()
             + self.period.duration_ns() / self.every.duration_ns()) as usize
+    }
+
+    pub(crate) fn estimate_overlapping_bounds_us(&self, boundary: Bounds) -> usize {
+        (boundary.duration() / self.every.duration_us()
+            + self.period.duration_us() / self.every.duration_us()) as usize
     }
 
     pub(crate) fn estimate_overlapping_bounds_ms(&self, boundary: Bounds) -> usize {
@@ -89,6 +109,7 @@ impl BoundsIter {
     fn new(window: Window, boundary: Bounds, tu: TimeUnit) -> Self {
         let bi = match tu {
             TimeUnit::Nanoseconds => window.get_earliest_bounds_ns(boundary.start),
+            TimeUnit::Microseconds => window.get_earliest_bounds_us(boundary.start),
             TimeUnit::Milliseconds => window.get_earliest_bounds_ms(boundary.start),
         };
         Self {
@@ -110,6 +131,10 @@ impl Iterator for BoundsIter {
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start);
                     self.bi.stop = self.window.every.add_ns(self.bi.stop);
+                }
+                TimeUnit::Microseconds => {
+                    self.bi.start = self.window.every.add_us(self.bi.start);
+                    self.bi.stop = self.window.every.add_us(self.bi.stop);
                 }
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start);

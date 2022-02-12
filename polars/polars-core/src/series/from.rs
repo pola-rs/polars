@@ -78,7 +78,7 @@ impl Series {
                 Ok(match tu {
                     ArrowTimeUnit::Second => &s * MILLISECONDS,
                     ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Microsecond => s,
                     ArrowTimeUnit::Nanosecond => s,
                 })
             }
@@ -91,7 +91,7 @@ impl Series {
                 Ok(match tu {
                     ArrowTimeUnit::Second => &s * MILLISECONDS,
                     ArrowTimeUnit::Millisecond => s,
-                    ArrowTimeUnit::Microsecond => &s * 1_000,
+                    ArrowTimeUnit::Microsecond => s,
                     ArrowTimeUnit::Nanosecond => s,
                 })
             }

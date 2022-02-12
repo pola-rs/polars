@@ -298,6 +298,7 @@ impl Wrap<&DataFrame> {
             let w = Window::new(options.every, options.period, options.offset);
             let truncate_fn = match tu {
                 TimeUnit::Nanoseconds => Window::truncate_no_offset_ns,
+                TimeUnit::Microseconds => Window::truncate_no_offset_us,
                 TimeUnit::Milliseconds => Window::truncate_no_offset_ms,
             };
             dt = dt.apply(|v| truncate_fn(&w, v));
@@ -383,33 +384,39 @@ mod test {
 
     #[test]
     fn test_rolling_groupby() -> Result<()> {
-        let date = Utf8Chunked::new(
-            "dt",
-            [
-                "2020-01-01 13:45:48",
-                "2020-01-01 16:42:13",
-                "2020-01-01 16:45:09",
-                "2020-01-02 18:12:48",
-                "2020-01-03 19:45:32",
-                "2020-01-08 23:16:43",
-            ],
-        )
-        .as_datetime(None, TimeUnit::Milliseconds)?
-        .into_series();
-        let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
-        let df = DataFrame::new(vec![date, a.clone()])?;
+        for tu in [
+            TimeUnit::Nanoseconds,
+            TimeUnit::Microseconds,
+            TimeUnit::Milliseconds,
+        ] {
+            let date = Utf8Chunked::new(
+                "dt",
+                [
+                    "2020-01-01 13:45:48",
+                    "2020-01-01 16:42:13",
+                    "2020-01-01 16:45:09",
+                    "2020-01-02 18:12:48",
+                    "2020-01-03 19:45:32",
+                    "2020-01-08 23:16:43",
+                ],
+            )
+            .as_datetime(None, tu)?
+            .into_series();
+            let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
+            let df = DataFrame::new(vec![date, a.clone()])?;
 
-        let (_, groups) = df
-            .groupby_rolling(&RollingGroupOptions {
-                index_column: "dt".into(),
-                period: Duration::parse("2d"),
-                offset: Duration::parse("-2d"),
-                closed_window: ClosedWindow::Right,
-            })
-            .unwrap();
-        let sum = a.agg_sum(&groups).unwrap();
-        let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
-        assert_eq!(sum, expected);
+            let (_, groups) = df
+                .groupby_rolling(&RollingGroupOptions {
+                    index_column: "dt".into(),
+                    period: Duration::parse("2d"),
+                    offset: Duration::parse("-2d"),
+                    closed_window: ClosedWindow::Right,
+                })
+                .unwrap();
+            let sum = a.agg_sum(&groups).unwrap();
+            let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
+            assert_eq!(sum, expected);
+        }
 
         Ok(())
     }

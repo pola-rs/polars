@@ -380,7 +380,7 @@ impl PyExpr {
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(TimeUnit::Milliseconds, None),
+                date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
                 fmt,
                 strict,
                 exact,

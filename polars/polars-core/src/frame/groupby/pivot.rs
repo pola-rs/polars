@@ -7,6 +7,7 @@ use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
 use crate::POOL;
 #[cfg(feature = "dtype-date")]
 use arrow::temporal_conversions::date32_to_date;
+use arrow::temporal_conversions::timestamp_us_to_datetime;
 #[cfg(feature = "dtype-datetime")]
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
 
@@ -421,6 +422,7 @@ fn finish_logical_types(
         DataType::Datetime(tu, _) => {
             let fun = match tu {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
+                TimeUnit::Microseconds => timestamp_us_to_datetime,
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime,
             };
 

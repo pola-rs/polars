@@ -3142,7 +3142,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tu
-            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
         dtype
             Output data type.
         """

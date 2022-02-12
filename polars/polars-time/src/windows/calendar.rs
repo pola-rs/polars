@@ -42,6 +42,7 @@ pub fn date_range(
 ) -> Vec<i64> {
     let size = match tu {
         TimeUnit::Nanoseconds => ((stop - start) / every.duration_ns() + 1) as usize,
+        TimeUnit::Microseconds => ((stop - start) / every.duration_us() + 1) as usize,
         TimeUnit::Milliseconds => ((stop - start) / every.duration_ms() + 1) as usize,
     };
     let mut ts = Vec::with_capacity(size);
@@ -49,6 +50,7 @@ pub fn date_range(
     let mut t = start;
     let f = match tu {
         TimeUnit::Nanoseconds => <Duration>::add_ns,
+        TimeUnit::Microseconds => <Duration>::add_us,
         TimeUnit::Milliseconds => <Duration>::add_ms,
     };
     match closed {

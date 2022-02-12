@@ -492,6 +492,7 @@ impl<'a> CoreReader<'a> {
                                 &mut buffers,
                                 ignore_parser_errors,
                                 chunk_size,
+                                self.schema.len(),
                             )?;
 
                             let mut local_df = DataFrame::new_no_checks(
@@ -610,6 +611,7 @@ impl<'a> CoreReader<'a> {
                                 // chunk size doesn't really matter anymore,
                                 // less calls if we increase the size
                                 usize::MAX,
+                                self.schema.len(),
                             )?;
                         }
 

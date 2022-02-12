@@ -402,8 +402,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        const NS_IN_DAY: i64 = 86_400_000_000_000;
-        const MS_IN_DAY: i64 = 86400000;
         use DataType::*;
         let ca = match (self.dtype(), data_type) {
             (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
@@ -411,15 +409,42 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
                     .into_datetime(TimeUnit::Nanoseconds, tz.clone())
                     .into_series())
             }
+            (Datetime(TimeUnit::Milliseconds, _), Datetime(TimeUnit::Microseconds, tz)) => {
+                return Ok((self.0.as_ref() * 1_000i64)
+                    .into_datetime(TimeUnit::Microseconds, tz.clone())
+                    .into_series())
+            }
             (Datetime(TimeUnit::Nanoseconds, _), Datetime(TimeUnit::Milliseconds, tz)) => {
                 return Ok((self.0.as_ref() / 1_000_000i64)
                     .into_datetime(TimeUnit::Milliseconds, tz.clone())
+                    .into_series())
+            }
+            (Datetime(TimeUnit::Nanoseconds, _), Datetime(TimeUnit::Microseconds, tz)) => {
+                return Ok((self.0.as_ref() / 1_000i64)
+                    .into_datetime(TimeUnit::Microseconds, tz.clone())
+                    .into_series())
+            }
+            (Datetime(TimeUnit::Microseconds, _), Datetime(TimeUnit::Milliseconds, tz)) => {
+                return Ok((self.0.as_ref() / 1_000i64)
+                    .into_datetime(TimeUnit::Milliseconds, tz.clone())
+                    .into_series())
+            }
+            (Datetime(TimeUnit::Microseconds, _), Datetime(TimeUnit::Nanoseconds, tz)) => {
+                return Ok((self.0.as_ref() * 1_000i64)
+                    .into_datetime(TimeUnit::Nanoseconds, tz.clone())
                     .into_series())
             }
             #[cfg(feature = "dtype-date")]
             (Datetime(tu, _), Date) => match tu {
                 TimeUnit::Nanoseconds => {
                     return Ok((self.0.as_ref() / NS_IN_DAY)
+                        .cast(&Int32)
+                        .unwrap()
+                        .into_date()
+                        .into_series());
+                }
+                TimeUnit::Microseconds => {
+                    return Ok((self.0.as_ref() / US_IN_DAY)
                         .cast(&Int32)
                         .unwrap()
                         .into_date()

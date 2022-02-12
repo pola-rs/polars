@@ -108,6 +108,14 @@ pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
     skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
+#[inline]
+/// Can be used to skip whitespace, but exclude the delimiter
+pub(crate) fn skip_whitespace_line_ending_exclude(input: &[u8], exclude: u8) -> &[u8] {
+    skip_condition(input, |b| {
+        b != exclude && (is_whitespace(b) || is_line_ending(b))
+    })
+}
+
 /// Local version of slice::starts_with (as it won't inline)
 #[inline]
 fn starts_with(bytes: &[u8], needle: u8) -> bool {
@@ -386,11 +394,20 @@ pub(crate) fn parse_lines(
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
     n_lines: usize,
+    // length or original schema
+    schema_len: usize,
 ) -> Result<usize> {
     assert!(
         !projection.is_empty(),
         "at least one column should be projected"
     );
+    // only when we have one column \n should not be skipped
+    // other widths should have commas.
+    let skipwh = if schema_len > 1 {
+        skip_whitespace_line_ending_exclude
+    } else {
+        skip_whitespace_exclude
+    };
 
     // we use the pointers to track the no of bytes read.
     let start = bytes.as_ptr() as usize;
@@ -404,7 +421,7 @@ pub(crate) fn parse_lines(
             return Ok(end - start);
         }
 
-        let b = skip_whitespace_exclude(bytes, delimiter);
+        let b = skipwh(bytes, delimiter);
         bytes = b;
         if bytes.is_empty() {
             return Ok(original_bytes_len);

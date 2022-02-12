@@ -360,11 +360,12 @@ macro_rules! df {
 }
 
 #[cfg(feature = "private")]
-pub fn get_time_units(l: &TimeUnit, r: &TimeUnit) -> TimeUnit {
-    if l == r {
-        *l
-    } else {
-        TimeUnit::Milliseconds
+pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
+    use TimeUnit::*;
+    match (tu_l, tu_r) {
+        (Nanoseconds, Microseconds) => Microseconds,
+        (_, Milliseconds) => Milliseconds,
+        _ => *tu_l,
     }
 }
 
@@ -614,41 +615,16 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
         (Duration(_), Date) | (Date, Duration(_)) => Some(Datetime(TimeUnit::Milliseconds, None)),
         (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
-        // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
-        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
-        | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
+
         // None and Some("") timezones
-        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz))
-            if tz.as_deref() == Some("") =>
+        // we cast from more precision to higher precision as that always fits with occasional loss of precision
+        (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r))
+            if (tz_l.is_none() || tz_l.as_deref() == Some(""))
+                && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
         {
-            Some(Datetime(TimeUnit::Nanoseconds, None))
+            let tu = get_time_units(tu_l, tu_r);
+            Some(Datetime(tu, None))
         }
-        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Nanoseconds, None))
-        }
-        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
-        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
-
-        (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
-        | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
-            match (tz_l.as_deref(), tz_r.as_deref()) {
-                (Some(""), None) | (None, Some("")) => Some(Datetime(TimeUnit::Milliseconds, None)),
-                _ => None,
-            }
-        }
-
         _ => None,
     }
 }

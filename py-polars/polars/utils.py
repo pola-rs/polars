@@ -63,13 +63,13 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
     """
     if tu == "ns":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+    elif tu == "us":
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     elif tu == "ms":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
     if tu is None:
-        if in_nanoseconds_window(dt):
-            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
-        else:
-            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+        # python has us precision
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     else:
         raise ValueError("expected on of {'ns', 'ms'}")
 
@@ -77,6 +77,8 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
 def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
     if tu == "ns":
         return int(td.total_seconds() * 1e9)
+    elif tu == "us":
+        return int(td.total_seconds() * 1e6)
     elif tu == "ms":
         return int(td.total_seconds() * 1e3)
     if tu is None:
@@ -85,7 +87,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
         else:
             return int(td.total_seconds() * 1e3)
     else:
-        raise ValueError("expected one of {'ns', 'ms'}")
+        raise ValueError("expected one of {'ns', 'us, 'ms'}")
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -143,6 +145,8 @@ def _to_python_timedelta(
 ) -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
+    elif tu == "us":
+        return timedelta(microseconds=value)
     elif tu == "ms":
         return timedelta(milliseconds=value)
     else:
@@ -163,6 +167,7 @@ def _prepare_row_count_args(
 def _to_python_datetime(
     value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
 ) -> Union[date, datetime]:
+    print(tu, value)
     if dtype == Date:
         # days to seconds
         # important to create from utc. Not doing this leads
@@ -172,6 +177,9 @@ def _to_python_datetime(
         if tu == "ns":
             # nanoseconds to seconds
             return datetime.utcfromtimestamp(value / 1_000_000_000)
+        if tu == "us":
+            # microseconds to seconds
+            return datetime.utcfromtimestamp(value / 1_000_000)
         elif tu == "ms":
             # milliseconds to seconds
             return datetime.utcfromtimestamp(value / 1_000)

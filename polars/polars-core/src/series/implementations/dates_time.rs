@@ -398,26 +398,20 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                const NS_IN_DAY: i64 = 86400000_000_000;
-                const MS_IN_DAY: i64 = 86400000;
                 use DataType::*;
                 let ca = match (self.dtype(), data_type) {
                     #[cfg(feature = "dtype-datetime")]
                     (Date, Datetime(tu, tz)) => {
                         let casted = self.0.cast(data_type)?;
                         let casted = casted.datetime().unwrap();
-                        match tu {
-                            TimeUnit::Nanoseconds => {
-                                return Ok((casted.deref() * NS_IN_DAY)
-                                    .into_datetime(*tu, tz.clone())
-                                    .into_series());
-                            }
-                            TimeUnit::Milliseconds => {
-                                return Ok((casted.deref() * MS_IN_DAY)
-                                    .into_datetime(*tu, tz.clone())
-                                    .into_series());
-                            }
-                        }
+                        let conversion = match tu {
+                            TimeUnit::Nanoseconds => NS_IN_DAY,
+                            TimeUnit::Microseconds => US_IN_DAY,
+                            TimeUnit::Milliseconds => MS_IN_DAY,
+                        };
+                        return Ok((casted.deref() * conversion)
+                            .into_datetime(*tu, tz.clone())
+                            .into_series());
                     }
                     _ => Cow::Borrowed(self.0.deref()),
                 };
