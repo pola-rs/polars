@@ -37,22 +37,29 @@ impl From<&AnyValue<'_>> for NaiveTime {
 
 // Used by lazy for literal conversion
 #[cfg(feature = "private")]
-pub fn naive_datetime_to_datetime_ns(v: &NaiveDateTime) -> i64 {
+pub fn datetime_to_timestamp_ns(v: NaiveDateTime) -> i64 {
     v.timestamp_nanos()
 }
 
 // Used by lazy for literal conversion
 #[cfg(feature = "private")]
-pub fn naive_datetime_to_datetime_ms(v: &NaiveDateTime) -> i64 {
+pub fn datetime_to_timestamp_ms(v: NaiveDateTime) -> i64 {
     v.timestamp_millis()
 }
 
-pub(crate) fn naive_datetime_to_date(v: &NaiveDateTime) -> i32 {
-    (naive_datetime_to_datetime_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
+// Used by lazy for literal conversion
+#[cfg(feature = "private")]
+pub fn datetime_to_timestamp_us(v: NaiveDateTime) -> i64 {
+    let us = v.timestamp() * 1_000_000;
+    us + v.timestamp_subsec_micros() as i64
+}
+
+pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
+    (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
     let nt = NaiveTime::from_hms(0, 0, 0);
     let ndt = NaiveDateTime::new(nd, nt);
-    naive_datetime_to_date(&ndt)
+    naive_datetime_to_date(ndt)
 }
