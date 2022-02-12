@@ -953,8 +953,7 @@ id090,id048,id0000067778,24,2,51862,4,9,
 
     #[test]
     fn test_new_line_escape() {
-        let s = r#"
- "sepal.length","sepal.width","petal.length","petal.width","variety"
+        let s = r#""sepal.length","sepal.width","petal.length","petal.width","variety"
  5.1,3.5,1.4,.2,"Setosa
  texts after new line character"
  4.9,3,1.4,.2,"Setosa"
@@ -1228,8 +1227,7 @@ bar,bar";
 
     #[test]
     fn test_no_quotes() -> Result<()> {
-        let rolling_stones = r#"
-linenum,last_name,first_name
+        let rolling_stones = r#"linenum,last_name,first_name
 1,Jagger,Mick
 2,O"Brian,Mary
 3,Richards,Keith
@@ -1535,6 +1533,29 @@ foo,bar
             rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
             (10u32..37).collect::<Vec<_>>()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_empty_string_cols() -> Result<()> {
+        let csv = "\nabc\n\nxyz\n";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(false).finish()?;
+        let s = df.column("column_1")?;
+        let ca = s.utf8()?;
+        assert_eq!(
+            ca.into_no_null_iter().collect::<Vec<_>>(),
+            &["", "abc", "", "xyz"]
+        );
+
+        let csv = ",\nabc,333\n,666\nxyz,999";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(false).finish()?;
+        let expected = df![
+            "column_1" => ["", "abc", "", "xyz"],
+            "column_2" => [None, Some(333i64), Some(666), Some(999)]
+        ]?;
+        assert!(df.frame_equal_missing(&expected));
         Ok(())
     }
 }

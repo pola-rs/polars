@@ -278,7 +278,12 @@ impl<'a> CoreReader<'a> {
 
     fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<&'b [u8]> {
         // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_line_ending(skip_whitespace(skip_bom(bytes)).0).0;
+        bytes = skip_whitespace(skip_bom(bytes));
+        // \n\n can be a empty string row of a single column
+        // in other cases we skip it.
+        if self.schema.fields().len() > 1 {
+            bytes = skip_line_ending(bytes)
+        }
 
         // If there is a header we skip it.
         if self.has_header {
