@@ -1011,10 +1011,15 @@ pub trait SeriesTrait:
                 .map(|ca| (ca.deref().clone())),
             DataType::Datetime(tu, tz) => {
                 use TimeUnit::*;
-                match (tu, tz) {
-                    (Nanoseconds, None) => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
-                    (Milliseconds, None) => self.datetime().map(|ca| ca.deref().clone()),
-                    _ => todo!(),
+                match (tu, tz.as_deref()) {
+                    (Nanoseconds, None | Some("")) => {
+                        self.datetime().map(|ca| ca.deref().clone() / 1_000_000)
+                    }
+                    (Microseconds, None | Some("")) => {
+                        self.datetime().map(|ca| ca.deref().clone() / 1_000)
+                    }
+                    (Milliseconds, None | Some("")) => self.datetime().map(|ca| ca.deref().clone()),
+                    (_, Some(_)) => panic!("tz not yet supported"),
                 }
             }
             _ => Err(PolarsError::InvalidOperation(

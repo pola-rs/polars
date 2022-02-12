@@ -42,8 +42,9 @@ pub fn groupby_windows(
 
     let size = if include_boundaries {
         match tu {
-            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
             TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
+            TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
+            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
         }
     } else {
         0
@@ -54,6 +55,9 @@ pub fn groupby_windows(
     let mut groups = match tu {
         TimeUnit::Nanoseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
+        }
+        TimeUnit::Microseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_us(boundary))
         }
         TimeUnit::Milliseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
@@ -144,6 +148,7 @@ pub fn groupby_values(
 ) -> GroupsSlice {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 

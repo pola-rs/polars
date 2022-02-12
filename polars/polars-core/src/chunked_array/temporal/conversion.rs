@@ -3,7 +3,7 @@ use crate::prelude::{AnyValue, TimeUnit};
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
 use arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, MILLISECONDS,
+    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
 use chrono::{NaiveDateTime, NaiveTime};
 
@@ -18,6 +18,7 @@ impl From<&AnyValue<'_>> for NaiveDateTime {
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
+                TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
                 TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
             },
             _ => panic!("can only convert date/datetime to NaiveDateTime"),
@@ -63,3 +64,6 @@ pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
     let ndt = NaiveDateTime::new(nd, nt);
     naive_datetime_to_date(ndt)
 }
+pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
+pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
+pub(crate) const MS_IN_DAY: i64 = 86_400_000;

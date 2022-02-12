@@ -9,7 +9,7 @@ use std::{
 };
 const LIMIT: usize = 25;
 
-use arrow::temporal_conversions::timestamp_ms_to_datetime;
+use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_us_to_datetime};
 #[cfg(feature = "pretty_fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
 #[cfg(feature = "pretty_fmt")]
@@ -580,6 +580,7 @@ const SIZES_NS: [i64; 4] = [
     1_000_000_000,
 ];
 const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
+const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
@@ -592,6 +593,19 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     } else if v % 1_000_000 != 0 {
         write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
     } else if v % 1_000_000_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 µs");
+    }
+    format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
+    if v % 1000 != 0 {
+        write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
+    } else if v % 1_000_000 != 0 {
         write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
     }
     Ok(())
@@ -650,11 +664,13 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                TimeUnit::Microseconds => write!(f, "{}", timestamp_us_to_datetime(*v)),
                 TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
+                TimeUnit::Microseconds => fmt_duration_us(f, *v),
                 TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
             },
             #[cfg(feature = "dtype-time")]

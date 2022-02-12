@@ -195,6 +195,10 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                         .call1((v, py_datetime_dtype, "ns"))
                         .unwrap()
                         .into_py(py),
+                    TimeUnit::Microseconds => convert
+                        .call1((v, py_datetime_dtype, "us"))
+                        .unwrap()
+                        .into_py(py),
                     TimeUnit::Milliseconds => convert
                         .call1((v, py_datetime_dtype, "ms"))
                         .unwrap()
@@ -208,6 +212,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 let convert = m_series.getattr("_to_python_datetime").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
+                    TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
                     TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
                 }
             }
@@ -323,6 +328,17 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
     }
 }
 
+impl ToPyObject for Wrap<TimeUnit> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let tu = match self.0 {
+            TimeUnit::Nanoseconds => "ns",
+            TimeUnit::Microseconds => "us",
+            TimeUnit::Milliseconds => "ms",
+        };
+        tu.into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
@@ -331,10 +347,12 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         let convert = m_series.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
 
+        let tu = Wrap(self.0.time_unit()).to_object(py);
+
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }

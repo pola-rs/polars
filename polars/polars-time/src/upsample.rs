@@ -141,8 +141,9 @@ fn upsample_single_impl(
             match (first, last) {
                 (Some(first), Some(last)) => {
                     let first = match tu {
-                        TimeUnit::Milliseconds => offset.add_ms(first),
                         TimeUnit::Nanoseconds => offset.add_ns(first),
+                        TimeUnit::Microseconds => offset.add_us(first),
+                        TimeUnit::Milliseconds => offset.add_ms(first),
                     };
                     let range =
                         date_range(index_col_name, first, last, every, ClosedWindow::Both, *tu)

@@ -78,6 +78,7 @@ impl PhysicalExpr for LiteralExpr {
                 use polars_core::chunked_array::temporal::conversion::*;
                 let timestamp = match tu {
                     TimeUnit::Nanoseconds => datetime_to_timestamp_ns(*ndt),
+                    TimeUnit::Microseconds => datetime_to_timestamp_us(*ndt),
                     TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
                 };
                 Int64Chunked::full("literal", timestamp, 1)
@@ -88,6 +89,15 @@ impl PhysicalExpr for LiteralExpr {
             Duration(v, tu) => {
                 let duration = match tu {
                     TimeUnit::Milliseconds => v.num_milliseconds(),
+                    TimeUnit::Microseconds => match v.num_microseconds() {
+                        Some(v) => v,
+                        None => {
+                            // Overflow
+                            return Err(PolarsError::InvalidOperation(
+                                format!("cannot represent {:?} as {:?}", v, tu).into(),
+                            ));
+                        }
+                    },
                     TimeUnit::Nanoseconds => {
                         match v.num_nanoseconds() {
                             Some(v) => v,

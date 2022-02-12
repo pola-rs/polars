@@ -4266,7 +4266,7 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tu
-            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
 
         """
         return wrap_s(self._s.and_time_unit(tu))

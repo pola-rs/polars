@@ -1426,7 +1426,7 @@ AAPL""".split(
 
     out = trades.join(quotes, on="dates", how="asof")
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
-    assert (out["dates"].cast(int)).to_list() == [
+    assert (out["dates"].cast(int) / 1000).to_list() == [
         1464183000023,
         1464183000038,
         1464183000048,

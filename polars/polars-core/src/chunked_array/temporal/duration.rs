@@ -1,7 +1,7 @@
 use crate::export::chrono::Duration as ChronoDuration;
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;
-use arrow::temporal_conversions::{MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS};
+use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS};
 
 const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 const SECONDS_IN_HOUR: i64 = 3600;
@@ -26,6 +26,7 @@ impl DurationChunked {
     ) -> Self {
         let func = match tu {
             TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
+            TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
             TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
         };
         let vals = v.into_iter().map(func).collect::<Vec<_>>();
@@ -40,6 +41,7 @@ impl DurationChunked {
     ) -> Self {
         let func = match tu {
             TimeUnit::Nanoseconds => |v: ChronoDuration| v.num_nanoseconds().unwrap(),
+            TimeUnit::Microseconds => |v: ChronoDuration| v.num_microseconds().unwrap(),
             TimeUnit::Milliseconds => |v: ChronoDuration| v.num_milliseconds(),
         };
         let vals = v.into_iter().map(|opt| opt.map(func));
@@ -50,6 +52,7 @@ impl DurationChunked {
     pub fn hours(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => &self.0 / (MILLISECONDS * SECONDS_IN_HOUR),
+            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * SECONDS_IN_HOUR),
             TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_HOUR),
         }
     }
@@ -58,6 +61,7 @@ impl DurationChunked {
     pub fn days(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => &self.0 / MILLISECONDS_IN_DAY,
+            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * SECONDS_IN_DAY),
             TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * SECONDS_IN_DAY),
         }
     }
@@ -66,6 +70,7 @@ impl DurationChunked {
     pub fn milliseconds(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => self.0.clone(),
+            TimeUnit::Microseconds => self.0.clone() / 1000,
             TimeUnit::Nanoseconds => &self.0 / 1_000_000,
         }
     }
@@ -74,6 +79,7 @@ impl DurationChunked {
     pub fn nanoseconds(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => &self.0 * NANOSECONDS_IN_MILLISECOND,
+            TimeUnit::Microseconds => &self.0 * 1000,
             TimeUnit::Nanoseconds => self.0.clone(),
         }
     }
@@ -82,6 +88,7 @@ impl DurationChunked {
     pub fn seconds(&self) -> Int64Chunked {
         match self.time_unit() {
             TimeUnit::Milliseconds => &self.0 / MILLISECONDS,
+            TimeUnit::Microseconds => &self.0 / MICROSECONDS,
             TimeUnit::Nanoseconds => &self.0 / NANOSECONDS,
         }
     }

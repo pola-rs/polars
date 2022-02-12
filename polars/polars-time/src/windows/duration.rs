@@ -6,9 +6,11 @@ use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime, MILLISECONDS,
 };
+use polars_core::export::arrow::temporal_conversions::MICROSECONDS;
 use polars_core::prelude::{
     datetime_to_timestamp_ms, datetime_to_timestamp_ns, datetime_to_timestamp_us,
 };
+use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 use std::ops::Mul;
 
 #[derive(Copy, Clone, Debug)]
@@ -183,13 +185,15 @@ impl Duration {
     }
 
     /// Estimated duration of the window duration. Not a very good one if months != 0.
-    #[inline]
-    pub const fn duration_ns(&self) -> i64 {
-        self.months * 28 * 24 * 3600 * NS_SECOND + self.nsecs
+    pub(crate) const fn duration_ns(&self) -> i64 {
+        self.months * 28 * 24 * 3600 * NANOSECONDS + self.nsecs
     }
 
-    #[inline]
-    pub const fn duration_ms(&self) -> i64 {
+    pub(crate) const fn duration_us(&self) -> i64 {
+        self.months * 28 * 24 * 3600 * MICROSECONDS + self.nsecs / 1000
+    }
+
+    pub(crate) const fn duration_ms(&self) -> i64 {
         self.months * 28 * 24 * 3600 * MILLISECONDS + self.nsecs / 1_000_000
     }
 
@@ -342,7 +346,7 @@ impl Duration {
         let d = self;
         let new_t = self.add_impl_month(t, timestamp_us_to_datetime, datetime_to_timestamp_us);
         let nsecs = if d.negative { -d.nsecs } else { d.nsecs };
-        new_t + nsecs
+        new_t + nsecs / 1_000
     }
 
     pub fn add_ms(&self, t: i64) -> i64 {

@@ -170,7 +170,7 @@ def test_to_list() -> None:
         pl.Datetime
     )
     out = s.to_list()
-    assert out[0] == datetime(1970, 1, 1, 0, 2, 3, 543000)
+    assert out[0] == datetime(1970, 1, 2, 10, 19, 3)
 
 
 def test_rows() -> None:
@@ -198,7 +198,7 @@ def test_to_numpy() -> None:
     assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
     assert (
         str(s1.to_numpy()[:2])
-        == "['2021-01-02T03:04:05.000000000' '2021-02-03T04:05:06.000000000']"
+        == "['2021-01-02T03:04:05.000000' '2021-02-03T04:05:06.000000']"
     )
     assert (
         str(s2.to_numpy()[:2])
