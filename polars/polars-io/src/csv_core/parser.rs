@@ -65,12 +65,12 @@ pub(crate) fn is_whitespace(b: u8) -> bool {
 }
 
 #[inline]
-fn skip_condition<F>(input: &[u8], f: F) -> (&[u8], usize)
+fn skip_condition<F>(input: &[u8], f: F) -> &[u8]
 where
     F: Fn(u8) -> bool,
 {
     if input.is_empty() {
-        return (input, 0);
+        return input;
     }
     let mut read = 0;
     let len = input.len();
@@ -81,7 +81,7 @@ where
         }
         read += 1;
     }
-    (&input[read..], read)
+    &input[read..]
 }
 
 /// Makes sure that the bytes stream starts with
@@ -96,18 +96,16 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
     (&input[pos..], pos)
 }
 
-/// Remove whitespace and line endings from the start of file.
+/// Remove whitespace from the start of buffer.
 #[inline]
-pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
-    skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
+pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
+    skip_condition(input, is_whitespace)
 }
 
 #[inline]
 /// Can be used to skip whitespace, but exclude the delimiter
-pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> (&[u8], usize) {
-    skip_condition(input, |b| {
-        b != exclude && (is_whitespace(b) || is_line_ending(b))
-    })
+pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
+    skip_condition(input, |b| b != exclude && (is_whitespace(b)))
 }
 
 /// Local version of slice::starts_with (as it won't inline)
@@ -128,7 +126,7 @@ pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
 }
 
 #[inline]
-pub(crate) fn skip_line_ending(input: &[u8]) -> (&[u8], usize) {
+pub(crate) fn skip_line_ending(input: &[u8]) -> &[u8] {
     skip_condition(input, is_line_ending)
 }
 
@@ -406,7 +404,7 @@ pub(crate) fn parse_lines(
             return Ok(end - start);
         }
 
-        let (b, _) = skip_whitespace_exclude(bytes, delimiter);
+        let b = skip_whitespace_exclude(bytes, delimiter);
         bytes = b;
         if bytes.is_empty() {
             return Ok(original_bytes_len);
@@ -535,17 +533,6 @@ pub(crate) fn parse_lines(
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_skip() {
-        let input = b"    hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-        let input = b"\n        hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-        let input = b"\t\n\r
-        hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-    }
 
     #[test]
     fn test_splitfields() {

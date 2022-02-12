@@ -136,7 +136,7 @@ pub fn infer_file_schema(
     // It may later.
     let encoding = CsvEncoding::LossyUtf8;
 
-    let bytes = skip_line_ending(skip_bom(reader_bytes)).0;
+    let bytes = skip_line_ending(skip_bom(reader_bytes));
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
 
     // get or create header names
@@ -183,10 +183,16 @@ pub fn infer_file_schema(
                 })
                 .collect::<Result<_>>()?
         } else {
-            byterecord
+            let mut column_names: Vec<String> = byterecord
                 .enumerate()
                 .map(|(i, _s)| format!("column_{}", i + 1))
-                .collect()
+                .collect();
+            // needed because SplitLines does not return the \n char, so SplitFields does not catch
+            // the latest value if ending with ','
+            if header_line.ends_with(b",") {
+                column_names.push(format!("column_{}", column_names.len() + 1))
+            }
+            column_names
         }
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
