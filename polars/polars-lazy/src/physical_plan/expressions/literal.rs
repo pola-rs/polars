@@ -77,8 +77,8 @@ impl PhysicalExpr for LiteralExpr {
             DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;
                 let timestamp = match tu {
-                    TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns(ndt),
-                    TimeUnit::Milliseconds => naive_datetime_to_datetime_ms(ndt),
+                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns(*ndt),
+                    TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
                 };
                 Int64Chunked::full("literal", timestamp, 1)
                     .into_datetime(*tu, None)

@@ -5,7 +5,7 @@ use arrow::temporal_conversions::date32_to_date;
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
     let nt = NaiveTime::from_hms(0, 0, 0);
     let ndt = NaiveDateTime::new(nd, nt);
-    naive_datetime_to_date(&ndt)
+    naive_datetime_to_date(ndt)
 }
 
 impl DateChunked {

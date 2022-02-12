@@ -1,4 +1,4 @@
-use super::conversion::{naive_datetime_to_datetime_ms, naive_datetime_to_datetime_ns};
+use super::conversion::{datetime_to_timestamp_ms, datetime_to_timestamp_ns};
 use super::*;
 use crate::prelude::DataType::Datetime;
 use crate::prelude::*;
@@ -176,10 +176,10 @@ impl DatetimeChunked {
         tu: TimeUnit,
     ) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
-        let vals = v.into_iter().map(|nd| func(&nd)).collect::<Vec<_>>();
+        let vals = v.into_iter().map(func).collect::<Vec<_>>();
         Int64Chunked::from_vec(name, vals).into_datetime(tu, None)
     }
 
@@ -189,27 +189,23 @@ impl DatetimeChunked {
         tu: TimeUnit,
     ) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
-        let vals = v.into_iter().map(|opt_nd| opt_nd.map(|nd| (func(&nd))));
+        let vals = v.into_iter().map(|opt_nd| opt_nd.map(func));
         Int64Chunked::from_iter_options(name, vals).into_datetime(tu, None)
     }
 
     pub fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> Self {
         let func = match tu {
-            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
         Int64Chunked::from_iter_options(
             name,
-            v.iter().map(|s| {
-                NaiveDateTime::parse_from_str(s, fmt)
-                    .ok()
-                    .as_ref()
-                    .map(func)
-            }),
+            v.iter()
+                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
         )
         .into_datetime(tu, None)
     }

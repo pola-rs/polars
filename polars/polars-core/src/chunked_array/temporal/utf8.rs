@@ -234,8 +234,8 @@ impl Utf8Chunked {
         };
 
         let func = match tu {
-            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
         let mut ca: Int64Chunked = self
@@ -249,7 +249,7 @@ impl Utf8Chunked {
                         if s.is_empty() {
                             return None;
                         }
-                        match NaiveDateTime::parse_from_str(s, fmt).map(|dt| func(&dt)) {
+                        match NaiveDateTime::parse_from_str(s, fmt).map(func) {
                             Ok(nd) => return Some(nd),
                             Err(e) => {
                                 let e: ParseErrorByteCopy = e.into();
@@ -316,27 +316,20 @@ impl Utf8Chunked {
         };
 
         let func = match tu {
-            TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns,
-            TimeUnit::Milliseconds => naive_datetime_to_datetime_ms,
+            TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
+            TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
         let mut ca: Int64Chunked = match self.has_validity() {
             false => self
                 .into_no_null_iter()
-                .map(|s| {
-                    NaiveDateTime::parse_from_str(s, fmt)
-                        .ok()
-                        .map(|dt| func(&dt))
-                })
+                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func))
                 .collect_trusted(),
             _ => self
                 .into_iter()
                 .map(|opt_s| {
-                    let opt_nd = opt_s.map(|s| {
-                        NaiveDateTime::parse_from_str(s, fmt)
-                            .ok()
-                            .map(|dt| func(&dt))
-                    });
+                    let opt_nd =
+                        opt_s.map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func));
                     match opt_nd {
                         None => None,
                         Some(None) => None,
