@@ -910,6 +910,29 @@ class DataFrame:
         self._df.to_csv(file, has_header, ord(sep))
         return None
 
+    def to_avro(
+        self,
+        file: Union[BinaryIO, BytesIO, str, Path],
+        compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
+    ) -> None:
+        """
+        Write to Appache Avro file.
+
+        Parameters
+        ----------
+        file
+            File path to which the file should be written.
+        compression
+            Compression method. Choose one of:
+                - "uncompressed"
+                - "snappy"
+                - "deflate"
+        """
+        if isinstance(file, Path):
+            file = str(file)
+
+        self._df.to_avro(file, compression)
+
     def to_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
