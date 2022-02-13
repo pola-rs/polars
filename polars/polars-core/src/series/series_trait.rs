@@ -426,6 +426,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype Time
+    #[cfg(feature = "dtype-time")]
     fn time(&self) -> Result<&TimeChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != Time", self.dtype()).into(),
@@ -433,6 +434,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype Date
+    #[cfg(feature = "dtype-date")]
     fn date(&self) -> Result<&DateChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!(" Series dtype {:?} != Date", self.dtype()).into(),
@@ -440,6 +442,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype datetime
+    #[cfg(feature = "dtype-datetime")]
     fn datetime(&self) -> Result<&DatetimeChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != datetime", self.dtype()).into(),
@@ -447,6 +450,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype duration
+    #[cfg(feature = "dtype-duration")]
     fn duration(&self) -> Result<&DurationChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != duration", self.dtype()).into(),
@@ -999,7 +1003,11 @@ pub trait SeriesTrait:
         }
     }
 
-    #[cfg(feature = "temporal")]
+    #[cfg(all(
+        feature = "temporal",
+        feature = "dtype-date",
+        feature = "dtype-datetime"
+    ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
     /// Convert date(time) object to timestamp in ms.
     fn timestamp(&self) -> Result<Int64Chunked> {

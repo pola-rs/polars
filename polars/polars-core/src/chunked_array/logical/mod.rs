@@ -1,9 +1,19 @@
+#[cfg(feature = "dtype-date")]
 mod date;
+#[cfg(feature = "dtype-date")]
+pub use date::*;
+#[cfg(feature = "dtype-datetime")]
 mod datetime;
+#[cfg(feature = "dtype-datetime")]
+pub use datetime::*;
+#[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-duration")]
+pub use duration::*;
+#[cfg(feature = "dtype-time")]
 mod time;
-
-pub use {date::*, datetime::*, duration::*, time::*};
+#[cfg(feature = "dtype-time")]
+pub use time::*;
 
 use crate::prelude::*;
 use std::marker::PhantomData;
@@ -52,6 +62,8 @@ pub trait LogicalType {
     fn get_any_value(&self, _i: usize) -> AnyValue<'_> {
         unimplemented!()
     }
+
+    fn cast(&self, dtype: &DataType) -> Result<Series>;
 }
 
 impl<K: PolarsDataType, T: PolarsDataType> Logical<K, T>

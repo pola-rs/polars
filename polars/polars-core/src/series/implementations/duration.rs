@@ -387,31 +387,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        use DataType::*;
-        let ca = match (self.dtype(), data_type) {
-            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
-                return Ok((self.0.as_ref() * 1_000_000i64)
-                    .into_duration(TimeUnit::Nanoseconds)
-                    .into_series())
-            }
-            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Microseconds)) => {
-                return Ok((self.0.as_ref() * 1_000i64)
-                    .into_duration(TimeUnit::Microseconds)
-                    .into_series())
-            }
-            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds)) => {
-                return Ok((self.0.as_ref() / 1_000_000i64)
-                    .into_duration(TimeUnit::Milliseconds)
-                    .into_series())
-            }
-            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Microseconds)) => {
-                return Ok((self.0.as_ref() / 1_000i64)
-                    .into_duration(TimeUnit::Microseconds)
-                    .into_series())
-            }
-            _ => Cow::Borrowed(self.0.deref()),
-        };
-        ca.cast(data_type)
+        self.0.cast(data_type)
     }
 
     fn to_dummies(&self) -> Result<DataFrame> {

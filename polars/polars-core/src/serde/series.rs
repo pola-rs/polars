@@ -25,14 +25,6 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.f64() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.date() {
-            ca.serialize(serializer)
-        } else if self.datetime().is_ok() {
-            let s = self
-                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
-                .unwrap();
-            let ca = s.datetime().unwrap();
-            ca.serialize(serializer)
         } else if let Ok(ca) = self.utf8() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.bool() {
@@ -49,8 +41,25 @@ impl Serialize for Series {
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
         } else {
-            // cast small integers to i32
-            self.cast(&DataType::Int32).unwrap().serialize(serializer)
+            match self.dtype() {
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => {
+                    let ca = self.date().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(_, _) => {
+                    let s = self
+                        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                        .unwrap();
+                    let ca = s.datetime().unwrap();
+                    ca.serialize(serializer)
+                }
+                _ => {
+                    // cast small integers to i32
+                    self.cast(&DataType::Int32).unwrap().serialize(serializer)
+                }
+            }
         }
     }
 }
