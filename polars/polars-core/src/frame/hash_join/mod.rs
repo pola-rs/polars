@@ -1438,8 +1438,8 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
-    use crate::df;
     use crate::prelude::*;
+    use crate::{df, POOL};
 
     fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", &[0, 1, 2]);
@@ -1992,6 +1992,36 @@ mod test {
         let out = a.inner_join(&b, ["a"], ["a"])?;
 
         assert_eq!(out.shape(), (9, 1));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_4_threads_bit_offset() -> Result<()> {
+        // run this locally with a thread pool size of 4
+        // this was an obscure bug caused by not taking the offset of a bit into account.
+        let n = 8i64;
+        let mut left_a = (0..n).map(Some).collect::<Int64Chunked>();
+        let mut left_b = (0..n)
+            .map(|i| if i % 2 == 0 { None } else { Some(0) })
+            .collect::<Int64Chunked>();
+        left_a.rename("a");
+        left_b.rename("b");
+        let left_df = DataFrame::new(vec![left_a.into_series(), left_b.into_series()])?;
+
+        let i = 1;
+        let len = 8;
+        let range = i..i + len;
+        let mut right_a = range.clone().map(Some).collect::<Int64Chunked>();
+        let mut right_b = range
+            .map(|i| if i % 3 == 0 { None } else { Some(1) })
+            .collect::<Int64Chunked>();
+        right_a.rename("a");
+        right_b.rename("b");
+
+        let right_df = DataFrame::new(vec![right_a.into_series(), right_b.into_series()])?;
+        let out = left_df.join(&right_df, ["a", "b"], ["a", "b"], JoinType::Inner, None)?;
+        assert_eq!(out.shape(), (1, 2));
         Ok(())
     }
 }

@@ -67,9 +67,9 @@ where
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
             if let Some(validity) = arr.validity() {
-                let (slice, offset, _) = validity.as_slice();
+                let (slice, byte_offset, _) = validity.as_slice();
                 (0..validity.len())
-                    .map(|i| unsafe { get_bit_unchecked(slice, i + offset) })
+                    .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         *h = [null_h, *h][valid as usize];
@@ -98,9 +98,9 @@ where
                     }),
                 _ => {
                     let validity = arr.validity().unwrap();
-                    let (slice, offset, _) = validity.as_slice();
+                    let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i) })
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
                         .zip(&mut hashes[offset..])
                         .zip(arr.values().as_slice())
                         .for_each(|((valid, h), l)| {
@@ -109,19 +109,6 @@ where
                                 *h,
                             )
                         });
-
-                    // arr
-                    //     .iter()
-                    //     .zip(&mut hashes[offset..])
-                    //     .for_each(|(opt_v, h)| match opt_v {
-                    //         Some(v) => {
-                    //             let l = T::Native::get_hash(v, &random_state);
-                    //             *h = boost_hash_combine(l, *h)
-                    //         }
-                    //         None => {
-                    //             *h = boost_hash_combine(null_h, *h);
-                    //         }
-                    //     })
                 }
             }
             offset += arr.len();
