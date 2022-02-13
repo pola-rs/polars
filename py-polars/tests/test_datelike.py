@@ -479,3 +479,21 @@ def test_upsample() -> None:
     )
 
     assert up.frame_equal(expected)
+
+
+def test_microseconds_accuracy() -> None:
+    timestamps = [
+        datetime(2600, 1, 1, 0, 0, 0, 123456),
+        datetime(2800, 1, 1, 0, 0, 0, 456789),
+    ]
+    a = pa.Table.from_arrays(
+        arrays=[timestamps, [128, 256]],
+        schema=pa.schema(
+            [
+                ("timestamp", pa.timestamp("us")),
+                ("value", pa.int16()),
+            ]
+        ),
+    )
+
+    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore

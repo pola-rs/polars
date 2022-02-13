@@ -164,10 +164,12 @@ def _prepare_row_count_args(
         return None
 
 
+EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
+
+
 def _to_python_datetime(
     value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
 ) -> Union[date, datetime]:
-    print(tu, value)
     if dtype == Date:
         # days to seconds
         # important to create from utc. Not doing this leads
@@ -176,10 +178,9 @@ def _to_python_datetime(
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
-            return datetime.utcfromtimestamp(value / 1_000_000_000)
+            return EPOCH + timedelta(microseconds=value / 1000)
         if tu == "us":
-            # microseconds to seconds
-            return datetime.utcfromtimestamp(value / 1_000_000)
+            return EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
             return datetime.utcfromtimestamp(value / 1_000)
