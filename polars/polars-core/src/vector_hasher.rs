@@ -67,9 +67,9 @@ where
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
             if let Some(validity) = arr.validity() {
-                let slice = validity.as_slice().0;
+                let (slice, offset, _) = validity.as_slice();
                 (0..validity.len())
-                    .map(|i| unsafe { get_bit_unchecked(slice, i) })
+                    .map(|i| unsafe { get_bit_unchecked(slice, i + offset) })
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         *h = [null_h, *h][valid as usize];
@@ -98,7 +98,7 @@ where
                     }),
                 _ => {
                     let validity = arr.validity().unwrap();
-                    let slice = validity.as_slice().0;
+                    let (slice, offset, _) = validity.as_slice();
                     (0..validity.len())
                         .map(|i| unsafe { get_bit_unchecked(slice, i) })
                         .zip(&mut hashes[offset..])
