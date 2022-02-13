@@ -29,6 +29,7 @@ Conversion
    :toctree: api/
 
     DataFrame.to_arrow
+    DataFrame.to_avro
     DataFrame.to_json
     DataFrame.to_pandas
     DataFrame.to_csv

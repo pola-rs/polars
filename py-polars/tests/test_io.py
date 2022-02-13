@@ -88,6 +88,19 @@ def test_read_avro() -> None:
     assert df_read.frame_equal(expected)
 
 
+def test_compressed_to_avro() -> None:
+    df = pl.DataFrame({"i64": [1, 2], "f64": [0.1, 0.2], "utf8": ["a", "b"]})
+    compressions = ["uncompressed", "snappy", "deflate"]
+
+    for compression in compressions:
+        f = io.BytesIO()
+        df.to_avro(f, compression)  # type: ignore
+        f.seek(0)
+
+        df_read = pl.read_avro(f)
+        assert df_read.frame_equal(df)
+
+
 def test_read_web_file() -> None:
     url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
     df = pl.read_csv(url)

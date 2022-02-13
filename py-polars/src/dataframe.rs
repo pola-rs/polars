@@ -251,6 +251,25 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    #[cfg(feature = "avro")]
+    pub fn to_avro(&mut self, py_f: PyObject, compression: &str) -> PyResult<()> {
+        use polars::io::avro::{AvroCompression, AvroWriter};
+        let compression = match compression {
+            "uncompressed" => None,
+            "snappy" => Some(AvroCompression::Snappy),
+            "deflate" => Some(AvroCompression::Deflate),
+            s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
+        };
+
+        let mut buf = get_file_like(py_f, false)?;
+        AvroWriter::new(&mut buf)
+            .with_compression(compression)
+            .finish(&mut self.df)
+            .map_err(PyPolarsEr::from)?;
+
+        Ok(())
+    }
+
     #[staticmethod]
     #[cfg(feature = "json")]
     pub fn read_json(json: &str) -> PyResult<Self> {

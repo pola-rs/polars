@@ -2,8 +2,8 @@ use std::io::{Read, Seek, Write};
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
-use lazy_static::__Deref;
 use polars_core::prelude::*;
+use std::ops::Deref;
 
 use arrow::io::avro::{read, write};
 
@@ -93,6 +93,8 @@ where
         finish_reader(avro_reader, rechunk, None, None, None, &schema, None)
     }
 }
+
+pub use write::Compression as AvroCompression;
 
 /// Write a DataFrame to Appache Avro format
 ///
@@ -187,7 +189,7 @@ mod test {
         buf.set_position(0);
 
         let read_df = AvroReader::new(buf).finish()?;
-        assert_eq!(write_df, read_df);
+        assert!(write_df.frame_equal(&read_df));
         Ok(())
     }
 
@@ -214,7 +216,7 @@ mod test {
             buf.set_position(0);
 
             let read_df = AvroReader::new(buf).finish()?;
-            assert_eq!(write_df, read_df);
+            assert!(write_df.frame_equal(&read_df));
         }
 
         Ok(())
