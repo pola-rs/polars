@@ -704,14 +704,11 @@ pub trait ChunkZip<T> {
 pub trait ChunkApplyKernel<A: Array> {
     /// Apply kernel and return result as a new ChunkedArray.
     #[must_use]
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&A) -> ArrayRef;
+    fn apply_kernel(&self, f: &dyn Fn(&A) -> ArrayRef) -> Self;
 
     /// Apply a kernel that outputs an array of different type.
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&A) -> ArrayRef,
         S: PolarsDataType;
 }
 

@@ -25,7 +25,7 @@ impl TimeChunked {
 
     /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(|arr| {
+        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let arr: Utf8Array<i64> = arr
                 .into_iter()
                 .map(|opt| opt.map(|v| format!("{}", time64ns_to_time(*v).format(fmt))))
@@ -39,26 +39,26 @@ impl TimeChunked {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     pub fn hour(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(time_to_hour)
+        self.apply_kernel_cast::<UInt32Type>(&time_to_hour)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     pub fn minute(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(time_to_minute)
+        self.apply_kernel_cast::<UInt32Type>(&time_to_minute)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     pub fn second(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(time_to_second)
+        self.apply_kernel_cast::<UInt32Type>(&time_to_second)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     pub fn nanosecond(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(time_to_nanosecond)
+        self.apply_kernel_cast::<UInt32Type>(&time_to_nanosecond)
     }
 
     /// Construct a new [`TimeChunked`] from an iterator over [`NaiveTime`].

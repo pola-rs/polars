@@ -40,11 +40,12 @@ impl DatetimeChunked {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     pub fn year(&self) -> Int32Chunked {
-        match self.time_unit() {
-            TimeUnit::Nanoseconds => self.apply_kernel_cast::<_, Int32Type>(datetime_to_year_ns),
-            TimeUnit::Microseconds => self.apply_kernel_cast::<_, Int32Type>(datetime_to_year_us),
-            TimeUnit::Milliseconds => self.apply_kernel_cast::<_, Int32Type>(datetime_to_year_ms),
-        }
+        let f = match self.time_unit() {
+            TimeUnit::Nanoseconds => datetime_to_year_ns,
+            TimeUnit::Microseconds => datetime_to_year_us,
+            TimeUnit::Milliseconds => datetime_to_year_ms,
+        };
+        self.apply_kernel_cast::<Int32Type>(&f)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -52,11 +53,12 @@ impl DatetimeChunked {
     ///
     /// The return value ranges from 1 to 12.
     pub fn month(&self) -> UInt32Chunked {
-        match self.time_unit() {
-            TimeUnit::Nanoseconds => self.apply_kernel_cast::<_, UInt32Type>(datetime_to_month_ns),
-            TimeUnit::Microseconds => self.apply_kernel_cast::<_, UInt32Type>(datetime_to_month_us),
-            TimeUnit::Milliseconds => self.apply_kernel_cast::<_, UInt32Type>(datetime_to_month_ms),
-        }
+        let f = match self.time_unit() {
+            TimeUnit::Nanoseconds => datetime_to_month_ns,
+            TimeUnit::Microseconds => datetime_to_month_us,
+            TimeUnit::Milliseconds => datetime_to_month_ms,
+        };
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract weekday from underlying NaiveDateTime representation.
@@ -67,7 +69,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_weekday_us,
             TimeUnit::Milliseconds => datetime_to_weekday_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Returns the ISO week number starting from 1.
@@ -78,7 +80,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_week_us,
             TimeUnit::Milliseconds => datetime_to_week_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract day from underlying NaiveDateTime representation.
@@ -91,7 +93,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_day_us,
             TimeUnit::Milliseconds => datetime_to_day_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
@@ -102,7 +104,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_hour_us,
             TimeUnit::Milliseconds => datetime_to_hour_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
@@ -113,7 +115,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_minute_us,
             TimeUnit::Milliseconds => datetime_to_minute_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
@@ -124,7 +126,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_second_us,
             TimeUnit::Milliseconds => datetime_to_second_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
@@ -136,7 +138,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_nanosecond_us,
             TimeUnit::Milliseconds => datetime_to_nanosecond_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Returns the day of year starting from 1.
@@ -148,7 +150,7 @@ impl DatetimeChunked {
             TimeUnit::Microseconds => datetime_to_ordinal_us,
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
         };
-        self.apply_kernel_cast::<_, UInt32Type>(f)
+        self.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
@@ -159,7 +161,7 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
 
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(|arr| {
+        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let arr: Utf8Array<i64> = arr
                 .into_iter()
                 .map(|opt| opt.map(|v| format!("{}", conversion_f(*v).format(fmt))))

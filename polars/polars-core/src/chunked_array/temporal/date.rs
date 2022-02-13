@@ -24,7 +24,7 @@ impl DateChunked {
     /// Extract month from underlying NaiveDate representation.
     /// Returns the year number in the calendar date.
     pub fn year(&self) -> Int32Chunked {
-        self.apply_kernel_cast::<_, Int32Type>(date_to_year)
+        self.apply_kernel_cast::<Int32Type>(&date_to_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -32,19 +32,19 @@ impl DateChunked {
     ///
     /// The return value ranges from 1 to 12.
     pub fn month(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date_to_month)
+        self.apply_kernel_cast::<UInt32Type>(&date_to_month)
     }
 
     /// Extract weekday from underlying NaiveDate representation.
     /// Returns the weekday number where monday = 0 and sunday = 6
     pub fn weekday(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date_to_weekday)
+        self.apply_kernel_cast::<UInt32Type>(&date_to_weekday)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     pub fn week(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date_to_week)
+        self.apply_kernel_cast::<UInt32Type>(&date_to_week)
     }
 
     /// Extract day from underlying NaiveDate representation.
@@ -52,19 +52,19 @@ impl DateChunked {
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     pub fn day(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date_to_day)
+        self.apply_kernel_cast::<UInt32Type>(&date_to_day)
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     pub fn ordinal(&self) -> UInt32Chunked {
-        self.apply_kernel_cast::<_, UInt32Type>(date_to_ordinal)
+        self.apply_kernel_cast::<UInt32Type>(&date_to_ordinal)
     }
 
     /// Format Date with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
     pub fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(|arr| {
+        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
             let arr: Utf8Array<i64> = arr
                 .into_iter()
                 .map(|opt| opt.map(|date| format!("{}", date32_to_date(*date).format(fmt))))

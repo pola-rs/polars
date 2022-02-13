@@ -602,7 +602,7 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
     }
 }
 
@@ -647,7 +647,7 @@ impl Utf8Chunked {
         f: impl Fn(&Utf8Array<i64>, &dyn Scalar) -> BooleanArray,
     ) -> BooleanChunked {
         let scalar = Utf8Scalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
     }
 }
 

@@ -205,12 +205,14 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn(bool) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        self.apply_kernel_cast(|array| {
+        let f = |array: &BooleanArray| {
             let values = array.values().iter().map(f);
             let values = Vec::<_>::from_trusted_len_iter(values);
             let validity = array.validity().cloned();
             to_array::<S>(values, validity)
-        })
+        };
+
+        self.apply_kernel_cast(&f)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -218,7 +220,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn(Option<bool>) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        self.apply_kernel_cast(|array| {
+        self.apply_kernel_cast(&|array: &BooleanArray| {
             let values = Vec::<_>::from_trusted_len_iter(array.into_iter().map(f));
             to_array::<S>(values, None)
         })
@@ -372,17 +374,13 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
 }
 
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&BooleanArray) -> ArrayRef,
-    {
+    fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
         Self::from_chunks(self.name(), chunks)
     }
 
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&BooleanArray) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
@@ -394,15 +392,14 @@ impl<T> ChunkApplyKernel<PrimitiveArray<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
-    {
-        self.apply_kernel_cast(f)
+    fn apply_kernel(&self, f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef) -> Self {
+        self.apply_kernel_cast(&f)
     }
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(
+        &self,
+        f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
+    ) -> ChunkedArray<S>
     where
-        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
@@ -411,16 +408,12 @@ where
 }
 
 impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&LargeStringArray) -> ArrayRef,
-    {
-        self.apply_kernel_cast(f)
+    fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
+        self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&LargeStringArray) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
