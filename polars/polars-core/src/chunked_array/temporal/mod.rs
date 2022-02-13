@@ -4,6 +4,7 @@ pub mod conversion;
 mod date;
 #[cfg(feature = "dtype-datetime")]
 mod datetime;
+#[cfg(feature = "dtype-duration")]
 mod duration;
 #[cfg(feature = "dtype-time")]
 mod time;

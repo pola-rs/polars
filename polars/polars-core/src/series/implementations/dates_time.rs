@@ -261,6 +261,7 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
+            #[cfg(feature = "dtype-time")]
             fn time(&self) -> Result<&TimeChunked> {
                 if matches!(self.0.dtype(), DataType::Time) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
@@ -276,6 +277,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            #[cfg(feature = "dtype-date")]
             fn date(&self) -> Result<&DateChunked> {
                 if matches!(self.0.dtype(), DataType::Date) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
@@ -398,24 +400,7 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                use DataType::*;
-                let ca = match (self.dtype(), data_type) {
-                    #[cfg(feature = "dtype-datetime")]
-                    (Date, Datetime(tu, tz)) => {
-                        let casted = self.0.cast(data_type)?;
-                        let casted = casted.datetime().unwrap();
-                        let conversion = match tu {
-                            TimeUnit::Nanoseconds => NS_IN_DAY,
-                            TimeUnit::Microseconds => US_IN_DAY,
-                            TimeUnit::Milliseconds => MS_IN_DAY,
-                        };
-                        return Ok((casted.deref() * conversion)
-                            .into_datetime(*tu, tz.clone())
-                            .into_series());
-                    }
-                    _ => Cow::Borrowed(self.0.deref()),
-                };
-                ca.cast(data_type)
+                self.0.cast(data_type)
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

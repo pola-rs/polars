@@ -237,6 +237,7 @@ impl Debug for Series {
             DataType::Float64 => {
                 format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
             }
+            #[cfg(feature = "dtype-date")]
             DataType::Date => format_array!(
                 limit,
                 f,
@@ -245,6 +246,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
+            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(
@@ -256,6 +258,7 @@ impl Debug for Series {
                     "Series"
                 )
             }
+            #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(
