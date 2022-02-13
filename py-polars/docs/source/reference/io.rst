@@ -47,3 +47,11 @@ JSON
 
    read_json
    DataFrame.to_json
+
+AVRO
+~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_avro
+   DataFrame.to_avro
