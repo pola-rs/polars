@@ -36,7 +36,8 @@ def test_categorical_parquet_statistics() -> None:
 
 
 def test_null_parquet() -> None:
+    file = path.join(path.dirname(__file__), "null.parquet")
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
-    df.to_parquet("null.parquet")
-    out = pl.read_parquet("null.parquet")
+    df.to_parquet(file)
+    out = pl.read_parquet(file)
     assert out.frame_equal(df)
