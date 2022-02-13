@@ -18,7 +18,7 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 impl Utf8Chunked {
     /// Get the length of the string values.
     pub fn str_lengths(&self) -> UInt32Chunked {
-        self.apply_kernel_cast(string_lengths)
+        self.apply_kernel_cast(&string_lengths)
     }
 
     /// Check if strings contain a regex pattern
