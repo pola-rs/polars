@@ -3,7 +3,7 @@ use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
 use crate::prelude::*;
-use crate::utils::series::to_physical;
+use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
 use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHasher, IdxHash};
 use crate::POOL;
@@ -239,8 +239,8 @@ pub(crate) fn inner_join_multiple_keys(
 
 #[cfg(feature = "private")]
 pub fn private_left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
-    let a = DataFrame::new_no_checks(to_physical(a.get_columns()));
-    let b = DataFrame::new_no_checks(to_physical(b.get_columns()));
+    let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
+    let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
     left_join_multiple_keys(&a, &b)
 }
 

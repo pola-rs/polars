@@ -1,5 +1,7 @@
 BASE ?= master
 
+.PHONY: fmt check check-features clippy clippy-default test test-doc integration-tests
+
 fmt:
 	cargo fmt --all
 	$(MAKE) -C .. fmt_toml
@@ -35,6 +37,9 @@ test:
 	    -p polars-utils \
 	    -- \
 	    --test-threads=2
+
+integration-tests:
+	cargo t --all-features --test it
 
 miri:
 	# not tested on all features because miri does not support SIMD

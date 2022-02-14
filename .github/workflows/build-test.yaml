@@ -54,7 +54,7 @@ jobs:
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd polars && make test
+          cd polars && make test && make integration-tests
       - name: Run miri
         run: |
           cd polars
