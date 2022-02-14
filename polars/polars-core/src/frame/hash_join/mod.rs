@@ -25,7 +25,7 @@ use unsafe_unwrap::UnsafeUnwrap;
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::utils::series::to_physical;
+use crate::utils::series::to_physical_and_bit_repr;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
@@ -1117,8 +1117,8 @@ impl DataFrame {
         }
         // make sure that we don't have logical types.
         // we don't overwrite the original selected as that might be used to create a column in the new df
-        let selected_left_physical = to_physical(&selected_left);
-        let selected_right_physical = to_physical(&selected_right);
+        let selected_left_physical = to_physical_and_bit_repr(&selected_left);
+        let selected_right_physical = to_physical_and_bit_repr(&selected_right);
 
         // multiple keys
         match how {

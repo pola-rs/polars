@@ -16,4 +16,4 @@ jobs:
           override: true
       - name: Run tests
         run: |
-          cd polars && make test
+          cd polars && make test && make integration-tests
