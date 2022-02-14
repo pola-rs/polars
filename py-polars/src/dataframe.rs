@@ -17,7 +17,7 @@ use crate::utils::str_to_polarstype;
 use crate::{
     arrow_interop,
     error::PyPolarsEr,
-    file::{get_either_file, get_file_like, EitherRustPythonFile},
+    file::get_file_like,
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
@@ -184,6 +184,7 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "parquet")]
     pub fn read_parquet(
+        py: Python,
         py_f: PyObject,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
@@ -191,28 +192,16 @@ impl PyDataFrame {
         parallel: bool,
         row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
-        use EitherRustPythonFile::*;
-
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let result = match get_either_file(py_f, false)? {
-            Py(f) => {
-                let buf = f.as_buffer();
-                ParquetReader::new(buf)
-                    .with_projection(projection)
-                    .with_columns(columns)
-                    .read_parallel(parallel)
-                    .with_n_rows(n_rows)
-                    .with_row_count(row_count)
-                    .finish()
-            }
-            Rust(f) => ParquetReader::new(f)
-                .with_projection(projection)
-                .with_columns(columns)
-                .read_parallel(parallel)
-                .with_n_rows(n_rows)
-                .with_row_count(row_count)
-                .finish(),
-        };
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f.as_ref(py))?;
+        let result = ParquetReader::new(mmap_bytes_r)
+            .with_projection(projection)
+            .with_columns(columns)
+            .read_parallel(parallel)
+            .with_n_rows(n_rows)
+            .with_row_count(row_count)
+            .finish();
+
         let df = result.map_err(PyPolarsEr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -220,15 +209,16 @@ impl PyDataFrame {
     #[staticmethod]
     #[cfg(feature = "ipc")]
     pub fn read_ipc(
-        py_f: PyObject,
+        py_f: &PyAny,
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         row_count: Option<(String, u32)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
-        let file = get_file_like(py_f, false)?;
-        let df = IpcReader::new(file)
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+
+        let df = IpcReader::new(mmap_bytes_r)
             .with_projection(projection)
             .with_columns(columns)
             .with_n_rows(n_rows)
@@ -240,11 +230,11 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "avro")]
-    pub fn read_avro(py_f: PyObject, n_rows: Option<usize>) -> PyResult<Self> {
+    pub fn read_avro(py_f: &PyAny, n_rows: Option<usize>) -> PyResult<Self> {
         use polars::io::avro::AvroReader;
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
 
-        let file = get_file_like(py_f, false)?;
-        let df = AvroReader::new(file)
+        let df = AvroReader::new(mmap_bytes_r)
             .with_n_rows(n_rows)
             .finish()
             .map_err(PyPolarsEr::from)?;

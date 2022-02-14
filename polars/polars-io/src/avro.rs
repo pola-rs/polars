@@ -1,4 +1,4 @@
-use std::io::{Read, Seek, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
@@ -61,7 +61,7 @@ where
 
 impl<R> SerReader<R> for AvroReader<R>
 where
-    R: Read + Seek,
+    R: MmapBytesReader,
 {
     fn new(reader: R) -> Self {
         AvroReader {
@@ -80,9 +80,13 @@ where
         let rechunk = self.rechunk;
         let (avro_schema, schema, codec, file_marker) = read::read_metadata(&mut self.reader)?;
 
+        let reader = ReaderBytes::from(&self.reader);
+        let bytes = reader.deref();
+        let mut reader = Cursor::new(bytes);
+
         let avro_reader = read::Reader::new(
             read::Decompressor::new(
-                read::BlockStreamIterator::new(&mut self.reader, file_marker),
+                read::BlockStreamIterator::new(&mut reader, file_marker),
                 codec,
             ),
             avro_schema,
@@ -94,6 +98,7 @@ where
     }
 }
 
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 pub use write::Compression as AvroCompression;
 
 /// Write a DataFrame to Appache Avro format

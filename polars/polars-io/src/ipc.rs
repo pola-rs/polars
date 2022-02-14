@@ -39,7 +39,8 @@ use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
-use std::io::{Read, Seek, Write};
+use std::io::{Cursor, Read, Seek, Write};
+use std::ops::Deref;
 use std::sync::Arc;
 
 /// Read Arrows IPC format into a DataFrame
@@ -70,7 +71,7 @@ pub struct IpcReader<R> {
     row_count: Option<RowCount>,
 }
 
-impl<R: Read + Seek> IpcReader<R> {
+impl<R: MmapBytesReader> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
@@ -128,8 +129,11 @@ impl<R: Read + Seek> IpcReader<R> {
         } else {
             metadata.schema.clone()
         };
+        let reader = ReaderBytes::from(&self.reader);
+        let bytes = reader.deref();
+        let mut reader = Cursor::new(bytes);
 
-        let reader = read::FileReader::new(&mut self.reader, metadata, projection);
+        let reader = read::FileReader::new(&mut reader, metadata, projection);
 
         finish_reader(
             reader,
@@ -145,7 +149,7 @@ impl<R: Read + Seek> IpcReader<R> {
 
 impl<R> ArrowReader for read::FileReader<R>
 where
-    R: Read + Seek,
+    R: Seek + Read,
 {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>> {
         self.next().map_or(Ok(None), |v| v.map(Some))
@@ -154,7 +158,7 @@ where
 
 impl<R> SerReader<R> for IpcReader<R>
 where
-    R: Read + Seek,
+    R: MmapBytesReader,
 {
     fn new(reader: R) -> Self {
         IpcReader {
@@ -217,8 +221,11 @@ where
         } else {
             metadata.schema.clone()
         };
+        let reader = ReaderBytes::from(&self.reader);
+        let bytes = reader.deref();
+        let mut reader = Cursor::new(bytes);
 
-        let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
+        let ipc_reader = read::FileReader::new(&mut reader, metadata, self.projection);
         finish_reader(
             ipc_reader,
             rechunk,
@@ -256,6 +263,7 @@ pub struct IpcWriter<W> {
 }
 
 use crate::aggregations::ScanAggregation;
+use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
