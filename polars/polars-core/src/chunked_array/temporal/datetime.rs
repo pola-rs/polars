@@ -5,6 +5,7 @@ use crate::prelude::*;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
+use std::fmt::Write;
 
 impl DatetimeChunked {
     pub fn as_datetime_iter(
@@ -161,14 +162,29 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
 
+        let dt = NaiveDate::from_ymd(2001, 1, 1).and_hms(0, 0, 0);
+        let fmted = format!("{}", dt.format(fmt));
+
         let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
-            let arr: Utf8Array<i64> = arr
-                .into_iter()
-                .map(|opt| opt.map(|v| format!("{}", conversion_f(*v).format(fmt))))
-                .collect();
+            let mut buf = String::new();
+            let mut mutarr =
+                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
+
+            for opt in arr.into_iter() {
+                match opt {
+                    None => mutarr.push_null(),
+                    Some(v) => {
+                        buf.clear();
+                        let datefmt = conversion_f(*v).format(fmt);
+                        write!(buf, "{}", datefmt).unwrap();
+                        mutarr.push(Some(&buf))
+                    }
+                }
+            }
+
+            let arr: Utf8Array<i64> = mutarr.into();
             Arc::new(arr)
         });
-
         ca.rename(self.name());
         ca
     }
