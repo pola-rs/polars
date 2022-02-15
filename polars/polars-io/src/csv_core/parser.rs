@@ -421,8 +421,7 @@ pub(crate) fn parse_lines(
             return Ok(end - start);
         }
 
-        let b = skipwh(bytes, delimiter);
-        bytes = b;
+        bytes = skipwh(bytes, delimiter);
         if bytes.is_empty() {
             return Ok(original_bytes_len);
         }

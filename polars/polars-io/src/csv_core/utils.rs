@@ -368,25 +368,29 @@ pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
 
 // replace double quotes by single ones
 pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [u8]) -> usize {
-    let mut prev_quote = false;
+    if bytes == [quote, quote] {
+        0
+    } else {
+        let mut prev_quote = false;
 
-    let mut count = 0;
-    for c in bytes {
-        if *c == quote {
-            if prev_quote {
+        let mut count = 0;
+        for c in bytes {
+            if *c == quote {
+                if prev_quote {
+                    prev_quote = false;
+                    *buf.get_unchecked_mut(count) = *c;
+                    count += 1;
+                } else {
+                    prev_quote = true;
+                }
+            } else {
                 prev_quote = false;
                 *buf.get_unchecked_mut(count) = *c;
                 count += 1;
-            } else {
-                prev_quote = true;
             }
-        } else {
-            prev_quote = false;
-            *buf.get_unchecked_mut(count) = *c;
-            count += 1;
         }
+        count
     }
-    count
 }
 
 #[cfg(test)]

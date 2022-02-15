@@ -672,7 +672,8 @@ mod test {
             .with_path(Some(FOODS_CSV.to_string()))
             .finish()
             .unwrap();
-        dbg!(df);
+
+        assert_eq!(df.shape(), (27, 4));
     }
 
     #[test]
@@ -731,7 +732,6 @@ mod test {
             .unwrap();
 
         let col = df.column("variety").unwrap();
-        dbg!(&df);
         assert_eq!(col.get(0), AnyValue::Utf8("Setosa"));
         assert_eq!(col.get(2), AnyValue::Utf8("Setosa"));
 
@@ -786,8 +786,6 @@ mod test {
             .with_ignore_parser_errors(true)
             .finish()
             .unwrap();
-
-        dbg!(df);
     }
 
     #[test]
@@ -797,7 +795,6 @@ mod test {
             .with_projection(Some(vec![0, 2]))
             .finish()
             .unwrap();
-        dbg!(&df);
         let col_1 = df.select_at_idx(0).unwrap();
         assert_eq!(col_1.get(0), AnyValue::Utf8("vegetables"));
         assert_eq!(col_1.get(1), AnyValue::Utf8("seafood"));
@@ -1410,7 +1407,7 @@ A3,\"B4_\"\"with_embedded_double_quotes\"\"\",C4,4";
         assert_eq!(df.dtypes(), &[DataType::Utf8, DataType::Int64]);
         let a = df.column("foo")?;
         let a = a.utf8()?;
-        assert_eq!(a.get(0), Some(""));
+        assert_eq!(a.get(0), None);
 
         Ok(())
     }
@@ -1544,18 +1541,43 @@ foo,bar
         let s = df.column("column_1")?;
         let ca = s.utf8()?;
         assert_eq!(
-            ca.into_no_null_iter().collect::<Vec<_>>(),
-            &["", "abc", "", "xyz"]
+            ca.into_iter().collect::<Vec<_>>(),
+            &[None, Some("abc"), None, Some("xyz")]
         );
 
         let csv = ",\nabc,333\n,666\nxyz,999";
         let file = Cursor::new(csv);
         let df = CsvReader::new(file).has_header(false).finish()?;
         let expected = df![
-            "column_1" => ["", "abc", "", "xyz"],
+            "column_1" => [None, Some("abc"), None, Some("xyz")],
             "column_2" => [None, Some(333i64), Some(666), Some(999)]
         ]?;
         assert!(df.frame_equal_missing(&expected));
+        Ok(())
+    }
+
+    #[test]
+    fn test_trailing_empty_string_cols() -> Result<()> {
+        let csv = "colx\nabc\nxyz\n\"\"";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+        let col = df.column("colx")?;
+        let col = col.utf8()?;
+        assert_eq!(
+            col.into_no_null_iter().collect::<Vec<_>>(),
+            &["abc", "xyz", ""]
+        );
+
+        let csv = "colx,coly\nabc,def\nxyz,mno\n,";
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).finish()?;
+
+        assert_eq!(
+            df.get(1).unwrap(),
+            &[AnyValue::Utf8("xyz"), AnyValue::Utf8("mno")]
+        );
+        assert_eq!(df.get(2).unwrap(), &[AnyValue::Null, AnyValue::Null]);
+
         Ok(())
     }
 }
