@@ -137,6 +137,13 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
         ignore_errors: bool,
         needs_escaping: bool,
     ) -> Result<()> {
+        if bytes.is_empty() {
+            // append null
+            self.offsets.push(self.data.len() as i64);
+            self.validity.push(false);
+            return Ok(());
+        }
+
         // Only for lossy utf8 we check utf8 now. Otherwise we check all utf8 at the end.
         let parse_result = if delay_utf8_validation(self.encoding, ignore_errors) {
             true
