@@ -1,3 +1,4 @@
+mod explodes;
 mod window_expressions;
 
 use polars::prelude::*;
