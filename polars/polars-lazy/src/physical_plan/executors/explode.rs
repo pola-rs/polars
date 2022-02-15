@@ -10,6 +10,6 @@ pub(crate) struct ExplodeExec {
 impl Executor for ExplodeExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
-        df.explode(&self.columns)
+        dbg!(df.explode(&self.columns))
     }
 }

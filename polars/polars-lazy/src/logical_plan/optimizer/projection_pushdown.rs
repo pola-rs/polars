@@ -868,6 +868,7 @@ impl ProjectionPushDown {
                     schema,
                 };
                 if options.projection_pd {
+                    let acc_projection_len = acc_projections.len();
                     let local_projections = self.pushdown_and_assign_check_schema(
                         input,
                         acc_projections,
@@ -878,9 +879,17 @@ impl ProjectionPushDown {
                     if local_projections.is_empty() {
                         Ok(lp)
                     } else {
-                        Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
-                            .project(local_projections)
-                            .build())
+                        // if we would project, we would remove pushed down predicates
+                        if local_projections.len() < acc_projection_len {
+                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                                .with_columns(local_projections)
+                                .build())
+                        // all projections are local
+                        } else {
+                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                                .project(local_projections)
+                                .build())
+                        }
                     }
                 } else {
                     Ok(lp)
