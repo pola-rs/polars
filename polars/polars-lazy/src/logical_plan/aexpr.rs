@@ -129,18 +129,7 @@ impl AExpr {
             Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
-
-                let field = e.to_field(schema, ctxt, arena);
-                match e {
-                    Agg(_) => field,
-                    _ => {
-                        let field = field?;
-                        Ok(Field::new(
-                            field.name(),
-                            DataType::List(Box::new(field.data_type().clone())),
-                        ))
-                    }
-                }
+                e.to_field(schema, ctxt, arena)
             }
             IsUnique(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;

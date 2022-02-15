@@ -7,7 +7,6 @@ mod optimization_checks;
 mod predicate_queries;
 mod projection_queries;
 mod queries;
-mod window_expressions;
 
 fn load_df() -> DataFrame {
     df!("a" => &[1, 2, 3, 4, 5],

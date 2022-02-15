@@ -2034,7 +2034,11 @@ impl Expr {
             },
             GetOutput::from_type(DataType::Boolean),
         )
-        .with_fmt("any")
+        .with_function_options(|mut opt| {
+            opt.fmt_str = "any";
+            opt.auto_explode = true;
+            opt
+        })
     }
 
     /// Check if all boolean values are `true`
@@ -2050,7 +2054,11 @@ impl Expr {
             },
             GetOutput::from_type(DataType::Boolean),
         )
-        .with_fmt("all")
+        .with_function_options(|mut opt| {
+            opt.fmt_str = "all";
+            opt.auto_explode = true;
+            opt
+        })
     }
 
     #[cfg(feature = "strings")]

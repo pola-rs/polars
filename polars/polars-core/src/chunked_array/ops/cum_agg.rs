@@ -140,6 +140,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
+    #[cfg(feature = "dtype-u8")]
     fn test_cummax() {
         let ca = UInt8Chunked::new("foo", &[None, Some(1), Some(3), None, Some(1)]);
         let out = ca.cummax(true);
@@ -149,6 +150,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-u8")]
     fn test_cummin() {
         let ca = UInt8Chunked::new("foo", &[None, Some(1), Some(3), None, Some(2)]);
         let out = ca.cummin(true);
