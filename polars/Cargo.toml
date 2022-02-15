@@ -105,6 +105,23 @@ dot_diagram = ["polars-lazy/dot_diagram"]
 dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
 product = ["polars-core/product"]
 
+test = [
+  "lazy",
+  "private",
+  "rolling_window",
+  "rank",
+  "list",
+  "round_series",
+  "csv-file",
+  "dtype-categorical",
+  "cum_agg",
+  "polars-core/plain_fmt",
+  "diff",
+  "abs",
+  "parquet",
+  "ipc",
+]
+
 # don't use this
 private = ["polars-lazy/private"]
 

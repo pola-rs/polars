@@ -297,3 +297,68 @@ fn test_window_mapping() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_window_exprs_in_binary_exprs() -> Result<()> {
+    let df = df![
+        "value" => 0..8,
+        "cat" => [0, 0, 0, 0, 1, 1, 1, 1]
+    ]?
+    .lazy()
+    .with_columns([
+        (col("value") - col("value").mean().over([col("cat")]))
+            .cast(DataType::Int32)
+            .alias("centered"),
+        (col("value") - col("value").std().over([col("cat")]))
+            .cast(DataType::Int32)
+            .alias("scaled"),
+        ((col("value") - col("value").mean().over([col("cat")]))
+            / col("value").std().over([col("cat")]))
+        .cast(DataType::Int32)
+        .alias("stdized"),
+        ((col("value") - col("value").mean()).over([col("cat")]) / col("value").std())
+            .cast(DataType::Int32)
+            .alias("stdized2"),
+        ((col("value") - col("value").mean()) / col("value").std())
+            .over([col("cat")])
+            .cast(DataType::Int32)
+            .alias("stdized3"),
+    ])
+    .sum()
+    .collect()?;
+
+    let expected = df![
+        "value" => [28],
+        "cat" => [4],
+        "centered" => [0],
+        "scaled" => [14],
+        "stdized" => [0],
+        "stdized2" => [0],
+        "stdized3" => [0]
+    ]?;
+
+    assert!(df.frame_equal(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_window_exprs_any_all() -> Result<()> {
+    let df = df![
+        "var1"=> ["A", "B", "C", "C", "D", "D", "E", "E"],
+        "var2"=> [false, true, false, false, false, true, true, true],
+    ]?
+    .lazy()
+    .select([
+        col("var2").any().over([col("var1")]).alias("any"),
+        col("var2").all().over([col("var1")]).alias("all"),
+    ])
+    .collect()?;
+
+    let expected = df![
+        "any" => [false, true, false, false, true, true, true, true],
+        "all" => [false, true, false, false, false, false, true, true],
+    ]?;
+    assert!(df.frame_equal(&expected));
+    Ok(())
+}

@@ -93,6 +93,27 @@ impl_named_from!([Option<i64>], Int64Type, from_slice_options);
 impl_named_from!([Option<f32>], Float32Type, from_slice_options);
 impl_named_from!([Option<f64>], Float64Type, from_slice_options);
 
+macro_rules! impl_named_from_range {
+    ($range:ty, $polars_type:ident) => {
+        impl NamedFrom<$range, $polars_type> for ChunkedArray<$polars_type> {
+            fn new(name: &str, range: $range) -> Self {
+                let values = range.collect::<Vec<_>>();
+                ChunkedArray::<$polars_type>::from_vec(name, values)
+            }
+        }
+
+        impl NamedFrom<$range, $polars_type> for Series {
+            fn new(name: &str, range: $range) -> Self {
+                ChunkedArray::new(name, range).into_series()
+            }
+        }
+    };
+}
+impl_named_from_range!(std::ops::Range<i64>, Int64Type);
+impl_named_from_range!(std::ops::Range<i32>, Int32Type);
+impl_named_from_range!(std::ops::Range<u64>, UInt64Type);
+impl_named_from_range!(std::ops::Range<u32>, UInt32Type);
+
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
         let series_slice = s.as_ref();

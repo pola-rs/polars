@@ -100,6 +100,8 @@ impl PhysicalExpr for BinaryExpr {
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
+            // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
+            // that's why a literal also takes this branch
             (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
                 if s.len() != df.height() =>
             {
@@ -149,9 +151,10 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
-                if s.len() != df.height() =>
-            {
+            (
+                AggState::Literal(_) | AggState::AggregatedList(_) | AggState::NotAggregated(_),
+                AggState::AggregatedFlat(s),
+            ) if s.len() != df.height() => {
                 // this is now a list
                 let l = ac_l.aggregated();
                 let l = l.list().unwrap();
