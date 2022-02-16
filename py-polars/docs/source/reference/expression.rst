@@ -261,6 +261,8 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.epoch_seconds
     ExprDateTimeNameSpace.and_time_unit
     ExprDateTimeNameSpace.and_time_zone
+    ExprDateTimeNameSpace.with_time_unit
+    ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.hours
     ExprDateTimeNameSpace.seconds

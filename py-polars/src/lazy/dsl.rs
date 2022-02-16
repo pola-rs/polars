@@ -688,6 +688,14 @@ impl PyExpr {
             .into()
     }
 
+    pub fn dt_with_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().with_time_unit(tu.0).into()
+    }
+
+    pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().cast_time_unit(tu.0).into()
+    }
+
     pub fn rolling_apply(
         &self,
         py: Python,

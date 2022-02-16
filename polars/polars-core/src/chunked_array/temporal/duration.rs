@@ -14,6 +14,52 @@ impl DurationChunked {
         }
     }
 
+    /// Change the underlying [`TimeUnit`]. And update the data accordingly.
+    #[must_use]
+    pub fn cast_time_unit(&self, tu: TimeUnit) -> Self {
+        let current_unit = self.time_unit();
+        let mut out = self.clone();
+        out.set_time_unit(tu);
+
+        use TimeUnit::*;
+        match (current_unit, tu) {
+            (Nanoseconds, Microseconds) => {
+                let ca = &self.0 / 1_000;
+                out.0 = ca;
+                out
+            }
+            (Nanoseconds, Milliseconds) => {
+                let ca = &self.0 / 1_000_000;
+                out.0 = ca;
+                out
+            }
+            (Microseconds, Nanoseconds) => {
+                let ca = &self.0 * 1_000;
+                out.0 = ca;
+                out
+            }
+            (Microseconds, Milliseconds) => {
+                let ca = &self.0 / 1_000;
+                out.0 = ca;
+                out
+            }
+            (Milliseconds, Nanoseconds) => {
+                let ca = &self.0 * 1_000_000;
+                out.0 = ca;
+                out
+            }
+            (Milliseconds, Microseconds) => {
+                let ca = &self.0 * 1_000;
+                out.0 = ca;
+                out
+            }
+            (Nanoseconds, Nanoseconds)
+            | (Microseconds, Microseconds)
+            | (Milliseconds, Milliseconds) => out,
+        }
+    }
+
+    /// Change the underlying [`TimeUnit`]. This does not modify the data.
     pub fn set_time_unit(&mut self, tu: TimeUnit) {
         self.2 = Some(Duration(tu))
     }
