@@ -1,4 +1,5 @@
 mod explodes;
+mod projection_queries;
 mod window_expressions;
 
 use polars::prelude::*;
