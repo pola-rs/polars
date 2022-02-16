@@ -2185,16 +2185,40 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.reshape(dims))
 
-    def shuffle(self, seed: int = 0) -> "Expr":
+    def shuffle(self, seed: Optional[int] = None) -> "Expr":
         """
         Shuffle the contents of this expr.
 
         Parameters
         ----------
         seed
-            Seed initialization
+            Seed initialization. If None given numpy is used.
         """
+        if seed is None:
+            seed = int(np.random.randint(0, 10000))
         return wrap_expr(self._pyexpr.shuffle(seed))
+
+    def sample(
+        self,
+        fraction: float = 1.0,
+        with_replacement: bool = True,
+        seed: Optional[int] = 0,
+    ) -> "Expr":
+        """
+        Sample a fraction of the `Series`.
+
+        Parameters
+        ----------
+        fraction
+            Fraction 0.0 <= value <= 1.0
+        with_replacement
+            Allow values to be sampled more than once.
+        seed
+            Seed initialization. If None given numpy is used.
+        """
+        if seed is None:
+            seed = int(np.random.randint(0, 10000))
+        return wrap_expr(self._pyexpr.sample_frac(fraction, with_replacement, seed))
 
     def ewm_mean(
         self,

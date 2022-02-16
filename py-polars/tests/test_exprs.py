@@ -87,3 +87,11 @@ def test_count_expr() -> None:
     out = df.groupby("b", maintain_order=True).agg(pl.count())
     assert out["b"].to_list() == ["a", "b"]
     assert out["count"].to_list() == [4, 1]
+
+
+def test_sample() -> None:
+    a = pl.Series("a", range(0, 20))
+    out = pl.select(pl.lit(a).sample(0.5, False, 1)).to_series()
+    assert out.shape == (10,)
+    assert out.to_list() != out.sort().to_list()
+    assert out.unique().shape == (10,)

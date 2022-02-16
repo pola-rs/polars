@@ -1168,6 +1168,13 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Self {
+        self.inner
+            .clone()
+            .sample_frac(frac, with_replacement, seed)
+            .into()
+    }
+
     pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
         let options = EWMOptions {
             alpha,
