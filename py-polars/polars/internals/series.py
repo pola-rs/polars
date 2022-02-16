@@ -2178,7 +2178,7 @@ class Series:
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
         """
-        Fill null values with a filling strategy.
+        Fill null values using a filling strategy, literal, or Expr.
 
         Examples
         --------
@@ -2196,24 +2196,32 @@ class Series:
         shape: (4,)
         Series: 'a' [i64]
         [
-                1
-                2
-                3
-                1
+            1
+            2
+            3
+            1
         ]
-
+        >>> s = pl.Series("b", ["x", None, "z"])
+        >>> s.fill_null(pl.lit(""))
+        shape: (3,)
+        Series: 'b' [str]
+        [
+            "x"
+            ""
+            "z"
+        ]
         Parameters
         ----------
         strategy
-
-        Fill null strategy or a value
-               * "backward"
-               * "forward"
-               * "min"
-               * "max"
-               * "mean"
-               * "one"
-               * "zero"
+            One of:
+            - "backward"
+            - "forward"
+            - "min"
+            - "max"
+            - "mean"
+            - "one"
+            - "zero"
+            Or an expression.
         """
         if not isinstance(strategy, str):
             return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
@@ -3427,7 +3435,7 @@ class Series:
     @property
     def time_unit(self) -> Optional[str]:
         """
-        Get the time unit of underlying Datetime Series as {"ns", "ms"}
+        Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}
         """
         return self._s.time_unit()
 
@@ -4299,7 +4307,7 @@ class DateTimeNameSpace:
 
     def and_time_zone(self, tz: Optional[str]) -> "Series":
         """
-        Set time zone a Series of type Datetime
+        Set time zone a Series of type Datetime.
 
         ..deprecated::
             Use `with_time_zone`
@@ -4307,19 +4315,19 @@ class DateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+            Time zone for the `Datetime` Series
 
         """
         return wrap_s(self._s.and_time_zone(tz))
 
     def with_time_zone(self, tz: Optional[str]) -> "Series":
         """
-        Set time zone a Series of type Datetime
+        Set time zone a Series of type Datetime.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+            Time zone for the `Datetime` Series
 
         """
         return wrap_s(self._s.and_time_zone(tz))

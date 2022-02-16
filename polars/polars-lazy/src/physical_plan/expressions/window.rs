@@ -131,7 +131,7 @@ impl WindowExpr {
             (true, true, _) => Ok(MapStrategy::ExplodeLater),
             // Explode all the aggregated lists. Maybe add later?
             (true, false, _) => {
-                Err(PolarsError::ComputeError("This operation is likely not what you want. Please open an issue if you really want to do this".into()))
+                Err(PolarsError::ComputeError("This operation is likely not what you want (you may need '.list()'). Please open an issue if you really want to do this".into()))
             }
             // explicit list
             // `(col("x").sum() * col("y")).list().over("groups")`
@@ -203,12 +203,12 @@ impl PhysicalExpr for WindowExpr {
         //
         //      - 3.2 EXPLODE
         //          Explicit list aggregations that are followed by `over().flatten()`
-        //          # the fastest method to do things over groups when the groups are sorted
-        //          # note that it will require an excit `list()` call from now on.
+        //          # the fastest method to do things over groups when the groups are sorted.
+        //          # note that it will require an explicit `list()` call from now on.
         //              `(col("x").sum() * col("y")).list().over("groups").flatten()`
         //
         //      - 3.3. MAP to original locations
-        //          This will be done for list aggregation that are not excitly aggregated as list
+        //          This will be done for list aggregations that are not explicitly aggregated as list
         //              `(col("x").sum() * col("y")).over("groups")`
 
         // 4. select the final column and return

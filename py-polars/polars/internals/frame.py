@@ -549,14 +549,14 @@ class DataFrame:
         file: Union[str, BinaryIO], n_rows: Optional[int] = None
     ) -> "DataFrame":
         """
-        Read into a DataFrame from Appache Avro format.
+        Read into a DataFrame from Apache Avro format.
 
         Parameters
         ----------
         file
             Path to a file or a file like object.
         n_rows
-            Stop reading from Appache Avro file after reading ``n_rows``.
+            Stop reading from Apache Avro file after reading ``n_rows``.
 
         Returns
         -------
@@ -916,7 +916,7 @@ class DataFrame:
         compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
     ) -> None:
         """
-        Write to Appache Avro file.
+        Write to Apache Avro file.
 
         Parameters
         ----------
@@ -3343,7 +3343,7 @@ class DataFrame:
 
     def fill_null(self, strategy: Union[str, "pli.Expr", Any]) -> "DataFrame":
         """
-        Fill None/missing values by a filling strategy or an Expression evaluation.
+        Fill null values using a filling strategy, literal, or Expr.
 
         Parameters
         ----------
@@ -3360,7 +3360,7 @@ class DataFrame:
 
         Returns
         -------
-            DataFrame with None replaced with the filling strategy.
+            DataFrame with None values replaced by the filling strategy.
         """
         if isinstance(strategy, pli.Expr):
             return self.lazy().fill_null(strategy).collect(no_optimization=True)
