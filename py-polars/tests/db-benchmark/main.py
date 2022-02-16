@@ -306,12 +306,14 @@ out = (
 )
 assert out["id6"] == 430957682
 assert np.isclose(out["v3"], 4.724150165888001e6)
+print(out)
 
 out = (
     x.filter(~(pl.col("id1") == pl.lit("id046")))
     .select([pl.sum("id6"), pl.sum("v3")])
     .collect()
 )
+print(out)
 
 assert out["id6"] == 2137755425
 assert np.isclose(out["v3"], 4.7040828499563754e8)
