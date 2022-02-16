@@ -7,7 +7,7 @@ use std::ops::Deref;
 
 use arrow::io::avro::{read, write};
 
-/// Read Appache Avro format into a DataFrame
+/// Read Apache Avro format into a DataFrame
 ///
 /// # Example
 /// ```
@@ -96,7 +96,7 @@ where
 
 pub use write::Compression as AvroCompression;
 
-/// Write a DataFrame to Appache Avro format
+/// Write a DataFrame to Apache Avro format
 ///
 /// # Example
 ///

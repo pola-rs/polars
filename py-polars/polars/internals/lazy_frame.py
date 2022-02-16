@@ -1106,12 +1106,12 @@ class LazyFrame:
 
     def fill_null(self, fill_value: Union[int, str, "pli.Expr"]) -> "LazyFrame":
         """
-        Fill missing values
+        Fill missing values with a literal or Expr.
 
         Parameters
         ----------
         fill_value
-            Value to fill the missing values with
+            Value to fill the missing values with.
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)

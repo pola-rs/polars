@@ -914,17 +914,18 @@ class Expr:
 
     def fill_null(self, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
         """
-        Fill none value with a fill value or strategy
+        Fill null values using a filling strategy, literal, or Expr.
 
         fill_value
-            Fill null strategy or a value
-                   * "backward"
-                   * "forward"
-                   * "min"
-                   * "max"
-                   * "mean"
-                   * "one"
-                   * "zero"
+            One of:
+            - "backward"
+            - "forward"
+            - "min"
+            - "max"
+            - "mean"
+            - "one"
+            - "zero"
+            Or an expression.
         """
         # we first must check if it is not an expr, as expr does not implement __bool__
         # and thus leads to a value error in the second comparisson.
@@ -3202,7 +3203,7 @@ class ExprDateTimeNameSpace:
 
     def and_time_zone(self, tz: Optional[str]) -> Expr:
         """
-        Set time zone a Series of type Datetime
+        Set time zone for a Series of type Datetime.
 
         ..deprecated::
             Use `with_time_zone`
@@ -3210,7 +3211,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+            Time zone for the `Datetime` Series
 
         """
         return wrap_expr(self._pyexpr).map(
@@ -3219,12 +3220,12 @@ class ExprDateTimeNameSpace:
 
     def with_time_zone(self, tz: Optional[str]) -> Expr:
         """
-        Set time zone a Series of type Datetime
+        Set time zone for a Series of type Datetime.
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+            Time zone for the `Datetime` Series
 
         """
         return wrap_expr(self._pyexpr).map(

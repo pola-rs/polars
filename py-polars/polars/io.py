@@ -700,14 +700,14 @@ def read_avro(
     file: Union[str, Path, BytesIO, BinaryIO], n_rows: Optional[int] = None
 ) -> DataFrame:
     """
-    Read into a DataFrame from Appache Avro format.
+    Read into a DataFrame from Apache Avro format.
 
     Parameters
     ----------
     file
         Path to a file or a file like object.
     n_rows
-        Stop reading from Appache Avro file after reading ``n_rows``.
+        Stop reading from Apache Avro file after reading ``n_rows``.
 
     Returns
     -------
