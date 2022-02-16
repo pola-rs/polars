@@ -6,7 +6,7 @@ use crate::utils::apply_projection;
 use crate::RowCount;
 use arrow::array::new_empty_array;
 use arrow::io::parquet::read;
-use arrow::io::parquet::read::{to_deserializer, FileMetaData};
+use arrow::io::parquet::read::{to_deserializer, ArrayIter, FileMetaData};
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::POOL;
@@ -16,6 +16,16 @@ use std::convert::TryFrom;
 use std::io::Cursor;
 use std::ops::Deref;
 use std::sync::Arc;
+
+fn array_iter_to_series(iter: ArrayIter, field: &ArrowField) -> Result<Series> {
+    let chunks = iter.collect::<arrow::error::Result<Vec<_>>>()?;
+    if chunks.is_empty() {
+        let arr = Arc::from(new_empty_array(field.data_type.clone()));
+        Series::try_from((field.name.as_str(), arr))
+    } else {
+        Series::try_from((field.name.as_str(), chunks))
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
@@ -80,17 +90,14 @@ pub fn read_parquet<R: MmapBytesReader>(
                         let mut reader = Cursor::new(bytes);
                         let field = &schema.fields[*column_i];
                         let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                        let mut iter = to_deserializer(
+                        let iter = to_deserializer(
                             columns,
                             field.clone(),
                             remaining_rows,
                             Some(chunk_size),
                         )?;
-                        let arr = match iter.next() {
-                            Some(arr) => arr?,
-                            None => Arc::from(new_empty_array(field.data_type.clone())),
-                        };
-                        Series::try_from((field.name.as_str(), arr))
+
+                        array_iter_to_series(iter, field)
                     })
                     .collect::<Result<Vec<_>>>()
             })?
@@ -100,14 +107,10 @@ pub fn read_parquet<R: MmapBytesReader>(
                 .map(|column_i| {
                     let field = &schema.fields[*column_i];
                     let columns = read::read_columns(&mut reader, md.columns(), &field.name)?;
-                    let mut iter =
+                    let iter =
                         to_deserializer(columns, field.clone(), remaining_rows, Some(chunk_size))?;
 
-                    let arr = match iter.next() {
-                        Some(arr) => arr?,
-                        None => Arc::from(new_empty_array(field.data_type.clone())),
-                    };
-                    Series::try_from((field.name.as_str(), arr))
+                    array_iter_to_series(iter, field)
                 })
                 .collect::<Result<Vec<_>>>()?
         };
