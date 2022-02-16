@@ -1982,6 +1982,15 @@ impl Expr {
             .with_fmt("shuffle")
     }
 
+    #[cfg(feature = "random")]
+    pub fn sample_frac(self, frac: f64, with_replacement: bool, seed: u64) -> Self {
+        self.apply(
+            move |s| s.sample_frac(frac, with_replacement, seed),
+            GetOutput::same_type(),
+        )
+        .with_fmt("shuffle")
+    }
+
     #[cfg(feature = "ewma")]
     pub fn ewm_mean(self, options: EWMOptions) -> Self {
         use DataType::*;
