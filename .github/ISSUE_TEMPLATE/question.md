@@ -13,6 +13,7 @@ Please use [stackoverflow](https://stackoverflow.com/) and one of the following 
 
 * [python-polars](https://stackoverflow.com/questions/tagged/python-polars)
 * [rust-polars](https://stackoverflow.com/questions/tagged/rust-polars)
+* [nodejs-polars](https://stackoverflow.com/questions/tagged/nodejs-polars)
 
 This allows us to create high quality answers that remain updated and will save us from
 answering the same questions over and over again.
