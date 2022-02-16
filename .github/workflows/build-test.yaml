@@ -42,12 +42,12 @@ jobs:
         run : |
           # do not produce debug symbols to keep memory usage down
           export RUSTFLAGS="-C debuginfo=0"
-          cd polars && cargo clippy -Z unstable-options --all-features \
+          cd polars && cargo clippy --all-features \
           -p polars-core \
           -p polars-io \
           -p polars-lazy \
           -- -D warnings
-          cargo clippy -Z unstable-options -- -D warnings
+          cargo clippy -- -D warnings
       - name: Feature test
         run: |
           cd polars && cargo hack check --each-feature --no-dev-deps --features private

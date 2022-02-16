@@ -328,6 +328,18 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<TimeUnit> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let unit = match ob.str()?.to_str()? {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" => TimeUnit::Milliseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
+        };
+        Ok(Wrap(unit))
+    }
+}
+
 impl ToPyObject for Wrap<TimeUnit> {
     fn to_object(&self, py: Python) -> PyObject {
         let tu = match self.0 {

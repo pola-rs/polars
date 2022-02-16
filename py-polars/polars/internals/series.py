@@ -4259,9 +4259,35 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.dt_epoch_seconds())
 
+    def with_time_unit(self, tu: str) -> "Series":
+        """
+        Set time unit a Series of dtype Datetime or Duration. This does not modify underlying data,
+        and should be used to fix an incorrect time unit.
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.with_time_unit(tu)).to_series()
+
+    def cast_time_unit(self, tu: str) -> "Series":
+        """
+        Cast the underlying data to another time unit. This may lose precision.
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
+
     def and_time_unit(self, tu: str) -> "Series":
         """
         Set time unit a Series of type Datetime
+
+        ..deprecated::
+            Use `with_time_unit`
 
         Parameters
         ----------
@@ -4269,9 +4295,24 @@ class DateTimeNameSpace:
             Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
 
         """
-        return wrap_s(self._s.and_time_unit(tu))
+        return self.with_time_unit(tu)
 
     def and_time_zone(self, tz: Optional[str]) -> "Series":
+        """
+        Set time zone a Series of type Datetime
+
+        ..deprecated::
+            Use `with_time_zone`
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_s(self._s.and_time_zone(tz))
+
+    def with_time_zone(self, tz: Optional[str]) -> "Series":
         """
         Set time zone a Series of type Datetime
 

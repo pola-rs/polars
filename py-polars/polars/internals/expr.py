@@ -3135,9 +3135,37 @@ class ExprDateTimeNameSpace:
         """Return timestamp in milliseconds as Int64 type."""
         return wrap_expr(self._pyexpr.timestamp())
 
+    def with_time_unit(self, tu: str) -> Expr:
+        """
+        Set time unit a Series of dtype Datetime or Duration. This does not modify underlying data,
+        and should be used to fix an incorrect time unit.
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
+
+    def cast_time_unit(self, tu: str) -> Expr:
+        """
+        Cast the underlying data to another time unit. This may lose precision.
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return wrap_expr(self._pyexpr.dt_cast_time_unit(tu))
+
     def and_time_unit(self, tu: str, dtype: Type[DataType] = Datetime) -> Expr:
         """
-        Set time unit a Series of type Datetime
+        Set time unit a Series of type Datetime. This does not modify underlying data,
+        and should be used to fix an incorrect time unit.
+
+        ..deprecated::
+            Use `with_time_unit`
+
 
         Parameters
         ----------
@@ -3146,11 +3174,26 @@ class ExprDateTimeNameSpace:
         dtype
             Output data type.
         """
-        return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.and_time_unit(tu), return_dtype=dtype
-        )
+        return self.with_time_unit(tu)
 
     def and_time_zone(self, tz: Optional[str]) -> Expr:
+        """
+        Set time zone a Series of type Datetime
+
+        ..deprecated::
+            Use `with_time_zone`
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+
+        """
+        return wrap_expr(self._pyexpr).map(
+            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
+        )
+
+    def with_time_zone(self, tz: Optional[str]) -> Expr:
         """
         Set time zone a Series of type Datetime
 
@@ -3161,7 +3204,7 @@ class ExprDateTimeNameSpace:
 
         """
         return wrap_expr(self._pyexpr).map(
-            lambda s: s.dt.and_time_zone(tz), return_dtype=Datetime
+            lambda s: s.dt.with_time_zone(tz), return_dtype=Datetime
         )
 
     def days(self) -> Expr:

@@ -224,6 +224,8 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.epoch_seconds
     DateTimeNameSpace.and_time_unit
     DateTimeNameSpace.and_time_zone
+    DateTimeNameSpace.with_time_unit
+    DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.days
     DateTimeNameSpace.hours
     DateTimeNameSpace.seconds

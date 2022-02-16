@@ -15,7 +15,7 @@ check:
 	    -p polars-time
 
 clippy:
-	cargo clippy -Z unstable-options --all-features \
+	cargo clippy --all-features \
 	    -p polars-core \
 	    -p polars-io \
 	    -p polars-lazy \
@@ -24,7 +24,7 @@ clippy:
 	    -p polars-time
 
 clippy-default:
-	cargo clippy -Z unstable-options
+	cargo clippy
 
 test:
 	POLARS_MAX_THREADS=4 cargo t -p polars-core test_4_threads

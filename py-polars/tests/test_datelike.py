@@ -497,3 +497,16 @@ def test_microseconds_accuracy() -> None:
     )
 
     assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore
+
+
+def test_cast_time_units() -> None:
+    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+    dates_in_ns = np.array([978307200000000000, 981022089000000000])
+
+    assert dates.dt.cast_time_unit("ns").cast(int).to_list() == list(dates_in_ns)
+    assert dates.dt.cast_time_unit("us").cast(int).to_list() == list(
+        dates_in_ns // 1_000
+    )
+    assert dates.dt.cast_time_unit("ms").cast(int).to_list() == list(
+        dates_in_ns // 1_000_000
+    )

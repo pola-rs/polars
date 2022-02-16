@@ -12,7 +12,6 @@ use crate::{
 use numpy::PyArray1;
 use polars_core::prelude::QuantileInterpolOptions;
 use polars_core::utils::CustomIterTools;
-use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyBytes, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*, Python};
 
@@ -1464,23 +1463,6 @@ impl PySeries {
             })
         } else {
             None
-        }
-    }
-    pub fn and_time_unit(&self, tu: &str) -> PyResult<Self> {
-        let unit = match tu {
-            "ns" => TimeUnit::Nanoseconds,
-            "us" => TimeUnit::Microseconds,
-            "ms" => TimeUnit::Milliseconds,
-            _ => return Err(PyValueError::new_err("expected one of {'ns', 'ms'}")),
-        };
-        if let DataType::Duration(_) = self.series.dtype() {
-            let mut dt = self.series.duration().map_err(PyPolarsEr::from)?.clone();
-            dt.set_time_unit(unit);
-            Ok(dt.into_series().into())
-        } else {
-            let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
-            dt.set_time_unit(unit);
-            Ok(dt.into_series().into())
         }
     }
 
