@@ -1293,6 +1293,7 @@ dependencies = [
  "comfy-table",
  "hashbrown 0.12.0",
  "hex",
+ "indexmap",
  "jsonpath_lib",
  "lazy_static",
  "ndarray",

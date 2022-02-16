@@ -2,13 +2,13 @@ use crate::conversion::prelude::*;
 use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
-use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown};
+use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
 use polars::frame::row::{rows_to_schema, Row};
+use polars::io::RowCount;
 use polars::prelude::*;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
-use polars::io::RowCount;
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -601,6 +601,8 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let rows = params.get::<JsObject>("rows")?;
+    let schema: Schema = infer_schema(&rows)?;
+
     let len = rows.get_array_length()?;
     let keys = rows
         .get_element_unchecked::<JsObject>(0)?
@@ -608,12 +610,24 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
         .into_unknown();
 
     let keys = Vec::<String>::from_js(keys)?;
+    (0..len).for_each(|idx| {
+        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+
+        schema.fields().iter().for_each(|fld| {
+            let dtype = fld.data_type();
+            let key = fld.name();
+            let js_str = cx.env.create_string(key).unwrap();
+            let value: JsUnknown = obj.get_named_property(key).unwrap();
+
+        });
+    });
 
     let rows: Vec<Row> = (0..len)
         .map(|idx| {
             let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
             let keys = obj.get_property_names().unwrap();
             let keys_len = keys.get_array_length_unchecked().unwrap();
+
             Row((0..keys_len)
                 .map(|key_idx| {
                     let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
@@ -626,6 +640,90 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let mut df = finish_from_rows(rows)?;
     df.set_column_names(&keys).map_err(JsPolarsEr::from)?;
     df.try_into_js(&cx)
+}
+use std::collections::{HashMap, HashSet};
+
+type Tracker = HashMap<String, HashSet<DataType>>;
+
+fn infer_schema(rows: &JsObject) -> JsResult<Schema> {
+    let mut values: Tracker = Tracker::new();
+    let len = rows.get_array_length()?;
+
+    let max_infer = std::cmp::min(len, 50);
+    (0..max_infer).for_each(|idx| {
+        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+        let keys = obj.get_property_names().unwrap();
+        let keys_len = keys.get_array_length_unchecked().unwrap();
+        for key_idx in (0..keys_len) {
+            let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+
+            let value: JsUnknown = obj.get_property(key).unwrap();
+            let dtype = DataType::from_js(value).unwrap();
+
+            let key = key.into_utf8().unwrap().into_owned().unwrap();
+            add_or_insert(&mut values, &key, dtype);
+        }
+    });
+    Ok(Schema::new(resolve_fields(values)))
+}
+
+fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
+    if data_type == DataType::Null {
+        return;
+    }
+
+    if values.contains_key(key) {
+        let x = values.get_mut(key).unwrap();
+        x.insert(data_type);
+    } else {
+        // create hashset and add value type
+        let mut hs = HashSet::new();
+        hs.insert(data_type);
+        values.insert(key.to_string(), hs);
+    }
+}
+
+fn resolve_fields(spec: Tracker) -> Vec<Field> {
+    spec.iter()
+        .map(|(k, hs)| {
+            let v: Vec<&DataType> = hs.iter().collect();
+            Field::new(k, coerce_data_type(&v))
+        })
+        .collect()
+}
+use std::borrow::Borrow;
+
+fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+    use DataType::*;
+
+    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+
+    if are_all_equal {
+        return datatypes[0].borrow().clone();
+    }
+
+    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+
+    return match (lhs, rhs) {
+        (lhs, rhs) if lhs == rhs => lhs.clone(),
+        (List(lhs), List(rhs)) => {
+            let inner = coerce_data_type(&[lhs.as_ref(), rhs.as_ref()]);
+            List(Box::new(inner))
+        }
+        (scalar, List(list)) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (List(list), scalar) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (Float64, UInt64) => Float64,
+        (UInt64, Float64) => Float64,
+        (UInt64, Boolean) => UInt64,
+        (Boolean, UInt64) => UInt64,
+        (_, _) => Utf8,
+    };
 }
 
 #[js_function(1)]

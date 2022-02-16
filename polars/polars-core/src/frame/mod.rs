@@ -23,9 +23,10 @@ pub(crate) mod cross_join;
 pub mod explode;
 pub mod groupby;
 pub mod hash_join;
-#[cfg(feature = "rows")]
+// #[cfg(feature = "rows")]
 pub mod row;
 mod upstream_traits;
+
 
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
