@@ -113,9 +113,14 @@ impl PhysicalExpr for ApplyExpr {
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
-                    let s = self
-                        .function
-                        .call_udf(&mut [ac.flat_naive().into_owned()])?;
+                    let input = ac.flat_naive().into_owned();
+                    let input_len = input.len();
+                    let s = self.function.call_udf(&mut [input])?;
+
+                    if s.len() != input_len {
+                        return Err(PolarsError::ComputeError("A map function may never return a Series of a different length than its input".into()));
+                    }
+
                     if ac.is_aggregated() {
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     }
