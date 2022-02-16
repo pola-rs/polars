@@ -81,7 +81,7 @@ where
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::eq(x, y))
+                lhs.comparison(&rhs, |x, y| comparison::eq_and_validity(x, y))
             }
         }
     }
@@ -106,7 +106,7 @@ where
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::neq(x, y))
+                lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
             }
         }
     }
@@ -257,7 +257,7 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq(lhs, rhs))
+                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs))
             }
         }
     }
@@ -288,7 +288,9 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::neq(lhs, rhs))
+                compare_bools(&lhs, &rhs, |lhs, rhs| {
+                    comparison::neq_and_validity(lhs, rhs)
+                })
             }
         }
     }
@@ -468,7 +470,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::eq(l, r))
+            self.comparison(rhs, |l, r| comparison::eq_and_validity(l, r))
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
         }
@@ -491,7 +493,7 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
         }
         // same length
         else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::neq(l, r))
+            self.comparison(rhs, |l, r| comparison::neq_and_validity(l, r))
         } else {
             apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
         }
@@ -616,11 +618,11 @@ where
     }
 
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
@@ -657,10 +659,10 @@ impl ChunkCompare<&str> for Utf8Chunked {
     }
 
     fn equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
     fn not_equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
