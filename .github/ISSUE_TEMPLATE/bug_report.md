@@ -1,18 +1,18 @@
 ---
 name: Bug report
-about: An issue with rust polars or python polars
+about: An issue with rust polars, python polars or nodejs polars
 title: ''
 labels: ''
 assignees: ''
 ---
 
-#### Are you using Python or Rust?
+#### What language are you using?
 
-Replace this text with the **Rust** or **Python**.
+Replace this text with the **Rust**, **Python**, or **Node.js**.
 
 #### Which feature gates did you use?
 
-This can be ignored by Python users.
+This can be ignored by Python & JS users.
 
 #### What version of polars are you using?
 
@@ -21,6 +21,9 @@ Replace this text with the version.
 #### What operating system are you using polars on?
 
 Replace this text with your operating system and version.
+
+#### What language version are you using
+ex: python 3.8, node 16, etc.. 
 
 #### Describe your bug.
 
