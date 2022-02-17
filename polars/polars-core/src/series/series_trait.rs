@@ -146,7 +146,7 @@ pub(crate) mod private {
         }
 
         #[cfg(feature = "asof_join")]
-        fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
+        fn join_asof(&self, _other: &Series) -> Result<Vec<Option<IdxSize>>> {
             invalid_operation!(self)
         }
 
@@ -211,19 +211,19 @@ pub(crate) mod private {
             None
         }
 
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
+        fn hash_join_inner(&self, _other: &Series) -> Vec<(IdxSize, IdxSize)> {
             invalid_operation_panic!(self)
         }
-        fn hash_join_left(&self, _other: &Series) -> Vec<(u32, Option<u32>)> {
+        fn hash_join_left(&self, _other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
             invalid_operation_panic!(self)
         }
-        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
+        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
             invalid_operation_panic!(self)
         }
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
-            _opt_join_tuples: &[(Option<u32>, Option<u32>)],
+            _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
         ) -> Series {
             invalid_operation_panic!(self)
         }

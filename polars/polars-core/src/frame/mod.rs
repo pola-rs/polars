@@ -1540,7 +1540,7 @@ impl DataFrame {
     }
 
     #[cfg(feature = "rows")]
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[u32]) -> Self {
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
         self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
     }
 

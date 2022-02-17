@@ -267,17 +267,17 @@ impl GroupsProxy {
         self.len() == 0
     }
 
-    pub fn group_count(&self) -> UInt32Chunked {
+    pub fn group_count(&self) -> IdxCa {
         match self {
             GroupsProxy::Idx(groups) => {
-                let ca: NoNull<UInt32Chunked> = groups
+                let ca: NoNull<IdxCa> = groups
                     .iter()
                     .map(|(_first, idx)| idx.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
             }
             GroupsProxy::Slice(groups) => {
-                let ca: NoNull<UInt32Chunked> =
+                let ca: NoNull<IdxCa> =
                     groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             }
@@ -288,14 +288,14 @@ impl GroupsProxy {
             GroupsProxy::Idx(groups) => groups
                 .iter()
                 .map(|(_first, idx)| {
-                    let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as IdxSize).collect();
+                    let ca: NoNull<IdxCa> = idx.iter().map(|&v| v as IdxSize).collect();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
             GroupsProxy::Slice(groups) => groups
                 .iter()
                 .map(|&[first, len]| {
-                    let ca: NoNull<UInt32Chunked> = (first..first + len).collect_trusted();
+                    let ca: NoNull<IdxCa> = (first..first + len).collect_trusted();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
