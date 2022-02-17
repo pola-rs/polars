@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 /// # Safety
 /// Does not do bounds checks
-pub unsafe fn take_unchecked(arr: &dyn Array, idx: &UInt32Array) -> ArrayRef {
+pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
     use PhysicalType::*;
     match arr.data_type().to_physical_type() {
         Primitive(primitive) => with_match_primitive_type!(primitive, |$T| {
@@ -39,7 +39,7 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &UInt32Array) -> ArrayRef {
 /// caller must ensure indices are in bounds
 pub unsafe fn take_primitive_unchecked<T: NativeType>(
     arr: &PrimitiveArray<T>,
-    indices: &UInt32Array,
+    indices: &IdxArr,
 ) -> Arc<PrimitiveArray<T>> {
     let array_values = arr.values().as_slice();
     let index_values = indices.values().as_slice();
@@ -89,7 +89,7 @@ pub unsafe fn take_primitive_unchecked<T: NativeType>(
 /// caller must ensure indices are in bounds
 pub unsafe fn take_no_null_primitive<T: NativeType>(
     arr: &PrimitiveArray<T>,
-    indices: &UInt32Array,
+    indices: &IdxArr,
 ) -> Arc<PrimitiveArray<T>> {
     debug_assert!(!arr.has_validity());
     let array_values = arr.values().as_slice();
@@ -380,7 +380,7 @@ pub unsafe fn take_utf8_opt_iter_unchecked<I: IntoIterator<Item = Option<usize>>
 /// caller must ensure indices are in bounds
 pub unsafe fn take_utf8_unchecked(
     arr: &LargeStringArray,
-    indices: &UInt32Array,
+    indices: &IdxArr,
 ) -> Arc<LargeStringArray> {
     let data_len = indices.len();
 
@@ -502,8 +502,8 @@ pub unsafe fn take_utf8_unchecked(
 /// No bounds checks
 pub unsafe fn take_value_indices_from_list(
     list: &ListArray<i64>,
-    indices: &UInt32Array,
-) -> (UInt32Array, Vec<i64>) {
+    indices: &IdxArr,
+) -> (IdxArr, Vec<i64>) {
     let offsets = list.offsets().as_slice();
 
     let mut new_offsets = Vec::with_capacity(indices.len());
@@ -528,7 +528,7 @@ pub unsafe fn take_value_indices_from_list(
 
             // if start == end, this slot is empty
             while curr < end {
-                values.push(curr as u32);
+                values.push(curr as IdxSize);
                 curr += 1;
             }
         }
@@ -547,7 +547,7 @@ pub unsafe fn take_value_indices_from_list(
 
                 // if start == end, this slot is empty
                 while curr < end {
-                    values.push(curr as u32);
+                    values.push(curr as IdxSize);
                     curr += 1;
                 }
             } else {
@@ -556,10 +556,7 @@ pub unsafe fn take_value_indices_from_list(
         }
     }
 
-    (
-        PrimitiveArray::from_data(DataType::UInt32, values.into(), None),
-        new_offsets,
-    )
+    (IdxArr::from_data_default(values.into(), None), new_offsets)
 }
 
 #[cfg(test)]
@@ -570,13 +567,13 @@ mod test {
     fn test_utf8_kernel() {
         let s = LargeStringArray::from(vec![Some("foo"), None, Some("bar")]);
         unsafe {
-            let out = take_utf8_unchecked(&s, &UInt32Array::from_slice(&[1, 2]));
+            let out = take_utf8_unchecked(&s, &IdxArr::from_slice(&[1, 2]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
-            let out = take_utf8_unchecked(&s, &UInt32Array::from(vec![None, Some(2)]));
+            let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, Some(2)]));
             assert!(out.is_null(0));
             assert!(out.is_valid(1));
-            let out = take_utf8_unchecked(&s, &UInt32Array::from(vec![None, None]));
+            let out = take_utf8_unchecked(&s, &IdxArr::from(vec![None, None]));
             assert!(out.is_null(0));
             assert!(out.is_null(1));
         }

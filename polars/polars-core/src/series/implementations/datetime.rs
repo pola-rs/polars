@@ -60,7 +60,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "asof_join")]
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+    fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
         let other = other.to_physical_repr();
         self.0.deref().join_asof(&other)
     }
@@ -150,22 +150,22 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 .into_series()
         })
     }
-    fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
         let other = other.to_physical_repr().into_owned();
         self.0.hash_join_inner(other.as_ref().as_ref())
     }
-    fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
         let other = other.to_physical_repr().into_owned();
         self.0.hash_join_left(other.as_ref().as_ref())
     }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let other = other.to_physical_repr().into_owned();
         self.0.hash_join_outer(other.as_ref().as_ref())
     }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         let right_column = right_column.to_physical_repr().into_owned();
         self.0
@@ -239,7 +239,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         self.0.deref().argsort_multiple(by, reverse)
     }
 }
@@ -336,7 +336,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -363,7 +363,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
@@ -431,7 +431,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         self.0.argsort(reverse)
     }
 
@@ -454,7 +454,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.n_unique()
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.0.arg_unique()
     }
 
@@ -567,7 +567,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         self.0
             .repeat_by(by)
             .cast(&DataType::List(Box::new(DataType::Datetime(

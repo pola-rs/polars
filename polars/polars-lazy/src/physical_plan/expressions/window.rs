@@ -365,7 +365,7 @@ impl PhysicalExpr for WindowExpr {
 
                 // groups are not changed, we can map by doing a standard argsort.
                 if std::ptr::eq(ac.groups.as_ref(), gb.get_groups()) {
-                    let mut iter = 0..flattened.len() as u32;
+                    let mut iter = 0..flattened.len() as IdxSize;
                     match ac.groups().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             for g in groups.all() {
@@ -399,7 +399,7 @@ impl PhysicalExpr for WindowExpr {
                 // Safety:
                 // we only have unique indices ranging from 0..len
                 let idx = unsafe { perfect_sort(&POOL, &idx_mapping) };
-                let idx = UInt32Chunked::from_vec("", idx);
+                let idx = IdxCa::from_vec("", idx);
 
                 // Safety:
                 // groups should always be in bounds.

@@ -10,12 +10,12 @@ use rayon::prelude::*;
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
-    first: Vec<u32>,
-    all: Vec<Vec<u32>>,
+    first: Vec<IdxSize>,
+    all: Vec<Vec<IdxSize>>,
 }
 
-pub type IdxItem = (u32, Vec<u32>);
-pub type BorrowIdxItem<'a> = (u32, &'a Vec<u32>);
+pub type IdxItem = (IdxSize, Vec<IdxSize>);
+pub type BorrowIdxItem<'a> = (IdxSize, &'a Vec<IdxSize>);
 
 impl Drop for GroupsIdx {
     fn drop(&mut self) {
@@ -78,15 +78,16 @@ impl GroupsIdx {
 
     pub fn iter(
         &self,
-    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<u32>>, std::slice::Iter<Vec<u32>>> {
+    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<Vec<IdxSize>>>
+    {
         self.into_iter()
     }
 
-    pub fn all(&self) -> &[Vec<u32>] {
+    pub fn all(&self) -> &[Vec<IdxSize>] {
         &self.all
     }
 
-    pub fn first(&self) -> &[u32] {
+    pub fn first(&self) -> &[IdxSize] {
         &self.first
     }
 
@@ -115,8 +116,8 @@ impl FromIterator<IdxItem> for GroupsIdx {
 impl<'a> IntoIterator for &'a GroupsIdx {
     type Item = BorrowIdxItem<'a>;
     type IntoIter = std::iter::Zip<
-        std::iter::Copied<std::slice::Iter<'a, u32>>,
-        std::slice::Iter<'a, Vec<u32>>,
+        std::iter::Copied<std::slice::Iter<'a, IdxSize>>,
+        std::slice::Iter<'a, Vec<IdxSize>>,
     >;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -126,7 +127,7 @@ impl<'a> IntoIterator for &'a GroupsIdx {
 
 impl<'a> IntoIterator for GroupsIdx {
     type Item = IdxItem;
-    type IntoIter = std::iter::Zip<std::vec::IntoIter<u32>, std::vec::IntoIter<Vec<u32>>>;
+    type IntoIter = std::iter::Zip<std::vec::IntoIter<IdxSize>, std::vec::IntoIter<Vec<IdxSize>>>;
 
     fn into_iter(mut self) -> Self::IntoIter {
         let first = std::mem::take(&mut self.first);
@@ -151,8 +152,8 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
 
 impl<'a> IntoParallelIterator for &'a GroupsIdx {
     type Iter = rayon::iter::Zip<
-        rayon::iter::Copied<rayon::slice::Iter<'a, u32>>,
-        rayon::slice::Iter<'a, Vec<u32>>,
+        rayon::iter::Copied<rayon::slice::Iter<'a, IdxSize>>,
+        rayon::slice::Iter<'a, Vec<IdxSize>>,
     >;
     type Item = BorrowIdxItem<'a>;
 
@@ -162,7 +163,7 @@ impl<'a> IntoParallelIterator for &'a GroupsIdx {
 }
 
 impl IntoParallelIterator for GroupsIdx {
-    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<u32>, rayon::vec::IntoIter<Vec<u32>>>;
+    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<IdxSize>, rayon::vec::IntoIter<Vec<IdxSize>>>;
     type Item = IdxItem;
 
     fn into_par_iter(mut self) -> Self::Iter {
@@ -176,7 +177,7 @@ impl IntoParallelIterator for GroupsIdx {
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
 /// Only used when group values are stored together
-pub type GroupsSlice = Vec<[u32; 2]>;
+pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupsProxy {
@@ -267,18 +268,17 @@ impl GroupsProxy {
         self.len() == 0
     }
 
-    pub fn group_count(&self) -> UInt32Chunked {
+    pub fn group_count(&self) -> IdxCa {
         match self {
             GroupsProxy::Idx(groups) => {
-                let ca: NoNull<UInt32Chunked> = groups
+                let ca: NoNull<IdxCa> = groups
                     .iter()
-                    .map(|(_first, idx)| idx.len() as u32)
+                    .map(|(_first, idx)| idx.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
             }
             GroupsProxy::Slice(groups) => {
-                let ca: NoNull<UInt32Chunked> =
-                    groups.iter().map(|[_first, len]| *len).collect_trusted();
+                let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             }
         }
@@ -288,14 +288,14 @@ impl GroupsProxy {
             GroupsProxy::Idx(groups) => groups
                 .iter()
                 .map(|(_first, idx)| {
-                    let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                    let ca: NoNull<IdxCa> = idx.iter().map(|&v| v as IdxSize).collect();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
             GroupsProxy::Slice(groups) => groups
                 .iter()
                 .map(|&[first, len]| {
-                    let ca: NoNull<UInt32Chunked> = (first..first + len).collect_trusted();
+                    let ca: NoNull<IdxCa> = (first..first + len).collect_trusted();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
@@ -311,7 +311,7 @@ impl From<GroupsIdx> for GroupsProxy {
 
 pub enum GroupsIndicator<'a> {
     Idx(BorrowIdxItem<'a>),
-    Slice([u32; 2]),
+    Slice([IdxSize; 2]),
 }
 
 impl<'a> GroupsIndicator<'a> {

@@ -19,3 +19,4 @@ thiserror = "^1.0"
 [features]
 strings = []
 compute = ["arrow/compute_cast"]
+bigidx = []

@@ -22,7 +22,7 @@ impl SortExpr {
 }
 
 /// Map argsort result back to the indices on the `GroupIdx`
-pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &UInt32Chunked, idx: &[u32]) -> Vec<u32> {
+pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> Vec<IdxSize> {
     sorted_idx
         .cont_slice()
         .unwrap()
@@ -35,9 +35,9 @@ pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &UInt32Chunked, idx: &
 }
 
 pub(crate) fn map_sorted_indices_to_group_slice(
-    sorted_idx: &UInt32Chunked,
-    first: u32,
-) -> Vec<u32> {
+    sorted_idx: &IdxCa,
+    first: IdxSize,
+) -> Vec<IdxSize> {
     sorted_idx
         .cont_slice()
         .unwrap()

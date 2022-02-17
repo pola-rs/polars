@@ -1420,7 +1420,7 @@ impl DataFrame {
         I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
-            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<IdxCa> = iter.into_iter().map(|idx| idx as IdxSize).collect();
             return self.take_unchecked_vectical(&idx_ca.into_inner());
         }
 
@@ -1434,7 +1434,7 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: NoNull<UInt32Chunked> = iter.into_iter().map(|idx| idx as u32).collect();
+            let idx_ca: NoNull<IdxCa> = iter.into_iter().map(|idx| idx as IdxSize).collect();
             let idx_ca = idx_ca.into_inner();
             return self.take_unchecked(&idx_ca);
         }
@@ -1470,7 +1470,10 @@ impl DataFrame {
         I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
     {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
-            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let idx_ca: IdxCa = iter
+                .into_iter()
+                .map(|opt| opt.map(|v| v as IdxSize))
+                .collect();
             return self.take_unchecked_vectical(&idx_ca);
         }
 
@@ -1485,7 +1488,10 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: UInt32Chunked = iter.into_iter().map(|opt| opt.map(|v| v as u32)).collect();
+            let idx_ca: IdxCa = iter
+                .into_iter()
+                .map(|opt| opt.map(|v| v as IdxSize))
+                .collect();
             return self.take_unchecked(&idx_ca);
         }
 
@@ -1516,11 +1522,11 @@ impl DataFrame {
     /// ```
     /// # use polars_core::prelude::*;
     /// fn example(df: &DataFrame) -> Result<DataFrame> {
-    ///     let idx = UInt32Chunked::new("idx", &[0, 1, 9]);
+    ///     let idx = IdxCa::new("idx", &[0, 1, 9]);
     ///     df.take(&idx)
     /// }
     /// ```
-    pub fn take(&self, indices: &UInt32Chunked) -> Result<Self> {
+    pub fn take(&self, indices: &IdxCa) -> Result<Self> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -1540,11 +1546,11 @@ impl DataFrame {
     }
 
     #[cfg(feature = "rows")]
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[u32]) -> Self {
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
         self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
     }
 
-    pub(crate) unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Self {
+    pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         let cols = POOL.install(|| {
             self.columns
                 .par_iter()
@@ -1557,7 +1563,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
-    unsafe fn take_unchecked_vectical(&self, indices: &UInt32Chunked) -> Self {
+    unsafe fn take_unchecked_vectical(&self, indices: &IdxCa) -> Self {
         let n_threads = POOL.current_num_threads();
         let idxs = split_ca(indices, n_threads).unwrap();
 
@@ -2752,9 +2758,9 @@ impl DataFrame {
         let gb = self.groupby(names)?;
         let groups = gb.get_groups().idx_ref();
 
-        let finish_maintain_order = |mut groups: Vec<u32>| {
+        let finish_maintain_order = |mut groups: Vec<IdxSize>| {
             groups.sort_unstable();
-            let ca = UInt32Chunked::from_vec("", groups);
+            let ca = IdxCa::from_vec("", groups);
             unsafe { self.take_unchecked(&ca) }
         };
 
@@ -2798,7 +2804,12 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as u32, true, false))
+        Ok(is_unique_helper(
+            groups,
+            self.height() as IdxSize,
+            true,
+            false,
+        ))
     }
 
     /// Get a mask of all the duplicated rows in the `DataFrame`.
@@ -2817,7 +2828,12 @@ impl DataFrame {
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as u32, false, true))
+        Ok(is_unique_helper(
+            groups,
+            self.height() as IdxSize,
+            false,
+            true,
+        ))
     }
 
     /// Create a new `DataFrame` that shows the null counts per column.

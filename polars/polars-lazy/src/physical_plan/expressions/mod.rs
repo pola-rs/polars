@@ -106,14 +106,14 @@ impl<'a> AggregationContext<'a> {
                 // and the series is aggregated with this groups
                 // so we need to recreate new grouptuples that
                 // match the exploded Series
-                let mut offset = 0u32;
+                let mut offset = 0 as IdxSize;
 
                 match self.groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .map(|g| {
-                                let len = g.1.len() as u32;
+                                let len = g.1.len() as IdxSize;
                                 let new_offset = offset + len;
                                 let out = [offset, len];
                                 offset = new_offset;
@@ -128,7 +128,7 @@ impl<'a> AggregationContext<'a> {
                 self.update_groups = UpdateGroups::No;
             }
             UpdateGroups::WithSeriesLen => {
-                let mut offset = 0u32;
+                let mut offset = 0 as IdxSize;
                 let list = self
                     .series()
                     .list()
@@ -143,7 +143,7 @@ impl<'a> AggregationContext<'a> {
                         let groups = offsets[1..]
                             .iter()
                             .map(|&o| {
-                                let len = (o - previous) as u32;
+                                let len = (o - previous) as IdxSize;
                                 let new_offset = offset + len;
                                 previous = o;
                                 let out = [offset, len];
@@ -161,7 +161,7 @@ impl<'a> AggregationContext<'a> {
                             .amortized_iter()
                             .map(|s| {
                                 if let Some(s) = s {
-                                    let len = s.as_ref().len() as u32;
+                                    let len = s.as_ref().len() as IdxSize;
                                     let new_offset = offset + len;
                                     let out = [offset, len];
                                     offset = new_offset;

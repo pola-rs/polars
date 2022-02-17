@@ -6,7 +6,7 @@ use rayon::prelude::*;
 
 use crate::frame::hash_join::{get_hash_tbl_threaded_join_partitioned, multiple_keys as mk};
 
-fn find_latest_leq<T>(left_val: T, right_asof: &[T], subset_idx: &[u32]) -> Option<u32>
+fn find_latest_leq<T>(left_val: T, right_asof: &[T], subset_idx: &[IdxSize]) -> Option<IdxSize>
 where
     T: Copy + PartialOrd,
 {
@@ -28,7 +28,7 @@ fn asof_join_by<T>(
     b: &DataFrame,
     left_asof: &ChunkedArray<T>,
     right_asof: &ChunkedArray<T>,
-) -> Vec<Option<u32>>
+) -> Vec<Option<IdxSize>>
 where
     T: PolarsNumericType,
 {
@@ -65,7 +65,7 @@ where
                     Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
                 let local_offset = offset;
 
-                let mut idx_a = local_offset as u32;
+                let mut idx_a = local_offset as IdxSize;
                 for probe_hashes in probe_hashes.data_views() {
                     for (idx, &h) in probe_hashes.iter().enumerate() {
                         debug_assert!(idx + offset < left_asof.len());

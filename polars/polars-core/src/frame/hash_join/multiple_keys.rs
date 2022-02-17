@@ -30,7 +30,7 @@ pub(crate) unsafe fn compare_df_rows2(
 pub(crate) fn create_build_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
-) -> Vec<HashMap<IdxHash, Vec<u32>, IdBuildHasher>> {
+) -> Vec<HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>> {
     let n_partitions = set_partition_size();
 
     // We will create a hashtable in every thread.
@@ -39,7 +39,7 @@ pub(crate) fn create_build_table(
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
             let part_no = part_no as u64;
-            let mut hash_tbl: HashMap<IdxHash, Vec<u32>, IdBuildHasher> =
+            let mut hash_tbl: HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_partitions = n_partitions as u64;
@@ -65,7 +65,7 @@ pub(crate) fn create_build_table(
                         idx += 1;
                     });
 
-                    offset += len as u32;
+                    offset += len as IdxSize;
                 }
             }
             hash_tbl
@@ -77,7 +77,7 @@ pub(crate) fn create_build_table(
 fn create_build_table_outer(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
-) -> Vec<HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher>> {
+) -> Vec<HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>> {
     // Outer join equivalent of create_build_table() adds a bool in the hashmap values for tracking
     // whether a value in the hash table has already been matched to a value in the probe hashes.
     let n_partitions = set_partition_size();
@@ -88,7 +88,7 @@ fn create_build_table_outer(
     POOL.install(|| {
         (0..n_partitions).into_par_iter().map(|part_no| {
             let part_no = part_no as u64;
-            let mut hash_tbl: HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher> =
+            let mut hash_tbl: HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher> =
                 HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
             let n_partitions = n_partitions as u64;
@@ -114,7 +114,7 @@ fn create_build_table_outer(
                         idx += 1;
                     });
 
-                    offset += len as u32;
+                    offset += len as IdxSize;
                 }
             }
             hash_tbl
@@ -127,17 +127,17 @@ fn create_build_table_outer(
 #[allow(clippy::too_many_arguments)]
 fn probe_inner<F>(
     probe_hashes: &UInt64Chunked,
-    hash_tbls: &[HashMap<IdxHash, Vec<u32>, IdBuildHasher>],
-    results: &mut Vec<(u32, u32)>,
+    hash_tbls: &[HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>],
+    results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: usize,
     n_tables: u64,
     a: &DataFrame,
     b: &DataFrame,
     swap_fn: F,
 ) where
-    F: Fn(u32, u32) -> (u32, u32),
+    F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
-    let mut idx_a = local_offset as u32;
+    let mut idx_a = local_offset as IdxSize;
     for probe_hashes in probe_hashes.data_views() {
         for &h in probe_hashes {
             // probe table that contains the hashed value
@@ -176,7 +176,7 @@ pub(crate) fn inner_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
     swap: bool,
-) -> Vec<(u32, u32)> {
+) -> Vec<(IdxSize, IdxSize)> {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
@@ -238,13 +238,19 @@ pub(crate) fn inner_join_multiple_keys(
 }
 
 #[cfg(feature = "private")]
-pub fn private_left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
+pub fn private_left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+) -> Vec<(IdxSize, Option<IdxSize>)> {
     let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
     let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
     left_join_multiple_keys(&a, &b)
 }
 
-pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32, Option<u32>)> {
+pub(crate) fn left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+) -> Vec<(IdxSize, Option<IdxSize>)> {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));
@@ -276,7 +282,7 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
                     Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
                 let local_offset = offset;
 
-                let mut idx_a = local_offset as u32;
+                let mut idx_a = local_offset as IdxSize;
                 for probe_hashes in probe_hashes.data_views() {
                     for &h in probe_hashes {
                         // probe table that contains the hashed value
@@ -315,8 +321,8 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(u32,
 #[allow(clippy::type_complexity)]
 fn probe_outer<F, G, H>(
     probe_hashes: &[UInt64Chunked],
-    hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<u32>), IdBuildHasher>],
-    results: &mut Vec<(Option<u32>, Option<u32>)>,
+    hash_tbls: &mut [HashMap<IdxHash, (bool, Vec<IdxSize>), IdBuildHasher>],
+    results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
     n_tables: u64,
     a: &DataFrame,
     b: &DataFrame,
@@ -328,11 +334,11 @@ fn probe_outer<F, G, H>(
     swap_fn_drain: H,
 ) where
     // idx_a, idx_b -> ...
-    F: Fn(u32, u32) -> (Option<u32>, Option<u32>),
+    F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_a -> ...
-    G: Fn(u32) -> (Option<u32>, Option<u32>),
+    G: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_b -> ...
-    H: Fn(u32) -> (Option<u32>, Option<u32>),
+    H: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
 {
     let mut idx_a = 0;
 
@@ -384,7 +390,7 @@ pub(crate) fn outer_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
     swap: bool,
-) -> Vec<(Option<u32>, Option<u32>)> {
+) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 

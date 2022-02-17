@@ -755,7 +755,7 @@ impl Expr {
         );
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
-            GetOutput::from_type(DataType::UInt32),
+            GetOutput::from_type(IDX_DTYPE),
         )
         .with_fmt("arg_unique")
     }
@@ -771,7 +771,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32),
+            GetOutput::from_type(IDX_DTYPE),
             options,
         )
     }
@@ -787,7 +787,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32),
+            GetOutput::from_type(IDX_DTYPE),
             options,
         )
     }
@@ -807,7 +807,7 @@ impl Expr {
 
         self.function_with_options(
             move |s: Series| Ok(s.argsort(reverse).into_series()),
-            GetOutput::from_type(DataType::UInt32),
+            GetOutput::from_type(IDX_DTYPE),
             options,
         )
     }
@@ -1521,8 +1521,8 @@ impl Expr {
         let function = |s: &mut [Series]| {
             let by = &s[1];
             let s = &s[0];
-            let by = by.cast(&DataType::UInt32)?;
-            Ok(s.repeat_by(by.u32()?).into_series())
+            let by = by.cast(&IDX_DTYPE)?;
+            Ok(s.repeat_by(by.idx()?).into_series())
         };
 
         self.map_many(
@@ -1837,7 +1837,7 @@ impl Expr {
             move |s| Ok(s.rank(options)),
             GetOutput::map_field(move |fld| match options.method {
                 RankMethod::Average => Field::new(fld.name(), DataType::Float32),
-                _ => Field::new(fld.name(), DataType::UInt32),
+                _ => Field::new(fld.name(), IDX_DTYPE),
             }),
         )
         .with_fmt("rank")
@@ -2001,7 +2001,7 @@ impl Expr {
                     Ok(ca.into_series())
                 }
             },
-            GetOutput::from_type(DataType::UInt32),
+            GetOutput::from_type(IDX_DTYPE),
         )
         .with_fmt("cumcount")
     }

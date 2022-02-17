@@ -52,7 +52,7 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
     if by.len() != reverse.len() {
         return Err(PolarsError::ValueError(
             format!(

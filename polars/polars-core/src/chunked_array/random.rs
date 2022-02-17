@@ -5,20 +5,20 @@ use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
-fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> UInt32Chunked {
+fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
     let mut rng = StdRng::seed_from_u64(seed);
-    (0u32..n as u32)
-        .map(move |_| Uniform::new(0u32, len as u32).sample(&mut rng))
-        .collect_trusted::<NoNull<UInt32Chunked>>()
+    (0..n as IdxSize)
+        .map(move |_| Uniform::new(0, len as IdxSize).sample(&mut rng))
+        .collect_trusted::<NoNull<IdxCa>>()
         .into_inner()
 }
 
-fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64) -> UInt32Chunked {
+fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
     let mut rng = StdRng::seed_from_u64(seed);
-    let mut idx = Vec::from_iter_trusted_length(0u32..len as u32);
+    let mut idx = Vec::from_iter_trusted_length(0..len as IdxSize);
     idx.shuffle(&mut rng);
     idx.truncate(n);
-    UInt32Chunked::new_vec("", idx)
+    IdxCa::new_vec("", idx)
 }
 
 impl<T> ChunkedArray<T>
@@ -121,7 +121,7 @@ impl DataFrame {
             ));
         }
         // all columns should used the same indices. So we first create the indices.
-        let idx: UInt32Chunked = match with_replacement {
+        let idx = match with_replacement {
             true => create_rand_index_with_replacement(n, self.height(), seed),
             false => create_rand_index_no_replacement(n, self.height(), seed),
         };

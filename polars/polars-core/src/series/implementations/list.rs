@@ -132,7 +132,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -153,7 +153,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {

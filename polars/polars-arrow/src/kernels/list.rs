@@ -1,8 +1,8 @@
-use crate::index::IndexToUsize;
+use crate::index::*;
 use crate::kernels::take::take_unchecked;
 use crate::trusted_len::PushUnchecked;
 use crate::utils::CustomIterTools;
-use arrow::array::{ArrayRef, ListArray, PrimitiveArray};
+use arrow::array::{ArrayRef, ListArray};
 use arrow::buffer::Buffer;
 
 /// Get the indices that would result in a get operation on the lists values.
@@ -29,13 +29,13 @@ use arrow::buffer::Buffer;
 ///     [3, 5, 6]
 ///
 /// ```
-fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> PrimitiveArray<u32> {
+fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
     let mut iter = arr.offsets().iter();
 
-    let mut cum_offset = 0u32;
+    let mut cum_offset: IdxSize = 0;
 
     if let Some(mut previous) = iter.next().copied() {
-        let a: PrimitiveArray<u32> = iter
+        let a: IdxArr = iter
             .map(|&offset| {
                 let len = offset - previous;
                 // make sure that empty lists don't get accessed
@@ -46,15 +46,15 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> PrimitiveArray<u32> 
 
                 let out = index
                     .negative_to_usize(len as usize)
-                    .map(|idx| idx as u32 + cum_offset);
-                cum_offset += len as u32;
+                    .map(|idx| idx as IdxSize + cum_offset);
+                cum_offset += len as IdxSize;
                 out
             })
             .collect_trusted();
 
         a
     } else {
-        PrimitiveArray::<u32>::from_slice(&[])
+        IdxArr::from_slice(&[])
     }
 }
 
@@ -87,7 +87,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::Int32Array;
+    use arrow::array::{Int32Array, PrimitiveArray};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
     use std::sync::Arc;

@@ -71,9 +71,9 @@ pub enum JoinType {
 
 pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<u32>, H>],
+    hash_tables: &[HashMap<T, Vec<IdxSize>, H>],
     len: u64,
-) -> &HashMap<T, Vec<u32>, H> {
+) -> &HashMap<T, Vec<IdxSize>, H> {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -88,9 +88,9 @@ pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
 #[allow(clippy::type_complexity)]
 unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     h: u64,
-    hash_tables: &mut [HashMap<T, (bool, Vec<u32>), H>],
+    hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
     len: u64,
-) -> &mut HashMap<T, (bool, Vec<u32>), H> {
+) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -105,18 +105,18 @@ unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
 /// Probe the build table and add tuples to the results (inner join)
 fn probe_inner<T, F>(
     probe: &[T],
-    hash_tbls: &[PlHashMap<T, Vec<u32>>],
-    results: &mut Vec<(u32, u32)>,
+    hash_tbls: &[PlHashMap<T, Vec<IdxSize>>],
+    results: &mut Vec<(IdxSize, IdxSize)>,
     local_offset: usize,
     n_tables: u64,
     swap_fn: F,
 ) where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
-    F: Fn(u32, u32) -> (u32, u32),
+    F: Fn(IdxSize, IdxSize) -> (IdxSize, IdxSize),
 {
     assert!(hash_tbls.len().is_power_of_two());
     probe.iter().enumerate().for_each(|(idx_a, k)| {
-        let idx_a = (idx_a + local_offset) as u32;
+        let idx_a = (idx_a + local_offset) as IdxSize;
         // probe table that contains the hashed value
         let current_probe_table =
             unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
@@ -130,7 +130,9 @@ fn probe_inner<T, F>(
     });
 }
 
-pub(crate) fn create_probe_table<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<u32>>>
+pub(crate) fn create_probe_table<T, IntoSlice>(
+    keys: Vec<IntoSlice>,
+) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -144,13 +146,14 @@ where
         (0..n_partitions).into_par_iter().map(|partition_no| {
             let partition_no = partition_no as u64;
 
-            let mut hash_tbl: PlHashMap<T, Vec<u32>> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+            let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
+                PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
             let n_partitions = n_partitions as u64;
             let mut offset = 0;
             for keys in &keys {
                 let keys = keys.as_ref();
-                let len = keys.len() as u32;
+                let len = keys.len() as IdxSize;
 
                 let mut cnt = 0;
                 keys.iter().for_each(|k| {
@@ -184,7 +187,7 @@ fn hash_join_tuples_inner<T, IntoSlice>(
     build: Vec<IntoSlice>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
-) -> Vec<(u32, u32)>
+) -> Vec<(IdxSize, IdxSize)>
 where
     IntoSlice: AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
@@ -249,7 +252,7 @@ where
 fn hash_join_tuples_left<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
-) -> Vec<(u32, Option<u32>)>
+) -> Vec<(IdxSize, Option<IdxSize>)>
 where
     IntoSlice: AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
@@ -287,7 +290,7 @@ where
                 let mut results = Vec::with_capacity(probe.len());
 
                 probe.iter().enumerate().for_each(|(idx_a, k)| {
-                    let idx_a = (idx_a + offset) as u32;
+                    let idx_a = (idx_a + offset) as IdxSize;
                     // probe table that contains the hashed value
                     let current_probe_table = unsafe {
                         get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables)
@@ -315,8 +318,8 @@ where
 /// Probe the build table and add tuples to the results (inner join)
 fn probe_outer<T, F, G, H>(
     probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<T, (bool, Vec<u32>)>],
-    results: &mut Vec<(Option<u32>, Option<u32>)>,
+    hash_tbls: &mut [PlHashMap<T, (bool, Vec<IdxSize>)>],
+    results: &mut Vec<(Option<IdxSize>, Option<IdxSize>)>,
     n_tables: u64,
     // Function that get index_a, index_b when there is a match and pushes to result
     swap_fn_match: F,
@@ -327,11 +330,11 @@ fn probe_outer<T, F, G, H>(
 ) where
     T: Send + Hash + Eq + Sync + Copy,
     // idx_a, idx_b -> ...
-    F: Fn(u32, u32) -> (Option<u32>, Option<u32>),
+    F: Fn(IdxSize, IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_a -> ...
-    G: Fn(u32) -> (Option<u32>, Option<u32>),
+    G: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
     // idx_b -> ...
-    H: Fn(u32) -> (Option<u32>, Option<u32>),
+    H: Fn(IdxSize) -> (Option<IdxSize>, Option<IdxSize>),
 {
     // needed for the partition shift instead of modulo to make sense
     assert!(n_tables.is_power_of_two());
@@ -376,7 +379,7 @@ fn hash_join_tuples_outer<T, I, J>(
     a: Vec<I>,
     b: Vec<J>,
     swap: bool,
-) -> Vec<(Option<u32>, Option<u32>)>
+) -> Vec<(Option<IdxSize>, Option<IdxSize>)>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     J: Iterator<Item = T> + Send + TrustedLen,
@@ -433,29 +436,29 @@ where
 }
 
 pub(crate) trait HashJoin<T> {
-    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(IdxSize, IdxSize)> {
         unimplemented!()
     }
-    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(IdxSize, Option<IdxSize>)> {
         unimplemented!()
     }
-    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         unimplemented!()
     }
 }
 
 impl HashJoin<Float32Type> for Float32Chunked {
-    fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(IdxSize, IdxSize)> {
         let ca = self.bit_repr_small();
         let other = other.bit_repr_small();
         ca.hash_join_inner(&other)
     }
-    fn hash_join_left(&self, other: &Float32Chunked) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &Float32Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         let ca = self.bit_repr_small();
         let other = other.bit_repr_small();
         ca.hash_join_left(&other)
     }
-    fn hash_join_outer(&self, other: &Float32Chunked) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &Float32Chunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let ca = self.bit_repr_small();
         let other = other.bit_repr_small();
         ca.hash_join_outer(&other)
@@ -463,17 +466,17 @@ impl HashJoin<Float32Type> for Float32Chunked {
 }
 
 impl HashJoin<Float64Type> for Float64Chunked {
-    fn hash_join_inner(&self, other: &Float64Chunked) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &Float64Chunked) -> Vec<(IdxSize, IdxSize)> {
         let ca = self.bit_repr_large();
         let other = other.bit_repr_large();
         ca.hash_join_inner(&other)
     }
-    fn hash_join_left(&self, other: &Float64Chunked) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &Float64Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         let ca = self.bit_repr_large();
         let other = other.bit_repr_large();
         ca.hash_join_left(&other)
     }
-    fn hash_join_outer(&self, other: &Float64Chunked) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &Float64Chunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let ca = self.bit_repr_large();
         let other = other.bit_repr_large();
         ca.hash_join_outer(&other)
@@ -481,18 +484,24 @@ impl HashJoin<Float64Type> for Float64Chunked {
 }
 
 impl HashJoin<CategoricalType> for CategoricalChunked {
-    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(IdxSize, IdxSize)> {
         self.deref().hash_join_inner(other.deref())
     }
-    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         self.deref().hash_join_left(other.deref())
     }
-    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(
+        &self,
+        other: &CategoricalChunked,
+    ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         self.deref().hash_join_outer(other.deref())
     }
 }
 
-fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(u32, u32)>
+fn num_group_join_inner<T>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+) -> Vec<(IdxSize, IdxSize)>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,
@@ -567,7 +576,7 @@ where
 fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> Vec<(u32, Option<u32>)>
+) -> Vec<(IdxSize, Option<IdxSize>)>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -659,7 +668,7 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash + num::NumCast,
 {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(IdxSize, IdxSize)> {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
@@ -701,7 +710,7 @@ where
         }
     }
 
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(IdxSize, Option<IdxSize>)> {
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.
@@ -743,7 +752,7 @@ where
         }
     }
 
-    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = set_partition_size();
@@ -778,7 +787,7 @@ where
 }
 
 impl HashJoin<BooleanType> for BooleanChunked {
-    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(IdxSize, IdxSize)> {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
         let other = other.cast(&DataType::UInt32).unwrap();
@@ -786,7 +795,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
         ca.hash_join_inner(other)
     }
 
-    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         let ca = self.cast(&DataType::UInt32).unwrap();
         let ca = ca.u32().unwrap();
         let other = other.cast(&DataType::UInt32).unwrap();
@@ -794,7 +803,7 @@ impl HashJoin<BooleanType> for BooleanChunked {
         ca.hash_join_left(other)
     }
 
-    fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = set_partition_size();
@@ -847,7 +856,7 @@ fn prepare_strs<'a>(been_split: &'a [Utf8Chunked], hb: &RandomState) -> Vec<Vec<
 }
 
 impl HashJoin<Utf8Type> for Utf8Chunked {
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(IdxSize, IdxSize)> {
         let n_threads = POOL.current_num_threads();
 
         let (a, b, swap) = det_hash_prone_order!(self, other);
@@ -861,7 +870,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         let n_threads = POOL.current_num_threads();
 
         let hb = RandomState::default();
@@ -873,7 +882,7 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
         hash_join_tuples_left(str_hashes_a, str_hashes_b)
     }
 
-    fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         let (a, b, swap) = det_hash_prone_order!(self, other);
 
         let n_partitions = set_partition_size();
@@ -911,7 +920,7 @@ pub trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
-        _opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         unimplemented!()
     }
@@ -925,7 +934,7 @@ where
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -955,7 +964,7 @@ macro_rules! impl_zip_outer_join {
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<u32>, Option<u32>)],
+                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
             ) -> Series {
                 let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -987,7 +996,7 @@ impl ZipOuterJoinColumn for Float32Chunked {
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         self.apply_as_ints(|s| {
             s.zip_outer_join_column(
@@ -1002,7 +1011,7 @@ impl ZipOuterJoinColumn for Float64Chunked {
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         self.apply_as_ints(|s| {
             s.zip_outer_join_column(
@@ -1044,7 +1053,7 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(u32, B)], left_join: bool) -> DataFrame {
+    fn create_left_df<B: Sync>(&self, join_tuples: &[(IdxSize, B)], left_join: bool) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {

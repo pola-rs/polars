@@ -96,7 +96,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "asof_join")]
-            fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+            fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
                 self.0.join_asof(other)
             }
 
@@ -173,19 +173,19 @@ macro_rules! impl_dyn_series {
             fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.agg_median(groups)
             }
-            fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
+            fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
                 HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
             }
-            fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
+            fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
                 HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
             }
-            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
+            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
                 HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
             }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<u32>, Option<u32>)],
+                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
             ) -> Series {
                 ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
             }
@@ -209,7 +209,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
                 self.0.argsort_multiple(by, reverse)
             }
         }
@@ -359,7 +359,7 @@ macro_rules! impl_dyn_series {
                 self.0.median().map(|v| v as f64)
             }
 
-            fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+            fn take(&self, indices: &IdxCa) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {
@@ -380,7 +380,7 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
             }
 
-            unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+            unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
                 let idx = if idx.chunks.len() > 1 {
                     Cow::Owned(idx.rechunk())
                 } else {
@@ -435,7 +435,7 @@ macro_rules! impl_dyn_series {
                 ChunkSort::sort_with(&self.0, options).into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> UInt32Chunked {
+            fn argsort(&self, reverse: bool) -> IdxCa {
                 ChunkSort::argsort(&self.0, reverse)
             }
 
@@ -455,7 +455,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn arg_unique(&self) -> Result<UInt32Chunked> {
+            fn arg_unique(&self) -> Result<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
             }
 
@@ -559,7 +559,7 @@ macro_rules! impl_dyn_series {
                 IsIn::is_in(&self.0, other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
                 RepeatBy::repeat_by(&self.0, by)
             }
 

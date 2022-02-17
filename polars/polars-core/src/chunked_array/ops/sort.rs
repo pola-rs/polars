@@ -3,7 +3,7 @@ use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
 use polars_arrow::array::default_arrays::FromDataUtf8;
-use polars_arrow::prelude::ValueSize;
+use polars_arrow::prelude::{FromData, ValueSize};
 use polars_arrow::trusted_len::PushUnchecked;
 use rayon::prelude::*;
 use std::cmp::Ordering;
@@ -133,7 +133,7 @@ fn argsort_branch<T, Fd, Fr>(
 macro_rules! argsort {
     ($self:expr, $reverse:expr) => {{
         let mut vals = Vec::with_capacity($self.len());
-        let mut count: u32 = 0;
+        let mut count: IdxSize = 0;
         $self.downcast_iter().for_each(|arr| {
             let iter = arr.iter().map(|v| {
                 let i = count;
@@ -149,7 +149,7 @@ macro_rules! argsort {
             |(_, a), (_, b)| order_default_null(a, b),
             |(_, a), (_, b)| order_reverse_null(a, b),
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.rename($self.name());
         ca
@@ -304,10 +304,10 @@ where
         })
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         if !self.has_validity() {
             let mut vals = Vec::with_capacity(self.len());
-            let mut count: u32 = 0;
+            let mut count: IdxSize = 0;
             self.downcast_iter().for_each(|arr| {
                 let values = arr.values();
                 let iter = values.iter().map(|&v| {
@@ -320,7 +320,7 @@ where
 
             argsort_no_nulls(vals.as_mut_slice(), reverse);
 
-            let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+            let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
             let mut ca = ca.into_inner();
             ca.rename(self.name());
             ca
@@ -339,7 +339,7 @@ where
                 len
             };
             let mut nulls_idx = Vec::with_capacity(null_cap);
-            let mut count: u32 = 0;
+            let mut count: IdxSize = 0;
             self.downcast_iter().for_each(|arr| {
                 let iter = arr.iter().filter_map(|v| {
                     let i = count;
@@ -375,8 +375,8 @@ where
                 nulls_idx
             };
 
-            let arr = UInt32Array::from_data(ArrowDataType::UInt32, Buffer::from(idx), None);
-            UInt32Chunked::from_chunks(self.name(), vec![Arc::new(arr)])
+            let arr = IdxArr::from_data_default(Buffer::from(idx), None);
+            IdxCa::from_chunks(self.name(), vec![Arc::new(arr)])
         }
     }
 
@@ -385,7 +385,7 @@ where
     ///
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         for ca in other {
             assert_eq!(self.len(), ca.len());
         }
@@ -407,7 +407,7 @@ where
             .map(|s| s.into_partial_ord_inner())
             .collect_trusted();
 
-        let mut count: u32 = 0;
+        let mut count: IdxSize = 0;
         let mut vals: Vec<_> = self
             .into_iter()
             .map(|v| {
@@ -431,7 +431,7 @@ where
                 (_, ord) => ord,
             },
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.set_sorted(reverse[0]);
         Ok(ca)
@@ -553,7 +553,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         })
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         argsort!(self, reverse)
     }
 
@@ -566,7 +566,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// In this case we assume that all numeric `Series` are `f64` types. The caller needs to
     /// uphold this contract. If not, it will panic.
     ///
-    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         for ca in other {
             if self.len() != ca.len() {
                 return Err(PolarsError::ShapeMisMatch(
@@ -575,7 +575,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
             }
         }
         assert_eq!(other.len(), reverse.len() - 1);
-        let mut count: u32 = 0;
+        let mut count: IdxSize = 0;
         let mut vals: Vec<_> = self
             .into_iter()
             .map(|v| {
@@ -603,7 +603,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (_, ord) => ord,
             },
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.set_sorted(reverse[0]);
         Ok(ca)
@@ -642,8 +642,8 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
         })
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        let mut count: u32 = 0;
+    fn argsort(&self, reverse: bool) -> IdxCa {
+        let mut count: IdxSize = 0;
         // safety: we know the iterators len
         let mut vals = self
             .iter_str()
@@ -660,7 +660,7 @@ impl ChunkSort<CategoricalType> for CategoricalChunked {
             |(_, a), (_, b)| order_default_null(a, b),
             |(_, a), (_, b)| order_reverse_null(a, b),
         );
-        let ca: NoNull<UInt32Chunked> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
+        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
         let mut ca = ca.into_inner();
         ca.rename(self.name());
         ca
@@ -694,7 +694,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         })
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         argsort!(self, reverse)
     }
 }

@@ -10,7 +10,7 @@ where
     T: PolarsNumericType,
     T::Native: Bounded + PartialOrd,
 {
-    pub(crate) fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
+    pub(crate) fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
         let mut rhs_iter = other.into_iter().peekable();
         let mut tuples = Vec::with_capacity(self.len());

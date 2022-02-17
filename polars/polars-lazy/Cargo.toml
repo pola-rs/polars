@@ -64,6 +64,8 @@ dot_diagram = []
 # no guarantees whatsoever
 private = []
 
+bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
+
 test = [
   "private",
   "rolling_window",

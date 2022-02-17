@@ -28,8 +28,6 @@ pub use pivot::PivotAgg;
 
 pub use proxy::*;
 
-pub type GroupedMap<T> = HashMap<T, Vec<u32>, RandomState>;
-
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
     /// Create the tuples need for a groupby operation.
@@ -1284,7 +1282,7 @@ mod test {
         let out = df.groupby_stable(["date"])?.select(["temp"]).count()?;
         assert_eq!(
             out.column("temp_count")?,
-            &Series::new("temp_count", [2u32, 2, 1])
+            &Series::new("temp_count", [2 as IdxSize, 2, 1])
         );
 
         // Select multiple

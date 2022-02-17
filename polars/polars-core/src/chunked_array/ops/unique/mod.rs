@@ -15,8 +15,8 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 fn finish_is_unique_helper(
-    mut unique_idx: Vec<u32>,
-    len: u32,
+    mut unique_idx: Vec<IdxSize>,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -40,8 +40,8 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper2(
-    unique_idx: Vec<u32>,
-    len: u32,
+    unique_idx: Vec<IdxSize>,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -51,7 +51,7 @@ pub(crate) fn is_unique_helper2(
 
 pub(crate) fn is_unique_helper(
     groups: GroupsProxy,
-    len: u32,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -75,15 +75,15 @@ macro_rules! is_unique_duplicated {
         $ca.into_iter().enumerate().for_each(|(idx, key)| {
             idx_key
                 .entry(key)
-                .and_modify(|v: &mut (u32, bool)| v.1 = false)
-                .or_insert((idx as u32, true));
+                .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
+                .or_insert((idx as IdxSize, true));
         });
 
         let idx: Vec<_> = idx_key
             .into_iter()
             .filter_map(|(_k, v)| if v.1 { Some(v.0) } else { None })
             .collect();
-        let mut out = is_unique_helper2(idx, $ca.len() as u32, !$inverse, $inverse);
+        let mut out = is_unique_helper2(idx, $ca.len() as IdxSize, !$inverse, $inverse);
         out.rename($ca.name());
         Ok(out)
     }};
@@ -97,7 +97,7 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
         ))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -111,7 +111,7 @@ where
     a.collect()
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<u32>
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
     T: Hash + Eq,
 {
@@ -119,7 +119,7 @@ where
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
-            unique.push(idx as u32)
+            unique.push(idx as IdxSize)
         }
     });
     unique
@@ -176,9 +176,9 @@ macro_rules! impl_value_counts {
         let group_tuples = $self.group_tuples(true, false).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
-        let mut counts: NoNull<UInt32Chunked> = group_tuples
+        let mut counts: NoNull<IdxCa> = group_tuples
             .into_iter()
-            .map(|(_, groups)| groups.len() as u32)
+            .map(|(_, groups)| groups.len() as IdxSize)
             .collect();
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
@@ -198,8 +198,8 @@ where
         Ok(Self::from_iter_options(self.name(), set.iter().copied()))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -238,8 +238,8 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -287,7 +287,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         Ok(ca.into())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.deref().arg_unique()
     }
 
@@ -315,7 +315,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
 }
 
 #[cfg(feature = "dtype-u8")]
-fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
+fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
     let mut av: Vec<_> = (0..len).map(|_| 0u8).collect();
@@ -329,7 +329,7 @@ fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked 
 }
 
 #[cfg(not(feature = "dtype-u8"))]
-fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked {
+fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> Int32Chunked {
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();
@@ -415,8 +415,8 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
         Ok(ChunkedArray::new(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -437,7 +437,7 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
             .collect())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.bit_repr_small().arg_unique()
     }
 
@@ -462,7 +462,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
             .collect())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.bit_repr_large().arg_unique()
     }
 

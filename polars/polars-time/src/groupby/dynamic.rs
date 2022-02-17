@@ -357,7 +357,10 @@ impl Wrap<&DataFrame> {
     }
 }
 
-fn update_subgroups(sub_groups: &[[u32; 2]], base_g: (u32, &Vec<u32>)) -> GroupsIdx {
+fn update_subgroups(
+    sub_groups: &[[IdxSize; 2]],
+    base_g: (IdxSize, &Vec<IdxSize>),
+) -> Vec<(IdxSize, Vec<IdxSize>)> {
     sub_groups
         .iter()
         .map(|&[first, len]| {
@@ -506,12 +509,12 @@ mod test {
 
         let expected = GroupsProxy::Idx(
             vec![
-                (0u32, vec![0u32, 1, 2]),
-                (2u32, vec![2]),
-                (5u32, vec![5, 6]),
-                (6u32, vec![6]),
-                (3u32, vec![3, 4]),
-                (4u32, vec![4]),
+                (0 as IdxSize, vec![0 as IdxSize, 1, 2]),
+                (2, vec![2]),
+                (5, vec![5, 6]),
+                (6, vec![6]),
+                (3, vec![3, 4]),
+                (4, vec![4]),
             ]
             .into(),
         );

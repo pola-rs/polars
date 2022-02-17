@@ -374,7 +374,7 @@ impl ChunkTake for ListChunked {
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {
                 if ca_self.chunks.len() == 1 {
-                    let idx: NoNull<UInt32Chunked> = iter.map(|v| v as u32).collect();
+                    let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
                     let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
@@ -384,7 +384,7 @@ impl ChunkTake for ListChunked {
             }
             TakeIdx::IterNulls(iter) => {
                 if ca_self.chunks.len() == 1 {
-                    let idx: UInt32Chunked = iter.map(|v| v.map(|v| v as u32)).collect();
+                    let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
                     ca_self.take_unchecked((&idx).into())
                 } else {
                     let mut ca: ListChunked =

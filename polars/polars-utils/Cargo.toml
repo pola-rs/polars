@@ -11,3 +11,6 @@ description = "private utils for the polars dataframe library"
 [dependencies]
 parking_lot = "0.11"
 rayon = "1.5"
+
+[features]
+bigidx = []

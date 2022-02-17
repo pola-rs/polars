@@ -4,7 +4,8 @@ use polars_core::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-pub type JoinTuplesCache = Arc<Mutex<HashMap<String, Vec<(u32, Option<u32>)>, RandomState>>>;
+pub type JoinTuplesCache =
+    Arc<Mutex<HashMap<String, Vec<(IdxSize, Option<IdxSize>)>, RandomState>>>;
 pub type GroupsProxyCache = Arc<Mutex<HashMap<String, GroupsProxy, RandomState>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.

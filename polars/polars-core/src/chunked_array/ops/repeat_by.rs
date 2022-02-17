@@ -10,7 +10,7 @@ impl<T> RepeatBy for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -30,7 +30,7 @@ where
     }
 }
 impl RepeatBy for BooleanChunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -47,7 +47,7 @@ impl RepeatBy for BooleanChunked {
     }
 }
 impl RepeatBy for Utf8Chunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -66,7 +66,7 @@ impl RepeatBy for Utf8Chunked {
 
 #[cfg(feature = "dtype-categorical")]
 impl RepeatBy for CategoricalChunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let mut ca = self.deref().repeat_by(by);
         ca.categorical_map = self.categorical_map.clone();
         ca

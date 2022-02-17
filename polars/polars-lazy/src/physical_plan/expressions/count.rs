@@ -21,7 +21,7 @@ impl PhysicalExpr for CountExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
-        Ok(Series::new("count", [df.height() as u32]))
+        Ok(Series::new("count", [df.height() as IdxSize]))
     }
 
     fn evaluate_on_groups<'a>(
@@ -32,15 +32,15 @@ impl PhysicalExpr for CountExpr {
     ) -> Result<AggregationContext<'a>> {
         let mut ca = match groups {
             GroupsProxy::Idx(groups) => {
-                let ca: NoNull<UInt32Chunked> = groups
+                let ca: NoNull<IdxCa> = groups
                     .all()
                     .iter()
-                    .map(|g| g.len() as u32)
+                    .map(|g| g.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
             }
             GroupsProxy::Slice(groups) => {
-                let ca: NoNull<UInt32Chunked> = groups.iter().map(|g| g[1]).collect_trusted();
+                let ca: NoNull<IdxCa> = groups.iter().map(|g| g[1]).collect_trusted();
                 ca.into_inner()
             }
         };

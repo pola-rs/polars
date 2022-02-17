@@ -18,7 +18,11 @@ pub use crate::{
     datatypes::*,
     df,
     error::{PolarsError, Result},
-    frame::{groupby::GroupsProxy, hash_join::JoinType, *},
+    frame::{
+        groupby::{GroupsIdx, GroupsProxy, GroupsSlice},
+        hash_join::JoinType,
+        *,
+    },
     named_from::{NamedFrom, NamedFromOwned},
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},

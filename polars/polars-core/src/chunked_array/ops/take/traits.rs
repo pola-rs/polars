@@ -1,7 +1,6 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
 use crate::frame::groupby::GroupsProxyIter;
 use crate::prelude::*;
-use arrow::array::UInt32Array;
 use polars_arrow::array::PolarsArray;
 
 // Utility traits
@@ -84,7 +83,7 @@ where
     I: TakeIterator,
     INulls: TakeIteratorNulls,
 {
-    Array(&'a UInt32Array),
+    Array(&'a IdxArr),
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
@@ -101,7 +100,7 @@ where
             TakeIdx::IterNulls(i) => i.check_bounds(bound),
             TakeIdx::Array(arr) => {
                 let mut inbounds = true;
-                let len = bound as u32;
+                let len = bound as IdxSize;
                 if !arr.has_validity() {
                     for &i in arr.values().as_slice() {
                         if i >= len {
@@ -145,8 +144,8 @@ pub type Dummy<T> = std::iter::Once<T>;
 // Unchecked conversions
 
 /// Conversion from UInt32Chunked to Unchecked TakeIdx
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
+impl<'a> From<&'a IdxCa> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a IdxCa) -> Self {
         if ca.chunks.len() == 1 {
             TakeIdx::Array(ca.downcast_iter().next().unwrap())
         } else {
