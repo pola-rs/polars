@@ -457,7 +457,9 @@ fn test_take_consistency() -> Result<()> {
         .select([col("A").arg_sort(true).take(lit(0))])
         .collect()?;
 
-    assert_eq!(out.column("A")?.get(0), AnyValue::UInt32(4));
+    let a = out.column("A")?;
+    let a = a.idx()?;
+    assert_eq!(a.get(0), Some(4));
 
     let out = df
         .clone()
@@ -467,7 +469,7 @@ fn test_take_consistency() -> Result<()> {
         .collect()?;
 
     let out = out.column("A")?;
-    let out = out.u32()?;
+    let out = out.idx()?;
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     let out_df = df
@@ -488,7 +490,7 @@ fn test_take_consistency() -> Result<()> {
     assert_eq!(Vec::from(out), &[Some(5), Some(2)]);
 
     let out = out_df.column("1")?;
-    let out = out.u32()?;
+    let out = out.idx()?;
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     Ok(())

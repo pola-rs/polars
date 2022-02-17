@@ -4,7 +4,7 @@ mod error;
 pub mod mem;
 pub mod sort;
 
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub type IdxSize = u32;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub type IdxSize = u64;

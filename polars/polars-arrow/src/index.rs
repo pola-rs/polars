@@ -1,6 +1,6 @@
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 use arrow::array::UInt32Array;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 use arrow::array::UInt64Array;
 
 pub trait IndexToUsize {
@@ -24,12 +24,12 @@ impl IndexToUsize for i64 {
 }
 
 /// The type used by polars to index data.
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub type IdxSize = u32;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
 
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub type IdxArr = UInt32Array;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub type IdxArr = UInt64Array;

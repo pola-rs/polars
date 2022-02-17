@@ -1082,7 +1082,7 @@ fn test_argsort_multiple() -> Result<()> {
         .collect()?;
 
     assert_eq!(
-        Vec::from(out.column("int")?.u32()?),
+        Vec::from(out.column("int")?.idx()?),
         [2, 4, 1, 3, 0]
             .iter()
             .copied()
@@ -1682,7 +1682,7 @@ fn test_groupby_rank() -> Result<()> {
 
     let out = out.column("B")?;
     let out = out.list()?.get(1).unwrap();
-    let out = out.u32()?;
+    let out = out.idx()?;
 
     assert_eq!(Vec::from(out), &[Some(1)]);
     Ok(())
@@ -1847,7 +1847,7 @@ fn test_single_group_result() -> Result<()> {
         .select([col("a").arg_sort(false).list().over([col("a")]).flatten()])
         .collect()?;
 
-    let a = out.column("a")?.u32()?;
+    let a = out.column("a")?.idx()?;
     assert_eq!(Vec::from(a), &[Some(0), Some(0)]);
 
     Ok(())

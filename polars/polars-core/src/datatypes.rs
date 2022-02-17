@@ -1028,20 +1028,20 @@ pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
 
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub type IdxCa = UInt64Chunked;
 pub use polars_arrow::index::{IdxArr, IdxSize};
 
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub const IDX_DTYPE: DataType = DataType::UInt32;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub const IDX_DTYPE: DataType = DataType::UInt64;
 
-#[cfg(not(feature = "bigint"))]
+#[cfg(not(feature = "bigidx"))]
 pub type IdxType = UInt32Type;
-#[cfg(feature = "bigint")]
+#[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
 #[cfg(test)]

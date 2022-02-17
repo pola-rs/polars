@@ -946,11 +946,11 @@ impl Series {
     }
 
     pub fn idx(&self) -> Result<&IdxCa> {
-        #[cfg(feature = "bigint")]
+        #[cfg(feature = "bigidx")]
         {
             self.u64()
         }
-        #[cfg(not(feature = "bigint"))]
+        #[cfg(not(feature = "bigidx"))]
         {
             self.u32()
         }

@@ -176,9 +176,9 @@ macro_rules! impl_value_counts {
         let group_tuples = $self.group_tuples(true, false).into_idx();
         let values =
             unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
-        let mut counts: NoNull<UInt32Chunked> = group_tuples
+        let mut counts: NoNull<IdxCa> = group_tuples
             .into_iter()
-            .map(|(_, groups)| groups.len() as u32)
+            .map(|(_, groups)| groups.len() as IdxSize)
             .collect();
         counts.rename("counts");
         let cols = vec![values.into_series(), counts.into_inner().into_series()];
@@ -329,7 +329,7 @@ fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chun
 }
 
 #[cfg(not(feature = "dtype-u8"))]
-fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> Int32Chunked {
+fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> Int32Chunked {
     groups.sort_unstable();
 
     // let mut group_member_iter = groups.into_iter();

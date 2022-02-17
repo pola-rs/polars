@@ -64,7 +64,7 @@ dot_diagram = []
 # no guarantees whatsoever
 private = []
 
-bigint = ["polars-arrow/bigint", "polars-core/bigint", "polars-utils/bigint"]
+bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 
 test = [
   "private",

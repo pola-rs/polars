@@ -190,8 +190,7 @@ mod test {
         let values = &[Some(foo1), None, Some(foo2), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups =
-            GroupsProxy::Idx(vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into());
+        let groups = GroupsProxy::Idx(vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into());
         let out = ca.agg_list(&groups).unwrap();
         assert!(matches!(out.dtype(), DataType::List(_)));
         assert_eq!(out.len(), groups.len());
