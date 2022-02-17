@@ -550,6 +550,17 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.suffix(suffix))
 
+    def map_alias(self, f: Callable[[str], str]) -> "Expr":
+        """
+        Rename the output of an expression by mapping a function over the root name.
+
+        Parameters
+        ----------
+        f
+            function that maps root name to new name
+        """
+        return wrap_expr(self._pyexpr.map_alias(f))
+
     def is_not(self) -> "Expr":
         """
         Negate a boolean expression.

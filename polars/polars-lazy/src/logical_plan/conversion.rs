@@ -135,7 +135,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Nth(i) => AExpr::Nth(i),
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
-        Expr::SufPreFix { .. } => panic!("no `suffix/prefix` expected at this point"),
+        Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
     };

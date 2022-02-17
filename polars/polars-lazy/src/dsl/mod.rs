@@ -72,6 +72,22 @@ impl Debug for dyn SeriesBinaryUdf {
     }
 }
 
+pub trait RenameAliasFn: Send + Sync {
+    fn call(&self, name: &str) -> String;
+}
+
+impl<F: Fn(&str) -> String + Send + Sync> RenameAliasFn for F {
+    fn call(&self, name: &str) -> String {
+        self(name)
+    }
+}
+
+impl Debug for dyn RenameAliasFn {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "RenameAliasFn")
+    }
+}
+
 #[derive(Clone)]
 /// Wrapper type that indicates that the inner type is not equal to anything
 pub struct NoEq<T>(T);
@@ -327,9 +343,8 @@ pub enum Expr {
     Exclude(Box<Expr>, Vec<Excluded>),
     /// Set root name as Alias
     KeepName(Box<Expr>),
-    SufPreFix {
-        is_suffix: bool,
-        value: String,
+    RenameAlias {
+        function: NoEq<Arc<dyn RenameAliasFn>>,
         expr: Box<Expr>,
     },
     /// Special case that does not need columns
@@ -1559,22 +1574,28 @@ impl Expr {
         Expr::KeepName(Box::new(self))
     }
 
+    /// Define an alias by mapping a function over the original root column name.
+    pub fn map_alias<F>(self, function: F) -> Expr
+    where
+        F: Fn(&str) -> String + 'static + Send + Sync,
+    {
+        let function = NoEq::new(Arc::new(function) as Arc<dyn RenameAliasFn>);
+        Expr::RenameAlias {
+            expr: Box::new(self),
+            function,
+        }
+    }
+
     /// Add a suffix to the root column name.
     pub fn suffix(self, suffix: &str) -> Expr {
-        Expr::SufPreFix {
-            is_suffix: true,
-            value: suffix.to_string(),
-            expr: Box::new(self),
-        }
+        let suffix = suffix.to_string();
+        self.map_alias(move |name| format!("{}{}", name, suffix))
     }
 
     /// Add a prefix to the root column name.
     pub fn prefix(self, prefix: &str) -> Expr {
-        Expr::SufPreFix {
-            is_suffix: false,
-            value: prefix.to_string(),
-            expr: Box::new(self),
-        }
+        let prefix = prefix.to_string();
+        self.map_alias(move |name| format!("{}{}", prefix, name))
     }
 
     /// Exclude a column from a wildcard/regex selection.

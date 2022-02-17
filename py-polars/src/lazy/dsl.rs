@@ -872,6 +872,17 @@ impl PyExpr {
     pub fn suffix(&self, suffix: &str) -> PyExpr {
         self.inner.clone().suffix(suffix).into()
     }
+    pub fn map_alias(&self, lambda: PyObject) -> PyExpr {
+        self.inner
+            .clone()
+            .map_alias(move |name| {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                let out = lambda.call1(py, (name,)).unwrap();
+                out.to_string()
+            })
+            .into()
+    }
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
     }

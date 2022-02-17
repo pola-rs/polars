@@ -260,7 +260,7 @@ impl fmt::Debug for Expr {
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
-            SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
+            RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {:?}", expr),
             Columns(names) => write!(f, "COLUMNS({:?})", names),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {:?}", dt),
         }

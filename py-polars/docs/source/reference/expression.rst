@@ -208,7 +208,7 @@ Column names
 
    A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
 
-   >>> df.select(col("*"))
+   >>> df.select(pl.all())
 
 .. autosummary::
    :toctree: api/
@@ -217,6 +217,7 @@ Column names
     Expr.keep_name
     Expr.prefix
     Expr.suffix
+    Expr.map_alias
     Expr.exclude
 
 Apply

@@ -80,7 +80,7 @@ macro_rules! push_expr {
             Slice { input, .. } => $push(input),
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
-            SufPreFix { expr, .. } => $push(expr),
+            RenameAlias { expr, .. } => $push(expr),
         }
     }};
 }
