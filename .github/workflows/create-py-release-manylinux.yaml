@@ -1,20 +1,56 @@
 name: Create Python release manylinux
 
 on:
-  push:
-    # Sequence of patterns matched against refs/tags
-    tags:
-      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
+  - pull_request
+#  push:
+#    # Sequence of patterns matched against refs/tags
+#    tags:
+#      - 'py-polars-v*' # Push events to matching py-polars-v*, i.e. py-polars-v1.0, py-polars-v20.15.10
 jobs:
   build_manylinux:
     name: Create Release manylinux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Publish wheel
-        uses: docker://konstin2/maturin:latest
+#      - name: Publish wheel
+#        uses: docker://konstin2/maturin:latest
+#        env:
+#          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+#        with:
+#          entrypoint: /bin/bash
+#          args: .github/deploy_manylinux.sh
+
+      - name: Install latest Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-01-01
+          override: true
+      - name: Add target
+        run: |
+          rustup target add aarch64-unknown-linux-gnu
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.7
+      - name: Prepare maturin publish
+        shell: bash
+        run: |
+          rm py-polars/README.md
+          cp README.md py-polars/README.md
+          cd py-polars
+          rustup override set nightly-2022-01-01
+      - name: Set up QEMU
+        id: qemu
+        uses: docker/setup-qemu-action@v1
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: all
+      - name: maturin publish
+        uses: messense/maturin-action@v1
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          entrypoint: /bin/bash
-          args: .github/deploy_manylinux.sh
+          target: aarch64-unknown-linux-gnu
+          maturin-version: 0.12.1
+          command: publish
+          args: -m py-polars/Cargo.toml --no-sdist -o wheels -i python -u ritchie46
