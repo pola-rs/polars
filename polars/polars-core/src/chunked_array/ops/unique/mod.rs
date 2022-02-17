@@ -15,8 +15,8 @@ use std::hash::Hash;
 use std::ops::Deref;
 
 fn finish_is_unique_helper(
-    mut unique_idx: Vec<u32>,
-    len: u32,
+    mut unique_idx: Vec<IdxSize>,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -40,8 +40,8 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper2(
-    unique_idx: Vec<u32>,
-    len: u32,
+    unique_idx: Vec<IdxSize>,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -51,7 +51,7 @@ pub(crate) fn is_unique_helper2(
 
 pub(crate) fn is_unique_helper(
     groups: GroupsProxy,
-    len: u32,
+    len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
@@ -75,15 +75,15 @@ macro_rules! is_unique_duplicated {
         $ca.into_iter().enumerate().for_each(|(idx, key)| {
             idx_key
                 .entry(key)
-                .and_modify(|v: &mut (u32, bool)| v.1 = false)
-                .or_insert((idx as u32, true));
+                .and_modify(|v: &mut (IdxSize, bool)| v.1 = false)
+                .or_insert((idx as IdxSize, true));
         });
 
         let idx: Vec<_> = idx_key
             .into_iter()
             .filter_map(|(_k, v)| if v.1 { Some(v.0) } else { None })
             .collect();
-        let mut out = is_unique_helper2(idx, $ca.len() as u32, !$inverse, $inverse);
+        let mut out = is_unique_helper2(idx, $ca.len() as IdxSize, !$inverse, $inverse);
         out.rename($ca.name());
         Ok(out)
     }};
@@ -315,7 +315,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
 }
 
 #[cfg(feature = "dtype-u8")]
-fn dummies_helper(mut groups: Vec<u32>, len: usize, name: &str) -> UInt8Chunked {
+fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
 
     let mut av: Vec<_> = (0..len).map(|_| 0u8).collect();

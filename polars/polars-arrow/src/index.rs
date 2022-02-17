@@ -1,3 +1,8 @@
+#[cfg(not(feature = "bigint"))]
+use arrow::array::UInt32Array;
+#[cfg(feature = "bigint")]
+use arrow::array::UInt64Array;
+
 pub trait IndexToUsize {
     /// Translate the negative index to an offset.
     fn negative_to_usize(self, index: usize) -> Option<usize>;
@@ -17,3 +22,14 @@ impl IndexToUsize for i64 {
         }
     }
 }
+
+/// The type used by polars to index data.
+#[cfg(not(feature = "bigint"))]
+pub type IdxSize = u32;
+#[cfg(feature = "bigint")]
+pub type IdxSize = u64;
+
+#[cfg(not(feature = "bigint"))]
+pub type IdxArr = UInt32Array;
+#[cfg(feature = "bigint")]
+pub type IdxArr = UInt64Array;

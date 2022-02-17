@@ -239,7 +239,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         self.0.deref().argsort_multiple(by, reverse)
     }
 }
@@ -336,7 +336,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         })
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         ChunkTake::take(self.0.deref(), indices.into()).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
@@ -363,7 +363,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
@@ -431,7 +431,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         self.0.argsort(reverse)
     }
 
@@ -567,7 +567,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         self.0
             .repeat_by(by)
             .cast(&DataType::List(Box::new(DataType::Datetime(

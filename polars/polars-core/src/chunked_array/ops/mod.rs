@@ -526,10 +526,10 @@ pub trait ChunkSort<T> {
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, reverse: bool) -> UInt32Chunked;
+    fn argsort(&self, reverse: bool) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "argsort_multiple not implemented for this dtype".into(),
         ))

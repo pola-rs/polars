@@ -362,7 +362,7 @@ impl Series {
     /// This doesn't check any bounds. Null validity is checked.
     pub unsafe fn take_unchecked_threaded(
         &self,
-        idx: &UInt32Chunked,
+        idx: &IdxCa,
         rechunk: bool,
     ) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
@@ -390,7 +390,7 @@ impl Series {
     /// # Safety
     ///
     /// Out of bounds access doesn't Error but will return a Null value
-    pub fn take_threaded(&self, idx: &UInt32Chunked, rechunk: bool) -> Result<Series> {
+    pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads).unwrap();
 
@@ -952,6 +952,9 @@ impl Series {
     /// Returns the unique values in the order they occur. This is slower than colling [`Series::unique`].
     pub fn unique_ordered(&self) -> Result<Series> {
         let args = self.arg_unique()?;
+        // Safety:
+        // args are in bounds
+        Ok(unsafe { self.take_unchecked(&args) })
     }
 }
 

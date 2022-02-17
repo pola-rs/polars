@@ -93,7 +93,7 @@ dtype-categorical = []
 parquet = ["arrow/io_parquet"]
 
 # scale to terrabytes?
-bigint = []
+bigint = ["polars-arrow/bigint"]
 
 docs-selection = [
   "ndarray",

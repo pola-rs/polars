@@ -5,8 +5,8 @@ use crate::POOL;
 impl DataFrame {
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
     pub fn cross_join(&self, other: &DataFrame) -> Result<DataFrame> {
-        let n_rows_left = self.height() as u32;
-        let n_rows_right = other.height() as u32;
+        let n_rows_left = self.height() as IdxSize;
+        let n_rows_right = other.height() as IdxSize;
         let total_rows = n_rows_right * n_rows_left;
 
         // the left side has the Nth row combined with every row from right.
@@ -18,7 +18,7 @@ impl DataFrame {
         // right take idx:  012301230123
 
         let create_left_df = || {
-            let take_left: NoNull<UInt32Chunked> =
+            let take_left: NoNull<IdxCa> =
                 (0..total_rows).map(|i| i / n_rows_right).collect_trusted();
             // Safety:
             // take left is in bounds

@@ -1,5 +1,8 @@
 pub use crate::array::default_arrays::*;
-pub use crate::array::*;
+pub use crate::{
+    array::*,
+    index::*
+};
 pub use crate::kernels::rolling::no_nulls::QuantileInterpolOptions;
 use arrow::array::{ListArray, Utf8Array};
 

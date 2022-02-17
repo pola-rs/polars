@@ -35,7 +35,7 @@ impl DataFrame {
                 // expand all the other columns based the exploded first column
                 if i == 0 {
                     let row_idx = offsets_to_indexes(&offsets, exploded.len());
-                    let row_idx = UInt32Chunked::from_vec("", row_idx);
+                    let row_idx = IdxCa::from_vec("", row_idx);
                     // Safety
                     // We just created indices that are in bounds.
                     df = unsafe { df.take_unchecked(&row_idx) };

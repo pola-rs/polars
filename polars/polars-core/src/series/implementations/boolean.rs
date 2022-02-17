@@ -102,7 +102,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         self.0.argsort_multiple(by, reverse)
     }
 }
@@ -198,7 +198,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.mean()
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -219,7 +219,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {
@@ -266,7 +266,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkSort::sort_with(&self.0, options).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, reverse: bool) -> IdxCa {
         ChunkSort::argsort(&self.0, reverse)
     }
 
@@ -298,7 +298,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ArgAgg::arg_max(&self.0)
     }
 
-    fn arg_true(&self) -> Result<UInt32Chunked> {
+    fn arg_true(&self) -> Result<IdxCa> {
         let ca: &BooleanChunked = self.bool()?;
         Ok(ca.arg_true())
     }
@@ -373,7 +373,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         IsIn::is_in(&self.0, other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         RepeatBy::repeat_by(&self.0, by)
     }
 

@@ -250,7 +250,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         #[cfg(feature = "sort_multiple")]
-        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
+        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<IdxCa> {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))
@@ -523,7 +523,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Result<Series> {
         invalid_operation_panic!(self)
     }
 
@@ -545,7 +545,7 @@ pub trait SeriesTrait:
     }
 
     /// Take by index. This operation is clone.
-    fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
+    fn take(&self, _indices: &IdxCa) -> Result<Series> {
         invalid_operation_panic!(self)
     }
 
@@ -635,7 +635,7 @@ pub trait SeriesTrait:
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
+    fn argsort(&self, _reverse: bool) -> IdxCa {
         invalid_operation_panic!(self)
     }
 
@@ -674,7 +674,7 @@ pub trait SeriesTrait:
     }
 
     /// Get indexes that evaluate true
-    fn arg_true(&self) -> Result<UInt32Chunked> {
+    fn arg_true(&self) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "arg_true can only be called for boolean dtype".into(),
         ))
@@ -1081,7 +1081,7 @@ pub trait SeriesTrait:
     }
     #[cfg(feature = "repeat_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
-    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
         invalid_operation_panic!(self)
     }
     #[cfg(feature = "checked_arithmetic")]
