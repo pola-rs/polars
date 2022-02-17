@@ -78,7 +78,8 @@ impl GroupsIdx {
 
     pub fn iter(
         &self,
-    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<Vec<IdxSize>>> {
+    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<Vec<IdxSize>>>
+    {
         self.into_iter()
     }
 
@@ -277,8 +278,7 @@ impl GroupsProxy {
                 ca.into_inner()
             }
             GroupsProxy::Slice(groups) => {
-                let ca: NoNull<IdxCa> =
-                    groups.iter().map(|[_first, len]| *len).collect_trusted();
+                let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             }
         }

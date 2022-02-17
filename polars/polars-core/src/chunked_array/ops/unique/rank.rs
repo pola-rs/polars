@@ -1,10 +1,10 @@
 use crate::prelude::*;
 
+use polars_arrow::prelude::FromData;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
 #[cfg(feature = "random")]
 use rand::thread_rng;
-use polars_arrow::prelude::FromData;
 
 #[derive(Copy, Clone)]
 pub enum RankMethod {
@@ -188,8 +188,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
                 }
                 dense.push(cumsum)
             });
-            let arr =
-                IdxArr::from_data_default(dense.into(), validity);
+            let arr = IdxArr::from_data_default(dense.into(), validity);
             let dense: IdxCa = (s.name(), arr).into();
             // Safety:
             // in bounds

@@ -1028,14 +1028,11 @@ pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
 
-
 #[cfg(not(feature = "bigint"))]
 pub type IdxCa = UInt32Chunked;
 #[cfg(feature = "bigint")]
 pub type IdxCa = UInt64Chunked;
-pub use polars_arrow::index::{
-    IdxSize, IdxArr
-};
+pub use polars_arrow::index::{IdxArr, IdxSize};
 
 #[cfg(not(feature = "bigint"))]
 pub const IDX_DTYPE: DataType = DataType::UInt32;

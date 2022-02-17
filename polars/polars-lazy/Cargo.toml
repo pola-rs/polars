@@ -64,6 +64,8 @@ dot_diagram = []
 # no guarantees whatsoever
 private = []
 
+bigint = ["polars-arrow/bigint", "polars-core/bigint", "polars-utils/bigint"]
+
 test = [
   "private",
   "rolling_window",

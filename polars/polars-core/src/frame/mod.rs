@@ -1470,7 +1470,10 @@ impl DataFrame {
         I: Iterator<Item = Option<usize>> + Clone + Sync + TrustedLen,
     {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
-            let idx_ca: IdxCa = iter.into_iter().map(|opt| opt.map(|v| v as IdxSize)).collect();
+            let idx_ca: IdxCa = iter
+                .into_iter()
+                .map(|opt| opt.map(|v| v as IdxSize))
+                .collect();
             return self.take_unchecked_vectical(&idx_ca);
         }
 
@@ -1485,7 +1488,10 @@ impl DataFrame {
             .any(|s| matches!(s.dtype(), DataType::Utf8));
 
         if (n_chunks == 1 && self.width() > 1) || has_utf8 {
-            let idx_ca: IdxCa = iter.into_iter().map(|opt| opt.map(|v| v as IdxSize)).collect();
+            let idx_ca: IdxCa = iter
+                .into_iter()
+                .map(|opt| opt.map(|v| v as IdxSize))
+                .collect();
             return self.take_unchecked(&idx_ca);
         }
 
@@ -2798,7 +2804,12 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as IdxSize, true, false))
+        Ok(is_unique_helper(
+            groups,
+            self.height() as IdxSize,
+            true,
+            false,
+        ))
     }
 
     /// Get a mask of all the duplicated rows in the `DataFrame`.
@@ -2817,7 +2828,12 @@ impl DataFrame {
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as IdxSize, false, true))
+        Ok(is_unique_helper(
+            groups,
+            self.height() as IdxSize,
+            false,
+            true,
+        ))
     }
 
     /// Create a new `DataFrame` that shows the null counts per column.

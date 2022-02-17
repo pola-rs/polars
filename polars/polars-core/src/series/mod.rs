@@ -360,11 +360,7 @@ impl Series {
     ///
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(
-        &self,
-        idx: &IdxCa,
-        rechunk: bool,
-    ) -> Result<Series> {
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
         let idx = split_ca(idx, n_threads)?;
 
@@ -946,6 +942,17 @@ impl Series {
             s.cast(self.dtype()).unwrap()
         } else {
             s
+        }
+    }
+
+    pub fn idx(&self) -> Result<&IdxCa> {
+        #[cfg(feature = "bigint")]
+        {
+            self.u64()
+        }
+        #[cfg(not(feature = "bigint"))]
+        {
+            self.u32()
         }
     }
 }

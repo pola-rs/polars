@@ -2,9 +2,6 @@ use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 
-pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
-pub type GroupsSlice = Vec<[u32; 2]>;
-
 #[derive(Clone, Copy, Debug)]
 pub enum ClosedWindow {
     Left,
@@ -99,12 +96,12 @@ pub fn groupby_windows(
                     lower_bound.push(bi.start);
                     upper_bound.push(bi.stop);
                 }
-                groups.push([i as u32, 1])
+                groups.push([i as IdxSize, 1])
             }
             continue;
         }
 
-        let first = start_offset as u32;
+        let first = start_offset as IdxSize;
 
         while i < time.len() {
             let t = time[i];
@@ -113,7 +110,7 @@ pub fn groupby_windows(
             }
             i += 1
         }
-        let len = (i as u32) - first;
+        let len = (i as IdxSize) - first;
 
         if include_boundaries {
             lower_bound.push(bi.start);
@@ -172,7 +169,7 @@ pub fn groupby_values(
             let slice = &time[lagging_offset..];
             let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
 
-            [lagging_offset as u32, len as u32]
+            [lagging_offset as IdxSize, len as IdxSize]
         })
         .collect_trusted()
 }

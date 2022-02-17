@@ -556,10 +556,7 @@ pub unsafe fn take_value_indices_from_list(
         }
     }
 
-    (
-        IdxArr::from_data_default(values.into(), None),
-        new_offsets,
-    )
+    (IdxArr::from_data_default(values.into(), None), new_offsets)
 }
 
 #[cfg(test)]

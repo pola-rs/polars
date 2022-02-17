@@ -121,7 +121,7 @@ impl DataFrame {
             ));
         }
         // all columns should used the same indices. So we first create the indices.
-        let idx= match with_replacement {
+        let idx = match with_replacement {
             true => create_rand_index_with_replacement(n, self.height(), seed),
             false => create_rand_index_no_replacement(n, self.height(), seed),
         };

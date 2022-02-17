@@ -1521,8 +1521,8 @@ impl Expr {
         let function = |s: &mut [Series]| {
             let by = &s[1];
             let s = &s[0];
-            let by = by.cast(&DataType::UInt32)?;
-            Ok(s.repeat_by(by.u32()?).into_series())
+            let by = by.cast(&IDX_DTYPE)?;
+            Ok(s.repeat_by(by.idx()?).into_series())
         };
 
         self.map_many(

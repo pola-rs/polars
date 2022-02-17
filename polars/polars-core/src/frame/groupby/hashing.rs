@@ -33,7 +33,8 @@ pub(crate) fn groupby<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProx
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+        PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;

@@ -130,7 +130,9 @@ fn probe_inner<T, F>(
     });
 }
 
-pub(crate) fn create_probe_table<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<IdxSize>>>
+pub(crate) fn create_probe_table<T, IntoSlice>(
+    keys: Vec<IntoSlice>,
+) -> Vec<PlHashMap<T, Vec<IdxSize>>>
 where
     T: Send + Hash + Eq + Sync + Copy + AsU64,
     IntoSlice: AsRef<[T]> + Send + Sync,
@@ -144,7 +146,8 @@ where
         (0..n_partitions).into_par_iter().map(|partition_no| {
             let partition_no = partition_no as u64;
 
-            let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+            let mut hash_tbl: PlHashMap<T, Vec<IdxSize>> =
+                PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
             let n_partitions = n_partitions as u64;
             let mut offset = 0;
@@ -487,12 +490,18 @@ impl HashJoin<CategoricalType> for CategoricalChunked {
     fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         self.deref().hash_join_left(other.deref())
     }
-    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
+    fn hash_join_outer(
+        &self,
+        other: &CategoricalChunked,
+    ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         self.deref().hash_join_outer(other.deref())
     }
 }
 
-fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(IdxSize, IdxSize)>
+fn num_group_join_inner<T>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+) -> Vec<(IdxSize, IdxSize)>
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,

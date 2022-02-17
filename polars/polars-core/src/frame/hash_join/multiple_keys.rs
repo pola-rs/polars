@@ -238,13 +238,19 @@ pub(crate) fn inner_join_multiple_keys(
 }
 
 #[cfg(feature = "private")]
-pub fn private_left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(IdxSize, Option<IdxSize>)> {
+pub fn private_left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+) -> Vec<(IdxSize, Option<IdxSize>)> {
     let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
     let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
     left_join_multiple_keys(&a, &b)
 }
 
-pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<(IdxSize, Option<IdxSize>)> {
+pub(crate) fn left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+) -> Vec<(IdxSize, Option<IdxSize>)> {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));

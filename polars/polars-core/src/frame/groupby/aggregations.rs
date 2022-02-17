@@ -97,19 +97,17 @@ impl Series {
                     Some((take.len() - take.null_count()) as IdxSize)
                 }
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    if len == 0 {
-                        None
-                    } else if !self.has_validity() {
-                        Some(len)
-                    } else {
-                        let take = self.slice_from_offsets(first, len);
-                        Some((take.len() - take.null_count()) as IdxSize)
-                    }
-                })
-            }
+            GroupsProxy::Slice(groups) => agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                if len == 0 {
+                    None
+                } else if !self.has_validity() {
+                    Some(len)
+                } else {
+                    let take = self.slice_from_offsets(first, len);
+                    Some((take.len() - take.null_count()) as IdxSize)
+                }
+            }),
         }
     }
 
@@ -160,17 +158,15 @@ impl Series {
                     take.n_unique().ok().map(|v| v as IdxSize)
                 }
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    if len == 0 {
-                        None
-                    } else {
-                        let take = self.slice_from_offsets(first, len);
-                        take.n_unique().ok().map(|v| v as IdxSize)
-                    }
-                })
-            }
+            GroupsProxy::Slice(groups) => agg_helper_slice::<IdxType, _>(groups, |[first, len]| {
+                debug_assert!(len <= self.len() as IdxSize);
+                if len == 0 {
+                    None
+                } else {
+                    let take = self.slice_from_offsets(first, len);
+                    take.n_unique().ok().map(|v| v as IdxSize)
+                }
+            }),
         }
     }
 
@@ -664,7 +660,7 @@ where
             }),
             GroupsProxy::Slice(groups) => {
                 agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
+                    debug_assert!(len <= self.len() as IdxSize);
                     match len {
                         0 => None,
                         1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),

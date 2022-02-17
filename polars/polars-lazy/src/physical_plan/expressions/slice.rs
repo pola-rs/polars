@@ -37,7 +37,10 @@ impl PhysicalExpr for SliceExpr {
                     .iter()
                     .map(|(first, idx)| {
                         let (offset, len) = slice_offsets(self.offset as i64, self.len, idx.len());
-                        (first + offset as u32, idx[offset..offset + len].to_vec())
+                        (
+                            first + offset as IdxSize,
+                            idx[offset..offset + len].to_vec(),
+                        )
                     })
                     .collect();
                 GroupsProxy::Idx(groups)
@@ -48,7 +51,7 @@ impl PhysicalExpr for SliceExpr {
                     .map(|&[first, len]| {
                         let (offset, len) =
                             slice_offsets(self.offset as i64, self.len, len as usize);
-                        [first + offset as u32, len as u32]
+                        [first + offset as IdxSize, len as IdxSize]
                     })
                     .collect_trusted();
                 GroupsProxy::Slice(groups)
