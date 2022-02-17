@@ -362,3 +362,26 @@ fn test_window_exprs_any_all() -> Result<()> {
     assert!(df.frame_equal(&expected));
     Ok(())
 }
+
+#[test]
+fn test_window_naive_any() -> Result<()> {
+    let df = df![
+        "row_id" => [0, 0, 1, 1, 1],
+        "boolvar" => [true, false, true, false, false]
+    ]?;
+
+    let df = df
+        .lazy()
+        .with_column(
+            col("boolvar")
+                .sum()
+                .gt(lit(0))
+                .over([col("row_id")])
+                .alias("res"),
+        )
+        .collect()?;
+
+    let res = df.column("res")?;
+    assert_eq!(res.sum::<usize>(), Some(5));
+    Ok(())
+}
