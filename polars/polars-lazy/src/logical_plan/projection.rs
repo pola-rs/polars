@@ -22,11 +22,11 @@ pub(super) fn replace_wildcard_with_column(mut expr: Expr, column_name: Arc<str>
     expr
 }
 
-fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
+fn rewrite_special_aliases(expr: Expr) -> Expr {
     // the blocks are added by cargo fmt
     #[allow(clippy::blocks_in_if_conditions)]
     if has_expr(&expr, |e| {
-        matches!(e, Expr::KeepName(_) | Expr::SufPreFix { .. })
+        matches!(e, Expr::KeepName(_) | Expr::RenameAlias { .. })
     }) {
         match expr {
             Expr::KeepName(expr) => {
@@ -36,18 +36,9 @@ fn rewrite_keep_name_and_sufprefix(expr: Expr) -> Expr {
                     .expect("expected root column to keep expression name");
                 Expr::Alias(expr, name.clone())
             }
-            Expr::SufPreFix {
-                is_suffix,
-                value,
-                expr,
-            } => {
+            Expr::RenameAlias { expr, function } => {
                 let name = get_single_root(&expr).unwrap();
-                let name = if is_suffix {
-                    format!("{}{}", name, value)
-                } else {
-                    format!("{}{}", value, name)
-                };
-
+                let name = function.call(&name);
                 Expr::Alias(expr, Arc::from(name))
             }
             _ => panic!("`keep_name`, `suffix`, `prefix` should be last expression"),
@@ -65,7 +56,7 @@ fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], sc
         let name = field.name();
         if !exclude.iter().any(|exluded| &**exluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
-            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr);
             result.push(new_expr)
         }
     }
@@ -109,7 +100,7 @@ fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &
                 _ => true,
             });
 
-            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr);
             result.push(new_expr)
         }
     }
@@ -127,11 +118,11 @@ fn replace_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema) {
         if name.starts_with('^') && name.ends_with('$') {
             expand_regex(expr, result, schema, name)
         } else {
-            let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+            let expr = rewrite_special_aliases(expr.clone());
             result.push(expr)
         }
     } else {
-        let expr = rewrite_keep_name_and_sufprefix(expr.clone());
+        let expr = rewrite_special_aliases(expr.clone());
         result.push(expr)
     }
 }
@@ -148,7 +139,7 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
             true
         });
 
-        let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+        let new_expr = rewrite_special_aliases(new_expr);
         result.push(new_expr)
     }
 }
@@ -168,7 +159,7 @@ fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &
                 true
             });
 
-            let new_expr = rewrite_keep_name_and_sufprefix(new_expr);
+            let new_expr = rewrite_special_aliases(new_expr);
             result.push(new_expr)
         }
     }
@@ -314,7 +305,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
             }
             #[cfg(not(feature = "regex"))]
             {
-                let expr = rewrite_keep_name_and_sufprefix(expr);
+                let expr = rewrite_special_aliases(expr);
                 result.push(expr)
             }
         };
