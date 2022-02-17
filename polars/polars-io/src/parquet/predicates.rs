@@ -18,6 +18,10 @@ impl ColumnStats {
         self.0.data_type().into()
     }
 
+    pub fn null_count(&self) -> Option<usize> {
+        self.0.null_count().map(|v| v as usize)
+    }
+
     pub fn to_min_max(&self) -> Option<Series> {
         let name = "";
         use DataType::*;

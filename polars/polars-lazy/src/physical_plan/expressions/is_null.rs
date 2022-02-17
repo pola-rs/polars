@@ -1,7 +1,12 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+use crate::utils::expr_to_root_column_name;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
+use polars_io::predicates::StatsEvaluator;
+#[cfg(feature = "parquet")]
+use polars_io::prelude::predicates::BatchStats;
 use std::sync::Arc;
 
 pub struct IsNullExpr {
@@ -44,5 +49,27 @@ impl PhysicalExpr for IsNullExpr {
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("is_null", DataType::Boolean))
+    }
+    #[cfg(feature = "parquet")]
+    fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
+        Some(self)
+    }
+}
+
+#[cfg(feature = "parquet")]
+impl StatsEvaluator for IsNullExpr {
+    fn should_read(&self, stats: &BatchStats) -> Result<bool> {
+        let root = expr_to_root_column_name(&self.expr)?;
+
+        let read = true;
+        let skip = false;
+
+        match stats.get_stats(&root).ok() {
+            Some(st) => match st.null_count() {
+                Some(0) => Ok(skip),
+                _ => Ok(read),
+            },
+            None => Ok(read),
+        }
     }
 }
