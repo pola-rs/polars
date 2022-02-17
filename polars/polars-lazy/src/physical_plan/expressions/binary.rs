@@ -241,8 +241,8 @@ impl PhysicalExpr for BinaryExpr {
         }
     }
 
-    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        todo!()
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.expr.to_field(input_schema, Context::Default)
     }
 
     fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
@@ -406,12 +406,6 @@ mod stats {
                 (Some(l), Some(r)) => match self.op {
                     Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
                     Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
-                    _ => Ok(true),
-                },
-                // This branch is probably never hit
-                (Some(other), None) | (None, Some(other)) => match self.op {
-                    Operator::And => Ok(self.should_read(stats)? && other.should_read(stats)?),
-                    Operator::Or => Ok(self.should_read(stats)? || other.should_read(stats)?),
                     _ => Ok(true),
                 },
                 _ => self.impl_should_read(stats),
