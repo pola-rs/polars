@@ -266,15 +266,15 @@ mod test {
         let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
 
         let out = rank(&s, RankMethod::Ordinal, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[2, 3, 6, 4, 5, 7, 1]);
+        assert_eq!(out, &[2 as IdxSize, 3, 6, 4, 5, 7, 1]);
 
         #[cfg(feature = "random")]
         {
             let out = rank(&s, RankMethod::Random, false)
-                .u32()?
+                .idx()?
                 .into_no_null_iter()
                 .collect::<Vec<_>>();
             assert_eq!(out[0], 2);
@@ -287,19 +287,19 @@ mod test {
         }
 
         let out = rank(&s, RankMethod::Dense, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 4, 3, 3, 4, 1]);
 
         let out = rank(&s, RankMethod::Max, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 5, 7, 5, 5, 7, 1]);
 
         let out = rank(&s, RankMethod::Min, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 6, 3, 3, 6, 1]);
@@ -346,7 +346,7 @@ mod test {
             ],
         );
         let out = rank(&s, RankMethod::Max, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
@@ -363,7 +363,7 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(out, &[2.0f32, 2.0, 2.0]);
         let out = rank(&s, RankMethod::Dense, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[1, 1, 1]);
@@ -383,10 +383,10 @@ mod test {
     fn test_rank_reverse() -> Result<()> {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[1, 3, 3, 2, 1]);
+        assert_eq!(out, &[1 as IdxSize, 3, 3, 2, 1]);
 
         Ok(())
     }

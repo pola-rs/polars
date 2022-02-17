@@ -87,7 +87,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::Int32Array;
+    use arrow::array::{Int32Array, PrimitiveArray};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
     use std::sync::Arc;
