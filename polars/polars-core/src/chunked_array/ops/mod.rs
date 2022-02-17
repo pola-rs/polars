@@ -752,7 +752,7 @@ pub trait ArgAgg {
 #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
 pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
-    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
         unimplemented!()
     }
 }

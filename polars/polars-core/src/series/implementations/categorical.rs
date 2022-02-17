@@ -72,19 +72,19 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.agg_list(groups)
     }
 
-    fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
+    fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
         HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
     }
-    fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
+    fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
         HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
     }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
+    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
     }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         let categorical_map_out = Some(
             self.0

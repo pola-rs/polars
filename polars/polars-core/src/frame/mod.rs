@@ -2798,7 +2798,7 @@ impl DataFrame {
     pub fn is_unique(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as u32, true, false))
+        Ok(is_unique_helper(groups, self.height() as IdxSize, true, false))
     }
 
     /// Get a mask of all the duplicated rows in the `DataFrame`.
@@ -2817,7 +2817,7 @@ impl DataFrame {
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
         let mut gb = self.groupby(self.get_column_names())?;
         let groups = std::mem::take(&mut gb.groups);
-        Ok(is_unique_helper(groups, self.height() as u32, false, true))
+        Ok(is_unique_helper(groups, self.height() as IdxSize, false, true))
     }
 
     /// Create a new `DataFrame` that shows the null counts per column.
