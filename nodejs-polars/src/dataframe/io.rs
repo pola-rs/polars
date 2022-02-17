@@ -613,13 +613,18 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     (0..len).for_each(|idx| {
         let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
 
-        schema.fields().iter().for_each(|fld| {
-            let dtype = fld.data_type();
-            let key = fld.name();
-            let js_str = cx.env.create_string(key).unwrap();
-            let value: JsUnknown = obj.get_named_property(key).unwrap();
-
-        });
+        let v: Vec<AnyValue> = schema
+            .fields()
+            .iter()
+            .map(|fld| {
+                let dtype = fld.data_type();
+                let key = fld.name();
+                let value: JsUnknown = obj.get_named_property(key).unwrap();
+                let value = coerce_to_dtype(value, dtype.clone());
+                AnyValue::from_js(value).unwrap()
+            })
+            .collect();
+        println!("v={:#?}", v);
     });
 
     let rows: Vec<Row> = (0..len)
@@ -692,6 +697,27 @@ fn resolve_fields(spec: Tracker) -> Vec<Field> {
         .collect()
 }
 use std::borrow::Borrow;
+
+fn coerce_to_dtype(val: JsUnknown, dtype: DataType) -> JsUnknown {
+    use DataType::*;
+    let actual: Wrap<DataType> = val.get_type().unwrap().into();
+    if actual.0 == dtype {
+        val
+    } else {
+        match dtype {
+            Boolean => val.coerce_to_bool().unwrap().into_unknown(),
+            Float32 => val.coerce_to_number().unwrap().into_unknown(),
+            Float64 => val.coerce_to_number().unwrap().into_unknown(),
+            Int8 => val.coerce_to_number().unwrap().into_unknown(),
+            UInt8 => val.coerce_to_number().unwrap().into_unknown(),
+            Int16 => val.coerce_to_number().unwrap().into_unknown(),
+            UInt16 => val.coerce_to_number().unwrap().into_unknown(),
+            Int32 => val.coerce_to_number().unwrap().into_unknown(),
+            UInt32 => val.coerce_to_number().unwrap().into_unknown(),
+            _ => val.coerce_to_string().unwrap().into_unknown(),
+        }
+    }
+}
 
 fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     use DataType::*;
