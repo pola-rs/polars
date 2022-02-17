@@ -226,6 +226,9 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn is_aggregated(&self) -> bool {
         !self.is_not_aggregated()
     }
+    pub(crate) fn is_literal(&self) -> bool {
+        matches!(self.state, AggState::Literal(_))
+    }
 
     pub(crate) fn combine_groups(&mut self, other: AggregationContext) -> &mut Self {
         if let (Cow::Borrowed(_), Cow::Owned(a)) = (&self.groups, other.groups) {
@@ -332,6 +335,11 @@ impl<'a> AggregationContext<'a> {
         self
     }
 
+    pub(crate) fn with_literal(&mut self, series: Series) -> &mut Self {
+        self.state = AggState::Literal(series);
+        self
+    }
+
     /// Update the group tuples
     pub(crate) fn with_groups(&mut self, groups: GroupsProxy) -> &mut Self {
         // In case of new groups, a series always needs to be flattened
@@ -353,6 +361,10 @@ impl<'a> AggregationContext<'a> {
                 // because this is lazy, we first must to update the groups
                 // by calling .groups()
                 self.groups();
+                assert!(
+                    self.groups.len() <= s.len(),
+                    "implementation error groups are out of bounds; please open an issue"
+                );
 
                 let out = s
                     .agg_list(&self.groups)

@@ -506,7 +506,7 @@ def test_all_expr() -> None:
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.any("A"))[0, 0]
+    assert fruits_cars.with_column(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
     assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
 
 

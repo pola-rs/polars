@@ -19,9 +19,9 @@ impl AliasExpr {
             expr,
         }
     }
-    fn finish(&self, mut input: Series) -> Result<Series> {
+    fn finish(&self, mut input: Series) -> Series {
         input.rename(&self.name);
-        Ok(input)
+        input
     }
 }
 
@@ -32,7 +32,7 @@ impl PhysicalExpr for AliasExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        self.finish(series)
+        Ok(self.finish(series))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -43,10 +43,14 @@ impl PhysicalExpr for AliasExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let mut s = ac.take();
-        s.rename(&self.name);
+        let s = ac.take();
+        let s = self.finish(s);
 
-        ac.with_series(self.finish(s)?, ac.is_aggregated());
+        if ac.is_literal() {
+            ac.with_literal(s);
+        } else {
+            ac.with_series(s, ac.is_aggregated());
+        }
         Ok(ac)
     }
 

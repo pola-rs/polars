@@ -811,7 +811,7 @@ def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     """
     if isinstance(name, list):
         return fold(lit(0), lambda a, b: a | b, name).alias("any")
-    return col(name).sum() > 0
+    return col(name).any()
 
 
 def exclude(columns: Union[str, List[str]]) -> "pli.Expr":
@@ -906,7 +906,7 @@ def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
         return col("*")
     if isinstance(name, list):
         return fold(lit(0), lambda a, b: a & b, name).alias("all")
-    return col(name).cast(bool).sum() == col(name).count()
+    return col(name).all()
 
 
 def groups(column: str) -> "pli.Expr":
