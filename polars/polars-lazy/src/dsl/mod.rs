@@ -1394,6 +1394,15 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
     pub fn is_in(self, other: Expr) -> Self {
         let has_literal = has_root_literal_expr(&other);
+        if has_literal {
+            if let Expr::Literal(LiteralValue::Series(s)) = &other {
+                // nothing is in an empty list return all False
+                if s.is_empty() {
+                    return Expr::Literal(LiteralValue::Boolean(false));
+                }
+            }
+        }
+
         let f = |s: &mut [Series]| {
             let left = &s[0];
             let other = &s[1];

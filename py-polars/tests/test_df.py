@@ -1892,3 +1892,9 @@ def test_categorical_outer_join() -> None:
     expected = pl.DataFrame({"val1": [1], "key1": [42], "key2": ["bar"], "val2": [2]})
 
     assert out.frame_equal(expected)
+
+
+def test_empty_is_in() -> None:
+    assert pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
+        pl.col("foo").is_in([])
+    ).shape == (0, 1)
