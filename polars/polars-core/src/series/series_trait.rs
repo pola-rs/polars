@@ -659,7 +659,7 @@ pub trait SeriesTrait:
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         invalid_operation_panic!(self)
     }
 

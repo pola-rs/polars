@@ -97,7 +97,7 @@ impl<T> ChunkUnique<ObjectType<T>> for ObjectChunked<T> {
         ))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "unique not supported for object".into(),
         ))
@@ -111,7 +111,7 @@ where
     a.collect()
 }
 
-fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<u32>
+fn arg_unique<T>(a: impl Iterator<Item = T>, capacity: usize) -> Vec<IdxSize>
 where
     T: Hash + Eq,
 {
@@ -119,7 +119,7 @@ where
     let mut unique = Vec::with_capacity(capacity);
     a.enumerate().for_each(|(idx, val)| {
         if set.insert(val) {
-            unique.push(idx as u32)
+            unique.push(idx as IdxSize)
         }
     });
     unique
@@ -198,8 +198,8 @@ where
         Ok(Self::from_iter_options(self.name(), set.iter().copied()))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -238,8 +238,8 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         ))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -287,7 +287,7 @@ impl ChunkUnique<CategoricalType> for CategoricalChunked {
         Ok(ca.into())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.deref().arg_unique()
     }
 
@@ -415,8 +415,8 @@ impl ChunkUnique<BooleanType> for BooleanChunked {
         Ok(ChunkedArray::new(self.name(), &unique))
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
-        Ok(UInt32Chunked::from_vec(self.name(), arg_unique_ca!(self)))
+    fn arg_unique(&self) -> Result<IdxCa> {
+        Ok(IdxCa::from_vec(self.name(), arg_unique_ca!(self)))
     }
 
     fn is_unique(&self) -> Result<BooleanChunked> {
@@ -437,7 +437,7 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
             .collect())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.bit_repr_small().arg_unique()
     }
 
@@ -462,7 +462,7 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
             .collect())
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.bit_repr_large().arg_unique()
     }
 

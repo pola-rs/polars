@@ -289,7 +289,7 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkUnique::n_unique(&self.0)
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }
 

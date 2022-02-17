@@ -465,7 +465,7 @@ pub trait ChunkUnique<T> {
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.
-    fn arg_unique(&self) -> Result<UInt32Chunked>;
+    fn arg_unique(&self) -> Result<IdxCa>;
 
     /// Number of unique values in the `ChunkedArray`
     fn n_unique(&self) -> Result<usize> {

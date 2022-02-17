@@ -948,6 +948,11 @@ impl Series {
             s
         }
     }
+
+    /// Returns the unique values in the order they occur. This is slower than colling [`Series::unique`].
+    pub fn unique_ordered(&self) -> Result<Series> {
+        let args = self.arg_unique()?;
+    }
 }
 
 impl Deref for Series {

@@ -1028,6 +1028,18 @@ pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
 
+/// The type used by polars to index data.
+#[cfg(not(feature = "bigint"))]
+pub type IdxSize = u32;
+#[cfg(feature = "bigint")]
+pub type IdxSize = u64;
+
+#[cfg(not(feature = "bigint"))]
+pub type IdxCa = UInt32Chunked;
+
+#[cfg(feature = "bigint")]
+pub type IdxCa = UInt64Chunked;
+
 #[cfg(test)]
 mod test {
     use super::*;

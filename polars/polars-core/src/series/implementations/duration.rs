@@ -438,7 +438,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.n_unique()
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.0.arg_unique()
     }
 
