@@ -261,7 +261,7 @@ impl PyDataFrame {
             s => return Err(PyPolarsEr::Other(format!("compression {} not supported", s)).into()),
         };
 
-        let mut buf = get_file_like(py_f, false)?;
+        let mut buf = get_file_like(py_f, true)?;
         AvroWriter::new(&mut buf)
             .with_compression(compression)
             .finish(&mut self.df)
