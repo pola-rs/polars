@@ -20,14 +20,6 @@ jobs:
 #          entrypoint: /bin/bash
 #          args: .github/deploy_manylinux.sh
 
-      - name: Install latest Rust nightly
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2022-01-01
-          override: true
-      - name: Add target
-        run: |
-          rustup target add aarch64-unknown-linux-gnu
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
@@ -37,16 +29,8 @@ jobs:
         run: |
           rm py-polars/README.md
           cp README.md py-polars/README.md
-          cd py-polars
-          rustup override set nightly-2022-01-01
-      - name: Set up QEMU
-        id: qemu
-        uses: docker/setup-qemu-action@v1
-        with:
-          image: tonistiigi/binfmt:latest
-          platforms: all
       - name: maturin publish
-        uses: messense/maturin-action@v1
+        uses: messense/maturin-action@main
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
