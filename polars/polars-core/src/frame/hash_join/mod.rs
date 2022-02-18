@@ -1663,9 +1663,9 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
 
         let out = df_a
@@ -1689,18 +1689,18 @@ mod test {
         for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
             let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
             let out = out.column("b").unwrap();
-            assert_eq!(out.dtype(), &DataType::Categorical);
+            assert_eq!(out.dtype(), &DataType::Categorical(None));
         }
 
         // Test error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
         assert!(out.is_err());

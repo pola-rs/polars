@@ -216,27 +216,27 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new("a", slice);
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
         toggle_string_cache(true);
         // empty global cache
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
         // full global cache
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
 
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
+        let ca1 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
+        let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None))?;
         let ca2 = ca2.categorical().unwrap();
         ca1.append(ca2);
 

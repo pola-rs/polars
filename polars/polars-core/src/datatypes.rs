@@ -6,8 +6,6 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -624,6 +622,12 @@ pub enum DataType {
     Categorical(Option<Arc<RevMapping>>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
+}
+
+impl Hash for DataType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state)
+    }
 }
 
 impl PartialEq for DataType {

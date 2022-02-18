@@ -592,7 +592,7 @@ mod test {
             "B" => [8, 2, 3, 6, 3, 6, 2, 2],
             "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
         ]?;
-        df.try_apply("C", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("C", |s| s.cast(&DataType::Categorical(None)))?;
 
         let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
         assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);

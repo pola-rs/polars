@@ -1,5 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 use crate::prelude::any_value::arr_to_any_value;
 use crate::prelude::*;
 use crate::utils::NoNull;

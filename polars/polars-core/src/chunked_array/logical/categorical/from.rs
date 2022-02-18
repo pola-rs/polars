@@ -1,11 +1,6 @@
-use crate::prelude::*;
+use super::*;
 use arrow::array::DictionaryArray;
 use polars_arrow::compute::cast::cast;
-mod builder;
-mod merge;
-
-pub use builder::*;
-use std::ops::{Deref, DerefMut};
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {

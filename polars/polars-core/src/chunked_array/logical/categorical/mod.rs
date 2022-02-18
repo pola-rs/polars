@@ -1,10 +1,12 @@
+mod builder;
+mod from;
+mod merge;
 mod ops;
 mod series;
 
 use super::*;
-use crate::chunked_array::categorical::*;
-use crate::prelude::DataType::UInt32;
 use crate::prelude::*;
+pub use builder::*;
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
@@ -15,7 +17,11 @@ pub struct CategoricalChunked {
 }
 
 impl CategoricalChunked {
-    pub(crate) fn len(&self) -> usize {
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub fn len(&self) -> usize {
         self.logical.len()
     }
 
@@ -192,12 +198,12 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new("a", slice);
-        let ca = ca.cast(&DataType::Categorical)?;
+        let ca = ca.cast(&DataType::Categorical(None))?;
         let ca = ca.categorical().unwrap();
 
         let arr: DictionaryArray<u32> = (ca).into();
         let s = Series::try_from(("foo", Arc::new(arr) as ArrayRef))?;
-        assert_eq!(s.dtype(), &DataType::Categorical);
+        assert!(matches!(s.dtype(), &DataType::Categorical(_)));
         assert_eq!(s.null_count(), 1);
         assert_eq!(s.len(), 6);
 
@@ -211,10 +217,10 @@ mod test {
         toggle_string_cache(true);
 
         let mut s1 = Series::new("1", vec!["a", "b", "c"])
-            .cast(&DataType::Categorical)
+            .cast(&DataType::Categorical(None))
             .unwrap();
         let s2 = Series::new("2", vec!["a", "x", "y"])
-            .cast(&DataType::Categorical)
+            .cast(&DataType::Categorical(None))
             .unwrap();
         let appended = s1.append(&s2).unwrap();
         assert_eq!(appended.str_value(0), "a");
@@ -226,7 +232,7 @@ mod test {
     #[test]
     fn test_fast_unique() {
         let s = Series::new("1", vec!["a", "b", "c"])
-            .cast(&DataType::Categorical)
+            .cast(&DataType::Categorical(None))
             .unwrap();
 
         assert_eq!(s.n_unique().unwrap(), 3);

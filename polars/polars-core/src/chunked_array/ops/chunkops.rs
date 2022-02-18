@@ -200,6 +200,6 @@ mod test {
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();
-        assert!(a.categorical().unwrap().categorical_map.is_some());
+        assert!(a.categorical().unwrap().get_rev_map().len() > 0);
     }
 }

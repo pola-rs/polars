@@ -151,9 +151,9 @@ impl OptimizationRule for TypeCoercionRule {
                             | Operator::Lt
                             | Operator::GtEq
                             | Operator::LtEq
-                    ) && ((type_left == DataType::Categorical
+                    ) && (matches!(type_left, DataType::Categorical(_))
                         && type_right == DataType::Utf8)
-                        || (type_left == DataType::Utf8 && type_right == DataType::Categorical));
+                        || (type_left == DataType::Utf8 && matches!(type_right, DataType::Categorical(_)));
 
                     let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
                         && matches!(
@@ -172,9 +172,9 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let mut st = use_supertype(st, left, right, &type_left, &type_right);
 
-                        let cat_str_arithmetic = (type_left == DataType::Categorical
+                        let cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
                             && type_right == DataType::Utf8)
-                            || (type_left == DataType::Utf8 && type_right == DataType::Categorical);
+                            || (type_left == DataType::Utf8 && matches!(type_right, DataType::Categorical(_)));
                         if cat_str_arithmetic {
                             st = DataType::Utf8
                         }
@@ -227,7 +227,7 @@ mod test {
     #[test]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical)]);
+        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical(None))]);
 
         let expr = col("fruits").eq(lit("somestr"));
         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);

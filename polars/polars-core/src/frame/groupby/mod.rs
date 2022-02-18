@@ -1427,7 +1427,7 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical(_)).unwrap())
+        df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
             .unwrap();
 
         // check multiple keys and categorical
@@ -1531,7 +1531,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical(_)))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
 
         let _ = df.groupby(["g"])?.sum()?;
         Ok(())

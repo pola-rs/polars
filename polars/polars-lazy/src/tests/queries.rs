@@ -1465,8 +1465,8 @@ fn test_categorical_addition() -> Result<()> {
     let out = df
         .lazy()
         .select([
-            col("fruits").cast(DataType::Categorical),
-            col("cars").cast(DataType::Categorical),
+            col("fruits").cast(DataType::Categorical(None)),
+            col("cars").cast(DataType::Categorical(None)),
         ])
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;

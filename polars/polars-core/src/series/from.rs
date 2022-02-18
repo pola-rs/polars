@@ -129,7 +129,6 @@ impl Series {
             }
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
-                use crate::chunked_array::categorical::CategoricalChunkedBuilder;
                 use arrow::datatypes::IntegerType;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concatenate::concatenate(&chunks)?;

@@ -39,7 +39,7 @@ fn test_issue_2472() -> Result<()> {
     ]?;
     let base = df
         .lazy()
-        .with_column(col("group").cast(DataType::Categorical));
+        .with_column(col("group").cast(DataType::Categorical(None)));
 
     let extract = col("group")
         .cast(DataType::Utf8)

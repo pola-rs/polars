@@ -19,8 +19,6 @@ pub mod kernels;
 mod ndarray;
 
 mod bitwise;
-#[cfg(feature = "dtype-categorical")]
-pub(crate) mod categorical;
 #[cfg(feature = "object")]
 mod drop;
 pub(crate) mod list;
@@ -803,9 +801,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();
-        let v: Vec<_> = ca.into_iter().collect();
+        let v: Vec<_> = ca.logical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

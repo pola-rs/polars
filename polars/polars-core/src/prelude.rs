@@ -55,3 +55,6 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptions;
 pub use polars_arrow::kernels::ewm::EWMOptions;
 
 pub(crate) use polars_arrow::export::*;
+
+#[cfg(feature = "dtype-categorical")]
+pub use crate::chunked_array::logical::categorical::*;

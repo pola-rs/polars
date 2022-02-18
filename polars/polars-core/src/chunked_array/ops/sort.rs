@@ -867,12 +867,12 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_sort_categorical() {
         let ca = Utf8Chunked::new("a", &[Some("a"), None, Some("c"), None, Some("b")]);
-        let ca = ca.cast(&DataType::Categorical).unwrap();
-        let ca = ca.categorical().unwrap();
+        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let out = ca.sort_with(SortOptions {
             descending: false,
             nulls_last: false,
         });
+        let out = out.categorical().unwrap();
         let out = out.iter_str().collect::<Vec<_>>();
         let expected = &[None, None, Some("a"), Some("b"), Some("c")];
         assert_eq!(out, expected);
