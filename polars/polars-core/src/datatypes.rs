@@ -131,7 +131,6 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait NumericNative:
     PartialOrd

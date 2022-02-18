@@ -418,6 +418,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0
             .get_any_value_unchecked(index)

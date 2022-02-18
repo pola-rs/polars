@@ -110,7 +110,7 @@ impl RevMapping {
 
 pub struct CategoricalChunkedBuilder {
     array_builder: UInt32Vec,
-    field: Field,
+    name: String,
     reverse_mapping: RevMappingBuilder,
 }
 
@@ -126,7 +126,7 @@ impl CategoricalChunkedBuilder {
 
         Self {
             array_builder: UInt32Vec::with_capacity(capacity),
-            field: Field::new(name, DataType::Categorical),
+            name: name.to_string(),
             reverse_mapping,
         }
     }
@@ -188,17 +188,8 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    pub fn finish(self) -> ChunkedArray<CategoricalType> {
-        // both for the local and the global map, we own a map that has all unique keys
-        let bit_settings = 1u8 << 4;
-
-        ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![self.array_builder.into_arc()],
-            phantom: PhantomData,
-            categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
-            bit_settings,
-        }
+    pub fn finish(self) -> CategoricalChunked {
+        CategoricalChunked::from_chunks_original(&self.name, vec![self.array_builder.into_arc()], self.reverse_mapping.finish())
     }
 }
 

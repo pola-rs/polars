@@ -65,20 +65,23 @@ impl Series {
     pub(crate) fn iter(&self) -> impl Iterator<Item = AnyValue> {
         assert_eq!(self.chunks().len(), 1, "impl error");
         let dtype = self.dtype();
+
+        let rev_map = match dtype {
+            DataType::Categorical => {
+                let cat_ca = self.categorical().unwrap();
+                Some(cat_ca.get_rev_map().clone())
+            }
+            _ => None
+        };
+
         let arr = &*self.chunks()[0];
         let len = arr.len();
         #[cfg(feature = "dtype-categorical")]
         {
-            let cat_map = if let Ok(ca) = self.categorical() {
-                &ca.categorical_map
-            } else {
-                &None
-            };
-
             SeriesIter {
                 arr,
                 dtype,
-                cat_map,
+                cat_map: rev_map,
                 idx: 0,
                 len,
             }
@@ -99,7 +102,7 @@ pub struct SeriesIter<'a> {
     arr: &'a dyn Array,
     dtype: &'a DataType,
     #[cfg(feature = "dtype-categorical")]
-    cat_map: &'a Option<Arc<RevMapping>>,
+    cat_map: Option<Arc<RevMapping>>,
     idx: usize,
     len: usize,
 }

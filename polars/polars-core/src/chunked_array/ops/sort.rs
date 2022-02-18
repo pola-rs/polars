@@ -610,63 +610,6 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkSort<CategoricalType> for CategoricalChunked {
-    fn sort_with(&self, options: SortOptions) -> ChunkedArray<CategoricalType> {
-        assert!(
-            !options.nulls_last,
-            "null last not yet supported for categorical dtype"
-        );
-        let mut vals = self
-            .into_iter()
-            .zip(self.iter_str())
-            .collect_trusted::<Vec<_>>();
-
-        argsort_branch(
-            vals.as_mut_slice(),
-            options.descending,
-            |(_, a), (_, b)| order_default_null(a, b),
-            |(_, a), (_, b)| order_reverse_null(a, b),
-        );
-        let arr: UInt32Array = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = self.clone();
-        ca.chunks = vec![Arc::new(arr)];
-
-        ca
-    }
-
-    fn sort(&self, reverse: bool) -> Self {
-        self.sort_with(SortOptions {
-            nulls_last: false,
-            descending: reverse,
-        })
-    }
-
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        let mut count: IdxSize = 0;
-        // safety: we know the iterators len
-        let mut vals = self
-            .iter_str()
-            .map(|s| {
-                let i = count;
-                count += 1;
-                (i, s)
-            })
-            .collect_trusted::<Vec<_>>();
-
-        argsort_branch(
-            vals.as_mut_slice(),
-            reverse,
-            |(_, a), (_, b)| order_default_null(a, b),
-            |(_, a), (_, b)| order_reverse_null(a, b),
-        );
-        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.rename(self.name());
-        ca
-    }
-}
-
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort_with(&self, options: SortOptions) -> ChunkedArray<BooleanType> {
         sort_with_fast_path!(self, options);

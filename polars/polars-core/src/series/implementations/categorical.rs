@@ -29,6 +29,22 @@ impl IntoSeries for CategoricalChunked {
     }
 }
 
+impl SeriesWrap<CategoricalChunked> {
+
+    fn with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> CategoricalChunked
+    where F: Fn(&UInt32Chunked) -> UInt32Chunked
+    {
+        let cats = apply(self.0.deref());
+        let mut out = CategoricalChunked::from_cats_and_rev_map(cats, self.0.get_rev_map().clone());
+        if keep_fast_unique && self.0.can_fast_unique() {
+            out.set_fast_unique(true)
+        }
+
+        out
+    }
+
+}
+
 impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn _field(&self) -> Cow<Field> {
         Cow::Borrowed(self.0.ref_field())
@@ -73,13 +89,13 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-        HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
+        self.0.hash_join_inner(other.to_physical_repr().as_ref().as_ref())
     }
     fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-        HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
+        self.0.hash_join_left(other.to_physical_repr().as_ref().as_ref())
     }
     fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-        HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
+        self.0.hash_join_outer(other.to_physical_repr().as_ref().as_ref())
     }
     fn zip_outer_join_column(
         &self,
@@ -107,7 +123,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "sort_multiple")]
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
-        self.0.argsort_multiple(by, reverse)
+        self.0.logical().argsort_multiple(by, reverse)
     }
 }
 
@@ -211,7 +227,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn take_every(&self, n: usize) -> Series {
-        self.0.take_every(n).into_series()
+        self.with_state(true, |cats| cats.take_every(n)).into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
@@ -241,11 +257,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        ChunkOps::rechunk(&self.0).into_series()
+        self.with_state(true, |ca| ca.rechunk()).into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
-        ChunkExpandAtIndex::expand_at_index(&self.0, index, length).into_series()
+        self.with_state(true, |cats| cats.expand_at_index(index, length)).into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
@@ -261,16 +277,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
-        self.0.get_any_value_unchecked(index)
+        self.0.logical().get_any_value_unchecked(index)
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
-        ChunkSort::sort_with(&self.0, options).into_series()
+        self.with_state(true, |cats| cats.sort_with(options)).into_series()
     }
 
     fn argsort(&self, reverse: bool) -> IdxCa {
-        ChunkSort::argsort(&self.0, reverse)
+        self.0.argsort(reverse)
     }
 
     fn null_count(&self) -> usize {
@@ -318,7 +335,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn shift(&self, periods: i64) -> Series {
-        ChunkShift::shift(&self.0, periods).into_series()
+        self.with_state(false, |ca| ca.shift(periods)).into_series()
     }
 
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {

@@ -382,24 +382,6 @@ where
 
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
 
-#[cfg(feature = "dtype-categorical")]
-#[doc(hidden)]
-impl CategoricalChunked {
-    #[allow(clippy::wrong_self_convention)]
-    #[doc(hidden)]
-    pub fn into_no_null_iter(
-        &self,
-    ) -> impl Iterator<Item = u32>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
-        self.deref().into_no_null_iter()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

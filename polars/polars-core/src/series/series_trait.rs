@@ -624,8 +624,11 @@ pub trait SeriesTrait:
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     ///
+    /// This may refer to physical types
+    ///
     /// # Safety
     /// Does not do any bounds checking
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         invalid_operation_panic!(self)
     }

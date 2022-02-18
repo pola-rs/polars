@@ -483,21 +483,6 @@ impl HashJoin<Float64Type> for Float64Chunked {
     }
 }
 
-impl HashJoin<CategoricalType> for CategoricalChunked {
-    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(IdxSize, IdxSize)> {
-        self.deref().hash_join_inner(other.deref())
-    }
-    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(IdxSize, Option<IdxSize>)> {
-        self.deref().hash_join_left(other.deref())
-    }
-    fn hash_join_outer(
-        &self,
-        other: &CategoricalChunked,
-    ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-        self.deref().hash_join_outer(other.deref())
-    }
-}
-
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,

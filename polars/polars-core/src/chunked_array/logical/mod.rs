@@ -14,6 +14,7 @@ pub use duration::*;
 mod time;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;
 
@@ -64,7 +65,10 @@ pub trait LogicalType {
     /// Get data type of ChunkedArray.
     fn dtype(&self) -> &DataType;
 
+    /// Gets AnyValue from LogicalType
     fn get_any_value(&self, _i: usize) -> AnyValue<'_> {
+        // note that unchecked version is not here
+        // because I don't think it should ever be called on logical types
         unimplemented!()
     }
 

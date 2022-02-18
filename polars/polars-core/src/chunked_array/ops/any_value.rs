@@ -138,25 +138,6 @@ impl ChunkAnyValue for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkAnyValue for CategoricalChunked {
-    #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        debug_assert!(idx < arr.len());
-        arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical)
-    }
-
-    fn get_any_value(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        assert!(idx < arr.len());
-        // SAFETY
-        // bounds are checked
-        unsafe { arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical) }
-    }
-}
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {

@@ -30,40 +30,6 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     Ok(out)
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkCast for CategoricalChunked {
-    fn cast(&self, data_type: &DataType) -> Result<Series> {
-        match data_type {
-            DataType::Utf8 => {
-                let mapping = &**self.categorical_map.as_ref().expect("should be set");
-
-                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.len() * 5);
-
-                let f = |idx: u32| mapping.get(idx);
-
-                if !self.has_validity() {
-                    self.into_no_null_iter()
-                        .for_each(|idx| builder.append_value(f(idx)));
-                } else {
-                    self.into_iter().for_each(|opt_idx| {
-                        builder.append_option(opt_idx.map(f));
-                    });
-                }
-
-                let ca = builder.finish();
-                Ok(ca.into_series())
-            }
-            DataType::UInt32 => {
-                let ca = UInt32Chunked::from_chunks(self.name(), self.chunks.clone());
-                Ok(ca.into_series())
-            }
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => Ok(self.clone().into_series()),
-            _ => cast_impl(self.name(), &self.chunks, data_type),
-        }
-    }
-}
-
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,

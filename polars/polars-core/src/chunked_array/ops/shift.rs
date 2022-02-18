@@ -100,14 +100,6 @@ impl ChunkShift<ListType> for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkShift<CategoricalType> for CategoricalChunked {
-    fn shift(&self, periods: i64) -> Self {
-        let ca: CategoricalChunked = self.deref().shift(periods).into();
-        ca.set_state(self)
-    }
-}
-
 #[cfg(feature = "object")]
 impl<T> ChunkShiftFill<ObjectType<T>, Option<ObjectType<T>>> for ObjectChunked<T> {
     fn shift_and_fill(

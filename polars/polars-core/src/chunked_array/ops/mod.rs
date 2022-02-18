@@ -653,14 +653,6 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
-        let ca: CategoricalChunked = self.deref().expand_at_index(index, length).into();
-        ca.set_state(self)
-    }
-}
-
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get(index);

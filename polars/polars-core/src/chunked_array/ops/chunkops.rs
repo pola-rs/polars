@@ -120,25 +120,6 @@ impl ChunkOps for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkOps for CategoricalChunked {
-    fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let mut out: CategoricalChunked = self.deref().rechunk().into();
-        let cat_map = self.categorical_map.clone();
-        out.categorical_map = cat_map;
-        out
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        let mut out = self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()));
-        out.set_fast_unique(false);
-        out
-    }
-}
-
 impl ChunkOps for ListChunked {
     fn rechunk(&self) -> Self {
         if self.chunks.len() == 1 {
