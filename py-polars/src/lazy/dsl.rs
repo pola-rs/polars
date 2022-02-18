@@ -594,34 +594,34 @@ impl PyExpr {
     }
 
     pub fn year(&self) -> PyExpr {
-        self.clone().inner.year().into()
+        self.clone().inner.dt().year().into()
     }
     pub fn month(&self) -> PyExpr {
-        self.clone().inner.month().into()
+        self.clone().inner.dt().month().into()
     }
     pub fn week(&self) -> PyExpr {
-        self.clone().inner.week().into()
+        self.clone().inner.dt().week().into()
     }
     pub fn weekday(&self) -> PyExpr {
-        self.clone().inner.weekday().into()
+        self.clone().inner.dt().weekday().into()
     }
     pub fn day(&self) -> PyExpr {
-        self.clone().inner.day().into()
+        self.clone().inner.dt().day().into()
     }
     pub fn ordinal_day(&self) -> PyExpr {
-        self.clone().inner.ordinal_day().into()
+        self.clone().inner.dt().ordinal_day().into()
     }
     pub fn hour(&self) -> PyExpr {
-        self.clone().inner.hour().into()
+        self.clone().inner.dt().hour().into()
     }
     pub fn minute(&self) -> PyExpr {
-        self.clone().inner.minute().into()
+        self.clone().inner.dt().minute().into()
     }
     pub fn second(&self) -> PyExpr {
-        self.clone().inner.second().into()
+        self.clone().inner.dt().second().into()
     }
     pub fn nanosecond(&self) -> PyExpr {
-        self.clone().inner.nanosecond().into()
+        self.clone().inner.dt().nanosecond().into()
     }
     pub fn duration_days(&self) -> PyExpr {
         self.inner

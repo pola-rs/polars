@@ -60,4 +60,77 @@ impl DateLikeNameSpace {
             GetOutput::same_type(),
         )
     }
+
+    /// Get the year of a Date/Datetime
+    pub fn year(self) -> Expr {
+        let function = move |s: Series| s.year().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("year")
+    }
+
+    /// Get the month of a Date/Datetime
+    pub fn month(self) -> Expr {
+        let function = move |s: Series| s.month().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("month")
+    }
+    /// Extract the week from the underlying Date representation.
+    /// Can be performed on Date and Datetime
+
+    /// Returns the ISO week number starting from 1.
+    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
+    pub fn week(self) -> Expr {
+        let function = move |s: Series| s.week().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("week")
+    }
+
+    /// Extract the week day from the underlying Date representation.
+    /// Can be performed on Date and Datetime.
+
+    /// Returns the weekday number where monday = 0 and sunday = 6
+    pub fn weekday(self) -> Expr {
+        let function = move |s: Series| s.weekday().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("weekday")
+    }
+
+    /// Get the month of a Date/Datetime
+    pub fn day(self) -> Expr {
+        let function = move |s: Series| s.day().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("day")
+    }
+    /// Get the ordinal_day of a Date/Datetime
+    pub fn ordinal_day(self) -> Expr {
+        let function = move |s: Series| s.ordinal_day().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("ordinal_day")
+    }
+    /// Get the hour of a Datetime/Time64
+    pub fn hour(self) -> Expr {
+        let function = move |s: Series| s.hour().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("hour")
+    }
+    /// Get the minute of a Datetime/Time64
+    pub fn minute(self) -> Expr {
+        let function = move |s: Series| s.minute().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("minute")
+    }
+
+    /// Get the second of a Datetime/Time64
+    pub fn second(self) -> Expr {
+        let function = move |s: Series| s.second().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("second")
+    }
+    /// Get the nanosecond of a Time64
+    pub fn nanosecond(self) -> Expr {
+        let function = move |s: Series| s.nanosecond().map(|ca| ca.into_series());
+        self.0.map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("nanosecond")
+    }
+
 }
