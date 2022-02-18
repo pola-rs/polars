@@ -588,7 +588,7 @@ impl TimeUnit {
 
 pub type TimeZone = String;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -623,6 +623,21 @@ pub enum DataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
 }
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        use DataType::*;
+        match (self, other) {
+            // Don't include rev maps in comparisons
+            (Categorical(_), Categorical(_)) => true,
+            _ => {
+                std::mem::discriminant(self) == std::mem::discriminant(other)
+            }
+        }
+    }
+}
+
+impl Eq for DataType {}
 
 impl DataType {
     pub fn inner_dtype(&self) -> Option<&DataType> {
@@ -694,7 +709,7 @@ impl PartialEq<ArrowDataType> for DataType {
 }
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     name: String,
     data_type: DataType,
@@ -813,7 +828,7 @@ impl IndexOfSchema for ArrowSchema {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Schema {
     fields: Vec<Field>,
 }

@@ -48,16 +48,6 @@ where
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl<'a> IntoIterator for &'a CategoricalChunked {
-    type Item = Option<u32>;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref().into_iter()
-    }
-}
-
 impl<'a> IntoIterator for &'a BooleanChunked {
     type Item = Option<bool>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;

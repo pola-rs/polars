@@ -46,7 +46,7 @@ impl SeriesWrap<CategoricalChunked> {
         self.finish_with_state(keep_fast_unique, cats)
     }
 
-    fn try_with_state<'a, F>(self,  keep_fast_unique: bool, apply: F,) -> Result<CategoricalChunked>
+    fn try_with_state<'a, F>(&'a self,  keep_fast_unique: bool, apply: F,) -> Result<CategoricalChunked>
         where F: for<'b> Fn(&'a UInt32Chunked) -> Result<UInt32Chunked>
     {
         let cats = apply(self.0.logical())?;
@@ -128,7 +128,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         let mut out = ZipOuterJoinColumn::zip_outer_join_column(ca, &right, opt_join_tuples)
             .cast(&DataType::Categorical(None))
             .unwrap();
-        let out_ca = out.as_mut_categorical();
+        let out_ca = out.get_inner_mut().as_mut_categorical();
         out_ca.set_rev_map(new_rev_map, false);
         out
     }
@@ -348,7 +348,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn as_single_ptr(&mut self) -> Result<usize> {
-        self.0.logical().as_single_ptr()
+        self.0.logical_mut().as_single_ptr()
     }
 
     fn shift(&self, periods: i64) -> Series {

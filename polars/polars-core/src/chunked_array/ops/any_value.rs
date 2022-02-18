@@ -47,7 +47,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
 
-            match **dt {
+            match &**dt {
                 DataType::Categorical(Some(rev_map)) => {
                     let mut s_new = s.cast(&DataType::Categorical(None)).unwrap();
                     let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut_categorical();

@@ -1415,7 +1415,7 @@ impl DataFrame {
             DataType::Categorical(_) => {
                 let ca_or = s_left.categorical().unwrap();
                 let mut out = s.cast(&DataType::Categorical(None)).unwrap();
-                let ca_new = s.as_mut_categorical();
+                let ca_new = s.get_inner_mut().as_mut_categorical();
                 ca_new.set_rev_map(ca_or.get_rev_map().clone(), false);
                 out
             }

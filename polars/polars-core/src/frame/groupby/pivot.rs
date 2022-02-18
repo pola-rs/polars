@@ -452,9 +452,9 @@ fn finish_logical_types(
 
             for s in out.columns.iter_mut() {
                 let mut s_ = s.cast(&DataType::Categorical(None)).unwrap();
-                let ca = s_.as_mut_categorical();
+                let ca = s_.get_inner_mut().as_mut_categorical();
                 ca.set_rev_map(rev_map.clone(), false);
-                *s = ca.into_series();
+                *s = s_
             }
         }
         DataType::Datetime(_, _) | DataType::Date | DataType::Time => {

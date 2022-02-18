@@ -86,7 +86,7 @@ impl CategoricalChunked {
 
     /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
     pub fn iter_str(&self) -> CatIter<'_> {
-        let iter = self.deref().into_iter();
+        let iter = self.logical().into_iter();
         CatIter {
             rev: self.get_rev_map(),
             iter,
