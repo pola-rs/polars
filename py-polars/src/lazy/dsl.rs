@@ -146,6 +146,9 @@ impl PyExpr {
     pub fn unique(&self) -> PyExpr {
         self.clone().inner.unique().into()
     }
+    pub fn unique_stable(&self) -> PyExpr {
+        self.clone().inner.unique_stable().into()
+    }
     pub fn first(&self) -> PyExpr {
         self.clone().inner.first().into()
     }

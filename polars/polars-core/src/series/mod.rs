@@ -945,6 +945,15 @@ impl Series {
         }
     }
 
+    /// Compute the unique elements, but maintain order. This requires more work
+    /// than a naive [`Series::unique`].
+    pub fn unique_stable(&self) -> Result<Series> {
+        let idx = self.arg_unique()?;
+        // Safety:
+        // Indices are in bounds.
+        unsafe { self.take_unchecked(&idx) }
+    }
+
     pub fn idx(&self) -> Result<&IdxCa> {
         #[cfg(feature = "bigidx")]
         {

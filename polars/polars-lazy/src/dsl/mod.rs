@@ -739,20 +739,19 @@ impl Expr {
 
     /// Get unique values of this expression.
     pub fn unique(self) -> Self {
-        assert!(
-            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
-            "wildcard not supperted in unique expr"
-        );
         self.apply(|s: Series| s.unique(), GetOutput::same_type())
             .with_fmt("unique")
     }
 
+    /// Get unique values of this expression, while maintaining order.
+    /// This requires more work than [`Expr::unique`].
+    pub fn unique_stable(self) -> Self {
+        self.apply(|s: Series| s.unique_stable(), GetOutput::same_type())
+            .with_fmt("unique_stable")
+    }
+
     /// Get the first index of unique values of this expression.
     pub fn arg_unique(self) -> Self {
-        assert!(
-            !has_expr(&self, |e| matches!(e, Expr::Wildcard)),
-            "wildcard not supported in unique expr"
-        );
         self.apply(
             |s: Series| s.arg_unique().map(|ca| ca.into_series()),
             GetOutput::from_type(IDX_DTYPE),

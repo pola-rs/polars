@@ -1370,9 +1370,14 @@ class Series:
         """
         return self._s.arg_max()
 
-    def unique(self) -> "Series":
+    def unique(self, maintain_order: bool = False) -> "Series":
         """
         Get unique elements in series.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1387,6 +1392,8 @@ class Series:
         ]
 
         """
+        if maintain_order:
+            return pli.select(pli.lit(self).unique(maintain_order)).to_series()
         return wrap_s(self._s.unique())
 
     def take(self, indices: Union[np.ndarray, List[int], "pli.Expr"]) -> "Series":

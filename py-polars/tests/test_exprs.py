@@ -104,3 +104,10 @@ def test_map_alias() -> None:
 
     expected = pl.DataFrame({"foofoo": [2, 4, 6]})
     assert out.frame_equal(expected)
+
+
+def test_unique_stable() -> None:
+    a = pl.Series("a", [1, 1, 1, 1, 2, 2, 2, 3, 3])
+    expected = pl.Series("a", [1, 2, 3])
+
+    verify_series_and_expr_api(a, expected, "unique", True)
