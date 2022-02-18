@@ -96,19 +96,6 @@ impl TakeRandom for BooleanChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl TakeRandom for CategoricalChunked {
-    type Item = u32;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get(index)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get_unchecked(index)
-    }
-}
-
 impl<'a> TakeRandom for &'a Utf8Chunked {
     type Item = &'a str;
 

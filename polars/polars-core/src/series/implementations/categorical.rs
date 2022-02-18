@@ -13,7 +13,7 @@ use crate::chunked_array::{
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
+use crate::frame::hash_join::{check_categorical_src, HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -147,7 +147,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         out
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+        self.0.logical().group_tuples(multithreaded, sorted)
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -417,7 +417,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "is_in")]
     fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        IsIn::is_in(&self.0, other)
+        check_categorical_src(self.dtype(), other.dtype())?;
+        self.0.logical().is_in(&other.to_physical_repr())
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {

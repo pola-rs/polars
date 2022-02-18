@@ -175,13 +175,6 @@ impl IntoGroupsProxy for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl IntoGroupsProxy for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        self.deref().group_tuples(multithreaded, sorted)
-    }
-}
-
 impl IntoGroupsProxy for ListChunked {
     #[cfg(feature = "groupby_list")]
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {

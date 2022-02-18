@@ -23,6 +23,7 @@ impl DateLikeNameSpace {
                     let ca = s.datetime().unwrap();
                     Ok(ca.cast_time_unit(tu).into_series())
                 }
+                #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let ca = s.duration().unwrap();
                     Ok(ca.cast_time_unit(tu).into_series())
@@ -48,6 +49,7 @@ impl DateLikeNameSpace {
                     ca.set_time_unit(tu);
                     Ok(ca.into_series())
                 }
+                #[cfg(feature = "dtype-duration")]
                 DataType::Duration(_) => {
                     let mut ca = s.duration().unwrap().clone();
                     ca.set_time_unit(tu);

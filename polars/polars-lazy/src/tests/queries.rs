@@ -439,7 +439,8 @@ fn test_lazy_query_9() -> Result<()> {
 #[cfg(all(
     feature = "temporal",
     feature = "dtype-datetime",
-    feature = "dtype-date"
+    feature = "dtype-date",
+    feature = "dtype-duration"
 ))]
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;

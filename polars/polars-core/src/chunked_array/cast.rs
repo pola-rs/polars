@@ -24,6 +24,12 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
+        #[cfg(feature = "dtype-categorical")]
+        Categorical(_) => {
+            return Err(PolarsError::ComputeError(
+                format!("can only cast Utf8 to Categorical").into(),
+            ))
+        }
         _ => out,
     };
 

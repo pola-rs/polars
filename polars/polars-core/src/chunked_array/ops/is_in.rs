@@ -234,13 +234,6 @@ impl IsIn for BooleanChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl IsIn for CategoricalChunked {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        self.deref().is_in(other)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

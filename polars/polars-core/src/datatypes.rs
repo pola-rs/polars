@@ -633,17 +633,14 @@ impl Hash for DataType {
 impl PartialEq for DataType {
     fn eq(&self, other: &Self) -> bool {
         use DataType::*;
-        #[cfg(feature = "dtype-categorical")]
         {
             match (self, other) {
                 // Don't include rev maps in comparisons
+                #[cfg(feature = "dtype-categorical")]
                 (Categorical(_), Categorical(_)) => true,
+                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            std::mem::discriminant(self) == std::mem::discriminant(other)
         }
     }
 }

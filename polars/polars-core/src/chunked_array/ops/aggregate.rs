@@ -378,8 +378,6 @@ impl ChunkQuantile<f64> for Float64Chunked {
 
 impl ChunkQuantile<String> for Utf8Chunked {}
 impl ChunkQuantile<Series> for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkQuantile<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkQuantile<Series> for ObjectChunked<T> {}
 impl ChunkQuantile<bool> for BooleanChunked {}
@@ -436,8 +434,6 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkVar<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
@@ -586,16 +582,6 @@ impl VarAggSeries for BooleanChunked {
         Self::full_null(self.name(), 1).into_series()
     }
 }
-#[cfg(feature = "dtype-categorical")]
-impl VarAggSeries for CategoricalChunked {
-    fn var_as_series(&self) -> Series {
-        unimplemented!()
-    }
-
-    fn std_as_series(&self) -> Series {
-        unimplemented!()
-    }
-}
 impl VarAggSeries for ListChunked {
     fn var_as_series(&self) -> Series {
         Self::full_null(self.name(), 1).into_series()
@@ -695,20 +681,6 @@ impl QuantileAggSeries for BooleanChunked {
         Self::full_null(self.name(), 1).into_series()
     }
 }
-#[cfg(feature = "dtype-categorical")]
-impl QuantileAggSeries for CategoricalChunked {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn median_as_series(&self) -> Series {
-        unimplemented!()
-    }
-}
 impl QuantileAggSeries for ListChunked {
     fn quantile_as_series(
         &self,
@@ -791,9 +763,6 @@ impl ChunkAggSeries for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkAggSeries for CategoricalChunked {}
-
 macro_rules! one_null_list {
     ($self:ident) => {{
         let mut builder = get_list_builder(&DataType::Null, 0, 1, $self.name());
@@ -836,8 +805,6 @@ where
 }
 
 impl ArgAgg for BooleanChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ArgAgg for CategoricalChunked {}
 impl ArgAgg for Utf8Chunked {}
 impl ArgAgg for ListChunked {}
 

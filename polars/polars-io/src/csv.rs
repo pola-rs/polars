@@ -479,6 +479,7 @@ where
                     use DataType::*;
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
+                        #[cfg(feature = "dtype-categorical")]
                         Categorical(_) => {
                             to_cast_local.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
