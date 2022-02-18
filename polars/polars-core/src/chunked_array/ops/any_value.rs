@@ -44,18 +44,6 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => downcast_and_pack!(Int32Array, Date),
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, tz) => {
-            let ts: i64 = downcast!(Int64Array);
-            AnyValue::Datetime(ts, *tu, tz)
-        }
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
-            let delta: i64 = downcast!(Int64Array);
-            AnyValue::Duration(delta, *tu)
-        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
@@ -75,12 +63,6 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
 
             AnyValue::List(s)
-        }
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
-            let idx = downcast!(UInt32Array);
-            let rev_map = &**categorical_map.as_ref().unwrap();
-            AnyValue::Categorical(idx, rev_map)
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),

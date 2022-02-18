@@ -16,7 +16,6 @@ impl LogicalType for DatetimeChunked {
         self.2.as_ref().unwrap()
     }
 
-    #[cfg(feature = "dtype-datetime")]
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
         self.0
             .get_any_value(i)
