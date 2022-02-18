@@ -1,74 +1,63 @@
-use crate::prelude::NewChunkedArray;
-use crate::prelude::*;
-use num::{Num, NumCast};
-use std::borrow::Borrow;
-use std::hash::Hasher;
+// use crate::prelude::NewChunkedArray;
+// use crate::prelude::*;
+// use num::{Num, NumCast};
+// use std::borrow::Borrow;
+// use std::hash::Hasher;
 
-fn deserialize_boolean<'a>(av: AnyValue<'a>) -> AnyValue<'a> {
-  match av {
-    AnyValue::Boolean(v) => av,
-    _ => AnyValue::Null,
-  }
-}
+// fn coerce_to_bool<(av: AnyValueOwned) -> AnyValueOwned {
 
-fn deserialize_num<'a, T: Num + NumCast>(av: AnyValue<'a>) -> Option<T> {
-  use AnyValue::*;
-  match av {
-    Int32(v) => num::cast::<i32, T>(v),
-    Int64(v) => num::cast::<i64, T>(v),
-    UInt32(v) => num::cast::<u32, T>(v),
-    UInt64(v) => num::cast::<u64, T>(v),
-    Float32(v) => num::cast::<f32, T>(v),
-    Float64(v) => num::cast::<f64, T>(v),
-    Boolean(v) => num::cast::<i32, T>(v as i32),
-    Utf8(v) => match v.parse::<i32>() {
-      Ok(val) => num::cast::<i32, T>(val),
-      Err(_) => None,
-    },
-    _ => None,
-  }
-}
+//   match av {
+//     AnyValueOwned::Boolean(v) => av,
+//     AnyValueOwned::Int32(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     AnyValueOwned::Int64(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     AnyValueOwned::UInt32(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     AnyValueOwned::UInt64(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     AnyValueOwned::Float32(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     AnyValueOwned::Float64(v) => if v != 0 {AnyValueOwned::Boolean(true)} else {AnyValueOwned::Boolean(true)},
+//     _ => AnyValue::Null,
+//   }
+// }
 
-fn deserialize_utf8<'a>(av: AnyValue<'a>) -> Option<String> {
-  use AnyValue::*;
+// fn coerce_to_num<T: Num + NumCast>(av: AnyValueOwned) -> AnyValueOwned {
+//   use AnyValueOwned::*;
+//   match av {
+//     Int32(v) => num::cast::<i32, T>(v).map(AnyValueOwned::Int32),
+//     Int64(v) => num::cast::<i64, T>(v).map(AnyValueOwned::Int64),
+//     UInt32(v) => num::cast::<u32, T>(v).map(AnyValueOwned::UInt32),
+//     UInt64(v) => num::cast::<u64, T>(v).map(AnyValueOwned::UInt64),
+//     Float32(v) => num::cast::<f32, T>(v).map(AnyValueOwned::Float32),
+//     Float64(v) => num::cast::<f64, T>(v).map(AnyValueOwned::Float64),
+//     Boolean(v) => num::cast::<i32, T>(v as i32).map(AnyValueOwned::Int32),
+//     Utf8(v) => match v.parse::<i32>() {
+//       Ok(val) => num::cast::<i32, T>(val),
+//       Err(_) => None,
+//     },
+//     _ => None,
+//   }.unwrap_or(AnyValueOwned::Null)
+// }
 
-  match av {
-    Utf8(v) => Some(v.clone().to_string()),
-    Int32(v) => Some(v.to_string()),
-    Int64(v) => Some(v.to_string()),
-    UInt32(v) => Some(v.to_string()),
-    UInt64(v) => Some(v.to_string()),
-    Float32(v) => Some(v.to_string()),
-    Float64(v) => Some(v.to_string()),
-    Boolean(v) => Some(v.to_string()),
-    _ => None,
-  }
-}
+// fn coerce_to_string<'a>(av: AnyValueOwned) -> AnyValueOwned {
+//   use AnyValueOwned::*;
 
-pub fn anyvalue_cast<'a>(av: &AnyValue<'a>, dtype: DataType) -> AnyValue<'a> {
-  use DataType::*;
-  let av = av.clone();
+//   match av {
+//     Utf8(v) => av,
+//     _ => AnyValueOwned::Utf8(v.to_string()),
+//   }
+// }
 
-  match dtype {
-    Int32 => deserialize_num::<i32>(av)
-      .map(AnyValue::Int32)
-      .unwrap_or(AnyValue::Null),
-    Int64 => deserialize_num::<i64>(av)
-      .map(AnyValue::Int64)
-      .unwrap_or(AnyValue::Null),
-    UInt32 => deserialize_num::<u32>(av)
-      .map(AnyValue::UInt32)
-      .unwrap_or(AnyValue::Null),
-    UInt64 => deserialize_num::<u64>(av)
-      .map(AnyValue::UInt64)
-      .unwrap_or(AnyValue::Null),
-    Float32 => deserialize_num::<f32>(av)
-      .map(AnyValue::Float32)
-      .unwrap_or(AnyValue::Null),
-    Float64 => deserialize_num::<f64>(av)
-      .map(AnyValue::Float64)
-      .unwrap_or(AnyValue::Null),
-    Boolean => deserialize_boolean(av),
-    _ => todo!(),
-  }
-}
+// pub fn anyvalue_cast(av: AnyValueOwned, dtype: DataType) -> AnyValueOwned {
+//   use DataType::*;
+//   let av = av.clone();
+
+//   match dtype {
+//     Int32 => coerce_to_num::<i32>(av),
+//     Int64 => coerce_to_num::<i64>(av),
+//     UInt32 => coerce_to_num::<u32>(av),
+//     UInt64 => coerce_to_num::<u64>(av),
+//     Float32 => coerce_to_num::<f32>(av),
+//     Float64 => coerce_to_num::<f64>(av),
+//     Utf8 => coerce_to_string::<f64>(av),
+//     Boolean => coerce_to_bool(av),
+//     _ => todo!(),
+//   }
+// }

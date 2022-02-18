@@ -599,158 +599,30 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
 
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
+    use polars::export::arrow::{array::StructArray, chunk::Chunk, io::json::read};
+
     let params = get_params(&cx)?;
     let rows = params.get::<JsObject>("rows")?;
-    let schema: Schema = infer_schema(&rows)?;
-
     let len = rows.get_array_length()?;
-    let keys = rows
-        .get_element_unchecked::<JsObject>(0)?
-        .get_property_names()?
-        .into_unknown();
+    let infer_schema_length: usize = params.get_or("inferSchemaLength", len as usize)?;
 
-    let keys = Vec::<String>::from_js(keys)?;
-    (0..len).for_each(|idx| {
-        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-
-        let v: Vec<AnyValue> = schema
-            .fields()
-            .iter()
-            .map(|fld| {
-                let dtype = fld.data_type();
-                let key = fld.name();
-                let value: JsUnknown = obj.get_named_property(key).unwrap();
-                let value = coerce_to_dtype(value, dtype.clone());
-                AnyValue::from_js(value).unwrap()
-            })
-            .collect();
-        println!("v={:#?}", v);
-    });
-
-    let rows: Vec<Row> = (0..len)
-        .map(|idx| {
-            let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-            let keys = obj.get_property_names().unwrap();
-            let keys_len = keys.get_array_length_unchecked().unwrap();
-
-            Row((0..keys_len)
-                .map(|key_idx| {
-                    let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-                    let value: JsUnknown = obj.get_property(key).unwrap();
-                    AnyValue::from_js(value).unwrap()
-                })
-                .collect())
-        })
-        .collect();
-    let mut df = finish_from_rows(rows)?;
-    df.set_column_names(&keys).map_err(JsPolarsEr::from)?;
-    df.try_into_js(&cx)
-}
-use std::collections::{HashMap, HashSet};
-
-type Tracker = HashMap<String, HashSet<DataType>>;
-
-fn infer_schema(rows: &JsObject) -> JsResult<Schema> {
-    let mut values: Tracker = Tracker::new();
-    let len = rows.get_array_length()?;
-
-    let max_infer = std::cmp::min(len, 50);
-    (0..max_infer).for_each(|idx| {
-        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-        let keys = obj.get_property_names().unwrap();
-        let keys_len = keys.get_array_length_unchecked().unwrap();
-        for key_idx in (0..keys_len) {
-            let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-
-            let value: JsUnknown = obj.get_property(key).unwrap();
-            let dtype = DataType::from_js(value).unwrap();
-
-            let key = key.into_utf8().unwrap().into_owned().unwrap();
-            add_or_insert(&mut values, &key, dtype);
-        }
-    });
-    Ok(Schema::new(resolve_fields(values)))
-}
-
-fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
-    if data_type == DataType::Null {
-        return;
-    }
-
-    if values.contains_key(key) {
-        let x = values.get_mut(key).unwrap();
-        x.insert(data_type);
+    let data: serde_json::Value = cx.env.from_js_value(rows)?;
+    let values = if let serde_json::Value::Array(values) = data {
+        Ok(values)
     } else {
-        // create hashset and add value type
-        let mut hs = HashSet::new();
-        hs.insert(data_type);
-        values.insert(key.to_string(), hs);
-    }
+        Err(JsPolarsEr::Other("not an array".into()))
+    }?;
+
+    let data_type = read::infer_rows(&values[0..infer_schema_length]).unwrap();
+    let sa = read::deserialize_struct(&values, data_type);
+    let (fields, columns, _) = sa.into_data();
+    
+    let chunk: ArrowChunk = Chunk::new(columns);
+    DataFrame::try_from((chunk, fields.as_slice()))
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
 }
 
-fn resolve_fields(spec: Tracker) -> Vec<Field> {
-    spec.iter()
-        .map(|(k, hs)| {
-            let v: Vec<&DataType> = hs.iter().collect();
-            Field::new(k, coerce_data_type(&v))
-        })
-        .collect()
-}
-use std::borrow::Borrow;
-
-fn coerce_to_dtype(val: JsUnknown, dtype: DataType) -> JsUnknown {
-    use DataType::*;
-    let actual: Wrap<DataType> = val.get_type().unwrap().into();
-    if actual.0 == dtype {
-        val
-    } else {
-        match dtype {
-            Boolean => val.coerce_to_bool().unwrap().into_unknown(),
-            Float32 => val.coerce_to_number().unwrap().into_unknown(),
-            Float64 => val.coerce_to_number().unwrap().into_unknown(),
-            Int8 => val.coerce_to_number().unwrap().into_unknown(),
-            UInt8 => val.coerce_to_number().unwrap().into_unknown(),
-            Int16 => val.coerce_to_number().unwrap().into_unknown(),
-            UInt16 => val.coerce_to_number().unwrap().into_unknown(),
-            Int32 => val.coerce_to_number().unwrap().into_unknown(),
-            UInt32 => val.coerce_to_number().unwrap().into_unknown(),
-            _ => val.coerce_to_string().unwrap().into_unknown(),
-        }
-    }
-}
-
-fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
-    use DataType::*;
-
-    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
-
-    if are_all_equal {
-        return datatypes[0].borrow().clone();
-    }
-
-    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
-
-    return match (lhs, rhs) {
-        (lhs, rhs) if lhs == rhs => lhs.clone(),
-        (List(lhs), List(rhs)) => {
-            let inner = coerce_data_type(&[lhs.as_ref(), rhs.as_ref()]);
-            List(Box::new(inner))
-        }
-        (scalar, List(list)) => {
-            let inner = coerce_data_type(&[scalar, list.as_ref()]);
-            List(Box::new(inner))
-        }
-        (List(list), scalar) => {
-            let inner = coerce_data_type(&[scalar, list.as_ref()]);
-            List(Box::new(inner))
-        }
-        (Float64, UInt64) => Float64,
-        (UInt64, Float64) => Float64,
-        (UInt64, Boolean) => UInt64,
-        (Boolean, UInt64) => UInt64,
-        (_, _) => Utf8,
-    };
-}
 
 #[js_function(1)]
 pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {

@@ -2036,8 +2036,12 @@ function objToDF(obj: Record<string, Array<any>>): any {
   return pli.df.read_columns({columns});
 }
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
+const fromRowArrays = (rows, inferSchemaLength) => {
+  return dfWrapper(pli.df.read_rows({rows, inferSchemaLength}));
+};
+
 export namespace pl {
-  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame, fromRowArrays});
 }
 
-export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame, fromRowArrays});
