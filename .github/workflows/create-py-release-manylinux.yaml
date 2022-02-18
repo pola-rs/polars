@@ -35,6 +35,7 @@ jobs:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
           rust-toolchain: nightly-2022-01-01
+          manylinux: '2_24'
           target: aarch64-unknown-linux-gnu
           maturin-version: 0.12.1
           command: publish
