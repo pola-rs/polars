@@ -1411,9 +1411,9 @@ impl DataFrame {
         s.rename(s_left.name());
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca_or = s_left.categorical().unwrap();
-                let ca_new = s.cast(&DataType::Categorical).unwrap();
+                let ca_new = s.cast(&DataType::Categorical(None)).unwrap();
                 let mut ca_new = ca_new.categorical().unwrap().clone();
                 ca_new.categorical_map = ca_or.categorical_map.clone();
                 ca_new.into_series()

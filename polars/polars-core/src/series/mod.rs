@@ -351,7 +351,7 @@ impl Series {
         match self.dtype() {
             Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
-            Categorical => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
+            Categorical(_) => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -997,6 +997,21 @@ where
     }
 }
 
+impl<'a> dyn SeriesTrait + 'a {
+    pub(crate) fn as_mut_categorical(&mut self) -> &mut CategoricalChunked {
+        if matches!(self.dtype(), DataType::Categorical) {
+            #[cfg(debug_assertions)]
+            {
+                self.as_any().downcast_ref::<CategoricalChunked>().unwrap();
+            }
+
+            unsafe { &mut *(self as *mut dyn SeriesTrait as *mut CategoricalChunked) }
+        } else {
+            panic!("implementation error")
+        }
+    }
+}
+
 impl<'a, T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + 'a
 where
     T: 'static + PolarsDataType,
@@ -1006,6 +1021,12 @@ where
             // needed because we want to get ref of List no matter what the inner type is.
             (matches!(T::get_dtype(), DataType::List(_)) && matches!(self.dtype(), DataType::List(_)))
         {
+
+            #[cfg(debug_assertions)]
+                {
+                    self.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
+                }
+
             unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
         } else {
             panic!(

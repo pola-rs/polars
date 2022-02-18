@@ -281,7 +281,7 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(limit, f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => format_array!(
+            DataType::Categorical(_) => format_array!(
                 limit,
                 f,
                 self.categorical().unwrap(),

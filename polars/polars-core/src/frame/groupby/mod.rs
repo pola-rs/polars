@@ -355,7 +355,7 @@ impl DataFrame {
         let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
-                    Categorical | Int8 | UInt8 | Int16 | UInt16 => {
+                    Categorical(_) | Int8 | UInt8 | Int16 | UInt16 => {
                         s.cast(&DataType::UInt32).unwrap()
                     }
                     Float32 => s.bit_repr_small().into_series(),
@@ -1427,7 +1427,7 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical).unwrap())
+        df.apply("foo", |s| s.cast(&DataType::Categorical(_)).unwrap())
             .unwrap();
 
         // check multiple keys and categorical
@@ -1531,7 +1531,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical(_)))?;
 
         let _ = df.groupby(["g"])?.sum()?;
         Ok(())

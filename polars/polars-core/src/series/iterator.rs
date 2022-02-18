@@ -67,7 +67,7 @@ impl Series {
         let dtype = self.dtype();
 
         let rev_map = match dtype {
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let cat_ca = self.categorical().unwrap();
                 Some(cat_ca.get_rev_map().clone())
             }

@@ -7,8 +7,6 @@ use crate::prelude::DataType::UInt32;
 
 pub struct CategoricalChunked {
     logical: Logical<CategoricalType, UInt32Type>,
-    /// maps categorical u32 indexes to String values
-    rev_map: Arc<RevMapping>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
     bit_settings: u8,
@@ -23,26 +21,26 @@ impl CategoricalChunked {
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub fn from_chunks_original(name: &str, chunks: Vec<ArrayRef>, rev_map: RevMapping) -> Self {
         let ca = UInt32Chunked::from_chunks(name, chunks);
-        let logical = Logical::new_logical::<CategoricalType>(ca);
+        let mut logical = Logical::new_logical::<CategoricalType>(ca);
+        logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
         let bit_settings = 1u8;
         Self {
             logical,
-            rev_map: Arc::new(rev_map),
             bit_settings
         }
     }
 
     pub fn from_cats_and_rev_map(idx: UInt32Chunked, rev_map: Arc<RevMapping>) -> Self {
-        let logical = Logical::new_logical::<CategoricalType>(idx);
+        let mut logical = Logical::new_logical::<CategoricalType>(idx);
+        logical.2 = Some(DataType::Categorical(Some(rev_map)));
         Self {
             logical,
-            rev_map,
             bit_settings: 0
         }
     }
 
     pub(crate) fn set_rev_map(&mut self, rev_map: Arc<RevMapping>, keep_fast_unique: bool) {
-        self.rev_map = rev_map;
+        self.logical.2 = Some(DataType::Categorical(Some(rev_map)));
         if !keep_fast_unique {
             self.set_fast_unique(false)
         }
@@ -62,11 +60,11 @@ impl CategoricalChunked {
 
     /// Get a reference to the mapping of categorical types to the string values.
     pub fn get_rev_map(&self) -> &Arc<RevMapping> {
-        &self.rev_map
-    }
-
-    pub(crate) fn set_categorical_map(&mut self, categorical_map: Arc<RevMapping>) {
-        self.rev_map = categorical_map
+        if let DataType::Categorical(Some(rev_map)) = &self.logical.2.as_ref().unwrap() {
+            rev_map
+        } else {
+            panic!("implementation error")
+        }
     }
 
     pub(crate) fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
@@ -86,7 +84,7 @@ impl CategoricalChunked {
 
 impl LogicalType for CategoricalChunked {
     fn dtype(&self) -> &DataType {
-        &DataType::Date
+        self.logical.2.as_ref().unwrap()
     }
 
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
@@ -107,7 +105,7 @@ impl LogicalType for CategoricalChunked {
 
                 let f = |idx: u32| mapping.get(idx);
 
-                if !self.has_validity() {
+                if !self.logical.has_validity() {
                     self.into_no_null_iter()
                         .for_each(|idx| builder.append_value(f(idx)));
                 } else {
@@ -124,7 +122,7 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             }
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => Ok(self.clone().into_series()),
+            DataType::Categorical(_) => Ok(self.clone().into_series()),
             _ => self.logical.cast(dtype)
         }
     }

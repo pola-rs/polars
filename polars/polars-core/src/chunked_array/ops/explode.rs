@@ -260,11 +260,11 @@ impl ChunkExplode for ListChunked {
         // make sure we restore the logical type
         match self.inner_dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca = s.u32().unwrap();
                 let mut ca = ca.clone();
                 ca.categorical_map = self.categorical_map.clone();
-                s = ca.cast(&DataType::Categorical)?;
+                s = ca.cast(&DataType::Categorical(None))?;
             }
             #[cfg(feature = "dtype-date")]
             DataType::Date => s = s.into_date(),

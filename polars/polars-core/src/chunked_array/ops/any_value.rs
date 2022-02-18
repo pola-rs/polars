@@ -10,7 +10,6 @@ use std::convert::TryFrom;
 pub(crate) unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
-    categorical_map: &'a Option<Arc<RevMapping>>,
     dtype: &'a DataType,
 ) -> AnyValue<'a> {
     if arr.is_null(idx) {
@@ -49,10 +48,10 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let mut s = Series::try_from(("", v)).unwrap();
 
             match **dt {
-                DataType::Categorical => {
-                    let mut s_new = s.cast(&DataType::Categorical).unwrap();
-                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
-                    ca.categorical_map = categorical_map.clone();
+                DataType::Categorical(Some(rev_map)) => {
+                    let mut s_new = s.cast(&DataType::Categorical(None)).unwrap();
+                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut_categorical();
+                    ca.set_rev_map(rev_map.clone(), false);
                     s = s_new;
                 }
                 DataType::Date

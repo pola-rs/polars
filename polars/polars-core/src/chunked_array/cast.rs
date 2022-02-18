@@ -39,7 +39,7 @@ where
         use DataType::*;
         match (self.dtype(), data_type) {
             #[cfg(feature = "dtype-categorical")]
-            (UInt32, Categorical) | (Categorical, Categorical) => {
+            (UInt32, Categorical(_)) | (Categorical(_), Categorical(_)) => {
                 let ca = CategoricalChunked::from_chunks(self.name(), self.chunks.clone())
                     .set_state(self);
                 Ok(ca.into_series())
@@ -53,7 +53,7 @@ impl ChunkCast for Utf8Chunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let iter = self.into_iter();
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
                 builder.drain_iter(iter);
@@ -137,8 +137,8 @@ mod test {
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
         let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
-        let out = ca.cast(&DataType::Categorical).unwrap();
-        let out = out.cast(&DataType::Categorical).unwrap();
+        let out = ca.cast(&DataType::Categorical(_)).unwrap();
+        let out = out.cast(&DataType::Categorical(_)).unwrap();
         assert_eq!(out.dtype(), &DataType::Categorical)
     }
 }

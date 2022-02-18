@@ -30,7 +30,6 @@ impl IntoSeries for CategoricalChunked {
 }
 
 impl SeriesWrap<CategoricalChunked> {
-
     fn with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> CategoricalChunked
     where F: Fn(&UInt32Chunked) -> UInt32Chunked
     {
@@ -162,7 +161,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn categorical(&self) -> Result<&CategoricalChunked> {
-        if matches!(self.0.dtype(), DataType::Categorical) {
+        if matches!(self.0.dtype(), DataType::Categorical(_)) {
             unsafe { Ok(&*(self as *const dyn SeriesTrait as *const CategoricalChunked)) }
         } else {
             Err(PolarsError::SchemaMisMatch(

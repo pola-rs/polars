@@ -409,7 +409,7 @@ fn finish_logical_types(
     // We cast the column headers to another string repr
     match columns.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
+        DataType::Categorical(_) => {
             let piv = columns.categorical().unwrap();
             let rev_map = piv.categorical_map.as_ref().unwrap().clone();
             for s in out.columns.iter_mut() {
@@ -446,12 +446,12 @@ fn finish_logical_types(
     let dtype = values.dtype();
     match dtype {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
+        DataType::Categorical(_) => {
             let piv = columns.categorical().unwrap();
             let rev_map = piv.categorical_map.as_ref().cloned();
 
             for s in out.columns.iter_mut() {
-                let s_ = s.cast(&DataType::Categorical).unwrap();
+                let s_ = s.cast(&DataType::Categorical(None)).unwrap();
                 let mut ca = s_.categorical().unwrap().clone();
                 ca.categorical_map = rev_map.clone();
                 *s = ca.into_series();

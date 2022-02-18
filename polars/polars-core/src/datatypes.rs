@@ -476,7 +476,7 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
-            DataType::Categorical => "cat",
+            DataType::Categorical(_) => "cat",
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
@@ -626,7 +626,7 @@ pub enum DataType {
     /// &'static str can be used to determine/set inner type
     Object(&'static str),
     Null,
-    Categorical,
+    Categorical(Option<Arc<RevMapping>>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
 }
@@ -649,7 +649,7 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
-            Categorical => UInt32,
+            Categorical(_) => UInt32,
             _ => self.clone(),
         }
     }
@@ -687,7 +687,7 @@ impl DataType {
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
-            Categorical => ArrowDataType::UInt32,
+            Categorical(_) => ArrowDataType::UInt32,
             Unknown => unreachable!(),
         }
     }
@@ -911,7 +911,7 @@ impl Schema {
                         ))),
                         true,
                     ),
-                    DataType::Categorical => ArrowField::new(
+                    DataType::Categorical(_) => ArrowField::new(
                         f.name(),
                         ArrowDataType::Dictionary(
                             IntegerType::UInt32,

@@ -14,7 +14,7 @@ impl Series {
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
                 let mut new = CategoricalChunked::from_chunks(
                     ca.name(),

@@ -297,7 +297,7 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if matches!(self.dtype(), DataType::Categorical) {
+        if matches!(self.dtype(), DataType::Categorical(_)) {
             return Err(PolarsError::InvalidOperation(
                 "append_array not supported for categorical type".into(),
             ));
