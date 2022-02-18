@@ -20,6 +20,7 @@ napi-derive = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
 serde_json = { version = "1" }
 thiserror = "1.0.20"
+rayon = "1.5.1"
 
 [dependencies.napi]
 features = [

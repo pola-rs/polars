@@ -228,7 +228,7 @@ pub fn get_idx(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let idx = params.get_as::<usize>("idx")?;
-    let val: Wrap<AnyValue> = series.get(idx).into();
+    let val: AnyValue = series.get(idx);
     val.try_into_js(&cx)
 }
 
@@ -534,7 +534,7 @@ pub fn quantile(cx: CallContext) -> JsResult<JsUnknown> {
     let q = series
         .quantile_as_series(quantile, QuantileInterpolOptions::default())
         .map_err(JsPolarsEr::from)?;
-    Wrap(q.get(0)).try_into_js(&cx)
+    q.get(0).try_into_js(&cx)
 }
 
 #[js_function(1)]

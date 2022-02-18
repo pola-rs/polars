@@ -26,6 +26,29 @@ pub enum JsDataType {
 }
 
 impl JsDataType {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Int8" => JsDataType::Int8,
+            "Int16" => JsDataType::Int16,
+            "Int32" => JsDataType::Int32,
+            "Int64" => JsDataType::Int64,
+            "UInt8" => JsDataType::UInt8,
+            "UInt16" => JsDataType::UInt16,
+            "UInt32" => JsDataType::UInt32,
+            "UInt64" => JsDataType::UInt64,
+            "Float32" => JsDataType::Float32,
+            "Float64" => JsDataType::Float64,
+            "Bool" => JsDataType::Bool,
+            "Utf8" => JsDataType::Utf8,
+            "List" => JsDataType::List,
+            "Date" => JsDataType::Date,
+            "Datetime" => JsDataType::Datetime,
+            "Time" => JsDataType::Time,
+            "Object" => JsDataType::Object,
+            "Categorical" => JsDataType::Categorical,
+            _ => panic!("not a valid dtype"),
+        }
+    }
     pub fn to_string(self) -> String {
         match self {
             JsDataType::Int8 => "Int8",
@@ -182,9 +205,22 @@ use crate::prelude::JsResult;
 
 impl FromJsUnknown for JsDataType {
     fn from_js(val: JsUnknown) -> JsResult<Self> {
-        let n: JsNumber = unsafe { val.cast() };
-        let val = n.get_uint32()?;
-        Ok(num_to_polarstype(val).into())
+        match val.get_type()? {
+            napi::ValueType::Number => {
+                let n: JsNumber = unsafe { val.cast() };
+                let val = n.get_uint32()?;
+                Ok(num_to_polarstype(val).into())
+            }
+            napi::ValueType::String => {
+                let s: napi::JsString = unsafe { val.cast() };
+                let val = s.into_utf8().unwrap();
+                let val = val.as_slice();
+                let val = std::str::from_utf8(val).unwrap();
+
+                Ok(JsDataType::from_str(val))
+            }
+            _ => panic!("not a valid dtype"),
+        }
     }
 }
 // Don't change the order of these!

@@ -6,6 +6,7 @@ use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, 
 use polars::frame::row::{rows_to_schema, Row};
 use polars::io::RowCount;
 use polars::prelude::*;
+use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
@@ -527,7 +528,7 @@ pub(crate) fn to_rows(cx: CallContext) -> JsResult<JsObject> {
     for idx in 0..df.height() {
         let mut arr_row = cx.env.create_array()?;
         for (i, col) in df.get_columns().iter().enumerate() {
-            let val: Wrap<AnyValue> = col.get(idx).into();
+            let val: AnyValue = col.get(idx);
             let jsv = val.into_js(&cx);
             arr_row.set_element(i as u32, jsv)?;
         }
@@ -549,11 +550,29 @@ pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
 
     let mut row = cx.env.create_array()?;
     for (i, col) in df.get_columns().iter().enumerate() {
-        let val: Wrap<AnyValue> = col.get(idx).into();
+        let val: AnyValue = col.get(idx);
         let jsv = val.into_js(&cx);
         row.set_element(i as u32, jsv)?;
     }
     Ok(row)
+}
+
+struct RowAppend(napi::Ref<()>);
+
+impl napi::Task for RowAppend {
+    type Output = napi::Ref<()>;
+    type JsValue = JsObject;
+
+    fn compute(&mut self) -> JsResult<Self::Output> {
+        todo!()
+    }
+
+    fn resolve(self, env: napi::Env, output: Self::Output) -> JsResult<Self::JsValue> {
+        todo!()
+        // let result = env.create_string_from_std(output);
+        // self.0.unref(env)?;
+        // result
+    }
 }
 
 #[js_function(1)]
@@ -566,13 +585,106 @@ pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
         for col in df.get_columns().iter() {
             let col_name = col.name();
             let col_name_js = cx.env.create_string(col_name)?;
-            let val: Wrap<AnyValue> = col.get(idx).into();
+            let val: AnyValue = col.get(idx);
             let jsv = val.into_js(&cx);
             obj_row.set_property(col_name_js, jsv)?;
         }
         arr.set_element(idx as u32, obj_row)?;
     }
     Ok(arr)
+}
+
+#[js_function(1)]
+pub(crate) fn to_row_objects_sync(cx: CallContext) -> JsResult<JsUndefined> {
+    use napi::threadsafe_function::ThreadSafeCallContext;
+    use rayon::prelude::*;
+
+    // polars::
+    let cb = cx
+        .env
+        .create_function_from_closure("cb", |ctx: CallContext| {
+            let o = ctx.get_all();
+            println!("inside cb");
+            ctx.env.create_array()
+        })?;
+
+    let tsfn = cx
+        .env
+        .create_threadsafe_function(&cb, 2, |ctx: ThreadSafeCallContext<()>| {
+            println!("tsfn ctx");
+            // let wo: WrappedObject = ctx.env.get::<JsObject>(0)?.into()
+            // let params = get_params(&cx)?;
+            // let df = params.get_external::<DataFrame>(&cx, "_df")?;
+            // let mut arr = cx.env.create_array()?;
+
+            // let (idx, cols, arr_ref) = ctx.value;
+            // let mut arr = ctx.env.get_reference_value::<JsObject>(arr_ref)?;
+            // let mut obj_row = ctx.env.create_object()?;
+            // for col in cols {
+            //     let col_name = col.name();
+            //     let col_name_js = ctx.env.create_string(col_name)?;
+            //     let val: AnyValue = col.get(idx);
+            //     let jsv = match val {
+            //         AnyValue::Boolean(v) => ctx.env.get_boolean(v).map(|v| v.into_unknown()),
+            //         AnyValue::Utf8(v) => ctx.env.create_string(v).map(|v| v.into_unknown()),
+            //         AnyValue::UInt8(v) => ctx.env.create_uint32(v as u32).map(|v| v.into_unknown()),
+            //         AnyValue::UInt16(v) => {
+            //             ctx.env.create_uint32(v as u32).map(|v| v.into_unknown())
+            //         }
+            //         AnyValue::UInt32(v) => ctx.env.create_uint32(v).map(|v| v.into_unknown()),
+            //         AnyValue::UInt64(v) => ctx
+            //             .env
+            //             .create_bigint_from_u64(v)
+            //             .map(|v| v.into_unknown())?,
+            //         AnyValue::Int8(v) => ctx.env.create_int32(v as i32).map(|v| v.into_unknown()),
+            //         AnyValue::Int16(v) => ctx.env.create_int32(v as i32).map(|v| v.into_unknown()),
+            //         AnyValue::Int32(v) => ctx.env.create_int32(v).map(|v| v.into_unknown()),
+            //         AnyValue::Int64(v) => ctx
+            //             .env
+            //             .create_bigint_from_i64(v)
+            //             .map(|v| v.into_unknown())?,
+            //         AnyValue::Float32(v) => {
+            //             ctx.env.create_double(v as f64).map(|v| v.into_unknown())
+            //         }
+            //         AnyValue::Float64(v) => ctx.env.create_double(v).map(|v| v.into_unknown()),
+            //         AnyValue::Date(v) => ctx.env.create_date(v as f64).map(|v| v.into_unknown()),
+            //         AnyValue::Datetime(v, _, _) => {
+            //             ctx.env.create_date(v as f64).map(|v| v.into_unknown())
+            //         }
+            //         AnyValue::List(v) => todo!(),
+            //         _ => ctx.env.get_null().map(|v| v.into_unknown()),
+            //     }?;
+            //     obj_row.set_property(col_name_js, jsv)?;
+            // }
+            // arr.set_element(idx as u32, obj_row)?;
+            Ok(vec![ctx.env.get_undefined().unwrap()])
+        })?;
+
+    tsfn.call(
+        Ok(()),
+        napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
+    );
+    // let arr_ref = cx.env.create_reference(arr)?;
+    // let cols = df.get_columns().clone();
+    // (0..df.height()).into_par_iter().for_each(|idx| {
+    //     let f = tsfn.clone();
+    //     // cx.env.spawn(|t| t.promise_object())
+    //     // let arr: JsObject = cx.env.get_reference_value(&arr_ref).unwrap();
+
+    //     // let mut obj_row = cx.env.create_object()?;
+    //     // for col in df.get_columns().iter() {
+    //     //     let col_name = col.name();
+    //     //     let col_name_js = cx.env.create_string(col_name)?;
+    //     //     let val: AnyValue = col.get(idx);
+    //     //     let jsv = val.into_js(&cx);
+    //     //     obj_row.set_property(col_name_js, jsv)?;
+    //     // }
+    //     // arr.set_element(idx as u32, obj_row)?;
+    //     // Ok(())
+    //     // todo!()
+    // });
+    cx.env.get_undefined()
+    // Ok(arr)
 }
 
 #[js_function(1)]
@@ -588,7 +700,7 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
 
     let mut obj = cx.env.create_object()?;
     for col in df.get_columns().iter() {
-        let val: Wrap<AnyValue> = col.get(idx).into();
+        let val: AnyValue = col.get(idx);
         let jsv = val.into_js(&cx);
         let col_name = col.name();
         let col_name_js = cx.env.create_string(col_name)?;
@@ -597,32 +709,104 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
     Ok(obj)
 }
 
+fn coerce_js_to_dtype(val: JsUnknown, dtype: &DataType) -> JsResult<JsUnknown> {
+    use DataType::*;
+    let vtype = val.get_type().unwrap();
+
+    match (vtype, dtype) {
+        (ValueType::String, Utf8) => Ok(val),
+        (ValueType::Boolean, Boolean) => Ok(val),
+        (
+            ValueType::Number,
+            UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64,
+        ) => Ok(val),
+        (ValueType::Bigint, UInt64 | Int64) => Ok(val),
+        (_, Utf8) => val.coerce_to_string().map(|v| v.into_unknown()),
+        (_, UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64) => {
+            val.coerce_to_number().map(|v| v.into_unknown())
+        }
+        (_, Boolean) => val.coerce_to_bool().map(|v| v.into_unknown()),
+        _ => Ok(val),
+    }
+}
+
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
-    use polars::export::arrow::{array::StructArray, chunk::Chunk, io::json::read};
-
     let params = get_params(&cx)?;
     let rows = params.get::<JsObject>("rows")?;
     let len = rows.get_array_length()?;
-    let infer_schema_length: usize = params.get_or("inferSchemaLength", len as usize)?;
 
-    let data: serde_json::Value = cx.env.from_js_value(rows)?;
-    let values = if let serde_json::Value::Array(values) = data {
-        Ok(values)
-    } else {
-        Err(JsPolarsEr::Other("not an array".into()))
+    let schema = match params.get_as::<Option<Schema>>("schema")? {
+        Some(s) => Ok(s),
+        None => {
+            let infer_schema_length = params.get_or("inferSchemaLength", len)?;
+
+            infer_schema(&rows, infer_schema_length)
+        }
     }?;
+    let null = cx.env.get_null()?;
+    let rows: Vec<Row> = (0..len)
+        .map(|idx| {
+            let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
+            Row(schema
+                .fields()
+                .iter()
+                .map(|fld| {
+                    let dtype = fld.data_type();
+                    let key = fld.name();
+                    let value: JsUnknown = js_row
+                        .get_named_property(key)
+                        .unwrap_or(null.into_unknown());
+                    let value = coerce_js_to_dtype(value, dtype).unwrap();
+                    AnyValue::from_js(value).unwrap()
+                })
+                .collect())
+        })
+        .collect();
 
-    let data_type = read::infer_rows(&values[0..infer_schema_length]).unwrap();
-    let sa = read::deserialize_struct(&values, data_type);
-    let (fields, columns, _) = sa.into_data();
-    
-    let chunk: ArrowChunk = Chunk::new(columns);
-    DataFrame::try_from((chunk, fields.as_slice()))
+    DataFrame::from_rows_and_schema(&rows, &schema)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
 
+#[js_function(1)]
+pub(crate) fn read_rows_sync(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let rows = params.get::<JsObject>("rows")?;
+    let len = rows.get_array_length()?;
+
+    let schema = match params.get_as::<Option<Schema>>("schema")? {
+        Some(s) => Ok(s),
+        None => {
+            let infer_schema_length = params.get_or("inferSchemaLength", len)?;
+
+            infer_schema(&rows, infer_schema_length)
+        }
+    }?;
+    let null = cx.env.get_null()?;
+    let rows: Vec<Row> = (0..len)
+        .map(|idx| {
+            let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
+            Row(schema
+                .fields()
+                .iter()
+                .map(|fld| {
+                    let dtype = fld.data_type();
+                    let key = fld.name();
+                    let value: JsUnknown = js_row
+                        .get_named_property(key)
+                        .unwrap_or(null.into_unknown());
+                    let value = coerce_js_to_dtype(value, dtype).unwrap();
+                    AnyValue::from_js(value).unwrap()
+                })
+                .collect())
+        })
+        .collect();
+
+    DataFrame::from_rows_and_schema(&rows, &schema)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
@@ -669,4 +853,88 @@ fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = Schema::new(fields);
 
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
+}
+
+use std::collections::{HashMap, HashSet};
+
+type Tracker = HashMap<String, HashSet<DataType>>;
+
+fn infer_schema(rows: &JsObject, infer_schema_length: u32) -> JsResult<Schema> {
+    let mut values: Tracker = Tracker::new();
+    let len = rows.get_array_length()?;
+
+    let max_infer = std::cmp::min(len, infer_schema_length);
+    (0..max_infer).for_each(|idx| {
+        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+        let keys = obj.get_property_names().unwrap();
+        let keys_len = keys.get_array_length_unchecked().unwrap();
+        for key_idx in 0..keys_len {
+            let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+
+            let value: JsUnknown = obj.get_property(key).unwrap();
+            let dtype = DataType::from_js(value).unwrap();
+
+            let key = key.into_utf8().unwrap().into_owned().unwrap();
+            add_or_insert(&mut values, &key, dtype);
+        }
+    });
+    Ok(Schema::new(resolve_fields(values)))
+}
+
+fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
+    if data_type == DataType::Null {
+        return;
+    }
+
+    if values.contains_key(key) {
+        let x = values.get_mut(key).unwrap();
+        x.insert(data_type);
+    } else {
+        // create hashset and add value type
+        let mut hs = HashSet::new();
+        hs.insert(data_type);
+        values.insert(key.to_string(), hs);
+    }
+}
+
+fn resolve_fields(spec: Tracker) -> Vec<Field> {
+    spec.iter()
+        .map(|(k, hs)| {
+            let v: Vec<&DataType> = hs.iter().collect();
+            Field::new(k, coerce_data_type(&v))
+        })
+        .collect()
+}
+
+fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+    use DataType::*;
+
+    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+
+    if are_all_equal {
+        return datatypes[0].borrow().clone();
+    }
+
+    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+
+    return match (lhs, rhs) {
+        (lhs, rhs) if lhs == rhs => lhs.clone(),
+        (List(lhs), List(rhs)) => {
+            let inner = coerce_data_type(&[lhs.as_ref(), rhs.as_ref()]);
+            List(Box::new(inner))
+        }
+        (scalar, List(list)) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (List(list), scalar) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (Float64, UInt64) => Float64,
+        (UInt64, Float64) => Float64,
+        (UInt64, Boolean) => UInt64,
+        (Boolean, UInt64) => UInt64,
+        (_, _) => Utf8,
+    };
 }

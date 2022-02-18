@@ -18,10 +18,8 @@ pub fn infer_schema(rows: &[Row]) -> Schema {
             add_or_insert(&mut values, &col_name, dt);
         });
     });
-    println!("values={:#?}", values);
 
     let fields = resolve_fields(values);
-    println!("fields={:#?}", fields);
     Schema::new(fields)
 
 }
