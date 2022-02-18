@@ -23,7 +23,7 @@ impl Series {
             // match the logical types and create them
             match dtype {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical => CategoricalChunked::full_null(name, size).into_series(),
+                DataType::Categorical(_) => CategoricalChunked::full_null(name, size).into_series(),
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => Int32Chunked::full_null(name, size)
                     .into_date()

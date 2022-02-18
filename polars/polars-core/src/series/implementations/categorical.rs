@@ -30,16 +30,27 @@ impl IntoSeries for CategoricalChunked {
 }
 
 impl SeriesWrap<CategoricalChunked> {
-    fn with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> CategoricalChunked
-    where F: Fn(&UInt32Chunked) -> UInt32Chunked
-    {
-        let cats = apply(self.0.deref());
+
+    fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
         let mut out = CategoricalChunked::from_cats_and_rev_map(cats, self.0.get_rev_map().clone());
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
-
         out
+    }
+
+    fn with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> CategoricalChunked
+    where F: Fn(&UInt32Chunked) -> UInt32Chunked
+    {
+        let cats = apply(self.0.deref());
+        self.finish_with_state(keep_fast_unique, cats)
+    }
+
+    fn try_with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> Result<CategoricalChunked>
+        where F: Fn(&UInt32Chunked) -> Result<UInt32Chunked>
+    {
+        let cats = apply(self.0.deref())?;
+        Ok(self.finish_with_state(keep_fast_unique, cats))
     }
 
 }
@@ -53,7 +64,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        self.0.explode_by_offsets(offsets)
+        // TODO! explode by offset should return concrete type
+        self.with_state(true, |cats| cats.explode_by_offsets(offsets).u32().unwrap().clone()).into_series()
     }
 
     fn set_sorted(&mut self, reverse: bool) {
@@ -61,12 +73,12 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
+        self.0.logical().equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-        ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
+        self.0.zip_with(mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
     fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
         (&self.0).into_partial_eq_inner()
@@ -209,7 +221,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
-        ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+        self.try_with_state(false, |cats| cats.filter(filter)).map(|ca| ca.into_series())
     }
 
     fn take(&self, indices: &IdxCa) -> Result<Series> {
@@ -218,7 +230,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         } else {
             Cow::Borrowed(indices)
         };
-        Ok(ChunkTake::take(&self.0, (&*indices).into())?.into_series())
+        self.try_with_state(false, |cats| cats.take((&*indices).into())).map(|ca| ca.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
@@ -230,7 +242,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.with_state(false, |cats| cats.take_unchecked(iter.into())).into_series()
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
@@ -239,16 +251,16 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         } else {
             Cow::Borrowed(idx)
         };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
+        Ok(self.with_state(false, |cats| cats.take_unchecked((&*idx).into())).into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
-        ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
+        self.with_state(false, |cats| cats.take_unchecked(iter.into())).into_series()
     }
 
     #[cfg(feature = "take_opt_iter")]
     fn take_opt_iter(&self, iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
-        Ok(ChunkTake::take(&self.0, iter.into())?.into_series())
+        self.try_with_state(false, |cats| cats.take(iter.into())).map(|ca|ca.into_series())
     }
 
     fn len(&self) -> usize {
@@ -326,7 +338,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn reverse(&self) -> Series {
-        ChunkReverse::reverse(&self.0).into_series()
+        self.with_state(true, |cats| cats.reverse()).into_series()
     }
 
     fn as_single_ptr(&mut self) -> Result<usize> {
@@ -380,7 +392,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        RepeatBy::repeat_by(&self.0, by)
+        let mut out = self.0.logical().repeat_by(by);
+        out.with_rev_map(self.0.get_rev_map().clone());
+        out
     }
 
     #[cfg(feature = "checked_arithmetic")]
@@ -390,7 +404,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "is_first")]
     fn is_first(&self) -> Result<BooleanChunked> {
-        self.0.is_first()
+        self.0.logical().is_first()
     }
 
     #[cfg(feature = "mode")]
@@ -401,12 +415,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
 impl private::PrivateSeriesNumeric for SeriesWrap<CategoricalChunked> {
     fn bit_repr_is_large(&self) -> bool {
-        CategoricalChunked::bit_repr_is_large()
-    }
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        self.0.bit_repr_large()
+        false
     }
     fn bit_repr_small(&self) -> UInt32Chunked {
-        self.0.bit_repr_small()
+        self.0.logical().clone()
     }
 }

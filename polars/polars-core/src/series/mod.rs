@@ -870,7 +870,7 @@ impl Series {
         match self.dtype() {
             DataType::Utf8
             | DataType::List(_)
-            | DataType::Categorical
+            | DataType::Categorical(_)
             | DataType::Date
             | DataType::Datetime(_, _)
             | DataType::Duration(_)
@@ -999,7 +999,7 @@ where
 
 impl<'a> dyn SeriesTrait + 'a {
     pub(crate) fn as_mut_categorical(&mut self) -> &mut CategoricalChunked {
-        if matches!(self.dtype(), DataType::Categorical) {
+        if matches!(self.dtype(), DataType::Categorical(_)) {
             #[cfg(debug_assertions)]
             {
                 self.as_any().downcast_ref::<CategoricalChunked>().unwrap();

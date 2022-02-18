@@ -5,6 +5,7 @@ use super::*;
 use crate::prelude::*;
 use crate::prelude::DataType::UInt32;
 
+#[derive(Clone)]
 pub struct CategoricalChunked {
     logical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
@@ -13,15 +14,26 @@ pub struct CategoricalChunked {
 }
 
 impl CategoricalChunked {
+    pub(crate) fn len(&self) -> usize {
+        self.logical.len()
+    }
+
     /// Get a reference to the logical array (the categories).
-    pub fn logical(&self) -> &UInt32Chunked {
+    pub(crate) fn rechunk(&self) -> Self {
+        let mut out = self.clone();
+        out.logical.0 = out.logical.0.rechunk();
+        out
+    }
+
+    /// Get a reference to the logical array (the categories).
+    pub(crate) fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
 
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
-    pub fn from_chunks_original(name: &str, chunks: Vec<ArrayRef>, rev_map: RevMapping) -> Self {
+    pub(crate) fn from_chunks_original(name: &str, chunks: Vec<ArrayRef>, rev_map: RevMapping) -> Self {
         let ca = UInt32Chunked::from_chunks(name, chunks);
-        let mut logical = Logical::new_logical::<CategoricalType>(ca);
+        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(ca);
         logical.2 = Some(DataType::Categorical(Some(Arc::new(rev_map))));
         let bit_settings = 1u8;
         Self {
@@ -30,8 +42,8 @@ impl CategoricalChunked {
         }
     }
 
-    pub fn from_cats_and_rev_map(idx: UInt32Chunked, rev_map: Arc<RevMapping>) -> Self {
-        let mut logical = Logical::new_logical::<CategoricalType>(idx);
+    pub(crate) fn from_cats_and_rev_map(idx: UInt32Chunked, rev_map: Arc<RevMapping>) -> Self {
+        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
         logical.2 = Some(DataType::Categorical(Some(rev_map)));
         Self {
             logical,
@@ -47,7 +59,7 @@ impl CategoricalChunked {
     }
 
     pub(crate) fn can_fast_unique(&self) -> bool {
-        self.bit_settings & 1 << 0 != 0 && self.chunks.len() == 1
+        self.bit_settings & 1 << 0 != 0 && self.logical.chunks.len() == 1
     }
 
     pub(crate) fn set_fast_unique(&mut self, can: bool) {
@@ -67,16 +79,11 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn set_state<T>(mut self, other: &ChunkedArray<T>) -> Self {
-        self.categorical_map = other.categorical_map.clone();
-        self
-    }
-
     /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.deref().into_iter();
         CatIter {
-            rev: self.categorical_map.as_ref().unwrap(),
+            rev: self.get_rev_map(),
             iter,
         }
     }
@@ -90,7 +97,7 @@ impl LogicalType for CategoricalChunked {
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
         match self.logical.0.get(i) {
             Some(i) => {
-                AnyValue::Categorical(i, &self.rev_map)
+                AnyValue::Categorical(i, &self.get_rev_map())
             },
             None => AnyValue::Null
         }
@@ -99,17 +106,17 @@ impl LogicalType for CategoricalChunked {
     fn cast(&self, dtype: &DataType) -> Result<Series> {
         match dtype {
             DataType::Utf8 => {
-                let mapping = &*self.rev_map;
+                let mapping = &**self.get_rev_map();
 
-                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.len() * 5);
+                let mut builder = Utf8ChunkedBuilder::new(self.logical.name(), self.len(), self.len() * 5);
 
                 let f = |idx: u32| mapping.get(idx);
 
                 if !self.logical.has_validity() {
-                    self.into_no_null_iter()
+                    self.logical.into_no_null_iter()
                         .for_each(|idx| builder.append_value(f(idx)));
                 } else {
-                    self.into_iter().for_each(|opt_idx| {
+                    self.logical.into_iter().for_each(|opt_idx| {
                         builder.append_option(opt_idx.map(f));
                     });
                 }
@@ -118,7 +125,7 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             }
             DataType::UInt32 => {
-                let ca = UInt32Chunked::from_chunks(self.name(), self.logical.chunks.clone());
+                let ca = UInt32Chunked::from_chunks(self.logical.name(), self.logical.chunks.clone());
                 Ok(ca.into_series())
             }
             #[cfg(feature = "dtype-categorical")]

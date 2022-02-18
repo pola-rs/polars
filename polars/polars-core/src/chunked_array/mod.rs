@@ -592,6 +592,15 @@ impl ListChunked {
             _ => unreachable!(),
         }
     }
+
+    #[cfg(feature = "dtype-categorical")]
+    pub(crate) fn with_rev_map(&mut self, rev_map: Arc<RevMapping>) {
+        if matches!(self.inner_dtype(), DataType::Categorical(_)) {
+            self.field.coerce(DataType::List(Box::new(DataType::Categorical(Some(rev_map)))))
+        } else {
+            panic!("implementation error")
+        }
+    }
 }
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(

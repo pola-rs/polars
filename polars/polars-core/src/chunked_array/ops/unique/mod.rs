@@ -478,13 +478,6 @@ mod is_first {
         }
     }
 
-    #[cfg(feature = "dtype-categorical")]
-    impl IsFirst<CategoricalType> for CategoricalChunked {
-        fn is_first(&self) -> Result<BooleanChunked> {
-            self.deref().is_first()
-        }
-    }
-
     impl IsFirst<Utf8Type> for Utf8Chunked {
         fn is_first(&self) -> Result<BooleanChunked> {
             let mut unique = PlHashSet::new();

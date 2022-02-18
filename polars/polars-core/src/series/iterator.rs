@@ -66,34 +66,13 @@ impl Series {
         assert_eq!(self.chunks().len(), 1, "impl error");
         let dtype = self.dtype();
 
-        let rev_map = match dtype {
-            DataType::Categorical(_) => {
-                let cat_ca = self.categorical().unwrap();
-                Some(cat_ca.get_rev_map().clone())
-            }
-            _ => None
-        };
-
         let arr = &*self.chunks()[0];
         let len = arr.len();
-        #[cfg(feature = "dtype-categorical")]
-        {
-            SeriesIter {
-                arr,
-                dtype,
-                cat_map: rev_map,
-                idx: 0,
-                len,
-            }
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            SeriesIter {
-                arr,
-                dtype,
-                idx: 0,
-                len,
-            }
+        SeriesIter {
+            arr,
+            dtype,
+            idx: 0,
+            len,
         }
     }
 }
@@ -101,8 +80,6 @@ impl Series {
 pub struct SeriesIter<'a> {
     arr: &'a dyn Array,
     dtype: &'a DataType,
-    #[cfg(feature = "dtype-categorical")]
-    cat_map: Option<Arc<RevMapping>>,
     idx: usize,
     len: usize,
 }
@@ -117,13 +94,8 @@ impl<'a> Iterator for SeriesIter<'a> {
         if idx == self.len {
             None
         } else {
-            #[cfg(feature = "dtype-categorical")]
             unsafe {
-                Some(arr_to_any_value(self.arr, idx, self.cat_map, self.dtype))
-            }
-            #[cfg(not(feature = "dtype-categorical"))]
-            unsafe {
-                Some(arr_to_any_value(self.arr, idx, &None, self.dtype))
+                Some(arr_to_any_value(self.arr, idx, self.dtype))
             }
         }
     }

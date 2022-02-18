@@ -27,9 +27,9 @@ use std::ops::{Deref, DerefMut};
 
 /// Maps a logical type to a a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
-pub struct Logical<K: PolarsDataType, T: PolarsDataType>(
-    pub ChunkedArray<T>,
-    PhantomData<K>,
+pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
+    pub ChunkedArray<Physical>,
+    PhantomData<Logical>,
     pub Option<DataType>,
 );
 

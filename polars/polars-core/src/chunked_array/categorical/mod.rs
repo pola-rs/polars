@@ -9,9 +9,9 @@ use std::ops::{Deref, DerefMut};
 
 impl From<&CategoricalChunked> for DictionaryArray<u32> {
     fn from(ca: &CategoricalChunked) -> Self {
-        let ca = ca.rechunk();
-        let keys = ca.downcast_iter().next().unwrap();
-        let map = &**ca.categorical_map.as_ref().unwrap();
+        let keys = ca.logical().rechunk();
+        let keys = keys.downcast_iter().next().unwrap();
+        let map = &**ca.get_rev_map();
         match map {
             RevMapping::Local(arr) => {
                 DictionaryArray::from_data(keys.clone(), Arc::new(arr.clone()))
@@ -29,9 +29,9 @@ impl From<&CategoricalChunked> for DictionaryArray<u32> {
 }
 impl From<&CategoricalChunked> for DictionaryArray<i64> {
     fn from(ca: &CategoricalChunked) -> Self {
-        let ca = ca.rechunk();
-        let keys = ca.downcast_iter().next().unwrap();
-        let map = &**ca.categorical_map.as_ref().unwrap();
+        let keys = ca.logical().rechunk();
+        let keys = keys.downcast_iter().next().unwrap();
+        let map = &**ca.get_rev_map();
         match map {
             RevMapping::Local(arr) => DictionaryArray::from_data(
                 cast(keys, &ArrowDataType::Int64)

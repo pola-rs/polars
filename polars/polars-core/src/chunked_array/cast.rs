@@ -35,17 +35,7 @@ where
     T: PolarsNumericType,
 {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        #[cfg(feature = "dtype-categorical")]
-        use DataType::*;
-        match (self.dtype(), data_type) {
-            #[cfg(feature = "dtype-categorical")]
-            (UInt32, Categorical(_)) | (Categorical(_), Categorical(_)) => {
-                let ca = CategoricalChunked::from_chunks(self.name(), self.chunks.clone())
-                    .set_state(self);
-                Ok(ca.into_series())
-            }
-            _ => cast_impl(self.name(), &self.chunks, data_type),
-        }
+        cast_impl(self.name(), &self.chunks, data_type)
     }
 }
 

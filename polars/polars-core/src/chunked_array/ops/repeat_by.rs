@@ -63,12 +63,3 @@ impl RepeatBy for Utf8Chunked {
         )
     }
 }
-
-#[cfg(feature = "dtype-categorical")]
-impl RepeatBy for CategoricalChunked {
-    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        let mut ca = self.deref().repeat_by(by);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
-    }
-}

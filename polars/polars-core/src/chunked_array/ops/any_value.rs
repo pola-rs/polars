@@ -75,7 +75,7 @@ macro_rules! get_any_value_unchecked {
         debug_assert!(chunk_idx < $self.chunks.len());
         let arr = &**$self.chunks.get_unchecked(chunk_idx);
         debug_assert!(idx < arr.len());
-        arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype())
+        arr_to_any_value(arr, idx, $self.dtype())
     }};
 }
 
@@ -86,7 +86,7 @@ macro_rules! get_any_value {
         assert!(idx < arr.len());
         // SAFETY
         // bounds are checked
-        unsafe { arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype()) }
+        unsafe { arr_to_any_value(arr, idx, $self.dtype()) }
     }};
 }
 

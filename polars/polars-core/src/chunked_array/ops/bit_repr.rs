@@ -57,22 +57,6 @@ where
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ToBitRepr for CategoricalChunked {
-    fn bit_repr_is_large() -> bool {
-        // u32
-        false
-    }
-
-    fn bit_repr_large(&self) -> UInt64Chunked {
-        unimplemented!()
-    }
-
-    fn bit_repr_small(&self) -> UInt32Chunked {
-        self.deref().clone()
-    }
-}
-
 #[cfg(feature = "reinterpret")]
 impl Reinterpret for UInt64Chunked {
     fn reinterpret_signed(&self) -> Series {

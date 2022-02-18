@@ -16,7 +16,7 @@ use std::ops::Deref;
 mod abs;
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
-mod append;
+pub(crate) mod append;
 mod apply;
 mod bit_repr;
 pub(crate) mod chunkops;

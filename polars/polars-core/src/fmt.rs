@@ -140,14 +140,6 @@ impl Debug for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl Debug for CategoricalChunked {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        format_array!(limit, f, self, "cat", self.name(), "ChunkedArray")
-    }
-}
-
 #[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where

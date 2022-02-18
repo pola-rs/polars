@@ -5,12 +5,12 @@ use std::sync::Arc;
 impl CategoricalChunked {
     pub(crate) fn merge_categorical_map(&self, other: &Self) -> Arc<RevMapping> {
         match (
-            self.categorical_map.as_deref(),
-            other.categorical_map.as_deref(),
+            &**self.get_rev_map(),
+            &**other.get_rev_map()
         ) {
             (
-                Some(RevMapping::Global(l_map, l_slots, l_id)),
-                Some(RevMapping::Global(r_map, r_slots, r_id)),
+                RevMapping::Global(l_map, l_slots, l_id),
+                RevMapping::Global(r_map, r_slots, r_id),
             ) => {
                 if l_id != r_id {
                     panic!("The two categorical arrays are not created under the same global string cache. They cannot be merged")
@@ -54,10 +54,10 @@ impl CategoricalChunked {
                 let new_rev = RevMapping::Global(new_map, new_slots.into(), *l_id);
                 Arc::new(new_rev)
             }
-            (Some(RevMapping::Local(arr_l)), Some(RevMapping::Local(arr_r))) => {
+            (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
                 // they are from the same source, just clone
                 if std::ptr::eq(arr_l, arr_r) {
-                    return self.categorical_map.clone().unwrap()
+                    return self.get_rev_map().clone()
                 }
 
                 let arr = arrow::compute::concatenate::concatenate(&[arr_l, arr_r]).unwrap();

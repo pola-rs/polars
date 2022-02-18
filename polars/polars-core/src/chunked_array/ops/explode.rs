@@ -4,8 +4,6 @@ use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
@@ -178,21 +176,6 @@ impl ExplodeByOffsets for Utf8Chunked {
             builder.append_option(val)
         }
         builder.finish().into()
-    }
-}
-#[cfg(feature = "dtype-categorical")]
-impl ExplodeByOffsets for CategoricalChunked {
-    #[inline(never)]
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        let ca: CategoricalChunked = self
-            .deref()
-            .explode_by_offsets(offsets)
-            .cast(&DataType::Categorical)
-            .unwrap()
-            .categorical()
-            .unwrap()
-            .clone();
-        ca.set_state(self).into()
     }
 }
 

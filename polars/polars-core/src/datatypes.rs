@@ -35,8 +35,6 @@ pub struct Utf8Type {}
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
 
-pub struct CategoricalType {}
-
 pub trait PolarsDataType: Send + Sync {
     fn get_dtype() -> DataType
     where
@@ -68,6 +66,7 @@ impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
+impl_polars_datatype!(CategoricalType, Unknown, u32);
 impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
@@ -88,12 +87,6 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(Box::new(DataType::Null))
-    }
-}
-
-impl PolarsDataType for CategoricalType {
-    fn get_dtype() -> DataType {
-        DataType::Categorical
     }
 }
 
@@ -595,7 +588,7 @@ impl TimeUnit {
 
 pub type TimeZone = String;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -984,7 +977,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical,
+            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
