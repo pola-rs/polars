@@ -1040,8 +1040,17 @@ class Expr:
         """Get index of first unique value."""
         return wrap_expr(self._pyexpr.arg_unique())
 
-    def unique(self) -> "Expr":
-        """Get unique values."""
+    def unique(self, maintain_order: bool = False) -> "Expr":
+        """
+        Get unique values of this expression.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
+        """
+        if maintain_order:
+            return wrap_expr(self._pyexpr.unique_stable())
         return wrap_expr(self._pyexpr.unique())
 
     def first(self) -> "Expr":
