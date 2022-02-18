@@ -1,6 +1,6 @@
-mod unique;
 mod append;
-mod zip;
 mod full;
+mod unique;
+mod zip;
 
 use super::*;

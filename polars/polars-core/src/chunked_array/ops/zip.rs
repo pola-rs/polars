@@ -154,7 +154,6 @@ impl ChunkZip<ListType> for ListChunked {
     }
 }
 
-
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkZip<ObjectType<T>> for ObjectChunked<T> {
     fn zip_with(

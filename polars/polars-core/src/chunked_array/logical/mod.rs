@@ -10,10 +10,10 @@ pub use datetime::*;
 mod duration;
 #[cfg(feature = "dtype-duration")]
 pub use duration::*;
-#[cfg(feature = "dtype-time")]
-mod time;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+#[cfg(feature = "dtype-time")]
+mod time;
 
 #[cfg(feature = "dtype-categorical")]
 pub use categorical::*;

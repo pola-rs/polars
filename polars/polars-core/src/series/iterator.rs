@@ -94,9 +94,7 @@ impl<'a> Iterator for SeriesIter<'a> {
         if idx == self.len {
             None
         } else {
-            unsafe {
-                Some(arr_to_any_value(self.arr, idx, self.dtype))
-            }
+            unsafe { Some(arr_to_any_value(self.arr, idx, self.dtype)) }
         }
     }
 }

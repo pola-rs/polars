@@ -30,7 +30,6 @@ impl IntoSeries for CategoricalChunked {
 }
 
 impl SeriesWrap<CategoricalChunked> {
-
     fn finish_with_state(&self, keep_fast_unique: bool, cats: UInt32Chunked) -> CategoricalChunked {
         let mut out = CategoricalChunked::from_cats_and_rev_map(cats, self.0.get_rev_map().clone());
         if keep_fast_unique && self.0.can_fast_unique() {
@@ -39,20 +38,25 @@ impl SeriesWrap<CategoricalChunked> {
         out
     }
 
-    fn with_state<F>(&self,  keep_fast_unique: bool, apply: F,) -> CategoricalChunked
-    where F: Fn(&UInt32Chunked) -> UInt32Chunked
+    fn with_state<F>(&self, keep_fast_unique: bool, apply: F) -> CategoricalChunked
+    where
+        F: Fn(&UInt32Chunked) -> UInt32Chunked,
     {
         let cats = apply(self.0.logical());
         self.finish_with_state(keep_fast_unique, cats)
     }
 
-    fn try_with_state<'a, F>(&'a self,  keep_fast_unique: bool, apply: F,) -> Result<CategoricalChunked>
-        where F: for<'b> Fn(&'a UInt32Chunked) -> Result<UInt32Chunked>
+    fn try_with_state<'a, F>(
+        &'a self,
+        keep_fast_unique: bool,
+        apply: F,
+    ) -> Result<CategoricalChunked>
+    where
+        F: for<'b> Fn(&'a UInt32Chunked) -> Result<UInt32Chunked>,
     {
         let cats = apply(self.0.logical())?;
         Ok(self.finish_with_state(keep_fast_unique, cats))
     }
-
 }
 
 impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
@@ -65,7 +69,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         // TODO! explode by offset should return concrete type
-        self.with_state(true, |cats| cats.explode_by_offsets(offsets).u32().unwrap().clone()).into_series()
+        self.with_state(true, |cats| {
+            cats.explode_by_offsets(offsets).u32().unwrap().clone()
+        })
+        .into_series()
     }
 
     fn set_sorted(&mut self, reverse: bool) {
@@ -78,7 +85,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
-        self.0.zip_with(mask, other.categorical()?).map(|ca| ca.into_series())
+        self.0
+            .zip_with(mask, other.categorical()?)
+            .map(|ca| ca.into_series())
     }
     fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
         (&self.0).into_partial_eq_inner()
@@ -96,7 +105,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
-
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0.logical().agg_list(groups).map(|s| {
             s.cast(&DataType::List(Box::new(self.dtype().clone())))
@@ -105,22 +113,28 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-        self.0.logical().hash_join_inner(other.categorical().unwrap().logical())
+        self.0
+            .logical()
+            .hash_join_inner(other.categorical().unwrap().logical())
     }
     fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-        self.0.logical().hash_join_left(other.categorical().unwrap().logical())
+        self.0
+            .logical()
+            .hash_join_left(other.categorical().unwrap().logical())
     }
     fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-        self.0.logical().hash_join_outer(other.categorical().unwrap().logical())
+        self.0
+            .logical()
+            .hash_join_outer(other.categorical().unwrap().logical())
     }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
         opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
-        let new_rev_map =
-            self.0
-                .merge_categorical_map(right_column.categorical().unwrap());
+        let new_rev_map = self
+            .0
+            .merge_categorical_map(right_column.categorical().unwrap());
         let s_left = self.0.cast(&DataType::UInt32).unwrap();
         let ca = s_left.u32().unwrap();
 
@@ -196,7 +210,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn slice(&self, offset: i64, length: usize) -> Series {
-        self.with_state(false, |cats| cats.slice(offset, length)).into_series()
+        self.with_state(false, |cats| cats.slice(offset, length))
+            .into_series()
     }
 
     fn append(&mut self, other: &Series) -> Result<()> {
@@ -223,7 +238,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
-        self.try_with_state(false, |cats| cats.filter(filter)).map(|ca| ca.into_series())
+        self.try_with_state(false, |cats| cats.filter(filter))
+            .map(|ca| ca.into_series())
     }
 
     fn take(&self, indices: &IdxCa) -> Result<Series> {
@@ -232,7 +248,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         } else {
             Cow::Borrowed(indices)
         };
-        self.try_with_state(false, |cats| cats.take((&*indices).into())).map(|ca| ca.into_series())
+        self.try_with_state(false, |cats| cats.take((&*indices).into()))
+            .map(|ca| ca.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
@@ -241,7 +258,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn take_every(&self, n: usize) -> Series {
-        self.with_state(true, |cats| cats.take_every(n)).into_series()
+        self.with_state(true, |cats| cats.take_every(n))
+            .into_series()
     }
 
     unsafe fn take_iter_unchecked(&self, iter: &mut dyn TakeIterator) -> Series {
@@ -255,7 +273,9 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         } else {
             Cow::Borrowed(idx)
         };
-        Ok(self.with_state(false, |cats| cats.take_unchecked((&*idx).into())).into_series())
+        Ok(self
+            .with_state(false, |cats| cats.take_unchecked((&*idx).into()))
+            .into_series())
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {
@@ -278,7 +298,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {
-        self.with_state(true, |cats| cats.expand_at_index(index, length)).into_series()
+        self.with_state(true, |cats| cats.expand_at_index(index, length))
+            .into_series()
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
@@ -300,7 +321,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
-        self.with_state(true, |cats| cats.sort_with(options)).into_series()
+        self.with_state(true, |cats| cats.sort_with(options))
+            .into_series()
     }
 
     fn argsort(&self, reverse: bool) -> IdxCa {
@@ -356,7 +378,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn fill_null(&self, strategy: FillNullStrategy) -> Result<Series> {
-        self.try_with_state(false, |cats| cats.fill_null(strategy)).map(|ca| ca.into_series())
+        self.try_with_state(false, |cats| cats.fill_null(strategy))
+            .map(|ca| ca.into_series())
     }
 
     fn _sum_as_series(&self) -> Series {

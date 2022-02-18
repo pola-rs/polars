@@ -469,6 +469,7 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
+            #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => "cat",
             DataType::Unknown => unreachable!(),
         };
@@ -619,6 +620,7 @@ pub enum DataType {
     /// &'static str can be used to determine/set inner type
     Object(&'static str),
     Null,
+    #[cfg(feature = "dtype-categorical")]
     Categorical(Option<Arc<RevMapping>>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
@@ -627,12 +629,17 @@ pub enum DataType {
 impl PartialEq for DataType {
     fn eq(&self, other: &Self) -> bool {
         use DataType::*;
-        match (self, other) {
-            // Don't include rev maps in comparisons
-            (Categorical(_), Categorical(_)) => true,
-            _ => {
-                std::mem::discriminant(self) == std::mem::discriminant(other)
+        #[cfg(feature = "dtype-categorical")]
+        {
+            match (self, other) {
+                // Don't include rev maps in comparisons
+                (Categorical(_), Categorical(_)) => true,
+                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
+        }
+        #[cfg(not(feature = "dtype-categorical"))]
+        {
+            std::mem::discriminant(self) == std::mem::discriminant(other)
         }
     }
 }
@@ -657,6 +664,7 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
+            #[cfg(feature = "dtype-categorical")]
             Categorical(_) => UInt32,
             _ => self.clone(),
         }
@@ -695,6 +703,7 @@ impl DataType {
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
+            #[cfg(feature = "dtype-categorical")]
             Categorical(_) => ArrowDataType::UInt32,
             Unknown => unreachable!(),
         }
@@ -919,6 +928,7 @@ impl Schema {
                         ))),
                         true,
                     ),
+                    #[cfg(feature = "dtype-categorical")]
                     DataType::Categorical(_) => ArrowField::new(
                         f.name(),
                         ArrowDataType::Dictionary(
@@ -992,6 +1002,7 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
+            #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
@@ -1056,6 +1067,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_arrow_dtypes_to_polars() {
         let dtypes = [
             (
@@ -1136,7 +1148,7 @@ mod test {
             ),
             (
                 ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1144,7 +1156,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1152,7 +1164,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
         ];
 

@@ -53,4 +53,3 @@ impl From<&CategoricalChunked> for DictionaryArray<i64> {
         }
     }
 }
-

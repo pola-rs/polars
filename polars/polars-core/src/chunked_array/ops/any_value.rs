@@ -48,6 +48,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             let mut s = Series::try_from(("", v)).unwrap();
 
             match &**dt {
+                #[cfg(feature = "dtype-categorical")]
                 DataType::Categorical(Some(rev_map)) => {
                     let mut s_new = s.cast(&DataType::Categorical(None)).unwrap();
                     let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut_categorical();
@@ -136,7 +137,6 @@ impl ChunkAnyValue for ListChunked {
         get_any_value!(self, index)
     }
 }
-
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {

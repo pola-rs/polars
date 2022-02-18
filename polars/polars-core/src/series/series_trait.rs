@@ -465,6 +465,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype categorical
+    #[cfg(feature = "dtype-categorical")]
     fn categorical(&self) -> Result<&CategoricalChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != categorical", self.dtype()).into(),

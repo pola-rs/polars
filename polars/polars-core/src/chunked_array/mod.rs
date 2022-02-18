@@ -297,11 +297,6 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if matches!(self.dtype(), DataType::Categorical(_)) {
-            return Err(PolarsError::InvalidOperation(
-                "append_array not supported for categorical type".into(),
-            ));
-        }
         if self.field.data_type() == other.data_type() {
             self.chunks.push(other);
             Ok(())
@@ -504,7 +499,6 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
-impl AsSinglePtr for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
@@ -597,7 +591,9 @@ impl ListChunked {
     pub(crate) fn with_rev_map(&mut self, rev_map: Arc<RevMapping>) {
         if matches!(self.inner_dtype(), DataType::Categorical(_)) {
             let field = Arc::make_mut(&mut self.field);
-            field.coerce(DataType::List(Box::new(DataType::Categorical(Some(rev_map)))))
+            field.coerce(DataType::List(Box::new(DataType::Categorical(Some(
+                rev_map,
+            )))))
         } else {
             panic!("implementation error")
         }

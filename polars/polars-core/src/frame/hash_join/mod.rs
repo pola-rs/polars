@@ -38,7 +38,7 @@ pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
             }
             Ok(())
         }
-        _ => Ok(())
+        _ => Ok(()),
     }
 }
 

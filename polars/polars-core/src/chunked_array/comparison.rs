@@ -852,7 +852,6 @@ impl ChunkEqualElement for Utf8Chunked {
 
 impl ChunkEqualElement for ListChunked {}
 
-
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};

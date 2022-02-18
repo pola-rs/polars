@@ -263,7 +263,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
-
 #[cfg(feature = "dtype-u8")]
 fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();

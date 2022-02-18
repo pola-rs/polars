@@ -355,9 +355,9 @@ impl DataFrame {
         let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
-                    Categorical(_) | Int8 | UInt8 | Int16 | UInt16 => {
-                        s.cast(&DataType::UInt32).unwrap()
-                    }
+                    Int8 | UInt8 | Int16 | UInt16 => s.cast(&DataType::UInt32).unwrap(),
+                    #[cfg(feature = "dtype-categorical")]
+                    Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
                     Float32 => s.bit_repr_small().into_series(),
                     // otherwise we use the vec hash for float
                     Float64 => s.bit_repr_large().into_series(),
