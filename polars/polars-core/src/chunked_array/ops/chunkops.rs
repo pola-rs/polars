@@ -5,8 +5,6 @@ use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[inline]
 fn slice(
@@ -198,7 +196,7 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
-        let mut a = s.cast(&DataType::Categorical).unwrap();
+        let mut a = s.cast(&DataType::Categorical(None)).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();

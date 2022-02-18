@@ -267,7 +267,7 @@ impl Series {
                     .into_iter()
                     .map(|opt_key| opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) }));
                 builder.drain_iter(iter);
-                Ok(builder.finish().into())
+                Ok(builder.finish().into_series())
             }
             #[cfg(not(feature = "dtype-u8"))]
             ArrowDataType::LargeBinary | ArrowDataType::Binary => {

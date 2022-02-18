@@ -31,14 +31,15 @@ use crate::utils::series::to_physical_and_bit_repr;
 /// a different global string cache the mapping will be incorrect.
 #[cfg(feature = "dtype-categorical")]
 pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
-    if let (Ok(l), Ok(r)) = (l.categorical(), r.categorical()) {
-        let l = l.categorical_map.as_ref().unwrap();
-        let r = r.categorical_map.as_ref().unwrap();
-        if !l.same_src(&*r) {
-            return Err(PolarsError::ValueError("joins on categorical dtypes can only happen if they are created under the same global string cache".into()));
+    match (l.dtype(), r.dtype()) {
+        (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
+            if !l.same_src(&*r) {
+                return Err(PolarsError::ValueError("joins on categorical dtypes can only happen if they are created under the same global string cache".into()));
+            }
+            Ok(())
         }
+        _ => Ok(())
     }
-    Ok(())
 }
 
 macro_rules! det_hash_prone_order {
@@ -1413,10 +1414,10 @@ impl DataFrame {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca_or = s_left.categorical().unwrap();
-                let ca_new = s.cast(&DataType::Categorical(None)).unwrap();
-                let mut ca_new = ca_new.categorical().unwrap().clone();
-                ca_new.categorical_map = ca_or.categorical_map.clone();
-                ca_new.into_series()
+                let mut out = s.cast(&DataType::Categorical(None)).unwrap();
+                let ca_new = s.as_mut_categorical();
+                ca_new.set_rev_map(ca_or.get_rev_map().clone(), false);
+                out
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time

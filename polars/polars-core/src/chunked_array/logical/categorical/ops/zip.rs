@@ -1,7 +1,7 @@
 use super::*;
 
 impl CategoricalChunked {
-    fn zip_with(
+    pub(crate) fn zip_with(
         &self,
         mask: &BooleanChunked,
         other: &CategoricalChunked,

@@ -43,7 +43,8 @@ macro_rules! impl_compare {
             DataType::Categorical(_) => lhs
                 .categorical()
                 .unwrap()
-                .$method(rhs.categorical().unwrap().deref()),
+                .logical()
+                .$method(rhs.categorical().unwrap().logical()),
 
             _ => unimplemented!(),
         }

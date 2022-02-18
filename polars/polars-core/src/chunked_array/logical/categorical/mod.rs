@@ -30,6 +30,11 @@ impl CategoricalChunked {
         &self.logical
     }
 
+    /// Get a reference to the logical array (the categories).
+    pub(crate) fn logical_mut(&mut self) -> &mut UInt32Chunked {
+        &mut self.logical
+    }
+
     /// Build a categorical from an original RevMap. That means that the number of categories in the `RevMapping == self.unique().len()`.
     pub(crate) fn from_chunks_original(name: &str, chunks: Vec<ArrayRef>, rev_map: RevMapping) -> Self {
         let ca = UInt32Chunked::from_chunks(name, chunks);
