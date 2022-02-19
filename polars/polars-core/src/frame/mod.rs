@@ -27,7 +27,6 @@ pub mod hash_join;
 pub mod row;
 mod upstream_traits;
 
-
 #[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::prepare_argsort;
 use crate::vector_hasher::boost_hash_combine;
