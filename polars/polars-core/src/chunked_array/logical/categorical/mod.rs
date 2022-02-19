@@ -243,6 +243,10 @@ mod test {
 
     #[test]
     fn test_categorical_flow() -> Result<()> {
+        let _lock = SINGLE_LOCK.lock();
+        reset_string_cache();
+        toggle_string_cache(false);
+
         // tests several things that may loose the dtype information
         let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
 

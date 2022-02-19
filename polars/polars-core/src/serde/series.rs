@@ -29,15 +29,6 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.bool() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.categorical() {
-            #[cfg(feature = "dtype-categorical")]
-            {
-                ca.serialize(serializer)
-            }
-            #[cfg(not(feature = "dtype-categorical"))]
-            {
-                panic!("activate dtype-categorical");
-            }
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
         } else {
@@ -53,6 +44,11 @@ impl Serialize for Series {
                         .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                         .unwrap();
                     let ca = s.datetime().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => {
+                    let ca = self.categorical().unwrap();
                     ca.serialize(serializer)
                 }
                 _ => {
