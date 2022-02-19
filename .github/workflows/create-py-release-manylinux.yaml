@@ -11,10 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Publish wheel
+      - name: publish x86_64
         uses: docker://konstin2/maturin:latest
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
           entrypoint: /bin/bash
           args: .github/deploy_manylinux.sh
+      # needed for docker on apple m1
+      - name: publish aarch64
+        uses: messense/maturin-action@main
+        env:
+          MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
+        with:
+          rust-toolchain: nightly-2022-01-01
+          manylinux: '2_24'
+          target: aarch64-unknown-linux-gnu
+          maturin-version: 0.12.1
+          command: publish
+          args: -m py-polars/Cargo.toml --no-sdist -o wheels -i python -u ritchie46
