@@ -2039,8 +2039,4 @@ function objToDF(obj: Record<string, Array<any>>): any {
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 
 
-export namespace pl {
-  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame, fromRowArrays});
-}
-
-export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame, fromRowArrays});
+export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
