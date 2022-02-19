@@ -124,7 +124,9 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   return series;
 }
 
-export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "col"| "row", typedArrays?: boolean): any {
+export function arrayToJsDataFrame(data: any[], options?): any {
+  let {columns, orient} = options;
+
   let dataSeries;
 
   if(!data.length) {
@@ -141,7 +143,7 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
     });
   }
   else if(data[0].constructor.name === "Object") {
-    const df = pli.df.read_rows({rows: data});
+    const df = pli.df.read_rows({rows: data, options});
 
     if(columns) {
       pli.df.set_column_names({_df: df, names: columns});
@@ -160,17 +162,9 @@ export function arrayToJsDataFrame(data: any[], columns?: string[], orient?: "co
 
       return df;
     } else {
-      if(typedArrays) {
 
-        dataSeries = data.map((s, idx) => Series.from(s)
-          .as(`column_${idx}`)
-          .inner()
-        );
+      dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
 
-      } else {
-
-        dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
-      }
     }
 
   }

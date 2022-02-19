@@ -10,6 +10,9 @@ use std::borrow::Borrow;
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
+
+type Tracker = HashMap<String, HashSet<DataType>>;
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -523,12 +526,13 @@ pub(crate) fn write_json_path(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn to_rows(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
+
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let mut arr = cx.env.create_array()?;
     for idx in 0..df.height() {
         let mut arr_row = cx.env.create_array()?;
         for (i, col) in df.get_columns().iter().enumerate() {
-            let val: AnyValue = col.get(idx);
+            let val = col.get(idx);
             let jsv = val.into_js(&cx);
             arr_row.set_element(i as u32, jsv)?;
         }
@@ -550,29 +554,11 @@ pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
 
     let mut row = cx.env.create_array()?;
     for (i, col) in df.get_columns().iter().enumerate() {
-        let val: AnyValue = col.get(idx);
+        let val = col.get(idx);
         let jsv = val.into_js(&cx);
         row.set_element(i as u32, jsv)?;
     }
     Ok(row)
-}
-
-struct RowAppend(napi::Ref<()>);
-
-impl napi::Task for RowAppend {
-    type Output = napi::Ref<()>;
-    type JsValue = JsObject;
-
-    fn compute(&mut self) -> JsResult<Self::Output> {
-        todo!()
-    }
-
-    fn resolve(self, env: napi::Env, output: Self::Output) -> JsResult<Self::JsValue> {
-        todo!()
-        // let result = env.create_string_from_std(output);
-        // self.0.unref(env)?;
-        // result
-    }
 }
 
 #[js_function(1)]
@@ -585,7 +571,7 @@ pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
         for col in df.get_columns().iter() {
             let col_name = col.name();
             let col_name_js = cx.env.create_string(col_name)?;
-            let val: AnyValue = col.get(idx);
+            let val = col.get(idx);
             let jsv = val.into_js(&cx);
             obj_row.set_property(col_name_js, jsv)?;
         }
@@ -594,98 +580,6 @@ pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
     Ok(arr)
 }
 
-#[js_function(1)]
-pub(crate) fn to_row_objects_sync(cx: CallContext) -> JsResult<JsUndefined> {
-    use napi::threadsafe_function::ThreadSafeCallContext;
-    use rayon::prelude::*;
-
-    // polars::
-    let cb = cx
-        .env
-        .create_function_from_closure("cb", |ctx: CallContext| {
-            let o = ctx.get_all();
-            println!("inside cb");
-            ctx.env.create_array()
-        })?;
-
-    let tsfn = cx
-        .env
-        .create_threadsafe_function(&cb, 2, |ctx: ThreadSafeCallContext<()>| {
-            println!("tsfn ctx");
-            // let wo: WrappedObject = ctx.env.get::<JsObject>(0)?.into()
-            // let params = get_params(&cx)?;
-            // let df = params.get_external::<DataFrame>(&cx, "_df")?;
-            // let mut arr = cx.env.create_array()?;
-
-            // let (idx, cols, arr_ref) = ctx.value;
-            // let mut arr = ctx.env.get_reference_value::<JsObject>(arr_ref)?;
-            // let mut obj_row = ctx.env.create_object()?;
-            // for col in cols {
-            //     let col_name = col.name();
-            //     let col_name_js = ctx.env.create_string(col_name)?;
-            //     let val: AnyValue = col.get(idx);
-            //     let jsv = match val {
-            //         AnyValue::Boolean(v) => ctx.env.get_boolean(v).map(|v| v.into_unknown()),
-            //         AnyValue::Utf8(v) => ctx.env.create_string(v).map(|v| v.into_unknown()),
-            //         AnyValue::UInt8(v) => ctx.env.create_uint32(v as u32).map(|v| v.into_unknown()),
-            //         AnyValue::UInt16(v) => {
-            //             ctx.env.create_uint32(v as u32).map(|v| v.into_unknown())
-            //         }
-            //         AnyValue::UInt32(v) => ctx.env.create_uint32(v).map(|v| v.into_unknown()),
-            //         AnyValue::UInt64(v) => ctx
-            //             .env
-            //             .create_bigint_from_u64(v)
-            //             .map(|v| v.into_unknown())?,
-            //         AnyValue::Int8(v) => ctx.env.create_int32(v as i32).map(|v| v.into_unknown()),
-            //         AnyValue::Int16(v) => ctx.env.create_int32(v as i32).map(|v| v.into_unknown()),
-            //         AnyValue::Int32(v) => ctx.env.create_int32(v).map(|v| v.into_unknown()),
-            //         AnyValue::Int64(v) => ctx
-            //             .env
-            //             .create_bigint_from_i64(v)
-            //             .map(|v| v.into_unknown())?,
-            //         AnyValue::Float32(v) => {
-            //             ctx.env.create_double(v as f64).map(|v| v.into_unknown())
-            //         }
-            //         AnyValue::Float64(v) => ctx.env.create_double(v).map(|v| v.into_unknown()),
-            //         AnyValue::Date(v) => ctx.env.create_date(v as f64).map(|v| v.into_unknown()),
-            //         AnyValue::Datetime(v, _, _) => {
-            //             ctx.env.create_date(v as f64).map(|v| v.into_unknown())
-            //         }
-            //         AnyValue::List(v) => todo!(),
-            //         _ => ctx.env.get_null().map(|v| v.into_unknown()),
-            //     }?;
-            //     obj_row.set_property(col_name_js, jsv)?;
-            // }
-            // arr.set_element(idx as u32, obj_row)?;
-            Ok(vec![ctx.env.get_undefined().unwrap()])
-        })?;
-
-    tsfn.call(
-        Ok(()),
-        napi::threadsafe_function::ThreadsafeFunctionCallMode::NonBlocking,
-    );
-    // let arr_ref = cx.env.create_reference(arr)?;
-    // let cols = df.get_columns().clone();
-    // (0..df.height()).into_par_iter().for_each(|idx| {
-    //     let f = tsfn.clone();
-    //     // cx.env.spawn(|t| t.promise_object())
-    //     // let arr: JsObject = cx.env.get_reference_value(&arr_ref).unwrap();
-
-    //     // let mut obj_row = cx.env.create_object()?;
-    //     // for col in df.get_columns().iter() {
-    //     //     let col_name = col.name();
-    //     //     let col_name_js = cx.env.create_string(col_name)?;
-    //     //     let val: AnyValue = col.get(idx);
-    //     //     let jsv = val.into_js(&cx);
-    //     //     obj_row.set_property(col_name_js, jsv)?;
-    //     // }
-    //     // arr.set_element(idx as u32, obj_row)?;
-    //     // Ok(())
-    //     // todo!()
-    // });
-    cx.env.get_undefined()
-    // Ok(arr)
-}
 
 #[js_function(1)]
 pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
@@ -769,44 +663,6 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-#[js_function(1)]
-pub(crate) fn read_rows_sync(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let rows = params.get::<JsObject>("rows")?;
-    let len = rows.get_array_length()?;
-
-    let schema = match params.get_as::<Option<Schema>>("schema")? {
-        Some(s) => Ok(s),
-        None => {
-            let infer_schema_length = params.get_or("inferSchemaLength", len)?;
-
-            infer_schema(&rows, infer_schema_length)
-        }
-    }?;
-    let null = cx.env.get_null()?;
-    let rows: Vec<Row> = (0..len)
-        .map(|idx| {
-            let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
-            Row(schema
-                .fields()
-                .iter()
-                .map(|fld| {
-                    let dtype = fld.data_type();
-                    let key = fld.name();
-                    let value: JsUnknown = js_row
-                        .get_named_property(key)
-                        .unwrap_or(null.into_unknown());
-                    let value = coerce_js_to_dtype(value, dtype).unwrap();
-                    AnyValue::from_js(value).unwrap()
-                })
-                .collect())
-        })
-        .collect();
-
-    DataFrame::from_rows_and_schema(&rows, &schema)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
 
 #[js_function(1)]
 pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
@@ -855,9 +711,7 @@ fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
 }
 
-use std::collections::{HashMap, HashSet};
 
-type Tracker = HashMap<String, HashSet<DataType>>;
 
 fn infer_schema(rows: &JsObject, infer_schema_length: u32) -> JsResult<Schema> {
     let mut values: Tracker = Tracker::new();
