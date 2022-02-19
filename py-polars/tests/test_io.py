@@ -242,6 +242,18 @@ def test_read_csv_columns_argument(
     assert df.columns == col_out
 
 
+def test_read_csv_buffer_ownership() -> None:
+    buf = io.BytesIO(b"\xf0\x9f\x98\x80,5.55,333\n\xf0\x9f\x98\x86,-5.0,666")
+    df = pl.read_csv(
+        buf,
+        has_header=False,
+        new_columns=["emoji", "flt", "int"],
+    )
+    # confirm that read_csv succeeded, and didn't close the input buffer (#2696)
+    assert df.shape == (2, 3)
+    assert not buf.closed
+
+
 def test_column_rename_and_dtype_overwrite() -> None:
     csv = """
 a,b,c
