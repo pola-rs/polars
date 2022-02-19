@@ -211,7 +211,6 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
     schema
 }
 
-
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
         use AnyValue::*;
