@@ -213,7 +213,7 @@ impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        let dtype = self.inner_dtype().to_arrow();
+        let dtype = self.inner_dtype();
 
         // we know that we only iterate over length == self.len()
         unsafe {
@@ -223,7 +223,11 @@ impl<'a> IntoIterator for &'a ListChunked {
                     .trust_my_length(self.len())
                     .map(move |arr| {
                         arr.map(|arr| {
-                            Series::try_from_unchecked("", vec![Arc::from(arr)], &dtype).unwrap()
+                            Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![Arc::from(arr)],
+                                &dtype,
+                            )
                         })
                     }),
             )
@@ -233,15 +237,17 @@ impl<'a> IntoIterator for &'a ListChunked {
 
 pub struct ListIterNoNull<'a> {
     array: &'a LargeListArray,
+    inner_type: DataType,
     current: usize,
     current_end: usize,
 }
 
 impl<'a> ListIterNoNull<'a> {
     /// create a new iterator
-    pub fn new(array: &'a LargeListArray) -> Self {
+    pub fn new(array: &'a LargeListArray, inner_type: DataType) -> Self {
         ListIterNoNull {
             array,
+            inner_type,
             current: 0,
             current_end: array.len(),
         }
@@ -257,7 +263,13 @@ impl<'a> Iterator for ListIterNoNull<'a> {
         } else {
             let old = self.current;
             self.current += 1;
-            unsafe { Some(Series::try_from(("", self.array.value_unchecked(old))).unwrap()) }
+            unsafe {
+                Some(Series::from_chunks_and_dtype_unchecked(
+                    "",
+                    vec![Arc::from(self.array.value_unchecked(old))],
+                    &self.inner_type,
+                ))
+            }
         }
     }
 
@@ -298,9 +310,10 @@ impl ListChunked {
            + DoubleEndedIterator
            + TrustedLen {
         // we know that we only iterate over length == self.len()
+        let inner_type = self.inner_dtype();
         unsafe {
             self.downcast_iter()
-                .flat_map(ListIterNoNull::new)
+                .flat_map(move |arr| ListIterNoNull::new(arr, inner_type.clone()))
                 .trust_my_length(self.len())
         }
     }
