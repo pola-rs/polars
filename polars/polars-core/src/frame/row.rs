@@ -212,30 +212,6 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
     schema
 }
 
-impl<'a> From<&AnyValue<'a>> for DataType {
-    fn from(val: &AnyValue<'a>) -> Self {
-        use AnyValue::*;
-        match val {
-            Null => DataType::Null,
-            Boolean(_) => DataType::Boolean,
-            Utf8(_) => DataType::Utf8,
-            UInt32(_) => DataType::UInt32,
-            UInt64(_) => DataType::UInt64,
-            Int32(_) => DataType::Int32,
-            Int64(_) => DataType::Int64,
-            Float32(_) => DataType::Float32,
-            Float64(_) => DataType::Float64,
-            #[cfg(feature = "dtype-date")]
-            Date(_) => DataType::Date,
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
-            #[cfg(feature = "dtype-time")]
-            Time(_) => DataType::Time,
-            List(s) => DataType::List(Box::new(s.dtype().clone())),
-            _ => unimplemented!(),
-        }
-    }
-}
 
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
