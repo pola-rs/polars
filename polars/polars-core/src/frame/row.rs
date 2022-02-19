@@ -72,8 +72,7 @@ impl DataFrame {
             .fields()
             .iter()
             .map(|fld| {
-                let dtype = fld.data_type();
-                let buf: AnyValueBuffer = (dtype, capacity).into();
+                let buf: AnyValueBuffer = (fld.data_type(), capacity).into();
                 buf
             })
             .collect();
