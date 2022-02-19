@@ -585,16 +585,10 @@ impl ListChunked {
         }
     }
 
-    #[cfg(feature = "dtype-categorical")]
-    pub(crate) fn with_rev_map(&mut self, rev_map: Arc<RevMapping>) {
-        if matches!(self.inner_dtype(), DataType::Categorical(_)) {
-            let field = Arc::make_mut(&mut self.field);
-            field.coerce(DataType::List(Box::new(DataType::Categorical(Some(
-                rev_map,
-            )))))
-        } else {
-            panic!("implementation error")
-        }
+    pub(crate) fn with_inner_type(&mut self, dtype: DataType) {
+        assert_eq!(dtype.to_physical(), self.inner_dtype());
+        let field = Arc::make_mut(&mut self.field);
+        field.coerce(DataType::List(Box::new(dtype)));
     }
 }
 

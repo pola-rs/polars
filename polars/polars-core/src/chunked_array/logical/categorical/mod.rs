@@ -17,6 +17,11 @@ pub struct CategoricalChunked {
 }
 
 impl CategoricalChunked {
+    pub(crate) fn field(&self) -> Field {
+        let name = self.logical().name();
+        Field::new(name, self.dtype().clone())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -238,11 +243,33 @@ mod test {
 
     #[test]
     fn test_categorical_flow() -> Result<()> {
-        let s = Series::new("1", vec!["a", "b", "c"])
-            .cast(&DataType::Categorical(None))?;
+        // tests several things that may loose the dtype information
+        let s = Series::new("a", vec!["a", "b", "c"]).cast(&DataType::Categorical(None))?;
 
-        dbg!(s);
+        assert_eq!(
+            s.field().into_owned(),
+            Field::new("a", DataType::Categorical(None))
+        );
+        assert!(matches!(
+            s.get(0),
+            AnyValue::Categorical(0, RevMapping::Local(_))
+        ));
+
+        let groups = s.group_tuples(false, true);
+        let aggregated = s.agg_list(&groups).unwrap();
+        match aggregated.get(0) {
+            AnyValue::List(s) => {
+                assert!(matches!(s.dtype(), DataType::Categorical(_)));
+                let str_s = s.cast(&DataType::Utf8).unwrap();
+                assert_eq!(str_s.get(0), AnyValue::Utf8("a"));
+                assert_eq!(s.len(), 1);
+            }
+            _ => panic!(),
+        }
+        let flat = aggregated.explode()?;
+        let ca = flat.categorical().unwrap();
+        let vals = ca.iter_str().map(|v| v.unwrap()).collect::<Vec<_>>();
+        assert_eq!(vals, &["a", "b", "c"]);
         Ok(())
-
     }
 }

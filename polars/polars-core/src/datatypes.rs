@@ -620,6 +620,8 @@ pub enum DataType {
     Object(&'static str),
     Null,
     #[cfg(feature = "dtype-categorical")]
+    // The RevMapping has the internal state.
+    // This is ignored with casts, comparisons, hashing etc.
     Categorical(Option<Arc<RevMapping>>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,

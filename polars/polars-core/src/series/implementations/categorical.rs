@@ -58,7 +58,7 @@ impl SeriesWrap<CategoricalChunked> {
 
 impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn _field(&self) -> Cow<Field> {
-        Cow::Borrowed(self.0.logical().ref_field())
+        Cow::Owned(self.0.field())
     }
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
@@ -132,16 +132,18 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         let new_rev_map = self
             .0
             .merge_categorical_map(right_column.categorical().unwrap());
-        let s_left = self.0.cast(&DataType::UInt32).unwrap();
-        let ca = s_left.u32().unwrap();
+        let left = self.0.logical();
+        let right = right_column
+            .categorical()
+            .unwrap()
+            .logical()
+            .clone()
+            .into_series();
 
-        let right = right_column.cast(&DataType::UInt32).unwrap();
-        let mut out = ZipOuterJoinColumn::zip_outer_join_column(ca, &right, opt_join_tuples)
-            .cast(&DataType::Categorical(None))
-            .unwrap();
-        let out_ca = out.get_inner_mut().as_mut_categorical();
-        out_ca.set_rev_map(new_rev_map, false);
-        out
+        let cats = left.zip_outer_join_column(&right, opt_join_tuples);
+        let cats = cats.u32().unwrap().clone();
+
+        CategoricalChunked::from_cats_and_rev_map(cats, new_rev_map).into_series()
     }
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         self.0.logical().group_tuples(multithreaded, sorted)
@@ -419,9 +421,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
     #[cfg(feature = "repeat_by")]
     fn repeat_by(&self, by: &IdxCa) -> ListChunked {
-        let mut out = self.0.logical().repeat_by(by);
-        out.with_rev_map(self.0.get_rev_map().clone());
-        out
+        let out = self.0.logical().repeat_by(by);
+        let casted = out
+            .cast(&DataType::List(Box::new(self.dtype().clone())))
+            .unwrap();
+        casted.list().unwrap().clone()
     }
 
     #[cfg(feature = "is_first")]

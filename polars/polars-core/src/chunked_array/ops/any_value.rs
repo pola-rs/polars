@@ -46,10 +46,9 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             match &**dt {
                 #[cfg(feature = "dtype-categorical")]
                 DataType::Categorical(Some(rev_map)) => {
-                    let mut s_new = s.cast(&DataType::Categorical(None)).unwrap();
-                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut_categorical();
-                    ca.set_rev_map(rev_map.clone(), false);
-                    s = s_new;
+                    let cats = s.u32().unwrap().clone();
+                    let out = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone());
+                    s = out.into_series();
                 }
                 DataType::Date
                 | DataType::Datetime(_, _)

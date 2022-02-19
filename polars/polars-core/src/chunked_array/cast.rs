@@ -40,9 +40,7 @@ where
             DataType::Categorical(_) => {
                 Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
             }
-            _ => {
-                cast_impl(self.name(), &self.chunks, data_type)
-            }
+            _ => cast_impl(self.name(), &self.chunks, data_type),
         }
     }
 }
@@ -101,11 +99,16 @@ impl ChunkCast for ListChunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
             DataType::List(child_type) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|list| cast_inner_list_type(list, &**child_type))
-                    .collect::<Result<_>>()?;
-                let ca = ListChunked::from_chunks(self.name(), chunks);
+                let mut ca = if child_type.to_physical() != self.inner_dtype() {
+                    let chunks = self
+                        .downcast_iter()
+                        .map(|list| cast_inner_list_type(list, &**child_type))
+                        .collect::<Result<_>>()?;
+                    ListChunked::from_chunks(self.name(), chunks)
+                } else {
+                    self.clone()
+                };
+                ca.with_inner_type(*child_type.clone());
                 Ok(ca.into_series())
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
