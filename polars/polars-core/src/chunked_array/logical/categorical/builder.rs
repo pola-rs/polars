@@ -237,7 +237,7 @@ mod test {
         let mut ca1 = ca1.categorical().unwrap().clone();
         let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None))?;
         let ca2 = ca2.categorical().unwrap();
-        ca1.append(ca2);
+        ca1.append(ca2).unwrap();
 
         Ok(())
     }

@@ -24,12 +24,6 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
-        #[cfg(feature = "dtype-categorical")]
-        Categorical(_) => {
-            return Err(PolarsError::ComputeError(
-                "can only cast Utf8 to Categorical".into(),
-            ))
-        }
         _ => out,
     };
 
@@ -41,7 +35,15 @@ where
     T: PolarsNumericType,
 {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        cast_impl(self.name(), &self.chunks, data_type)
+        match data_type {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => {
+                Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
+            }
+            _ => {
+                cast_impl(self.name(), &self.chunks, data_type)
+            }
+        }
     }
 }
 

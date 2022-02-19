@@ -235,4 +235,14 @@ mod test {
         let out = s.slice(1, 2);
         assert_eq!(out.n_unique().unwrap(), 2);
     }
+
+    #[test]
+    fn test_categorical_flow() -> Result<()> {
+        let s = Series::new("1", vec!["a", "b", "c"])
+            .cast(&DataType::Categorical(None))?;
+
+        dbg!(s);
+        Ok(())
+
+    }
 }
