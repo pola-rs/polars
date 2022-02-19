@@ -1138,6 +1138,7 @@ macro_rules! impl_method_with_err {
 }
 
 impl_method_with_err!(unique);
+impl_method_with_err!(unique_stable);
 impl_method_with_err!(explode);
 impl_method_with_err!(floor);
 impl_method_with_err!(ceil);

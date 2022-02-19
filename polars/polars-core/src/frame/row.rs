@@ -79,15 +79,9 @@ impl DataFrame {
             .collect();
 
         rows.try_for_each::<_, Result<()>>(|row| {
-            for (i, buf) in buffers.iter_mut().enumerate() {
-                let dtype = schema.fields()[i].data_type();
-                let av = match row.0.get(i) {
-                    Some(v) => v,
-                    None => &AnyValue::Null
-                };
-                buf.add_falible(av)?
+            for (value, buf) in row.0.iter().zip(&mut buffers) {
+                buf.add_falible(value)?
             }
-
             Ok(())
         })?;
         let v = buffers

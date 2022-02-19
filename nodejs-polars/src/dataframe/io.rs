@@ -7,10 +7,10 @@ use polars::frame::row::{rows_to_schema, Row};
 use polars::io::RowCount;
 use polars::prelude::*;
 use std::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
-use std::collections::{HashMap, HashSet};
 
 type Tracker = HashMap<String, HashSet<DataType>>;
 
@@ -580,7 +580,6 @@ pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
     Ok(arr)
 }
 
-
 #[js_function(1)]
 pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
@@ -603,24 +602,102 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
     Ok(obj)
 }
 
-fn coerce_js_to_dtype(val: JsUnknown, dtype: &DataType) -> JsResult<JsUnknown> {
+fn coerce_js_anyvalue<'a>(
+    cx: &'a CallContext,
+    val: JsUnknown,
+    dtype: &'a DataType,
+) -> JsResult<AnyValue<'a>> {
     use DataType::*;
     let vtype = val.get_type().unwrap();
 
+    // todo!()
     match (vtype, dtype) {
-        (ValueType::String, Utf8) => Ok(val),
-        (ValueType::Boolean, Boolean) => Ok(val),
-        (
-            ValueType::Number,
-            UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64,
-        ) => Ok(val),
-        (ValueType::Bigint, UInt64 | Int64) => Ok(val),
-        (_, Utf8) => val.coerce_to_string().map(|v| v.into_unknown()),
-        (_, UInt16 | UInt32 | UInt64 | Int8 | Int16 | Int32 | Int64 | Float32 | Float64) => {
-            val.coerce_to_number().map(|v| v.into_unknown())
+        (ValueType::Null | ValueType::Undefined | ValueType::Unknown, _) => Ok(AnyValue::Null),
+        (ValueType::String, Utf8) => AnyValue::from_js(val),
+        (_, Utf8) => {
+            let s = val.coerce_to_string()?.into_unknown();
+            AnyValue::from_js(s)
         }
-        (_, Boolean) => val.coerce_to_bool().map(|v| v.into_unknown()),
-        _ => Ok(val),
+        (ValueType::Boolean, Boolean) => bool::from_js(val).map(AnyValue::Boolean),
+        (_, Boolean) => val.coerce_to_bool().map(|b| {
+            let b: bool = b.try_into().unwrap();
+            AnyValue::Boolean(b)
+        }),
+        (ValueType::Bigint | ValueType::Number, UInt64) => u64::from_js(val).map(AnyValue::UInt64),
+        (_, UInt64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int64().unwrap();
+            AnyValue::UInt64(n as u64)
+        }),
+        (ValueType::Bigint | ValueType::Number, Int64) => i64::from_js(val).map(AnyValue::Int64),
+        (_, Int64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int64().unwrap();
+            AnyValue::Int64(n)
+        }),
+        (ValueType::Number, Float64) => f64::from_js(val).map(AnyValue::Float64),
+        (_, Float64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_double().unwrap();
+            AnyValue::Float64(n)
+        }),
+        (ValueType::Number, Float32) => f32::from_js(val).map(AnyValue::Float32),
+        (_, Float32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_double().unwrap();
+            AnyValue::Float32(n as f32)
+        }),
+        (ValueType::Number, Int32) => i32::from_js(val).map(AnyValue::Int32),
+        (_, Int32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int32(n)
+        }),
+        (ValueType::Number, UInt32) => u32::from_js(val).map(AnyValue::UInt32),
+        (_, UInt32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt32(n)
+        }),
+        (ValueType::Number, Int16) => i16::from_js(val).map(AnyValue::Int16),
+        (_, Int16) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int16(n as i16)
+        }),
+        (ValueType::Number, UInt16) => u16::from_js(val).map(AnyValue::UInt16),
+        (_, UInt16) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt16(n as u16)
+        }),
+        (ValueType::Number, Int8) => i8::from_js(val).map(AnyValue::Int8),
+        (_, Int8) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int8(n as i8)
+        }),
+        (ValueType::Number, UInt8) => u8::from_js(val).map(AnyValue::UInt8),
+        (_, UInt8) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt8(n as u8)
+        }),
+        (ValueType::Number, Date) => i32::from_js(val).map(AnyValue::Date),
+        (_, Date) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Date(n)
+        }),
+        (ValueType::Bigint | ValueType::Number, Datetime(_, _)) => {
+            i64::from_js(val).map(|d| AnyValue::Datetime(d, TimeUnit::Milliseconds, &None))
+        }
+        (ValueType::External, List(_)) => {
+            let ext: JsExternal = unsafe { val.cast() };
+            let s = cx.env.get_value_external::<Series>(&ext)?;
+            let s = s.clone();
+
+            Ok(AnyValue::List(s))
+        }
+        (ValueType::Object, DataType::Datetime(_, _)) => {
+            if val.is_date()? {
+                let d: napi::JsDate = unsafe { val.cast() };
+                let d = d.value_of()?;
+                Ok(AnyValue::Datetime(d as i64, TimeUnit::Milliseconds, &None))
+            } else {
+                Ok(AnyValue::Null)
+            }
+        }
+        _ => Ok(AnyValue::Null),
     }
 }
 
@@ -628,17 +705,16 @@ fn coerce_js_to_dtype(val: JsUnknown, dtype: &DataType) -> JsResult<JsUnknown> {
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let rows = params.get::<JsObject>("rows")?;
-    let len = rows.get_array_length()?;
 
+    let len = rows.get_array_length()?;
     let schema = match params.get_as::<Option<Schema>>("schema")? {
         Some(s) => Ok(s),
         None => {
             let infer_schema_length = params.get_or("inferSchemaLength", len)?;
-
             infer_schema(&rows, infer_schema_length)
         }
     }?;
-    let null = cx.env.get_null()?;
+
     let rows: Vec<Row> = (0..len)
         .map(|idx| {
             let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
@@ -648,11 +724,12 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
                 .map(|fld| {
                     let dtype = fld.data_type();
                     let key = fld.name();
-                    let value: JsUnknown = js_row
-                        .get_named_property(key)
-                        .unwrap_or(null.into_unknown());
-                    let value = coerce_js_to_dtype(value, dtype).unwrap();
-                    AnyValue::from_js(value).unwrap()
+                    match js_row.get_named_property::<JsUnknown>(key) {
+                        Ok(value) => {
+                            coerce_js_anyvalue(&cx, value, dtype).unwrap_or(AnyValue::Null)
+                        }
+                        _ => AnyValue::Null,
+                    }
                 })
                 .collect())
         })
@@ -662,7 +739,6 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
-
 
 #[js_function(1)]
 pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
@@ -710,8 +786,6 @@ fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
 
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
 }
-
-
 
 fn infer_schema(rows: &JsObject, infer_schema_length: u32) -> JsResult<Schema> {
     let mut values: Tracker = Tracker::new();
@@ -767,6 +841,10 @@ fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
 
     if are_all_equal {
         return datatypes[0].borrow().clone();
+    }
+    
+    if datatypes.len() > 2 {
+        return Utf8
     }
 
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());

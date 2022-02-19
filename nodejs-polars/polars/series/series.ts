@@ -920,6 +920,7 @@ export interface Series<T> extends
   /**
    * __Get unique elements in series.__
    * ___
+   * @param maintainOrder Maintain order of data. This requires more work.
    * @example
    * ```
    * s = pl.Series("a", [1, 2, 2, 3])
@@ -933,8 +934,8 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  unique(): Series<T>
-  /**
+  unique(maintainOrder?: boolean | {maintainOrder: boolean}): Series<T>
+   /**
    * __Count the unique values in a Series.__
    * ___
    * @example
@@ -991,7 +992,7 @@ export interface Series<T> extends
    * @example
    * ```
    * const s = pl.Series("foo", [1,2,3])
-   * s.toJS()
+   * s.toObject()
    * {
    *   name: "foo",
    *   datatype: "Float64",
@@ -1571,7 +1572,13 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       return unwrap<Buffer>("to_json").toString();
     },
     toObject: noArgUnwrap("to_js"),
-    unique: noArgWrap("unique"),
+    unique(opt?) {
+      if(opt) {
+        return wrap("unique_stable");
+      } else {
+        return wrap("unique");
+      }
+    },
     valueCounts() {
       return dfWrapper(unwrap("value_counts"));
     },

@@ -125,7 +125,9 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
 }
 
 export function arrayToJsDataFrame(data: any[], options?): any {
-  let {columns, orient} = options;
+  let columns = options?.columns;
+  let orient = options?.orient;
+
 
   let dataSeries;
 
@@ -143,7 +145,7 @@ export function arrayToJsDataFrame(data: any[], options?): any {
     });
   }
   else if(data[0].constructor.name === "Object") {
-    const df = pli.df.read_rows({rows: data, options});
+    const df = pli.df.read_rows({rows: data, ...options});
 
     if(columns) {
       pli.df.set_column_names({_df: df, names: columns});

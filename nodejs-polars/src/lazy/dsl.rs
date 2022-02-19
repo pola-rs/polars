@@ -766,6 +766,7 @@ impl_no_arg_expr!(sum);
 impl_no_arg_expr!(n_unique);
 impl_no_arg_expr!(arg_unique);
 impl_no_arg_expr!(unique);
+impl_no_arg_expr!(unique_stable);
 impl_no_arg_expr!(first);
 impl_no_arg_expr!(last);
 impl_no_arg_expr!(list);
@@ -784,21 +785,33 @@ impl_no_arg_expr!(floor);
 impl_no_arg_expr!(ceil);
 impl_no_arg_expr!(abs);
 impl_no_arg_expr!(is_duplicated);
-impl_no_arg_expr!(year);
-impl_no_arg_expr!(month);
-impl_no_arg_expr!(week);
-impl_no_arg_expr!(weekday);
-impl_no_arg_expr!(day);
-impl_no_arg_expr!(ordinal_day);
-impl_no_arg_expr!(hour);
-impl_no_arg_expr!(minute);
-impl_no_arg_expr!(second);
-impl_no_arg_expr!(nanosecond);
+
 impl_no_arg_expr!(mode);
 impl_no_arg_expr!(keep_name);
 impl_no_arg_expr!(interpolate);
 impl_no_arg_expr!(lower_bound);
 impl_no_arg_expr!(upper_bound);
+
+macro_rules! impl_dt_expr {
+    ($name:ident) => {
+        #[js_function(1)]
+        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
+            let params = get_params(&cx)?;
+            let expr = params.get_external::<Expr>(&cx, "_expr")?;
+            expr.clone().dt().$name().try_into_js(&cx)
+        }
+    };
+}
+impl_dt_expr!(year);
+impl_dt_expr!(month);
+impl_dt_expr!(week);
+impl_dt_expr!(weekday);
+impl_dt_expr!(day);
+impl_dt_expr!(ordinal_day);
+impl_dt_expr!(hour);
+impl_dt_expr!(minute);
+impl_dt_expr!(second);
+impl_dt_expr!(nanosecond);
 
 macro_rules! impl_rolling_method {
     ($name:ident) => {

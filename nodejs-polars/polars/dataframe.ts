@@ -2000,7 +2000,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       };
     }
   });
-
 };
 
 export interface DataFrameConstructor {
@@ -2008,7 +2007,8 @@ export interface DataFrameConstructor {
   (data: any, options?: {
     columns?: any[],
     orient?: "row" | "col",
-    schema?: Record<string, string | DataType>
+    schema?: Record<string, string | DataType>,
+    inferSchemaLength?: number,
   }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
 }

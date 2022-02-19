@@ -491,8 +491,11 @@ export interface Expr extends
   take({index}: {index: Expr | number[] | Series<number>}): Expr
   /** Take every nth value in the Series and return as a new Series. */
   takeEvery(n: number): Expr
-  /** Get the unique/distinct values in the list */
-  unique(): Expr
+  /**
+   * Get the unique/distinct values in the list
+   * @param maintainOrder Maintain order of data. This requires more work.
+   */
+  unique(maintainOrder?: boolean | {maintainOrder: boolean}): Expr
   /** Returns a unit Series with the highest value possible for the dtype of this expression. */
   upperBound(): Expr
   /** Get variance. */
@@ -761,7 +764,13 @@ const _Expr = (_expr: any): Expr => {
       return wrap("take", {other: indices._expr});
     },
     takeEvery: wrapUnary("takeEvery", "n"),
-    unique: wrapNullArgs("unique"),
+    unique(opt?) {
+      if(opt) {
+        return wrap("unique_stable");
+      }
+
+      return wrap("unique");
+    },
     upperBound: wrapNullArgs("upperBound"),
     where: wrapExprArg("filter"),
     var: wrapNullArgs("var"),
