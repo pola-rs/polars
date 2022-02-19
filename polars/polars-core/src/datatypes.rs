@@ -15,6 +15,7 @@ use crate::utils::Wrap;
 use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
+#[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::error::ArrowError;

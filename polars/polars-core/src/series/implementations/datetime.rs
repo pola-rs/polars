@@ -3,9 +3,7 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
-use crate::chunked_array::{
-    comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
-};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;

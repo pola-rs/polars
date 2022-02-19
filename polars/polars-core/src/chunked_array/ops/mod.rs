@@ -9,8 +9,6 @@ use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use arrow::buffer::Buffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[cfg(feature = "abs")]
 mod abs;

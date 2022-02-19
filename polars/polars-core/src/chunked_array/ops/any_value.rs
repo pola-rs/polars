@@ -1,7 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
-#[cfg(not(feature = "dtype-categorical"))]
-use crate::chunked_array::RevMapping;
 use crate::prelude::*;
 use std::convert::TryFrom;
 

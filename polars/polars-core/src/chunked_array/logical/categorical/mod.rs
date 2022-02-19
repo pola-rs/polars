@@ -26,13 +26,6 @@ impl CategoricalChunked {
     }
 
     /// Get a reference to the logical array (the categories).
-    pub(crate) fn rechunk(&self) -> Self {
-        let mut out = self.clone();
-        out.logical.0 = out.logical.0.rechunk();
-        out
-    }
-
-    /// Get a reference to the logical array (the categories).
     pub(crate) fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
@@ -112,7 +105,7 @@ impl LogicalType for CategoricalChunked {
 
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
         match self.logical.0.get(i) {
-            Some(i) => AnyValue::Categorical(i, &self.get_rev_map()),
+            Some(i) => AnyValue::Categorical(i, self.get_rev_map()),
             None => AnyValue::Null,
         }
     }

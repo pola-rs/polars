@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::utils::{get_supertype, CustomIterTools};
 use hashbrown::hash_set::HashSet;
 use std::hash::Hash;
-use std::ops::Deref;
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
 where

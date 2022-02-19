@@ -7,7 +7,6 @@ use crate::chunked_array::{
     ops::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
-        ChunkFullNull,
     },
     AsSinglePtr, ChunkIdIter,
 };
@@ -15,8 +14,6 @@ use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::{check_categorical_src, HashJoin, ZipOuterJoinColumn};
 use crate::prelude::*;
-#[cfg(feature = "checked_arithmetic")]
-use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
 use arrow::array::ArrayRef;

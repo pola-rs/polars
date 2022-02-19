@@ -14,8 +14,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 pub mod aggregations;
 pub(crate) mod hashing;

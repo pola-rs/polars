@@ -1,7 +1,5 @@
 use crate::prelude::*;
 use num::{abs, clamp};
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{

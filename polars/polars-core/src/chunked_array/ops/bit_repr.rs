@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use arrow::array::Array;
 use arrow::buffer::Buffer;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 impl<T> ToBitRepr for ChunkedArray<T>
 where

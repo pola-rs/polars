@@ -1,11 +1,7 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::datatypes::CategoricalChunked;
 use crate::prelude::*;
 use crate::utils::CustomIterTools;
 use arrow::array::*;
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 type LargeStringArray = Utf8Array<i64>;
 type LargeListArray = ListArray<i64>;

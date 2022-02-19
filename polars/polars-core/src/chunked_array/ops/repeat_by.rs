@@ -2,7 +2,6 @@ use super::RepeatBy;
 use crate::prelude::*;
 use arrow::array::ListArray;
 use polars_arrow::array::ListFromIter;
-use std::ops::Deref;
 
 type LargeListArray = ListArray<i64>;
 

@@ -27,7 +27,7 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
         #[cfg(feature = "dtype-categorical")]
         Categorical(_) => {
             return Err(PolarsError::ComputeError(
-                format!("can only cast Utf8 to Categorical").into(),
+                "can only cast Utf8 to Categorical".into(),
             ))
         }
         _ => out,

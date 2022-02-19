@@ -13,7 +13,6 @@ use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
 use crate::chunked_array::{
-    comparison::*,
     ops::{explode::ExplodeByOffsets, ToBitRepr},
     AsSinglePtr, ChunkIdIter,
 };

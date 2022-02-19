@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::{datatypes::PlHashMap, use_string_cache};
 use arrow::array::*;
-use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -70,9 +69,9 @@ impl RevMapping {
 
     /// Categorical to str
     ///
-    /// # Safety:
+    /// # Safety
     /// This doesn't do any bound checking
-    pub unsafe fn get_unchecked(&self, idx: u32) -> &str {
+    pub(crate) unsafe fn get_unchecked(&self, idx: u32) -> &str {
         match self {
             Self::Global(map, a, _) => {
                 let idx = *map.get(&idx).unwrap();

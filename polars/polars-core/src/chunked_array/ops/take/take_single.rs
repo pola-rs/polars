@@ -4,8 +4,6 @@ use crate::prelude::*;
 use arrow::array::*;
 use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 use std::sync::Arc;
 
 macro_rules! impl_take_random_get {

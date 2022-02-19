@@ -465,6 +465,7 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         // we cannot append categorical under local string cache, so we cast them later.
+        #[allow(unused_mut)]
         let mut to_cast_local = vec![];
 
         let mut df = if let Some(schema) = self.schema_overwrite {

@@ -14,7 +14,6 @@ use crate::series::implementations::SeriesWrap;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
-use std::ops::Deref;
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
 where

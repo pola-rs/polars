@@ -19,7 +19,6 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
 
 #[cfg(feature = "private")]
