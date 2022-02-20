@@ -172,7 +172,7 @@ impl Duration {
         self.months == 0 && self.nsecs == 0
     }
 
-    fn months_only(&self) -> bool {
+    pub(crate) fn months_only(&self) -> bool {
         self.months != 0 && self.nsecs == 0
     }
 
@@ -212,7 +212,7 @@ impl Duration {
     {
         match (self.months, self.nsecs) {
             (0, 0) => panic!("duration may not be zero"),
-            // truncate by milliseconds
+            // truncate by ns/us/ms
             (0, _) => {
                 let duration = nsecs_to_unit(self.nsecs);
                 let mut remainder = t % duration;
