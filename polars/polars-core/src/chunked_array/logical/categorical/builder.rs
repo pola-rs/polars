@@ -46,6 +46,13 @@ pub enum RevMapping {
     Local(Utf8Array<i64>),
 }
 
+impl Default for RevMapping {
+    fn default() -> Self {
+        let slice: &[Option<&str>] = &[];
+        RevMapping::Local(Utf8Array::<i64>::from(slice))
+    }
+}
+
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
     /// Get the length of the [`RevMapping`]
