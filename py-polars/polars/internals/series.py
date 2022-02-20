@@ -3507,7 +3507,48 @@ class StringNameSpace:
         Returns
         -------
         A Date/ Datetime Series
+
+        Examples
+        --------
+
+        Dealing with different formats.
+        >>> s = pl.Series(
+        ...     "date",
+        ...     [
+        ...         "2021-04-22",
+        ...         "2022-01-04 00:00:00",
+        ...         "01/31/22",
+        ...         "Sun Jul  8 00:34:60 2001",
+        ...     ],
+        ... )
+        >>> (
+        ...     s.to_frame().with_column(
+        ...         pl.col("date")
+        ...         .str.strptime(pl.Date, "%F", strict=False)
+        ...         .fill_null(
+        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
+        ...         )
+        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌────────────┐
+        │ date       │
+        │ ---        │
+        │ date       │
+        ╞════════════╡
+        │ 2021-04-22 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2022-01-04 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2022-01-31 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-07-08 │
+        └────────────┘
+
         """
+
         s = wrap_s(self._s)
         return (
             s.to_frame()
