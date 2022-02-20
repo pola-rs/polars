@@ -359,7 +359,14 @@ class DataFrame:
         """
         # path for table without rows that keeps datatype
         if data.shape[0] == 0:
-            return DataFrame([pli.Series(name, data[name]) for name in data.columns])
+            # We do a loop and materialize the series.
+            # There can be series of len != null due to pandas indexes.
+            series = []
+            for name in data.columns:
+                col = pli.Series(name, data[name])
+                if len(col) == 0:
+                    series.append(pli.Series(name, col))
+            return DataFrame(series)
 
         return cls._from_pydf(
             pandas_to_pydf(
