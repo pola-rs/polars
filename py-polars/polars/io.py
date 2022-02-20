@@ -108,7 +108,7 @@ def _prepare_file_arg(
     if isinstance(file, StringIO):
         return BytesIO(file.read().encode("utf8"))
     if isinstance(file, BytesIO):
-        return file
+        return managed_file(file)
     if isinstance(file, Path):
         return managed_file(str(file))
     if isinstance(file, str):
