@@ -1,5 +1,5 @@
 pub use arrow;
-#[cfg(all(feature = "private", feature = "temporal"))]
+#[cfg(feature = "temporal")]
 pub use chrono;
 
 #[cfg(feature = "private")]

@@ -1,2 +1,2 @@
 /// re-exports for utility
-pub use polars_core::export::arrow;
+pub use polars_core::export::*;

@@ -371,6 +371,15 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     }
 }
 
+/// For any [`ChunkedArray`] and [`Series`]
+impl<T: IntoSeries> NamedFrom<T, T> for Series {
+    fn new(name: &str, t: T) -> Self {
+        let mut s = t.into_series();
+        s.rename(name);
+        s
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

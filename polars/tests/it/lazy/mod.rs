@@ -1,4 +1,5 @@
 mod explodes;
+mod groupby_dynamic;
 mod projection_queries;
 mod window_expressions;
 

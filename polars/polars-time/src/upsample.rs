@@ -145,10 +145,16 @@ fn upsample_single_impl(
                         TimeUnit::Microseconds => offset.add_us(first),
                         TimeUnit::Milliseconds => offset.add_ms(first),
                     };
-                    let range =
-                        date_range(index_col_name, first, last, every, ClosedWindow::Both, *tu)
-                            .into_series()
-                            .into_frame();
+                    let range = date_range_impl(
+                        index_col_name,
+                        first,
+                        last,
+                        every,
+                        ClosedWindow::Both,
+                        *tu,
+                    )
+                    .into_series()
+                    .into_frame();
                     range.join(
                         source,
                         &[index_col_name],

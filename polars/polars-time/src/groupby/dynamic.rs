@@ -122,7 +122,7 @@ impl Wrap<&DataFrame> {
             )
         }
 
-        let time = self.0.column(&options.index_column)?;
+        let time = self.0.column(&options.index_column)?.rechunk();
         let time_type = time.dtype();
 
         if time.null_count() > 0 {
@@ -203,28 +203,12 @@ impl Wrap<&DataFrame> {
             };
 
         let groups = if by.is_empty() {
-            let mut groups_slice = dt
-                .downcast_iter()
-                .map(|vals| {
-                    let ts = vals.values().as_slice();
-                    let (groups, lower, upper) = groupby_windows(
-                        w,
-                        ts,
-                        options.include_boundaries,
-                        options.closed_window,
-                        tu,
-                    );
-                    update_bounds(lower, upper);
-                    groups
-                })
-                .collect::<Vec<_>>();
-            // we don't flatmap because in case of a single chunk we don't need to reallocate the inner vec,
-            // just pop it.
-            if groups_slice.len() == 1 {
-                GroupsProxy::Slice(groups_slice.pop().unwrap())
-            } else {
-                GroupsProxy::Slice(groups_slice.into_iter().flatten().collect())
-            }
+            let vals = dt.downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            let (groups, lower, upper) =
+                groupby_windows(w, ts, options.include_boundaries, options.closed_window, tu);
+            update_bounds(lower, upper);
+            GroupsProxy::Slice(groups)
         } else {
             let groups = self
                 .0
@@ -432,7 +416,7 @@ mod test {
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(3, 0, 0)
             .timestamp_millis();
-        let range = date_range(
+        let range = date_range_impl(
             "date",
             start,
             stop,
@@ -478,7 +462,7 @@ mod test {
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(3, 0, 0)
             .timestamp_millis();
-        let range = date_range(
+        let range = date_range_impl(
             "_upper_boundary",
             start,
             stop,
@@ -496,7 +480,7 @@ mod test {
         let stop = NaiveDate::from_ymd(2021, 12, 16)
             .and_hms(2, 0, 0)
             .timestamp_millis();
-        let range = date_range(
+        let range = date_range_impl(
             "_lower_boundary",
             start,
             stop,
