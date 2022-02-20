@@ -808,6 +808,7 @@ impl BooleanChunked {
 
 // private
 pub(crate) trait ChunkEqualElement {
+    /// Only meant for physical types.
     /// Check if element in self is equal to element in other, assumes same dtypes
     ///
     /// # Safety
@@ -850,15 +851,6 @@ impl ChunkEqualElement for Utf8Chunked {
 }
 
 impl ChunkEqualElement for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkEqualElement for CategoricalChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const CategoricalChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
-    }
-}
 
 #[cfg(test)]
 mod test {

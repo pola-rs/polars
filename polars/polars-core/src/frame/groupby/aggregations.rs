@@ -14,7 +14,6 @@ use crate::series::implementations::SeriesWrap;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
-use std::ops::Deref;
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
 where
@@ -1033,24 +1032,7 @@ impl AggList for ListChunked {
         }
     }
 }
-impl AggList for CategoricalChunked {
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
-        match self.deref().agg_list(groups) {
-            None => None,
-            Some(s) => {
-                let ca = s.list().unwrap();
-                let mut out = ListChunked::from_chunks(ca.name(), ca.chunks.clone());
-                out.field = Arc::new(Field::new(
-                    ca.name(),
-                    DataType::List(Box::new(DataType::Categorical)),
-                ));
-                out.categorical_map = self.categorical_map.clone();
-                out.bit_settings = ca.bit_settings;
-                Some(out.into_series())
-            }
-        }
-    }
-}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> AggList for ObjectChunked<T> {
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {

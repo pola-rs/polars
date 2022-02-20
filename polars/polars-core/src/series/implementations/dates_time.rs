@@ -13,7 +13,6 @@ use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
 use crate::chunked_array::{
-    comparison::*,
     ops::{explode::ExplodeByOffsets, ToBitRepr},
     AsSinglePtr, ChunkIdIter,
 };
@@ -66,15 +65,6 @@ macro_rules! impl_dyn_series {
 
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.deref_mut().set_sorted(reverse)
-            }
-
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
             }
 
             #[cfg(feature = "zip_with")]
@@ -416,6 +406,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
+            #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index).$into_logical()
             }

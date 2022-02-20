@@ -10,10 +10,69 @@ use polars_arrow::compute::cast::cast;
 use std::convert::TryFrom;
 
 impl Series {
+    /// Takes chunks and a polars datatype and constructs the Series
+    /// This is faster than creating from chunks and an arrow datatype because there is no
+    /// casting involved
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the given `dtype`'s physical type matches all the `ArrayRef` dtypes.
+    pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
+        name: &str,
+        chunks: Vec<ArrayRef>,
+        dtype: &DataType,
+    ) -> Self {
+        use DataType::*;
+        match dtype {
+            #[cfg(feature = "dtype-i8")]
+            Int8 => Int8Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => Int16Chunked::from_chunks(name, chunks).into_series(),
+            Int32 => Int32Chunked::from_chunks(name, chunks).into_series(),
+            Int64 => Int64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-u8")]
+            UInt8 => UInt8Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
+            UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
+            UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-date")]
+            Date => Int32Chunked::from_chunks(name, chunks)
+                .into_date()
+                .into_series(),
+            #[cfg(feature = "dtype-time")]
+            Time => Int64Chunked::from_chunks(name, chunks)
+                .into_time()
+                .into_series(),
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => Int64Chunked::from_chunks(name, chunks)
+                .into_duration(*tu)
+                .into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => Int64Chunked::from_chunks(name, chunks)
+                .into_datetime(*tu, tz.clone())
+                .into_series(),
+            List(_) => ListChunked::from_chunks(name, chunks).cast(dtype).unwrap(),
+            Utf8 => Utf8Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(rev_map) => {
+                let cats = UInt32Chunked::from_chunks(name, chunks);
+                CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone().unwrap())
+                    .into_series()
+            }
+            Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
+            Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
+            Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "object")]
+            Object(_) => todo!(),
+            _ => unreachable!(),
+        }
+    }
+
     // Create a new Series without checking if the inner dtype of the chunks is correct
     // # Safety
     // The caller must ensure that the given `dtype` matches all the `ArrayRef` dtypes.
-    pub(crate) unsafe fn try_from_unchecked(
+    pub(crate) unsafe fn try_from_arrow_unchecked(
         name: &str,
         chunks: Vec<ArrayRef>,
         dtype: &ArrowDataType,
@@ -129,7 +188,6 @@ impl Series {
             }
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(key_type, value_type, _) => {
-                use crate::chunked_array::categorical::CategoricalChunkedBuilder;
                 use arrow::datatypes::IntegerType;
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concatenate::concatenate(&chunks)?;
@@ -267,7 +325,7 @@ impl Series {
                     .into_iter()
                     .map(|opt_key| opt_key.map(|k| unsafe { values.value_unchecked(*k as usize) }));
                 builder.drain_iter(iter);
-                Ok(builder.finish().into())
+                Ok(builder.finish().into_series())
             }
             #[cfg(not(feature = "dtype-u8"))]
             ArrowDataType::LargeBinary | ArrowDataType::Binary => {
@@ -371,7 +429,7 @@ impl TryFrom<(&str, Vec<ArrayRef>)> for Series {
         }
         // Safety:
         // dtype is checked
-        unsafe { Series::try_from_unchecked(name, chunks, &data_type) }
+        unsafe { Series::try_from_arrow_unchecked(name, chunks, &data_type) }
     }
 }
 

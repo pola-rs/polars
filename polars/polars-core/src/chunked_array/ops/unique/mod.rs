@@ -1,8 +1,6 @@
 #[cfg(feature = "rank")]
 pub(crate) mod rank;
 
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
@@ -11,8 +9,6 @@ use crate::prelude::*;
 use crate::utils::NoNull;
 use rayon::prelude::*;
 use std::hash::Hash;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 fn finish_is_unique_helper(
     mut unique_idx: Vec<IdxSize>,
@@ -267,53 +263,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkUnique<CategoricalType> for CategoricalChunked {
-    fn unique(&self) -> Result<Self> {
-        let cat_map = self.categorical_map.as_ref().unwrap();
-        let mut ca = if self.can_fast_unique() {
-            match &**cat_map {
-                RevMapping::Local(a) => {
-                    UInt32Chunked::from_iter_values(self.name(), 0..(a.len() as u32))
-                }
-                RevMapping::Global(map, _, _) => {
-                    UInt32Chunked::from_iter_values(self.name(), map.keys().copied())
-                }
-            }
-        } else {
-            self.deref().unique()?
-        };
-        ca.categorical_map = self.categorical_map.clone();
-        Ok(ca.into())
-    }
-
-    fn arg_unique(&self) -> Result<IdxCa> {
-        self.deref().arg_unique()
-    }
-
-    fn is_unique(&self) -> Result<BooleanChunked> {
-        self.deref().is_unique()
-    }
-    fn is_duplicated(&self) -> Result<BooleanChunked> {
-        self.deref().is_duplicated()
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        impl_value_counts!(self)
-    }
-    fn n_unique(&self) -> Result<usize> {
-        if self.can_fast_unique() {
-            Ok(self.categorical_map.as_ref().unwrap().len())
-        } else {
-            self.deref().n_unique()
-        }
-    }
-    #[cfg(feature = "mode")]
-    fn mode(&self) -> Result<Self> {
-        Ok(ChunkFullNull::full_null(self.name(), 1))
-    }
-}
-
 #[cfg(feature = "dtype-u8")]
 fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chunked {
     groups.sort_unstable();
@@ -525,13 +474,6 @@ mod is_first {
                     }
                 }
             }
-        }
-    }
-
-    #[cfg(feature = "dtype-categorical")]
-    impl IsFirst<CategoricalType> for CategoricalChunked {
-        fn is_first(&self) -> Result<BooleanChunked> {
-            self.deref().is_first()
         }
     }
 

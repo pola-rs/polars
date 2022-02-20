@@ -237,10 +237,7 @@ impl Executor for PartitionGroupByExec {
 
         #[cfg(feature = "dtype-categorical")]
         let (frac, sampled_method) = if let Ok(ca) = key.categorical() {
-            let cat_map = ca
-                .get_categorical_map()
-                .expect("categorical type has categorical_map");
-
+            let cat_map = ca.get_rev_map();
             (cat_map.len() as f32 / ca.len() as f32, "known")
         } else {
             let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")

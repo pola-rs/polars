@@ -1,7 +1,5 @@
 use crate::prelude::*;
 use num::{abs, clamp};
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 macro_rules! impl_shift_fill {
     ($self:ident, $periods:expr, $fill_value:expr) => {{
@@ -97,14 +95,6 @@ impl ChunkShiftFill<ListType, Option<&Series>> for ListChunked {
 impl ChunkShift<ListType> for ListChunked {
     fn shift(&self, periods: i64) -> Self {
         self.shift_and_fill(periods, None)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkShift<CategoricalType> for CategoricalChunked {
-    fn shift(&self, periods: i64) -> Self {
-        let ca: CategoricalChunked = self.deref().shift(periods).into();
-        ca.set_state(self)
     }
 }
 

@@ -439,7 +439,8 @@ fn test_lazy_query_9() -> Result<()> {
 #[cfg(all(
     feature = "temporal",
     feature = "dtype-datetime",
-    feature = "dtype-date"
+    feature = "dtype-date",
+    feature = "dtype-duration"
 ))]
 fn test_lazy_query_10() {
     use polars_core::export::chrono::Duration as ChronoDuration;
@@ -1465,8 +1466,8 @@ fn test_categorical_addition() -> Result<()> {
     let out = df
         .lazy()
         .select([
-            col("fruits").cast(DataType::Categorical),
-            col("cars").cast(DataType::Categorical),
+            col("fruits").cast(DataType::Categorical(None)),
+            col("cars").cast(DataType::Categorical(None)),
         ])
         .select([(col("fruits") + lit(" ") + col("cars")).alias("foo")])
         .collect()?;

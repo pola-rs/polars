@@ -48,7 +48,7 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             DataType::Object(_) => Object,
-            DataType::Categorical => Categorical,
+            DataType::Categorical(_) => Categorical,
             DataType::Null | DataType::Unknown => {
                 panic!("null or unknown not expected here")
             }
@@ -84,7 +84,7 @@ impl Into<DataType> for PyDataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             PyDataType::Object => Object("object"),
-            PyDataType::Categorical => Categorical,
+            PyDataType::Categorical => Categorical(None),
         }
     }
 }

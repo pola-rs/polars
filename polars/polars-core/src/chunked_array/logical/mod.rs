@@ -10,8 +10,14 @@ pub use datetime::*;
 mod duration;
 #[cfg(feature = "dtype-duration")]
 pub use duration::*;
+#[cfg(feature = "dtype-categorical")]
+pub mod categorical;
 #[cfg(feature = "dtype-time")]
 mod time;
+
+#[cfg(feature = "dtype-categorical")]
+pub use categorical::*;
+
 #[cfg(feature = "dtype-time")]
 pub use time::*;
 
@@ -21,9 +27,9 @@ use std::ops::{Deref, DerefMut};
 
 /// Maps a logical type to a a chunked array implementation of the physical type.
 /// This saves a lot of compiler bloat and allows us to reuse functionality.
-pub struct Logical<K: PolarsDataType, T: PolarsDataType>(
-    pub ChunkedArray<T>,
-    PhantomData<K>,
+pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
+    pub ChunkedArray<Physical>,
+    PhantomData<Logical>,
     pub Option<DataType>,
 );
 
@@ -59,7 +65,10 @@ pub trait LogicalType {
     /// Get data type of ChunkedArray.
     fn dtype(&self) -> &DataType;
 
+    /// Gets AnyValue from LogicalType
     fn get_any_value(&self, _i: usize) -> AnyValue<'_> {
+        // note that unchecked version is not here
+        // because I don't think it should ever be called on logical types
         unimplemented!()
     }
 

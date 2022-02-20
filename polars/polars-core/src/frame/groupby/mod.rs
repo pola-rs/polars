@@ -14,8 +14,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 use rayon::prelude::*;
 use std::fmt::Debug;
 use std::hash::Hash;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 pub mod aggregations;
 pub(crate) mod hashing;
@@ -172,13 +170,6 @@ impl IntoGroupsProxy for Utf8Chunked {
                 .collect::<Vec<_>>();
             groupby(str_hashes.iter(), sorted)
         }
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl IntoGroupsProxy for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        self.deref().group_tuples(multithreaded, sorted)
     }
 }
 
@@ -355,9 +346,9 @@ impl DataFrame {
         let keys_df = DataFrame::new(
             by.iter()
                 .map(|s| match s.dtype() {
-                    Categorical | Int8 | UInt8 | Int16 | UInt16 => {
-                        s.cast(&DataType::UInt32).unwrap()
-                    }
+                    Int8 | UInt8 | Int16 | UInt16 => s.cast(&DataType::UInt32).unwrap(),
+                    #[cfg(feature = "dtype-categorical")]
+                    Categorical(_) => s.cast(&DataType::UInt32).unwrap(),
                     Float32 => s.bit_repr_small().into_series(),
                     // otherwise we use the vec hash for float
                     Float64 => s.bit_repr_large().into_series(),
@@ -1427,7 +1418,7 @@ mod test {
         }
         .unwrap();
 
-        df.apply("foo", |s| s.cast(&DataType::Categorical).unwrap())
+        df.apply("foo", |s| s.cast(&DataType::Categorical(None)).unwrap())
             .unwrap();
 
         // check multiple keys and categorical
@@ -1531,7 +1522,7 @@ mod test {
             "int" => [1, 2, 3, 1, 1]
         ]?;
 
-        df.try_apply("g", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("g", |s| s.cast(&DataType::Categorical(None)))?;
 
         let _ = df.groupby(["g"])?.sum()?;
         Ok(())

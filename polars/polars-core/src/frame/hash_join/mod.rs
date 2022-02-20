@@ -19,7 +19,6 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::ops::Deref;
 use unsafe_unwrap::UnsafeUnwrap;
 
 #[cfg(feature = "private")]
@@ -30,15 +29,16 @@ use crate::utils::series::to_physical_and_bit_repr;
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
 #[cfg(feature = "dtype-categorical")]
-pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
-    if let (Ok(l), Ok(r)) = (l.categorical(), r.categorical()) {
-        let l = l.categorical_map.as_ref().unwrap();
-        let r = r.categorical_map.as_ref().unwrap();
-        if !l.same_src(&*r) {
-            return Err(PolarsError::ValueError("joins on categorical dtypes can only happen if they are created under the same global string cache".into()));
+pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
+    match (l, r) {
+        (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
+            if !l.same_src(&*r) {
+                return Err(PolarsError::ValueError("joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache".into()));
+            }
+            Ok(())
         }
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 macro_rules! det_hash_prone_order {
@@ -480,21 +480,6 @@ impl HashJoin<Float64Type> for Float64Chunked {
         let ca = self.bit_repr_large();
         let other = other.bit_repr_large();
         ca.hash_join_outer(&other)
-    }
-}
-
-impl HashJoin<CategoricalType> for CategoricalChunked {
-    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(IdxSize, IdxSize)> {
-        self.deref().hash_join_inner(other.deref())
-    }
-    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(IdxSize, Option<IdxSize>)> {
-        self.deref().hash_join_left(other.deref())
-    }
-    fn hash_join_outer(
-        &self,
-        other: &CategoricalChunked,
-    ) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-        self.deref().hash_join_outer(other.deref())
     }
 }
 
@@ -1086,7 +1071,7 @@ impl DataFrame {
 
         #[cfg(feature = "dtype-categorical")]
         for (l, r) in selected_left.iter().zip(&selected_right) {
-            check_categorical_src(l, r)?
+            check_categorical_src(l.dtype(), r.dtype())?
         }
 
         // Single keys
@@ -1290,7 +1275,7 @@ impl DataFrame {
         suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let join_tuples = s_left.hash_join_inner(s_right);
 
         let (df_left, df_right) = POOL.join(
@@ -1355,7 +1340,7 @@ impl DataFrame {
         suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let opt_join_tuples = s_left.hash_join_left(s_right);
 
         let (df_left, df_right) = POOL.join(
@@ -1395,7 +1380,7 @@ impl DataFrame {
         suffix: Option<String>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         // store this so that we can keep original column order.
         let join_column_index = self.iter().position(|s| s.name() == s_left.name()).unwrap();
@@ -1426,12 +1411,11 @@ impl DataFrame {
         s.rename(s_left.name());
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca_or = s_left.categorical().unwrap();
-                let ca_new = s.cast(&DataType::Categorical).unwrap();
-                let mut ca_new = ca_new.categorical().unwrap().clone();
-                ca_new.categorical_map = ca_or.categorical_map.clone();
-                ca_new.into_series()
+                let logical = s.u32().unwrap().clone();
+                CategoricalChunked::from_cats_and_rev_map(logical, ca_or.get_rev_map().clone())
+                    .into_series()
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time
@@ -1677,9 +1661,9 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
 
         let out = df_a
@@ -1703,18 +1687,18 @@ mod test {
         for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
             let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
             let out = out.column("b").unwrap();
-            assert_eq!(out.dtype(), &DataType::Categorical);
+            assert_eq!(out.dtype(), &DataType::Categorical(None));
         }
 
         // Test error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
         assert!(out.is_err());

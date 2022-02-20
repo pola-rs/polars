@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::utils::{get_supertype, CustomIterTools};
 use hashbrown::hash_set::HashSet;
 use std::hash::Hash;
-use std::ops::Deref;
 
 unsafe fn is_in_helper<T, P>(ca: &ChunkedArray<T>, other: &Series) -> Result<BooleanChunked>
 where
@@ -231,13 +230,6 @@ impl IsIn for BooleanChunked {
             ca.rename(self.name());
             ca
         })
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl IsIn for CategoricalChunked {
-    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
-        self.deref().is_in(other)
     }
 }
 

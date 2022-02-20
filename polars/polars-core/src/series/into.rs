@@ -14,13 +14,12 @@ impl Series {
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
-                let mut new = CategoricalChunked::from_chunks(
-                    ca.name(),
-                    vec![ca.chunks()[chunk_idx].clone()],
-                );
-                new.set_categorical_map(ca.get_categorical_map().cloned().unwrap());
+                let arr = ca.logical().chunks()[chunk_idx].clone();
+                let cats = UInt32Chunked::from_chunks("", vec![arr]);
+
+                let new = CategoricalChunked::from_cats_and_rev_map(cats, ca.get_rev_map().clone());
 
                 let arr: DictionaryArray<u32> = (&new).into();
                 Arc::new(arr) as ArrayRef

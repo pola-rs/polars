@@ -4,8 +4,6 @@ use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
@@ -180,21 +178,6 @@ impl ExplodeByOffsets for Utf8Chunked {
         builder.finish().into()
     }
 }
-#[cfg(feature = "dtype-categorical")]
-impl ExplodeByOffsets for CategoricalChunked {
-    #[inline(never)]
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        let ca: CategoricalChunked = self
-            .deref()
-            .explode_by_offsets(offsets)
-            .cast(&DataType::Categorical)
-            .unwrap()
-            .categorical()
-            .unwrap()
-            .clone();
-        ca.set_state(self).into()
-    }
-}
 
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
@@ -260,11 +243,9 @@ impl ChunkExplode for ListChunked {
         // make sure we restore the logical type
         match self.inner_dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
-                let ca = s.u32().unwrap();
-                let mut ca = ca.clone();
-                ca.categorical_map = self.categorical_map.clone();
-                s = ca.cast(&DataType::Categorical)?;
+            DataType::Categorical(rev_map) => {
+                let cats = s.u32().unwrap().clone();
+                s = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.unwrap()).into_series();
             }
             #[cfg(feature = "dtype-date")]
             DataType::Date => s = s.into_date(),

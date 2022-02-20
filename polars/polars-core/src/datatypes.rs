@@ -6,8 +6,6 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
@@ -17,6 +15,7 @@ use crate::utils::Wrap;
 use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
+#[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
 use arrow::error::ArrowError;
@@ -34,8 +33,6 @@ pub struct Utf8Type {}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
-
-pub struct CategoricalType {}
 
 pub trait PolarsDataType: Send + Sync {
     fn get_dtype() -> DataType
@@ -68,6 +65,7 @@ impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
+impl_polars_datatype!(CategoricalType, Unknown, u32);
 impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
@@ -88,12 +86,6 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(Box::new(DataType::Null))
-    }
-}
-
-impl PolarsDataType for CategoricalType {
-    fn get_dtype() -> DataType {
-        DataType::Categorical
     }
 }
 
@@ -131,7 +123,6 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait NumericNative:
     PartialOrd
@@ -477,7 +468,8 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
-            DataType::Categorical => "cat",
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => "cat",
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
@@ -596,7 +588,7 @@ impl TimeUnit {
 
 pub type TimeZone = String;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Debug)]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -627,10 +619,36 @@ pub enum DataType {
     /// &'static str can be used to determine/set inner type
     Object(&'static str),
     Null,
-    Categorical,
+    #[cfg(feature = "dtype-categorical")]
+    // The RevMapping has the internal state.
+    // This is ignored with casts, comparisons, hashing etc.
+    Categorical(Option<Arc<RevMapping>>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
 }
+
+impl Hash for DataType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state)
+    }
+}
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        use DataType::*;
+        {
+            match (self, other) {
+                // Don't include rev maps in comparisons
+                #[cfg(feature = "dtype-categorical")]
+                (Categorical(_), Categorical(_)) => true,
+                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
+                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+            }
+        }
+    }
+}
+
+impl Eq for DataType {}
 
 impl DataType {
     pub fn inner_dtype(&self) -> Option<&DataType> {
@@ -650,7 +668,8 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
-            Categorical => UInt32,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => UInt32,
             _ => self.clone(),
         }
     }
@@ -688,7 +707,8 @@ impl DataType {
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
-            Categorical => ArrowDataType::UInt32,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => ArrowDataType::UInt32,
             Unknown => unreachable!(),
         }
     }
@@ -702,7 +722,7 @@ impl PartialEq<ArrowDataType> for DataType {
 }
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     name: String,
     data_type: DataType,
@@ -821,7 +841,7 @@ impl IndexOfSchema for ArrowSchema {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Hash, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct Schema {
     fields: Vec<Field>,
 }
@@ -912,7 +932,8 @@ impl Schema {
                         ))),
                         true,
                     ),
-                    DataType::Categorical => ArrowField::new(
+                    #[cfg(feature = "dtype-categorical")]
+                    DataType::Categorical(_) => ArrowField::new(
                         f.name(),
                         ArrowDataType::Dictionary(
                             IntegerType::UInt32,
@@ -985,7 +1006,8 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical,
+            #[cfg(feature = "dtype-categorical")]
+            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
@@ -1049,6 +1071,7 @@ mod test {
     use super::*;
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_arrow_dtypes_to_polars() {
         let dtypes = [
             (
@@ -1129,7 +1152,7 @@ mod test {
             ),
             (
                 ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1137,7 +1160,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1145,7 +1168,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
         ];
 

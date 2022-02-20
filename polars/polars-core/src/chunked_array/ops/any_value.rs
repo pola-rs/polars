@@ -1,7 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
-#[cfg(not(feature = "dtype-categorical"))]
-use crate::chunked_array::RevMapping;
 use crate::prelude::*;
 use std::convert::TryFrom;
 
@@ -10,7 +6,6 @@ use std::convert::TryFrom;
 pub(crate) unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
-    categorical_map: &'a Option<Arc<RevMapping>>,
     dtype: &'a DataType,
 ) -> AnyValue<'a> {
     if arr.is_null(idx) {
@@ -44,28 +39,16 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => downcast_and_pack!(Int32Array, Date),
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, tz) => {
-            let ts: i64 = downcast!(Int64Array);
-            AnyValue::Datetime(ts, *tu, tz)
-        }
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
-            let delta: i64 = downcast!(Int64Array);
-            AnyValue::Duration(delta, *tu)
-        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
 
-            match **dt {
-                DataType::Categorical => {
-                    let mut s_new = s.cast(&DataType::Categorical).unwrap();
-                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
-                    ca.categorical_map = categorical_map.clone();
-                    s = s_new;
+            match &**dt {
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(Some(rev_map)) => {
+                    let cats = s.u32().unwrap().clone();
+                    let out = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone());
+                    s = out.into_series();
                 }
                 DataType::Date
                 | DataType::Datetime(_, _)
@@ -75,12 +58,6 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
 
             AnyValue::List(s)
-        }
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
-            let idx = downcast!(UInt32Array);
-            let rev_map = &**categorical_map.as_ref().unwrap();
-            AnyValue::Categorical(idx, rev_map)
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
@@ -94,7 +71,7 @@ macro_rules! get_any_value_unchecked {
         debug_assert!(chunk_idx < $self.chunks.len());
         let arr = &**$self.chunks.get_unchecked(chunk_idx);
         debug_assert!(idx < arr.len());
-        arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype())
+        arr_to_any_value(arr, idx, $self.dtype())
     }};
 }
 
@@ -105,7 +82,7 @@ macro_rules! get_any_value {
         assert!(idx < arr.len());
         // SAFETY
         // bounds are checked
-        unsafe { arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype()) }
+        unsafe { arr_to_any_value(arr, idx, $self.dtype()) }
     }};
 }
 
@@ -153,26 +130,6 @@ impl ChunkAnyValue for ListChunked {
 
     fn get_any_value(&self, index: usize) -> AnyValue {
         get_any_value!(self, index)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkAnyValue for CategoricalChunked {
-    #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        debug_assert!(idx < arr.len());
-        arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical)
-    }
-
-    fn get_any_value(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        assert!(idx < arr.len());
-        // SAFETY
-        // bounds are checked
-        unsafe { arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical) }
     }
 }
 

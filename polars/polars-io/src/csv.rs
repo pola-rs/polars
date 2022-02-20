@@ -465,6 +465,7 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         // we cannot append categorical under local string cache, so we cast them later.
+        #[allow(unused_mut)]
         let mut to_cast_local = vec![];
 
         let mut df = if let Some(schema) = self.schema_overwrite {
@@ -479,7 +480,8 @@ where
                     use DataType::*;
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
-                        Categorical => {
+                        #[cfg(feature = "dtype-categorical")]
+                        Categorical(_) => {
                             to_cast_local.push(fld);
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }

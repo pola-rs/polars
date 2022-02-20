@@ -9,14 +9,12 @@ use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use arrow::buffer::Buffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[cfg(feature = "abs")]
 mod abs;
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
-mod append;
+pub(crate) mod append;
 mod apply;
 mod bit_repr;
 pub(crate) mod chunkops;
@@ -650,14 +648,6 @@ impl ChunkExpandAtIndex<BooleanType> for BooleanChunked {
 impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     fn expand_at_index(&self, index: usize, length: usize) -> Utf8Chunked {
         impl_chunk_expand!(self, length, index)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
-        let ca: CategoricalChunked = self.deref().expand_at_index(index, length).into();
-        ca.set_state(self)
     }
 }
 

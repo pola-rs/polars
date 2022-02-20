@@ -3,9 +3,7 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
-use crate::chunked_array::{
-    comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
-};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
@@ -67,10 +65,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
 
     fn set_sorted(&mut self, reverse: bool) {
         self.0.deref_mut().set_sorted(reverse)
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -418,6 +412,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0
             .get_any_value_unchecked(index)

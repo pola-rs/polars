@@ -76,17 +76,6 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkFullNull for CategoricalChunked {
-    fn full_null(name: &str, length: usize) -> CategoricalChunked {
-        use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-        let mut builder = CategoricalChunkedBuilder::new(name, length);
-        let iter = (0..length).map(|_| None);
-        builder.drain_iter(iter);
-        builder.finish()
-    }
-}
-
 impl ListChunked {
     pub(crate) fn full_null_with_dtype(
         name: &str,

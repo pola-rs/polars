@@ -351,7 +351,8 @@ impl Series {
         match self.dtype() {
             Date => Cow::Owned(self.cast(&DataType::Int32).unwrap()),
             Datetime(_, _) | Duration(_) | Time => Cow::Owned(self.cast(&DataType::Int64).unwrap()),
-            Categorical => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => Cow::Owned(self.cast(&DataType::UInt32).unwrap()),
             _ => Cow::Borrowed(self),
         }
     }
@@ -870,7 +871,6 @@ impl Series {
         match self.dtype() {
             DataType::Utf8
             | DataType::List(_)
-            | DataType::Categorical
             | DataType::Date
             | DataType::Datetime(_, _)
             | DataType::Duration(_)
@@ -878,6 +878,8 @@ impl Series {
             | DataType::Null => false,
             #[cfg(feature = "object")]
             DataType::Object(_) => false,
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => false,
             _ => true,
         }
     }

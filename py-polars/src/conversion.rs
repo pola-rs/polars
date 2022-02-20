@@ -257,7 +257,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
             DataType::Duration(_) => pl.getattr("Duration").unwrap().into(),
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
-            DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
+            DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
@@ -305,7 +305,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "<class 'polars.datatypes.Utf8'>" => DataType::Utf8,
             "<class 'polars.datatypes.List'>" => DataType::List(Box::new(DataType::Boolean)),
             "<class 'polars.datatypes.Boolean'>" => DataType::Boolean,
-            "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
+            "<class 'polars.datatypes.Categorical'>" => DataType::Categorical(None),
             "<class 'polars.datatypes.Date'>" => DataType::Date,
             "<class 'polars.datatypes.Datetime'>" => {
                 DataType::Datetime(TimeUnit::Milliseconds, None)

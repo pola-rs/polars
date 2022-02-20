@@ -30,53 +30,15 @@ fn cast_impl(name: &str, chunks: &[ArrayRef], dtype: &DataType) -> Result<Series
     Ok(out)
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkCast for CategoricalChunked {
-    fn cast(&self, data_type: &DataType) -> Result<Series> {
-        match data_type {
-            DataType::Utf8 => {
-                let mapping = &**self.categorical_map.as_ref().expect("should be set");
-
-                let mut builder = Utf8ChunkedBuilder::new(self.name(), self.len(), self.len() * 5);
-
-                let f = |idx: u32| mapping.get(idx);
-
-                if !self.has_validity() {
-                    self.into_no_null_iter()
-                        .for_each(|idx| builder.append_value(f(idx)));
-                } else {
-                    self.into_iter().for_each(|opt_idx| {
-                        builder.append_option(opt_idx.map(f));
-                    });
-                }
-
-                let ca = builder.finish();
-                Ok(ca.into_series())
-            }
-            DataType::UInt32 => {
-                let ca = UInt32Chunked::from_chunks(self.name(), self.chunks.clone());
-                Ok(ca.into_series())
-            }
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => Ok(self.clone().into_series()),
-            _ => cast_impl(self.name(), &self.chunks, data_type),
-        }
-    }
-}
-
 impl<T> ChunkCast for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        #[cfg(feature = "dtype-categorical")]
-        use DataType::*;
-        match (self.dtype(), data_type) {
+        match data_type {
             #[cfg(feature = "dtype-categorical")]
-            (UInt32, Categorical) | (Categorical, Categorical) => {
-                let ca = CategoricalChunked::from_chunks(self.name(), self.chunks.clone())
-                    .set_state(self);
-                Ok(ca.into_series())
+            DataType::Categorical(_) => {
+                Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
             }
             _ => cast_impl(self.name(), &self.chunks, data_type),
         }
@@ -87,7 +49,7 @@ impl ChunkCast for Utf8Chunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let iter = self.into_iter();
                 let mut builder = CategoricalChunkedBuilder::new(self.name(), self.len());
                 builder.drain_iter(iter);
@@ -137,11 +99,16 @@ impl ChunkCast for ListChunked {
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         match data_type {
             DataType::List(child_type) => {
-                let chunks = self
-                    .downcast_iter()
-                    .map(|list| cast_inner_list_type(list, &**child_type))
-                    .collect::<Result<_>>()?;
-                let ca = ListChunked::from_chunks(self.name(), chunks);
+                let mut ca = if child_type.to_physical() != self.inner_dtype() {
+                    let chunks = self
+                        .downcast_iter()
+                        .map(|list| cast_inner_list_type(list, &**child_type))
+                        .collect::<Result<_>>()?;
+                    ListChunked::from_chunks(self.name(), chunks)
+                } else {
+                    self.clone()
+                };
+                ca.with_inner_type(*child_type.clone());
                 Ok(ca.into_series())
             }
             _ => Err(PolarsError::ComputeError("Cannot cast list type".into())),
@@ -171,8 +138,8 @@ mod test {
     fn test_cast_noop() {
         // check if we can cast categorical twice without panic
         let ca = Utf8Chunked::new("foo", &["bar", "ham"]);
-        let out = ca.cast(&DataType::Categorical).unwrap();
-        let out = out.cast(&DataType::Categorical).unwrap();
-        assert_eq!(out.dtype(), &DataType::Categorical)
+        let out = ca.cast(&DataType::Categorical(None)).unwrap();
+        let out = out.cast(&DataType::Categorical(None)).unwrap();
+        assert!(matches!(out.dtype(), &DataType::Categorical(_)))
     }
 }

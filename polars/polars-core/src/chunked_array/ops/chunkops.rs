@@ -5,8 +5,6 @@ use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[inline]
 fn slice(
@@ -120,25 +118,6 @@ impl ChunkOps for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkOps for CategoricalChunked {
-    fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let mut out: CategoricalChunked = self.deref().rechunk().into();
-        let cat_map = self.categorical_map.clone();
-        out.categorical_map = cat_map;
-        out
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        let mut out = self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()));
-        out.set_fast_unique(false);
-        out
-    }
-}
-
 impl ChunkOps for ListChunked {
     fn rechunk(&self) -> Self {
         if self.chunks.len() == 1 {
@@ -217,10 +196,10 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
-        let mut a = s.cast(&DataType::Categorical).unwrap();
+        let mut a = s.cast(&DataType::Categorical(None)).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();
-        assert!(a.categorical().unwrap().categorical_map.is_some());
+        assert!(a.categorical().unwrap().get_rev_map().len() > 0);
     }
 }

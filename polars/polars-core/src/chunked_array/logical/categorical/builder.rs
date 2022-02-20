@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::{datatypes::PlHashMap, use_string_cache};
 use arrow::array::*;
-use std::marker::PhantomData;
 
 pub enum RevMappingBuilder {
     /// Hashmap: maps the indexes from the global cache/categorical array to indexes in the local Utf8Array
@@ -70,9 +69,9 @@ impl RevMapping {
 
     /// Categorical to str
     ///
-    /// # Safety:
+    /// # Safety
     /// This doesn't do any bound checking
-    pub unsafe fn get_unchecked(&self, idx: u32) -> &str {
+    pub(crate) unsafe fn get_unchecked(&self, idx: u32) -> &str {
         match self {
             Self::Global(map, a, _) => {
                 let idx = *map.get(&idx).unwrap();
@@ -110,7 +109,7 @@ impl RevMapping {
 
 pub struct CategoricalChunkedBuilder {
     array_builder: UInt32Vec,
-    field: Field,
+    name: String,
     reverse_mapping: RevMappingBuilder,
 }
 
@@ -126,7 +125,7 @@ impl CategoricalChunkedBuilder {
 
         Self {
             array_builder: UInt32Vec::with_capacity(capacity),
-            field: Field::new(name, DataType::Categorical),
+            name: name.to_string(),
             reverse_mapping,
         }
     }
@@ -188,17 +187,12 @@ impl CategoricalChunkedBuilder {
         }
     }
 
-    pub fn finish(self) -> ChunkedArray<CategoricalType> {
-        // both for the local and the global map, we own a map that has all unique keys
-        let bit_settings = 1u8 << 4;
-
-        ChunkedArray {
-            field: Arc::new(self.field),
-            chunks: vec![self.array_builder.into_arc()],
-            phantom: PhantomData,
-            categorical_map: Some(Arc::new(self.reverse_mapping.finish())),
-            bit_settings,
-        }
+    pub fn finish(self) -> CategoricalChunked {
+        CategoricalChunked::from_chunks_original(
+            &self.name,
+            vec![self.array_builder.into_arc()],
+            self.reverse_mapping.finish(),
+        )
     }
 }
 
@@ -221,29 +215,29 @@ mod test {
             Some("bar"),
         ];
         let ca = Utf8Chunked::new("a", slice);
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
         toggle_string_cache(true);
         // empty global cache
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
         // full global cache
-        let out = ca.cast(&DataType::Categorical)?;
+        let out = ca.cast(&DataType::Categorical(None))?;
         let mut out = out.categorical().unwrap().clone();
-        assert_eq!(out.categorical_map.take().unwrap().len(), 2);
+        assert_eq!(out.get_rev_map().len(), 2);
 
         // Check that we don't panic if we append two categorical arrays
         // build under the same string cache
         // https://github.com/pola-rs/polars/issues/1115
-        let ca1 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
+        let ca1 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None))?;
         let mut ca1 = ca1.categorical().unwrap().clone();
-        let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical)?;
+        let ca2 = Utf8Chunked::new("a", slice).cast(&DataType::Categorical(None))?;
         let ca2 = ca2.categorical().unwrap();
-        ca1.append(ca2);
+        ca1.append(ca2).unwrap();
 
         Ok(())
     }

@@ -409,9 +409,9 @@ fn finish_logical_types(
     // We cast the column headers to another string repr
     match columns.dtype() {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
+        DataType::Categorical(_) => {
             let piv = columns.categorical().unwrap();
-            let rev_map = piv.categorical_map.as_ref().unwrap().clone();
+            let rev_map = piv.get_rev_map().clone();
             for s in out.columns.iter_mut() {
                 let category = s.name().parse::<u32>().unwrap();
                 let name = rev_map.get(category);
@@ -446,15 +446,15 @@ fn finish_logical_types(
     let dtype = values.dtype();
     match dtype {
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
+        DataType::Categorical(_) => {
             let piv = columns.categorical().unwrap();
-            let rev_map = piv.categorical_map.as_ref().cloned();
+            let rev_map = piv.get_rev_map().clone();
 
             for s in out.columns.iter_mut() {
-                let s_ = s.cast(&DataType::Categorical).unwrap();
-                let mut ca = s_.categorical().unwrap().clone();
-                ca.categorical_map = rev_map.clone();
-                *s = ca.into_series();
+                let mut s_ = s.cast(&DataType::Categorical(None)).unwrap();
+                let ca = s_.get_inner_mut().as_mut_categorical();
+                ca.set_rev_map(rev_map.clone(), false);
+                *s = s_
             }
         }
         DataType::Datetime(_, _) | DataType::Date | DataType::Time => {
@@ -592,7 +592,7 @@ mod test {
             "B" => [8, 2, 3, 6, 3, 6, 2, 2],
             "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
         ]?;
-        df.try_apply("C", |s| s.cast(&DataType::Categorical))?;
+        df.try_apply("C", |s| s.cast(&DataType::Categorical(None)))?;
 
         let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
         assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);

@@ -2,7 +2,6 @@ use crate::prelude::*;
 use crate::series::unstable::{ArrayBox, UnstableSeries};
 use crate::utils::CustomIterTools;
 use arrow::array::ArrayRef;
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::ptr::NonNull;
 
@@ -67,7 +66,16 @@ impl ListChunked {
         // so that the container has the proper dtype.
         let arr = self.downcast_iter().next().unwrap();
         let inner_values = arr.values();
-        let series_container = Box::new(Series::try_from(("", inner_values.clone())).unwrap());
+
+        // Safety:
+        // inner types logical type fits physical type
+        let series_container = unsafe {
+            Box::new(Series::from_chunks_and_dtype_unchecked(
+                "",
+                vec![inner_values.clone()],
+                &self.inner_dtype(),
+            ))
+        };
 
         let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
 

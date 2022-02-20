@@ -19,8 +19,6 @@ pub mod kernels;
 mod ndarray;
 
 mod bitwise;
-#[cfg(feature = "dtype-categorical")]
-pub(crate) mod categorical;
 #[cfg(feature = "object")]
 mod drop;
 pub(crate) mod list;
@@ -154,8 +152,6 @@ pub struct ChunkedArray<T> {
     /// third bit dtype list: fast_explode
     ///     - unset: unknown or not all arrays have at least one value
     ///     - set: all list arrays are filled (this allows for cheap explode)
-    /// fourth bit: original local categorical
-    ///             meaning that n_unique is the same as the cat map length
     pub(crate) bit_settings: u8,
 }
 
@@ -299,11 +295,6 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if matches!(self.dtype(), DataType::Categorical) {
-            return Err(PolarsError::InvalidOperation(
-                "append_array not supported for categorical type".into(),
-            ));
-        }
         if self.field.data_type() == other.data_type() {
             self.chunks.push(other);
             Ok(())
@@ -506,7 +497,6 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
-impl AsSinglePtr for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
@@ -593,6 +583,12 @@ impl ListChunked {
             DataType::List(dt) => *dt.clone(),
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn with_inner_type(&mut self, dtype: DataType) {
+        assert_eq!(dtype.to_physical(), self.inner_dtype());
+        let field = Arc::make_mut(&mut self.field);
+        field.coerce(DataType::List(Box::new(dtype)));
     }
 }
 
@@ -799,9 +795,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();
-        let v: Vec<_> = ca.into_iter().collect();
+        let v: Vec<_> = ca.logical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

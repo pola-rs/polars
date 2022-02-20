@@ -1,5 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 use crate::prelude::any_value::arr_to_any_value;
 use crate::prelude::*;
 use crate::utils::NoNull;
@@ -65,32 +63,14 @@ impl Series {
     pub(crate) fn iter(&self) -> impl Iterator<Item = AnyValue> {
         assert_eq!(self.chunks().len(), 1, "impl error");
         let dtype = self.dtype();
+
         let arr = &*self.chunks()[0];
         let len = arr.len();
-        #[cfg(feature = "dtype-categorical")]
-        {
-            let cat_map = if let Ok(ca) = self.categorical() {
-                &ca.categorical_map
-            } else {
-                &None
-            };
-
-            SeriesIter {
-                arr,
-                dtype,
-                cat_map,
-                idx: 0,
-                len,
-            }
-        }
-        #[cfg(not(feature = "dtype-categorical"))]
-        {
-            SeriesIter {
-                arr,
-                dtype,
-                idx: 0,
-                len,
-            }
+        SeriesIter {
+            arr,
+            dtype,
+            idx: 0,
+            len,
         }
     }
 }
@@ -98,8 +78,6 @@ impl Series {
 pub struct SeriesIter<'a> {
     arr: &'a dyn Array,
     dtype: &'a DataType,
-    #[cfg(feature = "dtype-categorical")]
-    cat_map: &'a Option<Arc<RevMapping>>,
     idx: usize,
     len: usize,
 }
@@ -114,14 +92,7 @@ impl<'a> Iterator for SeriesIter<'a> {
         if idx == self.len {
             None
         } else {
-            #[cfg(feature = "dtype-categorical")]
-            unsafe {
-                Some(arr_to_any_value(self.arr, idx, self.cat_map, self.dtype))
-            }
-            #[cfg(not(feature = "dtype-categorical"))]
-            unsafe {
-                Some(arr_to_any_value(self.arr, idx, &None, self.dtype))
-            }
+            unsafe { Some(arr_to_any_value(self.arr, idx, self.dtype)) }
         }
     }
 }

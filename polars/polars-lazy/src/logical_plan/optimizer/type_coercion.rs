@@ -143,17 +143,24 @@ impl OptimizationRule for TypeCoercionRule {
                         .get_type(input_schema, Context::Default, expr_arena)
                         .expect("could not get dtype");
 
-                    let compare_cat_to_string = matches!(
-                        op,
-                        Operator::Eq
-                            | Operator::NotEq
-                            | Operator::Gt
-                            | Operator::Lt
-                            | Operator::GtEq
-                            | Operator::LtEq
-                    ) && ((type_left == DataType::Categorical
-                        && type_right == DataType::Utf8)
-                        || (type_left == DataType::Utf8 && type_right == DataType::Categorical));
+                    #[allow(unused_mut, unused_assignments)]
+                    let mut compare_cat_to_string = false;
+                    #[cfg(feature = "dtype-categorical")]
+                    {
+                        compare_cat_to_string =
+                            matches!(
+                                op,
+                                Operator::Eq
+                                    | Operator::NotEq
+                                    | Operator::Gt
+                                    | Operator::Lt
+                                    | Operator::GtEq
+                                    | Operator::LtEq
+                            ) && (matches!(type_left, DataType::Categorical(_))
+                                && type_right == DataType::Utf8)
+                                || (type_left == DataType::Utf8
+                                    && matches!(type_right, DataType::Categorical(_)));
+                    }
 
                     let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
                         && matches!(
@@ -172,9 +179,17 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let mut st = use_supertype(st, left, right, &type_left, &type_right);
 
-                        let cat_str_arithmetic = (type_left == DataType::Categorical
-                            && type_right == DataType::Utf8)
-                            || (type_left == DataType::Utf8 && type_right == DataType::Categorical);
+                        #[allow(unused_mut, unused_assignments)]
+                        let mut cat_str_arithmetic = false;
+
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
+                                && type_right == DataType::Utf8)
+                                || (type_left == DataType::Utf8
+                                    && matches!(type_right, DataType::Categorical(_)));
+                        }
+
                         if cat_str_arithmetic {
                             st = DataType::Utf8
                         }
@@ -227,7 +242,7 @@ mod test {
     #[test]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical)]);
+        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical(None))]);
 
         let expr = col("fruits").eq(lit("somestr"));
         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);

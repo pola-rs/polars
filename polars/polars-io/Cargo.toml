@@ -22,6 +22,7 @@ parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compress
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
 dtype-date = ["polars-core/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-categorical = ["polars-core/dtype-categorical"]
 csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv_write"]
 fmt = ["polars-core/plain_fmt"]
 decompress = ["flate2/miniz_oxide"]
