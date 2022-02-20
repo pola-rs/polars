@@ -151,7 +151,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "sort_multiple")]
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
-        self.0.logical().argsort_multiple(by, reverse)
+        self.0.argsort_multiple(by, reverse)
     }
 }
 
@@ -320,12 +320,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
-        self.with_state(true, |cats| cats.sort_with(options))
-            .into_series()
+        self.0.sort_with(options).into_series()
     }
 
     fn argsort(&self, reverse: bool) -> IdxCa {
-        self.0.logical().argsort(reverse)
+        self.0.argsort(reverse)
     }
 
     fn null_count(&self) -> usize {
