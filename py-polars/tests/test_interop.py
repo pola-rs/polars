@@ -198,3 +198,10 @@ def test_from_empty_arrow() -> None:
     df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
     assert df.columns == ["a", "b"]  # type: ignore
     assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore
+
+    # 2705
+    df1 = pd.DataFrame(columns=["b"], dtype=float)
+    tbl = pa.Table.from_pandas(df1)
+    out = pl.from_arrow(tbl)
+    assert out.columns == ["b"]  # type: ignore
+    assert out.dtypes == [pl.Float64]  # type: ignore
