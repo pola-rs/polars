@@ -7,6 +7,7 @@ mod series;
 use super::*;
 use crate::prelude::*;
 pub use builder::*;
+pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 
 #[derive(Clone)]
 pub struct CategoricalChunked {

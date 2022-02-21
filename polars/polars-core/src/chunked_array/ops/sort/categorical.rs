@@ -168,7 +168,12 @@ mod test {
             let out = df.sort(&["cat", "vals"], vec![false, false])?;
             let out = out.column("cat")?;
             let cat = out.categorical()?;
-            assert_order(cat, &["a", "a", "b", "c"])
+            assert_order(cat, &["a", "a", "b", "c"]);
+
+            let out = df.sort(&["vals", "cat"], vec![false, false])?;
+            let out = out.column("cat")?;
+            let cat = out.categorical()?;
+            assert_order(cat, &["b", "c", "a", "a"]);
         }
         Ok(())
     }

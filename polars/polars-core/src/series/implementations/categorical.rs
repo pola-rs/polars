@@ -5,7 +5,7 @@ use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
     ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
+        compare_inner::{IntoPartialOrdInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
     AsSinglePtr, ChunkIdIter,
@@ -85,9 +85,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0
             .zip_with(mask, other.categorical()?)
             .map(|ca| ca.into_series())
-    }
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
     }
     fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
         (&self.0).into_partial_ord_inner()

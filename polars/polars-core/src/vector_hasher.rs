@@ -187,8 +187,6 @@ impl VecHash for Float64Chunked {
     }
 }
 
-impl VecHash for ListChunked {}
-
 #[cfg(feature = "object")]
 impl<T> VecHash for ObjectChunked<T>
 where
