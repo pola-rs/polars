@@ -247,14 +247,11 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
             .0
             .iter()
             .enumerate()
-            .map(|(i, av)| {
-                (format!("column_{}", i), av.into())
-            })
+            .map(|(i, av)| (format!("column_{}", i), av.into()))
             .collect();
         fields
     });
     infer_schema(it, max_infer)
-
 }
 
 impl<'a> From<&AnyValue<'a>> for Field {
