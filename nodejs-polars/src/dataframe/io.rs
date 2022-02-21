@@ -610,7 +610,6 @@ fn coerce_js_anyvalue<'a>(
     use DataType::*;
     let vtype = val.get_type().unwrap();
 
-    // todo!()
     match (vtype, dtype) {
         (ValueType::Null | ValueType::Undefined | ValueType::Unknown, _) => Ok(AnyValue::Null),
         (ValueType::String, Utf8) => AnyValue::from_js(val),
