@@ -2378,7 +2378,7 @@ class Expr:
     @property
     def arr(self) -> "ExprListNameSpace":
         """
-        Create an object namespace of all datetime related methods.
+        Create an object namespace of all list related methods.
         """
         return ExprListNameSpace(self)
 
