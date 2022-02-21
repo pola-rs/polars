@@ -236,6 +236,7 @@ impl<'a> From<&AnyValue<'a>> for Field {
     }
 }
 
+
 impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
         let fields = row

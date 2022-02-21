@@ -156,6 +156,33 @@ impl From<napi::ValueType> for Wrap<DataType> {
     }
 }
 
+// impl From<&napi::JsUnknown> for Result<Wrap<DataType>> {
+//     fn from(val: &napi::JsUnknown) -> Self {
+//         use napi::ValueType::*;
+//         match val.get_type()? {
+//             Undefined | Null  => Ok(Wrap(DataType::Null)),
+//             Boolean => Ok(Wrap(DataType::Boolean)),
+//             Number => Ok(Wrap(DataType::Float64)),
+//             String => Ok(Wrap(DataType::Utf8)),
+//             Bigint => Ok(Wrap(DataType::UInt64)),
+//             Object => {
+//                 if val.is_date()? {
+//                     Ok(Wrap(DataType::Datetime(TimeUnit::Milliseconds, None)))
+//                 } else if val.is_array()? {
+//                     let i0: Wrap<DataType> = val.get_element::<JsUnknown>(0)?.into();
+//                     let i1: Wrap<DataType> = val.get_element::<JsUnknown>(1)?.into();
+                    
+//                     let v = Vec::<DataType>::from_js(val)
+//                         .map(|list| DataType::List(Box::new(coerce_data_type(&list))))
+//                 } else {
+//                     Ok(DataType::Utf8)
+//                 }
+//             }
+//             _ => panic!("not supported"),
+//         }
+//     }
+// }
+
 impl From<DataType> for JsDataType {
     fn from(dt: DataType) -> Self {
         (&dt).into()

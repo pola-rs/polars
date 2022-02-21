@@ -1,4 +1,5 @@
 use crate::conversion::wrap::*;
+use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
 use napi::{
     JsBigint, JsBoolean, JsDate, JsNumber, JsObject, JsString, JsUnknown, Result, ValueType,
@@ -7,7 +8,6 @@ use polars::io::RowCount;
 use polars::prelude::*;
 use polars_core::prelude::{Field, Schema};
 use std::borrow::Borrow;
-use crate::datatypes::JsDataType;
 
 pub trait FromJsUnknown: Sized + Send {
     fn from_js(obj: JsUnknown) -> Result<Self>;
@@ -367,7 +367,6 @@ where
     }
 }
 
-
 impl FromJsUnknown for Schema {
     fn from_js(val: JsUnknown) -> Result<Self> {
         let value_type = val.get_type()?;
@@ -377,15 +376,17 @@ impl FromJsUnknown for Schema {
                 let obj = unsafe { val.cast::<JsObject>() };
                 let keys = obj.get_property_names()?;
                 let key_len = keys.get_array_length_unchecked()?;
-                let fields: Vec<Field> = (0..key_len).map(|i| {
-                    let key: JsString = keys.get_element_unchecked(i).expect("key to exist");
-                    let value = obj.get_property::<_, JsUnknown>(key).unwrap();
-                    let dtype = JsDataType::from_js(value).unwrap();
-                    let key_str = key.into_utf8().unwrap();
-                    let key_str = key_str.as_str().unwrap();
-                    let fld = Field::new(key_str, dtype.into());
-                    fld
-                }).collect();
+                let fields: Vec<Field> = (0..key_len)
+                    .map(|i| {
+                        let key: JsString = keys.get_element_unchecked(i).expect("key to exist");
+                        let value = obj.get_property::<_, JsUnknown>(key).unwrap();
+                        let dtype = JsDataType::from_js(value).unwrap();
+                        let key_str = key.into_utf8().unwrap();
+                        let key_str = key_str.as_str().unwrap();
+                        let fld = Field::new(key_str, dtype.into());
+                        fld
+                    })
+                    .collect();
 
                 // let fields = keys.iter().map
                 Ok(Schema::new(fields))

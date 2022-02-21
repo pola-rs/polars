@@ -701,6 +701,42 @@ fn coerce_js_anyvalue<'a>(
     }
 }
 
+struct RowWrapper<'a>(&'a JsObject);
+
+impl IntoIterator for RowWrapper<'_> {
+    type Item = Vec<(String, DataType)>;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let rows = self.0;
+        let len = rows.get_array_length().unwrap();
+
+        (0..len).map(|idx| {
+            let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+            let keys = obj.get_property_names().unwrap();
+            // 2
+            let keys_len = keys.get_array_length_unchecked().unwrap();
+            
+            let values: Vec<(String, DataType)>  = (0..keys_len).map(|key_idx| {
+                // foo
+                let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+                // 1
+                let value: JsUnknown = obj.get_property(key).unwrap();
+                // f64
+                let dtype = DataType::from_js(value).unwrap();
+                // 'foo'
+                let key = key.into_utf8().unwrap().into_owned().unwrap();
+                (key, dtype)
+            }).collect();
+            values
+        }).collect()
+
+        
+    
+    
+    }
+
+}
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -793,19 +829,39 @@ fn infer_schema(rows: &JsObject, infer_schema_length: u32) -> JsResult<Schema> {
 
     let max_infer = std::cmp::min(len, infer_schema_length);
     (0..max_infer).for_each(|idx| {
+        // {foo: 1, bar: 'a'}
         let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+        // [foo, bar]
         let keys = obj.get_property_names().unwrap();
+        // 2
         let keys_len = keys.get_array_length_unchecked().unwrap();
         for key_idx in 0..keys_len {
+            // foo
             let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-
+            // 1
             let value: JsUnknown = obj.get_property(key).unwrap();
+            // f64
             let dtype = DataType::from_js(value).unwrap();
-
+            // 'foo'
             let key = key.into_utf8().unwrap().into_owned().unwrap();
             add_or_insert(&mut values, &key, dtype);
         }
     });
+    Ok(Schema::new(resolve_fields(values)))
+}
+
+fn infer_xx(
+    iter: impl Iterator<Item = (String, DataType)>,
+    infer_schema_length: usize,
+) -> JsResult<Schema> {
+
+    let mut values: Tracker = Tracker::new();
+    let len = iter.size_hint().1.unwrap();
+
+    let max_infer = std::cmp::min(len, infer_schema_length);
+    for (key, value) in iter.take(max_infer) {
+        add_or_insert(&mut values, &key, value.into());
+    }
     Ok(Schema::new(resolve_fields(values)))
 }
 
@@ -842,31 +898,10 @@ fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     if are_all_equal {
         return datatypes[0].borrow().clone();
     }
-    
     if datatypes.len() > 2 {
-        return Utf8
+        return Utf8;
     }
 
     let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
-
-    return match (lhs, rhs) {
-        (lhs, rhs) if lhs == rhs => lhs.clone(),
-        (List(lhs), List(rhs)) => {
-            let inner = coerce_data_type(&[lhs.as_ref(), rhs.as_ref()]);
-            List(Box::new(inner))
-        }
-        (scalar, List(list)) => {
-            let inner = coerce_data_type(&[scalar, list.as_ref()]);
-            List(Box::new(inner))
-        }
-        (List(list), scalar) => {
-            let inner = coerce_data_type(&[scalar, list.as_ref()]);
-            List(Box::new(inner))
-        }
-        (Float64, UInt64) => Float64,
-        (UInt64, Float64) => Float64,
-        (UInt64, Boolean) => UInt64,
-        (Boolean, UInt64) => UInt64,
-        (_, _) => Utf8,
-    };
+    polars_core::utils::get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
