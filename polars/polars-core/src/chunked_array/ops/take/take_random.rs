@@ -326,7 +326,7 @@ pub struct TakeRandomBitmap<'a> {
 impl<'a> TakeRandomBitmap<'a> {
     pub(crate) fn new(bitmap: &'a Bitmap) -> Self {
         let (bytes, offset, _) = bitmap.as_slice();
-        Self { bytes, offset}
+        Self { bytes, offset }
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> bool {
