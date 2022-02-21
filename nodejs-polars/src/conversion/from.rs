@@ -388,7 +388,6 @@ impl FromJsUnknown for Schema {
                     })
                     .collect();
 
-                // let fields = keys.iter().map
                 Ok(Schema::new(fields))
             }
             dt => {
