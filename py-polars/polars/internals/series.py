@@ -3512,6 +3512,7 @@ class StringNameSpace:
         --------
 
         Dealing with different formats.
+
         >>> s = pl.Series(
         ...     "date",
         ...     [
