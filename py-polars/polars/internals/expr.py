@@ -2560,6 +2560,7 @@ class ExprStringNameSpace:
         --------
 
         Dealing with different formats.
+
         >>> s = pl.Series(
         ...     "date",
         ...     [
