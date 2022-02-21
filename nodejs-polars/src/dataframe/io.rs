@@ -3,7 +3,7 @@ use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
-use polars::frame::row::{rows_to_schema, Row};
+use polars::frame::row::{rows_to_schema, Row, infer_schema};
 use polars::io::RowCount;
 use polars::prelude::*;
 use std::borrow::Borrow;
@@ -701,42 +701,6 @@ fn coerce_js_anyvalue<'a>(
     }
 }
 
-struct RowWrapper<'a>(&'a JsObject);
-
-impl IntoIterator for RowWrapper<'_> {
-    type Item = Vec<(String, DataType)>;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        let rows = self.0;
-        let len = rows.get_array_length().unwrap();
-
-        (0..len).map(|idx| {
-            let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-            let keys = obj.get_property_names().unwrap();
-            // 2
-            let keys_len = keys.get_array_length_unchecked().unwrap();
-            
-            let values: Vec<(String, DataType)>  = (0..keys_len).map(|key_idx| {
-                // foo
-                let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-                // 1
-                let value: JsUnknown = obj.get_property(key).unwrap();
-                // f64
-                let dtype = DataType::from_js(value).unwrap();
-                // 'foo'
-                let key = key.into_utf8().unwrap().into_owned().unwrap();
-                (key, dtype)
-            }).collect();
-            values
-        }).collect()
-
-        
-    
-    
-    }
-
-}
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -744,12 +708,14 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
 
     let len = rows.get_array_length()?;
     let schema = match params.get_as::<Option<Schema>>("schema")? {
-        Some(s) => Ok(s),
+        Some(s) => s,
         None => {
             let infer_schema_length = params.get_or("inferSchemaLength", len)?;
-            infer_schema(&rows, infer_schema_length)
+            let pairs = obj_to_pairs(&rows);
+
+            infer_schema(pairs, infer_schema_length as usize)
         }
-    }?;
+    };
 
     let rows: Vec<Row> = (0..len)
         .map(|idx| {
@@ -823,85 +789,20 @@ fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
 }
 
-fn infer_schema(rows: &JsObject, infer_schema_length: u32) -> JsResult<Schema> {
-    let mut values: Tracker = Tracker::new();
-    let len = rows.get_array_length()?;
-
-    let max_infer = std::cmp::min(len, infer_schema_length);
-    (0..max_infer).for_each(|idx| {
-        // {foo: 1, bar: 'a'}
+fn obj_to_pairs(rows: &JsObject) -> impl '_ + Iterator<Item = Vec<(String, DataType)>> {
+    let len = rows.get_array_length().unwrap_or(0);
+    (0..len).map(move |idx| {
         let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-        // [foo, bar]
         let keys = obj.get_property_names().unwrap();
-        // 2
         let keys_len = keys.get_array_length_unchecked().unwrap();
-        for key_idx in 0..keys_len {
-            // foo
-            let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-            // 1
-            let value: JsUnknown = obj.get_property(key).unwrap();
-            // f64
-            let dtype = DataType::from_js(value).unwrap();
-            // 'foo'
-            let key = key.into_utf8().unwrap().into_owned().unwrap();
-            add_or_insert(&mut values, &key, dtype);
-        }
-    });
-    Ok(Schema::new(resolve_fields(values)))
-}
-
-fn infer_xx(
-    iter: impl Iterator<Item = (String, DataType)>,
-    infer_schema_length: usize,
-) -> JsResult<Schema> {
-
-    let mut values: Tracker = Tracker::new();
-    let len = iter.size_hint().1.unwrap();
-
-    let max_infer = std::cmp::min(len, infer_schema_length);
-    for (key, value) in iter.take(max_infer) {
-        add_or_insert(&mut values, &key, value.into());
-    }
-    Ok(Schema::new(resolve_fields(values)))
-}
-
-fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
-    if data_type == DataType::Null {
-        return;
-    }
-
-    if values.contains_key(key) {
-        let x = values.get_mut(key).unwrap();
-        x.insert(data_type);
-    } else {
-        // create hashset and add value type
-        let mut hs = HashSet::new();
-        hs.insert(data_type);
-        values.insert(key.to_string(), hs);
-    }
-}
-
-fn resolve_fields(spec: Tracker) -> Vec<Field> {
-    spec.iter()
-        .map(|(k, hs)| {
-            let v: Vec<&DataType> = hs.iter().collect();
-            Field::new(k, coerce_data_type(&v))
-        })
-        .collect()
-}
-
-fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
-    use DataType::*;
-
-    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
-
-    if are_all_equal {
-        return datatypes[0].borrow().clone();
-    }
-    if datatypes.len() > 2 {
-        return Utf8;
-    }
-
-    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
-    polars_core::utils::get_supertype(lhs, rhs).unwrap_or(Utf8)
+        (0..keys_len)
+            .map(|key_idx| {
+                let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+                let value: JsUnknown = obj.get_property(key).unwrap();
+                let dtype = DataType::from_js(value).unwrap();
+                let key = key.into_utf8().unwrap().into_owned().unwrap();
+                (key, dtype)
+            })
+            .collect()
+    })
 }

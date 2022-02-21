@@ -1,3 +1,4 @@
+import {jsTypeToPolarsType} from "@polars/internals/construction";
 import pli from "./internals/polars_internal";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
