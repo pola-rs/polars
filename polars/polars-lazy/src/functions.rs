@@ -17,25 +17,60 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
             DataType::Float32 => {
                 let ca_a = a.f32().unwrap();
                 let ca_b = b.f32().unwrap();
-                Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
+                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
             }
             DataType::Float64 => {
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
+                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
+            }
+            DataType::Int32 => {
+                let ca_a = a.i32().unwrap();
+                let ca_b = b.i32().unwrap();
+                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
+            }
+            DataType::Int64 => {
+                let ca_a = a.i64().unwrap();
+                let ca_b = b.i64().unwrap();
+                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
+            }
+            DataType::UInt32 => {
+                let ca_a = a.u32().unwrap();
+                let ca_b = b.u32().unwrap();
+                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
+            }
+            DataType::UInt64 => {
+                let ca_a = a.u64().unwrap();
+                let ca_b = b.u64().unwrap();
+                Series::new(name, &[polars_core::functions::cov_i(ca_a, ca_b)])
             }
             _ => {
-                unreachable!()
+                let a = a.cast(&DataType::Float64)?;
+                let b = b.cast(&DataType::Float64)?;
+                let ca_a = a.f64().unwrap();
+                let ca_b = b.f64().unwrap();
+                Series::new(name, &[polars_core::functions::cov_f(ca_a, ca_b)])
             }
         };
         Ok(s)
     };
-    apply_binary(a.to_float(), b.to_float(), function, GetOutput::same_type())
-        .with_function_options(|mut options| {
-            options.auto_explode = true;
-            options.fmt_str = "cov";
-            options
-        })
+    apply_binary(
+        a,
+        b,
+        function,
+        GetOutput::map_dtype(|dt| {
+            if matches!(dt, DataType::Float32) {
+                DataType::Float32
+            } else {
+                DataType::Float64
+            }
+        }),
+    )
+    .with_function_options(|mut options| {
+        options.auto_explode = true;
+        options.fmt_str = "cov";
+        options
+    })
 }
 
 /// Compute the pearson correlation between two columns.
@@ -46,25 +81,60 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
             DataType::Float32 => {
                 let ca_a = a.f32().unwrap();
                 let ca_b = b.f32().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
+                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
             }
             DataType::Float64 => {
                 let ca_a = a.f64().unwrap();
                 let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
+                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
+            }
+            DataType::Int32 => {
+                let ca_a = a.i32().unwrap();
+                let ca_b = b.i32().unwrap();
+                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+            }
+            DataType::Int64 => {
+                let ca_a = a.i64().unwrap();
+                let ca_b = b.i64().unwrap();
+                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+            }
+            DataType::UInt32 => {
+                let ca_a = a.u32().unwrap();
+                let ca_b = b.u32().unwrap();
+                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
+            }
+            DataType::UInt64 => {
+                let ca_a = a.u64().unwrap();
+                let ca_b = b.u64().unwrap();
+                Series::new(name, &[polars_core::functions::pearson_corr_i(ca_a, ca_b)])
             }
             _ => {
-                unreachable!()
+                let a = a.cast(&DataType::Float64)?;
+                let b = b.cast(&DataType::Float64)?;
+                let ca_a = a.f64().unwrap();
+                let ca_b = b.f64().unwrap();
+                Series::new(name, &[polars_core::functions::pearson_corr_f(ca_a, ca_b)])
             }
         };
         Ok(s)
     };
-    apply_binary(a.to_float(), b.to_float(), function, GetOutput::same_type())
-        .with_function_options(|mut options| {
-            options.auto_explode = true;
-            options.fmt_str = "pearson_corr";
-            options
-        })
+    apply_binary(
+        a,
+        b,
+        function,
+        GetOutput::map_dtype(|dt| {
+            if matches!(dt, DataType::Float32) {
+                DataType::Float32
+            } else {
+                DataType::Float64
+            }
+        }),
+    )
+    .with_function_options(|mut options| {
+        options.auto_explode = true;
+        options.fmt_str = "pearson_corr";
+        options
+    })
 }
 
 /// Compute the spearman rank correlation between two columns.

@@ -189,7 +189,9 @@ impl PhysicalExpr for ApplyExpr {
 
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    if ac.is_aggregated() {
+                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    }
                     ac.with_series(s, false);
                     Ok(ac)
                 }
