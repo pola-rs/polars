@@ -237,21 +237,40 @@ fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
 
+
 /// Infer schema from rows.
 pub fn rows_to_schema(rows: &[Row]) -> Schema {
     // no of rows to use to infer dtype
     let max_infer = std::cmp::min(rows.len(), 50);
+    let mut schema: Schema = (&rows[0]).into();
+    // the first row that has no nulls will be used to infer the schema.
+    // if there is a null, we check the next row and see if we can update the schema
 
-    let it = rows.iter().map(|row| {
-        let fields: Vec<(String, DataType)> = row
-            .0
+    for row in rows.iter().take(max_infer).skip(1) {
+        // for i in 1..max_infer {
+        let nulls: Vec<_> = schema
+            .fields()
             .iter()
             .enumerate()
-            .map(|(i, av)| (format!("column_{}", i), av.into()))
+            .filter_map(|(i, f)| {
+                if matches!(f.data_type(), DataType::Null) {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
             .collect();
-        fields
-    });
-    infer_schema(it, max_infer)
+        if nulls.is_empty() {
+            break;
+        } else {
+            let fields = schema.fields_mut();
+            let local_schema: Schema = row.into();
+            for i in nulls {
+                fields[i] = local_schema.fields()[i].clone()
+            }
+        }
+    }
+    schema
 }
 
 impl<'a> From<&AnyValue<'a>> for Field {

@@ -655,7 +655,7 @@ pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
         DataType::Date => cx.env.to_js_value(series.date().unwrap()),
         DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
         DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
-        DataType::Categorical => cx.env.to_js_value(series.categorical().unwrap()),
+        DataType::Categorical(_) => cx.env.to_js_value(series.categorical().unwrap()),
         _ => todo!(),
     }
 }
