@@ -1,7 +1,7 @@
 # flake8: noqa: W191,E101
 import io
 import os
-from typing import List, Literal
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -9,15 +9,13 @@ import pytest
 
 import polars as pl
 
-Compression = Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
-
 
 @pytest.fixture
-def compressions() -> List[Compression]:
+def compressions() -> List[str]:
     return ["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 
 
-def test_to_from_buffer(df: pl.DataFrame, compressions: List[Compression]) -> None:
+def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
     for compression in compressions:
         if compression == "lzo":
             # lzo compression is not supported now
@@ -41,7 +39,7 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: List[Compression]) -> No
 
 
 def test_to_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: List[Compression]
+    io_test_dir: str, df: pl.DataFrame, compressions: List[str]
 ) -> None:
     f = os.path.join(io_test_dir, "small.parquet")
     for compression in compressions:
@@ -60,26 +58,26 @@ def test_to_from_file(
             assert df.frame_equal(read_df)
 
 
-def test_select_columns():
+def test_select_columns() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.to_parquet(f)  # type: ignore
+    df.to_parquet(f)
     f.seek(0)
 
-    read_df = pl.read_parquet(f, columns=["b", "c"], use_pyarrow=False)  # type: ignore
+    read_df = pl.read_parquet(f, columns=["b", "c"], use_pyarrow=False)
     assert expected.frame_equal(read_df)
 
 
-def test_select_projection():
+def test_select_projection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     f = io.BytesIO()
-    df.to_parquet(f)  # type: ignore
+    df.to_parquet(f)
     f.seek(0)
 
-    read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)  # type: ignore
+    read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)
     assert expected.frame_equal(read_df)
 
 
