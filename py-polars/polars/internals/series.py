@@ -3436,6 +3436,22 @@ class Series:
             The value to extend the Series with. This value may be None to fill with nulls.
         n
             The number of values to extend.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.extend_constant(99, n=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                99
+                99
+        ]
+
         """
         return wrap_s(self._s.extend_constant(value, n))
 

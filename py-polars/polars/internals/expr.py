@@ -2471,12 +2471,54 @@ class ExprListNameSpace:
     def sort(self, reverse: bool = False) -> "Expr":
         """
         Sort the arrays in the list
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[3, 2, 1], [9, 1, 2]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.sort())
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ list [i64] │
+        ╞════════════╡
+        │ [1, 2, 3]  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 2, 9]  │
+        └────────────┘
+
         """
         return wrap_expr(self._pyexpr.lst_sort(reverse))
 
     def reverse(self) -> "Expr":
         """
         Reverse the arrays in the list
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [[3, 2, 1], [9, 1, 2]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.reverse())
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ list [i64] │
+        ╞════════════╡
+        │ [1, 2, 3]  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [2, 1, 9]  │
+        └────────────┘
+
         """
         return wrap_expr(self._pyexpr.lst_reverse())
 
@@ -2496,6 +2538,28 @@ class ExprListNameSpace:
         ----------
         other
             Columns to concat into a List Series
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [["a"], ["x"]],
+        ...         "b": [["b", "c"], ["y", "z"]],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arr.concat("b"))
+        shape: (2, 1)
+        ┌─────────────────┐
+        │ a               │
+        │ ---             │
+        │ list [str]      │
+        ╞═════════════════╡
+        │ ["a", "b", "c"] │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["x", "y", "z"] │
+        └─────────────────┘
+
         """
         if isinstance(other, list) and (
             not isinstance(other[0], (Expr, str, pli.Series))
@@ -2565,6 +2629,23 @@ class ExprListNameSpace:
         Returns
         -------
         Series of dtype Utf8
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"s": [["a", "b", "c"], ["x", "y"]]})
+        >>> df.select(pl.col("s").arr.join(" "))
+        shape: (2, 1)
+        ┌───────┐
+        │ s     │
+        │ ---   │
+        │ str   │
+        ╞═══════╡
+        │ a b c │
+        ├╌╌╌╌╌╌╌┤
+        │ x y   │
+        └───────┘
+
         """
 
         return wrap_expr(self._pyexpr.lst_join(separator))
@@ -2908,6 +2989,25 @@ class ExprStringNameSpace:
             substring
         inclusive
             Include the split character/string in the results
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"s": ["foo bar", "foo-bar", "foo bar baz"]})
+        >>> df.select(pl.col("s").str.split(by=" "))
+        shape: (3, 1)
+        ┌───────────────────────┐
+        │ s                     │
+        │ ---                   │
+        │ list [str]            │
+        ╞═══════════════════════╡
+        │ ["foo", "bar"]        │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["foo-bar"]           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["foo", "bar", "baz"] │
+        └───────────────────────┘
+
         """
         if inclusive:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
