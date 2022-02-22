@@ -23,7 +23,9 @@ def test_from_to_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
             assert df.frame_equal(read_df)
         else:
             # Error with ipc compression
-            with pytest.raises(ValueError):
+            # Windows: OSError
+            # Linux: ValueError
+            with pytest.raises(Exception):
                 buf = io.BytesIO()
                 df.to_ipc(buf, compression=compression)  # type: ignore
                 buf.seek(0)
@@ -42,7 +44,9 @@ def test_from_to_file(
             assert df.frame_equal(df_read)
         else:
             # Error with ipc compression
-            with pytest.raises(ValueError):
+            # Windows: OSError
+            # Linux: ValueError
+            with pytest.raises(Exception):
                 df.to_ipc(f, compression=compression)  # type: ignore
                 _ = pl.read_ipc(str(f))
 
