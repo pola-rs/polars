@@ -4,6 +4,7 @@ use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -23,10 +24,12 @@ impl ApplyExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Vec<AggregationContext<'a>>> {
-        self.inputs
-            .par_iter()
-            .map(|e| e.evaluate_on_groups(df, groups, state))
-            .collect()
+        POOL.install(|| {
+            self.inputs
+                .par_iter()
+                .map(|e| e.evaluate_on_groups(df, groups, state))
+                .collect()
+        })
     }
 
     fn finish_apply_groups<'a>(
@@ -186,7 +189,9 @@ impl PhysicalExpr for ApplyExpr {
 
                     let s = self.function.call_udf(&mut s)?;
                     let mut ac = acs.pop().unwrap();
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    if ac.is_aggregated() {
+                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    }
                     ac.with_series(s, false);
                     Ok(ac)
                 }

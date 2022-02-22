@@ -7,12 +7,14 @@ mod series;
 use super::*;
 use crate::prelude::*;
 pub use builder::*;
+pub(crate) use ops::{CategoricalTakeRandomGlobal, CategoricalTakeRandomLocal};
 
 #[derive(Clone)]
 pub struct CategoricalChunked {
     logical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
     ///             meaning that n_unique is the same as the cat map length
+    /// 2nd bit: use lexical sorting
     bit_settings: u8,
 }
 
@@ -28,6 +30,10 @@ impl CategoricalChunked {
 
     pub fn len(&self) -> usize {
         self.logical.len()
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        self.logical.name()
     }
 
     /// Get a reference to the logical array (the categories).
@@ -54,6 +60,18 @@ impl CategoricalChunked {
             logical,
             bit_settings,
         }
+    }
+
+    pub fn set_lexical_sorted(&mut self, toggle: bool) {
+        if toggle {
+            self.bit_settings |= 1u8 << 1;
+        } else {
+            self.bit_settings &= !(1u8 << 1);
+        }
+    }
+
+    pub(crate) fn use_lexical_sort(&self) -> bool {
+        self.bit_settings & 1 << 1 != 0
     }
 
     pub(crate) fn from_cats_and_rev_map(idx: UInt32Chunked, rev_map: Arc<RevMapping>) -> Self {

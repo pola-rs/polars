@@ -2,18 +2,11 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{
-    ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
-        explode::ExplodeByOffsets,
-    },
-    AsSinglePtr, ChunkIdIter,
-};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use std::borrow::Cow;
@@ -46,20 +39,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
-    }
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
-    }
-    fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-        (&self.0).into_partial_ord_inner()
-    }
-
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.vec_hash(random_state)
-    }
-
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.vec_hash_combine(build_hasher, hashes)
     }
 
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {

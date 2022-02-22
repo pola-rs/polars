@@ -288,7 +288,7 @@ impl PyDataFrame {
         row_oriented: bool,
         json_lines: bool,
     ) -> PyResult<()> {
-        let file = get_file_like(py_f, false)?;
+        let file = get_file_like(py_f, true)?;
 
         let r = match (pretty, row_oriented, json_lines) {
             (_, true, true) => panic!("{}", "only one of {row_oriented, json_lines} should be set"),

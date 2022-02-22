@@ -1138,6 +1138,16 @@ impl PyExpr {
         self.inner.clone().str().concat(delimiter).into()
     }
 
+    fn cat_set_ordering(&self, ordering: &str) -> Self {
+        let ordering = match ordering {
+            "physical" => CategoricalOrdering::Physical,
+            "lexical" => CategoricalOrdering::Lexical,
+            _ => panic!("expected one of {{'physical', 'lexical'}}"),
+        };
+
+        self.inner.clone().cat().set_ordering(ordering).into()
+    }
+
     fn date_truncate(&self, every: &str, offset: &str) -> Self {
         let every = Duration::parse(every);
         let offset = Duration::parse(offset);

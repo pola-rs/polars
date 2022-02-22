@@ -1,4 +1,9 @@
+mod argsort_multiple;
+#[cfg(feature = "dtype-categorical")]
+mod categorical;
+
 use crate::prelude::compare_inner::PartialOrdInner;
+use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
 use arrow::{bitmap::MutableBitmap, buffer::Buffer};
@@ -75,12 +80,12 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
 }
 
 /// Default sorting nulls
-fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(a, b)
 }
 
 /// Default sorting nulls
-fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+pub fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     sort_with_nulls(b, a)
 }
 
@@ -114,7 +119,7 @@ where
     );
 }
 
-fn argsort_branch<T, Fd, Fr>(
+pub fn argsort_branch<T, Fd, Fr>(
     slice: &mut [T],
     reverse: bool,
     default_order_fn: Fd,
@@ -333,8 +338,8 @@ where
             // and need to be extended to the indices in reverse order
             let null_cap = if reverse {
                 null_count
-            // if we sort normally, the nulls are first
-            // and can be extended with the sorted indices
+                // if we sort normally, the nulls are first
+                // and can be extended with the sorted indices
             } else {
                 len
             };
@@ -386,29 +391,9 @@ where
     /// This function is very opinionated.
     /// We assume that all numeric `Series` are of the same type, if not it will panic
     fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
-        for ca in other {
-            assert_eq!(self.len(), ca.len());
-        }
-        if other.len() != (reverse.len() - 1) {
-            return Err(PolarsError::ValueError(
-                format!(
-                    "The amount of ordering booleans: {} does not match that no. of Series: {}",
-                    reverse.len(),
-                    other.len() + 1
-                )
-                .into(),
-            ));
-        }
-
-        assert_eq!(other.len(), reverse.len() - 1);
-
-        let compare_inner: Vec<_> = other
-            .iter()
-            .map(|s| s.into_partial_ord_inner())
-            .collect_trusted();
-
+        args_validate(self, other, reverse)?;
         let mut count: IdxSize = 0;
-        let mut vals: Vec<_> = self
+        let vals: Vec<_> = self
             .into_iter()
             .map(|v| {
                 let i = count;
@@ -417,24 +402,7 @@ where
             })
             .collect_trusted();
 
-        vals.sort_by(
-            |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
-                // if ordering is equal, we check the other arrays until we find a non-equal ordering
-                // if we have exhausted all arrays, we keep the equal ordering.
-                (_, Ordering::Equal) => {
-                    let idx_a = tpl_a.0 as usize;
-                    let idx_b = tpl_b.0 as usize;
-                    ordering_other_columns(&compare_inner, &reverse[1..], idx_a, idx_b)
-                }
-                (true, Ordering::Less) => Ordering::Greater,
-                (true, Ordering::Greater) => Ordering::Less,
-                (_, ord) => ord,
-            },
-        );
-        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.set_sorted(reverse[0]);
-        Ok(ca)
+        argsort_multiple_impl(vals, other, reverse)
     }
 }
 
@@ -567,16 +535,10 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
     /// uphold this contract. If not, it will panic.
     ///
     fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
-        for ca in other {
-            if self.len() != ca.len() {
-                return Err(PolarsError::ShapeMisMatch(
-                    "sort column should have equal length".into(),
-                ));
-            }
-        }
-        assert_eq!(other.len(), reverse.len() - 1);
+        args_validate(self, other, reverse)?;
+
         let mut count: IdxSize = 0;
-        let mut vals: Vec<_> = self
+        let vals: Vec<_> = self
             .into_iter()
             .map(|v| {
                 let i = count;
@@ -584,29 +546,7 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
                 (i, v)
             })
             .collect_trusted();
-        let compare_inner: Vec<_> = other
-            .iter()
-            .map(|s| s.into_partial_ord_inner())
-            .collect_trusted();
-
-        vals.sort_by(
-            |tpl_a, tpl_b| match (reverse[0], sort_with_nulls(&tpl_a.1, &tpl_b.1)) {
-                // if ordering is equal, we check the other arrays until we find a non-equal ordering
-                // if we have exhausted all arrays, we keep the equal ordering.
-                (_, Ordering::Equal) => {
-                    let idx_a = tpl_a.0 as usize;
-                    let idx_b = tpl_b.0 as usize;
-                    ordering_other_columns(&compare_inner, &reverse[1..], idx_a, idx_b)
-                }
-                (true, Ordering::Less) => Ordering::Greater,
-                (true, Ordering::Greater) => Ordering::Less,
-                (_, ord) => ord,
-            },
-        );
-        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.set_sorted(reverse[0]);
-        Ok(ca)
+        argsort_multiple_impl(vals, other, reverse)
     }
 }
 
@@ -655,6 +595,8 @@ pub(crate) fn prepare_argsort(
             use DataType::*;
             match s.dtype() {
                 Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
+                #[cfg(feature = "dtype-categorical")]
+                Categorical(_) => s.clone(),
                 _ => {
                     // small integers i8, u8 etc are casted to reduce compiler bloat
                     // not that we don't expect any logical types at this point

@@ -1382,6 +1382,30 @@ class Expr:
         Returns
         -------
         Series of type List
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["x", "y", "z"],
+        ...         "n": [1, 2, 3],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").repeat_by("n"))
+        shape: (3, 1)
+        ┌─────────────────┐
+        │ a               │
+        │ ---             │
+        │ list [str]      │
+        ╞═════════════════╡
+        │ ["x"]           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["y", "y"]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["z", "z", "z"] │
+        └─────────────────┘
+
         """
         by = expr_to_lit_or_expr(by, False)
         return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
@@ -2355,6 +2379,22 @@ class Expr:
             The value to extend the Series with. This value may be None to fill with nulls.
         n
             The number of values to extend.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.extend_constant(99, n=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                99
+                99
+        ]
+
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
@@ -2378,9 +2418,16 @@ class Expr:
     @property
     def arr(self) -> "ExprListNameSpace":
         """
-        Create an object namespace of all datetime related methods.
+        Create an object namespace of all list related methods.
         """
         return ExprListNameSpace(self)
+
+    @property
+    def cat(self) -> "ExprCatNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return ExprCatNameSpace(self)
 
 
 class ExprListNameSpace:
@@ -3375,6 +3422,57 @@ def expr_to_lit_or_expr(
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
         )
+
+
+class ExprCatNameSpace:
+    """
+    Namespace for categorical related expressions
+    """
+
+    def __init__(self, expr: Expr):
+        self._pyexpr = expr._pyexpr
+
+    def set_ordering(self, ordering: str) -> "Expr":
+        """
+        Determine how this categorical series should be sorted.
+
+        Parameters
+        ----------
+        ordering
+            One of:
+                - 'physical' -> use the physical representation of the categories to determine the order (default)
+                - 'lexical' -. use the string values to determine the ordering
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
+        ... ).with_columns(
+        ...     [
+        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
+        ...     ]
+        ... )
+        >>> df.sort(["cats", "vals"])
+        shape: (5, 2)
+        ┌──────┬──────┐
+        │ cats ┆ vals │
+        │ ---  ┆ ---  │
+        │ cat  ┆ i64  │
+        ╞══════╪══════╡
+        │ a    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ b    ┆ 3    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ k    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 1    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 3    │
+        └──────┴──────┘
+
+        """
+        return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
 
 
 def _prepare_alpha(

@@ -3,6 +3,8 @@ use crate::chunked_array::object::ObjectArray;
 use crate::prelude::downcast::Chunks;
 use crate::prelude::*;
 use arrow::array::{Array, BooleanArray, ListArray, PrimitiveArray, Utf8Array};
+use arrow::bitmap::utils::get_bit_unchecked;
+use arrow::bitmap::Bitmap;
 use polars_arrow::is_valid::*;
 use std::convert::TryFrom;
 
@@ -147,7 +149,7 @@ where
                 };
                 TakeRandBranch3::SingleNoNull(t)
             } else {
-                let t = NumTakeRandomSingleChunk { arr };
+                let t = NumTakeRandomSingleChunk::new(arr);
                 TakeRandBranch3::Single(t)
             }
         } else {
@@ -316,11 +318,36 @@ where
     }
 }
 
+pub struct TakeRandomBitmap<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> TakeRandomBitmap<'a> {
+    pub(crate) fn new(bitmap: &'a Bitmap) -> Self {
+        let (bytes, offset, _) = bitmap.as_slice();
+        Self { bytes, offset }
+    }
+
+    unsafe fn get_unchecked(&self, index: usize) -> bool {
+        get_bit_unchecked(self.bytes, self.offset + index)
+    }
+}
+
 pub struct NumTakeRandomSingleChunk<'a, T>
 where
     T: NumericNative,
 {
-    pub(crate) arr: &'a PrimitiveArray<T>,
+    pub(crate) vals: &'a [T],
+    pub(crate) validity: TakeRandomBitmap<'a>,
+}
+
+impl<'a, T: NumericNative> NumTakeRandomSingleChunk<'a, T> {
+    pub(crate) fn new(arr: &'a PrimitiveArray<T>) -> Self {
+        let validity = TakeRandomBitmap::new(arr.validity().unwrap());
+        let vals = arr.values();
+        NumTakeRandomSingleChunk { vals, validity }
+    }
 }
 
 impl<'a, T> TakeRandom for NumTakeRandomSingleChunk<'a, T>
@@ -331,13 +358,17 @@ where
 
     #[inline]
     fn get(&self, index: usize) -> Option<Self::Item> {
-        take_random_get_single!(self, index)
+        if index < self.vals.len() {
+            unsafe { self.get_unchecked(index) }
+        } else {
+            None
+        }
     }
 
     #[inline]
     unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        if self.arr.is_valid_unchecked(index) {
-            Some(self.arr.value_unchecked(index))
+        if self.validity.get_unchecked(index) {
+            Some(*self.vals.get_unchecked(index))
         } else {
             None
         }

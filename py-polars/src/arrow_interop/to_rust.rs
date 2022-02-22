@@ -33,7 +33,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
                 Some(validity.into()),
             ))
         } else {
-            ffi::import_array_from_c(array, &field).map_err(PyPolarsEr::from)?
+            ffi::import_array_from_c(array, field.data_type).map_err(PyPolarsEr::from)?
         };
         Ok(array.into())
     }

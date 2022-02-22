@@ -1,18 +1,41 @@
+# flake8: noqa: W191,E101
 from os import path
+from pathlib import Path
 
 import pandas as pd
-import pytest
 
 import polars as pl
 
 
-@pytest.fixture
-def cwd() -> str:
-    return path.dirname(__file__)
+def test_scan_parquet() -> None:
+    df = pl.scan_parquet(Path(__file__).parent.parent / "files" / "small.parquet")
+    assert df.collect().shape == (4, 3)
 
 
-def test_categorical_parquet_statistics(cwd: str) -> None:
-    file = path.join(cwd, "books.parquet")
+def test_row_count(foods_parquet: str) -> None:
+    df = pl.read_parquet(foods_parquet, row_count_name="row_count")
+    assert df["row_count"].to_list() == list(range(27))
+
+    df = (
+        pl.scan_parquet(foods_parquet, row_count_name="row_count")
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .collect()
+    )
+
+    assert df["row_count"].to_list() == [0, 6, 11, 13, 14, 20, 25]
+
+    df = (
+        pl.scan_parquet(foods_parquet, row_count_name="row_count")
+        .with_row_count("foo", 10)
+        .filter(pl.col("category") == pl.lit("vegetables"))
+        .collect()
+    )
+
+    assert df["foo"].to_list() == [10, 16, 21, 23, 24, 30, 35]
+
+
+def test_categorical_parquet_statistics(io_test_dir: str) -> None:
+    file = path.join(io_test_dir, "books.parquet")
     (
         pl.DataFrame(
             {
@@ -43,16 +66,16 @@ def test_categorical_parquet_statistics(cwd: str) -> None:
     assert df.shape == (4, 3)
 
 
-def test_null_parquet(cwd: str) -> None:
-    file = path.join(cwd, "null.parquet")
+def test_null_parquet(io_test_dir: str) -> None:
+    file = path.join(io_test_dir, "null.parquet")
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
     df.to_parquet(file)
     out = pl.read_parquet(file)
     assert out.frame_equal(df)
 
 
-def test_binary_parquet_stats(cwd: str) -> None:
-    file = path.join(cwd, "binary_stats.parquet")
+def test_binary_parquet_stats(io_test_dir: str) -> None:
+    file = path.join(io_test_dir, "binary_stats.parquet")
     df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
     df1.to_parquet(file, engine="pyarrow")
     df = (

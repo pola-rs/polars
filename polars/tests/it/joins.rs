@@ -1,6 +1,7 @@
 use polars::prelude::*;
 
 #[test]
+#[cfg(feature = "lazy")]
 fn join_nans_outer() -> Result<()> {
     let df1 = df! {
              "w" => [Some(2.5), None, Some(f64::NAN), None, Some(2.5), Some(f64::NAN), None, Some(3.0)],

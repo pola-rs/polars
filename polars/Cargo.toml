@@ -159,7 +159,7 @@ dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
-dtype-categorical = ["polars-core/dtype-categorical", "polars-io/dtype-categorical"]
+dtype-categorical = ["polars-core/dtype-categorical", "polars-io/dtype-categorical", "polars-lazy/dtype-categorical"]
 
 docs-selection = [
   "csv-file",
