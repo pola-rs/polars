@@ -2299,6 +2299,30 @@ class DataFrame:
             Arguments.
         kwargs
             Keyword arguments.
+
+        Examples
+        --------
+
+        >>> def cast_str_to_int(data, col_name):
+        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]})
+        >>> df.pipe(cast_str_to_int, col_name="b")
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 10  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 20  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 30  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 40  │
+        └─────┴─────┘
+
         """
         return func(self, *args, **kwargs)
 
@@ -3528,8 +3552,35 @@ class DataFrame:
         value_vars
             Values to use as identifier variables.
 
-        Returns
-        -------
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["x", "y", "z"],
+        ...         "b": [1, 3, 5],
+        ...         "c": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.melt(id_vars="a", value_vars=["b", "c"])
+        shape: (6, 3)
+        ┌─────┬──────────┬───────┐
+        │ a   ┆ variable ┆ value │
+        │ --- ┆ ---      ┆ ---   │
+        │ str ┆ str      ┆ i64   │
+        ╞═════╪══════════╪═══════╡
+        │ x   ┆ b        ┆ 1     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ y   ┆ b        ┆ 3     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ z   ┆ b        ┆ 5     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ x   ┆ c        ┆ 2     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ y   ┆ c        ┆ 4     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ z   ┆ c        ┆ 6     │
+        └─────┴──────────┴───────┘
 
         """
         if isinstance(value_vars, str):
@@ -4890,6 +4941,23 @@ class GroupBy:
     def agg_list(self) -> DataFrame:
         """
         Aggregate the groups into Series.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+        >>> df.groupby("a").agg_list()
+        shape: (2, 2)
+        ┌─────┬────────────┐
+        │ a   ┆ b          │
+        │ --- ┆ ---        │
+        │ str ┆ list [i64] │
+        ╞═════╪════════════╡
+        │ one ┆ [1, 3]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ two ┆ [2, 4]     │
+        └─────┴────────────┘
+
         """
         return self.agg(pli.all().list())
 
