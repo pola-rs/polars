@@ -1653,46 +1653,32 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| match s.dtype() {
-                DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
-                DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
-                _ => s
-                    .cast(&DataType::Float64)?
-                    .f64()
-                    .unwrap()
-                    .rolling_var(options.clone()),
-            },
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::Float64 => field.clone(),
-                DataType::Float32 => Field::new(field.name(), DataType::Float32),
-                _ => Field::new(field.name(), DataType::Float64),
-            }),
-        )
-        .with_fmt("rolling_var")
+        self.to_float()
+            .apply(
+                move |s| match s.dtype() {
+                    DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
+                    DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
+                    _ => unreachable!(),
+                },
+                GetOutput::same_type(),
+            )
+            .with_fmt("rolling_var")
     }
 
     /// Apply a rolling std-dev
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| match s.dtype() {
-                DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
-                DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
-                _ => s
-                    .cast(&DataType::Float64)?
-                    .f64()
-                    .unwrap()
-                    .rolling_std(options.clone()),
-            },
-            GetOutput::map_field(|field| match field.data_type() {
-                DataType::Float64 => field.clone(),
-                DataType::Float32 => Field::new(field.name(), DataType::Float32),
-                _ => Field::new(field.name(), DataType::Float64),
-            }),
-        )
-        .with_fmt("rolling_std")
+        self.to_float()
+            .apply(
+                move |s| match s.dtype() {
+                    DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
+                    DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
+                    _ => unreachable!(),
+                },
+                GetOutput::same_type(),
+            )
+            .with_fmt("rolling_std")
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
@@ -2019,6 +2005,24 @@ impl Expr {
             opt.auto_explode = true;
             opt
         })
+    }
+
+    /// This is useful if an `apply` function needs a floating point type.
+    /// Because this cast is done on a `map` level, it will be faster.
+    pub fn to_float(self) -> Self {
+        self.map(
+            |s| match s.dtype() {
+                DataType::Float32 | DataType::Float64 => Ok(s),
+                _ => s.cast(&DataType::Float64),
+            },
+            GetOutput::map_dtype(|dt| {
+                if matches!(dt, DataType::Float32) {
+                    DataType::Float32
+                } else {
+                    DataType::Float64
+                }
+            }),
+        )
     }
 
     #[cfg(feature = "strings")]

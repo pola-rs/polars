@@ -25,32 +25,17 @@ pub fn cov(a: Expr, b: Expr) -> Expr {
                 Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
             }
             _ => {
-                let a = a.cast(&DataType::Float64)?;
-                let b = b.cast(&DataType::Float64)?;
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::cov(ca_a, ca_b)])
+                unreachable!()
             }
         };
         Ok(s)
     };
-    apply_binary(
-        a,
-        b,
-        function,
-        GetOutput::map_dtype(|dt| {
-            if matches!(dt, DataType::Float32) {
-                DataType::Float32
-            } else {
-                DataType::Float64
-            }
-        }),
-    )
-    .with_function_options(|mut options| {
-        options.auto_explode = true;
-        options.fmt_str = "cov";
-        options
-    })
+    apply_binary(a.to_float(), b.to_float(), function, GetOutput::same_type())
+        .with_function_options(|mut options| {
+            options.auto_explode = true;
+            options.fmt_str = "cov";
+            options
+        })
 }
 
 /// Compute the pearson correlation between two columns.
@@ -69,32 +54,17 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
                 Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
             }
             _ => {
-                let a = a.cast(&DataType::Float64)?;
-                let b = b.cast(&DataType::Float64)?;
-                let ca_a = a.f64().unwrap();
-                let ca_b = b.f64().unwrap();
-                Series::new(name, &[polars_core::functions::pearson_corr(ca_a, ca_b)])
+                unreachable!()
             }
         };
         Ok(s)
     };
-    apply_binary(
-        a,
-        b,
-        function,
-        GetOutput::map_dtype(|dt| {
-            if matches!(dt, DataType::Float32) {
-                DataType::Float32
-            } else {
-                DataType::Float64
-            }
-        }),
-    )
-    .with_function_options(|mut options| {
-        options.auto_explode = true;
-        options.fmt_str = "pearson_corr";
-        options
-    })
+    apply_binary(a.to_float(), b.to_float(), function, GetOutput::same_type())
+        .with_function_options(|mut options| {
+            options.auto_explode = true;
+            options.fmt_str = "pearson_corr";
+            options
+        })
 }
 
 /// Compute the spearman rank correlation between two columns.
