@@ -1,3 +1,4 @@
+# flake8: noqa: W191,E101
 import polars as pl
 
 
