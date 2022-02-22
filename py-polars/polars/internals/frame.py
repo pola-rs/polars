@@ -2302,6 +2302,7 @@ class DataFrame:
 
         Examples
         --------
+
         >>> def cast_str_to_int(data, col_name):
         ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
         ...
@@ -3553,6 +3554,7 @@ class DataFrame:
 
         Examples
         --------
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -4942,6 +4944,7 @@ class GroupBy:
 
         Examples
         --------
+
         >>> df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
         >>> df.groupby("a").agg_list()
         shape: (2, 2)

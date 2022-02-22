@@ -1385,6 +1385,7 @@ class Expr:
 
         Examples
         --------
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "a": ["x", "y", "z"],
@@ -2381,6 +2382,7 @@ class Expr:
 
         Examples
         --------
+
         >>> s = pl.Series([1, 2, 3])
         >>> s.extend_constant(99, n=2)
         shape: (5,)
