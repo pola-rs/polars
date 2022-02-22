@@ -1382,6 +1382,29 @@ class Expr:
         Returns
         -------
         Series of type List
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["x", "y", "z"],
+        ...         "n": [1, 2, 3],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").repeat_by("n"))
+        shape: (3, 1)
+        ┌─────────────────┐
+        │ a               │
+        │ ---             │
+        │ list [str]      │
+        ╞═════════════════╡
+        │ ["x"]           │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["y", "y"]      │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["z", "z", "z"] │
+        └─────────────────┘
+
         """
         by = expr_to_lit_or_expr(by, False)
         return wrap_expr(self._pyexpr.repeat_by(by._pyexpr))
