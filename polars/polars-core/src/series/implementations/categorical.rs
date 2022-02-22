@@ -5,7 +5,7 @@ use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
     ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
+        compare_inner::{IntoPartialOrdInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
     AsSinglePtr, ChunkIdIter,
@@ -86,9 +86,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             .zip_with(mask, other.categorical()?)
             .map(|ca| ca.into_series())
     }
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
-    }
     fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
         (&self.0).into_partial_ord_inner()
     }
@@ -151,7 +148,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     #[cfg(feature = "sort_multiple")]
     fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
-        self.0.logical().argsort_multiple(by, reverse)
+        self.0.argsort_multiple(by, reverse)
     }
 }
 
@@ -320,12 +317,11 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn sort_with(&self, options: SortOptions) -> Series {
-        self.with_state(true, |cats| cats.sort_with(options))
-            .into_series()
+        self.0.sort_with(options).into_series()
     }
 
     fn argsort(&self, reverse: bool) -> IdxCa {
-        self.0.logical().argsort(reverse)
+        self.0.argsort(reverse)
     }
 
     fn null_count(&self) -> usize {

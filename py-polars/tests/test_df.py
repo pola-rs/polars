@@ -779,47 +779,6 @@ def test_to_dummies() -> None:
     assert dummies["A_c"].to_list() == [0, 0, 1]
 
 
-def test_from_pandas() -> None:
-    df = pd.DataFrame(
-        {
-            "bools": [False, True, False],
-            "bools_nulls": [None, True, False],
-            "int": [1, 2, 3],
-            "int_nulls": [1, None, 3],
-            "floats": [1.0, 2.0, 3.0],
-            "floats_nulls": [1.0, None, 3.0],
-            "strings": ["foo", "bar", "ham"],
-            "strings_nulls": ["foo", None, "ham"],
-            "strings-cat": ["foo", "bar", "ham"],
-        }
-    )
-    df["strings-cat"] = df["strings-cat"].astype("category")
-
-    out = pl.from_pandas(df)
-    assert out.shape == (3, 9)
-
-
-def test_from_pandas_nan_to_none() -> None:
-    from pyarrow import ArrowInvalid
-
-    df = pd.DataFrame(
-        {
-            "bools_nulls": [None, True, False],
-            "int_nulls": [1, None, 3],
-            "floats_nulls": [1.0, None, 3.0],
-            "strings_nulls": ["foo", None, "ham"],
-            "nulls": [None, np.nan, np.nan],
-        }
-    )
-    out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2, "nulls"] = pd.NA
-    assert all(val is None for val in out_true["nulls"])
-    assert all(np.isnan(val) for val in out_false["nulls"][1:])
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
-
-
 def test_custom_groupby() -> None:
     df = pl.DataFrame({"a": [1, 2, 1, 1], "b": ["a", "b", "c", "c"]})
 
@@ -932,14 +891,6 @@ def test_row_tuple() -> None:
     assert df.row(0) == ("foo", 1, 1.0)
     assert df.row(1) == ("bar", 2, 2.0)
     assert df.row(-1) == ("2", 3, 3.0)
-
-
-def test_read_csv_categorical() -> None:
-    f = BytesIO()
-    f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
-    f.seek(0)
-    df = pl.read_csv(f, has_header=True, dtypes={"col1": pl.Categorical})
-    assert df["col1"].dtype == pl.Categorical
 
 
 def test_df_apply() -> None:
@@ -1868,30 +1819,6 @@ def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
 
     out = df.select(pl.last())
     assert out.columns == ["cars"]
-
-
-def test_categorical_outer_join() -> None:
-    with pl.StringCache():
-        df1 = pl.DataFrame(
-            [
-                pl.Series("key1", [42]),
-                pl.Series("key2", ["bar"], dtype=pl.Categorical),
-                pl.Series("val1", [1]),
-            ]
-        ).lazy()
-
-        df2 = pl.DataFrame(
-            [
-                pl.Series("key1", [42]),
-                pl.Series("key2", ["bar"], dtype=pl.Categorical),
-                pl.Series("val2", [2]),
-            ]
-        ).lazy()
-
-    out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
-    expected = pl.DataFrame({"val1": [1], "key1": [42], "key2": ["bar"], "val2": [2]})
-
-    assert out.frame_equal(expected)
 
 
 def test_empty_is_in() -> None:

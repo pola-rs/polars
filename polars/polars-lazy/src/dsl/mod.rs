@@ -1,4 +1,8 @@
 //! Domain specific language for the Lazy api.
+#[cfg(feature = "dtype-categorical")]
+pub mod cat;
+#[cfg(feature = "dtype-categorical")]
+pub use cat::*;
 #[cfg(feature = "temporal")]
 mod dt;
 #[cfg(feature = "list")]
@@ -2029,6 +2033,10 @@ impl Expr {
     #[cfg(feature = "list")]
     pub fn arr(self) -> list::ListNameSpace {
         list::ListNameSpace(self)
+    }
+    #[cfg(feature = "dtype-categorical")]
+    pub fn cat(self) -> cat::CategoricalNameSpace {
+        cat::CategoricalNameSpace(self)
     }
 }
 

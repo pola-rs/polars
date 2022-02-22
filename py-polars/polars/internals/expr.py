@@ -2382,6 +2382,13 @@ class Expr:
         """
         return ExprListNameSpace(self)
 
+    @property
+    def cat(self) -> "ExprCatNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return ExprCatNameSpace(self)
+
 
 class ExprListNameSpace:
     """
@@ -3375,6 +3382,57 @@ def expr_to_lit_or_expr(
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
         )
+
+
+class ExprCatNameSpace:
+    """
+    Namespace for categorical related expressions
+    """
+
+    def __init__(self, expr: Expr):
+        self._pyexpr = expr._pyexpr
+
+    def set_ordering(self, ordering: str) -> "Expr":
+        """
+        Determine how this categorical series should be sorted.
+
+        Parameters
+        ----------
+        ordering
+            One of:
+                - 'physical' -> use the physical representation of the categories to determine the order (default)
+                - 'lexical' -. use the string values to determine the ordering
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
+        ... ).with_columns(
+        ...     [
+        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
+        ...     ]
+        ... )
+        >>> df.sort(["cats", "vals"])
+        shape: (5, 2)
+        ┌──────┬──────┐
+        │ cats ┆ vals │
+        │ ---  ┆ ---  │
+        │ cat  ┆ i64  │
+        ╞══════╪══════╡
+        │ a    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ b    ┆ 3    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ k    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 1    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 3    │
+        └──────┴──────┘
+
+        """
+        return wrap_expr(self._pyexpr.cat_set_ordering(ordering))
 
 
 def _prepare_alpha(

@@ -106,7 +106,7 @@ where
                 };
                 Box::new(t)
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T::Native> { arr };
+                let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
                 Box::new(t)
             }
         } else {
@@ -159,19 +159,6 @@ impl<'a> IntoPartialEqInner<'a> for &'a BooleanChunked {
     }
 }
 
-impl<'a> IntoPartialEqInner<'a> for &'a ListChunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner> {
-        unimplemented!()
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl<'a> IntoPartialEqInner<'a> for &'a CategoricalChunked {
-    fn into_partial_eq_inner(self) -> Box<dyn PartialEqInner> {
-        unimplemented!()
-    }
-}
-
 // Partial ordering implementations
 
 fn fallback<T: PartialEq>(a: T) -> Ordering {
@@ -219,7 +206,7 @@ where
                 };
                 Box::new(t)
             } else {
-                let t = NumTakeRandomSingleChunk::<'_, T::Native> { arr };
+                let t = NumTakeRandomSingleChunk::<'_, T::Native>::new(arr);
                 Box::new(t)
             }
         } else {
@@ -272,16 +259,13 @@ impl<'a> IntoPartialOrdInner<'a> for &'a BooleanChunked {
     }
 }
 
-impl<'a> IntoPartialOrdInner<'a> for &'a ListChunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner> {
-        unimplemented!()
-    }
-}
-
 #[cfg(feature = "dtype-categorical")]
 impl<'a> IntoPartialOrdInner<'a> for &'a CategoricalChunked {
-    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner> {
-        unimplemented!()
+    fn into_partial_ord_inner(self) -> Box<dyn PartialOrdInner + 'a> {
+        match &**self.get_rev_map() {
+            RevMapping::Local(_) => Box::new(CategoricalTakeRandomLocal::new(self)),
+            RevMapping::Global(_, _, _) => Box::new(CategoricalTakeRandomGlobal::new(self)),
+        }
     }
 }
 
