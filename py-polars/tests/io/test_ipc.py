@@ -15,21 +15,11 @@ def compressions() -> List[str]:
 
 def test_from_to_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
     for compression in compressions:
-        if compression == "uncompressed":
-            buf = io.BytesIO()
-            df.to_ipc(buf, compression=compression)  # type: ignore
-            buf.seek(0)
-            read_df = pl.read_ipc(buf)
-            assert df.frame_equal(read_df)
-        else:
-            # Error with ipc compression
-            # Windows: OSError
-            # Linux: ValueError
-            with pytest.raises(Exception):
-                buf = io.BytesIO()
-                df.to_ipc(buf, compression=compression)  # type: ignore
-                buf.seek(0)
-                _ = pl.read_ipc(buf)
+        buf = io.BytesIO()
+        df.to_ipc(buf, compression=compression)  # type: ignore
+        buf.seek(0)
+        read_df = pl.read_ipc(buf)
+        assert df.frame_equal(read_df)
 
 
 def test_from_to_file(
@@ -37,18 +27,12 @@ def test_from_to_file(
 ) -> None:
     f = os.path.join(io_test_dir, "small.ipc")
 
-    for compression in compressions:
-        if compression == "uncompressed":
+    # does not yet work on windows because we hold an mmap?
+    if os.name != "nt":
+        for compression in compressions:
             df.to_ipc(f, compression=compression)  # type: ignore
             df_read = pl.read_ipc(str(f))
             assert df.frame_equal(df_read)
-        else:
-            # Error with ipc compression
-            # Windows: OSError
-            # Linux: ValueError
-            with pytest.raises(Exception):
-                df.to_ipc(f, compression=compression)  # type: ignore
-                _ = pl.read_ipc(str(f))
 
 
 def test_select_columns() -> None:
