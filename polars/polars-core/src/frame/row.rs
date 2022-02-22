@@ -237,7 +237,6 @@ fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     get_supertype(lhs, rhs).unwrap_or(Utf8)
 }
 
-
 /// Infer schema from rows.
 pub fn rows_to_schema(rows: &[Row]) -> Schema {
     // no of rows to use to infer dtype
