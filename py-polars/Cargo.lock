@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=3bb4144ad6ba10ff74219a88b1a79a34ced21631#3bb4144ad6ba10ff74219a88b1a79a34ced21631"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=22bf173ec297fbc2ce156bd482cb410b7769073d#22bf173ec297fbc2ce156bd482cb410b7769073d"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -216,12 +216,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build_const"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4ae4235e6dac0694637c763029ecea1a2ec9e4e06ec2729bd21ba4d9c863eb7"
-
-[[package]]
 name = "bytemuck"
 version = "1.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -304,12 +298,18 @@ dependencies = [
 
 [[package]]
 name = "crc"
-version = "1.8.1"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d663548de7f5cca343f1e0a48d14dcfb0e9eb4e079ec58883b7251539fa10aeb"
+checksum = "49fc9a695bca7f35f5f4c15cddc84415f66a74ea78eef08e90c5024f2b540e23"
 dependencies = [
- "build_const",
+ "crc-catalog",
 ]
+
+[[package]]
+name = "crc-catalog"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ccaeedb56da03b09f598226e25e80088cb4cd25f316e6e4df7d695f0feeb1403"
 
 [[package]]
 name = "crc32fast"
