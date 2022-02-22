@@ -1151,3 +1151,27 @@ def test_nested_min_max() -> None:
     out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
     assert out.shape == (1, 5)
     assert out["t"][0] == 3
+
+
+def test_self_join() -> None:
+    # 2720
+    df = pl.from_dict(
+        data={
+            "employee_id": [100, 101, 102],
+            "employee_name": ["James", "Alice", "Bob"],
+            "manager_id": [None, 100, 101],
+        }
+    ).lazy()
+
+    out = (
+        df.join(ldf=df, left_on="manager_id", right_on="employee_id", how="left")
+        .select(
+            exprs=[
+                pl.col("employee_id"),
+                pl.col("employee_name"),
+                pl.col("employee_name_right").alias("manager_name"),
+            ]
+        )
+        .fetch()
+    )
+    assert out.shape == (3, 3)

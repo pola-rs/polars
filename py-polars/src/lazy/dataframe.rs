@@ -373,7 +373,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     pub fn join(
-        &mut self,
+        &self,
         other: PyLazyFrame,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
