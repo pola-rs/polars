@@ -4,6 +4,8 @@ import pytest
 
 import polars as pl
 
+IO_TEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "io"))
+
 EXAMPLES_DIR = os.path.abspath(
     os.path.join(
         os.path.dirname(__file__),
@@ -29,6 +31,16 @@ FOODS_IPC = os.path.join(
     EXAMPLES_DIR,
     "foods1.ipc",
 )
+
+
+@pytest.fixture
+def io_test_dir() -> str:
+    return IO_TEST_DIR
+
+
+@pytest.fixture
+def examples_dir() -> str:
+    return EXAMPLES_DIR
 
 
 @pytest.fixture
