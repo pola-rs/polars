@@ -2336,6 +2336,30 @@ class DataFrame:
             Name of the column to add.
         offset
             Start the row count at this offset. Default = 0
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_row_count()
+        shape: (3, 3)
+        ┌────────┬─────┬─────┐
+        │ row_nr ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ u32    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ 0      ┆ 1   ┆ 2   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1      ┆ 3   ┆ 4   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2      ┆ 5   ┆ 6   │
+        └────────┴─────┴─────┘
+
         """
         return wrap_df(self._df.with_row_count(name, offset))
 
@@ -3104,6 +3128,43 @@ class DataFrame:
         ----------
         column
             Series, where the name of the Series refers to the column in the DataFrame.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_column((pl.col("b") ** 2).alias("b_squared"))  # added
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ b_squared │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 4.0       │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 4   ┆ 16.0      │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ 6   ┆ 36.0      │
+        └─────┴─────┴───────────┘
+        >>> df.with_column(pl.col("a") ** 2)  # replaced
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 2   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9.0  ┆ 4   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 25.0 ┆ 6   │
+        └──────┴─────┘
+
         """
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
@@ -3527,6 +3588,28 @@ class DataFrame:
         Returns
         -------
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["one", "one", "one", "two", "two", "two"],
+        ...         "bar": ["A", "B", "C", "A", "B", "C"],
+        ...         "baz": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
+        >>> df.pivot(values="baz", index="foo", columns="bar")
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ foo ┆ A   ┆ B   ┆ C   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ one ┆ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ two ┆ 4   ┆ 5   ┆ 6   │
+        └─────┴─────┴─────┴─────┘
+
         """
         if isinstance(values, str):
             values = [values]
@@ -3685,12 +3768,52 @@ class DataFrame:
     def is_duplicated(self) -> "pli.Series":
         """
         Get a mask of all duplicated rows in this DataFrame.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 1],
+        ...         "b": ["x", "y", "z", "x"],
+        ...     }
+        ... )
+        >>> df.is_duplicated()
+        shape: (4,)
+        Series: '' [bool]
+        [
+                true
+                false
+                false
+                true
+        ]
+
         """
         return pli.wrap_s(self._df.is_duplicated())
 
     def is_unique(self) -> "pli.Series":
         """
         Get a mask of all unique rows in this DataFrame.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 1],
+        ...         "b": ["x", "y", "z", "x"],
+        ...     }
+        ... )
+        >>> df.is_unique()
+        shape: (4,)
+        Series: '' [bool]
+        [
+                false
+                true
+                true
+                false
+        ]
+
         """
         return pli.wrap_s(self._df.is_unique())
 
@@ -4294,6 +4417,23 @@ class DataFrame:
             null
         ]
 
+        A horizontal boolean or, similar to a row-wise .any():
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [False, False, True],
+        ...         "b": [False, True, False],
+        ...     }
+        ... )
+        >>> df.fold(lambda s1, s2: s1 | s2)
+        shape: (3,)
+        Series: 'a' [bool]
+        [
+                false
+                true
+                true
+        ]
+
         Parameters
         ----------
         operation
@@ -4587,6 +4727,31 @@ class GroupBy:
         ----------
         group_value
             Group to select.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["one", "one", "one", "two", "two", "two"],
+        ...         "bar": ["A", "B", "C", "A", "B", "C"],
+        ...         "baz": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
+        >>> df.groupby("foo").get_group("one")
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ bar ┆ baz │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ str ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ one ┆ A   ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ one ┆ B   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ one ┆ C   ┆ 3   │
+        └─────┴─────┴─────┘
+
         """
         groups_df = self.groups()
         groups = groups_df["groups"]
@@ -4862,6 +5027,29 @@ class GroupBy:
             Column to pivot.
         values_column
             Column that will be aggregated.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["one", "one", "one", "two", "two", "two"],
+        ...         "bar": ["A", "B", "C", "A", "B", "C"],
+        ...         "baz": [1, 2, 3, 4, 5, 6],
+        ...     }
+        ... )
+        >>> df.groupby("foo").pivot(pivot_column="bar", values_column="baz").first()
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬─────┐
+        │ foo ┆ A   ┆ B   ┆ C   │
+        │ --- ┆ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╪═════╡
+        │ one ┆ 1   ┆ 2   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ two ┆ 4   ┆ 5   ┆ 6   │
+        └─────┴─────┴─────┴─────┘
+
         """
         if isinstance(pivot_column, str):
             pivot_column = [pivot_column]
@@ -5092,6 +5280,30 @@ class GBSelection:
     def count(self) -> DataFrame:
         """
         Count the number of values in each group.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, None, 3, 4],
+        ...         "bar": ["a", "b", "c", "a"],
+        ...     }
+        ... )
+        >>> df.groupby("bar").count()  # counts nulls
+        shape: (3, 2)
+        ┌─────┬───────┐
+        │ bar ┆ count │
+        │ --- ┆ ---   │
+        │ str ┆ u32   │
+        ╞═════╪═══════╡
+        │ c   ┆ 1     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ a   ┆ 2     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ b   ┆ 1     │
+        └─────┴───────┘
+
         """
         return wrap_df(self._df.groupby(self.by, self.selection, "count"))
 
