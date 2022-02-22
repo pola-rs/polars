@@ -2,11 +2,11 @@ import io
 import os
 from typing import List, Literal
 
+import numpy as np
+import pandas as pd
 import pytest
 
 import polars as pl
-import pandas as pd
-import numpy as np
 
 Compression = Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"]
 

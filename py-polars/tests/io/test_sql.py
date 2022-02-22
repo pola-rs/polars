@@ -1,6 +1,7 @@
 import os
-import polars as pl
 from datetime import date
+
+import polars as pl
 
 
 def test_read_sql() -> None:
