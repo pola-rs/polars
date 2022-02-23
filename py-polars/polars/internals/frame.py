@@ -4087,6 +4087,35 @@ class DataFrame:
         │ 2   ┆ 7   ┆ null │
         └─────┴─────┴──────┘
 
+        Note: the mean of booleans evaluates to null.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [True, True, False],
+        ...         "b": [True, True, True],
+        ...     }
+        ... )
+        # mean evaluates to null
+        >>> df.mean()
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
+        # instead, cast to numeric type
+        >>> df.select(pl.all().cast(pl.UInt8)).mean()
+        shape: (1, 2)
+        ┌──────────┬─────┐
+        │ a        ┆ b   │
+        │ ---      ┆ --- │
+        │ f64      ┆ f64 │
+        ╞══════════╪═════╡
+        │ 0.666667 ┆ 1.0 │
+        └──────────┴─────┘
+
         """
         if axis == 0:
             return wrap_df(self._df.mean())
@@ -4539,6 +4568,33 @@ class DataFrame:
     def interpolate(self) -> "DataFrame":
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, None, 9, 10],
+        ...         "bar": [6, 7, 9, None],
+        ...         "baz": [1, None, None, 9],
+        ...     }
+        ... )
+        >>> df.interpolate()
+        shape: (4, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ baz │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ i64 │
+        ╞═════╪══════╪═════╡
+        │ 1   ┆ 6    ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 5   ┆ 7    ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9   ┆ 9    ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 10  ┆ null ┆ 9   │
+        └─────┴──────┴─────┘
+
         """
         return self.select(pli.col("*").interpolate())
 

@@ -607,6 +607,34 @@ class Expr:
     def is_null(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression contains null values.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None, 1, 5],
+        ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
+        ...     }
+        ... )
+        >>> df.with_column(pl.all().is_null().suffix("_isnull"))  # nan != null
+        shape: (5, 4)
+        ┌──────┬─────┬──────────┬──────────┐
+        │ a    ┆ b   ┆ a_isnull ┆ b_isnull │
+        │ ---  ┆ --- ┆ ---      ┆ ---      │
+        │ i64  ┆ f64 ┆ bool     ┆ bool     │
+        ╞══════╪═════╪══════════╪══════════╡
+        │ 1    ┆ 1.0 ┆ false    ┆ false    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ false    ┆ false    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ true     ┆ false    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ false    ┆ false    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ false    ┆ false    │
+        └──────┴─────┴──────────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.is_null())
 
@@ -631,6 +659,34 @@ class Expr:
     def is_nan(self) -> "Expr":
         """
         Create a boolean expression returning `True` where the expression values are NaN (Not A Number).
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, None, 1, 5],
+        ...         "b": [1.0, 2.0, float("nan"), 1.0, 5.0],
+        ...     }
+        ... )
+        >>> df.with_column(pl.all().is_nan().suffix("_isnan"))  # nan != null
+        shape: (5, 4)
+        ┌──────┬─────┬─────────┬─────────┐
+        │ a    ┆ b   ┆ a_isnan ┆ b_isnan │
+        │ ---  ┆ --- ┆ ---     ┆ ---     │
+        │ i64  ┆ f64 ┆ bool    ┆ bool    │
+        ╞══════╪═════╪═════════╪═════════╡
+        │ 1    ┆ 1.0 ┆ false   ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2    ┆ 2.0 ┆ false   ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ NaN ┆ false   ┆ true    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 1    ┆ 1.0 ┆ false   ┆ false   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 5    ┆ 5.0 ┆ false   ┆ false   │
+        └──────┴─────┴─────────┴─────────┘
+
         """
         return wrap_expr(self._pyexpr.is_nan())
 
@@ -801,6 +857,30 @@ class Expr:
             DataType to cast to
         strict
             Throw an error if a cast could not be done for instance due to an overflow
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": ["4", "5", "6"]})
+        >>> df.with_columns(
+        ...     [
+        ...         pl.col("a").cast(pl.Float64),
+        ...         pl.col("b").cast(pl.Int32),
+        ...     ]
+        ... )
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ f64 ┆ i32 │
+        ╞═════╪═════╡
+        │ 1.0 ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2.0 ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3.0 ┆ 6   │
+        └─────┴─────┘
+
         """
         dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
@@ -1144,6 +1224,33 @@ class Expr:
         Returns
         -------
         Boolean Series
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "num": [1, 2, 3, 1, 5],
+        ...     }
+        ... )
+        >>> df.with_column(pl.col("num").is_first().alias("is_first"))
+        shape: (5, 2)
+        ┌─────┬──────────┐
+        │ num ┆ is_first │
+        │ --- ┆ ---      │
+        │ i64 ┆ bool     │
+        ╞═════╪══════════╡
+        │ 1   ┆ true     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ true     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ true     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 1   ┆ false    │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ true     │
+        └─────┴──────────┘
+
         """
         return wrap_expr(self._pyexpr.is_first())
 
@@ -1436,6 +1543,33 @@ class Expr:
         Returns
         -------
         Expr that evaluates to a Boolean Series.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "num": [1, 2, 3, 4, 5],
+        ...     }
+        ... )
+        >>> df.with_column(pl.col("num").is_between(2, 4))
+        shape: (5, 2)
+        ┌─────┬────────────┐
+        │ num ┆ is_between │
+        │ --- ┆ ---        │
+        │ i64 ┆ bool       │
+        ╞═════╪════════════╡
+        │ 1   ┆ false      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ false      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ true       │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 4   ┆ false      │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ false      │
+        └─────┴────────────┘
+
         """
         cast_to_datetime = False
         if isinstance(start, datetime):
