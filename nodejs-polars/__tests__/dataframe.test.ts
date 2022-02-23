@@ -1368,9 +1368,9 @@ describe("io", () => {
   });
   test("toJSON:multiline", () => {
     const rows = [
-      {foo: 1.1, bar: 6.2, ham: "a"},
-      {foo: 3.1, bar: 9.2, ham: "b"},
-      {foo: 3.1, bar: 9.2, ham: "c"}
+      {foo: 1.1},
+      {foo: 3.1},
+      {foo: 3.1}
     ];
     const actual = pl.DataFrame(rows).toJSON({multiline:true});
     const expected = rows.map(r => JSON.stringify(r)).join("\n").concat("\n");
@@ -1408,9 +1408,9 @@ describe("io", () => {
   });
   test("JSON.stringify(df)", () => {
     const rows = [
-      {foo: 1.1, bar: 6.2, ham: "a"},
-      {foo: 3.1, bar: 9.2, ham: "b"},
-      {foo: 3.1, bar: 9.2, ham: "c"}
+      {foo: 1.1},
+      {foo: 3.1},
+      {foo: 3.1}
     ];
     const df = pl.DataFrame(rows);
     const expected = pl.DataFrame(rows).toJSON();
@@ -1419,9 +1419,9 @@ describe("io", () => {
   });
   test("toJSON:rows", () => {
     const rows = [
-      {foo: 1.1, bar: 6.2, ham: "a"},
-      {foo: 3.1, bar: 9.2, ham: "b"},
-      {foo: 3.1, bar: 9.2, ham: "c"}
+      {foo: 1.1},
+      {foo: 3.1},
+      {foo: 3.1}
     ];
     const expected = JSON.stringify(rows);
     const actual = pl.DataFrame(rows).toJSON({orient:"row"});
@@ -1582,18 +1582,42 @@ describe("create", () => {
     expect(df.row(1)).toEqual(rows[1]);
     expect(df.columns).toEqual(expectedColumns);
   });
-  test("from row objects", () => {
+  test("from row objects, inferred schema", () => {
     const rows = [
       {"num": 1, "date": new Date(Date.now()), "string": "foo1"},
-      {"num": 1, "date": new Date(Date.now()), "string": "foo2"}
+      {"num": 1, "date": new Date(Date.now()), "string": 1}
     ];
 
-    const df = pl.DataFrame(rows);
-    expect(df.row(0)).toEqual(Object.values(rows[0]));
-    expect(df.row(1)).toEqual(Object.values(rows[1]));
-    expect(df.columns).toEqual(Object.keys(rows[0]));
-    expect(df.dtypes).toEqual(["Float64", "Datetime", "Utf8"]);
+    const expected = [
+      rows[0],
+      {num: 1, date: rows[1].date, string: rows[1].string.toString()}
+    ];
+
+    const df = pl.DataFrame(rows, {inferSchemaLength: 1});
+    expect(df.toObject({orient: "row"})).toEqual(expected);
+    expect(df.dtypes.sort()).toEqual(["Datetime", "Float64", "Utf8"]);
   });
+  test("from row objects, with schema", () => {
+    const rows = [
+      {"num": 1, "date": new Date(Date.now()), "string": "foo1"},
+      {"num": 1, "date": new Date(Date.now())}
+    ];
+
+    const expected = [
+      {num: 1, date: rows[0].date.toString(), string: "foo1"},
+      {num: 1, date: rows[1].date.toString(), string: null}
+    ];
+
+    const schema = {
+      num: "Int32",
+      date: "Utf8",
+      string: "Utf8"
+    };
+    const df = pl.DataFrame(rows, {schema});
+    expect(df.toObject({orient: "row"})).toEqual(expected);
+    expect(df.schema()).toEqual(schema);
+  });
+
   test("from nulls", () => {
     const df = pl.DataFrame({"nulls": [null, null, null]});
     const expected = pl.DataFrame([pl.Series("nulls", [null, null, null], pl.Float64)]);
@@ -1908,6 +1932,7 @@ describe("meta", () => {
     const actual = df[0][0];
     expect(actual).toStrictEqual(df.getColumn("os").get(0));
   });
+
   test("proxy:has", () => {
     const df = pl.DataFrame({
       os: ["apple", "linux"],

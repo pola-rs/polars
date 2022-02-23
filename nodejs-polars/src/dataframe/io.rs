@@ -2,13 +2,17 @@ use crate::conversion::prelude::*;
 use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
-use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown};
-use polars::frame::row::{rows_to_schema, Row};
+use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
+use polars::frame::row::{rows_to_schema, Row, infer_schema};
+use polars::io::RowCount;
 use polars::prelude::*;
+use std::borrow::Borrow;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf};
-use polars::io::RowCount;
+
+type Tracker = HashMap<String, HashSet<DataType>>;
 
 #[js_function(1)]
 pub(crate) fn read_columns(cx: CallContext) -> JsResult<JsExternal> {
@@ -522,12 +526,13 @@ pub(crate) fn write_json_path(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn to_rows(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
+
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let mut arr = cx.env.create_array()?;
     for idx in 0..df.height() {
         let mut arr_row = cx.env.create_array()?;
         for (i, col) in df.get_columns().iter().enumerate() {
-            let val: Wrap<AnyValue> = col.get(idx).into();
+            let val = col.get(idx);
             let jsv = val.into_js(&cx);
             arr_row.set_element(i as u32, jsv)?;
         }
@@ -549,7 +554,7 @@ pub(crate) fn to_row(cx: CallContext) -> JsResult<JsObject> {
 
     let mut row = cx.env.create_array()?;
     for (i, col) in df.get_columns().iter().enumerate() {
-        let val: Wrap<AnyValue> = col.get(idx).into();
+        let val = col.get(idx);
         let jsv = val.into_js(&cx);
         row.set_element(i as u32, jsv)?;
     }
@@ -566,7 +571,7 @@ pub(crate) fn to_row_objects(cx: CallContext) -> JsResult<JsObject> {
         for col in df.get_columns().iter() {
             let col_name = col.name();
             let col_name_js = cx.env.create_string(col_name)?;
-            let val: Wrap<AnyValue> = col.get(idx).into();
+            let val = col.get(idx);
             let jsv = val.into_js(&cx);
             obj_row.set_property(col_name_js, jsv)?;
         }
@@ -588,7 +593,7 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
 
     let mut obj = cx.env.create_object()?;
     for col in df.get_columns().iter() {
-        let val: Wrap<AnyValue> = col.get(idx).into();
+        let val: AnyValue = col.get(idx);
         let jsv = val.into_js(&cx);
         let col_name = col.name();
         let col_name_js = cx.env.create_string(col_name)?;
@@ -597,35 +602,143 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
     Ok(obj)
 }
 
+fn coerce_js_anyvalue<'a>(
+    cx: &'a CallContext,
+    val: JsUnknown,
+    dtype: &'a DataType,
+) -> JsResult<AnyValue<'a>> {
+    use DataType::*;
+    let vtype = val.get_type().unwrap();
+
+    match (vtype, dtype) {
+        (ValueType::Null | ValueType::Undefined | ValueType::Unknown, _) => Ok(AnyValue::Null),
+        (ValueType::String, Utf8) => AnyValue::from_js(val),
+        (_, Utf8) => {
+            let s = val.coerce_to_string()?.into_unknown();
+            AnyValue::from_js(s)
+        }
+        (ValueType::Boolean, Boolean) => bool::from_js(val).map(AnyValue::Boolean),
+        (_, Boolean) => val.coerce_to_bool().map(|b| {
+            let b: bool = b.try_into().unwrap();
+            AnyValue::Boolean(b)
+        }),
+        (ValueType::Bigint | ValueType::Number, UInt64) => u64::from_js(val).map(AnyValue::UInt64),
+        (_, UInt64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int64().unwrap();
+            AnyValue::UInt64(n as u64)
+        }),
+        (ValueType::Bigint | ValueType::Number, Int64) => i64::from_js(val).map(AnyValue::Int64),
+        (_, Int64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int64().unwrap();
+            AnyValue::Int64(n)
+        }),
+        (ValueType::Number, Float64) => f64::from_js(val).map(AnyValue::Float64),
+        (_, Float64) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_double().unwrap();
+            AnyValue::Float64(n)
+        }),
+        (ValueType::Number, Float32) => f32::from_js(val).map(AnyValue::Float32),
+        (_, Float32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_double().unwrap();
+            AnyValue::Float32(n as f32)
+        }),
+        (ValueType::Number, Int32) => i32::from_js(val).map(AnyValue::Int32),
+        (_, Int32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int32(n)
+        }),
+        (ValueType::Number, UInt32) => u32::from_js(val).map(AnyValue::UInt32),
+        (_, UInt32) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt32(n)
+        }),
+        (ValueType::Number, Int16) => i16::from_js(val).map(AnyValue::Int16),
+        (_, Int16) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int16(n as i16)
+        }),
+        (ValueType::Number, UInt16) => u16::from_js(val).map(AnyValue::UInt16),
+        (_, UInt16) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt16(n as u16)
+        }),
+        (ValueType::Number, Int8) => i8::from_js(val).map(AnyValue::Int8),
+        (_, Int8) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Int8(n as i8)
+        }),
+        (ValueType::Number, UInt8) => u8::from_js(val).map(AnyValue::UInt8),
+        (_, UInt8) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_uint32().unwrap();
+            AnyValue::UInt8(n as u8)
+        }),
+        (ValueType::Number, Date) => i32::from_js(val).map(AnyValue::Date),
+        (_, Date) => val.coerce_to_number().map(|js_num| {
+            let n = js_num.get_int32().unwrap();
+            AnyValue::Date(n)
+        }),
+        (ValueType::Bigint | ValueType::Number, Datetime(_, _)) => {
+            i64::from_js(val).map(|d| AnyValue::Datetime(d, TimeUnit::Milliseconds, &None))
+        }
+        (ValueType::External, List(_)) => {
+            let ext: JsExternal = unsafe { val.cast() };
+            let s = cx.env.get_value_external::<Series>(&ext)?;
+            let s = s.clone();
+
+            Ok(AnyValue::List(s))
+        }
+        (ValueType::Object, DataType::Datetime(_, _)) => {
+            if val.is_date()? {
+                let d: napi::JsDate = unsafe { val.cast() };
+                let d = d.value_of()?;
+                Ok(AnyValue::Datetime(d as i64, TimeUnit::Milliseconds, &None))
+            } else {
+                Ok(AnyValue::Null)
+            }
+        }
+        _ => Ok(AnyValue::Null),
+    }
+}
+
 #[js_function(1)]
 pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let rows = params.get::<JsObject>("rows")?;
-    let len = rows.get_array_length()?;
-    let keys = rows
-        .get_element_unchecked::<JsObject>(0)?
-        .get_property_names()?
-        .into_unknown();
 
-    let keys = Vec::<String>::from_js(keys)?;
+    let len = rows.get_array_length()?;
+    let schema = match params.get_as::<Option<Schema>>("schema")? {
+        Some(s) => s,
+        None => {
+            let infer_schema_length = params.get_or("inferSchemaLength", len)?;
+            let pairs = obj_to_pairs(&rows);
+
+            infer_schema(pairs, infer_schema_length as usize)
+        }
+    };
 
     let rows: Vec<Row> = (0..len)
         .map(|idx| {
-            let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
-            let keys = obj.get_property_names().unwrap();
-            let keys_len = keys.get_array_length_unchecked().unwrap();
-            Row((0..keys_len)
-                .map(|key_idx| {
-                    let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
-                    let value: JsUnknown = obj.get_property(key).unwrap();
-                    AnyValue::from_js(value).unwrap()
+            let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
+            Row(schema
+                .fields()
+                .iter()
+                .map(|fld| {
+                    let dtype = fld.data_type();
+                    let key = fld.name();
+                    match js_row.get_named_property::<JsUnknown>(key) {
+                        Ok(value) => {
+                            coerce_js_anyvalue(&cx, value, dtype).unwrap_or(AnyValue::Null)
+                        }
+                        _ => AnyValue::Null,
+                    }
                 })
                 .collect())
         })
         .collect();
-    let mut df = finish_from_rows(rows)?;
-    df.set_column_names(&keys).map_err(JsPolarsEr::from)?;
-    df.try_into_js(&cx)
+
+    DataFrame::from_rows_and_schema(&rows, &schema)
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -673,4 +786,22 @@ fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = Schema::new(fields);
 
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
+}
+
+fn obj_to_pairs(rows: &JsObject) -> impl '_ + Iterator<Item = Vec<(String, DataType)>> {
+    let len = rows.get_array_length().unwrap_or(0);
+    (0..len).map(move |idx| {
+        let obj: JsObject = rows.get_element_unchecked(idx).unwrap();
+        let keys = obj.get_property_names().unwrap();
+        let keys_len = keys.get_array_length_unchecked().unwrap();
+        (0..keys_len)
+            .map(|key_idx| {
+                let key: JsString = keys.get_element_unchecked(key_idx).unwrap();
+                let value: JsUnknown = obj.get_property(key).unwrap();
+                let dtype = DataType::from_js(value).unwrap();
+                let key = key.into_utf8().unwrap().into_owned().unwrap();
+                (key, dtype)
+            })
+            .collect()
+    })
 }
