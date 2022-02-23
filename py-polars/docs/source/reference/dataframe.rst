@@ -123,6 +123,7 @@ Manipulation/ selection
     DataFrame.rechunk
     DataFrame.pipe
     DataFrame.join
+    DataFrame.join_asof
     DataFrame.interpolate
     DataFrame.transpose
     DataFrame.upsample
