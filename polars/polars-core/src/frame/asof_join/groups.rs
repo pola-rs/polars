@@ -32,7 +32,9 @@ pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + 
     right: &[T],
     offsets: &[IdxSize],
 ) -> (Option<IdxSize>, usize) {
-    debug_assert!(!offsets.is_empty());
+    if offsets.is_empty() {
+        return (None, 0);
+    }
     let mut previous = *offsets.get_unchecked(0);
     let first = *right.get_unchecked(previous as usize);
     if val_l < first {
@@ -353,7 +355,7 @@ impl DataFrame {
         right_on: &str,
         left_by: I,
         right_by: I,
-        strategy: AsofStrategy
+        strategy: AsofStrategy,
     ) -> Result<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -491,9 +493,7 @@ mod test {
             "right_vals" => [1, 2, 3, 4]
         ]?;
 
-        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"],
-                                 AsofStrategy::Backward
-        )?;
+        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"], AsofStrategy::Backward)?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
         let out = out.i32().unwrap();
@@ -528,8 +528,13 @@ mod test {
 
                ]?;
 
-        let out = trades.join_asof_by(&quotes, "time", "time", ["ticker"], ["ticker"],
-                                      AsofStrategy::Backward
+        let out = trades.join_asof_by(
+            &quotes,
+            "time",
+            "time",
+            ["ticker"],
+            ["ticker"],
+            AsofStrategy::Backward,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -543,7 +548,7 @@ mod test {
             "time",
             ["groups_numeric"],
             ["groups_numeric"],
-            AsofStrategy::Backward
+            AsofStrategy::Backward,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();

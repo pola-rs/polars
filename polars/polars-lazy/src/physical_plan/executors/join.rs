@@ -78,7 +78,6 @@ impl Executor for JoinExec {
             .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
             .collect::<Result<Vec<_>>>()?;
 
-
         let df = df_left.join(
             &df_right,
             &left_names,

@@ -1091,23 +1091,20 @@ impl DataFrame {
                     let right_on = selected_right[0].name();
 
                     match (options.left_by, options.right_by) {
-                        (Some(left_by), Some(right_by)) => {
-                            self.join_asof_by(other, left_on, right_on, left_by, right_by, options.strategy)
-                        }
-                        (None, None) => {
-                            self.join_asof(
-                                other,
-                                left_on,
-                                right_on,
-                                options.strategy
-                            )
-                        }
+                        (Some(left_by), Some(right_by)) => self.join_asof_by(
+                            other,
+                            left_on,
+                            right_on,
+                            left_by,
+                            right_by,
+                            options.strategy,
+                        ),
+                        (None, None) => self.join_asof(other, left_on, right_on, options.strategy),
                         _ => {
                             panic!("expected by arguments on both sides")
                         }
                     }
-
-                },
+                }
                 JoinType::Cross => {
                     unreachable!()
                 }

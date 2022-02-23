@@ -626,7 +626,11 @@ impl PyDataFrame {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
-            "asof" => JoinType::AsOf,
+            "asof" => JoinType::AsOf(AsOfOptions {
+                strategy: AsofStrategy::Backward,
+                left_by: None,
+                right_by: None,
+            }),
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),
         };

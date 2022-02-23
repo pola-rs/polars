@@ -1162,10 +1162,10 @@ def test_asof_cross_join() -> None:
     right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
 
     # only test dispatch of asof join
-    out = left.join(right, on="a", how="asof")
+    out = left.join_asof(right, on="a")
     assert out.shape == (3, 3)
 
-    left.lazy().join(right.lazy(), on="a", how="asof").collect()
+    left.lazy().join_asof(right.lazy(), on="a").collect()
     assert out.shape == (3, 3)
 
     # only test dispatch of cross join
@@ -1375,7 +1375,7 @@ AAPL""".split(
         }
     )
 
-    out = trades.join(quotes, on="dates", how="asof")
+    out = trades.join_asof(quotes, on="dates", strategy="backward")
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int) / 1000).to_list() == [
         1464183000023,
@@ -1384,10 +1384,14 @@ AAPL""".split(
         1464183000048,
         1464183000048,
     ]
-    out = trades.join(quotes, on="dates", how="asof", asof_by="ticker")
+    assert trades.join_asof(quotes, on="dates", strategy="forward")[
+        "bid_right"
+    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+
+    out = trades.join_asof(quotes, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
 
-    out = quotes.join(trades, on="dates", asof_by="ticker", how="asof")
+    out = quotes.join_asof(trades, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [
         None,
         51.95,

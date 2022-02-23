@@ -303,7 +303,7 @@ impl DefaultPlanner {
                 options,
             } => {
                 #[cfg(feature = "object")]
-                    let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
                 let mut phys_keys =
@@ -365,15 +365,15 @@ impl DefaultPlanner {
                         let agg = node_to_expr(*agg, expr_arena);
 
                         #[cfg(feature = "object")]
-                            {
-                                let name = expr_to_root_column_name(&agg).unwrap();
-                                let fld = input_schema.field_with_name(&name).unwrap();
+                        {
+                            let name = expr_to_root_column_name(&agg).unwrap();
+                            let fld = input_schema.field_with_name(&name).unwrap();
 
-                                if let DataType::Object(_) = fld.data_type() {
-                                    partitionable = false;
-                                    break;
-                                }
+                            if let DataType::Object(_) = fld.data_type() {
+                                partitionable = false;
+                                break;
                             }
+                        }
 
                         // check if the aggregation type is partitionable
                         match agg {
@@ -514,7 +514,7 @@ impl DefaultPlanner {
                             This is likely due to a syntax error in this expression: {:?}",
                                 e
                             )
-                                .into(),
+                            .into(),
                         ));
                     }
                 }
