@@ -1574,6 +1574,24 @@ def test_with_column_renamed() -> None:
     assert result.frame_equal(expected)
 
 
+def test_rename_swap() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [5, 4, 3, 2, 1],
+        }
+    )
+
+    out = df.rename({"a": "b", "b": "a"})
+    expected = pl.DataFrame(
+        {
+            "b": [1, 2, 3, 4, 5],
+            "a": [5, 4, 3, 2, 1],
+        }
+    )
+    assert out.frame_equal(expected)
+
+
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
