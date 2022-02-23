@@ -52,6 +52,7 @@ use crate::aggregations::{apply_aggregations, ScanAggregation};
     feature = "avro"
 ))]
 use crate::predicates::PhysicalIoExpr;
+#[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
 use arrow::error::Result as ArrowResult;
 use polars_core::frame::ArrowChunk;
