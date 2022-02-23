@@ -38,8 +38,6 @@ pub(crate) mod utils;
 
 pub use options::*;
 
-use arrow::error::Result as ArrowResult;
-
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -55,6 +53,7 @@ use crate::aggregations::{apply_aggregations, ScanAggregation};
 ))]
 use crate::predicates::PhysicalIoExpr;
 use arrow::array::new_empty_array;
+use arrow::error::Result as ArrowResult;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
