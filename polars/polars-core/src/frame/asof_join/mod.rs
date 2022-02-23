@@ -1,93 +1,53 @@
+mod asof;
 mod groups;
 
 use crate::prelude::*;
+use asof::*;
 use num::Bounded;
-use polars_arrow::trusted_len::PushUnchecked;
 use std::borrow::Cow;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AsOfOptions {
+    pub strategy: AsofStrategy,
+    pub left_by: Option<Vec<String>>,
+    pub right_by: Option<Vec<String>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AsofStrategy {
+    /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
+    Backward,
+    /// selects the first row in the right DataFrame whose ‘on’ key is greater than or equal to the left’s key.
+    Forward,
+}
 
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: Bounded + PartialOrd,
 {
-    pub(crate) fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
+    pub(crate) fn join_asof(
+        &self,
+        other: &Series,
+        strategy: AsofStrategy,
+    ) -> Result<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
-        let mut rhs_iter = other.into_iter().peekable();
-        let mut tuples = Vec::with_capacity(self.len());
-        if self.null_count() > 0 {
-            return Err(PolarsError::ComputeError(
-                "keys of asof join should not have null values".into(),
+
+        if self.null_count() > 0 || other.null_count() > 0 {
+            return Err(PolarsError::ValueError(
+                "asof join must not have null values in 'on' arguments".into(),
             ));
         }
-        if !(other.is_sorted_reverse() | other.is_sorted()) {
-            eprintln!("right key of asof join is not explicitly sorted, this may lead to unexpected results");
-        }
 
-        let mut rhs_idx = 0;
-
-        let mut previous_lhs_val: T::Native = Bounded::min_value();
-
-        let mut sorted = true;
-
-        for arr in self.downcast_iter() {
-            for &lhs_val in arr.values().as_slice() {
-                if lhs_val < previous_lhs_val {
-                    sorted = false;
-                }
-                if lhs_val == previous_lhs_val {
-                    tuples.push(Some(rhs_idx - 1));
-                    continue;
-                }
-                previous_lhs_val = lhs_val;
-
-                loop {
-                    match rhs_iter.next() {
-                        Some(Some(rhs_val)) => {
-                            if rhs_val > lhs_val {
-                                if previous_lhs_val <= lhs_val {
-                                    if rhs_idx == 0 {
-                                        tuples.push(None);
-                                    } else {
-                                        tuples.push(Some(rhs_idx - 1));
-                                    }
-                                }
-
-                                rhs_idx += 1;
-
-                                // breaks from the loop, not the right iter
-                                break;
-                            }
-                            rhs_idx += 1;
-                        }
-                        Some(None) => {
-                            rhs_idx += 1;
-                        }
-                        // exhausted rhs
-                        None => {
-                            let remaining = self.len() - tuples.len();
-
-                            // all remaining values in the rhs are smaller
-                            // so we join with the last: the biggest
-                            let item = tuples.last().map(|_| rhs_idx - 1);
-
-                            // we know the iterators len
-                            let iter = std::iter::repeat(item).take(remaining);
-                            tuples.extend_trusted_len(iter);
-
-                            return Ok(tuples);
-                        }
-                    }
-                }
+        let out = match strategy {
+            AsofStrategy::Forward => {
+                join_asof_forward(self.cont_slice().unwrap(), other.cont_slice().unwrap())
             }
-        }
-
-        if !sorted {
-            return Err(PolarsError::ComputeError(
-                "left key of asof join must be sorted".into(),
-            ));
-        }
-
-        Ok(tuples)
+            AsofStrategy::Backward => {
+                join_asof_backward(self.cont_slice().unwrap(), other.cont_slice().unwrap())
+            }
+        };
+        Ok(out)
     }
 }
 
@@ -95,11 +55,17 @@ impl DataFrame {
     /// This is similar to a left-join except that we match on nearest key rather than equal keys.
     /// The keys must be sorted to perform an asof join
     #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
-    pub fn join_asof(&self, other: &DataFrame, left_on: &str, right_on: &str) -> Result<DataFrame> {
+    pub fn join_asof(
+        &self,
+        other: &DataFrame,
+        left_on: &str,
+        right_on: &str,
+        strategy: AsofStrategy,
+    ) -> Result<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        let take_idx = left_key.join_asof(right_key)?;
+        let take_idx = left_key.join_asof(right_key, strategy)?;
 
         // take_idx are sorted so this is a bound check for all
         if let Some(Some(idx)) = take_idx.last() {
@@ -124,69 +90,5 @@ impl DataFrame {
         };
 
         self.finish_join(self.clone(), right_df, None)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use crate::df;
-
-    #[test]
-    fn test_join_asof() -> Result<()> {
-        let left = df![
-            "a" => [1, 5, 10],
-            "left_val" => ["a", "b", "c"]
-        ]?;
-
-        let right = df![
-            "b" => [1, 2, 3, 6, 7],
-            "right_val" => [1, 2, 3, 6, 7]
-        ]?;
-
-        let out = left.join_asof(&right, "a", "b")?;
-        let expected = df![
-            "a" => [1, 5, 10],
-            "left_val" => ["a", "b", "c"],
-            "b" => [1, 3, 7],
-            "right_val" => [1, 3, 7]
-        ]?;
-        assert!(out.frame_equal_missing(&expected));
-
-        let left = df![
-            "a" => [2, 5, 10, 12],
-            "left_val" => ["a", "b", "c", "d"]
-        ]?;
-
-        let right = df![
-            "b" => [1, 2, 3],
-            "right_val" => [1, 2, 3]
-        ]?;
-        let out = left.join_asof(&right, "a", "b")?;
-        let expected = df![
-            "a" => [2, 5, 10, 12],
-            "left_val" => ["a", "b", "c", "d"],
-            "b" => [Some(2), Some(3), Some(3), Some(3)],
-            "right_val" => [Some(2), Some(3), Some(3), Some(3)]
-        ]?;
-        assert!(out.frame_equal_missing(&expected));
-
-        let left = df![
-            "a" => [-10, 5, 10],
-            "left_val" => ["a", "b", "c"]
-        ]?;
-
-        let right = df![
-            "b" => [1, 2, 3, 6, 7]
-        ]?;
-
-        let out = left.join_asof(&right, "a", "b")?;
-        let expected = df![
-            "a" => [-10, 5, 10],
-            "left_val" => ["a", "b", "c"],
-            "b" => [None, Some(3), Some(7)]
-        ]?;
-        assert!(out.frame_equal_missing(&expected));
-        Ok(())
     }
 }

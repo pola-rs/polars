@@ -3,6 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
+import warnings
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -2946,6 +2947,79 @@ class DataFrame:
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
+    def join_asof(
+        self,
+        df: "DataFrame",
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
+        on: Optional[str] = None,
+        by_left: Optional[Union[str, List[str]]] = None,
+        by_right: Optional[Union[str, List[str]]] = None,
+        by: Optional[Union[str, List[str]]] = None,
+        strategy: str = "backward",
+        suffix: str = "_right",
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
+    ) -> "DataFrame":
+        """
+        Perform an asof join. This is similar to a left-join except that we
+        match on nearest key rather than equal keys.
+
+        Both DataFrames must be sorted by the key.
+
+        For each row in the left DataFrame:
+
+          - A "backward" search selects the last row in the right DataFrame whose
+            'on' key is less than or equal to the left's key.
+
+          - A "forward" search selects the first row in the right DataFrame whose
+            'on' key is greater than or equal to the left's key.
+
+        The default is "backward".
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with.
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        by
+            join on these columns before doing asof join
+        by_left
+            join on these columns before doing asof join
+        by_right
+            join on these columns before doing asof join
+        strategy
+            One of {'forward', 'backward'}
+        suffix
+            Suffix to append to columns with a duplicate name.
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+        """
+        return (
+            self.lazy()
+            .join_asof(
+                df.lazy(),
+                left_on=left_on,
+                right_on=right_on,
+                on=on,
+                by_left=by_left,
+                by_right=by_right,
+                by=by,
+                strategy=strategy,
+                suffix=suffix,
+                allow_parallel=allow_parallel,
+                force_parallel=force_parallel,
+            )
+            .collect(no_optimization=True)
+        )
+
     def join(
         self,
         df: "DataFrame",
@@ -3035,10 +3109,15 @@ class DataFrame:
         └──────┴──────┴─────┴───────┘
 
         **Asof join**
-        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        This is similar to a left-join except that we match on near keys rather than equal keys.
+        The direction is backward
         The keys must be sorted to perform an asof join
 
         """
+        if how == "asof":
+            warnings.warn(
+                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof"
+            )
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 

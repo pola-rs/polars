@@ -58,3 +58,6 @@ pub(crate) use polars_arrow::export::*;
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;
+
+#[cfg(feature = "asof_join")]
+pub use crate::frame::asof_join::*;

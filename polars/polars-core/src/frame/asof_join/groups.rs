@@ -1,10 +1,15 @@
 use super::*;
-use crate::utils::split_df;
-use crate::vector_hasher::df_rows_to_hashes_threaded;
+use crate::utils::{split_ca, split_df};
+use crate::vector_hasher::{df_rows_to_hashes_threaded, AsU64};
 use crate::POOL;
+use ahash::RandomState;
 use rayon::prelude::*;
+use std::fmt::Debug;
+use std::hash::Hash;
 
-use crate::frame::hash_join::{get_hash_tbl_threaded_join_partitioned, multiple_keys as mk};
+use crate::frame::hash_join::{
+    create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
+};
 
 fn find_latest_leq<T>(left_val: T, right_asof: &[T], subset_idx: &[IdxSize]) -> Option<IdxSize>
 where
@@ -22,8 +27,242 @@ where
         .copied()
 }
 
-// TODO! add faster implementation that has a single groupby key
-fn asof_join_by<T>(
+pub(super) unsafe fn join_asof_backward_with_indirection<T: PartialOrd + Copy + Debug>(
+    val_l: T,
+    right: &[T],
+    offsets: &[IdxSize],
+) -> (Option<IdxSize>, usize) {
+    if offsets.is_empty() {
+        return (None, 0);
+    }
+    let mut previous = *offsets.get_unchecked(0);
+    let first = *right.get_unchecked(previous as usize);
+    if val_l < first {
+        (None, 0)
+    } else {
+        for (idx, &offset) in offsets.iter().enumerate() {
+            let val_r = *right.get_unchecked(offset as usize);
+            if val_r > val_l {
+                return (Some(previous), idx);
+            }
+            previous = offset
+        }
+        (Some(previous), offsets.len())
+    }
+}
+
+fn asof_join_by_numeric<T, S>(
+    by_left: &ChunkedArray<S>,
+    by_right: &ChunkedArray<S>,
+    left_asof: &ChunkedArray<T>,
+    right_asof: &ChunkedArray<T>,
+) -> Vec<Option<IdxSize>>
+where
+    T: PolarsNumericType,
+    S: PolarsNumericType,
+    S::Native: Hash + Eq + AsU64,
+{
+    let left_asof = left_asof.rechunk();
+    let left_asof = left_asof.cont_slice().unwrap();
+
+    let right_asof = right_asof.rechunk();
+    let right_asof = right_asof.cont_slice().unwrap();
+
+    let n_threads = POOL.current_num_threads();
+    let splitted_left = split_ca(by_left, n_threads).unwrap();
+    let splitted_right = split_ca(by_right, n_threads).unwrap();
+
+    let vals_left = splitted_left
+        .iter()
+        .map(|ca| ca.cont_slice().unwrap())
+        .collect::<Vec<_>>();
+    let vals_right = splitted_right
+        .iter()
+        .map(|ca| ca.cont_slice().unwrap())
+        .collect::<Vec<_>>();
+
+    let hash_tbls = create_probe_table(vals_right);
+
+    // we determine the offset so that we later know which index to store in the join tuples
+    let offsets = vals_left
+        .iter()
+        .map(|ph| ph.len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+
+    let n_tables = hash_tbls.len() as u64;
+    debug_assert!(n_tables.is_power_of_two());
+
+    // next we probe the right relation
+    POOL.install(|| {
+        vals_left
+            .into_par_iter()
+            .zip(offsets)
+            // probes_hashes: Vec<u64> processed by this thread
+            // offset: offset index
+            .map(|(vals_left, offset)| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+
+                // assume the result tuples equal lenght of the no. of hashes processed by this thread.
+                let mut results = Vec::with_capacity(vals_left.len());
+
+                let mut right_tbl_offsets = PlHashMap::with_capacity(64);
+
+                vals_left.iter().enumerate().for_each(|(idx_a, k)| {
+                    let idx_a = (idx_a + offset) as IdxSize;
+                    // probe table that contains the hashed value
+                    let current_probe_table = unsafe {
+                        get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables)
+                    };
+
+                    // we already hashed, so we don't have to hash again.
+                    let value = current_probe_table.get(k);
+
+                    match value {
+                        // left and right matches
+                        Some(indexes_b) => {
+                            let (offset_slice, previous_join_idx) =
+                                *right_tbl_offsets.get(k).unwrap_or(&(0usize, None));
+                            let val_l = left_asof[idx_a as usize];
+                            // Safety;
+                            // elide bound checks
+                            let (join_idx, offset_slice_add) = unsafe {
+                                join_asof_backward_with_indirection(
+                                    val_l,
+                                    right_asof,
+                                    &indexes_b[offset_slice..],
+                                )
+                            };
+                            let offset_slice = offset_slice + offset_slice_add;
+
+                            match join_idx {
+                                Some(_) => {
+                                    results.push(join_idx);
+                                    right_tbl_offsets.insert(k, (offset_slice, join_idx));
+                                }
+                                None => results.push(previous_join_idx),
+                            }
+                        }
+                        // only left values, right = null
+                        None => results.push(None),
+                    }
+                });
+                results
+            })
+            .flatten()
+            .collect()
+    })
+}
+
+fn asof_join_by_utf8<T>(
+    by_left: &Utf8Chunked,
+    by_right: &Utf8Chunked,
+    left_asof: &ChunkedArray<T>,
+    right_asof: &ChunkedArray<T>,
+) -> Vec<Option<IdxSize>>
+where
+    T: PolarsNumericType,
+{
+    let left_asof = left_asof.rechunk();
+    let left_asof = left_asof.cont_slice().unwrap();
+
+    let right_asof = right_asof.rechunk();
+    let right_asof = right_asof.cont_slice().unwrap();
+
+    let n_threads = POOL.current_num_threads();
+    let splitted_left = split_ca(by_left, n_threads).unwrap();
+    let splitted_right = split_ca(by_right, n_threads).unwrap();
+
+    let hb = RandomState::default();
+    let vals_left = prepare_strs(&splitted_left, &hb);
+    let vals_right = prepare_strs(&splitted_right, &hb);
+
+    let hash_tbls = create_probe_table(vals_right);
+
+    // we determine the offset so that we later know which index to store in the join tuples
+    let offsets = vals_left
+        .iter()
+        .map(|ph| ph.len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect::<Vec<_>>();
+
+    let n_tables = hash_tbls.len() as u64;
+    debug_assert!(n_tables.is_power_of_two());
+
+    // next we probe the right relation
+    POOL.install(|| {
+        vals_left
+            .into_par_iter()
+            .zip(offsets)
+            // probes_hashes: Vec<u64> processed by this thread
+            // offset: offset index
+            .map(|(vals_left, offset)| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+
+                // assume the result tuples equal lenght of the no. of hashes processed by this thread.
+                let mut results = Vec::with_capacity(vals_left.len());
+
+                let mut right_tbl_offsets = PlHashMap::with_capacity(64);
+
+                vals_left.iter().enumerate().for_each(|(idx_a, k)| {
+                    let idx_a = (idx_a + offset) as IdxSize;
+                    // probe table that contains the hashed value
+                    let current_probe_table = unsafe {
+                        get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables)
+                    };
+
+                    // we already hashed, so we don't have to hash again.
+                    let value = current_probe_table.get(k);
+
+                    match value {
+                        // left and right matches
+                        Some(indexes_b) => {
+                            let (offset_slice, previous_join_idx) =
+                                *right_tbl_offsets.get(k).unwrap_or(&(0usize, None));
+                            let val_l = left_asof[idx_a as usize];
+                            // Safety;
+                            // elide bound checks
+                            let (join_idx, offset_slice_add) = unsafe {
+                                join_asof_backward_with_indirection(
+                                    val_l,
+                                    right_asof,
+                                    &indexes_b[offset_slice..],
+                                )
+                            };
+                            let offset_slice = offset_slice + offset_slice_add;
+
+                            match join_idx {
+                                Some(_) => {
+                                    results.push(join_idx);
+                                    right_tbl_offsets.insert(k, (offset_slice, join_idx));
+                                }
+                                None => results.push(previous_join_idx),
+                            }
+                        }
+                        // only left values, right = null
+                        None => results.push(None),
+                    }
+                });
+                results
+            })
+            .flatten()
+            .collect()
+    })
+}
+
+// TODO! optimize this. This does a full scan backwards. Use the same strategy as in the single `by`
+// implementations
+fn asof_join_by_multiple<T>(
     a: &DataFrame,
     b: &DataFrame,
     left_asof: &ChunkedArray<T>,
@@ -116,11 +355,17 @@ impl DataFrame {
         right_on: &str,
         left_by: I,
         right_by: I,
+        strategy: AsofStrategy,
     ) -> Result<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        if let AsofStrategy::Forward = strategy {
+            panic!("forward strategy + groupby not yet implemented");
+        }
+
+        use DataType::*;
         let left_asof = self.column(left_on)?;
         let right_asof = other.column(right_on)?;
         let right_asof_name = right_asof.name();
@@ -128,19 +373,77 @@ impl DataFrame {
         let left_by = self.select(left_by)?;
         let right_by = other.select(right_by)?;
 
+        let left_by_s = &left_by.get_columns()[0];
+        let right_by_s = &right_by.get_columns()[0];
+
         let right_join_tuples = if left_asof.bit_repr_is_large() {
+            let left_asof = left_asof.bit_repr_large();
+            let right_asof = right_asof.bit_repr_large();
             let left_asof = left_asof.cast(&DataType::Int64)?;
             let right_asof = right_asof.cast(&DataType::Int64)?;
             let left_asof = left_asof.i64().unwrap();
             let right_asof = right_asof.i64().unwrap();
 
-            asof_join_by(&left_by, &right_by, left_asof, right_asof)
+            if left_by.width() == 1 {
+                match left_by_s.dtype() {
+                    Utf8 => asof_join_by_utf8(
+                        left_by_s.utf8().unwrap(),
+                        right_by_s.utf8().unwrap(),
+                        left_asof,
+                        right_asof,
+                    ),
+                    _ => {
+                        if left_by_s.bit_repr_is_large() {
+                            let left_by = left_by_s.cast(&DataType::Int64).unwrap();
+                            let left_by = left_by.i64().unwrap();
+                            let right_by = right_by_s.cast(&DataType::Int64).unwrap();
+                            let right_by = right_by.i64().unwrap();
+                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                        } else {
+                            let left_by = left_by_s.cast(&DataType::Int32).unwrap();
+                            let left_by = left_by.i32().unwrap();
+                            let right_by = right_by_s.cast(&DataType::Int32).unwrap();
+                            let right_by = right_by.i32().unwrap();
+                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                        }
+                    }
+                }
+            } else {
+                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof)
+            }
         } else {
             let left_asof = left_asof.cast(&DataType::Int32)?;
             let right_asof = right_asof.cast(&DataType::Int32)?;
             let left_asof = left_asof.i32().unwrap();
             let right_asof = right_asof.i32().unwrap();
-            asof_join_by(&left_by, &right_by, left_asof, right_asof)
+
+            if left_by.width() == 1 {
+                match left_by_s.dtype() {
+                    Utf8 => asof_join_by_utf8(
+                        left_by_s.utf8().unwrap(),
+                        right_by_s.utf8().unwrap(),
+                        left_asof,
+                        right_asof,
+                    ),
+                    _ => {
+                        if left_by_s.bit_repr_is_large() {
+                            let left_by = left_by_s.cast(&DataType::Int64).unwrap();
+                            let left_by = left_by.i64().unwrap();
+                            let right_by = right_by_s.cast(&DataType::Int64).unwrap();
+                            let right_by = right_by.i64().unwrap();
+                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                        } else {
+                            let left_by = left_by_s.cast(&DataType::Int32).unwrap();
+                            let left_by = left_by.i32().unwrap();
+                            let right_by = right_by_s.cast(&DataType::Int32).unwrap();
+                            let right_by = right_by.i32().unwrap();
+                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                        }
+                    }
+                }
+            } else {
+                asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof)
+            }
         };
 
         let mut drop_these = right_by.get_column_names();
@@ -190,7 +493,7 @@ mod test {
             "right_vals" => [1, 2, 3, 4]
         ]?;
 
-        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"])?;
+        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"], AsofStrategy::Backward)?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
         let out = out.i32().unwrap();
@@ -204,33 +507,53 @@ mod test {
     #[test]
     fn test_asof_by2() -> Result<()> {
         let trades = df![
-            "time" => [1464183000023i64, 1464183000038, 1464183000048, 1464183000048, 1464183000048],
+            "time" => [23i64, 38, 48, 48, 48],
             "ticker" => ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "groups_numeric" => [1, 1, 2, 2, 3],
             "bid" => [51.95, 51.95, 720.77, 720.92, 98.0]
         ]?;
 
         let quotes = df![
-                   "time" => [1464183000023i64,
-        1464183000023,
-        1464183000030,
-        1464183000041,
-        1464183000048,
-        1464183000049,
-        1464183000072,
-        1464183000075],
+                   "time" => [23i64,
+        23,
+        30,
+        41,
+        48,
+        49,
+        72,
+        75],
                    "ticker" => ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+                   "groups_numeric" => [2, 1, 1, 1, 2, 3, 2, 1],
                    "bid" => [720.5, 51.95, 51.97, 51.99, 720.5, 97.99, 720.5, 52.01]
 
                ]?;
 
-        let out = trades.join_asof_by(&quotes, "time", "time", ["ticker"], ["ticker"])?;
+        let out = trades.join_asof_by(
+            &quotes,
+            "time",
+            "time",
+            ["ticker"],
+            ["ticker"],
+            AsofStrategy::Backward,
+        )?;
+        let a = out.column("bid_right").unwrap();
+        let a = a.f64().unwrap();
+        let expected = &[Some(51.95), Some(51.97), Some(720.5), Some(720.5), None];
+
+        assert_eq!(Vec::from(a), expected);
+
+        let out = trades.join_asof_by(
+            &quotes,
+            "time",
+            "time",
+            ["groups_numeric"],
+            ["groups_numeric"],
+            AsofStrategy::Backward,
+        )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
 
-        assert_eq!(
-            Vec::from(a),
-            &[Some(51.95), Some(51.97), Some(720.5), Some(720.5), None]
-        );
+        assert_eq!(Vec::from(a), expected);
 
         Ok(())
     }

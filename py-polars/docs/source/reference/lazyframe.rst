@@ -39,6 +39,7 @@ Manipulation/ selection
     LazyFrame.groupby_dynamic
     LazyFrame.groupby_rolling
     LazyFrame.join
+    DataFrame.join_asof
     LazyFrame.with_columns
     LazyFrame.with_column
     LazyFrame.drop
