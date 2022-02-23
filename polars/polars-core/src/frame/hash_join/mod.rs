@@ -822,7 +822,10 @@ impl HashJoin<BooleanType> for BooleanChunked {
     }
 }
 
-fn prepare_strs<'a>(been_split: &'a [Utf8Chunked], hb: &RandomState) -> Vec<Vec<StrHash<'a>>> {
+pub(crate) fn prepare_strs<'a>(
+    been_split: &'a [Utf8Chunked],
+    hb: &RandomState,
+) -> Vec<Vec<StrHash<'a>>> {
     POOL.install(|| {
         been_split
             .par_iter()
