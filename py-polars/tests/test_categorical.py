@@ -61,3 +61,30 @@ def test_categorical_lexical_sort() -> None:
         {"cats": ["z", "a", "k", "b", "z"], "vals": [1, 2, 2, 3, 3]}
     )
     assert out.with_column(pl.col("cats").cast(pl.Utf8)).frame_equal(expected)
+
+
+def test_categorical_lexical_ordering_after_concat() -> None:
+    with pl.StringCache():
+        ldf1 = (
+            pl.DataFrame([pl.Series("key1", [8, 5]), pl.Series("key2", ["fox", "baz"])])
+            .lazy()
+            .with_column(
+                pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
+            )
+        )
+        ldf2 = (
+            pl.DataFrame(
+                [pl.Series("key1", [6, 8, 6]), pl.Series("key2", ["fox", "foo", "bar"])]
+            )
+            .lazy()
+            .with_column(
+                pl.col("key2").cast(pl.Categorical).cat.set_ordering("lexical")
+            )
+        )
+        df = (
+            pl.concat([ldf1, ldf2])
+            .with_column(pl.col("key2").cat.set_ordering("lexical"))
+            .collect()
+        )
+
+        df.sort(["key1", "key2"])

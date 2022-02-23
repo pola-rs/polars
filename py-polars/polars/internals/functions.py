@@ -52,6 +52,15 @@ def concat(
     ...
 
 
+@overload
+def concat(
+    items: Sequence["pli.LazyFrame"],
+    rechunk: bool = True,
+    how: str = "vertical",
+) -> "pli.LazyFrame":
+    ...
+
+
 def concat(
     items: Union[
         Sequence["pli.DataFrame"], Sequence["pli.Series"], Sequence["pli.LazyFrame"]

@@ -193,7 +193,7 @@ def read_csv(
         Character that indicates the start of a comment line, for
         instance ``#``.
     quote_char
-        Single byte character used for csv quoting, default = ''.
+        Single byte character used for csv quoting, default = ``"``.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
         Start reading after ``skip_rows`` lines.
@@ -466,7 +466,7 @@ def scan_csv(
         Character that indicates the start of a comment line, for
         instance ``#``.
     quote_char
-        Single byte character used for csv quoting, default = ''.
+        Single byte character used for csv quoting, default = ``"``.
         Set to None to turn off special handling and escaping of quotes.
     skip_rows
         Start reading after ``skip_rows`` lines. The header will be parsed at this offset.

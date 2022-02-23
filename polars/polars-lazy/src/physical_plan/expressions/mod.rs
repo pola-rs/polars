@@ -361,10 +361,12 @@ impl<'a> AggregationContext<'a> {
                 // because this is lazy, we first must to update the groups
                 // by calling .groups()
                 self.groups();
-                assert!(
-                    self.groups.len() <= s.len(),
-                    "implementation error groups are out of bounds; please open an issue"
-                );
+                #[cfg(debug_assertions)]
+                {
+                    if self.groups.len() > s.len() {
+                        eprintln!("groups may be out of bounds; more groups than elements in a series is only possible in dynamic groupby")
+                    }
+                }
 
                 let out = s
                     .agg_list(&self.groups)

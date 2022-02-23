@@ -193,6 +193,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "takeEvery")?.with_method(dsl::take_every),
             napi::Property::new(env, "take")?.with_method(dsl::take),
             napi::Property::new(env, "unique")?.with_method(dsl::unique),
+            napi::Property::new(env, "unique_stable")?.with_method(dsl::unique_stable),
             napi::Property::new(env, "upperBound")?.with_method(dsl::upper_bound),
             napi::Property::new(env, "var")?.with_method(dsl::var),
             napi::Property::new(env, "xor")?.with_method(dsl::xor),

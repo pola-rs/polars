@@ -32,6 +32,7 @@ impl SeriesWrap<CategoricalChunked> {
         if keep_fast_unique && self.0.can_fast_unique() {
             out.set_fast_unique(true)
         }
+        out.set_lexical_sorted(self.0.use_lexical_sort());
         out
     }
 

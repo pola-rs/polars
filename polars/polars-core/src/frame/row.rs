@@ -1,10 +1,12 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use crate::POOL;
+
 use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
+use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
-
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
@@ -79,7 +81,7 @@ impl DataFrame {
 
         rows.try_for_each::<_, Result<()>>(|row| {
             for (value, buf) in row.0.iter().zip(&mut buffers) {
-                buf.add_falible(value.clone())?
+                buf.add_falible(value)?
             }
             Ok(())
         })?;
@@ -176,6 +178,65 @@ impl DataFrame {
     }
 }
 
+type Tracker = PlHashMap<String, PlHashSet<DataType>>;
+
+pub fn infer_schema(
+    iter: impl Iterator<Item = Vec<(String, impl Into<DataType>)>>,
+    infer_schema_length: usize,
+) -> Schema {
+    let mut values: Tracker = Tracker::new();
+    let len = iter.size_hint().1.unwrap();
+
+    let max_infer = std::cmp::min(len, infer_schema_length);
+    for inner in iter.take(max_infer) {
+        for (key, value) in inner {
+            add_or_insert(&mut values, &key, value.into());
+        }
+    }
+    Schema::new(resolve_fields(values))
+}
+
+fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
+    if data_type == DataType::Null {
+        return;
+    }
+
+    if values.contains_key(key) {
+        let x = values.get_mut(key).unwrap();
+        x.insert(data_type);
+    } else {
+        // create hashset and add value type
+        let mut hs = PlHashSet::new();
+        hs.insert(data_type);
+        values.insert(key.to_string(), hs);
+    }
+}
+
+fn resolve_fields(spec: Tracker) -> Vec<Field> {
+    spec.iter()
+        .map(|(k, hs)| {
+            let v: Vec<&DataType> = hs.iter().collect();
+            Field::new(k, coerce_data_type(&v))
+        })
+        .collect()
+}
+
+fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+    use DataType::*;
+
+    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+
+    if are_all_equal {
+        return datatypes[0].borrow().clone();
+    }
+    if datatypes.len() > 2 {
+        return Utf8;
+    }
+
+    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+    get_supertype(lhs, rhs).unwrap_or(Utf8)
+}
+
 /// Infer schema from rows.
 pub fn rows_to_schema(rows: &[Row]) -> Schema {
     // no of rows to use to infer dtype
@@ -231,6 +292,30 @@ impl<'a> From<&AnyValue<'a>> for Field {
             #[cfg(feature = "dtype-time")]
             Time(_) => Field::new("", DataType::Time),
             List(s) => Field::new("", DataType::List(Box::new(s.dtype().clone()))),
+            _ => unimplemented!(),
+        }
+    }
+}
+impl<'a> From<&AnyValue<'a>> for DataType {
+    fn from(val: &AnyValue<'a>) -> Self {
+        use AnyValue::*;
+        match val {
+            Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
+            Utf8(_) => DataType::Utf8,
+            UInt32(_) => DataType::UInt32,
+            UInt64(_) => DataType::UInt64,
+            Int32(_) => DataType::Int32,
+            Int64(_) => DataType::Int64,
+            Float32(_) => DataType::Float32,
+            Float64(_) => DataType::Float64,
+            #[cfg(feature = "dtype-date")]
+            Date(_) => DataType::Date,
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
+            #[cfg(feature = "dtype-time")]
+            Time(_) => DataType::Time,
+            List(s) => DataType::List(Box::new(s.dtype().clone())),
             _ => unimplemented!(),
         }
     }
@@ -336,7 +421,7 @@ impl AnyValueBuffer {
         Some(())
     }
 
-    pub(crate) fn add_falible(&mut self, val: AnyValue) -> Result<()> {
+    pub(crate) fn add_falible(&mut self, val: &AnyValue) -> Result<()> {
         self.add(val.clone()).ok_or_else(|| {
             PolarsError::ValueError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
         })

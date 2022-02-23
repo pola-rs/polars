@@ -228,7 +228,7 @@ pub fn get_idx(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let idx = params.get_as::<usize>("idx")?;
-    let val: Wrap<AnyValue> = series.get(idx).into();
+    let val: AnyValue = series.get(idx);
     val.try_into_js(&cx)
 }
 
@@ -534,7 +534,7 @@ pub fn quantile(cx: CallContext) -> JsResult<JsUnknown> {
     let q = series
         .quantile_as_series(quantile, QuantileInterpolOptions::default())
         .map_err(JsPolarsEr::from)?;
-    Wrap(q.get(0)).try_into_js(&cx)
+    q.get(0).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -655,7 +655,7 @@ pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
         DataType::Date => cx.env.to_js_value(series.date().unwrap()),
         DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
         DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
-        DataType::Categorical => cx.env.to_js_value(series.categorical().unwrap()),
+        DataType::Categorical(_) => cx.env.to_js_value(series.categorical().unwrap()),
         _ => todo!(),
     }
 }
@@ -1138,6 +1138,7 @@ macro_rules! impl_method_with_err {
 }
 
 impl_method_with_err!(unique);
+impl_method_with_err!(unique_stable);
 impl_method_with_err!(explode);
 impl_method_with_err!(floor);
 impl_method_with_err!(ceil);

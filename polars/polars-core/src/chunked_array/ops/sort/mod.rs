@@ -596,7 +596,7 @@ pub(crate) fn prepare_argsort(
             match s.dtype() {
                 Float32 | Float64 | Int32 | Int64 | Utf8 | UInt32 | UInt64 => s.clone(),
                 #[cfg(feature = "dtype-categorical")]
-                Categorical(_) => s.clone(),
+                Categorical(_) => s.rechunk(),
                 _ => {
                     // small integers i8, u8 etc are casted to reduce compiler bloat
                     // not that we don't expect any logical types at this point

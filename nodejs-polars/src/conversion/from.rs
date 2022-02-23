@@ -1,11 +1,13 @@
 use crate::conversion::wrap::*;
+use crate::datatypes::JsDataType;
 use crate::error::JsPolarsEr;
 use napi::{
     JsBigint, JsBoolean, JsDate, JsNumber, JsObject, JsString, JsUnknown, Result, ValueType,
 };
-use polars::prelude::*;
 use polars::io::RowCount;
-
+use polars::prelude::*;
+use polars_core::prelude::{Field, Schema};
+use std::borrow::Borrow;
 
 pub trait FromJsUnknown: Sized + Send {
     fn from_js(obj: JsUnknown) -> Result<Self>;
@@ -114,6 +116,62 @@ impl FromJsUnknown for AnyValue<'_> {
             _ => panic!("not supported"),
         }
     }
+}
+
+impl FromJsUnknown for DataType {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        match val.get_type()? {
+            ValueType::Undefined | ValueType::Null => Ok(DataType::Null),
+            ValueType::Boolean => Ok(DataType::Boolean),
+            ValueType::Number => Ok(DataType::Float64),
+            ValueType::String => Ok(DataType::Utf8),
+            ValueType::Bigint => Ok(DataType::UInt64),
+            ValueType::Object => {
+                if val.is_date()? {
+                    Ok(DataType::Datetime(TimeUnit::Milliseconds, None))
+                } else if val.is_array()? {
+                    Vec::<DataType>::from_js(val)
+                        .map(|list| DataType::List(Box::new(coerce_data_type(&list))))
+                } else {
+                    Ok(DataType::Utf8)
+                }
+            }
+            _ => panic!("not supported"),
+        }
+    }
+}
+
+fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+    use DataType::*;
+
+    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+
+    if are_all_equal {
+        return datatypes[0].borrow().clone();
+    }
+
+    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+
+    return match (lhs, rhs) {
+        (lhs, rhs) if lhs == rhs => lhs.clone(),
+        (List(lhs), List(rhs)) => {
+            let inner = coerce_data_type(&[lhs.as_ref(), rhs.as_ref()]);
+            List(Box::new(inner))
+        }
+        (scalar, List(list)) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (List(list), scalar) => {
+            let inner = coerce_data_type(&[scalar, list.as_ref()]);
+            List(Box::new(inner))
+        }
+        (Float64, UInt64) => Float64,
+        (UInt64, Float64) => Float64,
+        (UInt64, Boolean) => UInt64,
+        (Boolean, UInt64) => UInt64,
+        (_, _) => Utf8,
+    };
 }
 
 impl FromJsUnknown for Wrap<Utf8Chunked> {
@@ -305,6 +363,40 @@ where
         match v {
             Ok(v) => Ok(Some(v)),
             Err(_) => Ok(None),
+        }
+    }
+}
+
+impl FromJsUnknown for Schema {
+    fn from_js(val: JsUnknown) -> Result<Self> {
+        let value_type = val.get_type()?;
+
+        match value_type {
+            ValueType::Object => {
+                let obj = unsafe { val.cast::<JsObject>() };
+                let keys = obj.get_property_names()?;
+                let key_len = keys.get_array_length_unchecked()?;
+                let fields: Vec<Field> = (0..key_len)
+                    .map(|i| {
+                        let key: JsString = keys.get_element_unchecked(i).expect("key to exist");
+                        let value = obj.get_property::<_, JsUnknown>(key).unwrap();
+                        let dtype = JsDataType::from_js(value).unwrap();
+                        let key_str = key.into_utf8().unwrap();
+                        let key_str = key_str.as_str().unwrap();
+                        let fld = Field::new(key_str, dtype.into());
+                        fld
+                    })
+                    .collect();
+
+                Ok(Schema::new(fields))
+            }
+            dt => {
+                return Err(JsPolarsEr::Other(format!(
+                    "Invalid cast, unable to cast {} to object",
+                    dt
+                ))
+                .into())
+            }
         }
     }
 }
