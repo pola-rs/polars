@@ -14,3 +14,21 @@ fn test_sum_after_filter() -> Result<()> {
     assert_eq!(df.column("values")?.get(0), AnyValue::Int32(130));
     Ok(())
 }
+
+#[test]
+fn test_swap_rename() -> Result<()> {
+    let df = df![
+        "a" => [1],
+        "b" => [2],
+    ]?
+    .lazy()
+    .rename(["a", "b"], ["b", "a"])
+    .collect()?;
+
+    let expected = df![
+        "b" => [1],
+        "a" => [2],
+    ]?;
+    assert!(df.frame_equal(&expected));
+    Ok(())
+}

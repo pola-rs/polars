@@ -1571,10 +1571,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        df = self.clone()
-        for k, v in mapping.items():
-            df._df.rename(k, v)
-        return df
+        return self.lazy().rename(mapping).collect(no_optimization=True)
 
     def insert_at_idx(self, index: int, series: "pli.Series") -> None:
         """
