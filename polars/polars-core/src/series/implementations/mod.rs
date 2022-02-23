@@ -138,8 +138,12 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "asof_join")]
-            fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
-                self.0.join_asof(other)
+            fn join_asof(
+                &self,
+                other: &Series,
+                strategy: AsofStrategy,
+            ) -> Result<Vec<Option<IdxSize>>> {
+                self.0.join_asof(other, strategy)
             }
 
             fn set_sorted(&mut self, reverse: bool) {

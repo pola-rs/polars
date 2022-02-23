@@ -372,6 +372,40 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub fn join_asof(
+        &self,
+        other: PyLazyFrame,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        allow_parallel: bool,
+        force_parallel: bool,
+        suffix: String,
+    ) -> PyLazyFrame {
+
+        let ldf = self.ldf.clone();
+        let other = other.ldf;
+        let left_on = left_on
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
+        let right_on = right_on
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
+        ldf.join_builder()
+            .with(other)
+            .left_on(left_on)
+            .right_on(right_on)
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel)
+            .how(JoinType::AsOf)
+            .suffix(suffix)
+            .finish()
+            .into()
+
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn join(
         &self,
         other: PyLazyFrame,

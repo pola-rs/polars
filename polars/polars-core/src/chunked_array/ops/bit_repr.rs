@@ -50,7 +50,7 @@ where
                 .collect::<Vec<_>>();
             UInt32Chunked::from_chunks(self.name(), chunks)
         } else {
-            unreachable!()
+            self.cast(&DataType::UInt32).unwrap().u32().unwrap().clone()
         }
     }
 }

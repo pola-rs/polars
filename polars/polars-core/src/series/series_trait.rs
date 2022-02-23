@@ -146,7 +146,11 @@ pub(crate) mod private {
         }
 
         #[cfg(feature = "asof_join")]
-        fn join_asof(&self, _other: &Series) -> Result<Vec<Option<IdxSize>>> {
+        fn join_asof(
+            &self,
+            _other: &Series,
+            _strategy: AsofStrategy,
+        ) -> Result<Vec<Option<IdxSize>>> {
             invalid_operation!(self)
         }
 

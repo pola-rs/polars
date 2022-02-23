@@ -50,8 +50,7 @@ pub struct JoinOptions {
     pub force_parallel: bool,
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
-    pub asof_by_left: Vec<String>,
-    pub asof_by_right: Vec<String>,
+    pub asof_options: Option<AsOfOptions>,
 }
 
 impl Default for JoinOptions {
@@ -61,8 +60,7 @@ impl Default for JoinOptions {
             force_parallel: false,
             how: JoinType::Left,
             suffix: "_right".into(),
-            asof_by_left: vec![],
-            asof_by_right: vec![],
+            asof_options: None,
         }
     }
 }
@@ -1208,6 +1206,7 @@ pub struct JoinBuilder {
     suffix: Option<String>,
     asof_by_left: Vec<String>,
     asof_by_right: Vec<String>,
+    asof_by_strategy: AsofStrategy,
 }
 impl JoinBuilder {
     pub fn new(lf: LazyFrame) -> Self {
@@ -1222,6 +1221,7 @@ impl JoinBuilder {
             suffix: None,
             asof_by_left: vec![],
             asof_by_right: vec![],
+            asof_by_strategy: AsofStrategy::Backward,
         }
     }
 
@@ -1274,6 +1274,11 @@ impl JoinBuilder {
         self
     }
 
+    pub fn asof_direction(mut self, strategy: AsofStrategy) -> Self {
+        self.asof_by_strategy = strategy;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -1281,6 +1286,26 @@ impl JoinBuilder {
         let suffix = match self.suffix {
             None => Cow::Borrowed("_right"),
             Some(suffix) => Cow::Owned(suffix),
+        };
+
+        let asof_options = if let JoinType::AsOf = self.how {
+            let left_by = if self.asof_by_left.is_empty() {
+                None
+            } else {
+                Some(self.asof_by_left)
+            };
+            let right_by = if self.asof_by_right.is_empty() {
+                None
+            } else {
+                Some(self.asof_by_right)
+            };
+            Some(AsOfOptions {
+                left_by,
+                right_by,
+                strategy: AsofStrategy::Backward,
+            })
+        } else {
+            None
         };
 
         let lp = self
@@ -1295,8 +1320,7 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     how: self.how,
                     suffix,
-                    asof_by_left: self.asof_by_left,
-                    asof_by_right: self.asof_by_right,
+                    asof_options,
                 },
             )
             .build();

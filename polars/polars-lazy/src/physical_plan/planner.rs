@@ -454,8 +454,7 @@ impl DefaultPlanner {
                     right_on,
                     parallel,
                     options.suffix,
-                    options.asof_by_left,
-                    options.asof_by_right,
+                    options.asof_options,
                 )))
             }
             HStack { input, exprs, .. } => {

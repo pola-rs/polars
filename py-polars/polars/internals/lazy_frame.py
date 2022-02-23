@@ -786,6 +786,98 @@ class LazyFrame:
         )
         return LazyGroupBy(lgb)
 
+    def join_as_of(
+            self,
+            ldf: "LazyFrame",
+            left_on: Optional[Union[str, "pli.Expr"]] = None,
+            right_on: Optional[Union[str, "pli.Expr"]] = None,
+            on: Optional[str] = None,
+            suffix: str = "_right",
+            allow_parallel: bool = True,
+            force_parallel: bool = False,
+    ) -> "LazyFrame":
+        """
+        Add a join operation to the Logical Plan.
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with.
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        how
+            one of:
+                "inner"
+                "left"
+                "outer"
+                "asof",
+                "cross"
+        suffix
+            Suffix to append to columns with a duplicate name.
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+        asof_by
+            join on these columns before doing asof join
+        asof_by_left
+            join on these columns before doing asof join
+        asof_by_right
+            join on these columns before doing asof join
+
+        # Asof joins
+        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        The keys must be sorted to perform an asof join
+
+        """
+        left_on_: Optional[List[Union[str, pli.Expr]]]
+        if isinstance(left_on, (str, pli.Expr)):
+            left_on_ = [left_on]
+        else:
+            left_on_ = left_on
+
+        right_on_: Optional[List[Union[str, pli.Expr]]]
+        if isinstance(right_on, (str, pli.Expr)):
+            right_on_ = [right_on]
+        else:
+            right_on_ = right_on
+
+        if isinstance(on, str):
+            left_on_ = [on]
+            right_on_ = [on]
+        elif isinstance(on, list):
+            left_on_ = on
+            right_on_ = on
+
+        if left_on_ is None or right_on_ is None:
+            raise ValueError("You should pass the column to join on as an argument.")
+
+        new_left_on = []
+        for column in left_on_:
+            if isinstance(column, str):
+                column = pli.col(column)
+            new_left_on.append(column._pyexpr)
+        new_right_on = []
+        for column in right_on_:
+            if isinstance(column, str):
+                column = pli.col(column)
+            new_right_on.append(column._pyexpr)
+
+        return wrap_ldf(
+            self._ldf.join_asof(
+                ldf._ldf,
+                new_left_on,
+                new_right_on,
+                allow_parallel,
+                force_parallel,
+                suffix,
+            )
+        )
+
     def join(
         self,
         ldf: "LazyFrame",

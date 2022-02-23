@@ -3035,7 +3035,8 @@ class DataFrame:
         └──────┴──────┴─────┴───────┘
 
         **Asof join**
-        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        This is similar to a left-join except that we match on near keys rather than equal keys.
+        The direction is backward
         The keys must be sorted to perform an asof join
 
         """

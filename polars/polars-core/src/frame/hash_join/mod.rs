@@ -1083,9 +1083,12 @@ impl DataFrame {
                 JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
                 JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf => {
-                    self.join_asof(other, selected_left[0].name(), selected_right[0].name())
-                }
+                JoinType::AsOf => self.join_asof(
+                    other,
+                    selected_left[0].name(),
+                    selected_right[0].name(),
+                    AsofStrategy::Backward,
+                ),
                 JoinType::Cross => {
                     unreachable!()
                 }
