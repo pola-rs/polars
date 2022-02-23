@@ -59,13 +59,13 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum JoinType {
     Left,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
-    AsOf,
+    AsOf(AsOfOptions),
     Cross,
 }
 
@@ -1086,12 +1086,28 @@ impl DataFrame {
                 JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
                 JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf => self.join_asof(
-                    other,
-                    selected_left[0].name(),
-                    selected_right[0].name(),
-                    AsofStrategy::Backward,
-                ),
+                JoinType::AsOf(options) => {
+                    let left_on = selected_left[0].name();
+                    let right_on = selected_right[0].name();
+
+                    match (options.left_by, options.right_by) {
+                        (Some(left_by), Some(right_by)) => {
+                            self.join_asof_by(other, left_on, right_on, left_by, right_by, options.strategy)
+                        }
+                        (None, None) => {
+                            self.join_asof(
+                                other,
+                                left_on,
+                                right_on,
+                                options.strategy
+                            )
+                        }
+                        _ => {
+                            panic!("expected by arguments on both sides")
+                        }
+                    }
+
+                },
                 JoinType::Cross => {
                     unreachable!()
                 }
@@ -1189,7 +1205,7 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf => Err(PolarsError::ValueError(
+            JoinType::AsOf(_) => Err(PolarsError::ValueError(
                 "asof join not supported for join on multiple keys".into(),
             )),
             JoinType::Cross => {

@@ -6,14 +6,14 @@ use asof::*;
 use num::Bounded;
 use std::borrow::Cow;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     pub left_by: Option<Vec<String>>,
     pub right_by: Option<Vec<String>>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
     Backward,

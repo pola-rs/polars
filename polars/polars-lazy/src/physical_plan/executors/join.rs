@@ -13,9 +13,6 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     suffix: Cow<'static, str>,
-    // not used if asof not activated
-    #[allow(dead_code)]
-    asof_options: Option<AsOfOptions>,
 }
 
 impl JoinExec {
@@ -28,7 +25,6 @@ impl JoinExec {
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         suffix: Cow<'static, str>,
-        asof_options: Option<AsOfOptions>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -38,7 +34,6 @@ impl JoinExec {
             right_on,
             parallel,
             suffix,
-            asof_options,
         }
     }
 }
@@ -83,46 +78,12 @@ impl Executor for JoinExec {
             .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
             .collect::<Result<Vec<_>>>()?;
 
-        #[cfg(feature = "asof_join")]
-        let df = if let JoinType::AsOf = self.how {
-            if left_names.len() > 1 || right_names.len() > 1 {
-                return Err(PolarsError::ValueError(
-                    "only one column allowed in asof join".into(),
-                ));
-            }
-            let options = self.asof_options.as_ref().unwrap();
 
-            match (&options.left_by, &options.right_by) {
-                (Some(left_by), Some(right_by)) => df_left.join_asof_by(
-                    &df_right,
-                    &left_names[0],
-                    &right_names[0],
-                    left_by,
-                    right_by,
-                ),
-                (None, None) => {
-                    df_left.join_asof(&df_right, &left_names[0], &right_names[0], options.strategy)
-                }
-                _ => {
-                    panic!("expected by argument for both sides")
-                }
-            }
-        } else {
-            df_left.join(
-                &df_right,
-                &left_names,
-                &right_names,
-                self.how,
-                Some(self.suffix.clone().into_owned()),
-            )
-        };
-
-        #[cfg(not(feature = "asof_join"))]
         let df = df_left.join(
             &df_right,
             &left_names,
             &right_names,
-            self.how,
+            self.how.clone(),
             Some(self.suffix.clone().into_owned()),
         );
 

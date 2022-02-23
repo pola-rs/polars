@@ -353,11 +353,16 @@ impl DataFrame {
         right_on: &str,
         left_by: I,
         right_by: I,
+        strategy: AsofStrategy
     ) -> Result<DataFrame>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        if let AsofStrategy::Forward = strategy {
+            panic!("forward strategy + groupby not yet implemented");
+        }
+
         use DataType::*;
         let left_asof = self.column(left_on)?;
         let right_asof = other.column(right_on)?;
@@ -486,7 +491,9 @@ mod test {
             "right_vals" => [1, 2, 3, 4]
         ]?;
 
-        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"])?;
+        let out = a.join_asof_by(&b, "a", "a", ["b"], ["b"],
+                                 AsofStrategy::Backward
+        )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
         let out = out.i32().unwrap();
@@ -521,7 +528,9 @@ mod test {
 
                ]?;
 
-        let out = trades.join_asof_by(&quotes, "time", "time", ["ticker"], ["ticker"])?;
+        let out = trades.join_asof_by(&quotes, "time", "time", ["ticker"], ["ticker"],
+                                      AsofStrategy::Backward
+        )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
         let expected = &[Some(51.95), Some(51.97), Some(720.5), Some(720.5), None];
@@ -534,6 +543,7 @@ mod test {
             "time",
             ["groups_numeric"],
             ["groups_numeric"],
+            AsofStrategy::Backward
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
