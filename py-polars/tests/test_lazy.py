@@ -1112,7 +1112,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
 
-    out = pl.concat([df.lazy(), df.lazy()]).collect()  # type: ignore
+    out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
     assert out.frame_equal(df.vstack(df.clone()), null_equal=True)
 

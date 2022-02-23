@@ -65,6 +65,7 @@ Attributes
    Expr.arr
    Expr.dt
    Expr.str
+   Expr.cat
 
 
 Aggregation
@@ -322,3 +323,14 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.last
     ExprListNameSpace.contains
     ExprListNameSpace.join
+
+Categories
+----------
+The following methods are available under the `expr.cat` attribute.
+
+.. currentmodule:: polars.internals.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprCatNameSpace.set_ordering
