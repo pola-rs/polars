@@ -567,9 +567,7 @@ class LazyFrame:
 
     def select(
         self,
-        exprs: Union[
-            str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"
-        ],
+        exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"],
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.
@@ -1086,10 +1084,6 @@ class LazyFrame:
         └──────┴──────┴─────┴───────┘
 
         """
-        if how == "asof":
-            warnings.warn(
-                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof"
-            )
         if how == "cross":
             return wrap_ldf(
                 self._ldf.join(
