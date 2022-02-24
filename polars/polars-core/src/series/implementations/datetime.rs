@@ -57,12 +57,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
-    #[cfg(feature = "asof_join")]
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<IdxSize>>> {
-        let other = other.to_physical_repr();
-        self.0.deref().join_asof(&other)
-    }
-
     fn set_sorted(&mut self, reverse: bool) {
         self.0.deref_mut().set_sorted(reverse)
     }

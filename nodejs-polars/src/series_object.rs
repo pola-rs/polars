@@ -389,6 +389,7 @@ impl JsSeries {
             napi::Property::new(env, "to_dummies")?.with_method(to_dummies),
             napi::Property::new(env, "to_js")?.with_method(to_js),
             napi::Property::new(env, "unique")?.with_method(unique),
+            napi::Property::new(env, "unique_stable")?.with_method(unique_stable),
             napi::Property::new(env, "value_counts")?.with_method(value_counts),
             napi::Property::new(env, "week")?.with_method(week),
             napi::Property::new(env, "weekday")?.with_method(weekday),

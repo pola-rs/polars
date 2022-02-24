@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{Cursor, Read, Seek};
+use std::io::{BufReader, Cursor, Read, Seek};
 
 /// Trait used to get a hold to file handler or to the underlying bytes
 /// without performing a Read.
@@ -16,6 +16,12 @@ pub trait MmapBytesReader: Read + Seek + Send + Sync {
 impl MmapBytesReader for File {
     fn to_file(&self) -> Option<&File> {
         Some(self)
+    }
+}
+
+impl MmapBytesReader for BufReader<File> {
+    fn to_file(&self) -> Option<&File> {
+        Some(self.get_ref())
     }
 }
 

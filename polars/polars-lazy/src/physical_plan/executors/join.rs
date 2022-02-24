@@ -13,12 +13,6 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     suffix: Cow<'static, str>,
-    // not used if asof not activated
-    #[allow(dead_code)]
-    asof_by_left: Vec<String>,
-    // not used if asof not activated
-    #[allow(dead_code)]
-    asof_by_right: Vec<String>,
 }
 
 impl JoinExec {
@@ -31,8 +25,6 @@ impl JoinExec {
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         suffix: Cow<'static, str>,
-        asof_by_left: Vec<String>,
-        asof_by_right: Vec<String>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -42,8 +34,6 @@ impl JoinExec {
             right_on,
             parallel,
             suffix,
-            asof_by_left,
-            asof_by_right,
         }
     }
 }
@@ -88,40 +78,49 @@ impl Executor for JoinExec {
             .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
             .collect::<Result<Vec<_>>>()?;
 
+        // prepare the tolerance
+        // we must ensure that we use the right units
         #[cfg(feature = "asof_join")]
-        let df = if let (JoinType::AsOf, true, true) = (
-            self.how,
-            !self.asof_by_right.is_empty(),
-            !self.asof_by_left.is_empty(),
-        ) {
-            if left_names.len() > 1 || right_names.len() > 1 {
-                return Err(PolarsError::ValueError(
-                    "only one column allowed in asof join".into(),
-                ));
+        {
+            if let JoinType::AsOf(options) = &mut self.how {
+                use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+                if let Some(tol) = &options.tolerance_str {
+                    let duration = polars_time::Duration::parse(tol);
+                    if duration.months() != 0 {
+                        return Err(PolarsError::ValueError("Cannot use month offset in timedelta of an asof join. Consider using 4 weeks".into()));
+                    }
+                    let left_asof = df_left.column(&left_names[0])?;
+                    use DataType::*;
+                    match left_asof.dtype() {
+                        Datetime(tu, _) | Duration(tu) => {
+                            let tolerance = match tu {
+                                TimeUnit::Nanoseconds => duration.duration_ns(),
+                                TimeUnit::Microseconds => duration.duration_us(),
+                                TimeUnit::Milliseconds => duration.duration_ms(),
+                            };
+                            options.tolerance = Some(AnyValue::from(tolerance))
+                        }
+                        Date => {
+                            let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
+                            options.tolerance = Some(AnyValue::from(days))
+                        }
+                        Time => {
+                            let tolerance = duration.duration_ns();
+                            options.tolerance = Some(AnyValue::from(tolerance))
+                        }
+                        _ => {
+                            panic!("can only use timedelta string language with Date/Datetime/Duration/Time dtypes")
+                        }
+                    }
+                }
             }
-            df_left.join_asof_by(
-                &df_right,
-                &left_names[0],
-                &right_names[0],
-                &self.asof_by_left,
-                &self.asof_by_right,
-            )
-        } else {
-            df_left.join(
-                &df_right,
-                &left_names,
-                &right_names,
-                self.how,
-                Some(self.suffix.clone().into_owned()),
-            )
-        };
+        }
 
-        #[cfg(not(feature = "asof_join"))]
         let df = df_left.join(
             &df_right,
             &left_names,
             &right_names,
-            self.how,
+            self.how.clone(),
             Some(self.suffix.clone().into_owned()),
         );
 

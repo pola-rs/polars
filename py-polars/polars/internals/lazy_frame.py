@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 try:
@@ -170,6 +171,30 @@ class LazyFrame:
             Arguments.
         kwargs
             Keyword arguments.
+
+        Examples
+        --------
+
+        >>> def cast_str_to_int(data, col_name):
+        ...     return data.with_column(pl.col(col_name).cast(pl.Int64))
+        ...
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4], "b": ["10", "20", "30", "40"]}).lazy()
+        >>> df.pipe(cast_str_to_int, col_name="b").collect()
+        shape: (4, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 10  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 20  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 30  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 4   ┆ 40  │
+        └─────┴─────┘
+
         """
         return func(self, *args, **kwargs)
 
@@ -553,6 +578,31 @@ class LazyFrame:
         ----------
         exprs
             Column or columns to select.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> df.select("foo").collect()
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
         """
         exprs = pli.selection_to_pyexpr_list(exprs)
         return wrap_ldf(self._ldf.select(exprs))
@@ -571,6 +621,35 @@ class LazyFrame:
             Column(s) to group by.
         maintain_order
             Make sure that the order of the groups remain consistent. This is more expensive than a default groupby.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... ).lazy()
+        # does NOT work:
+        # df.groupby("a")["b"].sum().collect()
+        #                ^^^^ TypeError: 'LazyGroupBy' object is not subscriptable
+        # instead, use .agg():
+        >>> df.groupby("a").agg(pl.col("b").sum()).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ str ┆ i64 │
+        ╞═════╪═════╡
+        │ c   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ b   ┆ 11  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ a   ┆ 4   │
+        └─────┴─────┘
+
         """
         new_by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby(new_by, maintain_order)
@@ -786,6 +865,132 @@ class LazyFrame:
         )
         return LazyGroupBy(lgb)
 
+    def join_asof(
+        self,
+        ldf: "LazyFrame",
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
+        on: Optional[str] = None,
+        by_left: Optional[Union[str, List[str]]] = None,
+        by_right: Optional[Union[str, List[str]]] = None,
+        by: Optional[Union[str, List[str]]] = None,
+        strategy: str = "backward",
+        suffix: str = "_right",
+        tolerance: Optional[Union[str, int, float]] = None,
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
+    ) -> "LazyFrame":
+        """
+        Perform an asof join. This is similar to a left-join except that we
+        match on nearest key rather than equal keys.
+
+        Both DataFrames must be sorted by the key.
+
+        For each row in the left DataFrame:
+
+          - A "backward" search selects the last row in the right DataFrame whose
+            'on' key is less than or equal to the left's key.
+
+          - A "forward" search selects the first row in the right DataFrame whose
+            'on' key is greater than or equal to the left's key.
+
+        The default is "backward".
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with.
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        by
+            join on these columns before doing asof join
+        by_left
+            join on these columns before doing asof join
+        by_right
+            join on these columns before doing asof join
+        strategy
+            One of {'forward', 'backward'}
+        suffix
+            Suffix to append to columns with a duplicate name.
+        tolerance
+            Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
+            If an asof join is done on columns of dtype "Date", "Datetime", "Duration" or "Time" you
+            use the following string language:
+
+                - 1ns   (1 nanosecond)
+                - 1us   (1 microsecond)
+                - 1ms   (1 millisecond)
+                - 1s    (1 second)
+                - 1m    (1 minute)
+                - 1h    (1 hour)
+                - 1d    (1 day)
+                - 1w    (1 week)
+                - 1mo   (1 calendar month)
+                - 1y    (1 calendar year)
+                - 1i    (1 index count)
+
+                Or combine them:
+                "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+        """
+
+        if isinstance(on, str):
+            left_on = on
+            right_on = on
+
+        if left_on is None or right_on is None:
+            raise ValueError("You should pass the column to join on as an argument.")
+
+        by_left_: Union[List[str], None]
+        if isinstance(by_left, str):
+            by_left_ = [by_left]
+        else:
+            by_left_ = by_left
+
+        by_right_: Union[List[str], None]
+        if isinstance(by_right, (str, pli.Expr)):
+            by_right_ = [by_right]
+        else:
+            by_right_ = by_right
+
+        if isinstance(by, str):
+            by_left_ = [by]
+            by_right_ = [by]
+        elif isinstance(by, list):
+            by_left_ = by
+            by_right_ = by
+
+        tolerance_str: Optional[str] = None
+        tolerance_num: Optional[Union[float, int]] = None
+        if isinstance(tolerance, str):
+            tolerance_str = tolerance
+        else:
+            tolerance_num = tolerance
+
+        return wrap_ldf(
+            self._ldf.join_asof(
+                ldf._ldf,
+                pli.col(left_on)._pyexpr,
+                pli.col(right_on)._pyexpr,
+                by_left_,
+                by_right_,
+                allow_parallel,
+                force_parallel,
+                suffix,
+                strategy,
+                tolerance_num,
+                tolerance_str,
+            )
+        )
+
     def join(
         self,
         ldf: "LazyFrame",
@@ -837,7 +1042,54 @@ class LazyFrame:
         This is similar to a left-join except that we match on nearest key rather than equal keys.
         The keys must be sorted to perform an asof join
 
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> other_df = pl.DataFrame(
+        ...     {
+        ...         "apple": ["x", "y", "z"],
+        ...         "ham": ["a", "b", "d"],
+        ...     }
+        ... ).lazy()
+        >>> df.join(other_df, on="ham").collect()
+        shape: (2, 4)
+        ┌─────┬─────┬─────┬───────┐
+        │ foo ┆ bar ┆ ham ┆ apple │
+        │ --- ┆ --- ┆ --- ┆ ---   │
+        │ i64 ┆ f64 ┆ str ┆ str   │
+        ╞═════╪═════╪═════╪═══════╡
+        │ 1   ┆ 6.0 ┆ a   ┆ x     │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2   ┆ 7.0 ┆ b   ┆ y     │
+        └─────┴─────┴─────┴───────┘
+        >>> df.join(other_df, on="ham", how="outer").collect()
+        shape: (4, 4)
+        ┌──────┬──────┬─────┬───────┐
+        │ foo  ┆ bar  ┆ ham ┆ apple │
+        │ ---  ┆ ---  ┆ --- ┆ ---   │
+        │ i64  ┆ f64  ┆ str ┆ str   │
+        ╞══════╪══════╪═════╪═══════╡
+        │ 1    ┆ 6.0  ┆ a   ┆ x     │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 2    ┆ 7.0  ┆ b   ┆ y     │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ null ┆ null ┆ d   ┆ z     │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ 3    ┆ 8.0  ┆ c   ┆ null  │
+        └──────┴──────┴─────┴───────┘
+
         """
+        if how == "asof":
+            warnings.warn(
+                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof"
+            )
         if how == "cross":
             return wrap_ldf(
                 self._ldf.join(
@@ -956,6 +1208,43 @@ class LazyFrame:
         ----------
         expr
             Expression that evaluates to column.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>> df.with_column((pl.col("b") ** 2).alias("b_squared")).collect()  # added
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ b_squared │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 4.0       │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 4   ┆ 16.0      │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ 6   ┆ 36.0      │
+        └─────┴─────┴───────────┘
+        >>> df.with_column(pl.col("a") ** 2).collect()  # replaced
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 2   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9.0  ┆ 4   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 25.0 ┆ 6   │
+        └──────┴─────┘
+
         """
         return self.with_columns([expr])
 
@@ -1033,6 +1322,30 @@ class LazyFrame:
             Start index.
         length
             Length of the slice.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["x", "y", "z"],
+        ...         "b": [1, 3, 5],
+        ...         "c": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>>
+        >>> df.slice(1, 2).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ y   ┆ 3   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ z   ┆ 5   ┆ 6   │
+        └─────┴─────┴─────┘
+
         """
         return wrap_ldf(self._ldf.slice(offset, length))
 
@@ -1367,6 +1680,37 @@ class LazyFrame:
             Columns to use as identifier variables.
         value_vars
             Values to use as identifier variables.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": ["x", "y", "z"],
+        ...         "b": [1, 3, 5],
+        ...         "c": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>> df.melt(id_vars="a", value_vars=["b", "c"]).collect()
+        shape: (6, 3)
+        ┌─────┬──────────┬───────┐
+        │ a   ┆ variable ┆ value │
+        │ --- ┆ ---      ┆ ---   │
+        │ str ┆ str      ┆ i64   │
+        ╞═════╪══════════╪═══════╡
+        │ x   ┆ b        ┆ 1     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ y   ┆ b        ┆ 3     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ z   ┆ b        ┆ 5     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ x   ┆ c        ┆ 2     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ y   ┆ c        ┆ 4     │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ z   ┆ c        ┆ 6     │
+        └─────┴──────────┴───────┘
+
         """
         if isinstance(value_vars, str):
             value_vars = [value_vars]
@@ -1403,6 +1747,33 @@ class LazyFrame:
     def interpolate(self) -> "LazyFrame":
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, None, 9, 10],
+        ...         "bar": [6, 7, 9, None],
+        ...         "baz": [1, None, None, 9],
+        ...     }
+        ... ).lazy()
+        >>> df.interpolate().collect()
+        shape: (4, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ baz │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ i64 │
+        ╞═════╪══════╪═════╡
+        │ 1   ┆ 6    ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 5   ┆ 7    ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9   ┆ 9    ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 10  ┆ null ┆ 9   │
+        └─────┴──────┴─────┘
+
         """
         return self.select(pli.col("*").interpolate())
 

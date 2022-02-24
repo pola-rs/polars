@@ -2000,15 +2000,16 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       };
     }
   });
-
 };
 
 export interface DataFrameConstructor {
   (): DataFrame
-  (data: Record<string, any>[]): DataFrame
-  (data: Series<any>[]): DataFrame
-  (data: any): DataFrame
-  (data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
+  (data: any, options?: {
+    columns?: any[],
+    orient?: "row" | "col",
+    schema?: Record<string, string | DataType>,
+    inferSchemaLength?: number,
+  }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
 }
 function DataFrameConstructor(data?, options?): DataFrame {
@@ -2018,7 +2019,7 @@ function DataFrameConstructor(data?, options?): DataFrame {
   }
 
   if (Array.isArray(data)) {
-    return dfWrapper(arrayToJsDataFrame(data, options?.columns, options?.orient));
+    return dfWrapper(arrayToJsDataFrame(data, options));
   }
 
   return dfWrapper(objToDF(data as any));
@@ -2036,8 +2037,6 @@ function objToDF(obj: Record<string, Array<any>>): any {
   return pli.df.read_columns({columns});
 }
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
-export namespace pl {
-  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
-}
+
 
 export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});

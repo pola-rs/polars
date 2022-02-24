@@ -353,7 +353,7 @@ impl PredicatePushDown {
                         |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
                     if has_aexpr(predicate, expr_arena, matches)
                         // join might create null values.
-                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
+                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -382,7 +382,7 @@ impl PredicatePushDown {
                         );
                         filter_right = true;
                     }
-                    match (filter_left, filter_right, options.how) {
+                    match (filter_left, filter_right, &options.how) {
                         // if not pushed down on of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,

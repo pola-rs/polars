@@ -1,4 +1,5 @@
 # flake8: noqa: W191,E101
+import io
 import sys
 from builtins import range
 from datetime import datetime
@@ -1075,21 +1076,6 @@ def test_rename(df: pl.DataFrame) -> None:
     _ = out[["foos", "bars"]]
 
 
-def test_to_json(df: pl.DataFrame) -> None:
-    # text based conversion loses time info
-    df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.to_json(to_string=True)
-    out = pl.read_json(s)
-    assert df.frame_equal(out, null_equal=True)
-
-    file = BytesIO()
-    df.to_json(file)
-    file.seek(0)
-    s = file.read().decode("utf8")
-    out = pl.read_json(s)
-    assert df.frame_equal(out, null_equal=True)
-
-
 def test_to_csv() -> None:
     df = pl.DataFrame(
         {
@@ -1162,10 +1148,10 @@ def test_asof_cross_join() -> None:
     right = pl.DataFrame({"a": [1, 2, 3, 6, 7], "right_val": [1, 2, 3, 6, 7]})
 
     # only test dispatch of asof join
-    out = left.join(right, on="a", how="asof")
+    out = left.join_asof(right, on="a")
     assert out.shape == (3, 3)
 
-    left.lazy().join(right.lazy(), on="a", how="asof").collect()
+    left.lazy().join_asof(right.lazy(), on="a").collect()
     assert out.shape == (3, 3)
 
     # only test dispatch of cross join
@@ -1375,7 +1361,7 @@ AAPL""".split(
         }
     )
 
-    out = trades.join(quotes, on="dates", how="asof")
+    out = trades.join_asof(quotes, on="dates", strategy="backward")
     assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
     assert (out["dates"].cast(int) / 1000).to_list() == [
         1464183000023,
@@ -1384,10 +1370,14 @@ AAPL""".split(
         1464183000048,
         1464183000048,
     ]
-    out = trades.join(quotes, on="dates", how="asof", asof_by="ticker")
+    assert trades.join_asof(quotes, on="dates", strategy="forward")[
+        "bid_right"
+    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+
+    out = trades.join_asof(quotes, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
 
-    out = quotes.join(trades, on="dates", asof_by="ticker", how="asof")
+    out = quotes.join_asof(trades, on="dates", by="ticker")
     assert out["bid_right"].to_list() == [
         None,
         51.95,
@@ -1398,6 +1388,12 @@ AAPL""".split(
         720.92,
         51.95,
     ]
+    assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
+    assert quotes.join_asof(trades, on="dates", strategy="forward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
 
 def test_groupby_agg_n_unique_floats() -> None:
@@ -1572,6 +1568,24 @@ def test_with_column_renamed() -> None:
     result = df.rename({"b": "c"})
     expected = pl.DataFrame({"a": [1, 2], "c": [3, 4]})
     assert result.frame_equal(expected)
+
+
+def test_rename_swap() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [5, 4, 3, 2, 1],
+        }
+    )
+
+    out = df.rename({"a": "b", "b": "a"})
+    expected = pl.DataFrame(
+        {
+            "b": [1, 2, 3, 4, 5],
+            "a": [5, 4, 3, 2, 1],
+        }
+    )
+    assert out.frame_equal(expected)
 
 
 def test_fill_null() -> None:

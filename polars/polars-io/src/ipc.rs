@@ -389,4 +389,19 @@ mod test {
             assert!(df.frame_equal(&df_read));
         }
     }
+
+    #[test]
+    fn write_and_read_ipc_empty_series() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        let chunked_array = Float64Chunked::new("empty", &[0_f64; 0]);
+        let mut df = DataFrame::new(vec![chunked_array.into_series()]).unwrap();
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
+
+        buf.set_position(0);
+
+        let df_read = IpcReader::new(buf).finish().unwrap();
+        assert!(df.frame_equal(&df_read));
+    }
 }

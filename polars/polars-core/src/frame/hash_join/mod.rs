@@ -59,13 +59,13 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum JoinType {
     Left,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
-    AsOf,
+    AsOf(AsOfOptions),
     Cross,
 }
 
@@ -822,7 +822,10 @@ impl HashJoin<BooleanType> for BooleanChunked {
     }
 }
 
-fn prepare_strs<'a>(been_split: &'a [Utf8Chunked], hb: &RandomState) -> Vec<Vec<StrHash<'a>>> {
+pub(crate) fn prepare_strs<'a>(
+    been_split: &'a [Utf8Chunked],
+    hb: &RandomState,
+) -> Vec<Vec<StrHash<'a>>> {
     POOL.install(|| {
         been_split
             .par_iter()
@@ -1083,8 +1086,31 @@ impl DataFrame {
                 JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
                 JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf => {
-                    self.join_asof(other, selected_left[0].name(), selected_right[0].name())
+                JoinType::AsOf(options) => {
+                    let left_on = selected_left[0].name();
+                    let right_on = selected_right[0].name();
+
+                    match (options.left_by, options.right_by) {
+                        (Some(left_by), Some(right_by)) => self.join_asof_by(
+                            other,
+                            left_on,
+                            right_on,
+                            left_by,
+                            right_by,
+                            options.strategy,
+                        ),
+                        (None, None) => self.join_asof(
+                            other,
+                            left_on,
+                            right_on,
+                            options.strategy,
+                            options.tolerance,
+                            suffix,
+                        ),
+                        _ => {
+                            panic!("expected by arguments on both sides")
+                        }
+                    }
                 }
                 JoinType::Cross => {
                     unreachable!()
@@ -1183,7 +1209,7 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf => Err(PolarsError::ValueError(
+            JoinType::AsOf(_) => Err(PolarsError::ValueError(
                 "asof join not supported for join on multiple keys".into(),
             )),
             JoinType::Cross => {
@@ -1405,6 +1431,7 @@ impl DataFrame {
                 )
             },
         );
+
         let mut s = s_left
             .to_physical_repr()
             .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
@@ -1412,10 +1439,10 @@ impl DataFrame {
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
-                let ca_or = s_left.categorical().unwrap();
+                let ca_left = s_left.categorical().unwrap();
+                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap());
                 let logical = s.u32().unwrap().clone();
-                CategoricalChunked::from_cats_and_rev_map(logical, ca_or.get_rev_map().clone())
-                    .into_series()
+                CategoricalChunked::from_cats_and_rev_map(logical, new_rev_map).into_series()
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time

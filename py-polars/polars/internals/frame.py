@@ -3,6 +3,7 @@ Module containing logic related to eager DataFrames
 """
 import os
 import sys
+import warnings
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -57,7 +58,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, UInt32, py_type_to_dtype
+from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -359,12 +360,13 @@ class DataFrame:
         """
         # path for table without rows that keeps datatype
         if data.shape[0] == 0:
-            # We do a loop and materialize the series.
-            # There can be series of len != null due to pandas indexes.
             series = []
             for name in data.columns:
-                col = pli.Series(name, data[name])
-                if len(col) == 0:
+                pd_series = data[name]
+                if pd_series.dtype == np.dtype("O"):
+                    series.append(pli.Series(name, [], dtype=Utf8))
+                else:
+                    col = pli.Series(name, pd_series)
                     series.append(pli.Series(name, col))
             return DataFrame(series)
 
@@ -638,8 +640,6 @@ class DataFrame:
         file
             Path to a file or a file like object.
         """
-        if not isinstance(file, str):
-            file = file.read().decode("utf8")
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_json(file)
         return self
@@ -1087,9 +1087,7 @@ class DataFrame:
         file: Union[str, Path, BytesIO],
         compression: Optional[
             Union[
-                Literal[
-                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
-                ],
+                Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"],
                 str,
             ]
         ] = "snappy",
@@ -1174,9 +1172,7 @@ class DataFrame:
         """
         out = self._df.to_numpy()
         if out is None:
-            return np.vstack(
-                [self.to_series(i).to_numpy() for i in range(self.width)]
-            ).T
+            return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
         else:
             return out
 
@@ -1281,9 +1277,7 @@ class DataFrame:
     @overload
     def __getitem__(
         self,
-        item: Union[
-            int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
-        ],
+        item: Union[int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple],
     ) -> "DataFrame":
         ...
 
@@ -1571,10 +1565,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        df = self.clone()
-        for k, v in mapping.items():
-            df._df.rename(k, v)
-        return df
+        return self.lazy().rename(mapping).collect(no_optimization=True)
 
     def insert_at_idx(self, index: int, series: "pli.Series") -> None:
         """
@@ -2336,6 +2327,30 @@ class DataFrame:
             Name of the column to add.
         offset
             Start the row count at this offset. Default = 0
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_row_count()
+        shape: (3, 3)
+        ┌────────┬─────┬─────┐
+        │ row_nr ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ u32    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ 0      ┆ 1   ┆ 2   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1      ┆ 3   ┆ 4   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2      ┆ 5   ┆ 6   │
+        └────────┴─────┴─────┘
+
         """
         return wrap_df(self._df.with_row_count(name, offset))
 
@@ -2921,8 +2936,101 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        return wrap_df(
-            self._df.upsample(by, time_column, every, offset, maintain_order)
+        return wrap_df(self._df.upsample(by, time_column, every, offset, maintain_order))
+
+    def join_asof(
+        self,
+        df: "DataFrame",
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
+        on: Optional[str] = None,
+        by_left: Optional[Union[str, List[str]]] = None,
+        by_right: Optional[Union[str, List[str]]] = None,
+        by: Optional[Union[str, List[str]]] = None,
+        strategy: str = "backward",
+        suffix: str = "_right",
+        tolerance: Optional[Union[str, int, float]] = None,
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
+    ) -> "DataFrame":
+        """
+        Perform an asof join. This is similar to a left-join except that we
+        match on nearest key rather than equal keys.
+
+        Both DataFrames must be sorted by the key.
+
+        For each row in the left DataFrame:
+
+          - A "backward" search selects the last row in the right DataFrame whose
+            'on' key is less than or equal to the left's key.
+
+          - A "forward" search selects the first row in the right DataFrame whose
+            'on' key is greater than or equal to the left's key.
+
+        The default is "backward".
+
+        Parameters
+        ----------
+        ldf
+            Lazy DataFrame to join with.
+        left_on
+            Join column of the left DataFrame.
+        right_on
+            Join column of the right DataFrame.
+        on
+            Join column of both DataFrames. If set, `left_on` and `right_on` should be None.
+        by
+            join on these columns before doing asof join
+        by_left
+            join on these columns before doing asof join
+        by_right
+            join on these columns before doing asof join
+        strategy
+            One of {'forward', 'backward'}
+        suffix
+            Suffix to append to columns with a duplicate name.
+        tolerance
+            Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
+            If an asof join is done on columns of dtype "Date", "Datetime", "Duration" or "Time" you
+            use the following string language:
+
+                - 1ns   (1 nanosecond)
+                - 1us   (1 microsecond)
+                - 1ms   (1 millisecond)
+                - 1s    (1 second)
+                - 1m    (1 minute)
+                - 1h    (1 hour)
+                - 1d    (1 day)
+                - 1w    (1 week)
+                - 1mo   (1 calendar month)
+                - 1y    (1 calendar year)
+                - 1i    (1 index count)
+
+                Or combine them:
+                "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+        """
+        return (
+            self.lazy()
+            .join_asof(
+                df.lazy(),
+                left_on=left_on,
+                right_on=right_on,
+                on=on,
+                by_left=by_left,
+                by_right=by_right,
+                by=by,
+                strategy=strategy,
+                suffix=suffix,
+                tolerance=tolerance,
+                allow_parallel=allow_parallel,
+                force_parallel=force_parallel,
+            )
+            .collect(no_optimization=True)
         )
 
     def join(
@@ -3014,10 +3122,15 @@ class DataFrame:
         └──────┴──────┴─────┴───────┘
 
         **Asof join**
-        This is similar to a left-join except that we match on nearest key rather than equal keys.
+        This is similar to a left-join except that we match on near keys rather than equal keys.
+        The direction is backward
         The keys must be sorted to perform an asof join
 
         """
+        if how == "asof":
+            warnings.warn(
+                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof"
+            )
         if how == "cross":
             return wrap_df(self._df.join(df._df, [], [], how, suffix))
 
@@ -3104,6 +3217,43 @@ class DataFrame:
         ----------
         column
             Series, where the name of the Series refers to the column in the DataFrame.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.with_column((pl.col("b") ** 2).alias("b_squared"))  # added
+        shape: (3, 3)
+        ┌─────┬─────┬───────────┐
+        │ a   ┆ b   ┆ b_squared │
+        │ --- ┆ --- ┆ ---       │
+        │ i64 ┆ i64 ┆ f64       │
+        ╞═════╪═════╪═══════════╡
+        │ 1   ┆ 2   ┆ 4.0       │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 4   ┆ 16.0      │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 5   ┆ 6   ┆ 36.0      │
+        └─────┴─────┴───────────┘
+        >>> df.with_column(pl.col("a") ** 2)  # replaced
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ i64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 2   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9.0  ┆ 4   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 25.0 ┆ 6   │
+        └──────┴─────┘
+
         """
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
@@ -4029,6 +4179,35 @@ class DataFrame:
         │ 2   ┆ 7   ┆ null │
         └─────┴─────┴──────┘
 
+        Note: the mean of booleans evaluates to null.
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [True, True, False],
+        ...         "b": [True, True, True],
+        ...     }
+        ... )
+        # mean evaluates to null
+        >>> df.mean()
+        shape: (1, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ bool ┆ bool │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        └──────┴──────┘
+        # instead, cast to numeric type
+        >>> df.select(pl.all().cast(pl.UInt8)).mean()
+        shape: (1, 2)
+        ┌──────────┬─────┐
+        │ a        ┆ b   │
+        │ ---      ┆ --- │
+        │ f64      ┆ f64 │
+        ╞══════════╪═════╡
+        │ 0.666667 ┆ 1.0 │
+        └──────────┴─────┘
+
         """
         if axis == 0:
             return wrap_df(self._df.mean())
@@ -4356,7 +4535,7 @@ class DataFrame:
             null
         ]
 
-        A horizontal boolean or similar to a row-wise .any():
+        A horizontal boolean or, similar to a row-wise .any():
 
         >>> df = pl.DataFrame(
         ...     {
@@ -4364,7 +4543,6 @@ class DataFrame:
         ...         "b": [False, True, False],
         ...     }
         ... )
-        >>>
         >>> df.fold(lambda s1, s2: s1 | s2)
         shape: (3,)
         Series: 'a' [bool]
@@ -4482,6 +4660,33 @@ class DataFrame:
     def interpolate(self) -> "DataFrame":
         """
         Interpolate intermediate values. The interpolation method is linear.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, None, 9, 10],
+        ...         "bar": [6, 7, 9, None],
+        ...         "baz": [1, None, None, 9],
+        ...     }
+        ... )
+        >>> df.interpolate()
+        shape: (4, 3)
+        ┌─────┬──────┬─────┐
+        │ foo ┆ bar  ┆ baz │
+        │ --- ┆ ---  ┆ --- │
+        │ i64 ┆ i64  ┆ i64 │
+        ╞═════╪══════╪═════╡
+        │ 1   ┆ 6    ┆ 1   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 5   ┆ 7    ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 9   ┆ 9    ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 10  ┆ null ┆ 9   │
+        └─────┴──────┴─────┘
+
         """
         return self.select(pli.col("*").interpolate())
 

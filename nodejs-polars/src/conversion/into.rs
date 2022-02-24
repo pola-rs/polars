@@ -196,9 +196,9 @@ impl IntoJsRef<JsObject> for Series {
     }
 }
 
-impl IntoJs<JsUnknown> for Wrap<AnyValue<'_>> {
+impl IntoJs<JsUnknown> for AnyValue<'_> {
     fn try_into_js(self, cx: &CallContext) -> Result<JsUnknown> {
-        match self.0 {
+        match self {
             AnyValue::Boolean(v) => cx.env.get_boolean(v).map(|v| v.into_unknown()),
             AnyValue::Utf8(v) => cx.env.create_string(v).map(|v| v.into_unknown()),
             AnyValue::UInt8(v) => cx.env.create_uint32(v as u32).map(|v| v.into_unknown()),

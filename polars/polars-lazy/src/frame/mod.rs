@@ -50,8 +50,6 @@ pub struct JoinOptions {
     pub force_parallel: bool,
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
-    pub asof_by_left: Vec<String>,
-    pub asof_by_right: Vec<String>,
 }
 
 impl Default for JoinOptions {
@@ -61,8 +59,6 @@ impl Default for JoinOptions {
             force_parallel: false,
             how: JoinType::Left,
             suffix: "_right".into(),
-            asof_by_left: vec![],
-            asof_by_right: vec![],
         }
     }
 }
@@ -281,24 +277,57 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    /// Rename columns in the DataFrame.
-    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
-    where
-        I: IntoIterator<Item = T> + Clone,
-        J: IntoIterator<Item = S>,
-        T: AsRef<str>,
-        S: AsRef<str>,
-    {
-        let existing: Vec<String> = existing
-            .into_iter()
-            .map(|name| name.as_ref().to_string())
-            .collect();
+    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
+        // schema after renaming
+        let new_schema = self.schema().rename(&existing, &new).unwrap();
+
+        let prefix = "__POLARS_TEMP_";
 
         let new: Vec<String> = new
-            .into_iter()
-            .map(|name| name.as_ref().to_string())
+            .iter()
+            .map(|name| format!("{}{}", prefix, name))
             .collect();
 
+        self.with_columns(
+            existing
+                .iter()
+                .zip(&new)
+                .map(|(old, new)| col(old).alias(new))
+                .collect::<Vec<_>>(),
+        )
+        .map(
+            move |mut df: DataFrame| {
+                let mut cols = std::mem::take(df.get_columns_mut());
+                // we must find the indices before we start swapping,
+                // because swapping may influence the positions we find if columns are swapped for instance.
+                // e.g. a -> b
+                //      b -> a
+                #[allow(clippy::needless_collect)]
+                let existing_idx = existing
+                    .iter()
+                    .map(|name| cols.iter().position(|s| s.name() == name.as_str()).unwrap())
+                    .collect::<Vec<_>>();
+                let new_idx = new
+                    .iter()
+                    .map(|name| cols.iter().position(|s| s.name() == name.as_str()).unwrap())
+                    .collect::<Vec<_>>();
+
+                for (existing_i, new_i) in existing_idx.into_iter().zip(new_idx) {
+                    cols.swap(existing_i, new_i);
+                    let s = &mut cols[existing_i];
+                    let name = &s.name()[prefix.len()..].to_string();
+                    s.rename(name);
+                }
+                cols.truncate(cols.len() - existing.len());
+                DataFrame::new(cols)
+            },
+            None,
+            Some(new_schema),
+            Some("RENAME_SWAPPING"),
+        )
+    }
+
+    fn rename_imp(self, existing: Vec<String>, new: Vec<String>) -> Self {
         self.with_columns(
             existing
                 .iter()
@@ -324,6 +353,38 @@ impl LazyFrame {
             None,
             Some("RENAME"),
         )
+    }
+
+    /// Rename columns in the DataFrame.
+    pub fn rename<I, J, T, S>(self, existing: I, new: J) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        J: IntoIterator<Item = S>,
+        T: AsRef<str>,
+        S: AsRef<str>,
+    {
+        // We dispatch to 2 implementations.
+        // 1 is swapping eg. rename a -> b and b -> a
+        // 2 is non-swapping eg. rename a -> new_name
+        // the latter allows predicate pushdown.
+        let existing = existing
+            .into_iter()
+            .map(|a| a.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let new = new
+            .into_iter()
+            .map(|a| a.as_ref().to_string())
+            .collect::<Vec<_>>();
+        let schema = &*self.schema();
+        // a column gets swapped
+        if new
+            .iter()
+            .any(|name| schema.column_with_name(name).is_some())
+        {
+            self.rename_impl_swapping(existing, new)
+        } else {
+            self.rename_imp(existing, new)
+        }
     }
 
     /// Removes columns from the DataFrame.
@@ -1141,8 +1202,6 @@ pub struct JoinBuilder {
     allow_parallel: bool,
     force_parallel: bool,
     suffix: Option<String>,
-    asof_by_left: Vec<String>,
-    asof_by_right: Vec<String>,
 }
 impl JoinBuilder {
     pub fn new(lf: LazyFrame) -> Self {
@@ -1155,8 +1214,6 @@ impl JoinBuilder {
             allow_parallel: true,
             force_parallel: false,
             suffix: None,
-            asof_by_left: vec![],
-            asof_by_right: vec![],
         }
     }
 
@@ -1202,13 +1259,6 @@ impl JoinBuilder {
         self
     }
 
-    /// Set the `by` subgrouper of an asof join.
-    pub fn asof_by(mut self, left_by: Vec<String>, right_by: Vec<String>) -> Self {
-        self.asof_by_left = left_by;
-        self.asof_by_right = right_by;
-        self
-    }
-
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let opt_state = self.lf.opt_state;
@@ -1230,8 +1280,6 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     how: self.how,
                     suffix,
-                    asof_by_left: self.asof_by_left,
-                    asof_by_right: self.asof_by_right,
                 },
             )
             .build();

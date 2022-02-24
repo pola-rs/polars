@@ -22,9 +22,8 @@ def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
     f = os.path.join(io_test_dir, "small.json")
     df.to_json(f)
 
-    # Not sure why error occur
-    with pytest.raises(RuntimeError):
-        _ = pl.read_json(f)
+    out = pl.read_json(f)
+    assert out.frame_equal(df)
 
     # read_df = read_df.with_columns(
     #     [pl.col("cat").cast(pl.Categorical), pl.col("time").cast(pl.Time)]
@@ -50,3 +49,20 @@ def test_to_json() -> None:
 {"a":3,"b":null}
 """
     )
+
+
+def test_to_json2(df: pl.DataFrame) -> None:
+    # text based conversion loses time info
+    df = df.select(pl.all().exclude(["cat", "time"]))
+    s = df.to_json(to_string=True)
+    f = io.BytesIO()
+    f.write(s.encode())
+    f.seek(0)
+    out = pl.read_json(f)
+    assert df.frame_equal(out, null_equal=True)
+
+    file = io.BytesIO()
+    df.to_json(file)
+    file.seek(0)
+    out = pl.read_json(file)
+    assert df.frame_equal(out, null_equal=True)

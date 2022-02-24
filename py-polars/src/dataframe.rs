@@ -1,6 +1,7 @@
 use numpy::IntoPyArray;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use std::io::Read;
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
@@ -272,11 +273,15 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(json: &str) -> PyResult<Self> {
+    pub fn read_json(py_f: PyObject) -> PyResult<Self> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
+        let mut json = String::new();
+        let _ = get_file_like(py_f, false)?
+            .read_to_string(&mut json)
+            .unwrap();
         let df: DataFrame =
-            serde_json::from_str(json).map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
+            serde_json::from_str(&json).map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
         Ok(df.into())
     }
 
@@ -626,7 +631,13 @@ impl PyDataFrame {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
-            "asof" => JoinType::AsOf,
+            "asof" => JoinType::AsOf(AsOfOptions {
+                strategy: AsofStrategy::Backward,
+                left_by: None,
+                right_by: None,
+                tolerance: None,
+                tolerance_str: None,
+            }),
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),
         };

@@ -23,6 +23,7 @@ Attributes
    Series.arr
    Series.dt
    Series.str
+   Series.cat
    Series.time_unit
 
 Conversion
@@ -285,3 +286,14 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.last
     ListNameSpace.contains
     ListNameSpace.join
+
+Categories
+----------
+The following methods are available under the `expr.cat` attribute.
+
+.. currentmodule:: polars.internals.series
+
+.. autosummary::
+   :toctree: api/
+
+    CatNameSpace.set_ordering

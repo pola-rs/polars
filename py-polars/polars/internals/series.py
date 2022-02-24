@@ -2533,6 +2533,34 @@ class Series:
         Returns
         -------
         New Series
+
+        Examples
+        --------
+
+        >>> s1 = pl.Series([1, 2, 3, 4, 5])
+        >>> s2 = pl.Series([5, 4, 3, 2, 1])
+        >>> s1.zip_with(s1 < s2, s2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                2
+                1
+        ]
+        >>> mask = pl.Series([True, False, True, False, True])
+        >>> s1.zip_with(mask, s2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                4
+                3
+                2
+                5
+        ]
+
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
@@ -3436,6 +3464,22 @@ class Series:
             The value to extend the Series with. This value may be None to fill with nulls.
         n
             The number of values to extend.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.extend_constant(99, n=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                99
+                99
+        ]
+
         """
         return wrap_s(self._s.extend_constant(value, n))
 
@@ -3469,6 +3513,13 @@ class Series:
         Create an object namespace of all string related methods.
         """
         return StringNameSpace(self)
+
+    @property
+    def cat(self) -> "CatNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return CatNameSpace(self)
 
 
 class StringNameSpace:

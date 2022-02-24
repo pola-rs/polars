@@ -10,7 +10,7 @@ use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
-use polars_core::prelude::QuantileInterpolOptions;
+use polars_core::prelude::{AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -372,8 +372,51 @@ impl PyLazyFrame {
     }
 
     #[allow(clippy::too_many_arguments)]
+    pub fn join_asof(
+        &self,
+        other: PyLazyFrame,
+        left_on: PyExpr,
+        right_on: PyExpr,
+        left_by: Option<Vec<String>>,
+        right_by: Option<Vec<String>>,
+        allow_parallel: bool,
+        force_parallel: bool,
+        suffix: String,
+        strategy: &str,
+        tolerance: Option<Wrap<AnyValue<'_>>>,
+        tolerance_str: Option<String>,
+    ) -> PyLazyFrame {
+        let strategy = match strategy {
+            "forward" => AsofStrategy::Forward,
+            "backward" => AsofStrategy::Backward,
+            _ => panic!("expected on of {{'forward', 'backward'}}"),
+        };
+
+        let ldf = self.ldf.clone();
+        let other = other.ldf;
+        let left_on = left_on.inner;
+        let right_on = right_on.inner;
+        ldf.join_builder()
+            .with(other)
+            .left_on([left_on])
+            .right_on([right_on])
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel)
+            .how(JoinType::AsOf(AsOfOptions {
+                strategy,
+                left_by,
+                right_by,
+                tolerance: tolerance.map(|t| t.0.to_static().unwrap()),
+                tolerance_str,
+            }))
+            .suffix(suffix)
+            .finish()
+            .into()
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub fn join(
-        &mut self,
+        &self,
         other: PyLazyFrame,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
@@ -388,7 +431,21 @@ impl PyLazyFrame {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
-            "asof" => JoinType::AsOf,
+            "asof" => JoinType::AsOf(AsOfOptions {
+                strategy: AsofStrategy::Backward,
+                left_by: if asof_by_left.is_empty() {
+                    None
+                } else {
+                    Some(asof_by_left)
+                },
+                right_by: if asof_by_right.is_empty() {
+                    None
+                } else {
+                    Some(asof_by_right)
+                },
+                tolerance: None,
+                tolerance_str: None,
+            }),
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),
         };
@@ -412,7 +469,6 @@ impl PyLazyFrame {
             .force_parallel(force_parallel)
             .how(how)
             .suffix(suffix)
-            .asof_by(asof_by_left, asof_by_right)
             .finish()
             .into()
     }

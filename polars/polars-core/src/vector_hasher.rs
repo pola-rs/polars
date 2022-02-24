@@ -242,6 +242,19 @@ impl AsU64 for u64 {
     }
 }
 
+impl AsU64 for i32 {
+    fn as_u64(self) -> u64 {
+        let asu32: u32 = unsafe { std::mem::transmute(self) };
+        asu32 as u64
+    }
+}
+
+impl AsU64 for i64 {
+    fn as_u64(self) -> u64 {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl AsU64 for Option<u32> {
     fn as_u64(self) -> u64 {
         match self {

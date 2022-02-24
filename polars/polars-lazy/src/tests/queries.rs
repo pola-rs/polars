@@ -1135,9 +1135,10 @@ fn test_filter_and_alias() -> Result<()> {
 
     let expected = df![
         "a" => [2, 2],
-        "a_squared" => [4, 4]
+        "a_squared" => [4.0, 4.0]
     ]?;
-
+    println!("{:?}", out);
+    println!("{:?}", expected);
     assert!(out.frame_equal(&expected));
     Ok(())
 }
