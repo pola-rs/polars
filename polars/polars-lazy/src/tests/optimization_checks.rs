@@ -232,9 +232,10 @@ fn test_with_row_count_opts() -> Result<()> {
         .tail(5)
         .collect()?;
     let expected = df![
-        "row_nr" => [5, 6, 7, 8, 9],
+        "row_nr" => [5_u32, 6, 7, 8, 9],
         "a" => [5, 6, 7, 8, 9],
     ]?;
+
     assert!(out.frame_equal(&expected));
     let out = df
         .clone()

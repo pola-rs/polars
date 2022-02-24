@@ -38,8 +38,6 @@ pub(crate) mod utils;
 
 pub use options::*;
 
-use arrow::error::Result as ArrowResult;
-
 #[cfg(any(
     feature = "ipc",
     feature = "parquet",
@@ -54,6 +52,9 @@ use crate::aggregations::{apply_aggregations, ScanAggregation};
     feature = "avro"
 ))]
 use crate::predicates::PhysicalIoExpr;
+#[allow(unused)] // remove when updating to rust nightly >= 1.61
+use arrow::array::new_empty_array;
+use arrow::error::Result as ArrowResult;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::*;
 use std::io::{Read, Seek, Write};
@@ -134,10 +135,29 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             }
         }
     }
-    let mut df = accumulate_dataframes_vertical(parsed_dfs)?;
 
-    // Aggregations must be applied a final time to aggregate the partitions
-    apply_aggregations(&mut df, aggregate)?;
+    let df = {
+        if parsed_dfs.is_empty() {
+            // Create an empty dataframe with the correct data types
+            let empty_cols = arrow_schema
+                .fields
+                .iter()
+                .map(|fld| {
+                    Series::try_from((
+                        fld.name.as_str(),
+                        Arc::from(new_empty_array(fld.data_type.clone())),
+                    ))
+                })
+                .collect::<Result<_>>()?;
+            DataFrame::new(empty_cols)?
+        } else {
+            // If there are any rows, accumulate them into a df
+            let mut df = accumulate_dataframes_vertical(parsed_dfs)?;
+            // Aggregations must be applied a final time to aggregate the partitions
+            apply_aggregations(&mut df, aggregate)?;
+            df
+        }
+    };
 
     match rechunk {
         true => Ok(df.agg_chunks()),

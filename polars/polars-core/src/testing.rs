@@ -146,8 +146,8 @@ mod test {
 
     #[test]
     fn test_series_equal() {
-        let a = Series::new("a", &[1, 2, 3]);
-        let b = Series::new("a", &[1, 2, 3]);
+        let a = Series::new("a", &[1_u32, 2, 3]);
+        let b = Series::new("a", &[1_u32, 2, 3]);
         assert!(a.series_equal(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);
