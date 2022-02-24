@@ -61,7 +61,7 @@ impl PolarsExtension {
         let f = Box::new(move |arr: &FixedSizeBinaryArray, name: &str| {
             let iter = arr.iter().map(|opt| {
                 opt.map(|bytes| {
-                    let t = unsafe { std::ptr::read_unaligned(bytes.as_ptr() as *const T) };
+                    let t = std::ptr::read_unaligned(bytes.as_ptr() as *const T);
 
                     let ret = t.clone();
                     std::mem::forget(t);
