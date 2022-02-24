@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 try:
@@ -1085,6 +1086,10 @@ class LazyFrame:
         └──────┴──────┴─────┴───────┘
 
         """
+        if how == "asof":
+            warnings.warn(
+                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof"
+            )
         if how == "cross":
             return wrap_ldf(
                 self._ldf.join(
