@@ -1,4 +1,5 @@
 # flake8: noqa: W191,E101
+import io
 import sys
 from builtins import range
 from datetime import datetime
@@ -1073,21 +1074,6 @@ def test_rename(df: pl.DataFrame) -> None:
     out = df.rename({"strings": "bars", "int": "foos"})
     # check if wel can select these new columns
     _ = out[["foos", "bars"]]
-
-
-def test_to_json(df: pl.DataFrame) -> None:
-    # text based conversion loses time info
-    df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.to_json(to_string=True)
-    out = pl.read_json(s)
-    assert df.frame_equal(out, null_equal=True)
-
-    file = BytesIO()
-    df.to_json(file)
-    file.seek(0)
-    s = file.read().decode("utf8")
-    out = pl.read_json(s)
-    assert df.frame_equal(out, null_equal=True)
 
 
 def test_to_csv() -> None:

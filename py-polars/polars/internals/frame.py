@@ -640,8 +640,6 @@ class DataFrame:
         file
             Path to a file or a file like object.
         """
-        if not isinstance(file, str):
-            file = file.read().decode("utf8")
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_json(file)
         return self
