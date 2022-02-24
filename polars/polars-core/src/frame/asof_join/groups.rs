@@ -370,6 +370,8 @@ impl DataFrame {
         let right_asof = other.column(right_on)?;
         let right_asof_name = right_asof.name();
 
+        check_asof_columns(left_asof, right_asof)?;
+
         let left_by = self.select(left_by)?;
         let right_by = other.select(right_by)?;
 
@@ -377,8 +379,7 @@ impl DataFrame {
         let right_by_s = &right_by.get_columns()[0];
 
         let right_join_tuples = if left_asof.bit_repr_is_large() {
-            let left_asof = left_asof.bit_repr_large();
-            let right_asof = right_asof.bit_repr_large();
+            // we cannot use bit repr as that loses ordering
             let left_asof = left_asof.cast(&DataType::Int64)?;
             let right_asof = right_asof.cast(&DataType::Int64)?;
             let left_asof = left_asof.i64().unwrap();
@@ -394,17 +395,13 @@ impl DataFrame {
                     ),
                     _ => {
                         if left_by_s.bit_repr_is_large() {
-                            let left_by = left_by_s.cast(&DataType::Int64).unwrap();
-                            let left_by = left_by.i64().unwrap();
-                            let right_by = right_by_s.cast(&DataType::Int64).unwrap();
-                            let right_by = right_by.i64().unwrap();
-                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                            let left_by = left_by_s.bit_repr_large();
+                            let right_by = right_by_s.bit_repr_large();
+                            asof_join_by_numeric(&left_by, &right_by, left_asof, right_asof)
                         } else {
-                            let left_by = left_by_s.cast(&DataType::Int32).unwrap();
-                            let left_by = left_by.i32().unwrap();
-                            let right_by = right_by_s.cast(&DataType::Int32).unwrap();
-                            let right_by = right_by.i32().unwrap();
-                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                            let left_by = left_by_s.bit_repr_small();
+                            let right_by = right_by_s.bit_repr_small();
+                            asof_join_by_numeric(&left_by, &right_by, left_asof, right_asof)
                         }
                     }
                 }
@@ -412,6 +409,7 @@ impl DataFrame {
                 asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof)
             }
         } else {
+            // we cannot use bit repr as that loses ordering
             let left_asof = left_asof.cast(&DataType::Int32)?;
             let right_asof = right_asof.cast(&DataType::Int32)?;
             let left_asof = left_asof.i32().unwrap();
@@ -427,17 +425,13 @@ impl DataFrame {
                     ),
                     _ => {
                         if left_by_s.bit_repr_is_large() {
-                            let left_by = left_by_s.cast(&DataType::Int64).unwrap();
-                            let left_by = left_by.i64().unwrap();
-                            let right_by = right_by_s.cast(&DataType::Int64).unwrap();
-                            let right_by = right_by.i64().unwrap();
-                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                            let left_by = left_by_s.bit_repr_large();
+                            let right_by = right_by_s.bit_repr_large();
+                            asof_join_by_numeric(&left_by, &right_by, left_asof, right_asof)
                         } else {
-                            let left_by = left_by_s.cast(&DataType::Int32).unwrap();
-                            let left_by = left_by.i32().unwrap();
-                            let right_by = right_by_s.cast(&DataType::Int32).unwrap();
-                            let right_by = right_by.i32().unwrap();
-                            asof_join_by_numeric(left_by, right_by, left_asof, right_asof)
+                            let left_by = left_by_s.bit_repr_small();
+                            let right_by = right_by_s.bit_repr_small();
+                            asof_join_by_numeric(&left_by, &right_by, left_asof, right_asof)
                         }
                     }
                 }

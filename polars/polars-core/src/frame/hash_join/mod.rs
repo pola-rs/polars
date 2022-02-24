@@ -1099,7 +1099,14 @@ impl DataFrame {
                             right_by,
                             options.strategy,
                         ),
-                        (None, None) => self.join_asof(other, left_on, right_on, options.strategy),
+                        (None, None) => self.join_asof(
+                            other,
+                            left_on,
+                            right_on,
+                            options.strategy,
+                            options.tolerance,
+                            suffix,
+                        ),
                         _ => {
                             panic!("expected by arguments on both sides")
                         }

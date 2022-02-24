@@ -254,6 +254,35 @@ pub enum AnyValue<'a> {
     Object(&'a dyn PolarsObjectSafe),
 }
 
+impl<'a> AnyValue<'a> {
+    /// Extract a numerical value from the AnyValue
+    #[doc(hidden)]
+    #[cfg(feature = "private")]
+    pub fn extract<T: NumCast>(&self) -> Option<T> {
+        use AnyValue::*;
+        match self {
+            Null => None,
+            Int8(v) => NumCast::from(*v),
+            Int16(v) => NumCast::from(*v),
+            Int32(v) => NumCast::from(*v),
+            Int64(v) => NumCast::from(*v),
+            UInt8(v) => NumCast::from(*v),
+            UInt16(v) => NumCast::from(*v),
+            UInt32(v) => NumCast::from(*v),
+            UInt64(v) => NumCast::from(*v),
+            Float32(v) => NumCast::from(*v),
+            Float64(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(v, _, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, _) => NumCast::from(*v),
+            _ => unimplemented!(),
+        }
+    }
+}
+
 impl<'a> Hash for AnyValue<'a> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         use AnyValue::*;

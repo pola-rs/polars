@@ -876,6 +876,7 @@ class LazyFrame:
         by: Optional[Union[str, List[str]]] = None,
         strategy: str = "backward",
         suffix: str = "_right",
+        tolerance: Optional[Union[str, int, float]] = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> "LazyFrame":
@@ -915,6 +916,26 @@ class LazyFrame:
             One of {'forward', 'backward'}
         suffix
             Suffix to append to columns with a duplicate name.
+        tolerance
+            Numeric tolerance. By setting this the join will only be done if the near keys are within this distance.
+            If an asof join is done on columns of dtype "Date", "Datetime", "Duration" or "Time" you
+            use the following string language:
+
+                - 1ns   (1 nanosecond)
+                - 1us   (1 microsecond)
+                - 1ms   (1 millisecond)
+                - 1s    (1 second)
+                - 1m    (1 minute)
+                - 1h    (1 hour)
+                - 1d    (1 day)
+                - 1w    (1 week)
+                - 1mo   (1 calendar month)
+                - 1y    (1 calendar year)
+                - 1i    (1 index count)
+
+                Or combine them:
+                "3d12h4m25s" # 3 days, 12 hours, 4 minutes, and 25 seconds
+
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
         force_parallel
@@ -947,6 +968,13 @@ class LazyFrame:
             by_left_ = by
             by_right_ = by
 
+        tolerance_str: Optional[str] = None
+        tolerance_num: Optional[Union[float, int]] = None
+        if isinstance(tolerance, str):
+            tolerance_str = tolerance
+        else:
+            tolerance_num = tolerance
+
         return wrap_ldf(
             self._ldf.join_asof(
                 ldf._ldf,
@@ -958,6 +986,8 @@ class LazyFrame:
                 force_parallel,
                 suffix,
                 strategy,
+                tolerance_num,
+                tolerance_str,
             )
         )
 
