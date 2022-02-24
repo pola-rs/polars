@@ -6,8 +6,8 @@ use pyo3::prelude::*;
 
 /// Arrow array to Python.
 pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> PyResult<PyObject> {
-    let array_ptr = Box::new(ffi::Ffi_ArrowArray::empty());
-    let schema_ptr = Box::new(ffi::Ffi_ArrowSchema::empty());
+    let array_ptr = Box::new(ffi::ArrowArray::empty());
+    let schema_ptr = Box::new(ffi::ArrowSchema::empty());
 
     let array_ptr = Box::into_raw(array_ptr);
     let schema_ptr = Box::into_raw(schema_ptr);
