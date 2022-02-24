@@ -1402,6 +1402,12 @@ AAPL""".split(
         720.92,
         51.95,
     ]
+    assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
+    assert quotes.join_asof(trades, on="dates", strategy="forward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
 
 
 def test_groupby_agg_n_unique_floats() -> None:

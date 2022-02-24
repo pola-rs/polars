@@ -57,16 +57,6 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            #[cfg(feature = "asof_join")]
-            fn join_asof(
-                &self,
-                other: &Series,
-                strategy: AsofStrategy,
-            ) -> Result<Vec<Option<IdxSize>>> {
-                let other = other.to_physical_repr();
-                self.0.deref().join_asof(&other, strategy)
-            }
-
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.deref_mut().set_sorted(reverse)
             }
@@ -674,7 +664,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(all(feature = "dtype-datetime", feature = "dtype-duration"))]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
@@ -693,7 +683,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(all(feature = "dtype-datetime", feature = "dtype-duration"))]
     fn test_arithmetic_dispatch() {
         let s = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)

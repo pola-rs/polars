@@ -9,8 +9,31 @@ use std::borrow::Cow;
 #[derive(Clone, Debug, PartialEq)]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
+    /// A tolerance in the same unit as the asof column
+    pub tolerance: Option<AnyValue<'static>>,
+    /// An timedelta given as
+    /// - "5m"
+    /// - "2h15m"
+    /// - "1d6h"
+    /// etc
+    pub tolerance_str: Option<String>,
     pub left_by: Option<Vec<String>>,
     pub right_by: Option<Vec<String>>,
+}
+
+fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
+    if a.dtype() != b.dtype() {
+        return Err(PolarsError::ValueError(
+            format!(
+                "keys used in asof-join must have equal dtypes. We got: left: {:?}\tright: {:?}",
+                a.dtype(),
+                b.dtype()
+            )
+            .into(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -30,6 +53,7 @@ where
         &self,
         other: &Series,
         strategy: AsofStrategy,
+        tolerance: Option<AnyValue<'static>>,
     ) -> Result<Vec<Option<IdxSize>>> {
         let other = self.unpack_series_matching_type(other)?;
 
@@ -40,12 +64,28 @@ where
         }
 
         let out = match strategy {
-            AsofStrategy::Forward => {
-                join_asof_forward(self.cont_slice().unwrap(), other.cont_slice().unwrap())
-            }
-            AsofStrategy::Backward => {
-                join_asof_backward(self.cont_slice().unwrap(), other.cont_slice().unwrap())
-            }
+            AsofStrategy::Forward => match tolerance {
+                None => join_asof_forward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                Some(tolerance) => {
+                    let tolerance = tolerance.extract::<T::Native>().unwrap();
+                    join_asof_forward_with_tolerance(
+                        self.cont_slice().unwrap(),
+                        other.cont_slice().unwrap(),
+                        tolerance,
+                    )
+                }
+            },
+            AsofStrategy::Backward => match tolerance {
+                None => join_asof_backward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                Some(tolerance) => {
+                    let tolerance = tolerance.extract::<T::Native>().unwrap();
+                    join_asof_backward_with_tolerance(
+                        self.cont_slice().unwrap(),
+                        other.cont_slice().unwrap(),
+                        tolerance,
+                    )
+                }
+            },
         };
         Ok(out)
     }
@@ -61,11 +101,42 @@ impl DataFrame {
         left_on: &str,
         right_on: &str,
         strategy: AsofStrategy,
+        tolerance: Option<AnyValue<'static>>,
+        suffix: Option<String>,
     ) -> Result<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
 
-        let take_idx = left_key.join_asof(right_key, strategy)?;
+        check_asof_columns(left_key, right_key)?;
+        let left_key = left_key.to_physical_repr();
+        let right_key = right_key.to_physical_repr();
+
+        let take_idx = match left_key.dtype() {
+            DataType::Int64 => left_key
+                .i64()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
+            DataType::Int32 => left_key
+                .i32()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
+            DataType::UInt64 => left_key
+                .u64()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
+            DataType::UInt32 => left_key
+                .u32()
+                .unwrap()
+                .join_asof(&right_key, strategy, tolerance),
+            _ => {
+                let left_key = left_key.cast(&DataType::Int32).unwrap();
+                let right_key = right_key.cast(&DataType::Int32).unwrap();
+                left_key
+                    .i32()
+                    .unwrap()
+                    .join_asof(&right_key, strategy, tolerance)
+            }
+        }?;
 
         // take_idx are sorted so this is a bound check for all
         if let Some(Some(idx)) = take_idx.last() {
@@ -89,6 +160,6 @@ impl DataFrame {
             )
         };
 
-        self.finish_join(self.clone(), right_df, None)
+        self.finish_join(self.clone(), right_df, suffix)
     }
 }

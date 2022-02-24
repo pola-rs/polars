@@ -630,6 +630,8 @@ impl PyDataFrame {
                 strategy: AsofStrategy::Backward,
                 left_by: None,
                 right_by: None,
+                tolerance: None,
+                tolerance_str: None,
             }),
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),

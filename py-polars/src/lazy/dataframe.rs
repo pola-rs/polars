@@ -10,7 +10,7 @@ use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
-use polars_core::prelude::{AsOfOptions, AsofStrategy, QuantileInterpolOptions};
+use polars_core::prelude::{AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -383,6 +383,8 @@ impl PyLazyFrame {
         force_parallel: bool,
         suffix: String,
         strategy: &str,
+        tolerance: Option<Wrap<AnyValue<'_>>>,
+        tolerance_str: Option<String>,
     ) -> PyLazyFrame {
         let strategy = match strategy {
             "forward" => AsofStrategy::Forward,
@@ -404,6 +406,8 @@ impl PyLazyFrame {
                 strategy,
                 left_by,
                 right_by,
+                tolerance: tolerance.map(|t| t.0.to_static().unwrap()),
+                tolerance_str,
             }))
             .suffix(suffix)
             .finish()
@@ -439,6 +443,8 @@ impl PyLazyFrame {
                 } else {
                     Some(asof_by_right)
                 },
+                tolerance: None,
+                tolerance_str: None,
             }),
             "cross" => JoinType::Cross,
             _ => panic!("not supported"),

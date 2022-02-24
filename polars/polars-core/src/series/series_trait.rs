@@ -145,15 +145,6 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        #[cfg(feature = "asof_join")]
-        fn join_asof(
-            &self,
-            _other: &Series,
-            _strategy: AsofStrategy,
-        ) -> Result<Vec<Option<IdxSize>>> {
-            invalid_operation!(self)
-        }
-
         fn set_sorted(&mut self, _reverse: bool) {
             invalid_operation_panic!(self)
         }
