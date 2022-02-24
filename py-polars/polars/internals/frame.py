@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
 from polars._html import NotebookFormatter
-from polars.datatypes import Boolean, DataType, UInt32, py_type_to_dtype
+from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
@@ -360,12 +360,13 @@ class DataFrame:
         """
         # path for table without rows that keeps datatype
         if data.shape[0] == 0:
-            # We do a loop and materialize the series.
-            # There can be series of len != null due to pandas indexes.
             series = []
             for name in data.columns:
-                col = pli.Series(name, data[name])
-                if len(col) == 0:
+                pd_series = data[name]
+                if pd_series.dtype == np.dtype("O"):
+                    series.append(pli.Series(name, [], dtype=Utf8))
+                else:
+                    col = pli.Series(name, pd_series)
                     series.append(pli.Series(name, col))
             return DataFrame(series)
 
