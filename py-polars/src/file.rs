@@ -7,7 +7,7 @@ use pyo3::types::{PyBytes, PyString};
 use std::borrow::Borrow;
 use std::fs::File;
 use std::io;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 #[derive(Clone)]
 pub struct PyFileLikeObject {
@@ -193,7 +193,7 @@ impl MmapBytesReader for PyFileLikeObject {}
 
 pub enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(File),
+    Rust(BufReader<File>),
 }
 
 ///
@@ -207,9 +207,9 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
         let rstring = pstring.to_string();
         let str_slice: &str = rstring.borrow();
         let f = if truncate {
-            File::create(str_slice)?
+            BufReader::new(File::create(str_slice)?)
         } else {
-            File::open(str_slice)?
+            BufReader::new(File::open(str_slice)?)
         };
         Ok(EitherRustPythonFile::Rust(f))
     } else {
@@ -222,7 +222,7 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     use EitherRustPythonFile::*;
     match get_either_file(f, truncate)? {
         Py(f) => Ok(Box::new(f)),
-        Rust(f) => Ok(Box::new(f)),
+        Rust(f) => Ok(Box::new(f.into_inner())),
     }
 }
 
