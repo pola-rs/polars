@@ -700,6 +700,35 @@ class Expr:
         """
         Get the group indexes of the group by operation.
         Should be used in aggregation context only.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": [
+        ...             "one",
+        ...             "one",
+        ...             "one",
+        ...             "two",
+        ...             "two",
+        ...             "two",
+        ...         ],
+        ...         "value": [94, 95, 96, 97, 97, 99],
+        ...     }
+        ... )
+        >>> df.groupby("group").agg(pl.col("value").agg_groups())
+        shape: (2, 2)
+        ┌───────┬────────────┐
+        │ group ┆ value      │
+        │ ---   ┆ ---        │
+        │ str   ┆ list [u32] │
+        ╞═══════╪════════════╡
+        │ two   ┆ [3, 4, 5]  │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ one   ┆ [0, 1, 2]  │
+        └───────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.agg_groups())
 
@@ -967,6 +996,35 @@ class Expr:
         Returns
         -------
         Values taken by index
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "group": [
+        ...             "one",
+        ...             "one",
+        ...             "one",
+        ...             "two",
+        ...             "two",
+        ...             "two",
+        ...         ],
+        ...         "value": [1, 98, 2, 3, 99, 4],
+        ...     }
+        ... )
+        >>> df.groupby("group").agg(pl.col("value").take(1))
+        shape: (2, 2)
+        ┌───────┬───────┐
+        │ group ┆ value │
+        │ ---   ┆ ---   │
+        │ str   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ one   ┆ 98    │
+        ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ two   ┆ 99    │
+        └───────┴───────┘
+
         """
         if isinstance(index, (list, np.ndarray)):
             index_lit = pli.lit(pli.Series("", index, dtype=UInt32))
@@ -1017,6 +1075,38 @@ class Expr:
             - "one"
             - "zero"
             Or an expression.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 2, None], "b": [4, None, 6]})
+        >>> df.fill_null("zero")
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 0   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0   ┆ 6   │
+        └─────┴─────┘
+        >>> df.fill_null(99)
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 99  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 99  ┆ 6   │
+        └─────┴─────┘
+
         """
         # we first must check if it is not an expr, as expr does not implement __bool__
         # and thus leads to a value error in the second comparisson.
@@ -1148,6 +1238,26 @@ class Expr:
     def list(self) -> "Expr":
         """
         Aggregate to list.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3],
+        ...         "b": [4, 5, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.all().list())
+        shape: (1, 2)
+        ┌────────────┬────────────┐
+        │ a          ┆ b          │
+        │ ---        ┆ ---        │
+        │ list [i64] ┆ list [i64] │
+        ╞════════════╪════════════╡
+        │ [1, 2, 3]  ┆ [4, 5, 6]  │
+        └────────────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.list())
 
@@ -1409,6 +1519,31 @@ class Expr:
         Returns
         -------
         Exploded Series of same dtype
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"b": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.select(pl.col("b").explode())
+        shape: (6, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        ├╌╌╌╌╌┤
+        │ 4   │
+        ├╌╌╌╌╌┤
+        │ 5   │
+        ├╌╌╌╌╌┤
+        │ 6   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.explode())
 
@@ -2053,6 +2188,29 @@ class Expr:
         ----------
         reverse
             Reverse the ordering. Default is from low to high.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arg_sort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
         """
         return pli.argsort_by([self], [reverse])
 
@@ -2095,6 +2253,29 @@ class Expr:
             number of slots to shift
         null_behavior
             {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").diff())
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ -10  │
+        ├╌╌╌╌╌╌┤
+        │ 20   │
+        └──────┘
+
         """
         return wrap_expr(self._pyexpr.diff(n, null_behavior))
 
