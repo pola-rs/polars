@@ -9,11 +9,11 @@ use pyo3::prelude::*;
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
-    let array = Box::new(ffi::Ffi_ArrowArray::empty());
-    let schema = Box::new(ffi::Ffi_ArrowSchema::empty());
+    let array = Box::new(ffi::ArrowArray::empty());
+    let schema = Box::new(ffi::ArrowSchema::empty());
 
-    let array_ptr = &*array as *const ffi::Ffi_ArrowArray;
-    let schema_ptr = &*schema as *const ffi::Ffi_ArrowSchema;
+    let array_ptr = &*array as *const ffi::ArrowArray;
+    let schema_ptr = &*schema as *const ffi::ArrowSchema;
 
     // make the conversion through PyArrow's private API
     // this changes the pointer's memory and is thus unsafe. In particular, `_export_to_c` can go out of bounds
