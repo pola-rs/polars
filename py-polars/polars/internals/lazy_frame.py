@@ -5,7 +5,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import warnings
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 try:
@@ -567,7 +566,9 @@ class LazyFrame:
 
     def select(
         self,
-        exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"],
+        exprs: Union[
+            str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"
+        ],
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.

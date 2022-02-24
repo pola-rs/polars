@@ -1087,7 +1087,9 @@ class DataFrame:
         file: Union[str, Path, BytesIO],
         compression: Optional[
             Union[
-                Literal["uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"],
+                Literal[
+                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+                ],
                 str,
             ]
         ] = "snappy",
@@ -1172,7 +1174,9 @@ class DataFrame:
         """
         out = self._df.to_numpy()
         if out is None:
-            return np.vstack([self.to_series(i).to_numpy() for i in range(self.width)]).T
+            return np.vstack(
+                [self.to_series(i).to_numpy() for i in range(self.width)]
+            ).T
         else:
             return out
 
@@ -1277,7 +1281,9 @@ class DataFrame:
     @overload
     def __getitem__(
         self,
-        item: Union[int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple],
+        item: Union[
+            int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
+        ],
     ) -> "DataFrame":
         ...
 
@@ -2936,7 +2942,9 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        return wrap_df(self._df.upsample(by, time_column, every, offset, maintain_order))
+        return wrap_df(
+            self._df.upsample(by, time_column, every, offset, maintain_order)
+        )
 
     def join_asof(
         self,
