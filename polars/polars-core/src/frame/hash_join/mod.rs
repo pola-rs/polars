@@ -1431,6 +1431,7 @@ impl DataFrame {
                 )
             },
         );
+
         let mut s = s_left
             .to_physical_repr()
             .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
@@ -1438,10 +1439,10 @@ impl DataFrame {
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
-                let ca_or = s_left.categorical().unwrap();
+                let ca_left = s_left.categorical().unwrap();
+                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap());
                 let logical = s.u32().unwrap().clone();
-                CategoricalChunked::from_cats_and_rev_map(logical, ca_or.get_rev_map().clone())
-                    .into_series()
+                CategoricalChunked::from_cats_and_rev_map(logical, new_rev_map).into_series()
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time
