@@ -25,6 +25,23 @@ def test_categorical_outer_join() -> None:
     expected = pl.DataFrame({"val1": [1], "key1": [42], "key2": ["bar"], "val2": [2]})
 
     assert out.frame_equal(expected)
+    with pl.StringCache():
+        dfa = pl.DataFrame(
+            [
+                pl.Series("key", ["foo", "bar"], dtype=pl.Categorical),
+                pl.Series("val1", [3, 1]),
+            ]
+        )
+        dfb = pl.DataFrame(
+            [
+                pl.Series("key", ["bar", "baz"], dtype=pl.Categorical),
+                pl.Series("val2", [6, 8]),
+            ]
+        )
+
+    df = dfa.join(dfb, on="key", how="outer")
+    # the cast is important to test the rev map
+    assert df["key"].cast(pl.Utf8).to_list() == ["bar", "baz", "foo"]
 
 
 def test_read_csv_categorical() -> None:
