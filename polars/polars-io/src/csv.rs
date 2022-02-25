@@ -89,16 +89,15 @@ where
         }
     }
 
-    fn finish(self, df: &mut DataFrame) -> Result<()> {
+    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
         df.rechunk();
-        let mut writer = self.writer_builder.from_writer(self.buffer);
         let names = df.get_column_names();
         let iter = df.iter_chunks();
         if self.header {
-            write::write_header(&mut writer, &names)?;
+            write::write_header(&mut self.buffer, &names, &self.options)?;
         }
         for batch in iter {
-            write::write_chunk(&mut writer, &batch, &self.options)?;
+            write::write_chunk(&mut self.buffer, &batch, &self.options)?;
         }
         Ok(())
     }
