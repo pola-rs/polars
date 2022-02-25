@@ -48,32 +48,42 @@ def test_cum_agg() -> None:
     verify_series_and_expr_api(s, pl.Series("a", [1, 2, 6, 12]), "cumprod")
 
 
-def test_init_inputs() -> None:
-    # Good inputs
-    pl.Series("a", [1, 2])
-    pl.Series("a", values=[1, 2])
-    pl.Series(name="a", values=[1, 2])
-    pl.Series(values=[1, 2], name="a")
+def test_init_inputs(monkeypatch: Any) -> None:
+    for flag in [False, True]:
+        monkeypatch.setattr(pl.internals.construction, "_PYARROW_AVAILABLE", flag)
+        # Good inputs
+        pl.Series("a", [1, 2])
+        pl.Series("a", values=[1, 2])
+        pl.Series(name="a", values=[1, 2])
+        pl.Series(values=[1, 2], name="a")
 
-    assert pl.Series([1, 2]).dtype == pl.Int64
-    assert pl.Series(values=[1, 2]).dtype == pl.Int64
-    assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
-    assert pl.Series().dtype == pl.Float32
-    assert pl.Series(values=[True, False]).dtype == pl.Boolean
-    assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
-    assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
-    assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
-    assert pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype == pl.List
+        assert pl.Series([1, 2]).dtype == pl.Int64
+        assert pl.Series(values=[1, 2]).dtype == pl.Int64
+        assert pl.Series("a").dtype == pl.Float32  # f32 type used in case of no data
+        assert pl.Series().dtype == pl.Float32
+        assert pl.Series(values=[True, False]).dtype == pl.Boolean
+        assert pl.Series(values=np.array([True, False])).dtype == pl.Boolean
+        assert pl.Series(values=np.array(["foo", "bar"])).dtype == pl.Utf8
+        assert pl.Series(values=["foo", "bar"]).dtype == pl.Utf8
+        assert (
+            pl.Series("a", [pl.Series([1, 2, 4]), pl.Series([3, 2, 1])]).dtype
+            == pl.List
+        )
+        assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
+        # 2d numpy array
+        res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
+        assert all(res[0] == np.array([1, 2]))
+        assert all(res[1] == np.array([3, 4]))
+        assert (
+            pl.Series(values=np.array([["foo", "bar"], ["foo2", "bar2"]])).dtype
+            == pl.Object
+        )
+
+        # lists
+        assert pl.Series("a", [[1, 2], [3, 4]]).dtype == pl.List
+
+    # pandas
     assert pl.Series(pd.Series([1, 2])).dtype == pl.Int64
-    assert pl.Series("a", [10000, 20000, 30000], dtype=pl.Time).dtype == pl.Time
-    # 2d numpy array
-    res = pl.Series(name="a", values=np.array([[1, 2], [3, 4]]))
-    assert all(res[0] == np.array([1, 2]))
-    assert all(res[1] == np.array([3, 4]))
-    assert (
-        pl.Series(values=np.array([["foo", "bar"], ["foo2", "bar2"]])).dtype
-        == pl.Object
-    )
 
     # Bad inputs
     with pytest.raises(ValueError):
