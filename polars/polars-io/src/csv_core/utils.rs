@@ -138,6 +138,8 @@ pub fn infer_file_schema(
 
     let bytes = skip_line_ending(skip_bom(reader_bytes));
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
+    // it can be that we have a single line without eol char
+    let has_eol = bytes.contains(&b'\n');
 
     // get or create header names
     // when has_header is false, creates default column names with column_ prefix
@@ -156,6 +158,10 @@ pub fn infer_file_schema(
         }
     } else {
         first_line = lines.next();
+    }
+    // edge case where we a single row, no header and no eol char.
+    if first_line.is_none() && !has_eol && !has_header {
+        first_line = Some(bytes);
     }
 
     // now that we've found the first non-comment line we parse the headers, or we create a header
