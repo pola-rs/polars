@@ -4847,6 +4847,9 @@ class GroupBy:
         self.maintain_order = maintain_order
 
     def __getitem__(self, item: Any) -> "GBSelection":
+        print(
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+        )
         return self._select(item)
 
     def _select(self, columns: Union[str, List[str]]) -> "GBSelection":
@@ -4858,7 +4861,7 @@ class GroupBy:
         columns
             One or multiple columns.
         """
-        print(
+        warnings.warn(
             "accessing GroupBy by index is deprecated, consider using the `.agg` method"
         )
         if isinstance(columns, str):
@@ -4940,6 +4943,9 @@ class GroupBy:
         * the groupby keys
         * the group indexes aggregated as lists
         """
+        warnings.warn(
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+        )
         return wrap_df(self._df.groupby(self.by, None, "groups"))
 
     def apply(self, f: Callable[[DataFrame], DataFrame]) -> DataFrame:
