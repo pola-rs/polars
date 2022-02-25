@@ -1174,4 +1174,8 @@ def test_self_join() -> None:
         )
         .fetch()
     )
-    assert out.shape == (3, 3)
+    assert set(out.rows()) == {
+        (100, "James", None),
+        (101, "Alice", "James"),
+        (102, "Bob", "Alice"),
+    }

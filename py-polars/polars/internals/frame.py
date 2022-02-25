@@ -4,7 +4,7 @@ Module containing logic related to eager DataFrames
 import os
 import sys
 import warnings
-from io import BytesIO, StringIO
+from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
     Any,
@@ -512,7 +512,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to a file or a file like object. Any valid filepath can be used.
+            Path to a file or a file-like object. Any valid filepath can be used.
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         n_rows
@@ -563,7 +563,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to a file or a file like object.
+            Path to a file or a file-like object.
         n_rows
             Stop reading from Apache Avro file after reading ``n_rows``.
 
@@ -589,7 +589,7 @@ class DataFrame:
         Parameters
         ----------
         file
-            Path to a file or a file like object.
+            Path to a file or a file-like object.
         columns
             Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         n_rows
@@ -631,15 +631,18 @@ class DataFrame:
         return self
 
     @staticmethod
-    def _read_json(file: Union[str, BytesIO]) -> "DataFrame":
+    def _read_json(file: Union[str, IOBase]) -> "DataFrame":
         """
         Read into a DataFrame from JSON format.
 
         Parameters
         ----------
         file
-            Path to a file or a file like object.
+            Path to a file or a file-like object.
         """
+        if isinstance(file, StringIO):
+            file = BytesIO(file.getvalue().encode())
+
         self = DataFrame.__new__(DataFrame)
         self._df = PyDataFrame.read_json(file)
         return self
@@ -772,7 +775,7 @@ class DataFrame:
     @overload
     def to_json(
         self,
-        file: Optional[Union[BytesIO, str, Path]] = ...,
+        file: Optional[Union[IOBase, str, Path]] = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
@@ -784,7 +787,7 @@ class DataFrame:
     @overload
     def to_json(
         self,
-        file: Optional[Union[BytesIO, str, Path]] = ...,
+        file: Optional[Union[IOBase, str, Path]] = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
@@ -796,7 +799,7 @@ class DataFrame:
     @overload
     def to_json(
         self,
-        file: Optional[Union[BytesIO, str, Path]] = ...,
+        file: Optional[Union[IOBase, str, Path]] = ...,
         pretty: bool = ...,
         row_oriented: bool = ...,
         json_lines: bool = ...,
@@ -807,7 +810,7 @@ class DataFrame:
 
     def to_json(
         self,
-        file: Optional[Union[BytesIO, str, Path]] = None,
+        file: Optional[Union[IOBase, str, Path]] = None,
         pretty: bool = False,
         row_oriented: bool = False,
         json_lines: bool = False,
@@ -830,14 +833,20 @@ class DataFrame:
         to_string
             Ignore file argument and return a string.
         """
-        if to_string or file is None:
-            file = BytesIO()
-            self._df.to_json(file, pretty, row_oriented, json_lines)
-            file.seek(0)
-            return file.read().decode("utf8")
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._df.to_json(buf, pretty, row_oriented, json_lines)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
         else:
             self._df.to_json(file, pretty, row_oriented, json_lines)
-            return None
+        return None
 
     def to_pandas(
         self, *args: Any, date_as_object: bool = False, **kwargs: Any
