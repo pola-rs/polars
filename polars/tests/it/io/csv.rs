@@ -938,3 +938,14 @@ fn test_trailing_empty_string_cols() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_escaping_quotes() -> Result<()> {
+    let csv = "a\n\"\"\"\"";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file).finish()?;
+    let col = df.column("a")?;
+    let col = col.utf8()?;
+    assert_eq!(col.into_no_null_iter().collect::<Vec<_>>(), &["\""]);
+    Ok(())
+}

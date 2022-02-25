@@ -366,31 +366,35 @@ pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
-// replace double quotes by single ones
+/// replace double quotes by single ones
+///
+/// This function assumes that bytes is wrapped in the quoting character.
+///
+/// # Safety
+///
+/// The caller must ensure that:
+///     - Output buffer must have enough capacity to hold `bytes.len()`
+///     - bytes ends with the quote character e.g.: `"`
 pub(super) unsafe fn escape_field(bytes: &[u8], quote: u8, buf: &mut [u8]) -> usize {
-    if bytes == [quote, quote] {
-        0
-    } else {
-        let mut prev_quote = false;
+    let mut prev_quote = false;
 
-        let mut count = 0;
-        for c in bytes {
-            if *c == quote {
-                if prev_quote {
-                    prev_quote = false;
-                    *buf.get_unchecked_mut(count) = *c;
-                    count += 1;
-                } else {
-                    prev_quote = true;
-                }
-            } else {
+    let mut count = 0;
+    for c in bytes.get_unchecked(1..bytes.len() - 1) {
+        if *c == quote {
+            if prev_quote {
                 prev_quote = false;
                 *buf.get_unchecked_mut(count) = *c;
                 count += 1;
+            } else {
+                prev_quote = true;
             }
+        } else {
+            prev_quote = false;
+            *buf.get_unchecked_mut(count) = *c;
+            count += 1;
         }
-        count
     }
+    count
 }
 
 #[cfg(test)]
