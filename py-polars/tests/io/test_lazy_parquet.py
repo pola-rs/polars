@@ -74,7 +74,7 @@ def test_null_parquet(io_test_dir: str) -> None:
     assert out.frame_equal(df)
 
 
-def test_binary_parquet_stats(io_test_dir: str) -> None:
+def test_parquet_stats(io_test_dir: str) -> None:
     file = path.join(io_test_dir, "binary_stats.parquet")
     df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
     df1.to_parquet(file, engine="pyarrow")
@@ -84,3 +84,19 @@ def test_binary_parquet_stats(io_test_dir: str) -> None:
         .collect()
     )
     assert df["a"].to_list() == [5.0, 5.0]
+
+    assert (
+        pl.scan_parquet(file).filter(pl.col("a") > 4).select(pl.col("a").sum())
+    ).collect()[0, "a"] == 10.0
+
+    assert (
+        pl.scan_parquet(file).filter(pl.col("a") < 4).select(pl.col("a").sum())
+    ).collect()[0, "a"] == 9.0
+
+    assert (
+        pl.scan_parquet(file).filter(4 > pl.col("a")).select(pl.col("a").sum())
+    ).collect()[0, "a"] == 9.0
+
+    assert (
+        pl.scan_parquet(file).filter(4 < pl.col("a")).select(pl.col("a").sum())
+    ).collect()[0, "a"] == 10.0
