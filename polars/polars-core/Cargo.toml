@@ -163,10 +163,10 @@ unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "fb5d4330544d9d746dfc9bdacab5f1f5c1de9203"
-# branch = "no_null_propagate_comp"
+# git = "https://github.com/jorgecarleitao/arrow2"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "fb5d4330544d9d746dfc9bdacab5f1f5c1de9203"
+branch = "csv_write"
 # version = "0.9"
 default-features = false
 features = [

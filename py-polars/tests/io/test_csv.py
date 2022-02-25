@@ -348,3 +348,12 @@ foo,bar
     df = pl.scan_csv(foods_csv, skip_rows_after_header=10).collect()
     assert df.columns == ["category", "calories", "fats_g", "sugars_g"]
     assert df.shape == (17, 4)
+
+
+def test_empty_string_missing_round_trip() -> None:
+    df = pl.DataFrame({"varA": ["A", "", None], "varB": ["B", "", None]})
+    f = io.BytesIO()
+    df.to_csv(f)
+    f.seek(0)
+    df_read = pl.read_csv(f)
+    assert df.frame_equal(df_read)
