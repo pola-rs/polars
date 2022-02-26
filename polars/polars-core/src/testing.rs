@@ -5,7 +5,7 @@ use std::ops::Deref;
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
     pub fn series_equal(&self, other: &Series) -> bool {
-        if self.null_count() > 0 || other.null_count() > 0 {
+        if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
             false
         } else {
             self.series_equal_missing(other)
@@ -152,6 +152,13 @@ mod test {
 
         let s = Series::new("foo", &[None, Some(1i64)]);
         assert!(s.series_equal_missing(&s));
+    }
+
+    #[test]
+    fn test_series_dtype_noteq() {
+        let s_i32 = Series::new("a", &[1_i32, 2_i32]);
+        let s_i64 = Series::new("a", &[1_i64, 2_i64]);
+        assert!(!s_i32.series_equal(&s_i64));
     }
 
     #[test]
