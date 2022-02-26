@@ -1839,3 +1839,18 @@ def test_empty_is_in() -> None:
     assert pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
     ).shape == (0, 1)
+
+
+def test_groupby_slice_expression_args() -> None:
+    df = pl.DataFrame({"groups": ["a"] * 10 + ["b"] * 20, "vals": range(30)})
+
+    out = (
+        df.groupby("groups", maintain_order=True)
+        .agg([pl.col("vals").slice(pl.count() * 0.1, (pl.count() // 5))])
+        .explode("vals")
+    )
+
+    expected = pl.DataFrame(
+        {"groups": ["a", "a", "b", "b", "b", "b"], "vals": [1, 2, 12, 13, 14, 15]}
+    )
+    assert out.frame_equal(expected)

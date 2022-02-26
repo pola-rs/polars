@@ -743,7 +743,7 @@ class Expr:
         """
         return self.count()
 
-    def slice(self, offset: int, length: int) -> "Expr":
+    def slice(self, offset: Union[int, "Expr"], length: Union[int, "Expr"]) -> "Expr":
         """
         Slice the Series.
 
@@ -754,7 +754,11 @@ class Expr:
         length
             Length of the slice.
         """
-        return wrap_expr(self._pyexpr.slice(offset, length))
+        if isinstance(offset, int):
+            offset = pli.lit(offset)
+        if isinstance(length, int):
+            length = pli.lit(length)
+        return wrap_expr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
     def drop_nulls(self) -> "Expr":
         """
@@ -1553,10 +1557,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.take_every(n))
 
-    def head(self, n: Optional[int] = None) -> "Expr":
+    def head(self, n: Optional[Union[int, "Expr"]] = None) -> "Expr":
         """
         Take the first n values.
         """
+        if isinstance(n, Expr):
+            return self.slice(0, n)
         return wrap_expr(self._pyexpr.head(n))
 
     def tail(self, n: Optional[int] = None) -> "Expr":

@@ -988,10 +988,12 @@ impl DefaultPlanner {
                 length,
             } => {
                 let input = self.create_physical_expr(input, ctxt, expr_arena)?;
+                let offset = self.create_physical_expr(offset, ctxt, expr_arena)?;
+                let length = self.create_physical_expr(length, ctxt, expr_arena)?;
                 Ok(Arc::new(SliceExpr {
                     input,
                     offset,
-                    len: length,
+                    length,
                     expr: node_to_expr(expression, expr_arena),
                 }))
             }

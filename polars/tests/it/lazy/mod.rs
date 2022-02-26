@@ -1,7 +1,7 @@
 mod explodes;
+mod expressions;
 mod groupby_dynamic;
 mod projection_queries;
-mod window_expressions;
 
 use polars::prelude::*;
 

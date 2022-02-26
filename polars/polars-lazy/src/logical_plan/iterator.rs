@@ -77,7 +77,15 @@ macro_rules! push_expr {
                     $push(e);
                 }
             }
-            Slice { input, .. } => $push(input),
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                $push(input);
+                $push(offset);
+                $push(length);
+            }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
             RenameAlias { expr, .. } => $push(expr),
@@ -228,7 +236,15 @@ impl AExpr {
                     push(e);
                 }
             }
-            Slice { input, .. } => push(input),
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                push(input);
+                push(offset);
+                push(length);
+            }
         }
     }
 }

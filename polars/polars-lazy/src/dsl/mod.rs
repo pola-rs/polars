@@ -340,8 +340,8 @@ pub enum Expr {
     Slice {
         input: Box<Expr>,
         /// length is not yet known so we accept negative offsets
-        offset: i64,
-        length: usize,
+        offset: Box<Expr>,
+        length: Box<Expr>,
     },
     /// Can be used in a select statement to exclude a column from selection
     Exclude(Box<Expr>, Vec<Excluded>),
@@ -391,7 +391,6 @@ pub enum Operator {
     Minus,
     Multiply,
     Divide,
-    #[cfg(feature = "true_div")]
     TrueDivide,
     Modulus,
     And,
@@ -722,23 +721,24 @@ impl Expr {
     }
 
     /// Slice the Series.
-    pub fn slice(self, offset: i64, length: usize) -> Self {
+    /// `offset` may be negative.
+    pub fn slice(self, offset: Expr, length: Expr) -> Self {
         Expr::Slice {
             input: Box::new(self),
-            offset,
-            length,
+            offset: Box::new(offset),
+            length: Box::new(length),
         }
     }
 
     /// Get the first `n` elements of the Expr result
     pub fn head(self, length: Option<usize>) -> Self {
-        self.slice(0, length.unwrap_or(10))
+        self.slice(lit(0), lit(length.unwrap_or(10) as u64))
     }
 
     /// Get the last `n` elements of the Expr result
     pub fn tail(self, length: Option<usize>) -> Self {
         let len = length.unwrap_or(10);
-        self.slice(-(len as i64), len)
+        self.slice(lit(-(len as i64)), lit(len as u64))
     }
 
     /// Get unique values of this expression.

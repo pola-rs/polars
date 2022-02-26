@@ -101,6 +101,7 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
+strip = true
 codegen-units = 1
 
 # This is ignored here; would be set in .cargo/config.toml.

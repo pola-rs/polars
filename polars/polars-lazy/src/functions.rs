@@ -504,14 +504,6 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
     Expr::DtypeColumn(dtypes)
 }
 
-/// Count the number of values in this Expression.
-pub fn count(name: &str) -> Expr {
-    match name {
-        "" => col(name).count().alias("count"),
-        _ => col(name).count(),
-    }
-}
-
 /// Sum all the values in this Expression.
 pub fn sum(name: &str) -> Expr {
     col(name).sum()
