@@ -217,6 +217,19 @@ impl GroupsProxy {
         }
     }
 
+    pub fn group_lengths(&self, name: &str) -> IdxCa {
+        let ca: NoNull<IdxCa> = match self {
+            GroupsProxy::Idx(groups) => groups
+                .iter()
+                .map(|(_, groups)| groups.len() as IdxSize)
+                .collect_trusted(),
+            GroupsProxy::Slice(groups) => groups.iter().map(|g| g[1]).collect_trusted(),
+        };
+        let mut ca = ca.into_inner();
+        ca.rename(name);
+        ca
+    }
+
     #[cfg(feature = "private")]
     pub fn par_iter(&self) -> GroupsProxyParIter {
         GroupsProxyParIter::new(self)

@@ -11,6 +11,7 @@ pub mod pct_change;
 #[cfg(feature = "round_series")]
 mod round;
 mod to_list;
+mod unique;
 
 #[derive(Copy, Clone)]
 pub enum NullBehavior {

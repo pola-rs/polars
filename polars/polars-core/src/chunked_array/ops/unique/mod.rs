@@ -6,7 +6,6 @@ use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
-use crate::utils::NoNull;
 use rayon::prelude::*;
 use std::hash::Hash;
 
@@ -167,22 +166,6 @@ macro_rules! arg_unique_ca {
     }};
 }
 
-macro_rules! impl_value_counts {
-    ($self:expr) => {{
-        let group_tuples = $self.group_tuples(true, false).into_idx();
-        let values =
-            unsafe { $self.take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into()) };
-        let mut counts: NoNull<IdxCa> = group_tuples
-            .into_iter()
-            .map(|(_, groups)| groups.len() as IdxSize)
-            .collect();
-        counts.rename("counts");
-        let cols = vec![values.into_series(), counts.into_inner().into_series()];
-        let df = DataFrame::new_no_checks(cols);
-        df.sort(&["counts"], true)
-    }};
-}
-
 impl<T> ChunkUnique<T> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
@@ -204,11 +187,6 @@ where
 
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_unique_duplicated!(self, true)
-    }
-
-    // TODO! implement on series. Not worth the compile times here.
-    fn value_counts(&self) -> Result<DataFrame> {
-        impl_value_counts!(self)
     }
 
     fn n_unique(&self) -> Result<usize> {
@@ -243,10 +221,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         is_unique_duplicated!(self, true)
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        impl_value_counts!(self)
     }
 
     fn n_unique(&self) -> Result<usize> {
@@ -396,9 +370,6 @@ impl ChunkUnique<Float32Type> for Float32Chunked {
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         self.bit_repr_small().is_duplicated()
     }
-    fn value_counts(&self) -> Result<DataFrame> {
-        impl_value_counts!(self)
-    }
 }
 
 impl ChunkUnique<Float64Type> for Float64Chunked {
@@ -420,9 +391,6 @@ impl ChunkUnique<Float64Type> for Float64Chunked {
     }
     fn is_duplicated(&self) -> Result<BooleanChunked> {
         self.bit_repr_large().is_duplicated()
-    }
-    fn value_counts(&self) -> Result<DataFrame> {
-        impl_value_counts!(self)
     }
 }
 
