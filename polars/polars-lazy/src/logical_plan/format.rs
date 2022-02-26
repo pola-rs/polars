@@ -285,7 +285,6 @@ impl Debug for Operator {
             Minus => "-",
             Multiply => "*",
             Divide => "//",
-            #[cfg(feature = "true_div")]
             TrueDivide => "/",
             Modulus => "%",
             And => "&",

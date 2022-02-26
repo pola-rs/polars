@@ -280,7 +280,6 @@ impl OptimizationRule for SimplifyExprRule {
                     Operator::Minus => eval_binary_same_type!(left_aexpr, -, right_aexpr),
                     Operator::Multiply => eval_binary_same_type!(left_aexpr, *, right_aexpr),
                     Operator::Divide => eval_binary_same_type!(left_aexpr, /, right_aexpr),
-                    #[cfg(feature = "true_div")]
                     Operator::TrueDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)

@@ -52,6 +52,10 @@ impl PhysicalExpr for CountExpr {
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("count", DataType::UInt32))
     }
+
+    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+        Ok(self)
+    }
 }
 
 impl PhysicalAggregation for CountExpr {

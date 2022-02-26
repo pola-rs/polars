@@ -1,4 +1,4 @@
-use super::*;
+use crate::lazy::*;
 
 #[test]
 fn test_lazy_window_functions() {

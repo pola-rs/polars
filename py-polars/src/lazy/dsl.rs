@@ -287,8 +287,8 @@ impl PyExpr {
         self.clone().inner.head(n).into()
     }
 
-    pub fn slice(&self, offset: i64, length: usize) -> PyExpr {
-        self.clone().inner.slice(offset, length).into()
+    pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {
+        self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
     pub fn round(&self, decimals: u32) -> PyExpr {

@@ -391,7 +391,6 @@ pub enum Operator {
     Minus,
     Multiply,
     Divide,
-    #[cfg(feature = "true_div")]
     TrueDivide,
     Modulus,
     And,
