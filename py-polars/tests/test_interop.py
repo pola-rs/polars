@@ -254,3 +254,7 @@ def test_from_empty_arrow() -> None:
     out = pl.from_arrow(tbl)
     assert out.columns == ["b"]  # type: ignore
     assert out.dtypes == [pl.Float64]  # type: ignore
+
+
+def test_from_null_column() -> None:
+    assert pl.from_pandas(pd.DataFrame(data=[pd.NA, pd.NA])).shape == (2, 1)
