@@ -93,8 +93,8 @@ pub enum AExpr {
     Wildcard,
     Slice {
         input: Node,
-        offset: i64,
-        length: usize,
+        offset: Node,
+        length: Node,
     },
     Count,
     Nth(i64),

@@ -127,8 +127,8 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         } => AExpr::Slice {
             input: to_aexpr(*input, arena),
-            offset,
-            length,
+            offset: to_aexpr(*offset, arena),
+            length: to_aexpr(*length, arena),
         },
         Expr::Wildcard => AExpr::Wildcard,
         Expr::Count => AExpr::Count,
@@ -592,8 +592,8 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length,
         } => Expr::Slice {
             input: Box::new(node_to_expr(input, expr_arena)),
-            offset,
-            length,
+            offset: Box::new(node_to_expr(offset, expr_arena)),
+            length: Box::new(node_to_expr(length, expr_arena)),
         },
         AExpr::Count => Expr::Count,
         AExpr::Nth(i) => Expr::Nth(i),

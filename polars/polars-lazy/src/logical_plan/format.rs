@@ -256,7 +256,11 @@ impl fmt::Debug for Expr {
                 input,
                 offset,
                 length,
-            } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
+            } => write!(
+                f,
+                "{:?}.slice(offset={:?}, length={:?})",
+                input, offset, length
+            ),
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
