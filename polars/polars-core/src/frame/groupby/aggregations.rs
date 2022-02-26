@@ -234,9 +234,7 @@ where
                             )
                         },
                         _ => {
-                            let take = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                            };
+                            let take = unsafe { self.take_unchecked(idx.into()) };
                             take.min()
                         }
                     }
@@ -283,9 +281,7 @@ where
                             )
                         },
                         _ => {
-                            let take = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                            };
+                            let take = unsafe { self.take_unchecked(idx.into()) };
                             take.max()
                         }
                     }
@@ -332,9 +328,7 @@ where
                             )
                         },
                         _ => {
-                            let take = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                            };
+                            let take = unsafe { self.take_unchecked(idx.into()) };
                             take.sum()
                         }
                     }
@@ -408,9 +402,7 @@ where
                                     .unwrap()
                             }),
                             _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
+                                let take = unsafe { self.take_unchecked(idx.into()) };
                                 let opt_sum: Option<T::Native> = take.sum();
                                 opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                             }
@@ -441,7 +433,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
@@ -465,7 +457,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
@@ -496,7 +488,7 @@ where
                 if idx.is_empty() | invalid_quantile {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.quantile_as_series(quantile, interpol)
                     .unwrap() // checked with invalid quantile check
                     .unpack::<T>()
@@ -528,7 +520,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.median_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
@@ -596,9 +588,7 @@ where
                                     .unwrap()
                             }),
                             _ => {
-                                let take = unsafe {
-                                    self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                };
+                                let take = unsafe { self.take_unchecked(idx.into()) };
                                 let opt_sum: Option<T::Native> = take.sum();
                                 opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
                             }
@@ -629,7 +619,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { self.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
             GroupsProxy::Slice(groups) => {
@@ -654,7 +644,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { self.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
             GroupsProxy::Slice(groups) => {
@@ -685,7 +675,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { self.take_unchecked(idx.into()) };
                 take.quantile_as_series(quantile, interpol)
                     .unwrap()
                     .unpack::<Float64Type>()
@@ -714,7 +704,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                let take = unsafe { self.take_unchecked(idx.into()) };
                 take.median_as_series()
                     .unpack::<Float64Type>()
                     .unwrap()
@@ -802,10 +792,7 @@ where
                             self.dtype().clone(),
                         );
                         for idx in groups.all().iter() {
-                            let s = unsafe {
-                                self.take_unchecked(idx.iter().map(|i| *i as usize).into())
-                                    .into_series()
-                            };
+                            let s = unsafe { self.take_unchecked(idx.into()).into_series() };
                             builder.append_series(&s);
                         }
                         return Some(builder.finish().into_series());
@@ -885,7 +872,7 @@ impl AggList for BooleanChunked {
                 let mut builder =
                     ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    let ca = unsafe { self.take_unchecked(idx.into()) };
                     builder.append(&ca)
                 }
                 Some(builder.finish().into_series())
@@ -910,7 +897,7 @@ impl AggList for Utf8Chunked {
                 let mut builder =
                     ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for idx in groups.all().iter() {
-                    let ca = unsafe { self.take_unchecked(idx.iter().map(|i| *i as usize).into()) };
+                    let ca = unsafe { self.take_unchecked(idx.into()) };
                     builder.append(&ca)
                 }
                 Some(builder.finish().into_series())
@@ -987,8 +974,7 @@ impl AggList for ListChunked {
                         // Safety:
                         // group tuples are in bounds
                         unsafe {
-                            let mut s =
-                                ca.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
+                            let mut s = ca.take_unchecked(idx.into());
                             let arr = s.chunks.pop().unwrap();
                             list_values.push(arr);
 
@@ -1050,8 +1036,7 @@ impl<T: PolarsObject> AggList for ObjectChunked<T> {
                         GroupsIndicator::Idx((_first, idx)) => {
                             // Safety:
                             // group tuples always in bounds
-                            let group_vals =
-                                self.take_unchecked((idx.iter().map(|idx| *idx as usize)).into());
+                            let group_vals = self.take_unchecked(idx.into());
 
                             (group_vals, idx.len() as IdxSize)
                         }

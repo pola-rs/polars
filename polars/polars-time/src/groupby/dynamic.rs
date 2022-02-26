@@ -222,9 +222,7 @@ impl Wrap<&DataFrame> {
                     .iter()
                     // we just flat map, because iterate over groups so we almost always need to reallocate
                     .flat_map(|base_g| {
-                        let dt = unsafe {
-                            dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
-                        };
+                        let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
 
                         let vals = dt.downcast_iter().next().unwrap();
                         let ts = vals.values().as_slice();
@@ -252,9 +250,7 @@ impl Wrap<&DataFrame> {
                     groups
                         .par_iter()
                         .flat_map(|base_g| {
-                            let dt = unsafe {
-                                dt.take_unchecked((base_g.1.iter().map(|i| *i as usize)).into())
-                            };
+                            let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
                             let vals = dt.downcast_iter().next().unwrap();
                             let ts = vals.values().as_slice();
                             let (sub_groups, _, _) = groupby_windows(

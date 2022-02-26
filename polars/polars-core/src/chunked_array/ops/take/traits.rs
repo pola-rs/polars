@@ -173,3 +173,34 @@ where
         TakeIdx::IterNulls(iter)
     }
 }
+
+#[inline]
+fn to_usize(idx: &IdxSize) -> usize {
+    *idx as usize
+}
+
+/// Conversion from `&[IdxSize]` to Unchecked TakeIdx
+impl<'a> From<&'a [IdxSize]>
+    for TakeIdx<
+        'a,
+        std::iter::Map<std::slice::Iter<'a, IdxSize>, fn(&IdxSize) -> usize>,
+        Dummy<Option<usize>>,
+    >
+{
+    fn from(slice: &'a [IdxSize]) -> Self {
+        TakeIdx::Iter(slice.iter().map(to_usize))
+    }
+}
+
+/// Conversion from `&[IdxSize]` to Unchecked TakeIdx
+impl<'a> From<&'a Vec<IdxSize>>
+    for TakeIdx<
+        'a,
+        std::iter::Map<std::slice::Iter<'a, IdxSize>, fn(&IdxSize) -> usize>,
+        Dummy<Option<usize>>,
+    >
+{
+    fn from(slice: &'a Vec<IdxSize>) -> Self {
+        (&**slice).into()
+    }
+}

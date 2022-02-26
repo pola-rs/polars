@@ -212,7 +212,7 @@ impl PhysicalAggregation for AggregationExpr {
                     let ca = unsafe {
                         // Safety
                         // The indexes of the groupby operation are never out of bounds
-                        ca.take_unchecked(idx.iter().map(|i| *i as usize).into())
+                        ca.take_unchecked(idx.into())
                     };
                     let s = ca.explode()?;
                     length_so_far += s.len() as i64;
