@@ -6,7 +6,7 @@ use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     (0..n as IdxSize)
         .map(move |_| Uniform::new(0, len as IdxSize).sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
@@ -14,7 +14,7 @@ fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> IdxCa 
 }
 
 fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
-    let mut rng = StdRng::seed_from_u64(seed);
+    let mut rng = SmallRng::seed_from_u64(seed);
     let mut idx = Vec::from_iter_trusted_length(0..len as IdxSize);
     idx.shuffle(&mut rng);
     idx.truncate(n);
@@ -27,7 +27,7 @@ where
     Standard: Distribution<T::Native>,
 {
     pub fn init_rand(size: usize, null_density: f32, seed: u64) -> Self {
-        let mut rng = StdRng::seed_from_u64(seed);
+        let mut rng = SmallRng::seed_from_u64(seed);
         (0..size)
             .map(|_| {
                 if rng.gen::<f32>() < null_density {

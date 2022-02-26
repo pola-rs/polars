@@ -4,7 +4,7 @@ use polars_arrow::prelude::FromData;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
 #[cfg(feature = "random")]
-use rand::thread_rng;
+use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 
 #[derive(Copy, Clone)]
 pub enum RankMethod {
@@ -136,7 +136,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
             let mut sort_idx = sort_idx.to_vec();
 
-            let rng = &mut thread_rng();
+            let mut thread_rng = thread_rng();
+            let rng = &mut SmallRng::from_rng(&mut thread_rng).unwrap();
 
             // Shuffle sort_idx positions which point to ties in the original series.
             for i in 0..(ties_indices.len() - 1) as usize {
