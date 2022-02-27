@@ -567,7 +567,9 @@ class LazyFrame:
 
     def select(
         self,
-        exprs: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"],
+        exprs: Union[
+            str, "pli.Expr", Sequence[str], Sequence["pli.Expr"], "pli.Series"
+        ],
     ) -> "LazyFrame":
         """
         Select columns from this DataFrame.

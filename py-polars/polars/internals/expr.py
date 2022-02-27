@@ -1752,7 +1752,9 @@ class Expr:
         elif include_bounds == [True, False]:
             return ((expr >= start) & (expr < end)).alias("is_between")
         else:
-            raise ValueError("include_bounds should be a boolean or [boolean, boolean].")
+            raise ValueError(
+                "include_bounds should be a boolean or [boolean, boolean]."
+            )
 
     def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
         """
@@ -3115,7 +3117,9 @@ class ExprStringNameSpace:
 
         """
         if not issubclass(datatype, DataType):
-            raise ValueError(f"expected: {DataType} got: {datatype}")  # pragma: no cover
+            raise ValueError(
+                f"expected: {DataType} got: {datatype}"
+            )  # pragma: no cover
         if datatype == Date:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
@@ -3899,7 +3903,9 @@ def expr_to_lit_or_expr(
     """
     if isinstance(expr, str) and not str_to_lit:
         return pli.col(expr)
-    elif isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None:
+    elif (
+        isinstance(expr, (int, float, str, pli.Series, datetime, date)) or expr is None
+    ):
         return pli.lit(expr)
     elif isinstance(expr, Expr):
         return expr
