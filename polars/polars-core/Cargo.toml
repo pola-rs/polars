@@ -159,7 +159,6 @@ regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 thiserror = "^1.0"
-unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"

@@ -19,7 +19,6 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
-use unsafe_unwrap::UnsafeUnwrap;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
@@ -936,7 +935,7 @@ where
                     unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                 } else {
                     unsafe {
-                        let right_idx = opt_right_idx.unsafe_unwrap();
+                        let right_idx = opt_right_idx.unwrap_unchecked();
                         right_rand_access.get_unchecked(right_idx as usize)
                     }
                 }
@@ -966,7 +965,7 @@ macro_rules! impl_zip_outer_join {
                             unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                         } else {
                             unsafe {
-                                let right_idx = opt_right_idx.unsafe_unwrap();
+                                let right_idx = opt_right_idx.unwrap_unchecked();
                                 right_rand_access.get_unchecked(right_idx as usize)
                             }
                         }
