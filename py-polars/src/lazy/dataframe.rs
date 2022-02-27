@@ -129,15 +129,12 @@ impl PyLazyFrame {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype
-                .iter()
-                .map(|(name, dtype)| {
-                    let str_repr = dtype.str().unwrap().to_str().unwrap();
-                    let dtype = str_to_polarstype(str_repr);
-                    Field::new(name, dtype)
-                })
-                .collect();
-            Schema::new(fields)
+            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
+                let str_repr = dtype.str().unwrap().to_str().unwrap();
+                let dtype = str_to_polarstype(str_repr);
+                Field::new(name, dtype)
+            });
+            Schema::from(fields)
         });
         let mut r = LazyCsvReader::new(path)
             .with_infer_schema_length(infer_schema_length)
@@ -158,26 +155,24 @@ impl PyLazyFrame {
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
-            let f = |mut schema: Schema| {
+            let f = |schema: Schema| {
                 let gil = Python::acquire_gil();
                 let py = gil.python();
 
-                let iter = schema.fields().iter().map(|fld| fld.name().as_str());
+                let iter = schema.iter_names();
                 let names = PyList::new(py, iter);
 
                 let out = lambda.call1(py, (names,)).expect("python function failed");
                 let new_names = out
                     .extract::<Vec<String>>(py)
                     .expect("python function should return List[str]");
-                assert_eq!(new_names.len(), schema.fields().len(), "The length of the new names list should be equal to the original column length");
+                assert_eq!(new_names.len(), schema.len(), "The length of the new names list should be equal to the original column length");
 
-                schema
-                    .fields_mut()
-                    .iter_mut()
+                let fields = schema
+                    .iter_dtypes()
                     .zip(new_names)
-                    .for_each(|(fld, new_name)| fld.set_name(new_name));
-
-                Ok(schema)
+                    .map(|(dtype, name)| Field::from_owned(name, dtype.clone()));
+                Ok(Schema::from(fields))
             };
             r = r.with_schema_modify(f).map_err(PyPolarsEr::from)?
         }
@@ -653,11 +648,6 @@ impl PyLazyFrame {
     }
 
     pub fn columns(&self) -> Vec<String> {
-        self.ldf
-            .schema()
-            .fields()
-            .iter()
-            .map(|fld| fld.name().to_string())
-            .collect()
+        self.ldf.schema().iter_names().cloned().collect()
     }
 }

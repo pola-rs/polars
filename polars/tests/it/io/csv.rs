@@ -337,18 +337,12 @@ fn test_quoted_numeric() {
 #[test]
 fn test_empty_bytes_to_dataframe() {
     let fields = vec![Field::new("test_field", DataType::Utf8)];
-    let schema = Schema::new(fields);
+    let schema = Schema::from(fields);
     let file = Cursor::new(vec![]);
 
     let result = CsvReader::new(file)
         .has_header(false)
-        .with_columns(Some(
-            schema
-                .fields()
-                .iter()
-                .map(|s| s.name().to_string())
-                .collect(),
-        ))
+        .with_columns(Some(schema.iter_names().cloned().collect()))
         .with_schema(&schema)
         .finish();
     assert!(result.is_ok())
@@ -378,7 +372,7 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(&Schema::new(vec![
+        .with_schema(&Schema::from(vec![
             Field::new("foo", DataType::UInt32),
             Field::new("bar", DataType::UInt32),
             Field::new("ham", DataType::UInt32),
@@ -400,7 +394,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes(Some(&Schema::new(vec![Field::new(
+        .with_dtypes(Some(&Schema::from(vec![Field::new(
             "b",
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )])))

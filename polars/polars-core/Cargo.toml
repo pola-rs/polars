@@ -143,6 +143,7 @@ chrono = { version = "0.4", optional = true }
 comfy-table = { version = "5.0", optional = true }
 hashbrown = { version = "0.12", features = ["rayon"] }
 hex = { version = "0.4", optional = true }
+indexmap = { version = "1", features = ["std"] }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
@@ -159,7 +160,6 @@ regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1.0", optional = true }
 thiserror = "^1.0"
-unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"

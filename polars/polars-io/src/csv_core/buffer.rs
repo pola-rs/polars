@@ -258,38 +258,24 @@ pub(crate) fn init_buffers(
     projection
         .iter()
         .map(|&i| {
-            let field = schema.field(i).unwrap();
+            let (name, dtype) = schema.get_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            if field.data_type() == &DataType::Utf8 {
+            if dtype == &DataType::Utf8 {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
 
-            let builder = match field.data_type() {
-                &DataType::Boolean => {
-                    Buffer::Boolean(BooleanChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Int32 => {
-                    Buffer::Int32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Int64 => {
-                    Buffer::Int64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::UInt32 => {
-                    Buffer::UInt32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::UInt64 => {
-                    Buffer::UInt64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Float32 => {
-                    Buffer::Float32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Float64 => {
-                    Buffer::Float64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
+            let builder = match dtype {
+                &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
+                &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
-                    field.name(),
+                    name,
                     capacity,
                     str_capacity,
                     quote_char,

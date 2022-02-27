@@ -415,14 +415,13 @@ impl DataFrame {
     ///
     /// let f1: Field = Field::new("Thing", DataType::Utf8);
     /// let f2: Field = Field::new("Diameter (m)", DataType::Float64);
-    /// let sc: Schema = Schema::new(vec![f1, f2]);
+    /// let sc: Schema = Schema::from(vec![f1, f2]);
     ///
     /// assert_eq!(df.schema(), sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> Schema {
-        let fields = Self::create_fields(&self.columns);
-        Schema::new(fields)
+        Schema::from(self.iter().map(|s| s.field().into_owned()))
     }
 
     /// Get a reference to the `DataFrame` columns.
@@ -551,11 +550,6 @@ impl DataFrame {
             })?
             .chunks()
             .len())
-    }
-
-    /// Get fields from the columns.
-    fn create_fields(columns: &[Series]) -> Vec<Field> {
-        columns.iter().map(|s| s.field().into_owned()).collect()
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.

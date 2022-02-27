@@ -17,7 +17,7 @@ impl fmt::Debug for LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -39,7 +39,7 @@ impl fmt::Debug for LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -67,7 +67,7 @@ impl fmt::Debug for LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -87,7 +87,7 @@ impl fmt::Debug for LogicalPlan {
                 selection,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = projection {
                     n_columns = format!("{}", columns.len());
@@ -101,12 +101,7 @@ impl fmt::Debug for LogicalPlan {
                     f,
                     "DATAFRAME(in-memory): {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
                     \tselection: {:?}\n\n",
-                    schema
-                        .fields()
-                        .iter()
-                        .map(|f| f.name())
-                        .take(4)
-                        .collect::<Vec<_>>(),
+                    schema.iter_names().take(4).collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
                     projection,

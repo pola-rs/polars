@@ -49,7 +49,7 @@ fn prepare_scan_args<'a>(
     let projection: Option<Vec<_>> = with_columns.map(|with_columns| {
         with_columns
             .iter()
-            .map(|name| schema.column_with_name(name).unwrap().0)
+            .map(|name| schema.index_of(name).unwrap())
             .collect()
     });
 

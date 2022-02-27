@@ -52,8 +52,7 @@ fn rewrite_special_aliases(expr: Expr) -> Expr {
 /// with the exclusion of the `names` in the exclude expression.
 /// The resulting expressions are written to result.
 fn replace_wilcard(expr: &Expr, result: &mut Vec<Expr>, exclude: &[Arc<str>], schema: &Schema) {
-    for field in schema.fields() {
-        let name = field.name();
+    for name in schema.iter_names() {
         if !exclude.iter().any(|exluded| &**exluded == name) {
             let new_expr = replace_wildcard_with_column(expr.clone(), Arc::from(name.as_str()));
             let new_expr = rewrite_special_aliases(new_expr);
@@ -71,8 +70,8 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
                     *e = Expr::Column(Arc::from(name));
                 }
                 Some(idx) => {
-                    let fld = schema.field(idx).unwrap();
-                    *e = Expr::Column(Arc::from(&**fld.name()))
+                    let (name, _dtype) = schema.get_index(idx).unwrap();
+                    *e = Expr::Column(Arc::from(&**name))
                 }
             }
             true
@@ -87,8 +86,7 @@ fn replace_nth(expr: &mut Expr, schema: &Schema) {
 fn expand_regex(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, pattern: &str) {
     let re = regex::Regex::new(pattern)
         .unwrap_or_else(|_| panic!("invalid regular expression in column: {}", pattern));
-    for field in schema.fields() {
-        let name = field.name();
+    for name in schema.iter_names() {
         if re.is_match(name) {
             let mut new_expr = expr.clone();
 
@@ -147,7 +145,7 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
 /// replace `DtypeColumn` with `col("foo")..col("bar")`
 fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &[DataType]) {
     for dtype in dtypes {
-        for field in schema.fields().iter().filter(|f| f.data_type() == dtype) {
+        for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
             let name = field.name();
 
             let mut new_expr = expr.clone();
@@ -190,7 +188,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                             }
                         }
                         Excluded::Dtype(dt) => {
-                            for fld in schema.fields() {
+                            for fld in schema.iter_fields() {
                                 if fld.data_type() == dt {
                                     exclude.push(Arc::from(fld.name().as_ref()))
                                 }
@@ -206,9 +204,9 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                     match to_exclude_single {
                         Excluded::Name(name) => exclude.push(name.clone()),
                         Excluded::Dtype(dt) => {
-                            for fld in schema.fields() {
-                                if matches!(fld.data_type(), dt) {
-                                    exclude.push(Arc::from(fld.name().as_ref()))
+                            for (name, dtype) in schema.iter() {
+                                if matches!(dtype, dt) {
+                                    exclude.push(Arc::from(name.as_str()))
                                 }
                             }
                         }
@@ -240,7 +238,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
-    let mut result = Vec::with_capacity(exprs.len() + schema.fields().len());
+    let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
     for mut expr in exprs {
         // has multiple column names

@@ -74,7 +74,7 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok((&metadata.schema).into())
+        Ok((&metadata.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
@@ -202,7 +202,7 @@ where
                 }
             } else {
                 for column in cols.iter() {
-                    let i = schema.index_of(column)?;
+                    let i = schema.try_index_of(column)?;
                     prj.push(i);
                 }
             }

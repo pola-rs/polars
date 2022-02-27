@@ -278,16 +278,14 @@ mod test {
             .select(&[col("variety").alias("foo")])
             .logical_plan;
 
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("foo").is_ok());
+        assert!(lp.schema().get("foo").is_some());
 
         let lp = df
             .lazy()
             .groupby([col("variety")])
             .agg([col("sepal.width").min()])
             .logical_plan;
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("sepal.width").is_ok());
+        assert!(lp.schema().get("sepal.width").is_some());
     }
 
     #[test]

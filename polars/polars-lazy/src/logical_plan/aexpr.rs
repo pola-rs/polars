@@ -154,7 +154,7 @@ impl AExpr {
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
             )),
             Column(name) => {
-                let field = schema.field_with_name(name).map(|f| f.clone())?;
+                let field = schema.get_field(name).unwrap();
                 Ok(field)
             }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),

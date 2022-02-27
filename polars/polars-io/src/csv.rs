@@ -166,7 +166,7 @@ impl NullValues {
             NullValues::Named(v) => {
                 let mut null_values = vec!["".to_string(); schema.len()];
                 for (name, null_value) in v {
-                    let i = schema.index_of(&name)?;
+                    let i = schema.try_index_of(&name)?;
                     null_values[i] = null_value;
                 }
                 null_values
@@ -472,16 +472,16 @@ where
             // We only support a few dtypes in the parser and later cast to the required dtype
             let mut to_cast = Vec::with_capacity(schema.len());
 
-            let fields = schema
-                .fields()
-                .iter()
+            #[allow(clippy::unnecessary_filter_map)]
+            let fields: Vec<_> = schema
+                .iter_fields()
                 .filter_map(|fld| {
                     use DataType::*;
                     match fld.data_type() {
                         // For categorical we first read as utf8 and later cast to categorical
                         #[cfg(feature = "dtype-categorical")]
                         Categorical(_) => {
-                            to_cast_local.push(fld);
+                            to_cast_local.push(fld.clone());
                             Some(Field::new(fld.name(), DataType::Utf8))
                         }
                         Date | Datetime(_, _) => {
@@ -500,11 +500,11 @@ where
                             // let inference decide the column type
                             None
                         }
-                        _ => Some(fld.clone()),
+                        _ => Some(fld),
                     }
                 })
                 .collect();
-            let schema = Schema::new(fields);
+            let schema = Schema::from(fields);
 
             // we cannot overwrite self, because the lifetime is already instantiated with `a, and
             // the lifetime that accompanies this scope is shorter.
@@ -585,15 +585,15 @@ where
             let fixed_schema = match (self.schema_overwrite, self.dtype_overwrite) {
                 (Some(schema), _) => Cow::Borrowed(schema),
                 (None, Some(dtypes)) => {
-                    let fields = dtypes
+                    let fields: Vec<_> = dtypes
                         .iter()
                         .zip(df.get_column_names())
                         .map(|(dtype, name)| Field::new(name, dtype.clone()))
                         .collect();
 
-                    Cow::Owned(Schema::new(fields))
+                    Cow::Owned(Schema::from(fields))
                 }
-                _ => Cow::Owned(Schema::new(vec![])),
+                _ => Cow::Owned(Schema::default()),
             };
             df = parse_dates(df, &*fixed_schema)
         }
@@ -611,7 +611,7 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
         .map(|s| {
             if let Ok(ca) = s.utf8() {
                 // don't change columns that are in the fixed schema.
-                if fixed_schema.column_with_name(s.name()).is_some() {
+                if fixed_schema.index_of(s.name()).is_some() {
                     return s.clone();
                 }
 

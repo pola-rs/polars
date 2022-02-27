@@ -16,7 +16,7 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
-pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field], parallel: bool) -> Result<()> {
+pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
     use DataType::*;
 
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
@@ -77,7 +77,7 @@ pub(crate) struct CoreReader<'a> {
     null_values: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
-    to_cast: &'a [&'a Field],
+    to_cast: &'a [Field],
     row_count: Option<RowCount>,
 }
 
@@ -164,7 +164,7 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
-        to_cast: &'a [&'a Field],
+        to_cast: &'a [Field],
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
     ) -> Result<CoreReader<'a>> {
@@ -224,9 +224,8 @@ impl<'a> CoreReader<'a> {
         skip_rows += skip_rows_after_header;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
-            let fields = s.fields_mut();
-            for (dt, field) in dtypes.iter().zip(fields) {
-                *field = Field::new(field.name(), dt.clone())
+            for (index, dt) in dtypes.iter().enumerate() {
+                s.coerce_by_index(index, dt.clone()).unwrap();
             }
             schema = Cow::Owned(s);
         }
@@ -237,7 +236,7 @@ impl<'a> CoreReader<'a> {
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
             for col in cols {
-                let i = schema.index_of(&col)?;
+                let i = schema.try_index_of(&col)?;
                 prj.push(i);
             }
 
@@ -281,7 +280,7 @@ impl<'a> CoreReader<'a> {
         bytes = skip_whitespace(skip_bom(bytes));
         // \n\n can be a empty string row of a single column
         // in other cases we skip it.
-        if self.schema.fields().len() > 1 {
+        if self.schema.len() > 1 {
             bytes = skip_line_ending(bytes)
         }
 
@@ -337,7 +336,7 @@ impl<'a> CoreReader<'a> {
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
-                        self.schema.fields().len(),
+                        self.schema.len(),
                         self.delimiter,
                         self.quote_char,
                     ) {
@@ -366,7 +365,7 @@ impl<'a> CoreReader<'a> {
                 v.sort_unstable();
                 v
             })
-            .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
+            .unwrap_or_else(|| (0..self.schema.len()).collect());
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
         let n_chunks = total_rows / chunk_size;
@@ -383,13 +382,13 @@ impl<'a> CoreReader<'a> {
         // pushdown)
         let mut str_columns = Vec::with_capacity(projection.len());
         for i in &projection {
-            let fld = self.schema.field(*i).ok_or_else(||
+            let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
                 PolarsError::ValueError(
                     format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
                 )?;
 
-            if fld.data_type() == &DataType::Utf8 {
-                str_columns.push(fld.name())
+            if dtype == &DataType::Utf8 {
+                str_columns.push(name)
             }
         }
 
@@ -398,7 +397,7 @@ impl<'a> CoreReader<'a> {
         let file_chunks = get_file_chunks(
             bytes,
             n_threads,
-            self.schema.fields().len(),
+            self.schema.len(),
             self.delimiter,
             self.quote_char,
         );

@@ -25,8 +25,8 @@ impl Executor for ProjectionExec {
         {
             // TODO: check also the types.
             df.as_ref().map(|df| {
-                for (l, r) in df.schema().fields().iter().zip(self.schema.fields()) {
-                    assert_eq!(l.name(), r.name());
+                for (l, r) in df.iter().zip(self.schema.iter_names()) {
+                    assert_eq!(l.name(), r);
                 }
             });
         }

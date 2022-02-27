@@ -275,17 +275,18 @@ impl DefaultPlanner {
                 Ok(Box::new(ExplodeExec { input, columns }))
             }
             Cache { input } => {
-                let fields = lp_arena.get(input).schema(lp_arena).fields();
+                let schema = lp_arena.get(input).schema(lp_arena);
                 // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
-                let mut unique =
-                    HashSet::with_capacity_and_hasher(fields.len(), RandomState::default());
+                let mut unique = PlHashSet::with_capacity(schema.len());
                 // assumption of 80 characters per column name
-                let mut key = String::with_capacity(fields.len() * 80);
-                for field in fields {
-                    if unique.insert(field.name()) {
-                        key.push_str(field.name())
+                let mut key = String::with_capacity(schema.len() * 80);
+                for name in schema.iter_names() {
+                    if unique.insert(name) {
+                        key.push_str(name)
                     }
                 }
+                // mutable borrow otherwise
+                drop(unique);
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(CacheExec { key, input }))
             }
@@ -367,9 +368,9 @@ impl DefaultPlanner {
                         #[cfg(feature = "object")]
                         {
                             let name = expr_to_root_column_name(&agg).unwrap();
-                            let fld = input_schema.field_with_name(&name).unwrap();
+                            let dtype = input_schema.get(&name).unwrap();
 
-                            if let DataType::Object(_) = fld.data_type() {
+                            if let DataType::Object(_) = dtype {
                                 partitionable = false;
                                 break;
                             }

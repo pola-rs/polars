@@ -366,8 +366,7 @@ impl Display for DataFrame {
         #[cfg(not(feature = "pretty_fmt"))]
         {
             let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
-            let schema = self.schema();
-            let fields = schema.fields();
+            let fields = self.fields();
             for field in fields[0..n_first].iter() {
                 names.push(field_to_str(field));
             }
@@ -391,8 +390,7 @@ impl Display for DataFrame {
                 comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
             };
             let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
-            let schema = self.schema();
-            let fields = schema.fields();
+            let fields = self.fields();
             for field in fields[0..n_first].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);

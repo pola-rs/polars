@@ -606,10 +606,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
     }
 
     pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
-        // current schema
         let schema = self.schema();
-
-        let mut new_fields = schema.fields().clone();
+        let mut new_schema = (*schema).clone();
 
         for e in &exprs {
             let field = self
@@ -617,15 +615,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
                 .get(*e)
                 .to_field(schema, Context::Default, self.expr_arena)
                 .unwrap();
-            match schema.index_of(field.name()) {
-                Ok(idx) => {
-                    new_fields[idx] = field;
-                }
-                Err(_) => new_fields.push(field),
-            }
-        }
 
-        let new_schema = Schema::new(new_fields);
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
+        }
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
@@ -649,11 +641,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
 
-        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Default, self.expr_arena);
-        let schema2 =
-            aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
-
-        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+        let mut schema = aexprs_to_schema(&keys, current_schema, Context::Default, self.expr_arena);
+        let other = aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
+        schema.merge(other);
 
         let lp = ALogicalPlan::Aggregate {
             input: self.root,
@@ -683,12 +673,11 @@ impl<'a> ALogicalPlanBuilder<'a> {
             schema_left.len() + schema_right.len(),
             Default::default(),
         );
-        // fields of new schema
-        let mut fields = Vec::with_capacity(schema_left.len() + schema_right.len());
+        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
-        for f in schema_left.fields() {
-            names.insert(f.name().as_ref());
-            fields.push(f.clone());
+        for (name, dtype) in schema_left.iter() {
+            names.insert(name.as_str());
+            new_schema.with_column(name.to_string(), dtype.clone())
         }
 
         let right_names: HashSet<_, RandomState> = right_on
@@ -700,20 +689,18 @@ impl<'a> ALogicalPlanBuilder<'a> {
             })
             .collect();
 
-        for f in schema_right.fields() {
-            let name = f.name();
+        for (name, dtype) in schema_right.iter() {
             if !right_names.contains(name.as_str()) {
                 if names.contains(name.as_str()) {
                     let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    let field = Field::new(&new_name, f.data_type().clone());
-                    fields.push(field)
+                    new_schema.with_column(new_name, dtype.clone());
                 } else {
-                    fields.push(f.clone())
+                    new_schema.with_column(name.to_string(), dtype.clone());
                 }
             }
         }
 
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(new_schema);
 
         let lp = ALogicalPlan::Join {
             input_left: self.root,
