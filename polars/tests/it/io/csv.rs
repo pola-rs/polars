@@ -179,15 +179,15 @@ fn test_missing_data() {
     assert!(df
         .column("column_1")
         .unwrap()
-        .series_equal(&Series::new("column_1", &[1, 1])));
+        .series_equal(&Series::new("column_1", &[1_i64, 1])));
     assert!(df
         .column("column_2")
         .unwrap()
-        .series_equal_missing(&Series::new("column_2", &[Some(2), None])));
+        .series_equal_missing(&Series::new("column_2", &[Some(2_i64), None])));
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[3, 3])));
+        .series_equal(&Series::new("column_3", &[3_i64, 3])));
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn test_escape_comma() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[11, 12])));
+        .series_equal(&Series::new("column_3", &[11_i64, 12])));
 }
 
 #[test]
