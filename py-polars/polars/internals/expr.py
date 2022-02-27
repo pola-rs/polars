@@ -870,6 +870,26 @@ class Expr:
         ----------
         other
             Expression to compute dot product with
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").dot(pl.col("b")))
+        shape: (1, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 44  │
+        └─────┘
+
         """
         other = expr_to_lit_or_expr(other, str_to_lit=False)
         return wrap_expr(self._pyexpr.dot(other._pyexpr))
@@ -2246,6 +2266,29 @@ class Expr:
             on the order that the values occur in `a`.
         reverse
             reverse the operation
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [0, 1, 2, 2, 4]})
+        >>> df.select(pl.col("a").rank())
+        shape: (5, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ f32 │
+        ╞═════╡
+        │ 1.0 │
+        ├╌╌╌╌╌┤
+        │ 2.0 │
+        ├╌╌╌╌╌┤
+        │ 3.5 │
+        ├╌╌╌╌╌┤
+        │ 3.5 │
+        ├╌╌╌╌╌┤
+        │ 5.0 │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.rank(method, reverse))
 
@@ -2296,6 +2339,33 @@ class Expr:
         ----------
         n
             periods to shift for forming percent change.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [10, 11, 12, None, 12],
+        ...     }
+        ... )
+        >>> df.with_column(pl.col("a").pct_change().alias("pct_change"))
+        shape: (5, 2)
+        ┌──────┬────────────┐
+        │ a    ┆ pct_change │
+        │ ---  ┆ ---        │
+        │ i64  ┆ f64        │
+        ╞══════╪════════════╡
+        │ 10   ┆ null       │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 11   ┆ 0.1        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 12   ┆ 0.090909   │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ null ┆ 0.0        │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 12   ┆ 0.0        │
+        └──────┴────────────┘
+
         """
         return wrap_expr(self._pyexpr.pct_change(n))
 

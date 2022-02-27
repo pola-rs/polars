@@ -1291,6 +1291,43 @@ class LazyFrame:
         ----------
         periods
             Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>> df.shift(periods=1).collect()
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ null ┆ null │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 1    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 3    ┆ 4    │
+        └──────┴──────┘
+        >>> df.shift(periods=-1).collect()
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 3    ┆ 4    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 5    ┆ 6    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ null ┆ null │
+        └──────┴──────┘
+
         """
         return wrap_ldf(self._ldf.shift(periods))
 
@@ -1307,6 +1344,43 @@ class LazyFrame:
             Number of places to shift (may be negative).
         fill_value
             fill None values with the result of this expression.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>> df.shift_and_fill(periods=1, fill_value=0).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 0   ┆ 0   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 4   │
+        └─────┴─────┘
+        >>> df.shift_and_fill(periods=-1, fill_value=0).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 5   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 0   ┆ 0   │
+        └─────┴─────┘
+
         """
         if not isinstance(fill_value, pli.Expr):
             fill_value = pli.lit(fill_value)
@@ -1414,6 +1488,30 @@ class LazyFrame:
             Name of the column to add.
         offset
             Start the row count at this offset
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... ).lazy()
+        >>> df.with_row_count().collect()
+        shape: (3, 3)
+        ┌────────┬─────┬─────┐
+        │ row_nr ┆ a   ┆ b   │
+        │ ---    ┆ --- ┆ --- │
+        │ u32    ┆ i64 ┆ i64 │
+        ╞════════╪═════╪═════╡
+        │ 0      ┆ 1   ┆ 2   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 1      ┆ 3   ┆ 4   │
+        ├╌╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2      ┆ 5   ┆ 6   │
+        └────────┴─────┴─────┘
+
         """
         return wrap_ldf(self._ldf.with_row_count(name, offset))
 

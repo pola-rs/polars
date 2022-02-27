@@ -4608,6 +4608,19 @@ class DataFrame:
     def rows(self) -> List[Tuple]:
         """
         Convert columnar data to rows as python tuples.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 3, 5],
+        ...         "b": [2, 4, 6],
+        ...     }
+        ... )
+        >>> df.rows()
+        [(1, 2), (3, 4), (5, 6)]
+
         """
         return self._df.row_tuples()
 
