@@ -6,13 +6,13 @@ on:
       - 'polars/**'
 jobs:
   test-rust:
-    runs-on: windows-latest
+    runs-on: windows-2019
     steps:
       - uses: actions/checkout@v2
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-01-01
+          toolchain: nightly-2022-02-23
           override: true
       - name: Run tests
         run: |

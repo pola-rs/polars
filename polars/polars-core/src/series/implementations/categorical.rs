@@ -303,10 +303,6 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.cast(data_type)
     }
 
-    fn value_counts(&self) -> Result<DataFrame> {
-        self.0.value_counts()
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         self.0.get_any_value(index)
     }

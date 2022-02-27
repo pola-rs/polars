@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from io import BytesIO, StringIO
+from io import BytesIO, IOBase, StringIO
 from pathlib import Path
 from typing import (
     Any,
@@ -169,7 +169,7 @@ def read_csv(
     Parameters
     ----------
     file
-        Path to a file or a file like object.
+        Path to a file or a file-like object.
         By file-like object, we refer to objects with a ``read()``
         method, such as a file handler (e.g. via builtin ``open``
         function) or ``StringIO`` or ``BytesIO``.
@@ -687,7 +687,7 @@ def read_ipc_schema(
     Parameters
     ----------
     file
-        Path to a file or a file like object.
+        Path to a file or a file-like object.
 
     Returns
     -------
@@ -705,7 +705,7 @@ def read_avro(
     Parameters
     ----------
     file
-        Path to a file or a file like object.
+        Path to a file or a file-like object.
     n_rows
         Stop reading from Apache Avro file after reading ``n_rows``.
 
@@ -736,7 +736,7 @@ def read_ipc(
     Parameters
     ----------
     file
-        Path to a file or a file like object.
+        Path to a file or a file-like object.
         If ``fsspec`` is installed, it will be used to open remote files.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
@@ -812,7 +812,7 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
+        Path to a file, list of files, or a file-like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files.
     columns
@@ -878,14 +878,14 @@ def read_parquet(
         )
 
 
-def read_json(source: Union[str, BytesIO]) -> DataFrame:
+def read_json(source: Union[str, IOBase]) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
     Parameters
     ----------
     source
-        Path to a file or a file like object.
+        Path to a file or a file-like object.
     """
     return DataFrame._read_json(source)
 

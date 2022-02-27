@@ -170,10 +170,6 @@ where
         ))
     }
 
-    fn value_counts(&self) -> Result<DataFrame> {
-        ChunkUnique::value_counts(&self.0)
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         ObjectChunked::get_any_value(&self.0, index)
     }

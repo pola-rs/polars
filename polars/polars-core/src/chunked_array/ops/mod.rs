@@ -484,13 +484,6 @@ pub trait ChunkUnique<T> {
         ))
     }
 
-    /// Count the unique values.
-    fn value_counts(&self) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]

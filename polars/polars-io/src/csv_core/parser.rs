@@ -308,7 +308,9 @@ impl<'a> Iterator for SplitFields<'a> {
         // There can be strings with delimiters:
         // "Street, City",
 
-        let pos = if self.quoting && self.v[0] == self.quote_char {
+        // Safety:
+        // we have checked bounds
+        let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
             needs_escaping = true;
             // There can be pair of double-quotes within string.
             // Each of the embedded double-quote characters must be represented

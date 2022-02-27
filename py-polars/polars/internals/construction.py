@@ -167,15 +167,22 @@ def sequence_to_pyseries(
             # we infer the dtype of first 100 elements
             # if all() fails, we will hit the PySeries.new_object
             if not _PYARROW_AVAILABLE:
-                if all(
-                    isinstance(val, nested_dtype)
-                    for val in values[: min(100, len(values))]
-                ):  # pragma: no cover
-                    dtype = py_type_to_dtype(nested_dtype)
-                    try:
-                        return PySeries.new_list(name, values, dtype)
-                    except BaseException:
-                        pass
+                # check lists for consistent inner types
+                if isinstance(value, list):
+                    count = 0
+                    equal_to_inner = True
+                    for lst in values:
+                        for vl in lst:
+                            equal_to_inner = type(vl) == nested_dtype
+                            if not equal_to_inner or count > 50:
+                                break
+                            count += 1
+                    if equal_to_inner:
+                        dtype = py_type_to_dtype(nested_dtype)
+                        try:
+                            return PySeries.new_list(name, values, dtype)
+                        except BaseException:
+                            pass
                 # pass we create an object if we get here
             else:
                 try:
