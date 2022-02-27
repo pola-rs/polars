@@ -43,7 +43,7 @@ fn split_acc_projections(
     expr_arena: &mut Arena<AExpr>,
 ) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
-    if down_schema.fields().len() == acc_projections.len() {
+    if down_schema.len() == acc_projections.len() {
         let local_projections = acc_projections;
         (vec![], local_projections, PlHashSet::new())
     } else {
@@ -93,15 +93,15 @@ fn update_scan_schema(
     acc_projections: &[Node],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
-) -> Result<Schema> {
-    let mut new_fields = Vec::with_capacity(acc_projections.len());
+) -> Schema {
+    let mut new_schema = Schema::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         for name in aexpr_to_root_names(*node, expr_arena) {
-            let field = schema.field_with_name(&*name)?;
-            new_fields.push(field.clone())
+            let dtype = schema.get(&*name).unwrap();
+            new_schema.with_column(name.to_string(), dtype.clone())
         }
     }
-    Ok(Schema::new(new_fields))
+    new_schema
 }
 
 pub(crate) struct ProjectionPushDown {}
@@ -330,7 +330,7 @@ impl ProjectionPushDown {
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    schema = Arc::new(update_scan_schema(&acc_projections, expr_arena, &*schema)?);
+                    schema = Arc::new(update_scan_schema(&acc_projections, expr_arena, &*schema));
                     projection = Some(acc_projections);
                 }
                 let lp = DataFrameScan {
@@ -358,7 +358,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                    )))
                 };
                 options.with_columns = with_columns;
 
@@ -390,7 +390,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                    )))
                 };
                 options.with_columns = with_columns;
 
@@ -422,7 +422,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                    )))
                 };
 
                 let lp = CsvScan {
@@ -805,8 +805,7 @@ impl ProjectionPushDown {
 
                 for proj in &mut local_projection {
                     for name in aexpr_to_root_names(*proj, expr_arena) {
-                        if name.contains(suffix.as_ref())
-                            && schema_after_join.column_with_name(&*name).is_none()
+                        if name.contains(suffix.as_ref()) && schema_after_join.get(&*name).is_none()
                         {
                             let new_name = &name.as_ref()[..name.len() - suffix.len()];
 

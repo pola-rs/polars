@@ -18,7 +18,6 @@ use arrow::compute::comparison::Simd8;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::error::ArrowError;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -729,7 +728,7 @@ impl DataType {
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                "",
+                "item",
                 dt.to_arrow(),
                 true,
             ))),
@@ -737,7 +736,11 @@ impl DataType {
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_) => ArrowDataType::UInt32,
+            Categorical(_) => ArrowDataType::Dictionary(
+                IntegerType::UInt32,
+                Box::new(ArrowDataType::LargeUtf8),
+                false,
+            ),
             Unknown => unreachable!(),
         }
     }
@@ -754,7 +757,7 @@ impl PartialEq<ArrowDataType> for DataType {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Field {
     name: String,
-    data_type: DataType,
+    dtype: DataType,
 }
 
 impl Field {
@@ -768,11 +771,16 @@ impl Field {
     /// let f2 = Field::new("Lawful", DataType::Boolean);
     /// let f2 = Field::new("Departure", DataType::Time);
     /// ```
-    pub fn new(name: &str, data_type: DataType) -> Self {
+    #[inline]
+    pub fn new(name: &str, dtype: DataType) -> Self {
         Field {
             name: name.to_string(),
-            data_type,
+            dtype,
         }
+    }
+
+    pub fn from_owned(name: String, dtype: DataType) -> Self {
+        Field { name, dtype }
     }
 
     /// Returns a reference to the `Field` name.
@@ -785,6 +793,7 @@ impl Field {
     ///
     /// assert_eq!(f.name(), "Year");
     /// ```
+    #[inline]
     pub fn name(&self) -> &String {
         &self.name
     }
@@ -799,8 +808,9 @@ impl Field {
     ///
     /// assert_eq!(f.data_type(), &DataType::Date);
     /// ```
+    #[inline]
     pub fn data_type(&self) -> &DataType {
-        &self.data_type
+        &self.dtype
     }
 
     /// Sets the `Field` datatype.
@@ -815,7 +825,7 @@ impl Field {
     /// assert_eq!(f, Field::new("Temperature", DataType::Float32));
     /// ```
     pub fn coerce(&mut self, dtype: DataType) {
-        self.data_type = dtype;
+        self.dtype = dtype;
     }
 
     /// Sets the `Field` name.
@@ -845,171 +855,9 @@ impl Field {
     /// assert_eq!(f.to_arrow(), af);
     /// ```
     pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(&self.name, self.data_type.to_arrow(), true)
+        ArrowField::new(&self.name, self.dtype.to_arrow(), true)
     }
 }
-
-#[cfg(feature = "private")]
-pub trait IndexOfSchema {
-    fn index_of(&self, name: &str) -> arrow::error::Result<usize>;
-}
-
-impl IndexOfSchema for ArrowSchema {
-    fn index_of(&self, name: &str) -> arrow::error::Result<usize> {
-        self.fields
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| {
-                let valid_fields: Vec<String> =
-                    self.fields.iter().map(|f| f.name.clone()).collect();
-                ArrowError::InvalidArgumentError(format!(
-                    "Unable to get field named \"{}\". Valid fields: {:?}",
-                    name, valid_fields
-                ))
-            })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct Schema {
-    fields: Vec<Field>,
-}
-
-impl Schema {
-    pub fn rename<I, J, T, S>(&self, old_names: I, new_names: J) -> Result<Schema>
-    where
-        I: IntoIterator<Item = T>,
-        J: IntoIterator<Item = S>,
-        T: AsRef<str>,
-        S: AsRef<str>,
-    {
-        let idx = old_names
-            .into_iter()
-            .map(|name| self.index_of(name.as_ref()))
-            .collect::<Result<Vec<_>>>()?;
-        let mut new_fields = self.fields.clone();
-
-        for (i, name) in idx.into_iter().zip(new_names) {
-            let dt = new_fields[i].data_type.clone();
-            new_fields[i] = Field::new(name.as_ref(), dt)
-        }
-        Ok(Self::new(new_fields))
-    }
-
-    pub fn new(fields: Vec<Field>) -> Self {
-        Schema { fields }
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
-    }
-
-    /// Returns an immutable reference of the vector of `Field` instances
-    pub fn fields(&self) -> &Vec<Field> {
-        &self.fields
-    }
-
-    /// Returns a mutable reference of the vector of `Field` instances
-    pub fn fields_mut(&mut self) -> &mut Vec<Field> {
-        &mut self.fields
-    }
-
-    /// Returns an immutable reference of a specific `Field` instance selected using an
-    /// offset within the internal `fields` vector
-    pub fn field(&self, i: usize) -> Option<&Field> {
-        self.fields.get(i)
-    }
-
-    /// Returns an immutable reference of a specific `Field` instance selected by name
-    pub fn field_with_name(&self, name: &str) -> Result<&Field> {
-        Ok(&self.fields[self.index_of(name)?])
-    }
-
-    /// Find the index of the column with the given name
-    pub fn index_of(&self, name: &str) -> Result<usize> {
-        self.fields
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| {
-                let valid_fields: Vec<String> =
-                    self.fields.iter().map(|f| f.name.clone()).collect();
-                PolarsError::NotFound(format!(
-                    "Unable to get field named \"{}\". Valid fields: {:?}",
-                    name, valid_fields
-                ))
-            })
-    }
-
-    pub fn to_arrow(&self) -> ArrowSchema {
-        let fields: Vec<ArrowField> = self
-            .fields
-            .iter()
-            .map(|f| {
-                match f.data_type() {
-                    // we must call this item, because the arrow crate names this item when creating a
-                    // schema from record batches
-                    DataType::List(dt) => ArrowField::new(
-                        f.name(),
-                        ArrowDataType::LargeList(Box::new(ArrowField::new(
-                            "item",
-                            dt.to_arrow(),
-                            true,
-                        ))),
-                        true,
-                    ),
-                    #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_) => ArrowField::new(
-                        f.name(),
-                        ArrowDataType::Dictionary(
-                            IntegerType::UInt32,
-                            Box::new(ArrowDataType::LargeUtf8),
-                            false,
-                        ),
-                        true,
-                    ),
-                    _ => f.to_arrow(),
-                }
-            })
-            .collect();
-        ArrowSchema::from(fields)
-    }
-
-    pub fn try_merge(schemas: &[Self]) -> Result<Self> {
-        let mut merged = Self::default();
-
-        for schema in schemas {
-            // merge fields
-            for field in &schema.fields {
-                let mut new_field = true;
-                for merged_field in &mut merged.fields {
-                    if field.name != merged_field.name {
-                        continue;
-                    }
-                    new_field = false;
-                }
-                // found a new field, add to field list
-                if new_field {
-                    merged.fields.push(field.clone());
-                }
-            }
-        }
-
-        Ok(merged)
-    }
-
-    pub fn column_with_name(&self, name: &str) -> Option<(usize, &Field)> {
-        self.fields
-            .iter()
-            .enumerate()
-            .find(|&(_, c)| c.name == name)
-    }
-}
-
-pub type SchemaRef = Arc<Schema>;
 
 impl From<&ArrowDataType> for DataType {
     fn from(dt: &ArrowDataType) -> Self {
@@ -1057,27 +905,12 @@ impl From<&ArrowField> for Field {
         Field::new(&f.name, f.data_type().into())
     }
 }
-impl From<&ArrowSchema> for Schema {
-    fn from(a_schema: &ArrowSchema) -> Self {
-        Schema::new(
-            a_schema
-                .fields
-                .iter()
-                .map(|arrow_f| arrow_f.into())
-                .collect(),
-        )
-    }
-}
-impl From<ArrowSchema> for Schema {
-    fn from(a_schema: ArrowSchema) -> Self {
-        (&a_schema).into()
-    }
-}
-
 #[cfg(feature = "private")]
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
+#[cfg(feature = "private")]
+pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxCa = UInt32Chunked;

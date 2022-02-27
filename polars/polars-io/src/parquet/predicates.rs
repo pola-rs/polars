@@ -95,7 +95,7 @@ pub struct BatchStats {
 
 impl BatchStats {
     pub fn get_stats(&self, column: &str) -> polars_core::error::Result<&ColumnStats> {
-        self.schema.index_of(column).map(|i| &self.stats[i])
+        self.schema.try_index_of(column).map(|i| &self.stats[i])
     }
 
     pub fn schema(&self) -> &Schema {
@@ -106,24 +106,21 @@ impl BatchStats {
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
     md: &[ColumnChunkMetaData],
-    schema: &ArrowSchema,
+    arrow_schema: &ArrowSchema,
 ) -> ArrowResult<Option<BatchStats>> {
-    let mut fields = vec![];
+    let mut schema = Schema::with_capacity(arrow_schema.fields.len());
     let mut stats = vec![];
 
-    for fld in &schema.fields {
+    for fld in &arrow_schema.fields {
         for st in deserialize_statistics(fld, md)?.into_iter().flatten() {
-            fields.push(fld.into());
+            schema.with_column(fld.name.to_string(), (&fld.data_type).into());
             stats.push(ColumnStats(st));
         }
     }
 
-    Ok(if fields.is_empty() {
+    Ok(if stats.is_empty() {
         None
     } else {
-        Some(BatchStats {
-            schema: Schema::new(fields),
-            stats,
-        })
+        Some(BatchStats { schema, stats })
     })
 }

@@ -90,7 +90,7 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -118,7 +118,7 @@ impl LogicalPlan {
                 selection,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = projection {
                     n_columns = format!("{}", columns.len());
@@ -143,7 +143,7 @@ impl LogicalPlan {
                 let current_node = format!(
                     "π {}/{} [{:?}]",
                     expr.len(),
-                    input.schema().fields().len(),
+                    input.schema().len(),
                     (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -160,7 +160,7 @@ impl LogicalPlan {
                 let current_node = format!(
                     "LOCAL π {}/{} [{:?}]",
                     expr.len(),
-                    input.schema().fields().len(),
+                    input.schema().len(),
                     (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -240,7 +240,7 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -270,7 +270,7 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());

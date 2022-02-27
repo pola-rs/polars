@@ -279,7 +279,11 @@ impl LazyFrame {
 
     fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
         // schema after renaming
-        let new_schema = self.schema().rename(&existing, &new).unwrap();
+        let mut new_schema = (&*self.schema()).clone();
+
+        for (old, new) in existing.iter().zip(new.iter()) {
+            new_schema.rename(old, new.to_string()).unwrap();
+        }
 
         let prefix = "__POLARS_TEMP_";
 
@@ -377,10 +381,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let schema = &*self.schema();
         // a column gets swapped
-        if new
-            .iter()
-            .any(|name| schema.column_with_name(name).is_some())
-        {
+        if new.iter().any(|name| schema.get(name).is_some()) {
             self.rename_impl_swapping(existing, new)
         } else {
             self.rename_imp(existing, new)
@@ -553,17 +554,11 @@ impl LazyFrame {
         {
             // only check by names because we may supercast types.
             assert_eq!(
-                prev_schema
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
-                    .collect::<Vec<_>>(),
+                prev_schema.iter_names().collect::<Vec<_>>(),
                 lp_arena
                     .get(lp_top)
                     .schema(lp_arena)
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
+                    .iter_names()
                     .collect::<Vec<_>>()
             );
         };
@@ -1076,12 +1071,10 @@ impl LazyFrame {
                 self
             }
             _ => {
-                let schema = self.schema();
-
-                let mut fields = schema.fields().clone();
-                fields.insert(0, Field::new(name, DataType::UInt32));
-                let new_schema = Schema::new(fields);
-
+                let new_schema = self
+                    .schema()
+                    .insert_index(0, name.to_string(), IDX_DTYPE)
+                    .unwrap();
                 let name = name.to_owned();
 
                 let opt = AllowedOptimizations {

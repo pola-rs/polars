@@ -1317,6 +1317,7 @@ dependencies = [
  "comfy-table",
  "hashbrown 0.12.0",
  "hex",
+ "indexmap",
  "jsonpath_lib",
  "lazy_static",
  "ndarray",
@@ -1331,7 +1332,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "unsafe_unwrap",
 ]
 
 [[package]]
@@ -1815,12 +1815,6 @@ name = "unindent"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "514672a55d7380da379785a4d70ca8386c8883ff7eaae877be4d2081cebe73d8"
-
-[[package]]
-name = "unsafe_unwrap"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1230ec65f13e0f9b28d789da20d2d419511893ea9dac2c1f4ef67b8b14e5da80"
 
 [[package]]
 name = "vcpkg"

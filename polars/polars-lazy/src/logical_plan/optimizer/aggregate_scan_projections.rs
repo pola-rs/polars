@@ -25,10 +25,9 @@ fn process_with_columns(
         None => {
             cols.extend(
                 schema
-                    .fields()
-                    .iter()
+                    .iter_names()
                     .enumerate()
-                    .map(|t| (t.0, t.1.name().to_string())),
+                    .map(|t| (t.0, t.1.to_string())),
             );
         }
     }

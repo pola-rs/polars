@@ -205,10 +205,8 @@ impl LogicalPlanBuilder {
     pub fn fill_null(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
         let exprs = schema
-            .fields()
-            .iter()
-            .map(|field| {
-                let name = field.name();
+            .iter_names()
+            .map(|name| {
                 when(col(name).is_null())
                     .then(fill_value.clone())
                     .otherwise(col(name))
@@ -221,10 +219,8 @@ impl LogicalPlanBuilder {
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
         let exprs = schema
-            .fields()
-            .iter()
-            .map(|field| {
-                let name = field.name();
+            .iter_names()
+            .map(|name| {
                 when(col(name).is_nan())
                     .then(fill_value.clone())
                     .otherwise(col(name))
@@ -237,20 +233,13 @@ impl LogicalPlanBuilder {
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-        let mut new_fields = schema.fields().clone();
+        let mut new_schema = (**schema).clone();
         let (exprs, _) = prepare_projection(exprs, schema);
 
         for e in &exprs {
             let field = e.to_field(schema, Context::Default).unwrap();
-            match schema.index_of(field.name()) {
-                Ok(idx) => {
-                    new_fields[idx] = field;
-                }
-                Err(_) => new_fields.push(field),
-            }
+            new_schema.with_column(field.name().to_string(), field.data_type().clone());
         }
-
-        let new_schema = Schema::new(new_fields);
 
         LogicalPlan::HStack {
             input: Box::new(self.0),
@@ -287,9 +276,9 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
-        let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Default);
-        let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
-        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+        let mut schema = utils::expressions_to_schema(&keys, current_schema, Context::Default);
+        let other = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
+        schema.merge(other);
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
@@ -390,12 +379,11 @@ impl LogicalPlanBuilder {
 
         // column names of left table
         let mut names: HashSet<&String, RandomState> = HashSet::default();
-        // fields of new schema
-        let mut fields = vec![];
+        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
-        for f in schema_left.fields() {
-            names.insert(f.name());
-            fields.push(f.clone());
+        for (name, dtype) in schema_left.iter() {
+            names.insert(name);
+            new_schema.with_column(name.to_string(), dtype.clone())
         }
 
         let right_names: HashSet<_, RandomState> = right_on
@@ -403,21 +391,18 @@ impl LogicalPlanBuilder {
             .map(|e| utils::expr_output_name(e).expect("could not find name"))
             .collect();
 
-        for f in schema_right.fields() {
-            let name = f.name();
-
+        for (name, dtype) in schema_right.iter() {
             if !right_names.iter().any(|s| s.as_ref() == name) {
                 if names.contains(name) {
                     let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    let field = Field::new(&new_name, f.data_type().clone());
-                    fields.push(field)
+                    new_schema.with_column(new_name, dtype.clone())
                 } else {
-                    fields.push(f.clone())
+                    new_schema.with_column(name.to_string(), dtype.clone())
                 }
             }
         }
 
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(new_schema);
 
         LogicalPlan::Join {
             input_left: Box::new(self.0),
@@ -457,21 +442,16 @@ impl LogicalPlanBuilder {
 
 pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> SchemaRef {
     let mut fields = input_schema
-        .fields()
-        .iter()
+        .iter_fields()
         .filter(|field| !value_vars.contains(field.name()))
-        .cloned()
         .collect::<Vec<_>>();
 
     fields.reserve(2);
 
-    let value_dtype = input_schema
-        .field_with_name(&value_vars[0])
-        .expect("field not found")
-        .data_type();
+    let value_dtype = input_schema.get(&value_vars[0]).expect("field not found");
 
     fields.push(Field::new("variable", DataType::Utf8));
     fields.push(Field::new("value", value_dtype.clone()));
 
-    Arc::new(Schema::new(fields))
+    Arc::new(Schema::from(fields))
 }

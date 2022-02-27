@@ -228,12 +228,8 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
 
 /// Take a list of expressions and a schema and determine the output schema.
 pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Context) -> Schema {
-    let fields = expr
-        .iter()
-        .map(|expr| expr.to_field(schema, ctxt))
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    Schema::new(fields)
+    let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt).unwrap());
+    Schema::from(fields)
 }
 
 /// Get a set of the data source paths in this LogicalPlan
@@ -301,7 +297,7 @@ pub(crate) fn check_input_node(
 ) -> bool {
     aexpr_to_root_names(node, expr_arena)
         .iter()
-        .all(|name| input_schema.index_of(name).is_ok())
+        .all(|name| input_schema.index_of(name).is_some())
 }
 
 pub(crate) fn aexprs_to_schema(
@@ -312,10 +308,8 @@ pub(crate) fn aexprs_to_schema(
 ) -> Schema {
     let fields = expr
         .iter()
-        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena))
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    Schema::new(fields)
+        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap());
+    Schema::from(fields)
 }
 
 pub(crate) fn combine_predicates_expr<I>(iter: I) -> Expr

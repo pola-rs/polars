@@ -71,10 +71,9 @@ impl DataFrame {
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
-            .fields()
-            .iter()
-            .map(|fld| {
-                let buf: AnyValueBuffer = (fld.data_type(), capacity).into();
+            .iter_dtypes()
+            .map(|dtype| {
+                let buf: AnyValueBuffer = (dtype, capacity).into();
                 buf
             })
             .collect();
@@ -87,10 +86,10 @@ impl DataFrame {
         })?;
         let v = buffers
             .into_iter()
-            .zip(schema.fields())
-            .map(|(b, fld)| {
+            .zip(schema.iter_names())
+            .map(|(b, name)| {
                 let mut s = b.into_series();
-                s.rename(fld.name());
+                s.rename(name);
                 s
             })
             .collect();
@@ -103,9 +102,8 @@ impl DataFrame {
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
         let schema = rows_to_schema(rows);
         let has_nulls = schema
-            .fields()
-            .iter()
-            .any(|fld| matches!(fld.data_type(), DataType::Null));
+            .iter_dtypes()
+            .any(|dtype| matches!(dtype, DataType::Null));
         if has_nulls {
             return Err(PolarsError::HasNullValues(
                 "Could not infer row types, because of the null values".into(),
@@ -193,7 +191,7 @@ pub fn infer_schema(
             add_or_insert(&mut values, &key, value.into());
         }
     }
-    Schema::new(resolve_fields(values))
+    Schema::from(resolve_fields(values))
 }
 
 fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
@@ -248,11 +246,10 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
     for row in rows.iter().take(max_infer).skip(1) {
         // for i in 1..max_infer {
         let nulls: Vec<_> = schema
-            .fields()
-            .iter()
+            .iter_dtypes()
             .enumerate()
-            .filter_map(|(i, f)| {
-                if matches!(f.data_type(), DataType::Null) {
+            .filter_map(|(i, dtype)| {
+                if matches!(dtype, DataType::Null) {
                     Some(i)
                 } else {
                     None
@@ -262,10 +259,9 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
         if nulls.is_empty() {
             break;
         } else {
-            let fields = schema.fields_mut();
-            let local_schema: Schema = row.into();
             for i in nulls {
-                fields[i] = local_schema.fields()[i].clone()
+                let dtype = (&row.0[i]).into();
+                schema.coerce_by_index(i, dtype).unwrap();
             }
         }
     }
@@ -274,26 +270,7 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
 
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
-        use AnyValue::*;
-        match val {
-            Null => Field::new("", DataType::Null),
-            Boolean(_) => Field::new("", DataType::Boolean),
-            Utf8(_) => Field::new("", DataType::Utf8),
-            UInt32(_) => Field::new("", DataType::UInt32),
-            UInt64(_) => Field::new("", DataType::UInt64),
-            Int32(_) => Field::new("", DataType::Int32),
-            Int64(_) => Field::new("", DataType::Int64),
-            Float32(_) => Field::new("", DataType::Float32),
-            Float64(_) => Field::new("", DataType::Float64),
-            #[cfg(feature = "dtype-date")]
-            Date(_) => Field::new("", DataType::Date),
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => Field::new("", DataType::Datetime(*tu, (*tz).clone())),
-            #[cfg(feature = "dtype-time")]
-            Time(_) => Field::new("", DataType::Time),
-            List(s) => Field::new("", DataType::List(Box::new(s.dtype().clone()))),
-            _ => unimplemented!(),
-        }
+        Field::new("", val.into())
     }
 }
 impl<'a> From<&AnyValue<'a>> for DataType {
@@ -323,17 +300,12 @@ impl<'a> From<&AnyValue<'a>> for DataType {
 
 impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
-        let fields = row
-            .0
-            .iter()
-            .enumerate()
-            .map(|(i, av)| {
-                let field: Field = av.into();
-                Field::new(format!("column_{}", i).as_ref(), field.data_type().clone())
-            })
-            .collect();
+        let fields = row.0.iter().enumerate().map(|(i, av)| {
+            let dtype = av.into();
+            Field::new(format!("column_{}", i).as_ref(), dtype)
+        });
 
-        Schema::new(fields)
+        Schema::from(fields)
     }
 }
 

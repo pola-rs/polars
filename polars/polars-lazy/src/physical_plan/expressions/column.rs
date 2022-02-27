@@ -37,7 +37,12 @@ impl PhysicalExpr for ColumnExpr {
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        let field = input_schema.field_with_name(&self.0).map(|f| f.clone())?;
+        let field = input_schema.get_field(&self.0).ok_or_else(|| {
+            PolarsError::NotFound(format!(
+                "could not find column: {} in schema: {:?}",
+                self.0, &input_schema
+            ))
+        })?;
         Ok(field)
     }
 }

@@ -34,7 +34,7 @@ impl<R: Read + Seek> AvroReader<R> {
     /// Get schema of the Avro File
     pub fn schema(&mut self) -> Result<Schema> {
         let (_, schema, _, _) = read::read_metadata(&mut self.reader)?;
-        Ok(schema.into())
+        Ok((&schema.fields).into())
     }
 
     /// Get arrow schema of the avro File, this is faster than a polars schema.

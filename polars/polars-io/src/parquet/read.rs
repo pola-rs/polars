@@ -90,7 +90,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         let metadata = read::read_metadata(&mut self.reader)?;
 
         let schema = read::infer_schema(&metadata)?;
-        Ok(schema.into())
+        Ok((&schema.fields).into())
     }
 }
 
@@ -119,7 +119,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         if let Some(cols) = self.columns {
             let mut prj = Vec::with_capacity(cols.len());
             for col in cols.iter() {
-                let i = schema.index_of(col)?;
+                let i = schema.try_index_of(col)?;
                 prj.push(i);
             }
 

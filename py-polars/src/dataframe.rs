@@ -45,15 +45,14 @@ impl PyDataFrame {
     fn finish_from_rows(rows: Vec<Row>) -> PyResult<Self> {
         // replace inferred nulls with boolean
         let schema = rows_to_schema(&rows);
-        let fields = schema
-            .fields()
-            .iter()
-            .map(|fld| match fld.data_type() {
-                DataType::Null => Field::new(fld.name(), DataType::Boolean),
-                _ => fld.clone(),
-            })
-            .collect();
-        let schema = Schema::new(fields);
+        let fields = schema.iter_fields().map(|mut fld| match fld.data_type() {
+            DataType::Null => {
+                fld.coerce(DataType::Boolean);
+                fld
+            }
+            _ => fld,
+        });
+        let schema = Schema::from(fields);
 
         let df = DataFrame::from_rows_and_schema(&rows, &schema).map_err(PyPolarsEr::from)?;
         Ok(df.into())
@@ -132,15 +131,12 @@ impl PyDataFrame {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype
-                .iter()
-                .map(|(name, dtype)| {
-                    let str_repr = dtype.str().unwrap().to_str().unwrap();
-                    let dtype = str_to_polarstype(str_repr);
-                    Field::new(name, dtype)
-                })
-                .collect();
-            Schema::new(fields)
+            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
+                let str_repr = dtype.str().unwrap().to_str().unwrap();
+                let dtype = str_to_polarstype(str_repr);
+                Field::new(name, dtype)
+            });
+            Schema::from(fields)
         });
 
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
