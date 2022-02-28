@@ -17,14 +17,16 @@ impl PhysicalExpr for ColumnExpr {
     fn as_expression(&self) -> &Expr {
         &self.1
     }
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> Result<Series> {
-        let column = match &*self.0 {
-            "" => df.select_at_idx(0).ok_or_else(|| {
-                PolarsError::NoData("could not select a column from an empty DataFrame".into())
-            })?,
-            _ => df.column(&self.0)?,
-        };
-        Ok(column.clone())
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
+        match state.get_schema() {
+            None => df.column(&self.0).cloned(),
+            Some(schema) => {
+                let (idx, _, _) = schema
+                    .get_full(&self.0)
+                    .ok_or_else(|| PolarsError::NotFound(self.0.to_string()))?;
+                Ok(df.get_columns()[idx].clone())
+            }
+        }
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(

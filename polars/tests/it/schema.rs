@@ -9,7 +9,7 @@ fn test_schema_rename() {
         Field::new("c", Int8),
     ]);
     schema.rename("a", "anton".to_string()).unwrap();
-    let mut expected = Schema::from([
+    let expected = Schema::from([
         Field::new("anton", UInt64),
         Field::new("b", Int32),
         Field::new("c", Int8),

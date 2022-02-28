@@ -13,6 +13,7 @@ pub struct GroupByExec {
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     maintain_order: bool,
+    input_schema: SchemaRef,
 }
 
 impl GroupByExec {
@@ -22,6 +23,7 @@ impl GroupByExec {
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        input_schema: SchemaRef,
     ) -> Self {
         Self {
             input,
@@ -29,6 +31,7 @@ impl GroupByExec {
             aggs,
             apply,
             maintain_order,
+            input_schema,
         }
     }
 }
@@ -44,6 +47,7 @@ fn groupby_helper(
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
+        state.clear_schema_cache();
         return gb.apply(|df| f.call_udf(df));
     }
 
@@ -74,6 +78,7 @@ fn groupby_helper(
     let agg_columns = agg_columns?;
 
     columns.extend(agg_columns.into_iter().flatten());
+    state.clear_schema_cache();
     DataFrame::new(columns)
 }
 
@@ -83,6 +88,7 @@ impl Executor for GroupByExec {
             eprintln!("aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;
+        state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
             .iter()
@@ -289,6 +295,7 @@ impl Executor for PartitionGroupByExec {
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
+        // the partitioned groupby has added columns so we must update the schema.
         let key = self.key.evaluate(&df, state)?;
 
         // first get mutable access and optionally sort
@@ -321,6 +328,7 @@ impl Executor for PartitionGroupByExec {
             POOL.install(|| rayon::join(get_columns, get_agg));
 
         columns.extend(agg_columns);
+        state.clear_schema_cache();
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)

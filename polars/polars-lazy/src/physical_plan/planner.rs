@@ -13,12 +13,10 @@ use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
 };
-use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_io::aggregations::ScanAggregation;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
@@ -197,6 +195,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -205,6 +204,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -212,9 +212,12 @@ impl DefaultPlanner {
             LocalProjection {
                 expr,
                 input,
-                schema: _schema,
+                #[cfg(test)]
+                    schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -223,6 +226,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -303,7 +307,6 @@ impl DefaultPlanner {
                 maintain_order,
                 options,
             } => {
-                #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
@@ -319,6 +322,7 @@ impl DefaultPlanner {
                         keys: phys_keys,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -327,6 +331,7 @@ impl DefaultPlanner {
                         input,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -413,6 +418,7 @@ impl DefaultPlanner {
                         phys_aggs,
                         apply,
                         maintain_order,
+                        input_schema,
                     )))
                 }
             }
@@ -430,11 +436,9 @@ impl DefaultPlanner {
                     // check if two DataFrames come from a separate source.
                     // If they don't we can parallelize,
                     // Otherwise it is in cache.
-                    let mut sources_left =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_left = PlHashSet::with_capacity(16);
                     agg_source_paths(input_left, &mut sources_left, lp_arena);
-                    let mut sources_right =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_right = PlHashSet::with_capacity(16);
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
                     sources_left.intersection(&sources_right).next().is_none()
                 } else {
@@ -458,6 +462,7 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -466,6 +471,7 @@ impl DefaultPlanner {
                     input,
                     has_windows,
                     expr: phys_expr,
+                    input_schema,
                 }))
             }
             Udf {

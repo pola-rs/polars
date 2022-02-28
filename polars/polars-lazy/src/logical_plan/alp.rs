@@ -5,10 +5,8 @@ use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
-use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -669,10 +667,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
 
         // column names of left table
-        let mut names: HashSet<&str, RandomState> = HashSet::with_capacity_and_hasher(
-            schema_left.len() + schema_right.len(),
-            Default::default(),
-        );
+        let mut names: PlHashSet<&str> =
+            PlHashSet::with_capacity(schema_left.len() + schema_right.len());
         let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
         for (name, dtype) in schema_left.iter() {
@@ -680,7 +676,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             new_schema.with_column(name.to_string(), dtype.clone())
         }
 
-        let right_names: HashSet<_, RandomState> = right_on
+        let right_names: PlHashSet<_> = right_on
             .iter()
             .map(|e| match self.expr_arena.get(*e) {
                 AExpr::Alias(_, name) => name.clone(),
@@ -710,6 +706,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             right_on,
             options,
         };
+        drop(names);
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)
     }

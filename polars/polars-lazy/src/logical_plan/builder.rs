@@ -2,7 +2,6 @@ use crate::logical_plan::projection::rewrite_projections;
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
-use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
@@ -17,7 +16,6 @@ use polars_io::{
     csv::NullValues,
     csv_core::utils::{get_reader_bytes, is_compressed},
 };
-use std::collections::HashSet;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
@@ -378,7 +376,7 @@ impl LogicalPlanBuilder {
         let schema_right = other.schema();
 
         // column names of left table
-        let mut names: HashSet<&String, RandomState> = HashSet::default();
+        let mut names: PlHashSet<&str> = PlHashSet::default();
         let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
         for (name, dtype) in schema_left.iter() {
@@ -386,14 +384,14 @@ impl LogicalPlanBuilder {
             new_schema.with_column(name.to_string(), dtype.clone())
         }
 
-        let right_names: HashSet<_, RandomState> = right_on
+        let right_names: PlHashSet<_> = right_on
             .iter()
             .map(|e| utils::expr_output_name(e).expect("could not find name"))
             .collect();
 
         for (name, dtype) in schema_right.iter() {
             if !right_names.iter().any(|s| s.as_ref() == name) {
-                if names.contains(name) {
+                if names.contains(&**name) {
                     let new_name = format!("{}{}", name, options.suffix.as_ref());
                     new_schema.with_column(new_name, dtype.clone())
                 } else {
@@ -404,6 +402,7 @@ impl LogicalPlanBuilder {
 
         let schema = Arc::new(new_schema);
 
+        drop(names);
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),

@@ -264,6 +264,7 @@ impl Executor for DataFrameExec {
         // projection should be before selection as those are free
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
+            state.may_set_schema(&df, projection.len());
             df = evaluate_physical_expressions(&df, projection, state, self.has_windows)?;
         }
 
@@ -274,6 +275,7 @@ impl Executor for DataFrameExec {
             })?;
             df = df.filter(mask)?;
         }
+        state.clear_schema_cache();
 
         if let Some(limit) = set_n_rows(None) {
             Ok(df.head(Some(limit)))

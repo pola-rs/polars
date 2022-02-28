@@ -16,7 +16,6 @@ use ahash::RandomState;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
 
@@ -1017,7 +1016,7 @@ impl DataFrame {
         mut df_right: DataFrame,
         suffix: Option<String>,
     ) -> Result<DataFrame> {
-        let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
+        let mut left_names = PlHashSet::with_capacity(df_left.width());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());
@@ -1036,6 +1035,7 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}{}", name, suffix))?;
         }
 
+        drop(left_names);
         df_left.hstack_mut(&df_right.columns)?;
         Ok(df_left)
     }
