@@ -1,18 +1,15 @@
-use ahash::RandomState;
 use parking_lot::{Mutex, RwLock};
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
-use std::collections::HashMap;
 use std::ops::Deref;
 
-pub type JoinTuplesCache =
-    Arc<Mutex<HashMap<String, Vec<(IdxSize, Option<IdxSize>)>, RandomState>>>;
-pub type GroupsProxyCache = Arc<Mutex<HashMap<String, GroupsProxy, RandomState>>>;
+pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, Vec<(IdxSize, Option<IdxSize>)>>>>;
+pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 #[derive(Clone)]
 pub struct ExecutionState {
-    df_cache: Arc<Mutex<HashMap<String, DataFrame, RandomState>>>,
+    df_cache: Arc<Mutex<PlHashMap<String, DataFrame>>>,
     pub schema_cache: Arc<RwLock<Option<SchemaRef>>>,
     /// Used by Window Expression to prevent redundant grouping
     pub(crate) group_tuples: GroupsProxyCache,
@@ -25,10 +22,10 @@ pub struct ExecutionState {
 impl ExecutionState {
     pub fn new() -> Self {
         Self {
-            df_cache: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
+            df_cache: Arc::new(Mutex::new(PlHashMap::default())),
             schema_cache: Arc::new(RwLock::new(None)),
-            group_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
-            join_tuples: Arc::new(Mutex::new(HashMap::with_hasher(RandomState::default()))),
+            group_tuples: Arc::new(Mutex::new(PlHashMap::default())),
+            join_tuples: Arc::new(Mutex::new(PlHashMap::default())),
             verbose: std::env::var("POLARS_VERBOSE").is_ok(),
             cache_window: true,
         }

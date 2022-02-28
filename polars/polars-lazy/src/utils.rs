@@ -1,9 +1,7 @@
 use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use ahash::RandomState;
 use polars_core::prelude::*;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -235,7 +233,7 @@ pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Contex
 /// Get a set of the data source paths in this LogicalPlan
 pub(crate) fn agg_source_paths(
     root_lp: Node,
-    paths: &mut HashSet<PathBuf, RandomState>,
+    paths: &mut PlHashSet<PathBuf>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     lp_arena.iter(root_lp).for_each(|(_, lp)| {

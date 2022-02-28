@@ -1,6 +1,5 @@
 //! DataFrame module.
 use std::borrow::Cow;
-use std::collections::HashSet;
 use std::iter::{FromIterator, Iterator};
 use std::mem;
 use std::ops;
@@ -33,7 +32,6 @@ use crate::vector_hasher::boost_hash_combine;
 #[cfg(feature = "row_hash")]
 use crate::vector_hasher::df_rows_to_hashes_threaded;
 use crate::POOL;
-use hashbrown::HashMap;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};
@@ -153,14 +151,6 @@ impl DataFrame {
         } else {
             Ok(())
         }
-    }
-
-    fn hash_names(&self) -> HashSet<String, RandomState> {
-        let mut set = HashSet::with_capacity_and_hasher(self.columns.len(), RandomState::default());
-        for s in &self.columns {
-            set.insert(s.name().to_string());
-        }
-        set
     }
 
     /// Create a DataFrame from a Vector of Series.
@@ -673,7 +663,11 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack_mut(&mut self, columns: &[Series]) -> Result<&mut Self> {
-        let mut names = self.hash_names();
+        let mut names = PlHashSet::with_capacity(self.columns.len());
+        for s in &self.columns {
+            names.insert(s.name());
+        }
+
         let height = self.height();
         // first loop check validity. We don't do this in a single pass otherwise
         // this DataFrame is already modified when an error occurs.
@@ -693,8 +687,9 @@ impl DataFrame {
                     .into(),
                 ));
             }
-            names.insert(name.to_string());
+            names.insert(name);
         }
+        drop(names);
         Ok(self.hstack_mut_no_checks(columns))
     }
 
@@ -1280,10 +1275,10 @@ impl DataFrame {
 
     /// A non generic implementation to reduce compiler bloat.
     fn select_series_impl(&self, cols: &[String]) -> Result<Vec<Series>> {
-        let selected = if cols.len() > 1 && self.columns.len() > 300 {
+        let selected = if cols.len() > 1 && self.columns.len() > 10 {
             // we hash, because there are user that having millions of columns.
             // # https://github.com/pola-rs/polars/issues/1023
-            let name_to_idx: HashMap<&str, usize> = self
+            let name_to_idx: PlHashMap<&str, usize> = self
                 .columns
                 .iter()
                 .enumerate()

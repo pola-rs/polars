@@ -13,12 +13,10 @@ use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
 };
-use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_io::aggregations::ScanAggregation;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
@@ -430,11 +428,9 @@ impl DefaultPlanner {
                     // check if two DataFrames come from a separate source.
                     // If they don't we can parallelize,
                     // Otherwise it is in cache.
-                    let mut sources_left =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_left = PlHashSet::with_capacity(16);
                     agg_source_paths(input_left, &mut sources_left, lp_arena);
-                    let mut sources_right =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_right = PlHashSet::with_capacity(16);
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
                     sources_left.intersection(&sources_right).next().is_none()
                 } else {
