@@ -132,6 +132,9 @@ pub(crate) fn evaluate_physical_expressions(
     state: &ExecutionState,
     has_windows: bool,
 ) -> Result<DataFrame> {
+    if exprs.len() > 1 && df.get_columns().len() > 10 {
+        state.set_schema(Arc::new(df.schema()));
+    }
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?
@@ -143,6 +146,7 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<Result<_>>()
         })?
     };
+    state.clear_schema_cache();
 
     check_expand_literals(selected_columns, zero_length)
 }

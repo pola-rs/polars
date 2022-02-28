@@ -1364,6 +1364,7 @@ version = "0.19.1"
 dependencies = [
  "ahash",
  "glob",
+ "parking_lot 0.12.0",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1386,7 +1387,7 @@ dependencies = [
 name = "polars-utils"
 version = "0.1.0"
 dependencies = [
- "parking_lot 0.11.2",
+ "parking_lot 0.12.0",
  "rayon",
 ]
 
