@@ -1797,7 +1797,7 @@ class DataFrame:
         {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
         """
-        return {c: self[c].dtype for c in self.columns}
+        return dict(zip(self.columns, self.dtypes))
 
     def describe(self) -> "DataFrame":
         """
