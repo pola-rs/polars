@@ -14,7 +14,7 @@ impl Executor for StackExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let mut df = self.input.execute(state)?;
 
-        state.set_schema(Arc::new(df.schema()));
+        state.set_schema(&df, self.expr.len());
         let res = if self.has_windows {
             // we have a different run here
             // to ensure the window functions run sequential and share caches

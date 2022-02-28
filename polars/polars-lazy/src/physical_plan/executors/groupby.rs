@@ -44,6 +44,7 @@ fn groupby_helper(
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
+        state.clear_schema_cache();
         return gb.apply(|df| f.call_udf(df));
     }
 
@@ -74,6 +75,7 @@ fn groupby_helper(
     let agg_columns = agg_columns?;
 
     columns.extend(agg_columns.into_iter().flatten());
+    state.clear_schema_cache();
     DataFrame::new(columns)
 }
 
@@ -83,6 +85,7 @@ impl Executor for GroupByExec {
             eprintln!("aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;
+        state.set_schema(&df, self.aggs.len() + self.keys.len());
         let keys = self
             .keys
             .iter()
@@ -215,6 +218,7 @@ fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let original_df = self.input.execute(state)?;
+        state.set_schema(&original_df, self.aggs.len() + 1);
 
         // already get the keys. This is the very last minute decision which groupby method we choose.
         // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -289,6 +293,9 @@ impl Executor for PartitionGroupByExec {
         // MERGE phase
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
+        // the partitioned groupby has added columns so we must update the schema.
+        state.clear_schema_cache();
+        state.set_schema(&df, self.aggs.len() + 1);
         let key = self.key.evaluate(&df, state)?;
 
         // first get mutable access and optionally sort
@@ -321,6 +328,7 @@ impl Executor for PartitionGroupByExec {
             POOL.install(|| rayon::join(get_columns, get_agg));
 
         columns.extend(agg_columns);
+        state.clear_schema_cache();
 
         let df = DataFrame::new_no_checks(columns);
         Ok(df)

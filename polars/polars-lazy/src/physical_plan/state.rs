@@ -32,9 +32,12 @@ impl ExecutionState {
     }
 
     /// Set the schema. Typically at the start of a projection.
-    pub(crate) fn set_schema(&self, schema: SchemaRef) {
-        let mut opt = self.schema_cache.write();
-        *opt = Some(schema)
+    pub(crate) fn set_schema(&self, df: &DataFrame, exprs_len: usize) {
+        if exprs_len > 1 && df.get_columns().len() > 10 {
+            let schema = Arc::new(df.schema());
+            let mut opt = self.schema_cache.write();
+            *opt = Some(schema)
+        }
     }
 
     /// Clear the schema. Typically at the end of a projection.
