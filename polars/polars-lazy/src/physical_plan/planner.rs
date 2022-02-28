@@ -195,6 +195,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -203,6 +204,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -210,9 +212,12 @@ impl DefaultPlanner {
             LocalProjection {
                 expr,
                 input,
-                schema: _schema,
+                #[cfg(test)]
+                    schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -221,6 +226,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -301,7 +307,6 @@ impl DefaultPlanner {
                 maintain_order,
                 options,
             } => {
-                #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
@@ -317,6 +322,7 @@ impl DefaultPlanner {
                         keys: phys_keys,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -325,6 +331,7 @@ impl DefaultPlanner {
                         input,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -411,6 +418,7 @@ impl DefaultPlanner {
                         phys_aggs,
                         apply,
                         maintain_order,
+                        input_schema,
                     )))
                 }
             }
@@ -454,6 +462,7 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -462,6 +471,7 @@ impl DefaultPlanner {
                     input,
                     has_windows,
                     expr: phys_expr,
+                    input_schema,
                 }))
             }
             Udf {

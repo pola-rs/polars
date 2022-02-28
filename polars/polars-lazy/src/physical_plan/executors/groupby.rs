@@ -13,6 +13,7 @@ pub struct GroupByExec {
     aggs: Vec<Arc<dyn PhysicalExpr>>,
     apply: Option<Arc<dyn DataFrameUdf>>,
     maintain_order: bool,
+    input_schema: SchemaRef,
 }
 
 impl GroupByExec {
@@ -22,6 +23,7 @@ impl GroupByExec {
         aggs: Vec<Arc<dyn PhysicalExpr>>,
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
+        input_schema: SchemaRef,
     ) -> Self {
         Self {
             input,
@@ -29,6 +31,7 @@ impl GroupByExec {
             aggs,
             apply,
             maintain_order,
+            input_schema,
         }
     }
 }
@@ -85,7 +88,7 @@ impl Executor for GroupByExec {
             eprintln!("aggregates are not partitionable: running default HASH AGGREGATION")
         }
         let df = self.input.execute(state)?;
-        state.set_schema(&df, self.aggs.len() + self.keys.len());
+        state.set_schema(self.input_schema.clone());
         let keys = self
             .keys
             .iter()
@@ -218,7 +221,6 @@ fn sample_cardinality(key: &Series, sample_size: usize) -> f32 {
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let original_df = self.input.execute(state)?;
-        state.set_schema(&original_df, self.aggs.len() + 1);
 
         // already get the keys. This is the very last minute decision which groupby method we choose.
         // If the column is a categorical, we know the number of groups we have and can decide to continue
@@ -294,8 +296,6 @@ impl Executor for PartitionGroupByExec {
         // merge and hash aggregate again
         let df = accumulate_dataframes_vertical(dfs)?;
         // the partitioned groupby has added columns so we must update the schema.
-        state.clear_schema_cache();
-        state.set_schema(&df, self.aggs.len() + 1);
         let key = self.key.evaluate(&df, state)?;
 
         // first get mutable access and optionally sort

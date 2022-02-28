@@ -9,6 +9,7 @@ pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
+    pub(crate) input_schema: SchemaRef,
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
 }
@@ -16,6 +17,7 @@ pub struct ProjectionExec {
 impl Executor for ProjectionExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
+        state.set_schema(self.input_schema.clone());
 
         let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
 

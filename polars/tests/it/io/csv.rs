@@ -146,6 +146,7 @@ fn test_tab_sep() {
         .with_ignore_parser_errors(true)
         .finish()
         .unwrap();
+    assert_eq!(df.shape(), (8, 26))
 }
 
 #[test]

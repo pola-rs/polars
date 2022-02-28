@@ -132,7 +132,6 @@ pub(crate) fn evaluate_physical_expressions(
     state: &ExecutionState,
     has_windows: bool,
 ) -> Result<DataFrame> {
-    state.set_schema(df, exprs.len());
     let zero_length = df.height() == 0;
     let selected_columns = if has_windows {
         execute_projection_cached_window_fns(df, exprs, state)?

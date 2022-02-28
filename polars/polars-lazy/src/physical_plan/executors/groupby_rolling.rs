@@ -7,6 +7,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) options: RollingGroupOptions,
+    pub(crate) input_schema: SchemaRef,
 }
 
 impl Executor for GroupByRollingExec {
@@ -14,7 +15,7 @@ impl Executor for GroupByRollingExec {
         #[cfg(feature = "dynamic_groupby")]
         {
             let df = self.input.execute(state)?;
-            state.set_schema(&df, self.aggs.len());
+            state.set_schema(self.input_schema.clone());
 
             let (time_key, groups) = df.groupby_rolling(&self.options)?;
 

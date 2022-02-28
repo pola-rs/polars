@@ -10,6 +10,7 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) options: DynamicGroupOptions,
+    pub(crate) input_schema: SchemaRef,
 }
 
 impl Executor for GroupByDynamicExec {
@@ -17,7 +18,7 @@ impl Executor for GroupByDynamicExec {
         #[cfg(feature = "dynamic_groupby")]
         {
             let df = self.input.execute(state)?;
-            state.set_schema(&df, self.keys.len() + self.aggs.len());
+            state.set_schema(self.input_schema.clone());
             let keys = self
                 .keys
                 .iter()

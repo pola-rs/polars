@@ -30,13 +30,16 @@ impl ExecutionState {
             cache_window: true,
         }
     }
+    pub(crate) fn set_schema(&self, schema: SchemaRef) {
+        let mut opt = self.schema_cache.write();
+        *opt = Some(schema)
+    }
 
     /// Set the schema. Typically at the start of a projection.
-    pub(crate) fn set_schema(&self, df: &DataFrame, exprs_len: usize) {
+    pub(crate) fn may_set_schema(&self, df: &DataFrame, exprs_len: usize) {
         if exprs_len > 1 && df.get_columns().len() > 10 {
             let schema = Arc::new(df.schema());
-            let mut opt = self.schema_cache.write();
-            *opt = Some(schema)
+            self.set_schema(schema);
         }
     }
 
