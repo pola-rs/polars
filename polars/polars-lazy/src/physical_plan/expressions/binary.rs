@@ -389,7 +389,6 @@ mod stats {
     impl BinaryExpr {
         fn impl_should_read(&self, stats: &BatchStats) -> Result<bool> {
             let schema = stats.schema();
-            dbg!(schema);
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
 

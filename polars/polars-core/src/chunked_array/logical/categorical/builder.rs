@@ -223,18 +223,18 @@ mod test {
         ];
         let ca = Utf8Chunked::new("a", slice);
         let out = ca.cast(&DataType::Categorical(None))?;
-        let mut out = out.categorical().unwrap().clone();
+        let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
         // test the global branch
         toggle_string_cache(true);
         // empty global cache
         let out = ca.cast(&DataType::Categorical(None))?;
-        let mut out = out.categorical().unwrap().clone();
+        let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
         // full global cache
         let out = ca.cast(&DataType::Categorical(None))?;
-        let mut out = out.categorical().unwrap().clone();
+        let out = out.categorical().unwrap().clone();
         assert_eq!(out.get_rev_map().len(), 2);
 
         // Check that we don't panic if we append two categorical arrays

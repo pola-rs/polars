@@ -181,7 +181,7 @@ mod test {
         assert_eq!(ca.cont_slice().unwrap(), [1, 2, 3, 4, 5, 6]);
 
         // now check if it succeeds if we cannot do this with a mutable.
-        let temp = ca.chunks.clone();
+        let _temp = ca.chunks.clone();
         ca.extend(&to_append);
         let location2 = ca.cont_slice().unwrap().as_ptr() as usize;
         assert_ne!(location, location2);

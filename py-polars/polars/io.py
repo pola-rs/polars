@@ -795,7 +795,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
+    source: Union[str, Path, BinaryIO, BytesIO, bytes],
     columns: Optional[Union[List[int], List[str]]] = None,
     n_rows: Optional[int] = None,
     use_pyarrow: bool = False,
@@ -812,7 +812,7 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, list of files, or a file-like object. If the path is a directory, that directory will be used
+        Path to a file, or a file-like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files.
     columns
