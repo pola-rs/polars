@@ -953,3 +953,15 @@ fn test_header_only() -> Result<()> {
     assert_eq!(df.shape(), (1, 3));
     Ok(())
 }
+
+#[test]
+fn test_empty_csv() {
+    let csv = "";
+    let file = Cursor::new(csv);
+    for h in [true, false] {
+        assert!(matches!(
+            CsvReader::new(file.clone()).has_header(h).finish(),
+            Err(PolarsError::NoData(_))
+        ))
+    }
+}
