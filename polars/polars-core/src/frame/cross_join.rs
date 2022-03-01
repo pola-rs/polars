@@ -4,7 +4,7 @@ use crate::POOL;
 
 impl DataFrame {
     /// Creates the cartesian product from both frames, preserves the order of the left keys.
-    pub fn cross_join(&self, other: &DataFrame) -> Result<DataFrame> {
+    pub fn cross_join(&self, other: &DataFrame, suffix: Option<String>) -> Result<DataFrame> {
         let n_rows_left = self.height() as IdxSize;
         let n_rows_right = other.height() as IdxSize;
         let total_rows = n_rows_right * n_rows_left;
@@ -32,7 +32,7 @@ impl DataFrame {
 
         let (l_df, r_df) = POOL.install(|| rayon::join(create_left_df, create_right_df));
 
-        self.finish_join(l_df, r_df, None)
+        self.finish_join(l_df, r_df, suffix)
     }
 }
 
@@ -52,7 +52,7 @@ mod test {
             "b" => ["a", "b", "c"]
         ]?;
 
-        let out = df_a.cross_join(&df_b)?;
+        let out = df_a.cross_join(&df_b, None)?;
         let expected = df![
             "a" => [1, 1, 1, 2, 2, 2],
             "b" => ["foo", "foo", "foo", "spam", "spam", "spam"],
