@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
 use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
@@ -338,7 +339,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&value_vars, self.0.schema());
+        let schema = det_melt_schema(&id_vars, &value_vars, self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
             id_vars,
@@ -439,18 +440,41 @@ impl LogicalPlanBuilder {
     }
 }
 
-pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> SchemaRef {
-    let mut fields = input_schema
-        .iter_fields()
-        .filter(|field| !value_vars.contains(field.name()))
-        .collect::<Vec<_>>();
+pub(crate) fn det_melt_schema(
+    id_vars: &[String],
+    value_vars: &[String],
+    input_schema: &Schema,
+) -> SchemaRef {
+    let mut new_schema = Schema::from(
+        id_vars
+            .iter()
+            .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
+    );
+    new_schema.with_column("variable".to_string(), DataType::Utf8);
 
-    fields.reserve(2);
+    // We need to determine the supertype of all value columns.
+    let mut st = None;
 
-    let value_dtype = input_schema.get(&value_vars[0]).expect("field not found");
-
-    fields.push(Field::new("variable", DataType::Utf8));
-    fields.push(Field::new("value", value_dtype.clone()));
-
-    Arc::new(Schema::from(fields))
+    // take all columns that are not in `id_vars` as `value_var`
+    if value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(id_vars);
+        for (name, dtype) in input_schema.iter() {
+            if !id_vars.contains(name) {
+                match &st {
+                    None => st = Some(dtype.clone()),
+                    Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                }
+            }
+        }
+    } else {
+        for name in value_vars {
+            let dtype = input_schema.get(name).unwrap();
+            match &st {
+                None => st = Some(dtype.clone()),
+                Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+            }
+        }
+    }
+    new_schema.with_column("value".to_string(), st.unwrap());
+    Arc::new(new_schema)
 }

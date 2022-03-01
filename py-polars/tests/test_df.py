@@ -761,6 +761,20 @@ def test_melt() -> None:
 
     melted = df.melt(id_vars="A", value_vars="B")
     assert all(melted["value"] == [1, 3, 5])
+    n = 3
+    for melted in [df.melt(), df.lazy().melt().collect()]:
+        assert melted["variable"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+        assert melted["value"].to_list() == [
+            "a",
+            "b",
+            "c",
+            "1",
+            "3",
+            "5",
+            "2",
+            "4",
+            "6",
+        ]
 
 
 def test_shift() -> None:
