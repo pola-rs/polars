@@ -1264,7 +1264,7 @@ impl DataFrame {
     {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            return self.cross_join(other);
+            return self.cross_join(other, suffix);
         }
 
         #[allow(unused_mut)]

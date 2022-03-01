@@ -1868,3 +1868,14 @@ def test_groupby_slice_expression_args() -> None:
         {"groups": ["a", "a", "b", "b", "b", "b"], "vals": [1, 2, 12, 13, 14, 15]}
     )
     assert out.frame_equal(expected)
+
+
+def test_join_suffixes() -> None:
+    df_a = pl.DataFrame({"A": [1], "B": [1]})
+    df_b = pl.DataFrame({"A": [1], "B": [1]})
+
+    for how in ["left", "inner", "outer", "cross"]:
+        # no need for an essert, we error if wrong
+        df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
+
+    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]

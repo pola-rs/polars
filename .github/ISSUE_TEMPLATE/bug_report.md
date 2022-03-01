@@ -2,7 +2,7 @@
 name: Bug report
 about: An issue with rust polars, python polars or nodejs polars
 title: ''
-labels: ''
+labels: 'bug'
 assignees: ''
 ---
 
@@ -31,7 +31,7 @@ Give a high level description of the bug.
 
 #### What are the steps to reproduce the behavior?
 
-If possible, please include a minimal example on a dataset that is create through code:
+If possible, please include a **minimal simple** example on a dataset that is created through code:
 
 Please use code instead of images, we don't like typing.
 
@@ -60,6 +60,13 @@ pl.DataFrame({
 ```
 
 If we cannot reproduce the bug, it is unlikely that we will be able fix it.
+
+Please remove clutter from your examples. Only include the bare minimum to produce the result.
+So please:
+
+* strip unused columns
+* use short distinguishable names
+* don't include unneeded computations
 
 #### What is the actual behavior?
 
