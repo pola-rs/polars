@@ -137,6 +137,9 @@ pub fn infer_file_schema(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes));
+    if bytes.is_empty() {
+        return Err(PolarsError::NoData("empty csv".into()));
+    }
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&b'\n');
