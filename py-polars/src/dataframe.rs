@@ -974,7 +974,7 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn melt(&self, id_vars: Vec<&str>, value_vars: Vec<&str>) -> PyResult<Self> {
+    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> PyResult<Self> {
         let df = self
             .df
             .melt(id_vars, value_vars)

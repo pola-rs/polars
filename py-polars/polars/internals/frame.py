@@ -3728,10 +3728,17 @@ class DataFrame:
         )
 
     def melt(
-        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
+        self,
+        id_vars: Optional[Union[List[str], str]] = None,
+        value_vars: Optional[Union[List[str], str]] = None,
     ) -> "DataFrame":
         """
-        Unpivot DataFrame to long format.
+        Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
+        (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
+        leaving just two non-identifier columns, ‘variable’ and ‘value’.
+
 
         Parameters
         ----------
@@ -3740,6 +3747,7 @@ class DataFrame:
 
         value_vars
             Values to use as identifier variables.
+            If `value_vars` is empty all columns that are not in `id_vars` will be used.
 
         Examples
         --------
@@ -3776,6 +3784,10 @@ class DataFrame:
             value_vars = [value_vars]
         if isinstance(id_vars, str):
             id_vars = [id_vars]
+        if value_vars is None:
+            value_vars = []
+        if id_vars is None:
+            id_vars = []
         return wrap_df(self._df.melt(id_vars, value_vars))
 
     def shift(self, periods: int) -> "DataFrame":

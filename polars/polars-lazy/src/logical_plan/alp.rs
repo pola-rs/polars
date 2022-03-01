@@ -545,7 +545,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
     }
 
     pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&value_vars, self.schema());
+        let schema = det_melt_schema(&id_vars, &value_vars, self.schema());
 
         let lp = ALogicalPlan::Melt {
             input: self.root,

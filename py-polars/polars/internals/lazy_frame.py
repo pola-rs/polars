@@ -1767,10 +1767,16 @@ class LazyFrame:
         return wrap_ldf(self._ldf.drop_nulls(subset))
 
     def melt(
-        self, id_vars: Union[str, List[str]], value_vars: Union[str, List[str]]
+        self,
+        id_vars: Optional[Union[str, List[str]]] = None,
+        value_vars: Optional[Union[str, List[str]]] = None,
     ) -> "LazyFrame":
         """
-        Unpivot DataFrame to long format.
+        Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
+        (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
+        leaving just two non-identifier columns, ‘variable’ and ‘value’.
 
         Parameters
         ----------
@@ -1778,6 +1784,7 @@ class LazyFrame:
             Columns to use as identifier variables.
         value_vars
             Values to use as identifier variables.
+            If `value_vars` is empty all columns that are not in `id_vars` will be used.
 
         Examples
         --------
@@ -1814,6 +1821,10 @@ class LazyFrame:
             value_vars = [value_vars]
         if isinstance(id_vars, str):
             id_vars = [id_vars]
+        if value_vars is None:
+            value_vars = []
+        if id_vars is None:
+            id_vars = []
         return wrap_ldf(self._ldf.melt(id_vars, value_vars))
 
     def map(
