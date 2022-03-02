@@ -354,7 +354,7 @@ impl DataFrame {
                     Float64 => s.bit_repr_large().into_series(),
                     _ => {
                         // is date like
-                        if !s.is_numeric() && s.is_numeric_physical() {
+                        if !s.dtype().is_numeric() && s.is_numeric_physical() {
                             s.to_physical_repr().into_owned()
                         } else {
                             s.clone()
@@ -377,7 +377,7 @@ impl DataFrame {
 
                 // fast path for numeric data
                 // uses the bit values to tightly pack those into arrays.
-                if by.len() == 2 && s0.is_numeric() && s1.is_numeric() {
+                if by.len() == 2 && s0.dtype().is_numeric() && s1.dtype().is_numeric() {
                     match (s0.bit_repr_is_large(), s1.bit_repr_is_large()) {
                         (false, false) => {
                             let ca0 = s0.bit_repr_small();

@@ -702,9 +702,29 @@ impl DataType {
         }
     }
 
-    /// Check if this dtype is a logical type
+    /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()
+    }
+
+    /// Check if this [`DataType`] is a numeric type
+    pub fn is_numeric(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            DataType::Utf8
+            | DataType::List(_)
+            | DataType::Date
+            | DataType::Datetime(_, _)
+            | DataType::Duration(_)
+            | DataType::Boolean
+            | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => false,
+            _ => true,
+        }
     }
 
     /// Convert to an Arrow data type.
