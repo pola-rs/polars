@@ -1456,6 +1456,9 @@ class DataFrame:
     def __setitem__(
         self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
     ) -> None:
+        warnings.warn(
+            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column"
+        )
         # df["foo"] = series
         if isinstance(key, str):
             try:
