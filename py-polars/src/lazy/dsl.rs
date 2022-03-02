@@ -1127,6 +1127,10 @@ impl PyExpr {
         self.inner.clone().arr().shift(periods).into()
     }
 
+    fn lst_slice(&self, offset: i64, length: usize) -> Self {
+        self.inner.clone().arr().slice(offset, length).into()
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {

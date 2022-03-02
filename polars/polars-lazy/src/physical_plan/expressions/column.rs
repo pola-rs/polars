@@ -28,7 +28,7 @@ impl PhysicalExpr for ColumnExpr {
                         let out = &df.get_columns()[idx];
                         if out.name() != &*self.0 {
                             // this path should not happen
-                            #[cfg(debug_assertions)]
+                            #[cfg(feature = "panic_on_schema")]
                             {
                                 panic!(
                                     "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
@@ -39,7 +39,7 @@ impl PhysicalExpr for ColumnExpr {
                                 )
                             }
                             // in release we fallback to linear search
-                            #[cfg(not(debug_assertions))]
+                            #[allow(unreachable_code)]
                             df.column(&self.0).cloned()
                         } else {
                             Ok(out.clone())

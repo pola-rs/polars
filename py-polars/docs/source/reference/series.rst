@@ -290,6 +290,9 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.arg_max
     ListNameSpace.diff
     ListNameSpace.shift
+    ListNameSpace.slice
+    ListNameSpace.head
+    ListNameSpace.tail
 
 Categories
 ----------

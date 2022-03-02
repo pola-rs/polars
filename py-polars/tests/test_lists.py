@@ -161,3 +161,13 @@ def test_list_diff() -> None:
     s = pl.Series("a", [[1, 2], [10, 2, 1]])
     expected = pl.Series("a", [[None, 1], [None, -8, -1]])
     assert s.arr.diff().to_list() == expected.to_list()
+
+
+def test_slice() -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1]]
+    s = pl.Series("a", vals)
+    assert s.arr.head(2).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2).to_list() == [[3, 4], [2, 1]]
+    assert s.arr.tail(200).to_list() == vals
+    assert s.arr.head(200).to_list() == vals
+    assert s.arr.slice(1, 2).to_list() == [[2, 3], [2, 1]]
