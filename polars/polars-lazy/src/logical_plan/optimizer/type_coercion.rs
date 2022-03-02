@@ -21,12 +21,22 @@ fn use_supertype(
     // other types will always use the supertype.
     if type_left.is_numeric() && type_right.is_numeric() {
         match (left, right) {
+            // don't let the literal f64 coerce the f32 column
+            (AExpr::Literal(LiteralValue::Float64(_)), _) if matches!(type_right, DataType::Float32) => {
+                st = DataType::Float32
+            }
+            (_, AExpr::Literal(LiteralValue::Float64(_))) if matches!(type_left, DataType::Float32) => {
+                st = DataType::Float32
+            }
+
             // do nothing and use supertype
             (AExpr::Literal(_), AExpr::Literal(_))
             // always make sure that we cast to floats if one of the operands is float
+            // and the left type is integer
             |(AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)), _)
             |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
             => {}
+
             // cast literal to right type
             (AExpr::Literal(_), _) => {
                 st = type_right.clone();
