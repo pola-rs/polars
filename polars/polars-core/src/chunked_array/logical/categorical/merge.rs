@@ -79,6 +79,7 @@ mod test {
 
     #[test]
     fn test_merge_rev_map() {
+        let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         toggle_string_cache(true);
 

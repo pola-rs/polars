@@ -22,7 +22,29 @@ impl PhysicalExpr for ColumnExpr {
             None => df.column(&self.0).cloned(),
             Some(schema) => {
                 match schema.get_full(&self.0) {
-                    Some((idx, _, _)) => Ok(df.get_columns()[idx].clone()),
+                    Some((idx, _, _)) => {
+                        // check if the schema was correct
+                        // if not do O(n) search
+                        let out = &df.get_columns()[idx];
+                        if out.name() != &*self.0 {
+                            // this path should not happen
+                            #[cfg(debug_assertions)]
+                            {
+                                panic!(
+                                    "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
+                                    out.name(),
+                                    &*self.0,
+                                    &schema,
+                                    &df
+                                )
+                            }
+                            // in release we fallback to linear search
+                            #[cfg(not(debug_assertions))]
+                            df.column(&self.0).cloned()
+                        } else {
+                            Ok(out.clone())
+                        }
+                    }
                     // in the future we will throw an error here
                     // now we do a linear search first as the lazy reported schema may still be incorrect
                     // in debug builds we panic so that it can be fixed when occurring

@@ -247,6 +247,7 @@ mod test {
 
     #[test]
     fn test_fast_unique() {
+        let _lock = SINGLE_LOCK.lock();
         let s = Series::new("1", vec!["a", "b", "c"])
             .cast(&DataType::Categorical(None))
             .unwrap();

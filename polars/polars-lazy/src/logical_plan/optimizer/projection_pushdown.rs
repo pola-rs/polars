@@ -93,13 +93,26 @@ fn update_scan_schema(
     acc_projections: &[Node],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
+    // this is only needed for parsers that sort the projections
+    // currently these are:
+    // sorting parsers: csv and ipc,
+    // non-sorting: parquet
+    sort_projections: bool,
 ) -> Schema {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
+    let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         for name in aexpr_to_root_names(*node, expr_arena) {
-            let dtype = schema.get(&*name).unwrap();
-            new_schema.with_column(name.to_string(), dtype.clone())
+            let item = schema.get_full(&*name).unwrap();
+            new_cols.push(item);
         }
+    }
+    // make sure that the projections are sorted by the schema.
+    if sort_projections {
+        new_cols.sort_unstable_by_key(|item| item.0);
+    }
+    for item in new_cols {
+        new_schema.with_column(item.1.clone(), item.2.clone())
     }
     new_schema
 }
@@ -330,7 +343,12 @@ impl ProjectionPushDown {
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    schema = Arc::new(update_scan_schema(&acc_projections, expr_arena, &*schema));
+                    schema = Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                        false,
+                    ));
                     projection = Some(acc_projections);
                 }
                 let lp = DataFrameScan {
@@ -358,6 +376,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
+                        true,
                     )))
                 };
                 options.with_columns = with_columns;
@@ -390,6 +409,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
+                        false,
                     )))
                 };
                 options.with_columns = with_columns;
@@ -422,6 +442,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
+                        true,
                     )))
                 };
 
