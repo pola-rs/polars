@@ -631,20 +631,15 @@ class DataFrame:
         return self
 
     @staticmethod
-    def _read_json(file: Union[str, IOBase]) -> "DataFrame":
+    def _read_json(file: Union[str, IOBase], json_lines: bool = False) -> "DataFrame":
         """
-        Read into a DataFrame from JSON format.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file-like object.
+        See Also pl.read_json
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
 
         self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_json(file)
+        self._df = PyDataFrame.read_json(file, json_lines)
         return self
 
     def to_arrow(self) -> "pa.Table":

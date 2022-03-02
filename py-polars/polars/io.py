@@ -878,7 +878,7 @@ def read_parquet(
         )
 
 
-def read_json(source: Union[str, IOBase]) -> DataFrame:
+def read_json(source: Union[str, IOBase], json_lines: bool = False) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -886,8 +886,10 @@ def read_json(source: Union[str, IOBase]) -> DataFrame:
     ----------
     source
         Path to a file or a file-like object.
+    json_lines
+        Toggle between "JSON" and "NDJSON" format
     """
-    return DataFrame._read_json(source)
+    return DataFrame._read_json(source, json_lines)
 
 
 def read_sql(

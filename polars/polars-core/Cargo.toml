@@ -158,15 +158,15 @@ rayon = "1.5"
 regex = { version = "1.5", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
+serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
-# rev = "fb5d4330544d9d746dfc9bdacab5f1f5c1de9203"
-branch = "csv_write"
+git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
+rev = "5d0db548142e5a7944728fe81d00ed048f7114d9"
+# branch = "csv_write"
 # version = "0.9"
 default-features = false
 features = [

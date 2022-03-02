@@ -11,7 +11,7 @@ description = "IO related logic for the Polars DataFrame library"
 
 [features]
 # support for arrows json parsing
-json = ["arrow/io_json"]
+json = ["arrow/io_json", "serde_json"]
 # support for arrows ipc file parsing
 ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
@@ -34,8 +34,8 @@ private = []
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "fb5d4330544d9d746dfc9bdacab5f1f5c1de9203", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "csv_write", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "5d0db548142e5a7944728fe81d00ed048f7114d9", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "csv_write", default-features = false }
 # arrow = { package = "arrow2", version = "0.9", default-features = false }
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
@@ -51,6 +51,7 @@ polars-core = { version = "0.19.1", path = "../polars-core", features = ["privat
 polars-utils = { version = "0.1.0", path = "../polars-utils", optional = true }
 rayon = "1.5"
 regex = "1.5"
+serde_json = { version = "1", optional = true }
 simdutf8 = "0.1"
 
 [package.metadata.docs.rs]

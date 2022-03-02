@@ -1,7 +1,7 @@
 use numpy::IntoPyArray;
 use pyo3::types::{PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use std::io::Read;
+use std::io::{BufReader, Cursor, Read};
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
@@ -269,16 +269,39 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(py_f: PyObject) -> PyResult<Self> {
-        // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
-        // so don't bother with files.
-        let mut json = String::new();
-        let _ = get_file_like(py_f, false)?
-            .read_to_string(&mut json)
-            .unwrap();
-        let df: DataFrame =
-            serde_json::from_str(&json).map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
-        Ok(df.into())
+    pub fn read_json(py_f: PyObject, json_lines: bool) -> PyResult<Self> {
+        if json_lines {
+            let f = get_file_like(py_f, false)?;
+            let f = BufReader::new(f);
+            let out = JsonReader::new(f)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish()
+                .map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
+            Ok(out.into())
+        } else {
+            // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
+            // so don't bother with files.
+            let mut json = String::new();
+            let _ = get_file_like(py_f, false)?
+                .read_to_string(&mut json)
+                .unwrap();
+
+            // Happy path is our column oriented json as that is fasted
+            // on failure we try
+            match serde_json::from_str::<DataFrame>(&json) {
+                Ok(df) => Ok(df.into()),
+                // try arrow json reader instead
+                Err(_) => {
+                    let f = Cursor::new(json);
+
+                    let out = JsonReader::new(f)
+                        .with_json_format(JsonFormat::Json)
+                        .finish()
+                        .map_err(|e| PyPolarsEr::Other(format!("{:?}", e)))?;
+                    Ok(out.into())
+                }
+            }
+        }
     }
 
     #[cfg(feature = "json")]

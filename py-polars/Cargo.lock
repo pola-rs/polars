@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/ritchie46/arrow2?branch=csv_write#d9cccffc22beacf7b966fcaadda5c6242e663614"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=5d0db548142e5a7944728fe81d00ed048f7114d9#5d0db548142e5a7944728fe81d00ed048f7114d9"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -1355,6 +1355,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
+ "serde_json",
  "simdutf8",
 ]
 
