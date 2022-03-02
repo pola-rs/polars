@@ -166,6 +166,10 @@ impl ListChunked {
         self.apply_amortized(|s| s.as_ref().shift(periods))
     }
 
+    pub fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().slice(offset, length))
+    }
+
     pub fn lst_lengths(&self) -> UInt32Chunked {
         let mut lengths = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {

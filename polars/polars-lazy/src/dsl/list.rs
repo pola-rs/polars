@@ -183,4 +183,24 @@ impl ListNameSpace {
             )
             .with_fmt("arr.diff")
     }
+
+    /// Slice every sublist.
+    pub fn slice(self, offset: i64, length: usize) -> Expr {
+        self.0
+            .map(
+                move |s| Ok(s.list()?.lst_slice(offset, length).into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("arr.slice")
+    }
+
+    /// Get the head of every sublist
+    pub fn head(self, n: usize) -> Expr {
+        self.slice(0, n)
+    }
+
+    /// Get the tail of every sublist
+    pub fn tail(self, n: usize) -> Expr {
+        self.slice(-(n as i64), n)
+    }
 }

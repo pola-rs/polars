@@ -3071,6 +3071,19 @@ class ExprListNameSpace:
             number of slots to shift
         null_behavior
             {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.diff()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 1]
+            [null, -8, -1]
+        ]
+
         """
         return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
 
@@ -3083,8 +3096,95 @@ class ExprListNameSpace:
         ----------
         periods
             Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 3]
+            [null, 10, 2]
+        ]
+
         """
         return wrap_expr(self._pyexpr.lst_shift(periods))
+
+    def slice(self, offset: int, length: int) -> "Expr":
+        """
+        Slice every sublist
+
+        Parameters
+        ----------
+        offset
+            Take the values from this index offset
+        length
+            The length of the slice to take
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [2, 3]
+            [2, 1]
+        ]
+
+        """
+        return wrap_expr(self._pyexpr.lst_slice(offset, length))
+
+    def head(self, n: int = 5) -> "Expr":
+        """
+        Slice the head of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.head(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [1, 2]
+            [10, 2]
+        ]
+
+        """
+        return self.slice(0, n)
+
+    def tail(self, n: int = 5) -> "Expr":
+        """
+        Slice the tail of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.tail(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [3, 4]
+            [2, 1]
+        ]
+
+        """
+        return self.slice(-n, n)
 
 
 class ExprStringNameSpace:

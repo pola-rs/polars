@@ -4046,6 +4046,18 @@ class ListNameSpace:
             number of slots to shift
         null_behavior
             {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.diff()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 1]
+            [null, -8, -1]
+        ]
         """
         return pli.select(
             pli.lit(wrap_s(self._s)).arr.diff(n, null_behavior)
@@ -4060,8 +4072,97 @@ class ListNameSpace:
         ----------
         periods
             Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 3]
+            [null, 10, 2]
+        ]
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.shift(periods)).to_series()
+
+    def slice(self, offset: int, length: int) -> "Series":
+        """
+        Slice every sublist
+
+        Parameters
+        ----------
+        offset
+            Take the values from this index offset
+        length
+            The length of the slice to take
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [2, 3]
+            [2, 1]
+        ]
+
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.slice(offset, length)
+        ).to_series()
+
+    def head(self, n: int = 5) -> "Series":
+        """
+        Slice the head of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.head(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [1, 2]
+            [10, 2]
+        ]
+
+        """
+        return self.slice(0, n)
+
+    def tail(self, n: int = 5) -> "Series":
+        """
+        Slice the tail of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.tail(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [3, 4]
+            [2, 1]
+        ]
+
+        """
+        return self.slice(-n, n)
 
 
 class DateTimeNameSpace:

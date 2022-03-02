@@ -327,6 +327,9 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.arg_max
     ExprListNameSpace.diff
     ExprListNameSpace.shift
+    ExprListNameSpace.slice
+    ExprListNameSpace.head
+    ExprListNameSpace.tail
 
 Categories
 ----------
