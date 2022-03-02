@@ -21,10 +21,16 @@ impl PhysicalExpr for ColumnExpr {
         match state.get_schema() {
             None => df.column(&self.0).cloned(),
             Some(schema) => {
-                let (idx, _, _) = schema
-                    .get_full(&self.0)
-                    .ok_or_else(|| PolarsError::NotFound(self.0.to_string()))?;
-                Ok(df.get_columns()[idx].clone())
+                match schema.get_full(&self.0) {
+                    Some((idx, _, _)) => Ok(df.get_columns()[idx].clone()),
+                    // in the future we will throw an error here
+                    // now we do a linear search first as the lazy reported schema may still be incorrect
+                    // in debug builds we panic so that it can be fixed when occurring
+                    None => {
+                        debug_assert!(false);
+                        df.column(&self.0).cloned()
+                    }
+                }
             }
         }
     }
