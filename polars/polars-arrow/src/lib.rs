@@ -2,6 +2,7 @@ pub mod array;
 pub mod bit_util;
 #[cfg(feature = "compute")]
 pub mod compute;
+pub mod conversion;
 pub mod error;
 pub mod export;
 pub mod index;
