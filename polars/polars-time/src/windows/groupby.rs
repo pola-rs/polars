@@ -87,6 +87,9 @@ pub fn groupby_windows(
 
         // find members of this window
         let mut i = start_offset;
+        // start next iteration 1 index back because of boundary conditions.
+        // e.g. "closed left" could match the next iteration, but did not this one.
+        start_offset = start_offset.saturating_sub(1);
 
         // last value
         if i == time.len() - 1 {
@@ -101,14 +104,14 @@ pub fn groupby_windows(
             continue;
         }
 
-        let first = start_offset as IdxSize;
+        let first = i as IdxSize;
 
         while i < time.len() {
             let t = time[i];
             if !bi.is_member(t, closed_window) {
                 break;
             }
-            i += 1
+            i += 1;
         }
         let len = (i as IdxSize) - first;
 

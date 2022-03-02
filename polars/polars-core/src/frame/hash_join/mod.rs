@@ -1457,8 +1457,8 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::df;
     use crate::prelude::*;
-    use crate::{df, POOL};
 
     fn create_frames() -> (DataFrame, DataFrame) {
         let s0 = Series::new("days", &[0, 1, 2]);

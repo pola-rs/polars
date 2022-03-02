@@ -1,5 +1,4 @@
 use super::*;
-use polars_core::toggle_string_cache;
 
 #[test]
 fn test_pearson_corr() -> Result<()> {
