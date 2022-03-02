@@ -9,7 +9,7 @@ use crate::utils::is_scan;
 pub struct TypeCoercionRule {}
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
-/// it would be wasteful to cast the column instead of the unsigned integer literal.
+/// it would be wasteful to cast the column instead of the literal.
 fn use_supertype(
     mut st: DataType,
     left: &AExpr,
@@ -17,25 +17,27 @@ fn use_supertype(
     type_left: &DataType,
     type_right: &DataType,
 ) -> DataType {
-    match (left, right) {
-        // do nothing and use supertype
-        (AExpr::Literal(_), AExpr::Literal(_))
-        // always make sure that we cast to floats if one of the operands is float
-        |(AExpr::Literal(LiteralValue::Float32(_)), _)
-        |(AExpr::Literal(LiteralValue::Float64(_)), _)
-        |(_, AExpr::Literal(LiteralValue::Float32(_)))
-        |(_, AExpr::Literal(LiteralValue::Float64(_)))
-        => {}
-        // cast literal to right type
-        (AExpr::Literal(_), _) => {
-            st = type_right.clone();
+    // only interesting on numerical types
+    // other types will always use the supertype.
+    if type_left.is_numeric() && type_right.is_numeric() {
+        match (left, right) {
+            // do nothing and use supertype
+            (AExpr::Literal(_), AExpr::Literal(_))
+            // always make sure that we cast to floats if one of the operands is float
+            |(AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)), _)
+            |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
+            => {}
+            // cast literal to right type
+            (AExpr::Literal(_), _) => {
+                st = type_right.clone();
+            }
+            // cast literal to left type
+            (_, AExpr::Literal(_)) => {
+                st = type_left.clone();
+            }
+            // do nothing
+            _ => {}
         }
-        // cast literal to left type
-        (_, AExpr::Literal(_)) => {
-            st = type_left.clone();
-        }
-        // do nothing
-        _ => {}
     }
     st
 }

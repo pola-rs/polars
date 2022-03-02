@@ -864,26 +864,6 @@ impl Series {
         }
     }
 
-    /// Check if underlying data is numeric
-    pub fn is_numeric(&self) -> bool {
-        // allow because it cannot be replaced when object feature is activated
-        #[allow(clippy::match_like_matches_macro)]
-        match self.dtype() {
-            DataType::Utf8
-            | DataType::List(_)
-            | DataType::Date
-            | DataType::Datetime(_, _)
-            | DataType::Duration(_)
-            | DataType::Boolean
-            | DataType::Null => false,
-            #[cfg(feature = "object")]
-            DataType::Object(_) => false,
-            #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical(_) => false,
-            _ => true,
-        }
-    }
-
     #[cfg(feature = "abs")]
     #[cfg_attr(docsrs, doc(cfg(feature = "abs")))]
     /// convert numerical values to their absolute value
@@ -940,7 +920,7 @@ impl Series {
     pub fn mean_as_series(&self) -> Series {
         let val = [self.mean()];
         let s = Series::new(self.name(), val);
-        if !self.is_numeric() {
+        if !self.dtype().is_numeric() {
             s.cast(self.dtype()).unwrap()
         } else {
             s
