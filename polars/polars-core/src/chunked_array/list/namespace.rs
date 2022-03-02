@@ -1,5 +1,6 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use crate::series::ops::NullBehavior;
 use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
@@ -135,6 +136,34 @@ impl ListChunked {
 
     pub fn lst_unique(&self) -> Result<ListChunked> {
         self.try_apply_amortized(|s| s.as_ref().unique())
+    }
+
+    pub fn lst_arg_min(&self) -> IdxCa {
+        let mut out: IdxCa = self
+            .amortized_iter()
+            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize)))
+            .collect_trusted();
+        out.rename(self.name());
+        out
+    }
+
+    pub fn lst_arg_max(&self) -> IdxCa {
+        let mut out: IdxCa = self
+            .amortized_iter()
+            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize)))
+            .collect_trusted();
+        out.rename(self.name());
+        out
+    }
+
+    #[cfg(feature = "diff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
+    pub fn lst_diff(&self, n: usize, null_behavior: NullBehavior) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().diff(n, null_behavior))
+    }
+
+    pub fn lst_shift(&self, periods: i64) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().shift(periods))
     }
 
     pub fn lst_lengths(&self) -> UInt32Chunked {

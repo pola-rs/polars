@@ -1110,6 +1110,23 @@ impl PyExpr {
         self.inner.clone().arr().join(separator).into()
     }
 
+    fn lst_arg_min(&self) -> Self {
+        self.inner.clone().arr().arg_min().into()
+    }
+
+    fn lst_arg_max(&self) -> Self {
+        self.inner.clone().arr().arg_max().into()
+    }
+
+    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
+        let null_behavior = str_to_null_behavior(null_behavior)?;
+        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    }
+
+    fn lst_shift(&self, periods: i64) -> Self {
+        self.inner.clone().arr().shift(periods).into()
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {

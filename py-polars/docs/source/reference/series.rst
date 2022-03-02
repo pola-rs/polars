@@ -286,6 +286,10 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.last
     ListNameSpace.contains
     ListNameSpace.join
+    ListNameSpace.arg_min
+    ListNameSpace.arg_max
+    ListNameSpace.diff
+    ListNameSpace.shift
 
 Categories
 ----------

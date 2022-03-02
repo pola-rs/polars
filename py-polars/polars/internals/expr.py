@@ -1059,7 +1059,7 @@ class Expr:
     def shift(self, periods: int = 1) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
-        with `Nones`.
+        with nulls.
 
         Parameters
         ----------
@@ -3040,6 +3040,51 @@ class ExprListNameSpace:
         """
 
         return wrap_expr(self._pyexpr.lst_join(separator))
+
+    def arg_min(self) -> "Expr":
+        """
+        Retrieve the index of the minimal value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return wrap_expr(self._pyexpr.lst_arg_min())
+
+    def arg_max(self) -> "Expr":
+        """
+        Retrieve the index of the maximum value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return wrap_expr(self._pyexpr.lst_arg_max())
+
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
+        """
+        Calculate the n-th discrete difference of every sublist.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+        """
+        return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
+
+    def shift(self, periods: int = 1) -> "Expr":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with nulls.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
+        return wrap_expr(self._pyexpr.lst_shift(periods))
 
 
 class ExprStringNameSpace:

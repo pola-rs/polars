@@ -1,3 +1,5 @@
+from test_series import verify_series_and_expr_api
+
 import polars as pl
 from polars import testing
 
@@ -139,3 +141,23 @@ def test_list_arr_empty() -> None:
         {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
     )
     assert out.frame_equal(expected)
+
+
+def test_list_argminmax() -> None:
+    s = pl.Series("a", [[1, 2], [3, 2, 1]])
+    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "arr.arg_min")
+    expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "arr.arg_max")
+
+
+def test_list_shift() -> None:
+    s = pl.Series("a", [[1, 2], [3, 2, 1]])
+    expected = pl.Series("a", [[None, 1], [None, 3, 2]])
+    assert s.arr.shift().to_list() == expected.to_list()
+
+
+def test_list_diff() -> None:
+    s = pl.Series("a", [[1, 2], [10, 2, 1]])
+    expected = pl.Series("a", [[None, 1], [None, -8, -1]])
+    assert s.arr.diff().to_list() == expected.to_list()
