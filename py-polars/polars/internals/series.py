@@ -3984,7 +3984,6 @@ class ListNameSpace:
         -------
         Series of dtype Utf8
         """
-
         return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
 
     def first(self) -> "Series":
@@ -4016,6 +4015,53 @@ class ListNameSpace:
         s_list = wrap_s(self._s)
         out = s.is_in(s_list)
         return out.rename(s_list.name)
+
+    def arg_min(self) -> "Series":
+        """
+        Retrieve the index of the minimal value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_min()).to_series()
+
+    def arg_max(self) -> "Series":
+        """
+        Retrieve the index of the maximum value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
+
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
+        """
+        Calculate the n-th discrete difference of every sublist.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.diff(n, null_behavior)
+        ).to_series()
+
+    def shift(self, periods: int = 1) -> "Series":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with nulls.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.shift(periods)).to_series()
 
 
 class DateTimeNameSpace:

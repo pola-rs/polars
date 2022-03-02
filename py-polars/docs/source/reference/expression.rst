@@ -323,6 +323,10 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.last
     ExprListNameSpace.contains
     ExprListNameSpace.join
+    ExprListNameSpace.arg_min
+    ExprListNameSpace.arg_max
+    ExprListNameSpace.diff
+    ExprListNameSpace.shift
 
 Categories
 ----------

@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use polars_core::prelude::*;
+use polars_core::series::ops::NullBehavior;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].
 pub struct ListNameSpace(pub(crate) Expr);
@@ -139,5 +140,47 @@ impl ListNameSpace {
                 GetOutput::from_type(DataType::Utf8),
             )
             .with_fmt("arr.join")
+    }
+
+    /// Return the index of the minimal value of every sublist
+    pub fn arg_min(self) -> Expr {
+        self.0
+            .map(
+                |s| Ok(s.list()?.lst_arg_min().into_series()),
+                GetOutput::from_type(IDX_DTYPE),
+            )
+            .with_fmt("arr.arg_min")
+    }
+
+    /// Return the index of the maximum value of every sublist
+    pub fn arg_max(self) -> Expr {
+        self.0
+            .map(
+                |s| Ok(s.list()?.lst_arg_max().into_series()),
+                GetOutput::from_type(IDX_DTYPE),
+            )
+            .with_fmt("arr.arg_max")
+    }
+
+    /// Diff every sublist.
+    #[cfg(feature = "diff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
+    pub fn diff(self, n: usize, null_behavior: NullBehavior) -> Expr {
+        self.0
+            .map(
+                move |s| Ok(s.list()?.lst_diff(n, null_behavior).into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("arr.diff")
+    }
+
+    /// Shift every sublist.
+    pub fn shift(self, periods: i64) -> Expr {
+        self.0
+            .map(
+                move |s| Ok(s.list()?.lst_shift(periods).into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("arr.diff")
     }
 }

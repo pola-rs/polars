@@ -427,18 +427,29 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn(Series) -> S::Native + Copy,
         S: PolarsNumericType,
     {
+        let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let values: Vec<_> = (0..array.len())
-                    .map(|idx| {
-                        let arrayref: ArrayRef = unsafe { array.value_unchecked(idx) }.into();
-                        let series = Series::try_from(("", arrayref)).unwrap();
-                        f(series)
-                    })
-                    .collect_trusted();
-                to_array::<S>(values, array.validity().cloned())
+                unsafe {
+                    let values = array
+                        .values_iter()
+                        .map(|array| {
+                            // safety
+                            // reported dtype is correct
+                            let series = Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![array.into()],
+                                &dtype,
+                            );
+                            f(series)
+                        })
+                        .trust_my_length(self.len())
+                        .collect_trusted::<Vec<_>>();
+
+                    to_array::<S>(values, array.validity().cloned())
+                }
             })
             .collect();
         ChunkedArray::from_chunks(self.name(), chunks)
@@ -449,6 +460,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn(Option<Series>) -> S::Native + Copy,
         S: PolarsNumericType,
     {
+        let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
             .into_iter()
@@ -456,7 +468,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {
                         let x: ArrayRef = x.into();
-                        Series::try_from(("", x)).unwrap()
+                        // safety
+                        // reported dtype is correct
+                        unsafe { Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype) }
                     });
                     f(x)
                 });
