@@ -2,6 +2,7 @@ use std::io::{Read, Seek, Write};
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
+use crate::utils::columns_to_projection;
 use polars_core::prelude::*;
 use std::ops::Deref;
 
@@ -28,6 +29,7 @@ pub struct AvroReader<R> {
     reader: R,
     rechunk: bool,
     n_rows: Option<usize>,
+    columns: Option<Vec<String>>,
     projection: Option<Vec<usize>>,
 }
 
@@ -54,6 +56,11 @@ impl<R: Read + Seek> AvroReader<R> {
         self.projection = projection;
         self
     }
+
+    pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
+        self.columns = columns;
+        self
+    }
 }
 
 impl<R> ArrowReader for read::Reader<R>
@@ -74,6 +81,7 @@ where
             reader,
             rechunk: true,
             n_rows: None,
+            columns: None,
             projection: None,
         }
     }
@@ -86,6 +94,10 @@ where
     fn finish(mut self) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let (avro_schema, schema, codec, file_marker) = read::read_metadata(&mut self.reader)?;
+
+        if let Some(columns) = self.columns {
+            self.projection = Some(columns_to_projection(columns, &schema)?);
+        }
 
         let prj = if let Some(projection) = self.projection {
             let mut prj = vec![false; avro_schema.len()];
@@ -225,7 +237,7 @@ mod test {
     }
 
     #[test]
-    fn test_projection() -> Result<()> {
+    fn test_with_projection() -> Result<()> {
         let mut df = df!(
             "i64" => &[1, 2],
             "f64" => &[0.1, 0.2],
@@ -247,7 +259,34 @@ mod test {
             .finish()?;
 
         assert!(expected_df.frame_equal(&read_df));
-        
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_with_columns() -> Result<()> {
+        let mut df = df!(
+            "i64" => &[1, 2],
+            "f64" => &[0.1, 0.2],
+            "utf8" => &["a", "b"]
+        )?;
+
+        let expected_df = df!(
+            "i64" => &[1, 2],
+            "f64" => &[0.1, 0.2]
+        )?;
+
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+        AvroWriter::new(&mut buf).finish(&mut df)?;
+        buf.set_position(0);
+
+        let read_df = AvroReader::new(buf)
+            .with_columns(Some(vec!["i64".to_string(), "f64".to_string()]))
+            .finish()?;
+
+        assert!(expected_df.frame_equal(&read_df));
+
         Ok(())
     }
 }
