@@ -671,21 +671,17 @@ impl PyExpr {
             )
             .into()
     }
-    pub fn timestamp(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                |s| s.timestamp().map(|ca| ca.into_series()),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .with_fmt("timestamp")
-            .into()
+    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().timestamp(tu.0).into()
     }
     pub fn dt_epoch_seconds(&self) -> PyExpr {
         self.clone()
             .inner
             .map(
-                |s| s.timestamp().map(|ca| (ca / 1000).into_series()),
+                |s| {
+                    s.timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| (ca / 1000).into_series())
+                },
                 GetOutput::from_type(DataType::Int64),
             )
             .into()

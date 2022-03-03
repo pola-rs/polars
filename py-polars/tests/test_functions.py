@@ -56,3 +56,30 @@ def test_concat_horizontal() -> None:
         }
     )
     assert out.frame_equal(expected)
+
+
+def test_all_any_horizontally() -> None:
+    df = pl.DataFrame(
+        [
+            [False, False, True],
+            [False, False, True],
+            [True, False, False],
+            [False, None, True],
+            [None, None, False],
+        ],
+        columns=["var1", "var2", "var3"],
+    )
+
+    expected = pl.DataFrame(
+        {
+            "any": [True, True, False, True, None],
+            "all": [False, False, False, None, False],
+        }
+    )
+
+    assert df.select(
+        [
+            pl.any([pl.col("var2"), pl.col("var3")]),
+            pl.all([pl.col("var2"), pl.col("var3")]),
+        ]
+    ).frame_equal(expected)

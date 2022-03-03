@@ -834,7 +834,7 @@ class LazyFrame:
         period
             length of the window, if None it is equal to 'every'
         offset
-            offset of the window
+            offset of the window if None and period is None it will be equal to negative `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -848,10 +848,13 @@ class LazyFrame:
 
         """
 
+        if offset is None:
+            if period is None:
+                offset = f"-{every}"
+            else:
+                offset = "0ns"
         if period is None:
             period = every
-        if offset is None:
-            offset = "0ns"
         by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby_dynamic(
             index_column,

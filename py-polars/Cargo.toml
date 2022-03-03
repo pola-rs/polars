@@ -23,7 +23,7 @@ mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
 numpy = "0.15"
 polars-core = { path = "../polars/polars-core", default-features = false }
-pyo3 = { version = "0.15", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.15", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 

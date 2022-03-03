@@ -2610,7 +2610,7 @@ class DataFrame:
         period
             length of the window, if None it is equal to 'every'
         offset
-            offset of the window
+            offset of the window if None and period is None it will be equal to negative `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries

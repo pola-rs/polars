@@ -1004,31 +1004,10 @@ pub trait SeriesTrait:
         feature = "dtype-datetime"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Convert date(time) object to timestamp in ms.
-    fn timestamp(&self) -> Result<Int64Chunked> {
-        match self.dtype() {
-            DataType::Date => self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                .unwrap()
-                .datetime()
-                .map(|ca| (ca.deref().clone())),
-            DataType::Datetime(tu, tz) => {
-                use TimeUnit::*;
-                match (tu, tz.as_deref()) {
-                    (Nanoseconds, None | Some("")) => {
-                        self.datetime().map(|ca| ca.deref().clone() / 1_000_000)
-                    }
-                    (Microseconds, None | Some("")) => {
-                        self.datetime().map(|ca| ca.deref().clone() / 1_000)
-                    }
-                    (Milliseconds, None | Some("")) => self.datetime().map(|ca| ca.deref().clone()),
-                    (_, Some(_)) => panic!("tz not yet supported"),
-                }
-            }
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
+    /// Convert date(time) object to timestamp in [`TimeUnit`].
+    fn timestamp(&self, tu: TimeUnit) -> Result<Int64Chunked> {
+        self.cast(&DataType::Datetime(tu, None))
+            .map(|s| s.datetime().unwrap().deref().clone())
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc

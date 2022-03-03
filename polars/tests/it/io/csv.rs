@@ -2,7 +2,7 @@ use super::*;
 use polars::io::RowCount;
 use std::io::Cursor;
 
-const FOODS_CSV: &str = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+const FOODS_CSV: &str = "../examples/datasets/foods1.csv";
 
 #[test]
 fn write_csv() {

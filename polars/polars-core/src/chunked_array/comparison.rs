@@ -10,8 +10,6 @@ use num::{NumCast, ToPrimitive};
 use std::ops::Not;
 use std::sync::Arc;
 
-type LargeStringArray = Utf8Array<i64>;
-
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -427,24 +425,14 @@ impl Utf8Chunked {
         f: impl Fn(&Utf8Array<i64>, &Utf8Array<i64>) -> BooleanArray,
     ) -> BooleanChunked {
         let chunks = self
-            .chunks
-            .iter()
-            .zip(&rhs.chunks)
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
             .map(|(left, right)| {
-                let left = left
-                    .as_any()
-                    .downcast_ref::<LargeStringArray>()
-                    .expect("could not downcast one of the chunks");
-                let right = right
-                    .as_any()
-                    .downcast_ref::<LargeStringArray>()
-                    .expect("could not downcast one of the chunks");
                 let arr = f(left, right);
                 Arc::new(arr) as ArrayRef
             })
-            .collect::<Vec<_>>();
-
-        ChunkedArray::from_chunks("", chunks)
+            .collect();
+        BooleanChunked::from_chunks("", chunks)
     }
 }
 
@@ -467,12 +455,9 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::eq_and_validity(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::utf8::eq_and_validity)
         }
     }
 
@@ -490,12 +475,9 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::neq_and_validity(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::utf8::neq_and_validity)
         }
     }
 

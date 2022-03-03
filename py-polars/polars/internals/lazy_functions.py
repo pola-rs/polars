@@ -810,7 +810,9 @@ def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
     if isinstance(name, list):
-        return fold(lit(0), lambda a, b: a | b, name).alias("any")
+        return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
+            "any"
+        )
     return col(name).any()
 
 
@@ -905,7 +907,9 @@ def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
     if name is None:
         return col("*")
     if isinstance(name, list):
-        return fold(lit(0), lambda a, b: a & b, name).alias("all")
+        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
+            "all"
+        )
     return col(name).all()
 
 

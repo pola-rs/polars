@@ -259,6 +259,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.epoch
     ExprDateTimeNameSpace.epoch_days
     ExprDateTimeNameSpace.epoch_milliseconds
     ExprDateTimeNameSpace.epoch_seconds
