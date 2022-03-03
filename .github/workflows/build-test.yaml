@@ -25,9 +25,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Install Rust
-        run: rustup update stable
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-02-23
+          override: true
       - uses: Swatinem/rust-cache@v1
+      - name: Install dependencies
+        run: |
+          cargo install cargo-hack
       - name: Feature test
         run: |
           cd polars && cargo hack check --each-feature --no-dev-deps --features private
