@@ -125,7 +125,6 @@ impl Series {
                 let x_slice = arr.values().as_slice();
 
                 ewm_std(x_slice, ewma_slice, options.alpha);
-                ewma_arr.with_validity(arr.validity().cloned());
                 // we mask the original null values until we know better how to deal with them.
                 let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
@@ -165,7 +164,6 @@ impl Series {
                 let x_slice = arr.values().as_slice();
 
                 ewm_var(x_slice, ewma_slice, options.alpha);
-                ewma_arr.with_validity(arr.validity().cloned());
                 // we mask the original null values until we know better how to deal with them.
                 let out = Arc::new(ewma_arr.with_validity(arr.validity().cloned())) as ArrayRef;
                 Series::try_from((self.name(), out))
