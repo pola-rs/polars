@@ -28,6 +28,7 @@ pub struct AvroReader<R> {
     reader: R,
     rechunk: bool,
     n_rows: Option<usize>,
+    projection: Option<Vec<usize>>,
 }
 
 impl<R: Read + Seek> AvroReader<R> {
@@ -46,6 +47,11 @@ impl<R: Read + Seek> AvroReader<R> {
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
+        self
+    }
+
+    pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
+        self.projection = projection;
         self
     }
 }
@@ -68,6 +74,7 @@ where
             reader,
             rechunk: true,
             n_rows: None,
+            projection: None,
         }
     }
 
@@ -80,6 +87,17 @@ where
         let rechunk = self.rechunk;
         let (avro_schema, schema, codec, file_marker) = read::read_metadata(&mut self.reader)?;
 
+        let prj = if let Some(projection) = self.projection {
+            let mut prj = vec![false; avro_schema.len()];
+            for index in projection {
+                prj[index] = true;
+            }
+
+            Some(prj)
+        } else {
+            None
+        };
+
         let avro_reader = read::Reader::new(
             read::Decompressor::new(
                 read::BlockStreamIterator::new(&mut self.reader, file_marker),
@@ -87,10 +105,10 @@ where
             ),
             avro_schema,
             schema.clone().fields,
-            None,
+            prj,
         );
 
-        finish_reader(avro_reader, rechunk, None, None, None, &schema, None)
+        finish_reader(avro_reader, rechunk, self.n_rows, None, None, &schema, None)
     }
 }
 
@@ -176,22 +194,6 @@ mod test {
     use polars_core::df;
     use polars_core::prelude::*;
     use std::io::Cursor;
-    #[test]
-    fn write_and_read_avro() -> Result<()> {
-        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let mut write_df = df!(
-            "i64" => &[1, 2],
-            "f64" => &[0.1, 0.2],
-            "utf8" => &["a", "b"]
-        )?;
-
-        AvroWriter::new(&mut buf).finish(&mut write_df)?;
-        buf.set_position(0);
-
-        let read_df = AvroReader::new(buf).finish()?;
-        assert!(write_df.frame_equal(&read_df));
-        Ok(())
-    }
 
     #[test]
     fn test_write_and_read_with_compression() -> Result<()> {
@@ -219,6 +221,33 @@ mod test {
             assert!(write_df.frame_equal(&read_df));
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_projection() -> Result<()> {
+        let mut df = df!(
+            "i64" => &[1, 2],
+            "f64" => &[0.1, 0.2],
+            "utf8" => &["a", "b"]
+        )?;
+
+        let expected_df = df!(
+            "i64" => &[1, 2],
+            "f64" => &[0.1, 0.2]
+        )?;
+
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+
+        AvroWriter::new(&mut buf).finish(&mut df)?;
+        buf.set_position(0);
+
+        let read_df = AvroReader::new(buf)
+            .with_projection(Some(vec![0, 1]))
+            .finish()?;
+
+        assert!(expected_df.frame_equal(&read_df));
+        
         Ok(())
     }
 }

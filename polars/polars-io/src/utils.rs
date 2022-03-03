@@ -1,4 +1,4 @@
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
 use crate::ArrowSchema;
 use dirs::home_dir;
 use polars_core::frame::DataFrame;
@@ -16,7 +16,7 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
     path.into()
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
     let fields = &schema.fields;
     let fields = projection
