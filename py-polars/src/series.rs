@@ -1095,8 +1095,8 @@ impl PySeries {
         Ok(PySeries::new(s))
     }
 
-    pub fn timestamp(&self) -> PyResult<Self> {
-        let ca = self.series.timestamp().map_err(PyPolarsEr::from)?;
+    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyResult<Self> {
+        let ca = self.series.timestamp(tu.0).map_err(PyPolarsEr::from)?;
         Ok(ca.into_series().into())
     }
 
@@ -1319,7 +1319,10 @@ impl PySeries {
     }
 
     pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
-        let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        let ms = self
+            .series
+            .timestamp(TimeUnit::Milliseconds)
+            .map_err(PyPolarsEr::from)?;
         Ok((ms / 1000).into_series().into())
     }
 

@@ -3867,10 +3867,31 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
+    def epoch(self, tu: str = "us") -> Expr:
+        """
+        Get the time passed since the Unix EPOCH in the give time unit
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms', 's', 'd'}
+        """
+        if tu in ["ns", "us", "ms"]:
+            return self.timestamp(tu)
+        if tu == "s":
+            return wrap_expr(self._pyexpr.dt_epoch_seconds())
+        if tu == "d":
+            return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+        else:
+            raise ValueError(f"time unit {tu} not understood")
+
     def epoch_days(self) -> Expr:
         """
         Get the number of days since the unix EPOCH.
         If the date is before the unix EPOCH, the number of days will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -3883,16 +3904,22 @@ class ExprDateTimeNameSpace:
         Get the number of milliseconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of milliseconds will be negative.
 
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
+
         Returns
         -------
         Milliseconds as Int64
         """
-        return self.timestamp()
+        return self.timestamp("ms")
 
     def epoch_seconds(self) -> Expr:
         """
         Get the number of seconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -3900,9 +3927,16 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_epoch_seconds())
 
-    def timestamp(self) -> Expr:
-        """Return timestamp in milliseconds as Int64 type."""
-        return wrap_expr(self._pyexpr.timestamp())
+    def timestamp(self, tu: str = "us") -> Expr:
+        """
+        Return a timestamp in the given time unit.
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms'}
+        """
+        return wrap_expr(self._pyexpr.timestamp(tu))
 
     def with_time_unit(self, tu: str) -> Expr:
         """
@@ -3912,7 +3946,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+            Time unit for the `Datetime` Series: one of {"ns", "us", "ms"}
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 

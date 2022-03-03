@@ -144,4 +144,13 @@ impl DateLikeNameSpace {
             .map(function, GetOutput::from_type(DataType::UInt32))
             .with_fmt("nanosecond")
     }
+
+    pub fn timestamp(self, tu: TimeUnit) -> Expr {
+        self.0
+            .map(
+                move |s| s.timestamp(tu).map(|ca| ca.into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .with_fmt("timestamp")
+    }
 }
