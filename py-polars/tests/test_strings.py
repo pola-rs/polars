@@ -18,3 +18,9 @@ def test_auto_explode() -> None:
         .get_column("grouped")
     )
     assert grouped.dtype == pl.Utf8
+
+
+def test_null_comparisons() -> None:
+    s = pl.Series("s", [None, "str", "a"])
+    assert (s.shift() == s).null_count() == 0
+    assert (s.shift() != s).null_count() == 0
