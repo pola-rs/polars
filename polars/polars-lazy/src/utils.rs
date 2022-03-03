@@ -83,6 +83,7 @@ where
 }
 
 /// Check if root expression is a literal
+#[cfg(feature = "is_in")]
 pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
     matches!(e.into_iter().last(), Some(Expr::Literal(_)))
 }

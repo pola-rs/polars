@@ -19,7 +19,7 @@ impl PhysicalExpr for ColumnExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         match state.get_schema() {
-            None => df.column(&self.0).cloned(),
+            None => df.column(&self.0).map(|s| s.clone()),
             Some(schema) => {
                 match schema.get_full(&self.0) {
                     Some((idx, _, _)) => {
@@ -40,7 +40,7 @@ impl PhysicalExpr for ColumnExpr {
                             }
                             // in release we fallback to linear search
                             #[allow(unreachable_code)]
-                            df.column(&self.0).cloned()
+                            df.column(&self.0).map(|s| s.clone())
                         } else {
                             Ok(out.clone())
                         }
@@ -50,7 +50,7 @@ impl PhysicalExpr for ColumnExpr {
                     // in debug builds we panic so that it can be fixed when occurring
                     None => {
                         debug_assert!(false);
-                        df.column(&self.0).cloned()
+                        df.column(&self.0).map(|s| s.clone())
                     }
                 }
             }
