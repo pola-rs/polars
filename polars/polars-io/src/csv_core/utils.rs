@@ -430,7 +430,7 @@ mod test {
 
     #[test]
     fn test_get_file_chunks() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let path = "../../examples/datasets/foods1.csv";
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.

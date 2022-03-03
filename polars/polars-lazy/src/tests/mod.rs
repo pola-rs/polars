@@ -35,13 +35,12 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::export::lazy_static::lazy_static;
 use std::iter::FromIterator;
 
-static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
-static GLOB_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
-static GLOB_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
-static FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-static FOODS_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.ipc";
-static FOODS_PARQUET: &str =
-    "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet";
+static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
+static GLOB_CSV: &str = "../../examples/datasets/*.csv";
+static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
+static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
+static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
+static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
 lazy_static! {
     // needed prevent race conditions during test execution
@@ -60,8 +59,8 @@ fn scan_foods_ipc() -> LazyFrame {
 
 fn init_files() {
     for path in &[
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
+        "../../examples/datasets/foods1.csv",
+        "../../examples/datasets/foods2.csv",
     ] {
         let out_path1 = path.replace(".csv", ".parquet");
         let out_path2 = path.replace(".csv", ".ipc");

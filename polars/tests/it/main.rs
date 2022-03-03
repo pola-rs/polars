@@ -5,4 +5,4 @@ mod joins;
 mod lazy;
 mod schema;
 
-pub static FOODS_CSV: &str = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+pub static FOODS_CSV: &str = "../examples/datasets/foods1.csv";
