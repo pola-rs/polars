@@ -220,6 +220,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
     DateTimeNameSpace.truncate
+    DateTimeNameSpace.epoch
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds
