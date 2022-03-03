@@ -11,8 +11,8 @@ venv:
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 clean:
-	@rm -r venv
-	@rm -r target/
+	@-rm -r venv
+	@cargo clean
 
 pre-commit: venv
 	$(PYTHON_BIN)/isort .

@@ -539,3 +539,29 @@ def test_epoch() -> None:
     assert dates.dt.epoch("d").series_equal(
         (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32)
     )
+
+
+def test_default_negative_every_offset_dynamic_groupby() -> None:
+    # 2791
+    dts = [
+        datetime(2020, 1, 1),
+        datetime(2020, 1, 2),
+        datetime(2020, 2, 1),
+        datetime(2020, 3, 1),
+    ]
+    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
+    out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
+        pl.col("idx")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+            ],
+            "idx": [[0], [1, 2], [3]],
+        }
+    )
+    assert out.frame_equal(expected)
