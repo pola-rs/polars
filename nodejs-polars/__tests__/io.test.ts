@@ -3,7 +3,7 @@ import path from "path";
 import {Stream} from "stream";
 import fs from "fs";
 // eslint-disable-next-line no-undef
-const csvpath = path.resolve(__dirname, "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv");
+const csvpath = path.resolve(__dirname, "../../examples/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
 const parquetpath = path.resolve(__dirname, "./examples/foods.parquet");
 // eslint-disable-next-line no-undef
