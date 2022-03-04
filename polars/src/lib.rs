@@ -129,7 +129,10 @@
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `simd` - SIMD operations _(nightly only)_
-//!     - `performant` - ~40% faster chunkedarray creation but may lead to unexpected panic if iterator incorrectly sets a size_hint
+//!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This has not been needed by anyone.
+//!                  This allows polars to scale up way beyond that by using `u64` as an index.
+//!                  Polars will be a bit slower with this feature activated as many data structures
+//!                  are less cache efficient.
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
@@ -143,7 +146,7 @@
 //!
 //! * `DataFrame` operations:
 //!     - `dynamic_groupby` - Groupby based on a time window instead of predefined keys.
-//!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
+//!                           Also activates rolling window group by operations.
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!                And activates `pivot` and `transpose` operations
@@ -178,9 +181,10 @@
 //!     - `abs` - Get absolute values of Series
 //!     - `arange` - Range operation on Series
 //!     - `product` - Compute the product of a Series.
+//!     - `diff` - [`diff`] operation.
+//!     - `pct_change` - Compute change percentages.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
-//!     - `plain_fmt` - no overflowing (less compilation times)
-//!     - `pretty_fmt` - cell overflow (increased compilation times)
+//!     - `fmt` - Activate DataFrame formatting
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around

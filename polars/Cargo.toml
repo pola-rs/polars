@@ -22,7 +22,7 @@ default = [
   "csv-file",
   "temporal",
   "performant",
-  "plain_fmt",
+  "fmt",
   "dtype-slim",
 ]
 ndarray = ["polars-core/ndarray"]
@@ -55,11 +55,8 @@ csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 # that fits a TrustedLen iterator.
 performant = ["polars-core/performant"]
 
-# Choose one of those features for dataframe formatting.
-#   - plain_fmt: less compile times, simpler formatting
-#   - pretty_fmt: better looking dataframes for increase compile times
-plain_fmt = ["polars-core/plain_fmt"]
-pretty_fmt = ["polars-core/pretty_fmt"]
+# Dataframe formatting.
+fmt = ["polars-core/fmt"]
 
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
@@ -115,7 +112,7 @@ test = [
   "csv-file",
   "dtype-categorical",
   "cum_agg",
-  "polars-core/plain_fmt",
+  "fmt",
   "diff",
   "abs",
   "parquet",

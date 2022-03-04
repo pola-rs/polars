@@ -14,9 +14,6 @@ jobs:
       - name: Install Rust
         run: rustup update stable
       - uses: Swatinem/rust-cache@v1
-      - name: Install carho-hack
-        run: |
-          cargo install cargo-hack
       - name: "check"
         run: cd examples && cargo check
 
