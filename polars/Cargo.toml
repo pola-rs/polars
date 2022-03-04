@@ -133,6 +133,7 @@ dtype-full = [
   "dtype-u8",
   "dtype-u16",
   "dtype-categorical",
+  "dtype-struct",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -157,6 +158,7 @@ dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-io/dtype-categorical", "polars-lazy/dtype-categorical"]
+dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct"]
 
 docs-selection = [
   "csv-file",

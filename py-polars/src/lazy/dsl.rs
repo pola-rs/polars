@@ -1263,6 +1263,10 @@ impl PyExpr {
     pub fn all(&self) -> Self {
         self.inner.clone().all().into()
     }
+
+    pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
+        self.inner.clone().struct_().field_by_name(name).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {

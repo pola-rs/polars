@@ -12,10 +12,10 @@ impl PrivateSeriesNumeric for SeriesWrap<StructChunked> {}
 
 impl private::PrivateSeries for SeriesWrap<StructChunked> {
     fn _field(&self) -> Cow<Field> {
-        Cow::Borrowed(self.0.field())
+        Cow::Borrowed(self.0.ref_field())
     }
     fn _dtype(&self) -> &DataType {
-        self.0.field().data_type()
+        self.0.ref_field().data_type()
     }
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
         self.0
@@ -65,6 +65,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<StructChunked> {
+    #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.apply_fields(|s| s.interpolate()).into_series()
     }
@@ -188,7 +189,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Get length of series.
     fn len(&self) -> usize {
-        self.0.fields().get(0).map(|s| s.len()).unwrap_or(0)
+        self.0.len()
     }
 
     /// Aggregate all chunks to a contiguous array of memory.
@@ -291,7 +292,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn fmt_list(&self) -> String {
-        "fmt implemented".into()
+        self.0.fmt_list()
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

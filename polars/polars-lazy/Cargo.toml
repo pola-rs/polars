@@ -30,6 +30,7 @@ dtype-date = ["polars-core/dtype-date"]
 dtype-datetime = ["polars-core/dtype-datetime"]
 dtype-duration = ["polars-core/dtype-duration"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
 # uncomment to have datafusion integration
 # when uncommenting we both need to point to the same arrow version

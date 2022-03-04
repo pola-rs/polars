@@ -4736,6 +4736,9 @@ class DataFrame:
         """
         return self.height == 0
 
+    def to_struct(self, name: str) -> "pli.Series":
+        return pli.wrap_s(self._df.to_struct(name))
+
 
 class RollingGroupBy:
     """

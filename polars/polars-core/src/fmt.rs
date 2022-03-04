@@ -279,6 +279,15 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
+            #[cfg(feature = "dtype-struct")]
+            dt @ DataType::Struct(_) => format_array!(
+                limit,
+                f,
+                self.struct_().unwrap(),
+                format!("{}", dt),
+                self.name(),
+                "Series"
+            ),
             dt => panic!("{:?} not impl", dt),
         }
     }
@@ -724,6 +733,13 @@ impl FmtList for DurationChunked {
 
 #[cfg(feature = "dtype-time")]
 impl FmtList for TimeChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl FmtList for StructChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

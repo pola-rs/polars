@@ -25,7 +25,22 @@ impl PhysicalExpr for ColumnExpr {
                     Some((idx, _, _)) => {
                         // check if the schema was correct
                         // if not do O(n) search
-                        let out = &df.get_columns()[idx];
+                        let out = match df.get_columns().get(idx) {
+                            Some(out) => out,
+                            None => {
+                                // this path should not happen
+                                #[cfg(feature = "panic_on_schema")]
+                                {
+                                    panic!("invalid schema")
+                                }
+                                // in release we fallback to linear search
+                                #[allow(unreachable_code)]
+                                {
+                                    return df.column(&self.0).map(|s| s.clone());
+                                }
+                            }
+                        };
+
                         if out.name() != &*self.0 {
                             // this path should not happen
                             #[cfg(feature = "panic_on_schema")]
@@ -40,7 +55,9 @@ impl PhysicalExpr for ColumnExpr {
                             }
                             // in release we fallback to linear search
                             #[allow(unreachable_code)]
-                            df.column(&self.0).map(|s| s.clone())
+                            {
+                                df.column(&self.0).map(|s| s.clone())
+                            }
                         } else {
                             Ok(out.clone())
                         }

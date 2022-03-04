@@ -1235,6 +1235,11 @@ impl PyDataFrame {
         let out = out.map_err(PyPolarsEr::from)?;
         Ok(out.into())
     }
+
+    pub fn to_struct(&self, name: &str) -> PySeries {
+        let s = self.df.clone().into_struct(name);
+        s.into_series().into()
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {

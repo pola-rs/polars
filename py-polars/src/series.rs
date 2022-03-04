@@ -94,6 +94,17 @@ impl PySeries {
             }
         }
     }
+
+    pub fn struct_to_frame(&self) -> PyResult<PyDataFrame> {
+        let ca = self.series.struct_().map_err(PyPolarsEr::from)?;
+        let df: DataFrame = ca.clone().into();
+        Ok(df.into())
+    }
+
+    pub fn struct_fields(&self) -> PyResult<Vec<&str>> {
+        let ca = self.series.struct_().map_err(PyPolarsEr::from)?;
+        Ok(ca.fields().iter().map(|s| s.name()).collect())
+    }
 }
 
 #[pymethods]

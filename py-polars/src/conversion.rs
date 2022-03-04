@@ -14,7 +14,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence, PyTuple};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -227,6 +227,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .unwrap();
                 python_series_wrapper.into()
             }
+            AnyValue::Struct(vals) => {
+                // Safety:
+                // Wrap<T> is transparent
+                let vals = unsafe { std::mem::transmute::<_, Vec<Wrap<AnyValue>>>(vals) };
+                PyTuple::new(py, vals).into_py(py)
+            }
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -259,6 +265,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
+            DataType::Struct(_) => pl.getattr("Struct").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }

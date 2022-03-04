@@ -1,3 +1,5 @@
+mod from;
+
 use super::*;
 
 /// This is logical type [`StructChunked`] that
@@ -26,7 +28,21 @@ impl StructChunked {
         Self { fields, field }
     }
 
-    pub fn field(&self) -> &Field {
+    /// Get access to one of this `[StructChunked]`'s fields
+    pub fn field_by_name(&self, name: &str) -> Result<Series> {
+        self.fields
+            .iter()
+            .find(|s| s.name() == name)
+            .ok_or_else(|| PolarsError::NotFound(name.to_string()))
+            .map(|s| s.clone())
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.fields.get(0).map(|s| s.len()).unwrap_or(0)
+    }
+
+    /// Get a reference to the [`Field`] of array.
+    pub fn ref_field(&self) -> &Field {
         &self.field
     }
 

@@ -24,6 +24,7 @@ pub(crate) enum PyDataType {
     Time,
     Object,
     Categorical,
+    Struct,
 }
 
 impl From<&DataType> for PyDataType {
@@ -49,6 +50,7 @@ impl From<&DataType> for PyDataType {
             DataType::Time => Time,
             DataType::Object(_) => Object,
             DataType::Categorical(_) => Categorical,
+            DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown => {
                 panic!("null or unknown not expected here")
             }
@@ -85,6 +87,7 @@ impl Into<DataType> for PyDataType {
             PyDataType::Time => Time,
             PyDataType::Object => Object("object"),
             PyDataType::Categorical => Categorical(None),
+            PyDataType::Struct => Struct(vec![]),
         }
     }
 }
