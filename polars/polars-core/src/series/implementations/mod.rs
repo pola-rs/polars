@@ -15,6 +15,8 @@ mod floats;
 mod list;
 #[cfg(feature = "object")]
 mod object;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 mod utf8;
 
 #[cfg(feature = "object")]

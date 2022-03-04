@@ -624,6 +624,18 @@ impl Display for AnyValue<'_> {
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{}", v),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(vals) => {
+                write!(f, "{{")?;
+                if !vals.is_empty() {
+                    for v in &vals[..vals.len() - 1] {
+                        write!(f, "{},", v)?;
+                    }
+                    // last value has no trailing comma
+                    write!(f, "{}", vals[vals.len() - 1])?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }

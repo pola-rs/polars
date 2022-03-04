@@ -87,6 +87,7 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
+dtype-struct = []
 
 parquet = ["arrow/io_parquet"]
 
