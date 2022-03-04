@@ -19,7 +19,7 @@ ipc = ["polars-io/ipc"]
 csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposesses
-fmt = ["polars-core/plain_fmt"]
+fmt = ["polars-core/fmt"]
 strings = ["polars-core/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
@@ -79,7 +79,7 @@ test = [
   "dtype-categorical",
   "cum_agg",
   "regex",
-  "polars-core/plain_fmt",
+  "polars-core/fmt",
   "diff",
   "abs",
   "parquet",
