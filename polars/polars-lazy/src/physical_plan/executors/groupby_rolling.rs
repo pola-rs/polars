@@ -1,8 +1,6 @@
 use super::*;
-use crate::prelude::{utils::as_aggregated, *};
-use polars_core::POOL;
-use rayon::prelude::*;
 
+#[cfg_attr(not(feature = "dynamic_groupby"), allow(dead_code))]
 pub(crate) struct GroupByRollingExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
@@ -11,15 +9,21 @@ pub(crate) struct GroupByRollingExec {
 }
 
 impl Executor for GroupByRollingExec {
+    #[cfg(not(feature = "dynamic_groupby"))]
+    fn execute(&mut self, _state: &ExecutionState) -> Result<DataFrame> {
+        panic!("activate feature dynamic_groupby")
+    }
+
+    #[cfg(feature = "dynamic_groupby")]
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        #[cfg(feature = "dynamic_groupby")]
-        {
-            let df = self.input.execute(state)?;
-            state.set_schema(self.input_schema.clone());
+        use crate::prelude::{utils::as_aggregated, *};
 
-            let (time_key, groups) = df.groupby_rolling(&self.options)?;
+        let df = self.input.execute(state)?;
+        state.set_schema(self.input_schema.clone());
 
-            let agg_columns = POOL.install(|| {
+        let (time_key, groups) = df.groupby_rolling(&self.options)?;
+
+        let agg_columns = POOL.install(|| {
                     self.aggs
                         .par_iter()
                         .map(|expr| {
@@ -38,14 +42,11 @@ impl Executor for GroupByRollingExec {
                         .collect::<Result<Vec<_>>>()
                 })?;
 
-            state.clear_schema_cache();
-            let mut columns = Vec::with_capacity(agg_columns.len() + 1);
-            columns.push(time_key);
-            columns.extend(agg_columns.into_iter().flatten());
+        state.clear_schema_cache();
+        let mut columns = Vec::with_capacity(agg_columns.len() + 1);
+        columns.push(time_key);
+        columns.extend(agg_columns.into_iter().flatten());
 
-            DataFrame::new(columns)
-        }
-        #[cfg(not(feature = "dynamic_groupby"))]
-        panic!("activate feature dynamic_groupby")
+        DataFrame::new(columns)
     }
 }

@@ -6,6 +6,38 @@ on:
       - 'polars/**'
 jobs:
 
+  examples:
+    name: Examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust
+        run: rustup update stable
+      - uses: Swatinem/rust-cache@v1
+      - name: Install carho-hack
+        run: |
+          cargo install cargo-hack
+      - name: "check"
+        run: cd examples && cargo check
+
+  features:
+    name: Features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly-2022-02-23
+          override: true
+      - uses: Swatinem/rust-cache@v1
+      - name: Install dependencies
+        run: |
+          cargo install cargo-hack
+      - name: Feature test
+        run: |
+          cd polars && cargo hack check --each-feature --no-dev-deps --features private
+
   test-rust:
     name: Build and test Rust
     runs-on: ubuntu-latest
@@ -33,7 +65,6 @@ jobs:
           key: ubuntu-x86-64-target-cache-nightly
       - name: Install dependencies
         run: |
-          cargo install cargo-hack
           rm -f dprint-x86_64-unknown-linux-gnu.zip
       - name: Run formatting checks
         run: |
@@ -48,9 +79,6 @@ jobs:
           -p polars-lazy \
           -- -D warnings
           cargo clippy -- -D warnings
-      - name: Feature test
-        run: |
-          cd polars && cargo hack check --each-feature --no-dev-deps --features private
       - name: Run tests
         run: |
           export RUSTFLAGS="-C debuginfo=0"

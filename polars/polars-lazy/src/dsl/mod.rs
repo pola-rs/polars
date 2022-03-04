@@ -13,7 +13,10 @@ pub mod string;
 
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_root_literal_expr};
+use crate::utils::has_expr;
+
+#[cfg(feature = "is_in")]
+use crate::utils::has_root_literal_expr;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;

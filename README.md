@@ -177,6 +177,8 @@ Polars has transitioned to [arrow2](https://crates.io/crates/arrow2).
 Arrow2 is a faster and safer implementation of the [Apache Arrow Columnar Format](https://arrow.apache.org/docs/format/Columnar.html).
 Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 
+## Use custom Rust function in python?
+See [this example](./examples/python_rust_compiled_function).
 
 ## Acknowledgements
 
