@@ -117,13 +117,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
         let schema = read::schema::infer_schema(&metadata)?;
 
         if let Some(cols) = self.columns {
-            let mut prj = Vec::with_capacity(cols.len());
-            for col in cols.iter() {
-                let i = schema.try_index_of(col)?;
-                prj.push(i);
-            }
-
-            self.projection = Some(prj);
+            self.projection = Some(columns_to_projection(cols, &schema)?);
         }
 
         read_parquet(
