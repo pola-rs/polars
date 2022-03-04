@@ -2,7 +2,7 @@
 use crate::ArrowSchema;
 use dirs::home_dir;
 use polars_core::frame::DataFrame;
-#[cfg(any(feature = "ipc", feature = "avro"))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "parquet"))]
 use polars_core::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -28,7 +28,7 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
     ArrowSchema::from(fields)
 }
 
-#[cfg(any(feature = "ipc", feature = "avro"))]
+#[cfg(any(feature = "ipc", feature = "avro", feature = "parquet"))]
 pub(crate) fn columns_to_projection(
     columns: Vec<String>,
     schema: &ArrowSchema,
