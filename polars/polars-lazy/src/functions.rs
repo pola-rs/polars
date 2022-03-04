@@ -489,7 +489,8 @@ pub fn all() -> Expr {
 }
 
 /// Select multiple columns by name
-pub fn cols(names: Vec<String>) -> Expr {
+pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
+    let names = names.into_vec();
     Expr::Columns(names)
 }
 

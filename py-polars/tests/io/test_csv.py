@@ -41,7 +41,7 @@ def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
 
 
 def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
+    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 

@@ -8,7 +8,9 @@ use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::count::CountExpr;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_name, has_window_aexpr};
+#[cfg(feature = "object")]
+use crate::utils::expr_to_root_column_name;
+use crate::utils::has_window_aexpr;
 use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},

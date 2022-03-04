@@ -10,13 +10,11 @@ use std::{
 const LIMIT: usize = 25;
 
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_us_to_datetime};
-#[cfg(feature = "pretty_fmt")]
+#[cfg(feature = "fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
-#[cfg(feature = "pretty_fmt")]
+#[cfg(feature = "fmt")]
 use comfy_table::*;
-#[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
-use prettytable::{Cell, Row, Table};
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 use std::borrow::Cow;
 
 macro_rules! format_array {
@@ -297,7 +295,7 @@ impl Debug for DataFrame {
         Display::fmt(self, f)
     }
 }
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 fn make_str_val(v: &str) -> String {
     let string_limit = 32;
     let v_trunc = &v[..v
@@ -313,7 +311,7 @@ fn make_str_val(v: &str) -> String {
     }
 }
 
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
@@ -331,55 +329,39 @@ fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<Str
 
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let height = self.height();
-        assert!(
-            self.columns.iter().all(|s| s.len() == height),
-            "The columns lengths in the DataFrame are not equal."
-        );
+        #[cfg(feature = "fmt")]
+        {
+            let height = self.height();
+            assert!(
+                self.columns.iter().all(|s| s.len() == height),
+                "The columns lengths in the DataFrame are not equal."
+            );
 
-        let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
-            .unwrap_or_else(|_| "8".to_string())
-            .parse()
-            .unwrap_or(8);
-
-        #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
-        let max_n_rows = {
-            let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+            let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
                 .unwrap_or_else(|_| "8".to_string())
                 .parse()
                 .unwrap_or(8);
-            if max_n_rows < 2 {
-                2
+
+            let max_n_rows = {
+                let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+                    .unwrap_or_else(|_| "8".to_string())
+                    .parse()
+                    .unwrap_or(8);
+                if max_n_rows < 2 {
+                    2
+                } else {
+                    max_n_rows
+                }
+            };
+            let (n_first, n_last) = if self.width() > max_n_cols {
+                ((max_n_cols + 1) / 2, max_n_cols / 2)
             } else {
-                max_n_rows
-            }
-        };
-        let (n_first, n_last) = if self.width() > max_n_cols {
-            ((max_n_cols + 1) / 2, max_n_cols / 2)
-        } else {
-            (self.width(), 0)
-        };
-        let reduce_columns = n_first + n_last < self.width();
+                (self.width(), 0)
+            };
+            let reduce_columns = n_first + n_last < self.width();
 
-        let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+            let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
-        #[cfg(not(feature = "pretty_fmt"))]
-        {
-            let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
-            let fields = self.fields();
-            for field in fields[0..n_first].iter() {
-                names.push(field_to_str(field));
-            }
-            if reduce_columns {
-                names.push("...".into());
-            }
-            for field in fields[self.width() - n_last..].iter() {
-                names.push(field_to_str(field));
-            }
-        }
-
-        #[cfg(feature = "pretty_fmt")]
-        {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name());
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
@@ -465,51 +447,14 @@ impl Display for DataFrame {
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
-        #[cfg(not(any(feature = "plain_fmt", feature = "pretty_fmt")))]
+
+        #[cfg(not(feature = "fmt"))]
         {
             write!(
                 f,
                 "shape: {:?}\nto see more, compile with 'plain_fmt' or 'pretty_fmt' feature",
                 self.shape()
             )?;
-        }
-
-        #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
-        {
-            let mut table = Table::new();
-            table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
-            let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows {
-                for i in 0..(max_n_rows / 2) {
-                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
-                }
-                let dots = rows[0].iter().map(|_| "...".to_string()).collect();
-                rows.push(dots);
-                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
-                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
-                }
-                for row in rows {
-                    table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
-                }
-            } else {
-                for i in 0..self.height() {
-                    if self.width() > 0 {
-                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                        table.add_row(Row::new(
-                            prepare_row(row, n_first, n_last)
-                                .into_iter()
-                                .map(|s| Cell::new(&s))
-                                .collect(),
-                        ));
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
 
         Ok(())

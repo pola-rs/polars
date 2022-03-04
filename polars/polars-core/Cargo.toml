@@ -27,9 +27,7 @@ string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
-# Cannot have mutually exclusive types. User should choose one of:
-pretty_fmt = ["comfy-table"]
-plain_fmt = ["prettytable-rs"]
+fmt = ["comfy-table"]
 
 # opt-in features
 # sort by multiple columns
