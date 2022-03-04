@@ -2,7 +2,6 @@ use std::io::{Read, Seek, Write};
 
 use super::{finish_reader, ArrowChunk, ArrowReader, ArrowResult};
 use crate::prelude::*;
-use crate::utils::columns_to_projection;
 use polars_core::prelude::*;
 use std::ops::Deref;
 
@@ -52,11 +51,14 @@ impl<R: Read + Seek> AvroReader<R> {
         self
     }
 
+    /// Set the reader's column projection. This counts from 0, meaning that
+    /// `vec![0, 4]` would select the 1st and 5th column.
     pub fn with_projection(mut self, projection: Option<Vec<usize>>) -> Self {
         self.projection = projection;
         self
     }
 
+    /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
         self.columns = columns;
         self
