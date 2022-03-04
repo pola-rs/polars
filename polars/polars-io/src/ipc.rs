@@ -35,7 +35,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use crate::utils::columns_to_projection;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -178,7 +177,7 @@ where
         let schema = &metadata.schema;
 
         if let Some(columns) = self.columns {
-            let mut prj = columns_to_projection(columns, &schema)?;
+            let mut prj = columns_to_projection(columns, schema)?;
 
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
             prj.sort_unstable();
