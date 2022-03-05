@@ -62,8 +62,6 @@ use std::path::PathBuf;
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
-    /// Builds an Arrow CSV Writer
-    writer_builder: write::WriterBuilder,
     /// arrow specific options
     options: write::SerializeOptions,
     header: bool,
@@ -83,7 +81,6 @@ where
 
         CsvWriter {
             buffer,
-            writer_builder: write::WriterBuilder::new(),
             options,
             header: true,
         }
@@ -115,7 +112,7 @@ where
 
     /// Set the CSV file's column delimiter as a byte character
     pub fn with_delimiter(mut self, delimiter: u8) -> Self {
-        self.writer_builder.delimiter(delimiter);
+        self.options.delimiter = delimiter;
         self
     }
 
