@@ -32,7 +32,9 @@ pub mod series;
 pub mod utils;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
-use crate::error::PyPolarsErr;
+use crate::error::{
+    ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
+};
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
 use dsl::ToExprs;
@@ -353,7 +355,17 @@ fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pymodule]
-fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
+fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+    m.add("NotFoundError", py.get_type::<NotFoundError>())
+        .unwrap();
+    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add("ComputeError", py.get_type::<ComputeError>())
+        .unwrap();
+    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
+        .unwrap();
+    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add("ArrowError", py.get_type::<ArrowErrorException>())
+        .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();

@@ -197,11 +197,11 @@ def test_init_pandas() -> None:
 
 def test_init_errors() -> None:
     # Length mismatch
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ShapeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
     # Columns don't match data dimensions
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ShapeError):
         pl.DataFrame([[1, 2], [3, 4]], columns=["a", "b", "c"])
 
     # Unmatched input
@@ -705,7 +705,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(pl.ArrowError) as e:
         pl.read_parquet(f)
     assert "Invalid Parquet file" in str(e.value)
 
@@ -1732,7 +1732,7 @@ def test_getattr() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0]})
     testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(pl.NotFoundError):
         _ = df.b
 
 

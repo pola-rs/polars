@@ -19,7 +19,7 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
     for compression in compressions:
         if compression == "lzo":
             # lzo compression is not supported now
-            with pytest.raises(RuntimeError):
+            with pytest.raises(pl.ArrowError):
                 buf = io.BytesIO()
                 df.to_parquet(buf, compression=compression)
                 buf.seek(0)
@@ -45,7 +45,7 @@ def test_to_from_file(
     for compression in compressions:
         if compression == "lzo":
             # lzo compression is not supported now
-            with pytest.raises(RuntimeError):
+            with pytest.raises(pl.ArrowError):
                 df.to_parquet(f, compression=compression)
                 _ = pl.read_parquet(f)
 

@@ -198,7 +198,7 @@ def test_string_cache(environ: None) -> None:
     pl.Config.unset_global_string_cache()
     df1a = df1.with_column(pl.col("a").cast(pl.Categorical))
     df2a = df2.with_column(pl.col("a").cast(pl.Categorical))
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         _ = df1a.join(df2a, on="a", how="inner")
 
     # now turn on the cache

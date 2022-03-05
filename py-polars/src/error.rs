@@ -1,6 +1,11 @@
 use polars::prelude::PolarsError;
 use polars_core::error::ArrowError;
-use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use pyo3::exceptions::{PyIOError, PyValueError};
+use pyo3::{
+    create_exception,
+    exceptions::{PyException, PyRuntimeError},
+    prelude::*,
+};
 use std::fmt::{Debug, Formatter};
 use thiserror::Error;
 
@@ -16,7 +21,24 @@ pub enum PyPolarsErr {
 
 impl std::convert::From<PyPolarsErr> for PyErr {
     fn from(err: PyPolarsErr) -> PyErr {
-        PyRuntimeError::new_err(format!("{:?}", err))
+        let default = || PyRuntimeError::new_err(format!("{:?}", &err));
+
+        use PyPolarsErr::*;
+        match &err {
+            Polars(err) => match err {
+                PolarsError::NotFound(name) => NotFoundError::new_err(name.clone()),
+                PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
+                PolarsError::NoData(err) => NoDataError::new_err(err.to_string()),
+                PolarsError::ShapeMisMatch(err) => ShapeError::new_err(err.to_string()),
+                PolarsError::SchemaMisMatch(err) => SchemaError::new_err(err.to_string()),
+                PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
+                PolarsError::InvalidOperation(err) => PyValueError::new_err(err.to_string()),
+                PolarsError::ArrowError(err) => ArrowErrorException::new_err(format!("{:?}", err)),
+                _ => default(),
+            },
+            Arrow(err) => ArrowErrorException::new_err(format!("{:?}", err)),
+            _ => default(),
+        }
     }
 }
 
@@ -30,3 +52,10 @@ impl Debug for PyPolarsErr {
         }
     }
 }
+
+create_exception!(exceptions, NotFoundError, PyException);
+create_exception!(exceptions, ComputeError, PyException);
+create_exception!(exceptions, NoDataError, PyException);
+create_exception!(exceptions, ArrowErrorException, PyException);
+create_exception!(exceptions, ShapeError, PyException);
+create_exception!(exceptions, SchemaError, PyException);
