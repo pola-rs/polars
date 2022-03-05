@@ -169,7 +169,7 @@ where
 {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -239,7 +239,7 @@ where
 impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -309,7 +309,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
 impl ChunkQuantile<f64> for Float64Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }

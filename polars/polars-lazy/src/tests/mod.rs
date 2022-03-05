@@ -1,11 +1,18 @@
+#[cfg(feature = "test")]
 mod aggregations;
+#[cfg(feature = "test")]
 mod arity;
 #[cfg(feature = "parquet")]
 mod io;
+#[cfg(feature = "test")]
 mod logical;
+#[cfg(feature = "test")]
 mod optimization_checks;
+#[cfg(feature = "test")]
 mod predicate_queries;
+#[cfg(feature = "test")]
 mod projection_queries;
+#[cfg(feature = "test")]
 mod queries;
 
 fn load_df() -> DataFrame {

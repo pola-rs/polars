@@ -1739,7 +1739,7 @@ impl DataFrame {
                 ).into()));
         };
         if idx >= self.width() {
-            return Err(PolarsError::OutOfBounds(
+            return Err(PolarsError::ComputeError(
                 format!(
                     "Column index: {} outside of DataFrame with {} columns",
                     idx,
@@ -1840,7 +1840,7 @@ impl DataFrame {
         let df_height = self.height();
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
-            PolarsError::OutOfBounds(
+            PolarsError::ComputeError(
                 format!(
                     "Column index: {} outside of DataFrame with {} columns",
                     idx, width
@@ -1925,7 +1925,7 @@ impl DataFrame {
     {
         let width = self.width();
         let col = self.columns.get_mut(idx).ok_or_else(|| {
-            PolarsError::OutOfBounds(
+            PolarsError::ComputeError(
                 format!(
                     "Column index: {} outside of DataFrame with {} columns",
                     idx, width

@@ -1,5 +1,5 @@
 use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
 use crate::series::PySeries;
@@ -146,7 +146,7 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
             Ok(Wrap(NullValues::Named(s)))
         } else {
             Err(
-                PyPolarsEr::Other("could not extract value from null_values argument".into())
+                PyPolarsErr::Other("could not extract value from null_values argument".into())
                     .into(),
             )
         }
@@ -439,7 +439,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
         } else {
-            Err(PyErr::from(PyPolarsEr::Other(format!(
+            Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",
                 ob
             ))))

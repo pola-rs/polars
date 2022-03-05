@@ -155,6 +155,7 @@ FROM
                 write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
             }
             Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
+            Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
         }
     }
 }

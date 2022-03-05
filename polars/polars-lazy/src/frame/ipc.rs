@@ -41,7 +41,7 @@ impl LazyFrame {
     pub fn scan_ipc(path: String, args: ScanArgsIpc) -> Result<Self> {
         if path.contains('*') {
             let paths = glob::glob(&path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;

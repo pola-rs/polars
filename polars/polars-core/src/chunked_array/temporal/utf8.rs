@@ -102,7 +102,7 @@ impl Utf8Chunked {
         let idx = match self.first_non_null() {
             Some(idx) => idx,
             None => {
-                return Err(PolarsError::HasNullValues(
+                return Err(PolarsError::ComputeError(
                     "Cannot determine date parsing format, all values are null".into(),
                 ))
             }

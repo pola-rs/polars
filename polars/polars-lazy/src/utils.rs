@@ -226,9 +226,13 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Context) -> Schema {
-    let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt).unwrap());
-    Schema::from(fields)
+pub(crate) fn expressions_to_schema(
+    expr: &[Expr],
+    schema: &Schema,
+    ctxt: Context,
+) -> Result<Schema> {
+    let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt));
+    Schema::try_from_fallible(fields)
 }
 
 /// Get a set of the data source paths in this LogicalPlan
@@ -335,7 +339,7 @@ pub(crate) mod test {
         // initialize arena's
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
         let opt = StackOptimizer {};
         let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
@@ -365,7 +369,7 @@ pub(crate) mod test {
             schema,
         };
 
-        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
         let opt = StackOptimizer {};
         let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);

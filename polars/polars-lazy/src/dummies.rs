@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 impl Default for NoEq<Arc<dyn SeriesBinaryUdf>> {
     fn default() -> Self {
-        NoEq::new(Arc::new(|_, _| Err(PolarsError::ImplementationError)))
+        panic!("implementation error");
     }
 }
 

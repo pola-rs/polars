@@ -40,6 +40,14 @@ from polars.datatypes import (
     UInt64,
     Utf8,
 )
+from polars.exceptions import (
+    ArrowError,
+    ComputeError,
+    NoDataError,
+    NotFoundError,
+    SchemaError,
+    ShapeError,
+)
 from polars.internals.expr import Expr
 from polars.internals.frame import (  # flake8: noqa # TODO: remove need for wrap_df
     DataFrame,
@@ -113,6 +121,13 @@ from polars.io import (
 from polars.string_cache import StringCache
 
 __all__ = [
+    "exceptions",
+    "NotFoundError",
+    "ShapeError",
+    "SchemaError",
+    "ArrowError",
+    "ComputeError",
+    "NoDataError",
     "DataFrame",
     "Series",
     "LazyFrame",

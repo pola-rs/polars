@@ -50,7 +50,7 @@ impl Series {
 
         let prod = dims.iter().product::<i64>() as usize;
         if prod != s_ref.len() {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 format!("cannot reshape len {} into shape {:?}", s_ref.len(), dims).into(),
             ));
         }

@@ -383,7 +383,7 @@ impl<'a> CoreReader<'a> {
         let mut str_columns = Vec::with_capacity(projection.len());
         for i in &projection {
             let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
-                PolarsError::ValueError(
+                PolarsError::ComputeError(
                     format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
                 )?;
 

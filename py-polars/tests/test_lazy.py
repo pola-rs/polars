@@ -596,7 +596,7 @@ def test_take(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # out of bounds error
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
                 [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]

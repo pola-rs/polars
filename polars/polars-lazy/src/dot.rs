@@ -314,6 +314,10 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
+            Error { err, .. } => {
+                let current_node = format!("{:?}", &**err);
+                self.write_dot(acc_str, prev_node, &current_node, id)
+            }
         }
     }
 }

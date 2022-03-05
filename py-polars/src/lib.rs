@@ -32,7 +32,9 @@ pub mod series;
 pub mod utils;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
-use crate::error::PyPolarsEr;
+use crate::error::{
+    ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
+};
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
 use dsl::ToExprs;
@@ -206,7 +208,7 @@ fn concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
     for res in iter {
         let item = res?;
         let other = get_df(item)?;
-        df.vstack_mut(&other).map_err(PyPolarsEr::from)?;
+        df.vstack_mut(&other).map_err(PyPolarsErr::from)?;
     }
     Ok(df.into())
 }
@@ -222,7 +224,7 @@ fn concat_lf(lfs: &PyAny, rechunk: bool) -> PyResult<PyLazyFrame> {
         lfs.push(lf);
     }
 
-    let lf = polars::lazy::functions::concat(lfs, rechunk).map_err(PyPolarsEr::from)?;
+    let lf = polars::lazy::functions::concat(lfs, rechunk).map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -238,7 +240,7 @@ fn py_diag_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = diag_concat_df(&dfs).map_err(PyPolarsEr::from)?;
+    let df = diag_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
@@ -254,7 +256,7 @@ fn py_hor_concat_df(dfs: &PyAny) -> PyResult<PyDataFrame> {
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let df = hor_concat_df(&dfs).map_err(PyPolarsEr::from)?;
+    let df = hor_concat_df(&dfs).map_err(PyPolarsErr::from)?;
     Ok(df.into())
 }
 
@@ -269,7 +271,7 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
     for res in iter {
         let item = res?;
         let item = get_series(item)?;
-        s.append(&item).map_err(PyPolarsEr::from)?;
+        s.append(&item).map_err(PyPolarsErr::from)?;
     }
     Ok(s.into())
 }
@@ -278,9 +280,9 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
 fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
-            read_file_metadata(&mut r).map_err(PyPolarsEr::from)?
+            read_file_metadata(&mut r).map_err(PyPolarsErr::from)?
         }
-        EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsEr::from)?,
+        EitherRustPythonFile::Py(mut r) => read_file_metadata(&mut r).map_err(PyPolarsErr::from)?,
     };
 
     let dict = PyDict::new(py);
@@ -303,7 +305,7 @@ fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> 
                     Ok(PyDataFrame::new(df))
                 })
                 .collect::<polars_core::error::Result<Vec<_>>>()
-                .map_err(PyPolarsEr::from)
+                .map_err(PyPolarsErr::from)
         })
     });
 
@@ -353,7 +355,17 @@ fn max_exprs(exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pymodule]
-fn polars(_py: Python, m: &PyModule) -> PyResult<()> {
+fn polars(py: Python, m: &PyModule) -> PyResult<()> {
+    m.add("NotFoundError", py.get_type::<NotFoundError>())
+        .unwrap();
+    m.add("NoDataError", py.get_type::<NoDataError>()).unwrap();
+    m.add("ComputeError", py.get_type::<ComputeError>())
+        .unwrap();
+    m.add("ShapeError", py.get_type::<crate::error::ShapeError>())
+        .unwrap();
+    m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
+    m.add("ArrowError", py.get_type::<ArrowErrorException>())
+        .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();

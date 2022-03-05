@@ -568,6 +568,7 @@ impl Expr {
     /// Overwrite the function name used for formatting
     /// this is not intended to be used
     #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn with_fmt(self, name: &'static str) -> Expr {
         self.with_function_options(|mut options| {
             options.fmt_str = name;
@@ -2192,30 +2193,4 @@ pub fn first() -> Expr {
 /// Last column in DataFrame
 pub fn last() -> Expr {
     Expr::Nth(-1)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use polars_core::df;
-
-    #[test]
-    #[cfg(feature = "is_in")]
-    fn test_is_in() -> Result<()> {
-        let df = df![
-            "x" => [1, 2, 3],
-            "y" => ["a", "b", "c"]
-        ]?;
-        let s = Series::new("a", ["a", "b"]);
-
-        let out = df
-            .lazy()
-            .select([col("y").is_in(lit(s)).alias("isin")])
-            .collect()?;
-        assert_eq!(
-            Vec::from(out.column("isin")?.bool()?),
-            &[Some(true), Some(true), Some(false)]
-        );
-        Ok(())
-    }
 }

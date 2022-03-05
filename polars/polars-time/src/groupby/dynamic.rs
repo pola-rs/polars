@@ -95,7 +95,7 @@ impl Wrap<&DataFrame> {
                 return Ok((out, gt));
             }
             dt => {
-                return Err(PolarsError::ValueError(
+                return Err(PolarsError::ComputeError(
                     format!(
                     "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
                     dt
@@ -163,7 +163,7 @@ impl Wrap<&DataFrame> {
                 return Ok((out, keys, gt));
             }
             dt => {
-                return Err(PolarsError::ValueError(
+                return Err(PolarsError::ComputeError(
                     format!(
                     "expected any of the following dtypes {{Date, Datetime, Int32, Int64}}, got {}",
                     dt
@@ -362,7 +362,6 @@ fn update_subgroups(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::prelude::*;
     use chrono::prelude::*;
 
     #[test]

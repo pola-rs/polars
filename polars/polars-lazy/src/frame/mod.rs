@@ -152,7 +152,7 @@ impl LazyFrame {
     pub(crate) fn into_alp(self) -> (Node, Arena<AExpr>, Arena<ALogicalPlan>) {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena).unwrap();
         (root, expr_arena, lp_arena)
     }
 
@@ -490,7 +490,7 @@ impl LazyFrame {
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
 
-        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena);
+        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
         // simplify expression is valuable for projection and predicate pushdown optimizers, so we
         // run that first

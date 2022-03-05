@@ -269,7 +269,7 @@ mod inner_mod {
     /// utility
     fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
         if min_periods > window_size {
-            Err(PolarsError::ValueError(
+            Err(PolarsError::ComputeError(
                 "`windows_size` should be >= `min_periods`".into(),
             ))
         } else {
