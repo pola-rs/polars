@@ -105,7 +105,7 @@ impl DataFrame {
             .iter_dtypes()
             .any(|dtype| matches!(dtype, DataType::Null));
         if has_nulls {
-            return Err(PolarsError::HasNullValues(
+            return Err(PolarsError::ComputeError(
                 "Could not infer row types, because of the null values".into(),
             ));
         }
@@ -395,7 +395,7 @@ impl AnyValueBuffer {
 
     pub(crate) fn add_falible(&mut self, val: &AnyValue) -> Result<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ValueError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
+            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
         })
     }
 

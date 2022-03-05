@@ -31,7 +31,7 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
     match (l, r) {
         (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
             if !l.same_src(&*r) {
-                return Err(PolarsError::ValueError("joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache".into()));
+                return Err(PolarsError::ComputeError("joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache".into()));
             }
             Ok(())
         }
@@ -1059,7 +1059,7 @@ impl DataFrame {
         suffix: Option<String>,
     ) -> Result<DataFrame> {
         if selected_right.len() != selected_left.len() {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "the number of columns given as join key should be equal".into(),
             ));
         }
@@ -1068,7 +1068,7 @@ impl DataFrame {
             .zip(&selected_right)
             .any(|(l, r)| l.dtype() != r.dtype())
         {
-            return Err(PolarsError::ValueError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
+            return Err(PolarsError::ComputeError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
         }
 
         #[cfg(feature = "dtype-categorical")]
@@ -1208,7 +1208,7 @@ impl DataFrame {
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => Err(PolarsError::ValueError(
+            JoinType::AsOf(_) => Err(PolarsError::ComputeError(
                 "asof join not supported for join on multiple keys".into(),
             )),
             JoinType::Cross => {
