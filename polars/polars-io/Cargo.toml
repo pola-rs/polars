@@ -34,7 +34,7 @@ private = []
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "a87c758a80facbfbcde4768ad42cdf4c5c2cc5a8", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "81bfaddb92f432ae25bff4e9fdf200159ecebafe", default-features = false }
 # arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "csv_write", default-features = false }
 # arrow = { package = "arrow2", version = "0.9", default-features = false }
 csv-core = { version = "0.1.10", optional = true }

@@ -1,6 +1,6 @@
+#![allow(clippy::transmute_undefined_repr)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
-
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;

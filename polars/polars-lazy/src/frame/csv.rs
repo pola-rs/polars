@@ -30,7 +30,6 @@ pub struct LazyCsvReader<'a> {
 }
 
 #[cfg(feature = "csv-file")]
-#[must_use]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: String) -> Self {
         LazyCsvReader {
