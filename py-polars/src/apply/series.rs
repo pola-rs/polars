@@ -1,5 +1,5 @@
 use super::*;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
@@ -1440,7 +1440,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                         .apply_lambda_with_list_out_type(py, lambda, null_count, &series, dt)
                         .map(|ca| ca.into_series().into());
                 } else {
-                    return Err(PyPolarsEr::Other("Could not determine output type".into()).into());
+                    return Err(PyPolarsErr::Other("Could not determine output type".into()).into());
                 }
             } else {
                 null_count += 1

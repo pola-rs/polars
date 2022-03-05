@@ -410,7 +410,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
     let lf = std::mem::take(
         inputs
             .get_mut(0)
-            .ok_or_else(|| PolarsError::ValueError("empty container given".into()))?,
+            .ok_or_else(|| PolarsError::ComputeError("empty container given".into()))?,
     );
     let opt_state = lf.opt_state;
     let mut lps = Vec::with_capacity(inputs.len());

@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
@@ -161,6 +162,11 @@ pub enum LogicalPlan {
         inputs: Vec<LogicalPlan>,
         options: UnionOptions,
     },
+    /// Catches errors and throws them later
+    Error {
+        input: Box<LogicalPlan>,
+        err: Arc<Mutex<Option<PolarsError>>>,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -181,7 +187,7 @@ impl LogicalPlan {
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
-        let root = to_alp(self, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(self, &mut expr_arena, &mut lp_arena).unwrap();
         (root, lp_arena, expr_arena)
     }
 }
@@ -214,6 +220,7 @@ impl LogicalPlan {
                 Some(schema) => schema,
                 None => input.schema(),
             },
+            Error { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {

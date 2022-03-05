@@ -1,6 +1,6 @@
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
 use crate::utils::str_to_polarstype;
@@ -123,7 +123,7 @@ impl PyLazyFrame {
             "utf8-lossy" => CsvEncoding::LossyUtf8,
             e => {
                 return Err(
-                    PyPolarsEr::Other(format!("encoding not {} not implemented.", e)).into(),
+                    PyPolarsErr::Other(format!("encoding not {} not implemented.", e)).into(),
                 )
             }
         };
@@ -174,10 +174,10 @@ impl PyLazyFrame {
                     .map(|(dtype, name)| Field::from_owned(name, dtype.clone()));
                 Ok(Schema::from(fields))
             };
-            r = r.with_schema_modify(f).map_err(PyPolarsEr::from)?
+            r = r.with_schema_modify(f).map_err(PyPolarsErr::from)?
         }
 
-        Ok(r.finish().map_err(PyPolarsEr::from)?.into())
+        Ok(r.finish().map_err(PyPolarsErr::from)?.into())
     }
 
     #[staticmethod]
@@ -198,7 +198,7 @@ impl PyLazyFrame {
             rechunk,
             row_count,
         };
-        let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsEr::from)?;
+        let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 
@@ -217,7 +217,7 @@ impl PyLazyFrame {
             rechunk,
             row_count,
         };
-        let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsEr::from)?;
+        let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
 
@@ -229,11 +229,11 @@ impl PyLazyFrame {
         let result = self
             .ldf
             .describe_optimized_plan()
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(result)
     }
     pub fn to_dot(&self, optimized: bool) -> PyResult<String> {
-        let result = self.ldf.to_dot(optimized).map_err(PyPolarsEr::from)?;
+        let result = self.ldf.to_dot(optimized).map_err(PyPolarsErr::from)?;
         Ok(result)
     }
 
@@ -277,7 +277,7 @@ impl PyLazyFrame {
         // threads we deadlock.
         let df = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.collect().map_err(PyPolarsEr::from)
+            ldf.collect().map_err(PyPolarsErr::from)
         })?;
         Ok(df.into())
     }
@@ -286,7 +286,7 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         let gil = Python::acquire_gil();
         let py = gil.python();
-        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsEr::from))?;
+        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
         Ok(df.into())
     }
 

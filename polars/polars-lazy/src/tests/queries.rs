@@ -592,7 +592,7 @@ fn test_simplify_expr() {
     let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(SimplifyExprRule {})];
 
     let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena);
+    let mut lp_top = to_alp(plan, &mut expr_arena, &mut lp_arena).unwrap();
     lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
     let plan = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
     assert!(
@@ -688,7 +688,7 @@ fn test_type_coercion() {
     let rules: &mut [Box<dyn OptimizationRule>] = &mut [Box::new(TypeCoercionRule {})];
 
     let optimizer = StackOptimizer {};
-    let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena);
+    let mut lp_top = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
     lp_top = optimizer.optimize_loop(rules, &mut expr_arena, &mut lp_arena, lp_top);
     let lp = node_to_lp(lp_top, &mut expr_arena, &mut lp_arena);
 

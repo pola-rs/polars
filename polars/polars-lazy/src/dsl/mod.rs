@@ -568,6 +568,7 @@ impl Expr {
     /// Overwrite the function name used for formatting
     /// this is not intended to be used
     #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn with_fmt(self, name: &'static str) -> Expr {
         self.with_function_options(|mut options| {
             options.fmt_str = name;

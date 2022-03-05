@@ -2,6 +2,7 @@ use crate::logical_plan::projection::rewrite_projections;
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
+use parking_lot::Mutex;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_io::csv::CsvEncoding;
@@ -20,10 +21,10 @@ use polars_io::{
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
-pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
+pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> Result<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[]);
-    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default);
-    (exprs, schema)
+    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
+    Ok((exprs, schema))
 }
 
 pub struct LogicalPlanBuilder(LogicalPlan);
@@ -32,6 +33,21 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(lp: LogicalPlan) -> Self {
         LogicalPlanBuilder(lp)
     }
+}
+
+macro_rules! try_delayed {
+    ($fallible:expr, $input:expr, $convert:ident) => {
+        match $fallible {
+            Ok(success) => success,
+            Err(err) => {
+                return LogicalPlan::Error {
+                    input: Box::new($input.clone()),
+                    err: Arc::new(Mutex::new(Some(err))),
+                }
+                .$convert()
+            }
+        }
+    };
 }
 
 impl LogicalPlanBuilder {
@@ -168,7 +184,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
+        let (exprs, schema) =
+            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
 
         if exprs.is_empty() {
             self.map(
@@ -188,7 +205,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
+        let (exprs, schema) =
+            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
         if !exprs.is_empty() {
             LogicalPlan::LocalProjection {
                 expr: exprs,
@@ -233,7 +251,7 @@ impl LogicalPlanBuilder {
         // current schema
         let schema = self.0.schema();
         let mut new_schema = (**schema).clone();
-        let (exprs, _) = prepare_projection(exprs, schema);
+        let (exprs, _) = try_delayed!(prepare_projection(exprs, schema), &self.0, into);
 
         for e in &exprs {
             let field = e.to_field(schema, Context::Default).unwrap();
@@ -275,8 +293,16 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
-        let mut schema = utils::expressions_to_schema(&keys, current_schema, Context::Default);
-        let other = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
+        let mut schema = try_delayed!(
+            utils::expressions_to_schema(&keys, current_schema, Context::Default),
+            &self.0,
+            into
+        );
+        let other = try_delayed!(
+            utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation),
+            &self.0,
+            into
+        );
         schema.merge(other);
 
         LogicalPlan::Aggregate {

@@ -234,7 +234,7 @@ impl<'a> LazyCsvReader<'a> {
     pub fn finish(self) -> Result<LazyFrame> {
         if self.path.contains('*') {
             let paths = glob::glob(&self.path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
 
             let lfs = paths
                 .map(|r| {

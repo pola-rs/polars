@@ -1,4 +1,4 @@
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::utils::arrow::{array::ArrayRef, ffi};
@@ -21,8 +21,8 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     )?;
 
     unsafe {
-        let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsEr::from)?;
-        let array = ffi::import_array_from_c(array, field.data_type).map_err(PyPolarsEr::from)?;
+        let field = ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)?;
+        let array = ffi::import_array_from_c(array, field.data_type).map_err(PyPolarsErr::from)?;
         Ok(array.into())
     }
 }
@@ -30,7 +30,7 @@ pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
 pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
     let schema = rb
         .get(0)
-        .ok_or_else(|| PyPolarsEr::Other("empty table".into()))?
+        .ok_or_else(|| PyPolarsErr::Other("empty table".into()))?
         .getattr("schema")?;
     let names = schema.getattr("names")?.extract::<Vec<String>>()?;
 
@@ -41,13 +41,14 @@ pub fn to_rust_df(rb: &[&PyAny]) -> PyResult<DataFrame> {
                 .map(|i| {
                     let array = rb.call_method1("column", (i,))?;
                     let arr = array_to_rust(array)?;
-                    let s = Series::try_from((names[i].as_str(), arr)).map_err(PyPolarsEr::from)?;
+                    let s =
+                        Series::try_from((names[i].as_str(), arr)).map_err(PyPolarsErr::from)?;
                     Ok(s)
                 })
                 .collect::<PyResult<_>>()?;
-            Ok(DataFrame::new(columns).map_err(PyPolarsEr::from)?)
+            Ok(DataFrame::new(columns).map_err(PyPolarsErr::from)?)
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    Ok(accumulate_dataframes_vertical(dfs).map_err(PyPolarsEr::from)?)
+    Ok(accumulate_dataframes_vertical(dfs).map_err(PyPolarsErr::from)?)
 }

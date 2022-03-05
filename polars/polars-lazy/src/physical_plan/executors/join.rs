@@ -87,7 +87,7 @@ impl Executor for JoinExec {
                 if let Some(tol) = &options.tolerance_str {
                     let duration = polars_time::Duration::parse(tol);
                     if duration.months() != 0 {
-                        return Err(PolarsError::ValueError("Cannot use month offset in timedelta of an asof join. Consider using 4 weeks".into()));
+                        return Err(PolarsError::ComputeError("Cannot use month offset in timedelta of an asof join. Consider using 4 weeks".into()));
                     }
                     let left_asof = df_left.column(&left_names[0])?;
                     use DataType::*;

@@ -35,6 +35,21 @@ where
 }
 
 impl Schema {
+    // could not implement TryFrom
+    pub fn try_from_fallible<I>(flds: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = Result<Field>>,
+    {
+        let iter = flds.into_iter();
+        let mut map: PlIndexMap<_, _> =
+            IndexMap::with_capacity_and_hasher(iter.size_hint().0, ahash::RandomState::default());
+        for fld in iter {
+            let fld = fld?;
+            map.insert(fld.name().clone(), fld.data_type().clone());
+        }
+        Ok(Self { inner: map })
+    }
+
     pub fn new() -> Self {
         Self::with_capacity(0)
     }
