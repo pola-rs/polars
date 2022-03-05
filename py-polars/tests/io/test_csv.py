@@ -357,3 +357,11 @@ def test_empty_string_missing_round_trip() -> None:
     f.seek(0)
     df_read = pl.read_csv(f)
     assert df.frame_equal(df_read)
+
+
+def test_write_csv_delimiter() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.to_csv(f, sep="\t")
+    f.seek(0)
+    assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
