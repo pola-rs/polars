@@ -251,6 +251,8 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
+    #[cfg(feature = "dtype-struct")]
+    Struct(Vec<AnyValue<'a>>),
 }
 
 impl<'a> AnyValue<'a> {
@@ -498,6 +500,41 @@ impl Display for DataType {
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => "cat",
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => {
+                return match fields.len() {
+                    1 => {
+                        write!(f, "struct{{{}: {}}}", fields[0].name(), fields[0].dtype)
+                    }
+                    2 => {
+                        write!(
+                            f,
+                            "struct{{{}: {}, {}: {}}}",
+                            fields[0].name(),
+                            fields[0].dtype,
+                            fields[1].name(),
+                            fields[1].dtype
+                        )
+                    }
+                    3 => {
+                        write!(
+                            f,
+                            "struct{{{}, {}, {}}}",
+                            fields[0].name(),
+                            fields[1].name(),
+                            fields[2].name()
+                        )
+                    }
+                    _ => {
+                        write!(
+                            f,
+                            "struct{{{}, ... {}}}",
+                            fields[0].name(),
+                            fields[fields.len() - 1].name()
+                        )
+                    }
+                }
+            }
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
@@ -651,6 +688,8 @@ pub enum DataType {
     // The RevMapping has the internal state.
     // This is ignored with casts, comparisons, hashing etc.
     Categorical(Option<Arc<RevMapping>>),
+    #[cfg(feature = "dtype-struct")]
+    Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
 }
@@ -761,6 +800,11 @@ impl DataType {
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
             ),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
+                ArrowDataType::Struct(fields)
+            }
             Unknown => unreachable!(),
         }
     }

@@ -208,6 +208,7 @@
 //! | UInt8                   | dtype-u8          |
 //! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
+//! | Struct                  | dtype-struct      |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.

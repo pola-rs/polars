@@ -5,7 +5,6 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 #[cfg(feature = "temporal")]
@@ -1024,8 +1023,6 @@ pub trait SeriesTrait:
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
-    #[cfg(feature = "object")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
         invalid_operation_panic!(self)
     }

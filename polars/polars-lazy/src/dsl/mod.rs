@@ -10,6 +10,8 @@ mod list;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 
 use crate::logical_plan::Context;
 use crate::prelude::*;
@@ -2044,6 +2046,10 @@ impl Expr {
     #[cfg(feature = "dtype-categorical")]
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
+    }
+    #[cfg(feature = "dtype-struct")]
+    pub fn struct_(self) -> struct_::StructNameSpace {
+        struct_::StructNameSpace(self)
     }
 }
 

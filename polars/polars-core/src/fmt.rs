@@ -279,6 +279,15 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
+            #[cfg(feature = "dtype-struct")]
+            dt @ DataType::Struct(_) => format_array!(
+                limit,
+                f,
+                self.struct_().unwrap(),
+                format!("{}", dt),
+                self.name(),
+                "Series"
+            ),
             dt => panic!("{:?} not impl", dt),
         }
     }
@@ -624,6 +633,18 @@ impl Display for AnyValue<'_> {
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{}", v),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(vals) => {
+                write!(f, "{{")?;
+                if !vals.is_empty() {
+                    for v in &vals[..vals.len() - 1] {
+                        write!(f, "{},", v)?;
+                    }
+                    // last value has no trailing comma
+                    write!(f, "{}", vals[vals.len() - 1])?;
+                }
+                write!(f, "}}")
+            }
         }
     }
 }
@@ -712,6 +733,13 @@ impl FmtList for DurationChunked {
 
 #[cfg(feature = "dtype-time")]
 impl FmtList for TimeChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl FmtList for StructChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

@@ -342,3 +342,14 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
 
     ExprCatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `expr.struct` attribute.
+
+.. currentmodule:: polars.internals.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprStructNameSpace.field

@@ -3,6 +3,8 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
+#[cfg(any(feature = "dtype-struct", feature = "object"))]
+use std::any::Any;
 
 pub(crate) mod arithmetic;
 mod comparison;
@@ -944,6 +946,25 @@ impl Series {
         #[cfg(not(feature = "bigidx"))]
         {
             self.u32()
+        }
+    }
+
+    /// Unpack to ChunkedArray of dtype struct
+    #[cfg(feature = "dtype-struct")]
+    pub fn struct_(&self) -> Result<&StructChunked> {
+        #[cfg(feature = "dtype-struct")]
+        match self.dtype() {
+            DataType::Struct(_) => {
+                let any = self.as_any();
+
+                debug_assert!(any.is::<StructChunked>());
+                // Safety
+                // We just checked type
+                Ok(unsafe { &*(any as *const dyn Any as *const StructChunked) })
+            }
+            _ => Err(PolarsError::SchemaMisMatch(
+                format!("Series dtype {:?} != struct", self.dtype()).into(),
+            )),
         }
     }
 }

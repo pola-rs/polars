@@ -32,6 +32,7 @@ from polars.datatypes import (
     Int64,
     List,
     Object,
+    Struct,
     Time,
     UInt8,
     UInt16,
@@ -135,6 +136,7 @@ __all__ = [
     "Time",
     "Object",
     "Categorical",
+    "Struct",
     # polars.io
     "read_csv",
     "read_parquet",

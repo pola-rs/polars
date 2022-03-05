@@ -3521,6 +3521,41 @@ class Series:
         """
         return CatNameSpace(self)
 
+    @property
+    def struct(self) -> "StructNameSpace":
+        """
+        Create an object namespace of all struct related methods.
+        """
+        return StructNameSpace(self)
+
+
+class StructNameSpace:
+    def __init__(self, s: "Series"):
+        self.s = s
+
+    def to_frame(self) -> "pli.DataFrame":
+        """
+        Convert this Struct Series to a DataFrame
+        """
+        return pli.wrap_df(self.s._s.struct_to_frame())
+
+    def field(self, name: str) -> Series:
+        """
+        Retrieve one of the fields of this `Struct` as a new Series
+
+        Parameters
+        ----------
+        name
+            Name of the field
+        """
+        return pli.select(pli.lit(self.s).struct.field(name)).to_series()
+
+    def fields(self) -> List[str]:
+        """
+        Get the names of the fields
+        """
+        return self.s._s.struct_fields()
+
 
 class StringNameSpace:
     """

@@ -12,6 +12,8 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -20,6 +22,9 @@ pub use categorical::*;
 
 #[cfg(feature = "dtype-time")]
 pub use time::*;
+
+#[cfg(feature = "dtype-struct")]
+pub use struct_::*;
 
 use crate::prelude::*;
 use std::marker::PhantomData;

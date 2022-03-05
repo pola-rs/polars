@@ -297,7 +297,7 @@ The following methods are available under the `Series.arr` attribute.
 
 Categories
 ----------
-The following methods are available under the `expr.cat` attribute.
+The following methods are available under the `Series.cat` attribute.
 
 .. currentmodule:: polars.internals.series
 
@@ -305,3 +305,16 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
 
     CatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `Series.struct` attribute.
+
+.. currentmodule:: polars.internals.series
+
+.. autosummary::
+   :toctree: api/
+
+    StructNameSpace.to_frame
+    StructNameSpace.field
+    StructNameSpace.fields

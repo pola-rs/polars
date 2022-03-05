@@ -2820,6 +2820,33 @@ class Expr:
         """
         return ExprCatNameSpace(self)
 
+    @property
+    def struct(self) -> "ExprStructNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return ExprStructNameSpace(self)
+
+
+class ExprStructNameSpace:
+    """
+    Namespace for struct related expressions
+    """
+
+    def __init__(self, expr: Expr):
+        self._pyexpr = expr._pyexpr
+
+    def field(self, name: str) -> Expr:
+        """
+        Retrieve one of the fields of this `Struct` as a new Series
+
+        Parameters
+        ----------
+        name
+            Name of the field
+        """
+        return wrap_expr(self._pyexpr.struct_field_by_name(name))
+
 
 class ExprListNameSpace:
     """
