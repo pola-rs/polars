@@ -41,8 +41,10 @@ use dsl::ToExprs;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars_core::datatypes::TimeUnit;
+#[cfg(feature = "ipc")]
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
+use pyo3::exceptions::PyNotImplementedError;
 use pyo3::types::PyDict;
 
 #[global_allocator]
@@ -276,6 +278,7 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
     Ok(s.into())
 }
 
+#[cfg(feature = "ipc")]
 #[pyfunction]
 fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
     let metadata = match get_either_file(py_f, false)? {
@@ -291,6 +294,13 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
         dict.set_item(field.name, dt.to_object(py))?;
     }
     Ok(dict.to_object(py))
+}
+#[cfg(not(feature = "ipc"))]
+#[pyfunction]
+fn ipc_schema(_py: Python, _py_f: PyObject) -> PyResult<PyObject> {
+    Err(PyNotImplementedError::new_err(
+        "ipc_schema needs ipc feature support",
+    ))
 }
 
 #[pyfunction]

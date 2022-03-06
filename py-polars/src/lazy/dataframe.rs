@@ -2,7 +2,11 @@ use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
+use crate::prelude::NullValues;
+#[cfg(feature = "ipc")]
+use crate::prelude::ScanArgsIpc;
+#[cfg(feature = "parquet")]
+use crate::prelude::ScanArgsParquet;
 use crate::utils::str_to_polarstype;
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
@@ -11,6 +15,7 @@ use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Sch
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
 use polars_core::prelude::{AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions};
+use pyo3::exceptions::PyNotImplementedError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -201,7 +206,22 @@ impl PyLazyFrame {
         let lf = LazyFrame::scan_parquet(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
     }
+    #[cfg(not(feature = "parquet"))]
+    #[staticmethod]
+    pub fn new_from_parquet(
+        _path: String,
+        _n_rows: Option<usize>,
+        _cache: bool,
+        _parallel: bool,
+        _rechunk: bool,
+        _row_count: Option<(String, u32)>,
+    ) -> PyResult<Self> {
+        Err(PyNotImplementedError::new_err(
+            "new_from_parquet needs parquet feature support",
+        ))
+    }
 
+    #[cfg(feature = "ipc")]
     #[staticmethod]
     pub fn new_from_ipc(
         path: String,
@@ -219,6 +239,19 @@ impl PyLazyFrame {
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
+    }
+    #[cfg(not(feature = "ipc"))]
+    #[staticmethod]
+    pub fn new_from_ipc(
+        _path: String,
+        _n_rows: Option<usize>,
+        _cache: bool,
+        _rechunk: bool,
+        _row_count: Option<(String, u32)>,
+    ) -> PyResult<Self> {
+        Err(PyNotImplementedError::new_err(
+            "new_from_ipc needs parquet feature support",
+        ))
     }
 
     pub fn describe_plan(&self) -> String {
