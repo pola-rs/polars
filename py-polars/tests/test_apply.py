@@ -65,3 +65,14 @@ def test_agg_objects() -> None:
         [pl.apply([pl.col("dates"), pl.col("names")], lambda s: dict(zip(s[0], s[1])))]
     )
     assert out.dtypes == [pl.Utf8, pl.Object]
+
+
+def test_apply_infer_list() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2],
+            "str": ["a", "b"],
+            "bool": [True, None],
+        }
+    )
+    assert df.select([pl.all().apply(lambda x: [x])]).dtypes == [pl.List] * 3
