@@ -34,7 +34,13 @@ import numpy as np
 try:
     import pyarrow as pa
     import pyarrow.compute
-    import pyarrow.parquet
+
+    try:
+        import pyarrow.parquet
+
+        _PYARROW_PARQUET_AVAILABLE = True
+    except ImportError:  # pragma: no cover
+        _PYARROW_PARQUET_AVAILABLE = False
 
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -1131,9 +1137,9 @@ class DataFrame:
             file = str(file)
 
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE or not _PYARROW_PARQUET_AVAILABLE:
                 raise ImportError(  # pragma: no cover
-                    "'pyarrow' is required when using 'to_parquet(..., use_pyarrow=True)'."
+                    "'pyarrow' with parquets support is required when using 'to_parquet(..., use_pyarrow=True)'."
                 )
 
             tbl = self.to_arrow()

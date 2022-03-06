@@ -24,8 +24,19 @@ from polars.utils import handle_projection_columns
 try:
     import pyarrow as pa
     import pyarrow.csv
-    import pyarrow.feather
-    import pyarrow.parquet
+
+    try:
+        import pyarrow.feather
+
+        _PYARROW_FEATHER_AVAILABLE = True
+    except ImportError:  # pragma: no cover
+        _PYARROW_FEATHER_AVAILABLE = False
+    try:
+        import pyarrow.parquet
+
+        _PYARROW_PARQUET_AVAILABLE = True
+    except ImportError:  # pragma: no cover
+        _PYARROW_PARQUET_AVAILABLE = False
 
     _PYARROW_AVAILABLE = True
 except ImportError:  # pragma: no cover
@@ -777,9 +788,9 @@ def read_ipc(
     storage_options = storage_options or {}
     with _prepare_file_arg(file, **storage_options) as data:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE or not _PYARROW_FEATHER_AVAILABLE:
                 raise ImportError(
-                    "'pyarrow' is required when using 'read_ipc(..., use_pyarrow=True)'."
+                    "'pyarrow' with feather support is required when using 'read_ipc(..., use_pyarrow=True)'."
                 )
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
@@ -854,9 +865,9 @@ def read_parquet(
     storage_options = storage_options or {}
     with _prepare_file_arg(source, **storage_options) as source_prep:
         if use_pyarrow:
-            if not _PYARROW_AVAILABLE:
+            if not _PYARROW_AVAILABLE or not _PYARROW_PARQUET_AVAILABLE:
                 raise ImportError(
-                    "'pyarrow' is required when using 'read_parquet(..., use_pyarrow=True)'."
+                    "'pyarrow' with parquet support is required when using 'read_parquet(..., use_pyarrow=True)'."
                 )
 
             return from_arrow(  # type: ignore[return-value]
