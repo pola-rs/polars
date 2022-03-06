@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=a87c758a80facbfbcde4768ad42cdf4c5c2cc5a8#a87c758a80facbfbcde4768ad42cdf4c5c2cc5a8"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=81bfaddb92f432ae25bff4e9fdf200159ecebafe#81bfaddb92f432ae25bff4e9fdf200159ecebafe"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -94,7 +94,6 @@ dependencies = [
  "lz4",
  "multiversion",
  "num-traits",
- "packed_simd_2",
  "parquet2",
  "serde",
  "serde_json",
@@ -848,12 +847,6 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc7aa29613bd6a620df431842069224d8bc9011086b1db4c0e0cd47fa03ec9a"
-
-[[package]]
-name = "libm"
 version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
@@ -900,9 +893,9 @@ dependencies = [
 
 [[package]]
 name = "lz4"
-version = "1.23.2"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac20ed6991e01bf6a2e68cc73df2b389707403662a8ba89f68511fb340f724c"
+checksum = "4edcb94251b1c375c459e5abe9fb0168c1c826c3370172684844f8f3f8d1a885"
 dependencies = [
  "libc",
  "lz4-sys",
@@ -910,9 +903,9 @@ dependencies = [
 
 [[package]]
 name = "lz4-sys"
-version = "1.9.2"
+version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dca79aa95d8b3226213ad454d328369853be3a1382d89532a854f4d69640acae"
+checksum = "d7be8908e2ed6f31c02db8a9fa962f03e36c53fbfde437363eae3306b85d7e17"
 dependencies = [
  "cc",
  "libc",
@@ -1108,7 +1101,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a64b1ec5cda2586e284722486d802acf1f7dbdc623e2bfc57e65ca1cd099290"
 dependencies = [
  "autocfg",
- "libm 0.2.2",
+ "libm",
 ]
 
 [[package]]
@@ -1137,9 +1130,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da32515d9f6e6e489d7bc9d84c71b060db7247dc035bbe44eac88cf87486d8d5"
+checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
 
 [[package]]
 name = "ordered-float"
@@ -1148,16 +1141,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3305af35278dd29f46fcdd139e0b1fbfae2153f0e5928b39b035542dd31e37b7"
 dependencies = [
  "num-traits",
-]
-
-[[package]]
-name = "packed_simd_2"
-version = "0.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "defdcfef86dcc44ad208f71d9ff4ce28df6537a4e0d6b0e8e845cb8ca10059a6"
-dependencies = [
- "cfg-if 1.0.0",
- "libm 0.1.4",
 ]
 
 [[package]]
@@ -1223,9 +1206,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe2f206abf5ff36f501e6b6acb646de1d236ca4ecb35dc6a58cbedbf7cab748a"
+checksum = "6b085f9e78e4842865151b693f6d94bdf7b280af66daa6e3587adeb3106a07e9"
 dependencies = [
  "async-stream",
  "bitpacking",

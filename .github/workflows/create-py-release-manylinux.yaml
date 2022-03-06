@@ -24,7 +24,7 @@ jobs:
         env:
           MATURIN_PASSWORD: ${{ secrets.PYPI_PASS }}
         with:
-          rust-toolchain: nightly-2022-02-23
+          rust-toolchain: nightly-2022-03-03
           manylinux: '2_24'
           target: aarch64-unknown-linux-gnu
           maturin-version: 0.12.1
