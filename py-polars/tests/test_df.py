@@ -1732,7 +1732,7 @@ def test_getattr() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0]})
     testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
 
-    with pytest.raises(pl.NotFoundError):
+    with pytest.raises(AttributeError):
         _ = df.b
 
 
