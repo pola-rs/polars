@@ -1242,10 +1242,19 @@ class DataFrame:
         """
         Access columns as attribute.
         """
+        # it is important that we return an AttributeError here
+        # this is used by ipython to check some private
+        # `_ipython_canary_method_should_not_exist_`
+        # if we return any other error than AttributeError pretty printing
+        # will not work in notebooks.
+        # See: https://github.com/jupyter/notebook/issues/2014
+        if item.startswith("_"):
+            raise AttributeError(item)
         try:
+            warnings.warn("accessing series as Attribute of a DataFrame is deprecated")
             return pli.wrap_s(self._df.column(item))
-        except RuntimeError:
-            raise AttributeError(f"{item} not found")
+        except Exception:
+            raise AttributeError(item)
 
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
