@@ -48,6 +48,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    exclude
    datetime
    date
+   struct
 
 Constructor
 -----------

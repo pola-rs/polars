@@ -96,6 +96,7 @@ from polars.internals.lazy_functions import (
     select,
     spearman_rank_corr,
     std,
+    struct,
     sum,
     tail,
 )

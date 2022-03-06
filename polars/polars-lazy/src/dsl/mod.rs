@@ -5,6 +5,8 @@ pub mod cat;
 pub use cat::*;
 #[cfg(feature = "temporal")]
 mod dt;
+#[cfg(feature = "compile")]
+mod functions;
 #[cfg(feature = "list")]
 mod list;
 mod options;
@@ -32,8 +34,8 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
-pub use crate::functions::*;
 pub use crate::logical_plan::lit;
+pub use functions::*;
 pub use options::*;
 
 use polars_arrow::array::default_arrays::FromData;
@@ -180,6 +182,12 @@ impl GetOutput {
     pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
         NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(&flds[0])
+        }))
+    }
+
+    pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            f(flds)
         }))
     }
 

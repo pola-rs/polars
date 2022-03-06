@@ -30,7 +30,7 @@ use polars_core::prelude::*;
 use polars_io::prelude::*;
 use std::io::Cursor;
 
-use crate::functions::{argsort_by, pearson_corr};
+use crate::dsl::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};

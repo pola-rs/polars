@@ -16,6 +16,7 @@ from polars.utils import (
 try:
     from polars.polars import arange as pyarange
     from polars.polars import argsort_by as pyargsort_by
+    from polars.polars import as_struct as _as_struct
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
@@ -1301,3 +1302,39 @@ def select(
 
     """
     return pli.DataFrame([]).select(exprs)
+
+
+def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
+    """
+    Collect several columns into a Series of dtype Struct
+
+    Parameters
+    ----------
+    exprs
+        Columns/Expressions to collect into a Struct
+
+    Examples
+    --------
+
+    >>> pl.DataFrame(
+    ...     {
+    ...         "int": [1, 2],
+    ...         "str": ["a", "b"],
+    ...         "bool": [True, None],
+    ...         "list": [[1, 2], [3]],
+    ...     }
+    ... ).select([pl.struct(pl.all()).alias("my_struct")])
+    shape: (2, 1)
+    ┌───────────────────────┐
+    │ my_struct             │
+    │ ---                   │
+    │ struct{int, ... list} │
+    ╞═══════════════════════╡
+    │ {1,"a",true,[1, 2]}   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}      │
+    └───────────────────────┘
+
+    """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    return pli.wrap_expr(_as_struct(exprs))
