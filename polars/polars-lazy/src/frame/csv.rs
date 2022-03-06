@@ -1,4 +1,3 @@
-use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};

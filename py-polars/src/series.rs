@@ -724,6 +724,14 @@ impl PySeries {
                 let ca = series.datetime().unwrap();
                 return Wrap(ca).to_object(python);
             }
+            DataType::Utf8 => {
+                let ca = series.utf8().unwrap();
+                return Wrap(ca).to_object(python);
+            }
+            DataType::Struct(_) => {
+                let ca = series.struct_().unwrap();
+                return Wrap(ca).to_object(python);
+            }
             dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)

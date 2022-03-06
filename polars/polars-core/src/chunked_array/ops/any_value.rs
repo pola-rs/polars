@@ -59,6 +59,17 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 
             AnyValue::List(s)
         }
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(flds) => {
+            let arr = &*(arr as *const dyn Array as *const StructArray);
+            let vals = arr
+                .values()
+                .iter()
+                .zip(flds)
+                .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
+                .collect();
+            AnyValue::Struct(vals)
+        }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
         _ => unimplemented!(),

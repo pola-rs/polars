@@ -733,3 +733,18 @@ impl_into_range!(u32);
 pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
     low.into_range(high)
 }
+
+/// Take several expressions and collect them into a [`StructChunked`].
+#[cfg(feature = "dtype-struct")]
+pub fn as_struct(exprs: &[Expr]) -> Expr {
+    map_multiple(
+        |s| StructChunked::new("", s).map(|ca| ca.into_series()),
+        exprs,
+        GetOutput::map_fields(|fld| Field::new("", DataType::Struct(fld.to_vec()))),
+    )
+    .with_function_options(|mut options| {
+        options.input_wildcard_expansion = true;
+        options.fmt_str = "as_struct";
+        options
+    })
+}

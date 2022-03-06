@@ -358,6 +358,28 @@ impl ToPyObject for Wrap<TimeUnit> {
     }
 }
 
+impl ToPyObject for Wrap<&Utf8Chunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let iter = self.0.into_iter();
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&StructChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let s = self.0.clone().into_series();
+        let iter = s.iter().map(|av| {
+            if let AnyValue::Struct(vals) = av {
+                PyTuple::new(py, vals.into_iter().map(|av| Wrap(av)))
+            } else {
+                unreachable!()
+            }
+        });
+
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
