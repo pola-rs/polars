@@ -35,7 +35,7 @@ Conversion
    Series.to_list
    Series.to_numpy
    Series.to_arrow
-   Series.to_numpy
+   Series.to_pandas
 
 
 Aggregation

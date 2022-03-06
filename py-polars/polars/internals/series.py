@@ -2102,6 +2102,16 @@ class Series:
         """
         return self._s.to_arrow()
 
+    def to_pandas(self) -> "pd.Series":
+        """
+        Convert this Series to a pandas Series
+        """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(  # pragma: no cover
+                "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
+            )
+        return self.to_arrow().to_pandas()
+
     def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
         Set masked values.
