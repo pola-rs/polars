@@ -258,3 +258,7 @@ def test_from_empty_arrow() -> None:
 
 def test_from_null_column() -> None:
     assert pl.from_pandas(pd.DataFrame(data=[pd.NA, pd.NA])).shape == (2, 1)
+
+
+def test_to_pandas_series() -> None:
+    assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
