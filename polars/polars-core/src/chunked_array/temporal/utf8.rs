@@ -145,6 +145,7 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-time")]
+    /// Parsing string values and return a [`TimeChunked`]
     pub fn as_time(&self, fmt: Option<&str>) -> Result<TimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
@@ -183,6 +184,9 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-date")]
+    /// Parsing string values and return a [`DateChunked`]
+    /// Different from `as_date` this function allows matches that not contain the whole string
+    /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
     pub fn as_date_not_exact(&self, fmt: Option<&str>) -> Result<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
@@ -223,6 +227,9 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-datetime")]
+    /// Parsing string values and return a [`DatetimeChunked`]
+    /// Different from `as_datetime` this function allows matches that not contain the whole string
+    /// e.g. "foo-2021-01-01-bar" could match "2021-01-01"
     pub fn as_datetime_not_exact(
         &self,
         fmt: Option<&str>,
@@ -274,6 +281,7 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-date")]
+    /// Parsing string values and return a [`DateChunked`]
     pub fn as_date(&self, fmt: Option<&str>) -> Result<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
@@ -310,6 +318,7 @@ impl Utf8Chunked {
     }
 
     #[cfg(feature = "dtype-datetime")]
+    /// Parsing string values and return a [`DatetimeChunked`]
     pub fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
