@@ -318,3 +318,4 @@ The following methods are available under the `Series.struct` attribute.
     StructNameSpace.to_frame
     StructNameSpace.field
     StructNameSpace.fields
+    StructNameSpace.rename_fields

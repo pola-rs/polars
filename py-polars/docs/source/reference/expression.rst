@@ -354,3 +354,4 @@ The following methods are available under the `expr.struct` attribute.
    :toctree: api/
 
     ExprStructNameSpace.field
+    ExprStructNameSpace.rename_fields

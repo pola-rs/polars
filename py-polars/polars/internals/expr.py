@@ -2847,6 +2847,17 @@ class ExprStructNameSpace:
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
+    def rename_fields(self, names: List[str]) -> Expr:
+        """
+        Rename the fields of the struct
+
+        Parameters
+        ----------
+        names
+            New names in the order of the struct's fields
+        """
+        return wrap_expr(self._pyexpr.struct_rename_fields(names))
+
 
 class ExprListNameSpace:
     """
