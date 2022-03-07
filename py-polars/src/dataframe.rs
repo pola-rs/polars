@@ -1245,6 +1245,11 @@ impl PyDataFrame {
         let s = self.df.clone().into_struct(name);
         s.into_series().into()
     }
+
+    pub fn unnest(&self, names: Vec<String>) -> PyResult<Self> {
+        let df = self.df.unnest(names).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
+    }
 }
 
 fn finish_groupby(gb: GroupBy, agg: &str) -> PyResult<PyDataFrame> {

@@ -650,4 +650,8 @@ impl PyLazyFrame {
     pub fn columns(&self) -> Vec<String> {
         self.ldf.schema().iter_names().cloned().collect()
     }
+
+    pub fn unnest(&self, cols: Vec<String>) -> PyLazyFrame {
+        self.ldf.clone().unnest(cols).into()
+    }
 }

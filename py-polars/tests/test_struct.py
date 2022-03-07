@@ -51,3 +51,43 @@ def test_rename_fields() -> None:
         "a",
         "b",
     ]
+
+
+def struct_unnesting() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    out = df.select(
+        [
+            pl.all().alias("a_original"),
+            pl.col("a")
+            .apply(lambda x: (x, x * 2, x % 2 == 0))
+            .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+            .alias("foo"),
+        ]
+    ).unnest("foo")
+
+    expected = pl.DataFrame(
+        {
+            "a_original": [1, 2],
+            "a": [1, 2],
+            "a_squared": [2, 4],
+            "mod2eq0": [False, True],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+    out = (
+        df.lazy()
+        .select(
+            [
+                pl.all().alias("a_original"),
+                pl.col("a")
+                .apply(lambda x: (x, x * 2, x % 2 == 0))
+                .struct.rename_fields(["a", "a_squared", "mod2eq0"])
+                .alias("foo"),
+            ]
+        )
+        .unnest("foo")
+        .collect()
+    )
+    out.frame_equal(expected)

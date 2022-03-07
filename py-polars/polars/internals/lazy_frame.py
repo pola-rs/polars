@@ -1889,6 +1889,20 @@ class LazyFrame:
         """
         return self.select(pli.col("*").interpolate())
 
+    def unnest(self, names: Union[str, List[str]]) -> "LazyFrame":
+        """
+        Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+        location of the `struct` type.
+
+        Parameters
+        ----------
+        names
+           Names of the struct columns that will be decomposed by its fields
+        """
+        if isinstance(names, str):
+            names = [names]
+        return wrap_ldf(self._ldf.unnest(names))
+
 
 class LazyGroupBy:
     """

@@ -1091,6 +1091,42 @@ impl LazyFrame {
             }
         }
     }
+
+    /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
+    /// inserted as columns.
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
+    pub fn unnest<I: IntoVec<String>>(self, cols: I) -> Self {
+        let cols = cols.into_vec();
+        self.unnest_impl(cols.into_iter().collect())
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn unnest_impl(self, cols: PlHashSet<String>) -> Self {
+        let schema = self.schema();
+
+        let mut new_schema = Schema::with_capacity(schema.len() * 2);
+        for (name, dtype) in schema.iter() {
+            if cols.contains(name) {
+                if let DataType::Struct(flds) = dtype {
+                    for fld in flds {
+                        new_schema.with_column(fld.name().clone(), fld.data_type().clone())
+                    }
+                } else {
+                    // todo: return lazy error here.
+                    panic!("expected struct dtype")
+                }
+            } else {
+                new_schema.with_column(name.clone(), dtype.clone())
+            }
+        }
+        self.map(
+            move |df| df.unnest(&cols),
+            Some(AllowedOptimizations::default()),
+            Some(new_schema),
+            Some("unnest"),
+        )
+    }
 }
 
 /// Utility struct for lazy groupby operation.

@@ -60,7 +60,15 @@ impl StructNameSpace {
                             .collect();
                         DataType::Struct(fields)
                     }
-                    _ => dt.clone(),
+                    // The types will be incorrect, but its better than nothing
+                    // we can get an incorrect type with python lambdas, because we only know return type when running
+                    // the query
+                    dt => DataType::Struct(
+                        names2
+                            .iter()
+                            .map(|name| Field::new(name, dt.clone()))
+                            .collect(),
+                    ),
                 }),
             )
             .with_fmt("struct.rename_fields")
