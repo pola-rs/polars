@@ -253,6 +253,8 @@ pub enum AnyValue<'a> {
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<AnyValue<'a>>),
+    /// A UTF8 encoded string type.
+    Utf8Owned(String),
 }
 
 impl<'a> AnyValue<'a> {
@@ -426,26 +428,27 @@ impl<'a> AnyValue<'a> {
 
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
-    pub fn to_static(&self) -> Result<AnyValue<'static>> {
+    pub fn into_static(self) -> Result<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
             Null => AnyValue::Null,
-            Int8(v) => AnyValue::Int8(*v),
-            Int16(v) => AnyValue::Int16(*v),
-            Int32(v) => AnyValue::Int32(*v),
-            Int64(v) => AnyValue::Int64(*v),
-            UInt8(v) => AnyValue::UInt8(*v),
-            UInt16(v) => AnyValue::UInt16(*v),
-            UInt32(v) => AnyValue::UInt32(*v),
-            UInt64(v) => AnyValue::UInt64(*v),
-            Boolean(v) => AnyValue::Boolean(*v),
-            Float32(v) => AnyValue::Float32(*v),
-            Float64(v) => AnyValue::Float64(*v),
+            Int8(v) => AnyValue::Int8(v),
+            Int16(v) => AnyValue::Int16(v),
+            Int32(v) => AnyValue::Int32(v),
+            Int64(v) => AnyValue::Int64(v),
+            UInt8(v) => AnyValue::UInt8(v),
+            UInt16(v) => AnyValue::UInt16(v),
+            UInt32(v) => AnyValue::UInt32(v),
+            UInt64(v) => AnyValue::UInt64(v),
+            Boolean(v) => AnyValue::Boolean(v),
+            Float32(v) => AnyValue::Float32(v),
+            Float64(v) => AnyValue::Float64(v),
             #[cfg(feature = "dtype-date")]
-            Date(v) => AnyValue::Date(*v),
+            Date(v) => AnyValue::Date(v),
             #[cfg(feature = "dtype-time")]
-            Time(v) => AnyValue::Time(*v),
-            List(v) => AnyValue::List(v.clone()),
+            Time(v) => AnyValue::Time(v),
+            List(v) => AnyValue::List(v),
+            Utf8(s) => AnyValue::Utf8Owned(s.to_string()),
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!("cannot get static AnyValue from {}", dt).into(),
@@ -509,7 +512,8 @@ impl Display for DataType {
                     2 => {
                         write!(
                             f,
-                            "struct{{{}: {}, {}: {}}}",
+                            "struct[{}]{{'{}': {}, '{}': {}}}",
+                            fields.len(),
                             fields[0].name(),
                             fields[0].dtype,
                             fields[1].name(),
@@ -519,7 +523,8 @@ impl Display for DataType {
                     3 => {
                         write!(
                             f,
-                            "struct{{{}, {}, {}}}",
+                            "struct[{}]{{'{}', '{}', '{}'}}",
+                            fields.len(),
                             fields[0].name(),
                             fields[1].name(),
                             fields[2].name()
@@ -528,7 +533,8 @@ impl Display for DataType {
                     _ => {
                         write!(
                             f,
-                            "struct{{{}, ... {}}}",
+                            "struct[{}]{{'{}',...,'{}'}}",
+                            fields.len(),
                             fields[0].name(),
                             fields[fields.len() - 1].name()
                         )

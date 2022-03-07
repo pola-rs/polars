@@ -6,6 +6,8 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(any(feature = "dtype-struct", feature = "object"))]
 use std::any::Any;
 
+#[cfg(feature = "series_from_anyvalue")]
+mod any_value;
 pub(crate) mod arithmetic;
 mod comparison;
 mod from;
@@ -152,6 +154,11 @@ impl Hash for Wrap<Series> {
 }
 
 impl Series {
+    /// Create a new empty Series
+    pub fn new_empty(name: &str, dtype: &DataType) -> Series {
+        Series::full_null(name, 0, dtype)
+    }
+
     pub(crate) fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();

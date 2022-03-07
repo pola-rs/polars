@@ -102,6 +102,8 @@ dot_diagram = ["polars-lazy/dot_diagram"]
 dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
 product = ["polars-core/product"]
 
+series_from_anyvalue = ["polars-core/series_from_anyvalue"]
+
 test = [
   "lazy",
   "private",

@@ -169,6 +169,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::Utf8Owned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(idx);
                 s.into_py(py)
@@ -370,7 +371,7 @@ impl ToPyObject for Wrap<&StructChunked> {
         let s = self.0.clone().into_series();
         let iter = s.iter().map(|av| {
             if let AnyValue::Struct(vals) = av {
-                PyTuple::new(py, vals.into_iter().map(|av| Wrap(av)))
+                PyTuple::new(py, vals.into_iter().map(Wrap))
             } else {
                 unreachable!()
             }
@@ -460,6 +461,28 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
+        } else if ob.is_instance::<PyTuple>()? {
+            let tuple = ob.downcast::<PyTuple>().unwrap();
+            let items = tuple
+                .iter()
+                .map(|ob| {
+                    let av = ob.extract::<Wrap<AnyValue>>()?;
+                    Ok(av.0)
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok(Wrap(AnyValue::Struct(items)))
+        } else if ob.is_instance::<PyList>()? {
+            Python::with_gil(|py| {
+                let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+                let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;
+                let py_pyseries = series.getattr(py, "_s").unwrap();
+                let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
+                Ok(Wrap(AnyValue::List(series)))
+            })
+        } else if ob.hasattr("_s")? {
+            let py_pyseries = ob.getattr("_s").unwrap();
+            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            Ok(Wrap(AnyValue::List(series)))
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",

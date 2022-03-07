@@ -36,7 +36,7 @@ pub(crate) fn to_py_array(array: ArrayRef, py: Python, pyarrow: &PyModule) -> Py
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &ArrowChunk,
-    names: &Vec<&str>,
+    names: &[&str],
     py: Python,
     pyarrow: &PyModule,
 ) -> PyResult<PyObject> {
@@ -49,7 +49,7 @@ pub(crate) fn to_py_rb(
 
     let record = pyarrow
         .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names.clone()))?;
+        .call_method1("from_arrays", (arrays, names.to_vec()))?;
 
     Ok(record.to_object(py))
 }
