@@ -3560,11 +3560,23 @@ class StructNameSpace:
         """
         return pli.select(pli.lit(self.s).struct.field(name)).to_series()
 
+    @property
     def fields(self) -> List[str]:
         """
         Get the names of the fields
         """
         return self.s._s.struct_fields()
+
+    def rename_fields(self, names: List[str]) -> Series:
+        """
+        Rename the fields of the struct
+
+        Parameters
+        ----------
+        names
+            New names in the order of the struct's fields
+        """
+        return pli.select(pli.lit(self.s).struct.rename_fields(names)).to_series()
 
 
 class StringNameSpace:

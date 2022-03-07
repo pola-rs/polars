@@ -1267,6 +1267,10 @@ impl PyExpr {
     pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
         self.inner.clone().struct_().field_by_name(name).into()
     }
+
+    pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
+        self.inner.clone().struct_().rename_fields(names).into()
+    }
 }
 
 impl From<dsl::Expr> for PyExpr {
