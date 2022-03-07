@@ -179,6 +179,7 @@ impl DataFrame {
         let series_cols = if S::is_series() {
             // Safety:
             // we are guarded by the type system here.
+            #[allow(clippy::transmute_undefined_repr)]
             let series_cols = unsafe { std::mem::transmute::<Vec<S>, Vec<Series>>(columns) };
             let mut names = PlHashSet::with_capacity(series_cols.len());
 

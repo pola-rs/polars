@@ -35,6 +35,7 @@ impl Series {
         // A fat pointer consists of a data ptr and a ptr to the vtable.
         // we specifically check that we only transmute &dyn SeriesTrait e.g.
         // a trait object, therefore this is sound.
+        #[allow(clippy::transmute_undefined_repr)]
         let (data_ptr, _vtable_ptr) =
             unsafe { std::mem::transmute::<&dyn SeriesTrait, (usize, usize)>(object) };
         data_ptr

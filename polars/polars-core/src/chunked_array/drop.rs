@@ -4,8 +4,14 @@ use crate::prelude::*;
 impl<T> Drop for ChunkedArray<T> {
     fn drop(&mut self) {
         if matches!(self.dtype(), DataType::List(_)) {
+            // Safety
             // guarded by the type system
-            unsafe { drop_list(std::mem::transmute(self)) }
+            // the transmute only convinces the type system that we are a list
+            // (which we are)
+            #[allow(clippy::transmute_undefined_repr)]
+            unsafe {
+                drop_list(std::mem::transmute(self))
+            }
         }
     }
 }
