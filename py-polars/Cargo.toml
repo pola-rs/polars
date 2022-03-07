@@ -91,6 +91,7 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
+  "series_from_anyvalue",
 ]
 
 # [patch.crates-io]

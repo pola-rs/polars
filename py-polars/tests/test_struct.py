@@ -23,3 +23,23 @@ def test_struct_to_list() -> None:
         (1, "a", True, pl.Series([1, 2])),
         (2, "b", None, pl.Series([3])),
     ]
+
+
+def test_apply_to_struct() -> None:
+    df = (
+        pl.Series([None, 2, 3, 4])
+        .apply(lambda x: (x, x * 2, True, [1, 2], "foo"))
+        .struct.to_frame()
+    )
+
+    expected = pl.DataFrame(
+        {
+            "field_0": [None, 2, 3, 4],
+            "field_1": [None, 4, 6, 8],
+            "field_2": [None, True, True, True],
+            "field_3": [None, [1, 2], [1, 2], [1, 2]],
+            "field_4": [None, "foo", "foo", "foo"],
+        }
+    )
+
+    assert df.frame_equal(expected)

@@ -401,7 +401,7 @@ impl PyLazyFrame {
                 strategy,
                 left_by,
                 right_by,
-                tolerance: tolerance.map(|t| t.0.to_static().unwrap()),
+                tolerance: tolerance.map(|t| t.0.into_static().unwrap()),
                 tolerance_str,
             }))
             .suffix(suffix)

@@ -17,6 +17,7 @@ temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
+series_from_anyvalue = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []

@@ -1,9 +1,14 @@
 pub mod dataframe;
 pub mod series;
+
 use crate::prelude::ObjectValue;
+use crate::{PySeries, Wrap};
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
+use polars_core::{export::rayon::prelude::*, POOL};
+use pyo3::types::PyTuple;
+use pyo3::{PyAny, PyResult};
 
 pub trait PyArrowPrimitiveType: PolarsNumericType {}
 
@@ -17,6 +22,65 @@ impl PyArrowPrimitiveType for Int32Type {}
 impl PyArrowPrimitiveType for Int64Type {}
 impl PyArrowPrimitiveType for Float32Type {}
 impl PyArrowPrimitiveType for Float64Type {}
+
+fn iterator_to_struct<'a>(
+    it: impl Iterator<Item = Option<&'a PyAny>>,
+    init_null_count: usize,
+    first_value: AnyValue<'a>,
+    name: &str,
+    capacity: usize,
+) -> PyResult<PySeries> {
+    if let AnyValue::Struct(fields) = &first_value {
+        let struct_width = fields.len();
+
+        let mut items = Vec::with_capacity(fields.len());
+        for item in fields {
+            let mut buf = Vec::with_capacity(capacity);
+            for _ in 0..init_null_count {
+                buf.push(AnyValue::Null);
+            }
+            buf.push(item.clone());
+            items.push(buf);
+        }
+
+        for tuple in it {
+            match tuple {
+                None => {
+                    for field_items in &mut items {
+                        field_items.push(AnyValue::Null);
+                    }
+                }
+                Some(tuple) => {
+                    let tuple = tuple.downcast::<PyTuple>()?;
+                    if tuple.len() != struct_width {
+                        return Err(crate::error::ComputeError::new_err(
+                            "all tuples must have equal size",
+                        ));
+                    }
+                    for (item, field_items) in tuple.iter().zip(&mut items) {
+                        let item = item.extract::<Wrap<AnyValue>>()?;
+                        field_items.push(item.0)
+                    }
+                }
+            }
+        }
+
+        let fields = POOL.install(|| {
+            items
+                .par_iter()
+                .enumerate()
+                .map(|(i, av)| Series::new(&format!("field_{i}"), av))
+                .collect::<Vec<_>>()
+        });
+
+        Ok(StructChunked::new(name, &fields)
+            .unwrap()
+            .into_series()
+            .into())
+    } else {
+        Err(crate::error::ComputeError::new_err("expected struct"))
+    }
+}
 
 fn iterator_to_primitive<T>(
     it: impl Iterator<Item = Option<T::Native>>,
