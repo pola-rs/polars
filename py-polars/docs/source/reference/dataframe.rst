@@ -128,6 +128,7 @@ Manipulation/ selection
     DataFrame.interpolate
     DataFrame.transpose
     DataFrame.upsample
+    DataFrame.unnest
 
 Apply
 -----

@@ -40,6 +40,9 @@ impl JoinExec {
 
 impl Executor for JoinExec {
     fn execute<'a>(&'a mut self, state: &'a ExecutionState) -> Result<DataFrame> {
+        if state.verbose {
+            eprintln!("join parallel: {}", self.parallel);
+        };
         let mut input_left = self.input_left.take().unwrap();
         let mut input_right = self.input_right.take().unwrap();
 

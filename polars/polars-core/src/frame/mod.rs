@@ -2859,6 +2859,39 @@ impl DataFrame {
             .map(|s| Ok(s.dtype().clone()))
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
+
+    /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
+    /// inserted as columns.
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
+    pub fn unnest<I: IntoVec<String>>(&self, cols: I) -> Result<DataFrame> {
+        let cols = cols.into_vec();
+        self.unnest_impl(cols.into_iter().collect())
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn unnest_impl(&self, cols: PlHashSet<String>) -> Result<DataFrame> {
+        let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
+        let mut count = 0;
+        for s in &self.columns {
+            if cols.contains(s.name()) {
+                let ca = s.struct_()?;
+                new_cols.extend_from_slice(ca.fields());
+                count += 1;
+            } else {
+                new_cols.push(s.clone())
+            }
+        }
+        if count != cols.len() {
+            // one or more columns not found
+            // the code below will return an error with the missing name
+            let schema = self.schema();
+            for col in cols {
+                let _ = schema.get(&col).ok_or(PolarsError::NotFound(col))?;
+            }
+        }
+        DataFrame::new(new_cols)
+    }
 }
 
 pub struct RecordBatchIter<'a> {

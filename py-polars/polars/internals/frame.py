@@ -4746,7 +4746,29 @@ class DataFrame:
         return self.height == 0
 
     def to_struct(self, name: str) -> "pli.Series":
+        """
+        Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+
+        Parameters
+        ----------
+        name
+            Name for the struct Series
+        """
         return pli.wrap_s(self._df.to_struct(name))
+
+    def unnest(self, names: Union[str, List[str]]) -> "DataFrame":
+        """
+        Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+        location of the `struct` type.
+
+        Parameters
+        ----------
+        names
+           Names of the struct columns that will be decomposed by its fields
+        """
+        if isinstance(names, str):
+            names = [names]
+        return wrap_df(self._df.unnest(names))
 
 
 class RollingGroupBy:
