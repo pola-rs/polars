@@ -23,7 +23,6 @@ impl Default for ScanArgsIpc {
 
 impl LazyFrame {
     fn scan_ipc_impl(path: String, args: ScanArgsIpc) -> Result<Self> {
-        dbg!(&args.row_count);
         let options = IpcScanOptions {
             n_rows: args.n_rows,
             cache: args.cache,
