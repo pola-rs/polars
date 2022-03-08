@@ -506,7 +506,7 @@ where
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
-        if self.chunks.len() == 1 && !self.chunks[0].has_validity() {
+        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {
             Err(PolarsError::ComputeError("cannot take slice".into()))
