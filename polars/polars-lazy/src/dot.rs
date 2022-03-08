@@ -278,7 +278,7 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let current_node = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "IPC SCAN {};\nπ {}/{};\nσ {} [{:?}]",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
