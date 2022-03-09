@@ -332,6 +332,12 @@ impl LazyFrame {
     }
 
     fn rename_imp(self, existing: Vec<String>, new: Vec<String>) -> Self {
+        let mut schema = (*self.schema()).clone();
+
+        for (old, new) in existing.iter().zip(&new) {
+            let _ = schema.rename(old, new.clone());
+        }
+
         self.with_columns(
             existing
                 .iter()
@@ -354,7 +360,7 @@ impl LazyFrame {
                 Ok(df)
             },
             None,
-            None,
+            Some(schema),
             Some("RENAME"),
         )
     }

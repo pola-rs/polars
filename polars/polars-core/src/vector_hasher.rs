@@ -231,18 +231,21 @@ pub(crate) trait AsU64 {
 }
 
 impl AsU64 for u32 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self as u64
     }
 }
 
 impl AsU64 for u64 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self
     }
 }
 
 impl AsU64 for i32 {
+    #[inline]
     fn as_u64(self) -> u64 {
         let asu32: u32 = unsafe { std::mem::transmute(self) };
         asu32 as u64
@@ -250,12 +253,14 @@ impl AsU64 for i32 {
 }
 
 impl AsU64 for i64 {
+    #[inline]
     fn as_u64(self) -> u64 {
         unsafe { std::mem::transmute(self) }
     }
 }
 
 impl AsU64 for Option<u32> {
+    #[inline]
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => v as u64,
@@ -266,12 +271,14 @@ impl AsU64 for Option<u32> {
 }
 
 impl AsU64 for Option<u64> {
+    #[inline]
     fn as_u64(self) -> u64 {
         self.unwrap_or(u64::MAX >> 2)
     }
 }
 
 impl AsU64 for [u8; 9] {
+    #[inline]
     fn as_u64(self) -> u64 {
         // the last byte includes the null information.
         // that one is skipped. Worst thing that could happen is unbalanced partition.
@@ -280,12 +287,14 @@ impl AsU64 for [u8; 9] {
 }
 const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
 impl AsU64 for [u8; 17] {
+    #[inline]
     fn as_u64(self) -> u64 {
         <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
 }
 
 impl AsU64 for [u8; 13] {
+    #[inline]
     fn as_u64(self) -> u64 {
         <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
