@@ -3133,7 +3133,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .join_asof(
                 df.lazy(),
@@ -3150,7 +3150,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 force_parallel=force_parallel,
             )
             .collect(no_optimization=True)
-            ._df
         )
 
     def join(
@@ -3283,7 +3282,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             or asof_by_right is not None
             or asof_by is not None
         ):
-            return self._from_pydf(
+            return (
                 self.lazy()
                 .join(
                     df.lazy(),
@@ -3297,7 +3296,6 @@ class DataFrame(metaclass=DataFrameMetaClass):
                     asof_by=asof_by,
                 )
                 .collect(no_optimization=True)
-                ._df
             )
         else:
             return self._from_pydf(
@@ -3669,9 +3667,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             DataFrame with None values replaced by the filling strategy.
         """
         if isinstance(strategy, pli.Expr):
-            return self._from_pydf(
-                self.lazy().fill_null(strategy).collect(no_optimization=True)._df
-            )
+            return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
             return self.fill_null(pli.lit(strategy))
         return self._from_pydf(self._df.fill_null(strategy))
@@ -3694,9 +3690,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         -------
             DataFrame with NaN replaced with fill_value
         """
-        return self._from_pydf(
-            self.lazy().fill_nan(fill_value).collect(no_optimization=True)._df
-        )
+        return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
         self: DF,
@@ -3768,9 +3762,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────────┴─────┘
 
         """
-        return self._from_pydf(
-            self.lazy().explode(columns).collect(no_optimization=True)._df
-        )
+        return self.lazy().explode(columns).collect(no_optimization=True)
 
     def pivot(
         self: DF,
@@ -3992,11 +3984,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .shift_and_fill(periods, fill_value)
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def is_duplicated(self) -> "pli.Series":
@@ -4108,11 +4099,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┘
 
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .select(exprs)  # type: ignore
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def with_columns(self: DF, exprs: Union["pli.Expr", List["pli.Expr"]]) -> DF:
@@ -4126,11 +4116,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if not isinstance(exprs, list):
             exprs = [exprs]
-        return self._from_pydf(
+        return (
             self.lazy()
             .with_columns(exprs)
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def n_chunks(self) -> int:
