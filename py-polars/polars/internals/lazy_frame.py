@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     Dict,
+    Generic,
     List,
     Optional,
     Sequence,
@@ -35,6 +36,11 @@ from polars.utils import _in_notebook, _prepare_row_count_args, _process_null_va
 # including sub-classes.
 LDF = TypeVar("LDF", bound="LazyFrame")
 
+# We redefine the DF type variable from polars.internals.frame here in order to prevent
+# circular import issues. The frame module needs this module to be defined at import
+# time due to how the metaclass of DataFrame is defined.
+DF = TypeVar("DF", bound="pli.DataFrame")
+
 
 def wrap_ldf(ldf: "PyLazyFrame") -> "LazyFrame":
     return LazyFrame._from_pyldf(ldf)
@@ -58,7 +64,7 @@ def _prepare_groupby_inputs(
     return new_by
 
 
-class LazyFrame:
+class LazyFrame(Generic[DF]):
     """
     Representation of a Lazy computation graph/ query.
     """
@@ -71,6 +77,23 @@ class LazyFrame:
         self = cls.__new__(cls)
         self._ldf = ldf
         return self
+
+    @property
+    def _dataframe_class(self) -> Type[DF]:
+        """
+        Return the associated DataFrame which is the equivalent of this LazyFrame object.
+
+        This class is used when a LazyFrame object is casted to a non-lazy representation
+        by the invocation of `.collect()`, `.fetch()`, and so on. By default we specify
+        the regular `polars.internals.frame.DataFrame` class here, but any subclass of
+        DataFrame that wishes to preserve its type when converted to LazyFrame and back
+        (with `.lazy().collect()` for instance) must overwrite this class variable
+        before setting DataFrame._lazyframe_class.
+
+        This property is dynamically overwritten when DataFrame is sub-classed. See
+        `polars.internals.frame.DataFrameMetaClass.__init__` for implementation details.
+        """
+        return pli.DataFrame  # type: ignore
 
     @classmethod
     def scan_csv(
@@ -393,7 +416,7 @@ class LazyFrame:
         string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
+    ) -> DF:
         """
         Collect into a DataFrame.
 
@@ -439,7 +462,7 @@ class LazyFrame:
             string_cache,
             slice_pushdown,
         )
-        return pli.wrap_df(ldf.collect())
+        return self._dataframe_class._from_pydf(ldf.collect())
 
     def fetch(
         self,
@@ -451,7 +474,7 @@ class LazyFrame:
         string_cache: bool = True,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
-    ) -> pli.DataFrame:
+    ) -> DF:
         """
         Fetch is like a collect operation, but it overwrites the number of rows read by every scan
         operation. This is a utility that helps debug a query on a smaller number of rows.
@@ -497,7 +520,7 @@ class LazyFrame:
             string_cache,
             slice_pushdown,
         )
-        return pli.wrap_df(ldf.fetch(n_rows))
+        return self._dataframe_class._from_pydf(ldf.fetch(n_rows))
 
     @property
     def columns(self) -> List[str]:
@@ -1852,7 +1875,7 @@ class LazyFrame:
 
     def map(
         self: LDF,
-        f: Callable[[pli.DataFrame], pli.DataFrame],
+        f: Callable[["pli.DataFrame"], "pli.DataFrame"],
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         no_optimizations: bool = False,
@@ -2077,7 +2100,7 @@ class LazyGroupBy:
         """
         return wrap_ldf(self.lgb.tail(n))
 
-    def apply(self, f: Callable[[pli.DataFrame], pli.DataFrame]) -> "LazyFrame":
+    def apply(self, f: Callable[["pli.DataFrame"], "pli.DataFrame"]) -> "LazyFrame":
         """
         Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
         this as materializing the `DataFrame` is quite expensive.

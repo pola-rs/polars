@@ -4,7 +4,7 @@ import sys
 from builtins import range
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Iterator
+from typing import Any, Iterator, Type
 from unittest.mock import patch
 
 import numpy as np
@@ -1897,3 +1897,19 @@ def test_preservation_of_subclasses() -> None:
     # Methods which yield new dataframes should preserve the subclass,
     # and here we choose a random method to test with
     assert isinstance(df.transpose(), SubClassedDataFrame)
+
+    # The type of the dataframe should be preserved when casted to LazyFrame and back
+    assert isinstance(df.lazy().collect(), SubClassedDataFrame)
+
+    # Check if the end user can extend the functionality of both DataFrame and LazyFrame
+    # and connect these classes together
+    class MyLazyFrame(pl.LazyFrame):
+        @property
+        def _dataframe_class(cls) -> "Type[MyDataFrame]":
+            return MyDataFrame
+
+    class MyDataFrame(pl.DataFrame):
+        _lazyframe_class = MyLazyFrame
+
+    assert isinstance(MyDataFrame().lazy(), MyLazyFrame)
+    assert isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
