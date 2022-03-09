@@ -1879,3 +1879,21 @@ def test_join_suffixes() -> None:
         df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
 
     df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+
+
+def test_preservation_of_subclasses() -> None:
+    """Tests for DataFrame inheritance."""
+
+    # We should be able to inherit from polars.DataFrame
+    class SubClassedDataFrame(pl.DataFrame):
+        pass
+
+    # The constructor creates an object which is an instance of both the
+    # superclass and subclass
+    df = SubClassedDataFrame({"column_1": [1, 2, 3]})
+    assert isinstance(df, pl.DataFrame)
+    assert isinstance(df, SubClassedDataFrame)
+
+    # Methods which yield new dataframes should preserve the subclass,
+    # and here we choose a random method to test with
+    assert isinstance(df.transpose(), SubClassedDataFrame)

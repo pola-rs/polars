@@ -1179,3 +1179,19 @@ def test_self_join() -> None:
         (101, "Alice", "James"),
         (102, "Bob", "Alice"),
     }
+
+
+def test_preservation_of_subclasses() -> None:
+    """Tests for LazyFrame inheritance."""
+
+    # We should be able to inherit from polars.LazyFrame
+    class SubClassedLazyFrame(pl.LazyFrame):
+        pass
+
+    # The constructor creates an object which is an instance of both the
+    # superclass and subclass
+    ldf = pl.DataFrame({"column_1": [1, 2, 3]}).lazy()
+    ldf.__class__ = SubClassedLazyFrame
+    extended_ldf = ldf.with_column(pl.lit(1).alias("column_2"))
+    assert isinstance(extended_ldf, pl.LazyFrame)
+    assert isinstance(extended_ldf, SubClassedLazyFrame)
