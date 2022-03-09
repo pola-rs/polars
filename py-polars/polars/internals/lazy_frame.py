@@ -20,7 +20,7 @@ from typing import (
 )
 
 try:
-    from polars.polars import PyDataFrame, PyExpr, PyLazyFrame, PyLazyGroupBy
+    from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
 
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
@@ -29,7 +29,6 @@ except ImportError:  # pragma: no cover
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import _in_notebook, _prepare_row_count_args, _process_null_values
-
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
