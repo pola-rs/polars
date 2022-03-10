@@ -51,6 +51,8 @@ from polars.internals.construction import (
     series_to_pydf,
 )
 
+from .lazy_frame import LazyFrame, wrap_ldf  # noqa: F401
+
 try:
     from polars.polars import PyDataFrame, PySeries
 
@@ -98,7 +100,75 @@ def _prepare_other_arg(other: Any) -> "pli.Series":
     return other
 
 
-class DataFrame:
+class DataFrameMetaClass(type):
+    """
+    Custom metaclass for DataFrame class.
+
+    This metaclass is responsible for constructing the relationship between the
+    DataFrame class and the LazyFrame class. Originally, without inheritance, the
+    relationship is as follows:
+
+    DataFrame <-> LazyFrame
+
+    This two-way relationship is represented by the following pointers:
+        - cls._lazyframe_class: A pointer on the DataFrame (sub)class to a LazyFrame
+            (sub)class. This class property can be used in DataFrame methods in order
+            to construct new lazy dataframes.
+        - cls._lazyframe_class._dataframe_class: A pointer on the LazyFrame (sub)class
+            back to the original DataFrame (sub)class. This allows LazyFrame methods to
+            construct new non-lazy dataframes with the correct type. This pointer should
+            always be set to cls such that the following is always `True`:
+                `type(cls) is type(cls.lazy().collect())`.
+
+    If an end user subclasses DataFrame like so:
+
+    >>> class MyDataFrame(pl.DataFrame):
+    ...     pass
+    ...
+
+    Then the following class is dynamically created by the metaclass and saved on the
+    class variable `MyDataFrame._lazyframe_class`.
+
+    >>> class LazyMyDataFrame(pl.DataFrame):
+    ...     _dataframe_class = MyDataFrame
+    ...
+
+    If an end user needs to extend both `DataFrame` and `LazyFrame`, it can be done like
+    so:
+
+    >>> class MyLazyFrame(pl.LazyFrame):
+    ...     @classmethod
+    ...     @property
+    ...     def _dataframe_class(cls):
+    ...         return MyDataFrame
+    ...
+
+    >>> class MyDataFrame(pl.DataFrame):
+    ...     _lazyframe_class = MyLazyFrame
+    ...
+
+    """
+
+    def __init__(cls, name: str, bases: tuple, clsdict: dict) -> None:
+        """Construct new DataFrame class."""
+        if not bases:
+            # This is not a subclass of DataFrame and we can simply hard-link to
+            # LazyFrame instead of dynamically defining a new subclass of LazyFrame.
+            cls._lazyframe_class = LazyFrame
+        elif cls._lazyframe_class is LazyFrame:
+            # This is a subclass of DataFrame which has *not* specified a custom
+            # LazyFrame subclass by setting `cls._lazyframe_class`. We must therefore
+            # dynamically create a subclass of LazyFrame with `_dataframe_class` set
+            # to `cls` in order to preserve types after `.lazy().collect()` roundtrips.
+            cls._lazyframe_class = type(  # type: ignore
+                f"Lazy{name}",
+                (LazyFrame,),
+                {"_dataframe_class": cls},
+            )
+        super().__init__(name, bases, clsdict)
+
+
+class DataFrame(metaclass=DataFrameMetaClass):
     """
     A DataFrame is a two-dimensional data structure that represents data as a table
     with rows and columns.
@@ -1610,9 +1680,7 @@ class DataFrame:
         └───────┴─────┴─────┘
 
         """
-        return self._from_pydf(
-            self.lazy().rename(mapping).collect(no_optimization=True)._df
-        )
+        return self.lazy().rename(mapping).collect(no_optimization=True)
 
     def insert_at_idx(self, index: int, series: "pli.Series") -> None:
         """
@@ -1674,11 +1742,10 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .filter(predicate)
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     @property
@@ -2028,12 +2095,11 @@ class DataFrame:
                 self.lazy()
                 .sort(by, reverse)
                 .collect(no_optimization=True, string_cache=False)
-                ._df
             )
             if in_place:
-                self._df = df
+                self._df = df._df
                 return self
-            return self._from_pydf(df)
+            return df
         if in_place:
             self._df.sort_in_place(by, reverse)
             return None
@@ -3067,7 +3133,7 @@ class DataFrame:
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .join_asof(
                 df.lazy(),
@@ -3084,7 +3150,6 @@ class DataFrame:
                 force_parallel=force_parallel,
             )
             .collect(no_optimization=True)
-            ._df
         )
 
     def join(
@@ -3217,7 +3282,7 @@ class DataFrame:
             or asof_by_right is not None
             or asof_by is not None
         ):
-            return self._from_pydf(
+            return (
                 self.lazy()
                 .join(
                     df.lazy(),
@@ -3231,7 +3296,6 @@ class DataFrame:
                     asof_by=asof_by,
                 )
                 .collect(no_optimization=True)
-                ._df
             )
         else:
             return self._from_pydf(
@@ -3603,9 +3667,7 @@ class DataFrame:
             DataFrame with None values replaced by the filling strategy.
         """
         if isinstance(strategy, pli.Expr):
-            return self._from_pydf(
-                self.lazy().fill_null(strategy).collect(no_optimization=True)._df
-            )
+            return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
             return self.fill_null(pli.lit(strategy))
         return self._from_pydf(self._df.fill_null(strategy))
@@ -3628,9 +3690,7 @@ class DataFrame:
         -------
             DataFrame with NaN replaced with fill_value
         """
-        return self._from_pydf(
-            self.lazy().fill_nan(fill_value).collect(no_optimization=True)._df
-        )
+        return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
         self: DF,
@@ -3702,9 +3762,7 @@ class DataFrame:
         └─────────┴─────┘
 
         """
-        return self._from_pydf(
-            self.lazy().explode(columns).collect(no_optimization=True)._df
-        )
+        return self.lazy().explode(columns).collect(no_optimization=True)
 
     def pivot(
         self: DF,
@@ -3926,11 +3984,10 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .shift_and_fill(periods, fill_value)
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def is_duplicated(self) -> "pli.Series":
@@ -3985,7 +4042,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "pli.LazyFrame":
+    def lazy(self: DF) -> "pli.LazyFrame[DF]":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -3999,7 +4056,7 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        return pli.wrap_ldf(self._df.lazy())
+        return self._lazyframe_class._from_pyldf(self._df.lazy())
 
     def select(
         self: DF,
@@ -4042,11 +4099,10 @@ class DataFrame:
         └─────┘
 
         """
-        return self._from_pydf(
+        return (
             self.lazy()
             .select(exprs)  # type: ignore
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def with_columns(self: DF, exprs: Union["pli.Expr", List["pli.Expr"]]) -> DF:
@@ -4060,11 +4116,10 @@ class DataFrame:
         """
         if not isinstance(exprs, list):
             exprs = [exprs]
-        return self._from_pydf(
+        return (
             self.lazy()
             .with_columns(exprs)
             .collect(no_optimization=True, string_cache=False)
-            ._df
         )
 
     def n_chunks(self) -> int:
