@@ -81,9 +81,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_list(groups)
     }
-    fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-        HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-    }
+
     fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
         HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
     }

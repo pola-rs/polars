@@ -204,10 +204,6 @@ pub(crate) mod private {
         fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
-
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(IdxSize, IdxSize)> {
-            invalid_operation_panic!(self)
-        }
         fn hash_join_left(&self, _other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
             invalid_operation_panic!(self)
         }

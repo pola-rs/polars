@@ -449,7 +449,7 @@ impl HashJoin<Float32Type> for Float32Chunked {
     fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(IdxSize, IdxSize)> {
         let ca = self.bit_repr_small();
         let other = other.bit_repr_small();
-        ca.hash_join_inner(&other)
+        num_group_join_inner(&ca, &other)
     }
     fn hash_join_left(&self, other: &Float32Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
         let ca = self.bit_repr_small();
@@ -651,46 +651,8 @@ where
     T: PolarsIntegerType + Sync,
     T::Native: Eq + Hash + num::NumCast,
 {
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(IdxSize, IdxSize)> {
-        match self.dtype() {
-            DataType::UInt64 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                let other: &UInt64Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                num_group_join_inner(ca, other)
-            }
-            DataType::UInt32 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt32Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                let other: &UInt32Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                num_group_join_inner(ca, other)
-            }
-            DataType::Int64 | DataType::Float64 => {
-                let ca = self.bit_repr_large();
-                let other = other.bit_repr_large();
-                num_group_join_inner(&ca, &other)
-            }
-            DataType::Int32 | DataType::Float32 => {
-                let ca = self.bit_repr_small();
-                let other = other.bit_repr_small();
-                num_group_join_inner(&ca, &other)
-            }
-            _ => {
-                let ca = self.cast(&DataType::UInt32).unwrap();
-                let ca = ca.u32().unwrap();
-                let other = other.cast(&DataType::UInt32).unwrap();
-                let other = other.u32().unwrap();
-                num_group_join_inner(ca, other)
-            }
-        }
+    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(IdxSize, IdxSize)> {
+        unimplemented!()
     }
 
     fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(IdxSize, Option<IdxSize>)> {
@@ -1301,7 +1263,28 @@ impl DataFrame {
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
-        let join_tuples = s_left.hash_join_inner(s_right);
+
+        let (lhs, rhs) = (s_left.to_physical_repr(), s_right.to_physical_repr());
+
+        use DataType::*;
+        let join_tuples = match lhs.dtype() {
+            Utf8 => {
+                let lhs = lhs.utf8().unwrap();
+                let rhs = rhs.utf8().unwrap();
+                lhs.hash_join_inner(rhs)
+            }
+            _ => {
+                if s_left.bit_repr_is_large() {
+                    let lhs = s_left.bit_repr_large();
+                    let rhs = s_right.bit_repr_large();
+                    num_group_join_inner(&lhs, &rhs)
+                } else {
+                    let lhs = s_left.bit_repr_small();
+                    let rhs = s_right.bit_repr_small();
+                    num_group_join_inner(&lhs, &rhs)
+                }
+            }
+        };
 
         let (df_left, df_right) = POOL.join(
             || self.create_left_df(&join_tuples, false),

@@ -168,9 +168,6 @@ macro_rules! impl_dyn_series {
             fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.agg_median(groups)
             }
-            fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-                HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-            }
             fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
                 HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
             }

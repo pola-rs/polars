@@ -138,10 +138,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
                 .into_series()
         })
     }
-    fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-        let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_inner(other.as_ref().as_ref())
-    }
     fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
         let other = other.to_physical_repr().into_owned();
         self.0.hash_join_left(other.as_ref().as_ref())

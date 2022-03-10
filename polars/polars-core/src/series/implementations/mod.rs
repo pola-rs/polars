@@ -216,9 +216,6 @@ macro_rules! impl_dyn_series {
             fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_median(groups)
             }
-            fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-                HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-            }
             fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
                 HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
             }
@@ -797,4 +794,16 @@ impl_dyn_series_numeric!(Int64Chunked);
 
 impl private::PrivateSeriesNumeric for SeriesWrap<Utf8Chunked> {}
 impl private::PrivateSeriesNumeric for SeriesWrap<ListChunked> {}
-impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {}
+impl private::PrivateSeriesNumeric for SeriesWrap<BooleanChunked> {
+    fn bit_repr_is_large(&self) -> bool {
+        false
+    }
+    fn bit_repr_small(&self) -> UInt32Chunked {
+        self.0
+            .cast(&DataType::UInt32)
+            .unwrap()
+            .u32()
+            .unwrap()
+            .clone()
+    }
+}
