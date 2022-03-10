@@ -267,28 +267,32 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                 |e| matches!(e, Expr::Function { options,  .. } if options.input_wildcard_expansion),
             ) {
                 expr.mutate().apply(|e| {
-                    if let Expr::Function { input, .. } = e {
-                        let mut new_inputs = Vec::with_capacity(input.len());
+                    match e {
+                        Expr::Function { input, options, .. }
+                            if options.input_wildcard_expansion =>
+                        {
+                            let mut new_inputs = Vec::with_capacity(input.len());
 
-                        input.iter_mut().for_each(|e| {
-                            if has_wildcard(e) {
-                                replace_wilcard(e, &mut new_inputs, &exclude, schema)
-                            } else {
-                                #[cfg(feature = "regex")]
-                                {
-                                    replace_regex(e, &mut new_inputs, schema)
-                                }
-                                #[cfg(not(feature = "regex"))]
-                                {
-                                    new_inputs.push(e.clone())
-                                }
-                            };
-                        });
+                            input.iter_mut().for_each(|e| {
+                                if has_wildcard(e) {
+                                    replace_wilcard(e, &mut new_inputs, &exclude, schema)
+                                } else {
+                                    #[cfg(feature = "regex")]
+                                    {
+                                        replace_regex(e, &mut new_inputs, schema)
+                                    }
+                                    #[cfg(not(feature = "regex"))]
+                                    {
+                                        new_inputs.push(e.clone())
+                                    }
+                                };
+                            });
 
-                        *input = new_inputs;
-                        false
-                    } else {
-                        true
+                            *input = new_inputs;
+                            // continue there can be more functions that require expansion
+                            true
+                        }
+                        _ => true,
                     }
                 });
                 result.push(expr);

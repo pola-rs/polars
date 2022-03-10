@@ -1071,7 +1071,9 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
+def concat_str(
+    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"], sep: str = ""
+) -> "pli.Expr":
     """
     Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 

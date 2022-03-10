@@ -111,3 +111,14 @@ def test_unique_stable() -> None:
     expected = pl.Series("a", [1, 2, 3])
 
     verify_series_and_expr_api(a, expected, "unique", True)
+
+
+def test_wildcard_expansion() -> None:
+    # one function requires wildcard expansion the other need
+    # this tests the nested behavior
+    # see: #2867
+
+    df = pl.DataFrame({"a": ["x", "Y", "z"], "b": ["S", "o", "S"]})
+    assert df.select(
+        pl.concat_str(pl.all()).str.to_lowercase()
+    ).to_series().to_list() == ["xs", "yo", "zs"]
