@@ -3,7 +3,7 @@ use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca,
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_offsets,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
@@ -44,14 +44,14 @@ impl DataFrame {
                 // pack the bit values together and add a final byte that will be 0
                 // when there are no null values.
                 // otherwise we use two bits of this byte to represent null values.
-                let split_0 = split_ca(&$ca0, n_partitions).unwrap();
-                let split_1 = split_ca(&$ca1, n_partitions).unwrap();
+                let splits = split_offsets($ca0.len(), n_partitions);
 
                 let keys = POOL.install(|| {
-                    split_0
+                    splits
                         .into_par_iter()
-                        .zip(split_1.into_par_iter())
-                        .map(|(ca0, ca1)| {
+                        .map(|(offset, len)| {
+                            let ca0 = $ca0.slice(offset as i64, len);
+                            let ca1 = $ca1.slice(offset as i64, len);
                             ca0.into_iter()
                                 .zip(ca1.into_iter())
                                 .map(|(l, r)| $pack_fn(l, r))

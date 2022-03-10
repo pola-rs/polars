@@ -707,9 +707,17 @@ where
     F: Fn(Series) -> Result<Series> + Send + Sync,
 {
     let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let slices = split_series(&s, n_threads)?;
+    let splits = split_offsets(s.len(), n_threads);
 
-    let chunks = POOL.install(|| slices.into_par_iter().map(&f).collect::<Result<Vec<_>>>())?;
+    let chunks = POOL.install(|| {
+        splits
+            .into_par_iter()
+            .map(|(offset, len)| {
+                let s = s.slice(offset as i64, len);
+                f(s)
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
 
     let mut iter = chunks.into_iter();
     let first = iter.next().unwrap();

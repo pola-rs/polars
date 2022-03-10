@@ -1,5 +1,5 @@
 use super::*;
-use crate::utils::{align_chunks_binary, split_offsets};
+use crate::utils::split_offsets;
 use polars_arrow::prelude::*;
 
 /// Used to create the tuples for a groupby operation.
@@ -107,26 +107,34 @@ impl IntoGroupsProxy for BooleanChunked {
 }
 
 impl IntoGroupsProxy for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    #[allow(clippy::needless_lifetimes)]
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> GroupsProxy {
         let hb = RandomState::default();
         let null_h = get_null_hash_value(hb.clone());
 
         if multithreaded {
             let n_partitions = set_partition_size();
 
-            let split = split_ca(self, n_partitions).unwrap();
+            let split = split_offsets(self.len(), n_partitions);
 
             let str_hashes = POOL.install(|| {
                 split
-                    .par_iter()
-                    .map(|ca| {
+                    .into_par_iter()
+                    .map(|(offset, len)| {
+                        let ca = self.slice(offset as i64, len);
                         ca.into_iter()
                             .map(|opt_s| {
                                 let hash = match opt_s {
                                     Some(s) => str::get_hash(s, &hb),
                                     None => null_h,
                                 };
-                                StrHash::new(opt_s, hash)
+                                // Safety:
+                                // the underlying data is tied to self
+                                unsafe {
+                                    std::mem::transmute::<StrHash<'_>, StrHash<'a>>(StrHash::new(
+                                        opt_s, hash,
+                                    ))
+                                }
                             })
                             .collect::<Vec<_>>()
                     })
