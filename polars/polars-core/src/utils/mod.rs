@@ -109,6 +109,27 @@ where
     split_array!(ca, n, i64)
 }
 
+// prefer this one over split_ca, as this can push the null_count into the thread pool
+pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
+    if n == 1 {
+        vec![(0, len)]
+    } else {
+        let chunk_size = len / n;
+
+        (0..n)
+            .map(|partition| {
+                let offset = partition * chunk_size;
+                let len = if partition == (n - 1) {
+                    len - offset
+                } else {
+                    chunk_size
+                };
+                (partition * chunk_size, len)
+            })
+            .collect_trusted()
+    }
+}
+
 #[cfg(feature = "private")]
 pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
