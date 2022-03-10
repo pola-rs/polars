@@ -697,7 +697,10 @@ def read_ipc_schema(
 
 
 def read_avro(
-    file: Union[str, Path, BytesIO, BinaryIO], n_rows: Optional[int] = None
+    file: Union[str, Path, BytesIO, BinaryIO],
+    columns: Optional[Union[List[int], List[str]]] = None,
+    n_rows: Optional[int] = None,
+    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Apache Avro format.
@@ -706,6 +709,8 @@ def read_avro(
     ----------
     file
         Path to a file or a file-like object.
+    columns
+        Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
     n_rows
         Stop reading from Apache Avro file after reading ``n_rows``.
 
@@ -715,8 +720,10 @@ def read_avro(
     """
     if isinstance(file, Path):
         file = str(file)
+    if columns is None:
+        columns = kwargs.pop("projection", None)
 
-    return DataFrame._read_avro(file, n_rows=n_rows)
+    return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
 def read_ipc(

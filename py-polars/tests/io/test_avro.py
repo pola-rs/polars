@@ -36,3 +36,27 @@ def test_from_to_file(
         example_df.to_avro(f, compression=compression)  # type: ignore
         df_read = pl.read_avro(str(f))
         assert example_df.frame_equal(df_read)
+
+
+def test_select_columns() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
+    expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
+
+    f = io.BytesIO()
+    df.to_avro(f)
+    f.seek(0)
+
+    read_df = pl.read_avro(f, columns=["b", "c"])
+    assert expected.frame_equal(read_df)
+
+
+def test_select_projection() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
+    expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
+
+    f = io.BytesIO()
+    df.to_avro(f)
+    f.seek(0)
+
+    read_df = pl.read_avro(f, columns=[1, 2])
+    assert expected.frame_equal(read_df)
