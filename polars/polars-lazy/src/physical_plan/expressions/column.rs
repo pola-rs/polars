@@ -66,7 +66,12 @@ impl PhysicalExpr for ColumnExpr {
                     // now we do a linear search first as the lazy reported schema may still be incorrect
                     // in debug builds we panic so that it can be fixed when occurring
                     None => {
-                        debug_assert!(false);
+                        #[cfg(feature = "panic_on_schema")]
+                        {
+                            panic!("invalid schema")
+                        }
+                        // in release we fallback to linear search
+                        #[allow(unreachable_code)]
                         df.column(&self.0).map(|s| s.clone())
                     }
                 }
