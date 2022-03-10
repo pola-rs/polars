@@ -118,7 +118,7 @@ where
                 codec,
             ),
             avro_schema,
-            schema.fields.clone(),
+            schema.fields,
             prj,
         );
 
