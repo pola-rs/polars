@@ -215,90 +215,21 @@ where
         let s: &Series = owned_s.borrow();
         let capacity = get_iter_capacity(&it);
         let estimated_s_size = std::cmp::min(s.len(), 1 << 18);
-        // use specialized builder for most common types
-        match s.dtype() {
-            DataType::UInt32 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<u32>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
-            DataType::Int32 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<i32>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
-            DataType::UInt64 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<u64>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
-            DataType::Int64 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<i64>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
-            DataType::Float32 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<f32>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
-            DataType::Float64 => primitive_series_collect(
-                nulls_so_far,
-                it,
-                s,
-                &mut ListPrimitiveChunkedBuilder::<f64>::new(
-                    "collected",
-                    capacity,
-                    capacity * estimated_s_size,
-                    s.dtype().clone(),
-                ),
-            ),
+        // we first used specialized builders for most common types, but this explodes bloat
+        // because every iterator collect is a unique instantiation of this function
+        let mut builder = match s.dtype() {
             #[cfg(feature = "object")]
             DataType::Object(_) => {
-                let mut builder =
-                    s.get_list_builder("collected", capacity * estimated_s_size, capacity);
-                primitive_series_collect(nulls_so_far, it, s, &mut builder)
+                s.get_list_builder("collected", capacity * estimated_s_size, capacity)
             }
-            _ => {
-                let mut builder = get_list_builder(
-                    s.dtype(),
-                    capacity * estimated_s_size,
-                    capacity,
-                    "collected",
-                );
-                primitive_series_collect(nulls_so_far, it, s, &mut builder)
-            }
-        }
+            _ => get_list_builder(
+                s.dtype(),
+                capacity * estimated_s_size,
+                capacity,
+                "collected",
+            ),
+        };
+        primitive_series_collect(nulls_so_far, it, s, &mut builder)
     }
 }
 

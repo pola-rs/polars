@@ -13,15 +13,27 @@ use hashbrown::{hash_map::RawEntryMut, HashMap};
 use rayon::prelude::*;
 use std::hash::{BuildHasher, Hash};
 
-fn finish_group_order(out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {
-        let mut out = out.into_iter().flatten().collect::<Vec<_>>();
+        // we can just take the first value, no need to flatten
+        let mut out = if out.len() == 1 {
+            out.pop().unwrap()
+        } else {
+            // flattens
+            out.into_iter().flatten().collect::<Vec<_>>()
+        };
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out.into_iter());
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {
-        GroupsProxy::Idx(GroupsIdx::from(out))
+        // we can just take the first value, no need to flatten
+        if out.len() == 1 {
+            GroupsProxy::Idx(GroupsIdx::from(out.pop().unwrap()))
+        } else {
+            // flattens
+            GroupsProxy::Idx(GroupsIdx::from(out))
+        }
     }
 }
 
@@ -61,7 +73,7 @@ where
         idx.sorted = true;
         GroupsProxy::Idx(idx)
     } else {
-        GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, v)| v).collect())
+        GroupsProxy::Idx(hash_tbl.into_values().collect())
     }
 }
 

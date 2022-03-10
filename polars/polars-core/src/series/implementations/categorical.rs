@@ -12,7 +12,7 @@ use crate::chunked_array::{
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{check_categorical_src, HashJoin, ZipOuterJoinColumn};
+use crate::frame::hash_join::{check_categorical_src, ZipOuterJoinColumn};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
@@ -107,21 +107,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         })
     }
 
-    fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-        self.0
-            .logical()
-            .hash_join_inner(other.categorical().unwrap().logical())
-    }
-    fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-        self.0
-            .logical()
-            .hash_join_left(other.categorical().unwrap().logical())
-    }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-        self.0
-            .logical()
-            .hash_join_outer(other.categorical().unwrap().logical())
-    }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
