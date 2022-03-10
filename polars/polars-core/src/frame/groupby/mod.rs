@@ -3,7 +3,7 @@ use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_ca,
+    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_offsets,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;
@@ -17,6 +17,7 @@ use std::hash::Hash;
 
 pub mod aggregations;
 pub(crate) mod hashing;
+mod into_groups;
 #[cfg(feature = "rows")]
 pub(crate) mod pivot;
 mod proxy;
@@ -24,276 +25,9 @@ mod proxy;
 #[cfg(feature = "rows")]
 pub use pivot::PivotAgg;
 
+pub use into_groups::*;
+use polars_arrow::array::ValueSize;
 pub use proxy::*;
-
-/// Used to create the tuples for a groupby operation.
-pub trait IntoGroupsProxy {
-    /// Create the tuples need for a groupby operation.
-    ///     * The first value in the tuple is the first index of the group.
-    ///     * The second value in the tuple is are the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> GroupsProxy {
-        unimplemented!()
-    }
-}
-
-fn group_multithreaded<T>(ca: &ChunkedArray<T>) -> bool {
-    // TODO! change to something sensible
-    ca.len() > 1000
-}
-
-fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
-where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
-    Option<T::Native>: AsU64,
-{
-    #[cfg(feature = "dtype-categorical")]
-    let group_size_hint = if let Some(m) = &ca.categorical_map {
-        ca.len() / m.len()
-    } else {
-        0
-    };
-    #[cfg(not(feature = "dtype-categorical"))]
-    let group_size_hint = 0;
-    if multithreaded && group_multithreaded(ca) {
-        let n_partitions = set_partition_size() as u64;
-
-        // use the arrays as iterators
-        if ca.chunks.len() == 1 {
-            if !ca.has_validity() {
-                let keys = vec![ca.cont_slice().unwrap()];
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            } else {
-                let keys = ca
-                    .downcast_iter()
-                    .map(|arr| arr.into_iter().map(|x| x.copied()).collect::<Vec<_>>())
-                    .collect::<Vec<_>>();
-                groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-            }
-            // use the polars-iterators
-        } else if !ca.has_validity() {
-            let keys = vec![ca.into_no_null_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-        } else {
-            let keys = vec![ca.into_iter().collect::<Vec<_>>()];
-            groupby_threaded_num(keys, group_size_hint, n_partitions, sorted)
-        }
-    } else if !ca.has_validity() {
-        groupby(ca.into_no_null_iter(), sorted)
-    } else {
-        groupby(ca.into_iter(), sorted)
-    }
-}
-
-impl<T> IntoGroupsProxy for ChunkedArray<T>
-where
-    T: PolarsNumericType,
-    T::Native: NumCast,
-{
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        match self.dtype() {
-            DataType::UInt64 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            }
-            DataType::UInt32 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt32Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                num_groups_proxy(ca, multithreaded, sorted)
-            }
-            DataType::Int64 | DataType::Float64 => {
-                let ca = self.bit_repr_large();
-                num_groups_proxy(&ca, multithreaded, sorted)
-            }
-            DataType::Int32 | DataType::Float32 => {
-                let ca = self.bit_repr_small();
-                num_groups_proxy(&ca, multithreaded, sorted)
-            }
-            _ => {
-                let ca = self.cast(&DataType::UInt32).unwrap();
-                let ca = ca.u32().unwrap();
-                num_groups_proxy(ca, multithreaded, sorted)
-            }
-        }
-    }
-}
-impl IntoGroupsProxy for BooleanChunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let ca = self.cast(&DataType::UInt32).unwrap();
-        let ca = ca.u32().unwrap();
-        ca.group_tuples(multithreaded, sorted)
-    }
-}
-
-impl IntoGroupsProxy for Utf8Chunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
-        let hb = RandomState::default();
-        let null_h = get_null_hash_value(hb.clone());
-
-        if multithreaded {
-            let n_partitions = set_partition_size();
-
-            let split = split_ca(self, n_partitions).unwrap();
-
-            let str_hashes = POOL.install(|| {
-                split
-                    .par_iter()
-                    .map(|ca| {
-                        ca.into_iter()
-                            .map(|opt_s| {
-                                let hash = match opt_s {
-                                    Some(s) => str::get_hash(s, &hb),
-                                    None => null_h,
-                                };
-                                StrHash::new(opt_s, hash)
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            });
-            groupby_threaded_num(str_hashes, 0, n_partitions as u64, sorted)
-        } else {
-            let str_hashes = self
-                .into_iter()
-                .map(|opt_s| {
-                    let hash = match opt_s {
-                        Some(s) => str::get_hash(s, &hb),
-                        None => null_h,
-                    };
-                    StrHash::new(opt_s, hash)
-                })
-                .collect::<Vec<_>>();
-            groupby(str_hashes.iter(), sorted)
-        }
-    }
-}
-
-impl IntoGroupsProxy for ListChunked {
-    #[cfg(feature = "groupby_list")]
-    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
-        groupby(self.into_iter().map(|opt_s| opt_s.map(Wrap)), sorted)
-    }
-}
-
-#[cfg(feature = "object")]
-impl<T> IntoGroupsProxy for ObjectChunked<T>
-where
-    T: PolarsObject,
-{
-    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> GroupsProxy {
-        groupby(self.into_iter(), sorted)
-    }
-}
-
-/// Used to tightly two 32 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-fn pack_u32_tuples(opt_l: Option<u32>, opt_r: Option<u32>) -> [u8; 9] {
-    // 4 bytes for first value
-    // 4 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 9];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[8] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..8]) }
-            // set left null bit
-            s[8] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[8] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly two 64 bit values and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-fn pack_u64_tuples(opt_l: Option<u64>, opt_r: Option<u64>) -> [u8; 17] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 17];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..8]) }
-            // set right null bit
-            s[16] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[8..16]) }
-            // set left null bit
-            s[16] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[16] = 3;
-        }
-    }
-    val
-}
-
-/// Used to tightly one 32 bit and a 64 bit valued type and null information
-/// Only the bit values matter, not the meaning of the bits
-#[inline]
-fn pack_u32_u64_tuples(opt_l: Option<u32>, opt_r: Option<u64>) -> [u8; 13] {
-    // 8 bytes for first value
-    // 8 bytes for second value
-    // last bytes' bits are used to indicate missing values
-    let mut val = [0u8; 13];
-    let s = &mut val;
-    match (opt_l, opt_r) {
-        (Some(l), Some(r)) => {
-            // write to first 4 places
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // write to second chunk of 4 places
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // leave last byte as is
-        }
-        (Some(l), None) => {
-            unsafe { copy_from_slice_unchecked(&l.to_ne_bytes(), &mut s[..4]) }
-            // set right null bit
-            s[12] = 1;
-        }
-        (None, Some(r)) => {
-            unsafe { copy_from_slice_unchecked(&r.to_ne_bytes(), &mut s[4..12]) }
-            // set left null bit
-            s[12] = 1 << 1;
-        }
-        (None, None) => {
-            // set two null bits
-            s[12] = 3;
-        }
-    }
-    val
-}
 
 impl DataFrame {
     pub fn groupby_with_series(
@@ -310,14 +44,14 @@ impl DataFrame {
                 // pack the bit values together and add a final byte that will be 0
                 // when there are no null values.
                 // otherwise we use two bits of this byte to represent null values.
-                let split_0 = split_ca(&$ca0, n_partitions).unwrap();
-                let split_1 = split_ca(&$ca1, n_partitions).unwrap();
+                let splits = split_offsets($ca0.len(), n_partitions);
 
                 let keys = POOL.install(|| {
-                    split_0
+                    splits
                         .into_par_iter()
-                        .zip(split_1.into_par_iter())
-                        .map(|(ca0, ca1)| {
+                        .map(|(offset, len)| {
+                            let ca0 = $ca0.slice(offset as i64, len);
+                            let ca1 = $ca1.slice(offset as i64, len);
                             ca0.into_iter()
                                 .zip(ca1.into_iter())
                                 .map(|(l, r)| $pack_fn(l, r))
@@ -343,7 +77,7 @@ impl DataFrame {
 
         use DataType::*;
         // make sure that categorical and small integers are used as uint32 in value type
-        let keys_df = DataFrame::new(
+        let keys_df = DataFrame::new_no_checks(
             by.iter()
                 .map(|s| match s.dtype() {
                     Int8 | UInt8 | Int16 | UInt16 => s.cast(&DataType::UInt32).unwrap(),
@@ -362,14 +96,16 @@ impl DataFrame {
                     }
                 })
                 .collect(),
-        )?;
+        );
+
+        let n_partitions = set_partition_size();
 
         let groups = match by.len() {
             1 => {
                 let series = &by[0];
                 series.group_tuples(multithreaded, sorted)
             }
-            _ => {
+            2 => {
                 // multiple keys is always multi-threaded
                 // reduce code paths
                 let s0 = &keys_df.get_columns()[0];
@@ -377,7 +113,7 @@ impl DataFrame {
 
                 // fast path for numeric data
                 // uses the bit values to tightly pack those into arrays.
-                if by.len() == 2 && s0.dtype().is_numeric() && s1.dtype().is_numeric() {
+                if s0.dtype().is_numeric() && s1.dtype().is_numeric() {
                     match (s0.bit_repr_is_large(), s1.bit_repr_is_large()) {
                         (false, false) => {
                             let ca0 = s0.bit_repr_small();
@@ -402,11 +138,22 @@ impl DataFrame {
                             finish_packed_bit_path!(ca0, ca1, pack_u32_u64_tuples)
                         }
                     }
-                }
+                } else if matches!((s0.dtype(), s1.dtype()), (DataType::Utf8, DataType::Utf8)) {
+                    let lhs = s0.utf8().unwrap();
+                    let rhs = s1.utf8().unwrap();
 
-                let n_partitions = set_partition_size();
-                groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                    // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
+                    // value we fall back to default groupby
+                    if (lhs.get_values_size() + rhs.get_values_size()) / lhs.len() < 128 {
+                        pack_utf8_columns(lhs, rhs, n_partitions, sorted)
+                    } else {
+                        groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                    }
+                } else {
+                    groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
+                }
             }
+            _ => groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted),
         };
         Ok(GroupBy::new(self, by, groups, None))
     }
