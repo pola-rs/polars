@@ -568,6 +568,7 @@ class DataFrame:
     def _read_avro(
         cls: Type[DF],
         file: Union[str, BinaryIO],
+        columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
     ) -> DF:
         """
@@ -584,8 +585,9 @@ class DataFrame:
         -------
         DataFrame
         """
+        projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
-        self._df = PyDataFrame.read_avro(file, n_rows)
+        self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
         return self
 
     @classmethod

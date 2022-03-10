@@ -237,11 +237,18 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "avro")]
-    pub fn read_avro(py_f: PyObject, n_rows: Option<usize>) -> PyResult<Self> {
+    pub fn read_avro(
+        py_f: PyObject,
+        columns: Option<Vec<String>>,
+        projection: Option<Vec<usize>>,
+        n_rows: Option<usize>,
+    ) -> PyResult<Self> {
         use polars::io::avro::AvroReader;
 
         let file = get_file_like(py_f, false)?;
         let df = AvroReader::new(file)
+            .with_projection(projection)
+            .with_columns(columns)
             .with_n_rows(n_rows)
             .finish()
             .map_err(PyPolarsErr::from)?;

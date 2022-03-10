@@ -101,15 +101,15 @@ where
             self.projection = Some(columns_to_projection(columns, &schema)?);
         }
 
-        let prj = if let Some(projection) = self.projection {
+        let (prj, arrow_schema) = if let Some(projection) = self.projection {
             let mut prj = vec![false; avro_schema.len()];
-            for index in projection {
+            for &index in projection.iter() {
                 prj[index] = true;
             }
 
-            Some(prj)
+            (Some(prj), apply_projection(&schema, &projection))
         } else {
-            None
+            (None, schema.clone())
         };
 
         let avro_reader = read::Reader::new(
@@ -118,11 +118,19 @@ where
                 codec,
             ),
             avro_schema,
-            schema.clone().fields,
+            schema.fields,
             prj,
         );
 
-        finish_reader(avro_reader, rechunk, self.n_rows, None, None, &schema, None)
+        finish_reader(
+            avro_reader,
+            rechunk,
+            self.n_rows,
+            None,
+            None,
+            &arrow_schema,
+            None,
+        )
     }
 }
 
@@ -144,7 +152,6 @@ pub use write::Compression as AvroCompression;
 ///     AvroWriter::new(&mut file)
 ///         .finish(df)
 /// }
-///
 /// ```
 #[must_use]
 pub struct AvroWriter<W> {
@@ -275,7 +282,7 @@ mod test {
 
         let expected_df = df!(
             "i64" => &[1, 2],
-            "f64" => &[0.1, 0.2]
+            "utf8" => &["a", "b"]
         )?;
 
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
@@ -284,7 +291,7 @@ mod test {
         buf.set_position(0);
 
         let read_df = AvroReader::new(buf)
-            .with_columns(Some(vec!["i64".to_string(), "f64".to_string()]))
+            .with_columns(Some(vec!["i64".to_string(), "utf8".to_string()]))
             .finish()?;
 
         assert!(expected_df.frame_equal(&read_df));
