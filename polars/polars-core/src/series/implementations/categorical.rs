@@ -107,11 +107,6 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         })
     }
 
-    fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-        self.0
-            .logical()
-            .hash_join_left(other.categorical().unwrap().logical())
-    }
     fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         self.0
             .logical()

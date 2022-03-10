@@ -68,9 +68,6 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.agg_list(groups)
     }
 
-    fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-        HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
-    }
     fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
         HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
     }
