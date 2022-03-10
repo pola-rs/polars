@@ -1048,8 +1048,18 @@ impl_from_chunked_with_err!(minute);
 impl_from_chunked_with_err!(second);
 impl_from_chunked_with_err!(nanosecond);
 impl_from_chunked_with_err!(is_first);
-impl_from_chunked_with_err!(timestamp);
 
+#[js_function(1)]
+pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+
+        series
+        .timestamp(TimeUnit::Milliseconds)
+        .map_err(JsPolarsEr::from)?
+        .into_series()
+        .try_into_js(&cx)
+}
 macro_rules! impl_method {
     ($name:ident) => {
         #[js_function(1)]

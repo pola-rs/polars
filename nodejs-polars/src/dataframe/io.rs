@@ -605,7 +605,7 @@ pub(crate) fn to_row_object(cx: CallContext) -> JsResult<JsObject> {
 fn coerce_js_anyvalue<'a>(
     cx: &'a CallContext,
     val: JsUnknown,
-    dtype: &'a DataType,
+    dtype: DataType,
 ) -> JsResult<AnyValue<'a>> {
     use DataType::*;
     let vtype = val.get_type().unwrap();
@@ -720,10 +720,9 @@ pub(crate) fn read_rows(cx: CallContext) -> JsResult<JsExternal> {
         .map(|idx| {
             let js_row: JsObject = rows.get_element_unchecked(idx).unwrap();
             Row(schema
-                .fields()
-                .iter()
+                .iter_fields()
                 .map(|fld| {
-                    let dtype = fld.data_type();
+                    let dtype = fld.data_type().clone();
                     let key = fld.name();
                     match js_row.get_named_property::<JsUnknown>(key) {
                         Ok(value) => {
@@ -775,15 +774,14 @@ fn resolve_homedir(path: &Path) -> PathBuf {
 
 fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = rows_to_schema(&rows);
-    let fields = schema
-        .fields()
-        .iter()
+    let fields: Vec<Field> = schema
+        .iter_fields()
         .map(|fld| match fld.data_type() {
             DataType::Null => Field::new(fld.name(), DataType::Boolean),
             _ => fld.clone(),
         })
         .collect();
-    let schema = Schema::new(fields);
+    let schema = Schema::from(fields);
 
     DataFrame::from_rows_and_schema(&rows, &schema).map_err(|err| JsPolarsEr::from(err).into())
 }

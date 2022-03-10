@@ -492,15 +492,9 @@ pub fn drop_columns(cx: CallContext) -> JsResult<JsExternal> {
 pub fn columns(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
-    let columns: Vec<String> = ldf
-        .schema()
-        .fields()
-        .iter()
-        .map(|fld| fld.name().to_string())
-        .collect();
-    let mut arr = cx.env.create_array_with_length(columns.len())?;
-    for (idx, item) in columns.into_iter().enumerate() {
-        arr.set_element(idx as u32, cx.env.create_string_from_std(item)?)?;
+    let mut arr = cx.env.create_array()?;
+    for (idx, item) in ldf.schema().iter_names().enumerate() {
+        arr.set_element(idx as u32, cx.env.create_string_from_std(item.clone())?)?;
     }
     Ok(arr)
 }
