@@ -3868,6 +3868,55 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
+    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+        """
+        Split the string by a substring into a struct of `n` fields.
+        The return type will by of type Struct<Utf8>
+
+        If it cannot make `n` splits, the remaiming field elements will be null
+
+        Parameters
+        ----------
+        by
+            substring
+        n
+            Number of splits to make
+        inclusive
+            Include the split character/string in the results
+
+        Examples
+        --------
+
+        >>> (
+        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
+        ...         [
+        ...             pl.col("x").str.split_exact("_", 2).alias("fields"),
+        ...         ]
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌───────────────────────────────────────────┐
+        │ fields                                    │
+        │ ---                                       │
+        │ struct[2]{'field_0': str, 'field_1': str} │
+        ╞═══════════════════════════════════════════╡
+        │ {"a","1"}                                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null}                               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}                                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}                                 │
+        └───────────────────────────────────────────┘
+
+        """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.split_exact(by, n, inclusive))
+            .to_series()
+        )
+
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
