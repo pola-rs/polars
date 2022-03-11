@@ -1,5 +1,6 @@
 use super::*;
 use polars_arrow::array::ValueSize;
+use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
 
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);
@@ -107,6 +108,104 @@ impl StringNameSpace {
                 GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
             )
             .with_fmt("str.split")
+    }
+
+    pub fn split_exact(self, by: &str, n: usize) -> Expr {
+        let by = by.to_string();
+
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+
+            let mut arrs = (0..n)
+                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+                .collect::<Vec<_>>();
+
+            ca.into_iter().for_each(|opt_s| match opt_s {
+                None => {
+                    for arr in &mut arrs {
+                        arr.push_null()
+                    }
+                }
+                Some(s) => {
+                    let mut arr_iter = arrs.iter_mut();
+                    let split_iter = s.split(&by);
+                    (split_iter)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    // fill the remaining with null
+                    for arr in arr_iter {
+                        arr.push_null()
+                    }
+                }
+            });
+            let fields = arrs
+                .into_iter()
+                .enumerate()
+                .map(|(i, arr)| {
+                    Series::try_from((format!("field_{i}").as_str(), arr.into_arc())).unwrap()
+                })
+                .collect::<Vec<_>>();
+            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+        };
+        self.0
+            .map(
+                function,
+                GetOutput::from_type(DataType::Struct(
+                    (0..n)
+                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .collect(),
+                )),
+            )
+            .with_fmt("str.split_exact")
+    }
+
+    pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
+        let by = by.to_string();
+
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+
+            let mut arrs = (0..n)
+                .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
+                .collect::<Vec<_>>();
+
+            ca.into_iter().for_each(|opt_s| match opt_s {
+                None => {
+                    for arr in &mut arrs {
+                        arr.push_null()
+                    }
+                }
+                Some(s) => {
+                    let mut arr_iter = arrs.iter_mut();
+                    let split_iter = s.split_inclusive(&by);
+                    (split_iter)
+                        .zip(&mut arr_iter)
+                        .for_each(|(splitted, arr)| arr.push(Some(splitted)));
+                    // fill the remaining with null
+                    for arr in arr_iter {
+                        arr.push_null()
+                    }
+                }
+            });
+            let fields = arrs
+                .into_iter()
+                .enumerate()
+                .map(|(i, arr)| {
+                    Series::try_from((format!("field_{i}").as_str(), arr.into_arc())).unwrap()
+                })
+                .collect::<Vec<_>>();
+            Ok(StructChunked::new(ca.name(), &fields)?.into_series())
+        };
+        self.0
+            .map(
+                function,
+                GetOutput::from_type(DataType::Struct(
+                    (0..n)
+                        .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
+                        .collect(),
+                )),
+            )
+            .with_fmt("str.split_exact")
     }
 
     /// Split the string by a substring.

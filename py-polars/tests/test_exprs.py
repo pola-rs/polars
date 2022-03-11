@@ -122,3 +122,27 @@ def test_wildcard_expansion() -> None:
     assert df.select(
         pl.concat_str(pl.all()).str.to_lowercase()
     ).to_series().to_list() == ["xs", "yo", "zs"]
+
+
+def test_split_exact() -> None:
+    df = pl.DataFrame(dict(x=["a_a", None, "b", "c_c"]))
+    out = df.select([pl.col("x").str.split_exact("_", 3, inclusive=False)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {
+            "field_0": ["a", None, "b", "c"],
+            "field_1": ["a", None, None, "c"],
+            "field_2": [None, None, None, None],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=True)]).unnest("x")
+
+    expected = pl.DataFrame(
+        {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
+    )
+    assert out.frame_equal(expected)
+    assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
+    assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
