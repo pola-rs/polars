@@ -459,7 +459,7 @@ impl ProjectionPushDown {
             Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             } => {
                 if !acc_projections.is_empty() {
                     // Make sure that the column(s) used for the sort is projected
@@ -488,7 +488,7 @@ impl ProjectionPushDown {
                 Ok(Sort {
                     input,
                     by_column,
-                    reverse,
+                    args,
                 })
             }
             Explode { input, columns } => {

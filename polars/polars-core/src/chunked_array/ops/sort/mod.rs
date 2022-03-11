@@ -1,8 +1,11 @@
+mod argsort;
+#[cfg(feature = "sort_multiple")]
 mod argsort_multiple;
 #[cfg(feature = "dtype-categorical")]
 mod categorical;
 
 use crate::prelude::compare_inner::PartialOrdInner;
+#[cfg(feature = "sort_multiple")]
 use crate::prelude::sort::argsort_multiple::{args_validate, argsort_multiple_impl};
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, NoNull};
@@ -79,16 +82,6 @@ fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
     }
 }
 
-/// Default sorting nulls
-pub fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_with_nulls(a, b)
-}
-
-/// Default sorting nulls
-pub fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    sort_with_nulls(b, a)
-}
-
 fn sort_branch<T, Fd, Fr>(
     slice: &mut [T],
     reverse: bool,
@@ -133,32 +126,6 @@ pub fn argsort_branch<T, Fd, Fr>(
         true => slice.par_sort_by(reverse_order_fn),
         false => slice.par_sort_by(default_order_fn),
     }
-}
-
-macro_rules! argsort {
-    ($self:expr, $reverse:expr) => {{
-        let mut vals = Vec::with_capacity($self.len());
-        let mut count: IdxSize = 0;
-        $self.downcast_iter().for_each(|arr| {
-            let iter = arr.iter().map(|v| {
-                let i = count;
-                count += 1;
-                (i, v)
-            });
-            vals.extend_trusted_len(iter);
-        });
-
-        argsort_branch(
-            vals.as_mut_slice(),
-            $reverse,
-            |(_, a), (_, b)| order_default_null(a, b),
-            |(_, a), (_, b)| order_reverse_null(a, b),
-        );
-        let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-        let mut ca = ca.into_inner();
-        ca.rename($self.name());
-        ca
-    }};
 }
 
 fn memcpy_values<T>(ca: &ChunkedArray<T>) -> Vec<T::Native>
@@ -309,8 +276,9 @@ where
         })
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        if !self.has_validity() {
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        let reverse = options.descending;
+        if self.null_count() == 0 {
             let mut vals = Vec::with_capacity(self.len());
             let mut count: IdxSize = 0;
             self.downcast_iter().for_each(|arr| {
@@ -330,58 +298,10 @@ where
             ca.rename(self.name());
             ca
         } else {
-            let null_count = self.null_count();
-            let len = self.len();
-            let mut vals = Vec::with_capacity(len - null_count);
-
-            // if we sort reverse, the nulls are last
-            // and need to be extended to the indices in reverse order
-            let null_cap = if reverse {
-                null_count
-                // if we sort normally, the nulls are first
-                // and can be extended with the sorted indices
-            } else {
-                len
-            };
-            let mut nulls_idx = Vec::with_capacity(null_cap);
-            let mut count: IdxSize = 0;
-            self.downcast_iter().for_each(|arr| {
-                let iter = arr.iter().filter_map(|v| {
-                    let i = count;
-                    count += 1;
-                    match v {
-                        Some(v) => Some((i, *v)),
-                        None => {
-                            // Safety:
-                            // we allocated enough
-                            unsafe { nulls_idx.push_unchecked(i) };
-                            None
-                        }
-                    }
-                });
-                vals.extend(iter);
-            });
-
-            argsort_branch(
-                vals.as_mut_slice(),
-                reverse,
-                |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-                |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
-            );
-
-            let iter = vals.into_iter().map(|(idx, _v)| idx);
-            let idx = if reverse {
-                let mut idx = Vec::with_capacity(len);
-                idx.extend(iter);
-                idx.extend(nulls_idx.into_iter().rev());
-                idx
-            } else {
-                nulls_idx.extend(iter);
-                nulls_idx
-            };
-
-            let arr = IdxArr::from_data_default(Buffer::from(idx), None);
-            IdxCa::from_chunks(self.name(), vec![Arc::new(arr)])
+            let iter = self
+                .downcast_iter()
+                .map(|arr| arr.iter().map(|opt| opt.copied()));
+            argsort::argsort(self.name(), iter, options, self.null_count(), self.len())
         }
     }
 
@@ -521,8 +441,14 @@ impl ChunkSort<Utf8Type> for Utf8Chunked {
         })
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        argsort!(self, reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        argsort::argsort(
+            self.name(),
+            self.downcast_iter().map(|arr| arr.iter()),
+            options,
+            self.null_count(),
+            self.len(),
+        )
     }
 
     #[cfg(feature = "sort_multiple")]
@@ -577,8 +503,14 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         })
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        argsort!(self, reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        argsort::argsort(
+            self.name(),
+            self.downcast_iter().map(|arr| arr.iter()),
+            options,
+            self.null_count(),
+            self.len(),
+        )
     }
 }
 
@@ -640,13 +572,19 @@ mod test {
                 Some(1), // 7
             ],
         );
-        let idx = a.argsort(false);
+        let idx = a.argsort(SortOptions {
+            descending: false,
+            ..Default::default()
+        });
         let idx = idx.cont_slice().unwrap();
 
         let expected = [2, 4, 0, 3, 7, 6, 5, 1];
         assert_eq!(idx, expected);
 
-        let idx = a.argsort(true);
+        let idx = a.argsort(SortOptions {
+            descending: true,
+            ..Default::default()
+        });
         let idx = idx.cont_slice().unwrap();
         // the duplicates are in reverse order of appearance, so we cannot reverse expected
         let expected = [1, 5, 6, 0, 3, 7, 4, 2];

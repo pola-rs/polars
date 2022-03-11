@@ -564,6 +564,10 @@ class Series:
         """
         return wrap_s(self._s.drop_nulls())
 
+    def drop_nans(self) -> "Series":
+        """ """
+        return self.filter(self.is_not_nan())
+
     def to_frame(self) -> "pli.DataFrame":
         """
         Cast this Series to a DataFrame.
@@ -1326,7 +1330,7 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
-    def argsort(self, reverse: bool = False) -> "Series":
+    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> "Series":
         """
         Index location of the sorted variant of this Series.
 
@@ -1334,6 +1338,8 @@ class Series:
         -------
         indexes
             Indexes that can be used to sort this array.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -1350,7 +1356,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.argsort(reverse))
+        return wrap_s(self._s.argsort(reverse, nulls_last))
 
     def arg_unique(self) -> "Series":
         """

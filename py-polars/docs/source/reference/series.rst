@@ -165,6 +165,7 @@ Manipulation/ selection
     Series.shift
     Series.shift_and_fill
     Series.drop_nulls
+    Series.drop_nans
     Series.rechunk
     Series.cast
     Series.round

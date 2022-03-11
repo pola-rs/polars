@@ -302,8 +302,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         self.0.sort_with(options).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        self.0.argsort(reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        self.0.argsort(options)
     }
 
     fn null_count(&self) -> usize {

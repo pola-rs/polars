@@ -121,3 +121,10 @@ pub struct LogicalPlanUdfOptions {
     // used for formatting
     pub(crate) fmt_str: &'static str,
 }
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct SortArguments {
+    pub(crate) reverse: Vec<bool>,
+    // Can only be true in case of a single column.
+    pub(crate) nulls_last: bool,
+}

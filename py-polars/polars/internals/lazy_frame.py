@@ -384,6 +384,7 @@ class LazyFrame(Generic[DF]):
         self: LDF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = False,
+        nulls_last: bool = False,
     ) -> LDF:
         """
         Sort the DataFrame by:
@@ -397,10 +398,16 @@ class LazyFrame(Generic[DF]):
         by
             Column (expressions) to sort by.
         reverse
-            Whether or not to sort in reverse order.
+            Sort in descending order.
+        nulls_last
+            Place null values last. Can only be used if sorted by a single column.
         """
+        if nulls_last and not isinstance(by, str):
+            raise ValueError(
+                "nulls_last can only be combined with 'by' argument of type str"
+            )
         if type(by) is str:
-            return self._from_pyldf(self._ldf.sort(by, reverse))
+            return self._from_pyldf(self._ldf.sort(by, reverse, nulls_last))
         if type(reverse) is bool:
             reverse = [reverse]
 

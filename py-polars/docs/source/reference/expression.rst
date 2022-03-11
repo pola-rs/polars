@@ -193,6 +193,7 @@ Manipulation/ selection
     Expr.tail
     Expr.reinterpret
     Expr.drop_nulls
+    Expr.drop_nans
     Expr.interpolate
     Expr.argsort
     Expr.clip

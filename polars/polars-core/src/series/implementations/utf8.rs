@@ -257,8 +257,8 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkSort::sort_with(&self.0, options).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        ChunkSort::argsort(&self.0, reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        ChunkSort::argsort(&self.0, options)
     }
 
     fn null_count(&self) -> usize {

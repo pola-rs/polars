@@ -619,7 +619,8 @@ pub trait SeriesTrait:
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> IdxCa {
+    #[allow(unused)]
+    fn argsort(&self, options: SortOptions) -> IdxCa {
         invalid_operation_panic!(self)
     }
 

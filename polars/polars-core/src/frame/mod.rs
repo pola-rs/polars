@@ -1616,13 +1616,18 @@ impl DataFrame {
         self.rechunk();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
-        self.columns = self.sort_impl(by_column, reverse)?.columns;
+        self.columns = self.sort_impl(by_column, reverse, false)?.columns;
         Ok(self)
     }
 
     /// This is the dispatch of Self::sort, and exists to reduce compile bloat by monomorphization.
     #[cfg(feature = "private")]
-    pub fn sort_impl(&self, by_column: Vec<Series>, reverse: Vec<bool>) -> Result<Self> {
+    pub fn sort_impl(
+        &self,
+        by_column: Vec<Series>,
+        reverse: Vec<bool>,
+        nulls_last: bool,
+    ) -> Result<Self> {
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
 
@@ -1633,7 +1638,10 @@ impl DataFrame {
         let take = match by_column.len() {
             1 => {
                 let s = &by_column[0];
-                s.argsort(reverse[0])
+                s.argsort(SortOptions {
+                    descending: reverse[0],
+                    nulls_last,
+                })
             }
             _ => {
                 #[cfg(feature = "sort_multiple")]
@@ -1687,6 +1695,19 @@ impl DataFrame {
     ) -> Result<Self> {
         let mut df = self.clone();
         df.sort_in_place(by_column, reverse)?;
+        Ok(df)
+    }
+
+    /// Sort the `DataFrame` by a single column with extra options.
+    pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> Result<Self> {
+        let mut df = self.clone();
+        // a lot of indirection in both sorting and take
+        df.rechunk();
+        let by_column = vec![df.column(by_column)?.clone()];
+        let reverse = vec![options.descending];
+        df.columns = df
+            .sort_impl(by_column, reverse, options.nulls_last)?
+            .columns;
         Ok(df)
     }
 

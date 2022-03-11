@@ -335,11 +335,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>) -> Self {
+    pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
-            reverse,
+            args: SortArguments {
+                reverse,
+                nulls_last: null_last,
+            },
         }
         .into()
     }

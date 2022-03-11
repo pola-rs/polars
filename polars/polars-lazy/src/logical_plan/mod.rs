@@ -131,7 +131,7 @@ pub enum LogicalPlan {
     Sort {
         input: Box<LogicalPlan>,
         by_column: Vec<Expr>,
-        reverse: Vec<bool>,
+        args: SortArguments,
     },
     /// An explode operation
     Explode {
@@ -250,7 +250,7 @@ mod test {
         let lf = df
             .lazy()
             .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
-            .sort("super_wide", false);
+            .sort("super_wide", SortOptions::default());
 
         print_plans(&lf);
 

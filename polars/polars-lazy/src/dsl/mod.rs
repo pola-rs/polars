@@ -823,7 +823,13 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(s.argsort(reverse).into_series()),
+            move |s: Series| {
+                Ok(s.argsort(SortOptions {
+                    descending: reverse,
+                    ..Default::default()
+                })
+                .into_series())
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )

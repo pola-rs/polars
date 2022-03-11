@@ -223,14 +223,17 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort("sepal.width", false)
+    ///         .sort("sepal.width", Default::default())
     /// }
     /// ```
-    pub fn sort(self, by_column: &str, reverse: bool) -> Self {
+    pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
+        let reverse = options.descending;
+        let nulls_last = options.nulls_last;
+
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![reverse])
+            .sort(vec![col(by_column)], vec![reverse], nulls_last)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -255,7 +258,10 @@ impl LazyFrame {
             self
         } else {
             let opt_state = self.get_opt_state();
-            let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
+            let lp = self
+                .get_plan_builder()
+                .sort(by_exprs, reverse, false)
+                .build();
             Self::from_logical_plan(lp, opt_state)
         }
     }
@@ -692,7 +698,6 @@ impl LazyFrame {
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
-    ///        .sort("date", false)
     /// }
     /// ```
     pub fn groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
@@ -1160,13 +1165,12 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby([col("date")])
+    ///        .groupby_stable([col("date")])
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
-    ///        .sort("date", false)
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {

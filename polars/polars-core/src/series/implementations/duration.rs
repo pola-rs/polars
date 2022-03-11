@@ -395,8 +395,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> IdxCa {
-        self.0.argsort(reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        self.0.argsort(options)
     }
 
     fn null_count(&self) -> usize {
