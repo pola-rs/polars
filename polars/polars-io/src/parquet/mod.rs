@@ -56,7 +56,7 @@ mod test {
             s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))
         })?;
 
-        ParquetWriter::new(&mut f).finish(&df)?;
+        ParquetWriter::new(&mut f).finish(&mut df)?;
 
         f.seek(SeekFrom::Start(0))?;
 
@@ -68,10 +68,10 @@ mod test {
     #[test]
     fn test_read_parquet_with_projection() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
         ParquetWriter::new(&mut buf)
-            .finish(&df)
+            .finish(&mut df)
             .expect("parquet writer");
         buf.set_position(0);
 
@@ -87,10 +87,10 @@ mod test {
     #[test]
     fn test_read_parquet_with_columns() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
-        let df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
+        let mut df = df!("a" => [1, 2, 3], "b" => [2, 3, 4], "c" => [3, 4, 5]).unwrap();
 
         ParquetWriter::new(&mut buf)
-            .finish(&df)
+            .finish(&mut df)
             .expect("parquet writer");
         buf.set_position(0);
 

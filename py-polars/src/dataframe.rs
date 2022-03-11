@@ -477,7 +477,12 @@ impl PyDataFrame {
     }
 
     #[cfg(feature = "parquet")]
-    pub fn to_parquet(&self, py_f: PyObject, compression: &str, statistics: bool) -> PyResult<()> {
+    pub fn to_parquet(
+        &mut self,
+        py_f: PyObject,
+        compression: &str,
+        statistics: bool,
+    ) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
@@ -493,7 +498,7 @@ impl PyDataFrame {
         ParquetWriter::new(buf)
             .with_compression(compression)
             .with_statistics(statistics)
-            .finish(&self.df)
+            .finish(&mut self.df)
             .map_err(PyPolarsErr::from)?;
         Ok(())
     }

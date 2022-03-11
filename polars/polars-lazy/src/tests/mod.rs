@@ -80,7 +80,7 @@ fn init_files() {
                     let f = std::fs::File::create(&out_path).unwrap();
                     ParquetWriter::new(f)
                         .with_statistics(true)
-                        .finish(&df)
+                        .finish(&mut df)
                         .unwrap();
                 } else {
                     let f = std::fs::File::create(&out_path).unwrap();
