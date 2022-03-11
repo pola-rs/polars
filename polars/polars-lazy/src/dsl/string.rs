@@ -116,7 +116,7 @@ impl StringNameSpace {
         let function = move |s: Series| {
             let ca = s.utf8()?;
 
-            let mut arrs = (0..n)
+            let mut arrs = (0..n + 1)
                 .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
                 .collect::<Vec<_>>();
 
@@ -151,7 +151,7 @@ impl StringNameSpace {
             .map(
                 function,
                 GetOutput::from_type(DataType::Struct(
-                    (0..n)
+                    (0..n + 1)
                         .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
@@ -165,7 +165,7 @@ impl StringNameSpace {
         let function = move |s: Series| {
             let ca = s.utf8()?;
 
-            let mut arrs = (0..n)
+            let mut arrs = (0..n + 1)
                 .map(|_| MutableUtf8Array::<i64>::with_capacity(ca.len()))
                 .collect::<Vec<_>>();
 
@@ -200,7 +200,7 @@ impl StringNameSpace {
             .map(
                 function,
                 GetOutput::from_type(DataType::Struct(
-                    (0..n)
+                    (0..n + 1)
                         .map(|i| Field::new(&format!("field_{i}"), DataType::Utf8))
                         .collect(),
                 )),
