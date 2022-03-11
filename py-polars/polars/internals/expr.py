@@ -3609,7 +3609,7 @@ class ExprStringNameSpace:
         >>> (
         ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
         ...         [
-        ...             pl.col("x").str.split_exact("_", 2).alias("fields"),
+        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
         ...         ]
         ...     )
         ... )

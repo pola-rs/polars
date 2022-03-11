@@ -126,7 +126,7 @@ def test_wildcard_expansion() -> None:
 
 def test_split_exact() -> None:
     df = pl.DataFrame(dict(x=["a_a", None, "b", "c_c"]))
-    out = df.select([pl.col("x").str.split_exact("_", 3, inclusive=False)]).unnest("x")
+    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=False)]).unnest("x")
 
     expected = pl.DataFrame(
         {
@@ -138,7 +138,7 @@ def test_split_exact() -> None:
 
     assert out.frame_equal(expected)
 
-    out = df.select([pl.col("x").str.split_exact("_", 2, inclusive=True)]).unnest("x")
+    out = df.select([pl.col("x").str.split_exact("_", 1, inclusive=True)]).unnest("x")
 
     expected = pl.DataFrame(
         {"field_0": ["a_", None, "b", "c_"], "field_1": ["a", None, None, "c"]}
