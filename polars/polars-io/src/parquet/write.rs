@@ -78,7 +78,8 @@ where
     }
 
     /// Write the given DataFrame in the the writer `W`.
-    pub fn finish(mut self, df: &DataFrame) -> Result<()> {
+    pub fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+        df.rechunk();
         let fields = df.schema().to_arrow().fields;
         let rb_iter = df.iter_chunks();
 
