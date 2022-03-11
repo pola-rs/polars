@@ -116,23 +116,6 @@ pub(crate) fn skip_whitespace_line_ending_exclude(input: &[u8], exclude: u8) -> 
     })
 }
 
-/// Local version of slice::starts_with (as it won't inline)
-#[inline]
-fn starts_with(bytes: &[u8], needle: u8) -> bool {
-    !bytes.is_empty() && bytes[0] == needle
-}
-
-/// Slice `"100"` to `100`, if slice starts with `"` it does not check that it ends with `"`, but
-/// assumes this. Be aware of this.
-#[inline]
-pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
-    if starts_with(input, b'"') {
-        &input[1..input.len() - 1]
-    } else {
-        input
-    }
-}
-
 #[inline]
 pub(crate) fn skip_line_ending(input: &[u8]) -> &[u8] {
     skip_condition(input, is_line_ending)
@@ -479,6 +462,11 @@ pub(crate) fn parse_lines(
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = &null_values {
                             if let Some(null_value) = null_values.get(processed_fields) {
+                                let field = if needs_escaping && !field.is_empty() {
+                                    &field[1..field.len() - 1]
+                                } else {
+                                    field
+                                };
                                 if field == null_value.as_bytes() {
                                     add_null = true;
                                 }

@@ -1,6 +1,5 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::csv::RunningSize;
-use crate::csv_core::parser::drop_quotes;
 use crate::csv_core::utils::escape_field;
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
@@ -67,12 +66,17 @@ where
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        _needs_escaping: bool,
+        needs_escaping: bool,
     ) -> Result<()> {
         if bytes.is_empty() {
             self.append_null()
         } else {
-            let bytes = drop_quotes(bytes);
+            let bytes = if needs_escaping {
+                &bytes[1..bytes.len() - 1]
+            } else {
+                bytes
+            };
+
             // legacy comment (remember this if you decide to use Results again):
             // its faster to work on options.
             // if we need to throw an error, we parse again to be able to throw the error
