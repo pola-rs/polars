@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-polars-core = { version = "0.19.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "pretty_fmt"], default-features = false }
+polars-core = { version = "0.19.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "fmt"], default-features = false }
 polars-lazy = { version = "0.19.1", path = "../polars-lazy", features = ["csv-file", "private"], default-features = true }
 sqlparser = "0.14"
