@@ -80,7 +80,7 @@ pub enum ALogicalPlan {
     Sort {
         input: Node,
         by_column: Vec<Node>,
-        reverse: Vec<bool>,
+        args: SortArguments,
     },
     Explode {
         input: Node,
@@ -252,11 +252,11 @@ impl ALogicalPlan {
                 options: options.clone(),
             },
             Sort {
-                by_column, reverse, ..
+                by_column, args, ..
             } => Sort {
                 input: inputs[0],
                 by_column: by_column.clone(),
-                reverse: reverse.clone(),
+                args: args.clone(),
             },
             Explode { columns, .. } => Explode {
                 input: inputs[0],

@@ -53,7 +53,10 @@ impl PhysicalExpr for SortByExpr {
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
-                Ok(s_sort_by.argsort(reverse[0]))
+                Ok(s_sort_by.argsort(SortOptions {
+                    descending: reverse[0],
+                    ..Default::default()
+                }))
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         } else {
@@ -101,12 +104,18 @@ impl PhysicalExpr for SortByExpr {
                                 sort_by_s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
                             };
 
-                            let sorted_idx = group.argsort(reverse[0]);
+                            let sorted_idx = group.argsort(SortOptions {
+                                descending: reverse[0],
+                                ..Default::default()
+                            });
                             map_sorted_indices_to_group_idx(&sorted_idx, idx)
                         }
                         GroupsIndicator::Slice([first, len]) => {
                             let group = sort_by_s.slice(first as i64, len as usize);
-                            let sorted_idx = group.argsort(reverse[0]);
+                            let sorted_idx = group.argsort(SortOptions {
+                                descending: reverse[0],
+                                ..Default::default()
+                            });
                             map_sorted_indices_to_group_slice(&sorted_idx, first)
                         }
                     };
@@ -207,7 +216,10 @@ impl PhysicalAggregation for SortByExpr {
                 .map(|(opt_s, opt_sort_by)| {
                     match (opt_s, opt_sort_by) {
                         (Some(s), Some(sort_by)) => {
-                            let sorted_idx = sort_by.as_ref().argsort(reverse);
+                            let sorted_idx = sort_by.as_ref().argsort(SortOptions {
+                                descending: reverse,
+                                ..Default::default()
+                            });
                             // Safety:
                             // sorted index are within bounds
                             unsafe { s.as_ref().take_unchecked(&sorted_idx) }.ok()

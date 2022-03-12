@@ -822,10 +822,16 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
-    pub fn sort(&self, by_column: &str, reverse: bool) -> PyResult<Self> {
+    pub fn sort(&self, by_column: &str, reverse: bool, nulls_last: bool) -> PyResult<Self> {
         let df = self
             .df
-            .sort([by_column], reverse)
+            .sort_with_options(
+                by_column,
+                SortOptions {
+                    descending: reverse,
+                    nulls_last,
+                },
+            )
             .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }

@@ -769,6 +769,15 @@ class Expr:
         """
         return self.filter(self.is_not_null())
 
+    def drop_nans(self) -> "Expr":
+        """
+        Syntactic sugar for:
+
+        >>> pl.col("foo").filter(pl.col("foo").is_not_nan())  # doctest: +IGNORE_RESULT
+
+        """
+        return self.filter(self.is_not_nan())
+
     def cumsum(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative sum computed at every element.

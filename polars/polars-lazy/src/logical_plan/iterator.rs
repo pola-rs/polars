@@ -327,7 +327,7 @@ mod test {
 
         let (root, lp_arena, _expr_arena) = df
             .lazy()
-            .sort("a", false)
+            .sort("a", Default::default())
             .groupby([col("a")])
             .agg([col("a").first()])
             .logical_plan

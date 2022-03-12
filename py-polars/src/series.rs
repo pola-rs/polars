@@ -495,8 +495,14 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool) -> Self {
-        self.series.argsort(reverse).into_series().into()
+    pub fn argsort(&self, reverse: bool, nulls_last: bool) -> Self {
+        self.series
+            .argsort(SortOptions {
+                descending: reverse,
+                nulls_last,
+            })
+            .into_series()
+            .into()
     }
 
     pub fn unique(&self) -> PyResult<Self> {

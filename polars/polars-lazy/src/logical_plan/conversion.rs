@@ -276,7 +276,7 @@ pub(crate) fn to_alp(
         LogicalPlan::Sort {
             input,
             by_column,
-            reverse,
+            args,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
             let by_column = by_column
@@ -286,7 +286,7 @@ pub(crate) fn to_alp(
             ALogicalPlan::Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             }
         }
         LogicalPlan::Explode { input, columns } => {
@@ -730,13 +730,13 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::Sort {
             input,
             by_column,
-            reverse,
+            args,
         } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Sort {
                 input,
                 by_column: nodes_to_exprs(&by_column, expr_arena),
-                reverse,
+                args,
             }
         }
         ALogicalPlan::Explode { input, columns } => {

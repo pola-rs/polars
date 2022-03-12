@@ -67,7 +67,10 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(reverse);
+    let sort_idx_ca = s.argsort(SortOptions {
+        descending: reverse,
+        ..Default::default()
+    });
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
     let mut inv: Vec<IdxSize> = Vec::with_capacity(len);

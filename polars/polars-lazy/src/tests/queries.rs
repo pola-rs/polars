@@ -29,7 +29,7 @@ fn test_lazy_exec() {
         .clone()
         .lazy()
         .select([col("sepal.width"), col("variety")])
-        .sort("sepal.width", false)
+        .sort("sepal.width", Default::default())
         .collect();
     println!("{:?}", new);
 
@@ -181,7 +181,7 @@ fn test_lazy_agg() {
                 .quantile(0.5, QuantileInterpolOptions::default())
                 .alias("median_rain"),
         ])
-        .sort("date", false);
+        .sort("date", Default::default());
 
     let new = lf.collect().unwrap();
     dbg!(new);
@@ -424,7 +424,7 @@ fn test_lazy_query_9() -> Result<()> {
         )
         .groupby([col("Cities.Country")])
         .agg([col("Sales.Amount").sum().alias("sum")])
-        .sort("sum", false)
+        .sort("sum", Default::default())
         .collect()?;
     let vals = out
         .column("sum")?
@@ -715,7 +715,7 @@ fn test_lazy_partition_agg() {
         .lazy()
         .groupby([col("foo")])
         .agg([col("bar").mean()])
-        .sort("foo", false)
+        .sort("foo", Default::default())
         .collect()
         .unwrap();
 
@@ -727,7 +727,7 @@ fn test_lazy_partition_agg() {
     let out = scan_foods_csv()
         .groupby([col("category")])
         .agg([col("calories").list()])
-        .sort("category", false)
+        .sort("category", Default::default())
         .collect()
         .unwrap();
     let cat_agg_list = out.select_at_idx(1).unwrap();
@@ -805,7 +805,7 @@ fn test_lazy_groupby() {
         .lazy()
         .groupby([col("groups")])
         .agg([col("a").mean()])
-        .sort("a", false)
+        .sort("a", Default::default())
         .collect()
         .unwrap();
 
@@ -918,7 +918,7 @@ fn test_lazy_groupby_binary_expr() {
         .lazy()
         .groupby([col("a")])
         .agg([col("b").mean() * lit(2)])
-        .sort("a", false)
+        .sort("a", Default::default())
         .collect()
         .unwrap();
     assert_eq!(
@@ -955,7 +955,13 @@ fn test_lazy_groupby_filter() -> Result<()> {
                 .last()
                 .alias("b_last"),
         ])
-        .sort("a", false)
+        .sort(
+            "a",
+            SortOptions {
+                descending: false,
+                nulls_last: false,
+            },
+        )
         .collect()?;
 
     dbg!(&out);
@@ -1022,17 +1028,23 @@ fn test_groupby_sort_slice() -> Result<()> {
     let out1 = df
         .clone()
         .lazy()
-        .sort("vals", true)
+        .sort(
+            "vals",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .groupby([col("groups")])
         .agg([col("vals").head(Some(2)).alias("foo")])
-        .sort("groups", false)
+        .sort("groups", SortOptions::default())
         .collect()?;
 
     let out2 = df
         .lazy()
         .groupby([col("groups")])
         .agg([col("vals").sort(true).head(Some(2)).alias("foo")])
-        .sort("groups", false)
+        .sort("groups", SortOptions::default())
         .collect()?;
 
     assert!(out1.column("foo")?.series_equal(out2.column("foo")?));
@@ -1051,7 +1063,7 @@ fn test_groupby_cumsum() -> Result<()> {
         .lazy()
         .groupby([col("groups")])
         .agg([col("vals").cumsum(false)])
-        .sort("groups", false)
+        .sort("groups", Default::default())
         .collect()?;
 
     dbg!(&out);
@@ -1510,7 +1522,13 @@ fn test_groupby_small_ints() -> Result<()> {
         .lazy()
         .groupby([col("id_16"), col("id_32")])
         .agg([col("id_16").sum().alias("foo")])
-        .sort("foo", true)
+        .sort(
+            "foo",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .collect()?;
 
     assert_eq!(Vec::from(out.column("foo")?.i64()?), &[Some(2), Some(1)]);

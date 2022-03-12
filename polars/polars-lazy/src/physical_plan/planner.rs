@@ -265,7 +265,7 @@ impl DefaultPlanner {
             Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let by_column =
@@ -273,7 +273,7 @@ impl DefaultPlanner {
                 Ok(Box::new(SortExec {
                     input,
                     by_column,
-                    reverse,
+                    args,
                 }))
             }
             Explode { input, columns } => {

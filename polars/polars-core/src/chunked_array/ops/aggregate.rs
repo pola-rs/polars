@@ -163,6 +163,7 @@ fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> 
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -623,6 +624,7 @@ macro_rules! impl_quantile_as_series {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

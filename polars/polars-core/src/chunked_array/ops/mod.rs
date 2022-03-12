@@ -517,7 +517,7 @@ pub trait ChunkSort<T> {
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, reverse: bool) -> IdxCa;
+    fn argsort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
     fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<IdxCa> {

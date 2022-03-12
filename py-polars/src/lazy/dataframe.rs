@@ -10,7 +10,9 @@ use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
-use polars_core::prelude::{AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions};
+use polars_core::prelude::{
+    AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions, SortOptions,
+};
 use pyo3::prelude::*;
 use pyo3::types::PyList;
 
@@ -257,9 +259,16 @@ impl PyLazyFrame {
         ldf.into()
     }
 
-    pub fn sort(&self, by_column: &str, reverse: bool) -> PyLazyFrame {
+    pub fn sort(&self, by_column: &str, reverse: bool, nulls_last: bool) -> PyLazyFrame {
         let ldf = self.ldf.clone();
-        ldf.sort(by_column, reverse).into()
+        ldf.sort(
+            by_column,
+            SortOptions {
+                descending: reverse,
+                nulls_last,
+            },
+        )
+        .into()
     }
 
     pub fn sort_by_exprs(&self, by_column: Vec<PyExpr>, reverse: Vec<bool>) -> PyLazyFrame {

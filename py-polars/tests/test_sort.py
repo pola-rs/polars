@@ -1,5 +1,7 @@
 from typing import List, Union
 
+import pytest
+
 import polars as pl
 
 
@@ -70,3 +72,26 @@ def test_sort_by_exprs() -> None:
     out = df.sort(pl.col("a").abs()).to_series()
 
     assert out.to_list() == [1, -1, 2, -2]
+
+
+def test_argsort_nulls() -> None:
+    a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
+    assert a.argsort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
+    assert a.argsort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
+
+    assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
+        None,
+        None,
+        1.0,
+        2.0,
+        3.0,
+    ]
+    assert a.to_frame().sort(by="a", nulls_last=True).to_series().to_list() == [
+        1.0,
+        2.0,
+        3.0,
+        None,
+        None,
+    ]
+    with pytest.raises(ValueError):
+        a.to_frame().sort(by=["a", "b"], nulls_last=True)

@@ -2001,6 +2001,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: Literal[False] = ...,
     ) -> DF:
@@ -2011,6 +2012,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: Literal[True],
     ) -> None:
@@ -2021,6 +2023,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: bool,
     ) -> Optional[DF]:
@@ -2030,6 +2033,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = False,
+        nulls_last: bool = False,
         *,
         in_place: bool = False,
     ) -> Optional[DF]:
@@ -2044,6 +2048,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Reverse/descending sort.
         in_place
             Perform operation in-place.
+        nulls_last
+            Place null values last. Can only be used if sorted by a single column.
 
         Examples
         --------
@@ -2093,18 +2099,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if type(by) is list or isinstance(by, pli.Expr):
             df = (
                 self.lazy()
-                .sort(by, reverse)
+                .sort(by, reverse, nulls_last)
                 .collect(no_optimization=True, string_cache=False)
             )
             if in_place:
+                warnings.warn(
+                    "in-place sorting is deprecated; please use default sorting"
+                )
                 self._df = df._df
                 return self
             return df
         if in_place:
+            warnings.warn("in-place sorting is deprecated; please use default sorting")
             self._df.sort_in_place(by, reverse)
             return None
         else:
-            return self._from_pydf(self._df.sort(by, reverse))
+            return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
     def frame_equal(self, other: "DataFrame", null_equal: bool = True) -> bool:
         """

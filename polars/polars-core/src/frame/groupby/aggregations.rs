@@ -542,8 +542,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
     ChunkedArray<T>: IntoSeries,
-    T::Native:
-        NativeType + PartialOrd + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native>,
+    T::Native: NativeType + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native> + Ord,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
