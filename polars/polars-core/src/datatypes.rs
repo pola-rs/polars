@@ -9,7 +9,6 @@
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ops::sort::PlIsNan;
 use crate::prelude::*;
 use crate::utils::Wrap;
 use ahash::RandomState;
@@ -140,7 +139,6 @@ pub trait NumericNative:
     + AddAssign
     + Bounded
     + FromPrimitive
-    + PlIsNan
     + NativeArithmetics
 {
 }

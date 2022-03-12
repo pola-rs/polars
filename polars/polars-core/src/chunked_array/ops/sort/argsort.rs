@@ -1,5 +1,13 @@
 use super::*;
 
+fn default_order<T: PartialOrd>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+    a.1.partial_cmp(&b.1).unwrap()
+}
+
+fn reverse_order<T: PartialOrd>(a: &(IdxSize, T), b: &(IdxSize, T)) -> Ordering {
+    b.1.partial_cmp(&a.1).unwrap()
+}
+
 pub(super) fn argsort<I, J, K>(
     name: &str,
     iters: I,
@@ -46,12 +54,7 @@ where
         vals.extend(iter);
     }
 
-    argsort_branch(
-        vals.as_mut_slice(),
-        reverse,
-        |(_, a), (_, b)| a.partial_cmp(b).unwrap(),
-        |(_, a), (_, b)| b.partial_cmp(a).unwrap(),
-    );
+    argsort_branch(vals.as_mut_slice(), reverse, default_order, reverse_order);
 
     let iter = vals.into_iter().map(|(idx, _v)| idx);
     let idx = if reverse || nulls_last {
