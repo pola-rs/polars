@@ -4861,6 +4861,27 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         name
             Name for the struct Series
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5],
+        ...         "b": ["one", "two", "three", "four", "five"],
+        ...     }
+        ... )
+        >>> df.to_struct("nums")
+        shape: (5,)
+        Series: 'nums' [struct[2]{'a': i64, 'b': str}]
+        [
+                {1,"one"}
+                {2,"two"}
+                {3,"three"}
+                {4,"four"}
+                {5,"five"}
+        ]
+
         """
         return pli.wrap_s(self._df.to_struct(name))
 
@@ -4873,6 +4894,45 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         names
            Names of the struct columns that will be decomposed by its fields
+
+        Examples
+        --------
+
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df
+        shape: (2, 1)
+        ┌─────────────────────────────┐
+        │ my_struct                   │
+        │ ---                         │
+        │ struct[4]{'int',...,'list'} │
+        ╞═════════════════════════════╡
+        │ {1,"a",true,[1, 2]}         │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {2,"b",null,[3]}            │
+        └─────────────────────────────┘
+        >>> df.unnest("my_struct")
+        shape: (2, 4)
+        ┌─────┬─────┬──────┬────────────┐
+        │ int ┆ str ┆ bool ┆ list       │
+        │ --- ┆ --- ┆ ---  ┆ ---        │
+        │ i64 ┆ str ┆ bool ┆ list [i64] │
+        ╞═════╪═════╪══════╪════════════╡
+        │ 1   ┆ a   ┆ true ┆ [1, 2]     │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ b   ┆ null ┆ [3]        │
+        └─────┴─────┴──────┴────────────┘
+
         """
         if isinstance(names, str):
             names = [names]
