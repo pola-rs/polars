@@ -909,7 +909,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.mode())
 
-    def cast(self, dtype: Type[Any], strict: bool = True) -> "Expr":
+    def cast(self, dtype: Union[Type[Any], DataType], strict: bool = True) -> "Expr":
         """
         Cast between data types.
 
@@ -944,7 +944,7 @@ class Expr:
         └─────┴─────┘
 
         """
-        dtype = py_type_to_dtype(dtype)
+        dtype = py_type_to_dtype(dtype)  # type: ignore
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> "Expr":

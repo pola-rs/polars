@@ -4,7 +4,7 @@ use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
-use crate::utils::{reinterpret, str_to_polarstype};
+use crate::utils::reinterpret;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
@@ -175,9 +175,8 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn cast(&self, data_type: &PyAny, strict: bool) -> PyExpr {
-        let str_repr = data_type.str().unwrap().to_str().unwrap();
-        let dt = str_to_polarstype(str_repr);
+    pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
+        let dt = data_type.0;
         let expr = if strict {
             self.inner.clone().strict_cast(dt)
         } else {
@@ -1441,10 +1440,8 @@ pub fn lit(value: &PyAny) -> PyExpr {
     }
 }
 
-pub fn range(low: i64, high: i64, dtype: &PyAny) -> PyExpr {
-    let str_repr = dtype.str().unwrap().to_str().unwrap();
-    let dtype = str_to_polarstype(str_repr);
-    match dtype {
+pub fn range(low: i64, high: i64, dtype: Wrap<DataType>) -> PyExpr {
+    match dtype.0 {
         DataType::Int32 => dsl::range(low as i32, high as i32).into(),
         DataType::UInt32 => dsl::range(low as u32, high as u32).into(),
         _ => dsl::range(low, high).into(),

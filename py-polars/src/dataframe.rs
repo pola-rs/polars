@@ -14,7 +14,6 @@ use crate::conversion::{ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
-use crate::utils::str_to_polarstype;
 use crate::{
     arrow_interop,
     error::PyPolarsErr,
@@ -96,8 +95,8 @@ impl PyDataFrame {
         encoding: &str,
         n_threads: Option<usize>,
         path: Option<String>,
-        overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
-        overwrite_dtype_slice: Option<Vec<&PyAny>>,
+        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
+        overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_char: Option<&str>,
         quote_char: Option<&str>,
@@ -132,8 +131,7 @@ impl PyDataFrame {
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
             let fields = overwrite_dtype.iter().map(|(name, dtype)| {
-                let str_repr = dtype.str().unwrap().to_str().unwrap();
-                let dtype = str_to_polarstype(str_repr);
+                let dtype = dtype.0.clone();
                 Field::new(name, dtype)
             });
             Schema::from(fields)
@@ -142,10 +140,7 @@ impl PyDataFrame {
         let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
             overwrite_dtype
                 .iter()
-                .map(|dt| {
-                    let str_repr = dt.str().unwrap().to_str().unwrap();
-                    str_to_polarstype(str_repr)
-                })
+                .map(|dt| dt.0.clone())
                 .collect::<Vec<_>>()
         });
 
@@ -1149,20 +1144,14 @@ impl PyDataFrame {
     pub fn apply(
         &self,
         lambda: &PyAny,
-        output_type: &PyAny,
+        output_type: Option<Wrap<DataType>>,
         inference_size: usize,
     ) -> PyResult<(PyObject, bool)> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let df = &self.df;
 
-        let output_type = match output_type.is_none() {
-            true => None,
-            false => {
-                let str_repr = output_type.str().unwrap().to_str().unwrap();
-                Some(str_to_polarstype(str_repr))
-            }
-        };
+        let output_type = output_type.map(|dt| dt.0);
         let out = match output_type {
             Some(DataType::Int32) => {
                 apply_lambda_with_primitive_out_type::<Int32Type>(df, py, lambda, 0, None)

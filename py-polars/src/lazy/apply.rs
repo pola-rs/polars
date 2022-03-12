@@ -1,7 +1,6 @@
 use crate::lazy::dsl::PyExpr;
 use crate::prelude::PyDataType;
 use crate::series::PySeries;
-use crate::utils::str_to_polarstype;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -114,18 +113,14 @@ pub fn binary_function(
     input_a: PyExpr,
     input_b: PyExpr,
     lambda: PyObject,
-    output_type: &PyAny,
+    output_type: Option<DataType>,
 ) -> PyExpr {
     let input_a = input_a.inner;
     let input_b = input_b.inner;
 
-    let output_field = match output_type.is_none() {
-        true => Field::new("binary_function", DataType::Null),
-        false => {
-            let str_repr = output_type.str().unwrap().to_str().unwrap();
-            let data_type = str_to_polarstype(str_repr);
-            Field::new("binary_function", data_type)
-        }
+    let output_field = match output_type {
+        None => Field::new("binary_function", DataType::Null),
+        Some(dt) => Field::new("binary_function", dt),
     };
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);

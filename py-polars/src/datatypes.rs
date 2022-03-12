@@ -1,4 +1,4 @@
-use crate::utils::str_to_polarstype;
+use crate::Wrap;
 use polars::prelude::*;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
@@ -94,8 +94,8 @@ impl Into<DataType> for PyDataType {
 
 impl FromPyObject<'_> for PyDataType {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let str_repr = ob.str().unwrap().to_str().unwrap();
-        Ok(str_to_polarstype(str_repr).into())
+        let dt = ob.extract::<Wrap<DataType>>()?;
+        Ok(dt.0.into())
     }
 }
 

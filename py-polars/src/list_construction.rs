@@ -1,13 +1,9 @@
 use crate::conversion::get_pyseq;
-use crate::utils::str_to_polarstype;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::{PyAny, PyResult};
 
-pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Series> {
-    let str_repr = dtype.str().unwrap().to_str().unwrap();
-    let dtype = str_to_polarstype(str_repr);
-
+pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &DataType) -> PyResult<Series> {
     let (seq, len) = get_pyseq(seq)?;
     let s = match dtype {
         DataType::Int64 => {

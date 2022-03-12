@@ -64,8 +64,37 @@ class Utf8(DataType):
     pass
 
 
-class List(DataType):
+class Null(DataType):
     pass
+
+
+class List(DataType):
+    def __init__(self, inner: Type[DataType]):
+        self.inner = py_type_to_dtype(inner)
+
+    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+        # The comparison allows comparing objects to classes
+        # and specific inner types to none specific.
+        # if one of the arguments is not specific about its inner type
+        # we infer it as being equal.
+        # List[i64] == List[i64] == True
+        # List[i64] == List == True
+        # List[i64] == List[None] == True
+        # List[i64] == List[f32] == False
+
+        # allow comparing object instances to class
+        if type(other) is type and issubclass(other, List):
+            return True
+        if isinstance(other, List):
+            if self.inner is None or other.inner is None:
+                return True
+            else:
+                return self.inner == other.inner
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(List)
 
 
 class Date(DataType):
@@ -94,7 +123,26 @@ class Categorical(DataType):
 
 class Struct(DataType):
     def __init__(self, inner_types: Sequence[Type[DataType]]):
-        self.inner_types = inner_types
+        self.inner_types = [py_type_to_dtype(dt) for dt in inner_types]
+
+    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+        # The comparison allows comparing objects to classes
+        # and specific inner types to none specific.
+        # if one of the arguments is not specific about its inner type
+        # we infer it as being equal.
+        # See the list type for more info
+        if type(other) is type and issubclass(other, Struct):
+            return True
+        if isinstance(other, Struct):
+            if self.inner_types is None or other.inner_types is None:
+                return True
+            else:
+                return self.inner_types == other.inner_types
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(Struct)
 
 
 _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
@@ -193,7 +241,11 @@ def dtype_to_py_type(dtype: Type[DataType]) -> Type:
 
 def py_type_to_dtype(data_type: Type[Any]) -> Type[DataType]:
     # when the passed in is already a Polars datatype, return that
-    if issubclass(data_type, DataType):
+    if (
+        type(data_type) is type
+        and issubclass(data_type, DataType)
+        or isinstance(data_type, DataType)
+    ):
         return data_type
 
     try:
