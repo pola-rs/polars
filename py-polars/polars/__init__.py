@@ -31,6 +31,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     Object,
     Struct,
     Time,

@@ -278,6 +278,7 @@ impl ToPyObject for Wrap<DataType> {
                 let struct_class = pl.getattr("Struct").unwrap();
                 struct_class.call1((inners,)).unwrap().into()
             }
+            DataType::Null => pl.getattr("Null").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }
@@ -338,6 +339,7 @@ impl FromPyObject<'_> for Wrap<DataType> {
             "Object" => DataType::Object("unknown"),
             // just the class, not an object
             "List" => DataType::List(Box::new(DataType::Boolean)),
+            "Null" => DataType::Null,
             dt => {
                 let out: PyResult<_> = Python::with_gil(|py| {
                     let builtins = PyModule::import(py, "builtins")?;

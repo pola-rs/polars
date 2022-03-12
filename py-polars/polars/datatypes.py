@@ -64,6 +64,10 @@ class Utf8(DataType):
     pass
 
 
+class Null(DataType):
+    pass
+
+
 class List(DataType):
     def __init__(self, inner: Type[DataType]):
         self.inner = py_type_to_dtype(inner)

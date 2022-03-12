@@ -1,3 +1,4 @@
+import pandas as pd
 from test_series import verify_series_and_expr_api
 
 import polars as pl
@@ -179,3 +180,7 @@ def test_cast_inner() -> None:
         b = a.cast(pl.List(t))
         assert b.dtype == pl.List(pl.Boolean)
         assert b.to_list() == [[True, True]]
+
+    # this creates an inner null type
+    df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
+    assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore
