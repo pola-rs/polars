@@ -188,6 +188,7 @@ where
             if let AExpr::Alias(_, name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
+
                 if let Some(predicate) = acc_predicates.remove(&*name) {
                     if projection_is_boundary {
                         local_predicates.push(predicate);

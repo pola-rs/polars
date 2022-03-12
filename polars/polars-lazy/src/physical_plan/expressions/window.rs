@@ -248,7 +248,7 @@ impl PhysicalExpr for WindowExpr {
                 cache_key.push_str(s.name());
             }
 
-            let mut gt_map = state.group_tuples.lock().unwrap();
+            let mut gt_map = state.group_tuples.lock();
             // we run sequential and partitioned
             // and every partition run the cache should be empty so we expect a max of 1.
             debug_assert!(gt_map.len() <= 1);
@@ -274,7 +274,7 @@ impl PhysicalExpr for WindowExpr {
         let cache_gb = |mut gb: GroupBy| {
             if state.cache_window {
                 let groups = std::mem::take(gb.get_groups_mut());
-                let mut gt_map = state.group_tuples.lock().unwrap();
+                let mut gt_map = state.group_tuples.lock();
                 gt_map.insert(cache_key.clone(), groups);
             } else {
                 // drop the group tuples to reduce allocated memory.
@@ -424,7 +424,7 @@ impl PhysicalExpr for WindowExpr {
 
                 // try to get cached join_tuples
                 let opt_join_tuples = if state.cache_window {
-                    let mut jt_map = state.join_tuples.lock().unwrap();
+                    let mut jt_map = state.join_tuples.lock();
                     // we run sequential and partitioned
                     // and every partition run the cache should be empty so we expect a max of 1.
                     debug_assert!(jt_map.len() <= 1);
@@ -447,7 +447,7 @@ impl PhysicalExpr for WindowExpr {
                 }
 
                 if state.cache_window {
-                    let mut jt_map = state.join_tuples.lock().unwrap();
+                    let mut jt_map = state.join_tuples.lock();
                     jt_map.insert(cache_key, opt_join_tuples);
                 }
 

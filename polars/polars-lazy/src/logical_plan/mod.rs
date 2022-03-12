@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
@@ -130,7 +131,7 @@ pub enum LogicalPlan {
     Sort {
         input: Box<LogicalPlan>,
         by_column: Vec<Expr>,
-        reverse: Vec<bool>,
+        args: SortArguments,
     },
     /// An explode operation
     Explode {
@@ -161,6 +162,11 @@ pub enum LogicalPlan {
         inputs: Vec<LogicalPlan>,
         options: UnionOptions,
     },
+    /// Catches errors and throws them later
+    Error {
+        input: Box<LogicalPlan>,
+        err: Arc<Mutex<Option<PolarsError>>>,
+    },
 }
 
 impl Default for LogicalPlan {
@@ -181,7 +187,7 @@ impl LogicalPlan {
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
-        let root = to_alp(self, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(self, &mut expr_arena, &mut lp_arena).unwrap();
         (root, lp_arena, expr_arena)
     }
 }
@@ -214,6 +220,7 @@ impl LogicalPlan {
                 Some(schema) => schema,
                 None => input.schema(),
             },
+            Error { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -243,7 +250,7 @@ mod test {
         let lf = df
             .lazy()
             .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
-            .sort("super_wide", false);
+            .sort("super_wide", SortOptions::default());
 
         print_plans(&lf);
 
@@ -278,16 +285,14 @@ mod test {
             .select(&[col("variety").alias("foo")])
             .logical_plan;
 
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("foo").is_ok());
+        assert!(lp.schema().get("foo").is_some());
 
         let lp = df
             .lazy()
             .groupby([col("variety")])
             .agg([col("sepal.width").min()])
             .logical_plan;
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("sepal.width").is_ok());
+        assert!(lp.schema().get("sepal.width").is_some());
     }
 
     #[test]
@@ -313,7 +318,7 @@ mod test {
 
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
-            let df = lf.collect().unwrap();
+            let _df = lf.collect().unwrap();
         }
 
         // check if optimization succeeds with selection
@@ -324,7 +329,7 @@ mod test {
                 .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp")]);
 
-            let df = lf.collect().unwrap();
+            let _df = lf.collect().unwrap();
         }
 
         // check if optimization succeeds with selection of a renamed column due to the join
@@ -335,7 +340,7 @@ mod test {
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);
-            let df = lf.collect().unwrap();
+            let _df = lf.collect().unwrap();
         }
     }
 

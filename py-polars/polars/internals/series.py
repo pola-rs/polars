@@ -564,6 +564,10 @@ class Series:
         """
         return wrap_s(self._s.drop_nulls())
 
+    def drop_nans(self) -> "Series":
+        """ """
+        return self.filter(self.is_not_nan())
+
     def to_frame(self) -> "pli.DataFrame":
         """
         Cast this Series to a DataFrame.
@@ -1326,7 +1330,7 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
-    def argsort(self, reverse: bool = False) -> "Series":
+    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> "Series":
         """
         Index location of the sorted variant of this Series.
 
@@ -1334,6 +1338,8 @@ class Series:
         -------
         indexes
             Indexes that can be used to sort this array.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -1350,7 +1356,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.argsort(reverse))
+        return wrap_s(self._s.argsort(reverse, nulls_last))
 
     def arg_unique(self) -> "Series":
         """
@@ -2101,6 +2107,16 @@ class Series:
 
         """
         return self._s.to_arrow()
+
+    def to_pandas(self) -> "pd.Series":
+        """
+        Convert this Series to a pandas Series
+        """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(  # pragma: no cover
+                "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
+            )
+        return self.to_arrow().to_pandas()
 
     def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
@@ -3521,6 +3537,53 @@ class Series:
         """
         return CatNameSpace(self)
 
+    @property
+    def struct(self) -> "StructNameSpace":
+        """
+        Create an object namespace of all struct related methods.
+        """
+        return StructNameSpace(self)
+
+
+class StructNameSpace:
+    def __init__(self, s: "Series"):
+        self.s = s
+
+    def to_frame(self) -> "pli.DataFrame":
+        """
+        Convert this Struct Series to a DataFrame
+        """
+        return pli.wrap_df(self.s._s.struct_to_frame())
+
+    def field(self, name: str) -> Series:
+        """
+        Retrieve one of the fields of this `Struct` as a new Series
+
+        Parameters
+        ----------
+        name
+            Name of the field
+        """
+        return pli.select(pli.lit(self.s).struct.field(name)).to_series()
+
+    @property
+    def fields(self) -> List[str]:
+        """
+        Get the names of the fields
+        """
+        return self.s._s.struct_fields()
+
+    def rename_fields(self, names: List[str]) -> Series:
+        """
+        Rename the fields of the struct
+
+        Parameters
+        ----------
+        names
+            New names in the order of the struct's fields
+        """
+        return pli.select(pli.lit(self.s).struct.rename_fields(names)).to_series()
+
 
 class StringNameSpace:
     """
@@ -3811,6 +3874,55 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
 
+    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+        """
+        Split the string by a substring into a struct of `n` fields.
+        The return type will by of type Struct<Utf8>
+
+        If it cannot make `n` splits, the remaiming field elements will be null
+
+        Parameters
+        ----------
+        by
+            substring
+        n
+            Number of splits to make
+        inclusive
+            Include the split character/string in the results
+
+        Examples
+        --------
+
+        >>> (
+        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
+        ...         [
+        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...         ]
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌───────────────────────────────────────────┐
+        │ fields                                    │
+        │ ---                                       │
+        │ struct[2]{'field_0': str, 'field_1': str} │
+        ╞═══════════════════════════════════════════╡
+        │ {"a","1"}                                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null}                               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}                                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}                                 │
+        └───────────────────────────────────────────┘
+
+        """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.split_exact(by, n, inclusive))
+            .to_series()
+        )
+
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
@@ -3984,7 +4096,6 @@ class ListNameSpace:
         -------
         Series of dtype Utf8
         """
-
         return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
 
     def first(self) -> "Series":
@@ -4016,6 +4127,154 @@ class ListNameSpace:
         s_list = wrap_s(self._s)
         out = s.is_in(s_list)
         return out.rename(s_list.name)
+
+    def arg_min(self) -> "Series":
+        """
+        Retrieve the index of the minimal value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_min()).to_series()
+
+    def arg_max(self) -> "Series":
+        """
+        Retrieve the index of the maximum value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
+
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
+        """
+        Calculate the n-th discrete difference of every sublist.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.diff()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 1]
+            [null, -8, -1]
+        ]
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.diff(n, null_behavior)
+        ).to_series()
+
+    def shift(self, periods: int = 1) -> "Series":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with nulls.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 3]
+            [null, 10, 2]
+        ]
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.shift(periods)).to_series()
+
+    def slice(self, offset: int, length: int) -> "Series":
+        """
+        Slice every sublist
+
+        Parameters
+        ----------
+        offset
+            Take the values from this index offset
+        length
+            The length of the slice to take
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [2, 3]
+            [2, 1]
+        ]
+
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.slice(offset, length)
+        ).to_series()
+
+    def head(self, n: int = 5) -> "Series":
+        """
+        Slice the head of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.head(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [1, 2]
+            [10, 2]
+        ]
+
+        """
+        return self.slice(0, n)
+
+    def tail(self, n: int = 5) -> "Series":
+        """
+        Slice the tail of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.tail(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [3, 4]
+            [2, 1]
+        ]
+
+        """
+        return self.slice(-n, n)
 
 
 class DateTimeNameSpace:
@@ -4288,17 +4547,22 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.nanosecond())
 
-    def timestamp(self) -> Series:
+    def timestamp(self, tu: str = "us") -> Series:
         """
-        Return timestamp in ms as Int64 type.
+        Return a timestamp in the given time unit.
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms'}
         """
-        return wrap_s(self._s.timestamp())
+        return wrap_s(self._s.timestamp(tu))
 
     def to_python_datetime(self) -> Series:
         """
         Go from Date/Datetime to python DateTime objects
         """
-        return (self.timestamp() / 1000).apply(
+        return (self.timestamp("ms") / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
@@ -4334,10 +4598,31 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
+    def epoch(self, tu: str = "us") -> Series:
+        """
+        Get the time passed since the Unix EPOCH in the give time unit
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms', 's', 'd'}
+        """
+        if tu in ["ns", "us", "ms"]:
+            return self.timestamp(tu)
+        if tu == "s":
+            return wrap_s(self._s.dt_epoch_seconds())
+        if tu == "d":
+            return wrap_s(self._s).cast(Date).cast(Int32)
+        else:
+            raise ValueError(f"time unit {tu} not understood")
+
     def epoch_days(self) -> Series:
         """
         Get the number of days since the unix EPOCH.
         If the date is before the unix EPOCH, the number of days will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -4350,16 +4635,22 @@ class DateTimeNameSpace:
         Get the number of milliseconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of milliseconds will be negative.
 
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
+
         Returns
         -------
         Milliseconds as Int64
         """
-        return self.timestamp()
+        return self.timestamp("ms")
 
     def epoch_seconds(self) -> Series:
         """
         Get the number of seconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------

@@ -9,7 +9,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
         assert_eq!(ca.len(), s.len());
     }
     if other.len() != (reverse.len() - 1) {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             format!(
                 "The amount of ordering booleans: {} does not match that no. of Series: {}",
                 reverse.len(),

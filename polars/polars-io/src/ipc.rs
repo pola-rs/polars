@@ -35,7 +35,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -74,7 +73,7 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok((&metadata.schema).into())
+        Ok((&metadata.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
@@ -177,35 +176,8 @@ where
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
 
-        let err = |column: &str| {
-            let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-            PolarsError::NotFound(format!(
-                "Unable to get field named \"{}\". Valid fields: {:?}",
-                column, valid_fields
-            ))
-        };
-
-        if let Some(cols) = self.columns {
-            let mut prj = Vec::with_capacity(cols.len());
-            if cols.len() > 100 {
-                let mut column_names = AHashMap::with_capacity(schema.fields.len());
-                schema.fields.iter().enumerate().for_each(|(i, c)| {
-                    column_names.insert(c.name.as_str(), i);
-                });
-
-                for column in cols.iter() {
-                    if let Some(i) = column_names.get(column.as_str()) {
-                        prj.push(*i);
-                    } else {
-                        return Err(err(column));
-                    }
-                }
-            } else {
-                for column in cols.iter() {
-                    let i = schema.index_of(column)?;
-                    prj.push(i);
-                }
-            }
+        if let Some(columns) = self.columns {
+            let mut prj = columns_to_projection(columns, schema)?;
 
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
             prj.sort_unstable();

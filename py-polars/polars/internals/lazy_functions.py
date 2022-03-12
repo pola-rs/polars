@@ -16,6 +16,7 @@ from polars.utils import (
 try:
     from polars.polars import arange as pyarange
     from polars.polars import argsort_by as pyargsort_by
+    from polars.polars import as_struct as _as_struct
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
     from polars.polars import collect_all as _collect_all
@@ -810,7 +811,9 @@ def any(name: Union[str, List["pli.Expr"]]) -> "pli.Expr":
     Evaluate columnwise or elementwise with a bitwise OR operation.
     """
     if isinstance(name, list):
-        return fold(lit(0), lambda a, b: a | b, name).alias("any")
+        return fold(lit(False), lambda a, b: a.cast(bool) | b.cast(bool), name).alias(
+            "any"
+        )
     return col(name).any()
 
 
@@ -905,7 +908,9 @@ def all(name: Optional[Union[str, List["pli.Expr"]]] = None) -> "pli.Expr":
     if name is None:
         return col("*")
     if isinstance(name, list):
-        return fold(lit(0), lambda a, b: a & b, name).alias("all")
+        return fold(lit(True), lambda a, b: a.cast(bool) & b.cast(bool), name).alias(
+            "all"
+        )
     return col(name).all()
 
 
@@ -1066,7 +1071,9 @@ def _date(
     return _datetime(year, month, day).cast(Date).alias("date")
 
 
-def concat_str(exprs: Sequence[Union["pli.Expr", str]], sep: str = "") -> "pli.Expr":
+def concat_str(
+    exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"], sep: str = ""
+) -> "pli.Expr":
     """
     Horizontally Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8.
 
@@ -1297,3 +1304,39 @@ def select(
 
     """
     return pli.DataFrame([]).select(exprs)
+
+
+def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
+    """
+    Collect several columns into a Series of dtype Struct
+
+    Parameters
+    ----------
+    exprs
+        Columns/Expressions to collect into a Struct
+
+    Examples
+    --------
+
+    >>> pl.DataFrame(
+    ...     {
+    ...         "int": [1, 2],
+    ...         "str": ["a", "b"],
+    ...         "bool": [True, None],
+    ...         "list": [[1, 2], [3]],
+    ...     }
+    ... ).select([pl.struct(pl.all()).alias("my_struct")])
+    shape: (2, 1)
+    ┌───────────────────────┐
+    │ my_struct             │
+    │ ---                   │
+    │ struct{int, ... list} │
+    ╞═══════════════════════╡
+    │ {1,"a",true,[1, 2]}   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}      │
+    └───────────────────────┘
+
+    """
+    exprs = pli.selection_to_pyexpr_list(exprs)
+    return pli.wrap_expr(_as_struct(exprs))

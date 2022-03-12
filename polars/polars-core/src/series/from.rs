@@ -7,6 +7,8 @@ use arrow::temporal_conversions::MILLISECONDS;
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::NANOSECONDS;
 use polars_arrow::compute::cast::cast;
+#[cfg(feature = "dtype-struct")]
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use std::convert::TryFrom;
 
 impl Series {
@@ -63,6 +65,8 @@ impl Series {
             Boolean => BooleanChunked::from_chunks(name, chunks).into_series(),
             Float32 => Float32Chunked::from_chunks(name, chunks).into_series(),
             Float64 => Float64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
             Object(_) => todo!(),
             _ => unreachable!(),
@@ -375,6 +379,32 @@ impl Series {
                     s
                 };
                 Ok(s)
+            }
+            #[cfg(feature = "dtype-struct")]
+            ArrowDataType::Struct(_) => {
+                let arr = if chunks.len() > 1 {
+                    concatenate_owned_unchecked(&chunks).unwrap() as ArrayRef
+                } else {
+                    chunks[0].clone()
+                };
+                let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+                assert!(
+                    struct_arr.validity().is_none(),
+                    "polars struct does not support validity"
+                );
+                let fields = struct_arr
+                    .values()
+                    .iter()
+                    .zip(struct_arr.fields())
+                    .map(|(arr, field)| {
+                        Series::try_from_arrow_unchecked(
+                            &field.name,
+                            vec![arr.clone()],
+                            &field.data_type,
+                        )
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+                Ok(StructChunked::new_unchecked(name, &fields).into_series())
             }
             dt => Err(PolarsError::InvalidOperation(
                 format!("Cannot create polars series from {:?} type", dt).into(),

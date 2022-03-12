@@ -23,7 +23,7 @@ pub struct AsOfOptions {
 
 fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
     if a.dtype() != b.dtype() {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             format!(
                 "keys used in asof-join must have equal dtypes. We got: left: {:?}\tright: {:?}",
                 a.dtype(),
@@ -58,7 +58,7 @@ where
         let other = self.unpack_series_matching_type(other)?;
 
         if self.null_count() > 0 || other.null_count() > 0 {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "asof join must not have null values in 'on' arguments".into(),
             ));
         }

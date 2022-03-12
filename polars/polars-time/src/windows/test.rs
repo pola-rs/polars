@@ -449,3 +449,22 @@ fn test_end_membership() {
     assert_eq!(groups[2], [1, 1]);
     assert_eq!(groups[3], [1, 1]);
 }
+
+#[test]
+fn test_groupby_windows_membership_2791() {
+    let dates = [0, 0, 2, 2];
+    let window = Window::new(
+        Duration::parse("1ms"),
+        Duration::parse("1ms"),
+        Duration::parse("0ns"),
+    );
+    let (groups, _, _) = groupby_windows(
+        window,
+        &dates,
+        false,
+        ClosedWindow::Left,
+        TimeUnit::Milliseconds,
+    );
+    assert_eq!(groups[0], [0, 2]);
+    assert_eq!(groups[1], [2, 2]);
+}

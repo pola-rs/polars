@@ -11,8 +11,8 @@ venv:
 	@unset CONDA_PREFIX && source venv/bin/activate && maturin develop
 
 clean:
-	@rm -r venv
-	@rm -r target/
+	@-rm -r venv
+	@cargo clean
 
 pre-commit: venv
 	$(PYTHON_BIN)/isort .
@@ -28,7 +28,7 @@ test: venv
 	$(PYTHON) -m pytest tests
 
 test-with-cov: venv
-	@cd tests && ../$(PYTHON) -m pytest --cov=polars --cov-fail-under=91 --import-mode=importlib
+	@cd tests && ../$(PYTHON) -m pytest --cov=polars --cov-fail-under=90 --import-mode=importlib
 
 doctest:
 	cd tests && ../$(PYTHON) run_doc_examples.py

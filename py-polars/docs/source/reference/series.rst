@@ -35,7 +35,7 @@ Conversion
    Series.to_list
    Series.to_numpy
    Series.to_arrow
-   Series.to_numpy
+   Series.to_pandas
 
 
 Aggregation
@@ -165,6 +165,7 @@ Manipulation/ selection
     Series.shift
     Series.shift_and_fill
     Series.drop_nulls
+    Series.drop_nans
     Series.rechunk
     Series.cast
     Series.round
@@ -220,6 +221,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
     DateTimeNameSpace.truncate
+    DateTimeNameSpace.epoch
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds
@@ -251,6 +253,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.json_path_match
     StringNameSpace.extract
     StringNameSpace.split
+    StringNameSpace.split_exact
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase
@@ -286,10 +289,17 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.last
     ListNameSpace.contains
     ListNameSpace.join
+    ListNameSpace.arg_min
+    ListNameSpace.arg_max
+    ListNameSpace.diff
+    ListNameSpace.shift
+    ListNameSpace.slice
+    ListNameSpace.head
+    ListNameSpace.tail
 
 Categories
 ----------
-The following methods are available under the `expr.cat` attribute.
+The following methods are available under the `Series.cat` attribute.
 
 .. currentmodule:: polars.internals.series
 
@@ -297,3 +307,17 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
 
     CatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `Series.struct` attribute.
+
+.. currentmodule:: polars.internals.series
+
+.. autosummary::
+   :toctree: api/
+
+    StructNameSpace.to_frame
+    StructNameSpace.field
+    StructNameSpace.fields
+    StructNameSpace.rename_fields

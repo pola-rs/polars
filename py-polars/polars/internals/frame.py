@@ -20,6 +20,7 @@ from typing import (
     TextIO,
     Tuple,
     Type,
+    TypeVar,
     Union,
     overload,
 )
@@ -50,6 +51,8 @@ from polars.internals.construction import (
     series_to_pydf,
 )
 
+from .lazy_frame import LazyFrame, wrap_ldf  # noqa: F401
+
 try:
     from polars.polars import PyDataFrame, PySeries
 
@@ -76,6 +79,11 @@ except ImportError:  # pragma: no cover
     _PANDAS_AVAILABLE = False
 
 
+# A type variable used to refer to a polars.DataFrame or any subclass of it.
+# Used to annotate DataFrame methods which returns the same type as self.
+DF = TypeVar("DF", bound="DataFrame")
+
+
 def wrap_df(df: "PyDataFrame") -> "DataFrame":
     return DataFrame._from_pydf(df)
 
@@ -92,7 +100,75 @@ def _prepare_other_arg(other: Any) -> "pli.Series":
     return other
 
 
-class DataFrame:
+class DataFrameMetaClass(type):
+    """
+    Custom metaclass for DataFrame class.
+
+    This metaclass is responsible for constructing the relationship between the
+    DataFrame class and the LazyFrame class. Originally, without inheritance, the
+    relationship is as follows:
+
+    DataFrame <-> LazyFrame
+
+    This two-way relationship is represented by the following pointers:
+        - cls._lazyframe_class: A pointer on the DataFrame (sub)class to a LazyFrame
+            (sub)class. This class property can be used in DataFrame methods in order
+            to construct new lazy dataframes.
+        - cls._lazyframe_class._dataframe_class: A pointer on the LazyFrame (sub)class
+            back to the original DataFrame (sub)class. This allows LazyFrame methods to
+            construct new non-lazy dataframes with the correct type. This pointer should
+            always be set to cls such that the following is always `True`:
+                `type(cls) is type(cls.lazy().collect())`.
+
+    If an end user subclasses DataFrame like so:
+
+    >>> class MyDataFrame(pl.DataFrame):
+    ...     pass
+    ...
+
+    Then the following class is dynamically created by the metaclass and saved on the
+    class variable `MyDataFrame._lazyframe_class`.
+
+    >>> class LazyMyDataFrame(pl.DataFrame):
+    ...     _dataframe_class = MyDataFrame
+    ...
+
+    If an end user needs to extend both `DataFrame` and `LazyFrame`, it can be done like
+    so:
+
+    >>> class MyLazyFrame(pl.LazyFrame):
+    ...     @classmethod
+    ...     @property
+    ...     def _dataframe_class(cls):
+    ...         return MyDataFrame
+    ...
+
+    >>> class MyDataFrame(pl.DataFrame):
+    ...     _lazyframe_class = MyLazyFrame
+    ...
+
+    """
+
+    def __init__(cls, name: str, bases: tuple, clsdict: dict) -> None:
+        """Construct new DataFrame class."""
+        if not bases:
+            # This is not a subclass of DataFrame and we can simply hard-link to
+            # LazyFrame instead of dynamically defining a new subclass of LazyFrame.
+            cls._lazyframe_class = LazyFrame
+        elif cls._lazyframe_class is LazyFrame:
+            # This is a subclass of DataFrame which has *not* specified a custom
+            # LazyFrame subclass by setting `cls._lazyframe_class`. We must therefore
+            # dynamically create a subclass of LazyFrame with `_dataframe_class` set
+            # to `cls` in order to preserve types after `.lazy().collect()` roundtrips.
+            cls._lazyframe_class = type(  # type: ignore
+                f"Lazy{name}",
+                (LazyFrame,),
+                {"_dataframe_class": cls},
+            )
+        super().__init__(name, bases, clsdict)
+
+
+class DataFrame(metaclass=DataFrameMetaClass):
     """
     A DataFrame is a two-dimensional data structure that represents data as a table
     with rows and columns.
@@ -232,7 +308,7 @@ class DataFrame:
             raise ValueError("DataFrame constructor not called properly.")
 
     @classmethod
-    def _from_pydf(cls, py_df: "PyDataFrame") -> "DataFrame":
+    def _from_pydf(cls: Type[DF], py_df: "PyDataFrame") -> DF:
         """
         Construct Polars DataFrame from FFI PyDataFrame object.
         """
@@ -241,16 +317,19 @@ class DataFrame:
         return df
 
     @classmethod
-    def _from_dicts(cls, data: Sequence[Dict[str, Any]]) -> "DataFrame":
+    def _from_dicts(
+        cls: Type[DF],
+        data: Sequence[Dict[str, Any]],
+    ) -> DF:
         pydf = PyDataFrame.read_dicts(data)
-        return DataFrame._from_pydf(pydf)
+        return cls._from_pydf(pydf)
 
     @classmethod
     def _from_dict(
-        cls,
+        cls: Type[DF],
         data: Dict[str, Sequence[Any]],
         columns: Optional[Sequence[str]] = None,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Construct a DataFrame from a dictionary of sequences.
 
@@ -271,11 +350,11 @@ class DataFrame:
 
     @classmethod
     def _from_records(
-        cls,
+        cls: Type[DF],
         data: Union[np.ndarray, Sequence[Sequence[Any]]],
         columns: Optional[Sequence[str]] = None,
         orient: Optional[str] = None,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Construct a DataFrame from a numpy ndarray or sequence of sequences.
 
@@ -303,11 +382,11 @@ class DataFrame:
 
     @classmethod
     def _from_arrow(
-        cls,
+        cls: Type[DF],
         data: "pa.Table",
         columns: Optional[Sequence[str]] = None,
         rechunk: bool = True,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Construct a DataFrame from an Arrow table.
 
@@ -333,12 +412,12 @@ class DataFrame:
 
     @classmethod
     def _from_pandas(
-        cls,
+        cls: Type[DF],
         data: "pd.DataFrame",
         columns: Optional[Sequence[str]] = None,
         rechunk: bool = True,
         nan_to_none: bool = True,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Construct a Polars DataFrame from a pandas DataFrame.
 
@@ -368,7 +447,7 @@ class DataFrame:
                 else:
                     col = pli.Series(name, pd_series)
                     series.append(pli.Series(name, col))
-            return DataFrame(series)
+            return cls(series)
 
         return cls._from_pydf(
             pandas_to_pydf(
@@ -376,8 +455,9 @@ class DataFrame:
             )
         )
 
-    @staticmethod
+    @classmethod
     def _read_csv(
+        cls: Type[DF],
         file: Union[str, BinaryIO, bytes],
         has_header: bool = True,
         columns: Optional[Union[List[int], List[str]]] = None,
@@ -401,11 +481,11 @@ class DataFrame:
         skip_rows_after_header: int = 0,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         see pl.read_csv
         """
-        self = DataFrame.__new__(DataFrame)
+        self = cls.__new__(cls)
 
         path: Optional[str]
         if isinstance(file, str):
@@ -460,9 +540,9 @@ class DataFrame:
                 row_count_offset=row_count_offset,
             )
             if columns is None:
-                return scan.collect()
+                return self._from_pydf(scan.collect()._df)
             elif is_str_sequence(columns, False):
-                return scan.select(columns).collect()
+                return self._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
@@ -497,15 +577,16 @@ class DataFrame:
         )
         return self
 
-    @staticmethod
+    @classmethod
     def _read_parquet(
+        cls: Type[DF],
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         parallel: bool = True,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Read into a DataFrame from a parquet file.
 
@@ -533,16 +614,16 @@ class DataFrame:
             )
 
             if columns is None:
-                return scan.collect()
+                return cls._from_pydf(scan.collect()._df)
             elif is_str_sequence(columns, False):
-                return scan.select(columns).collect()
+                return cls._from_pydf(scan.select(columns).collect()._df)
             else:
                 raise ValueError(
                     "cannot use glob patterns and integer based projection as `columns` argument; Use columns: List[str]"
                 )
 
         projection, columns = handle_projection_columns(columns)
-        self = DataFrame.__new__(DataFrame)
+        self = cls.__new__(cls)
         self._df = PyDataFrame.read_parquet(
             file,
             columns,
@@ -553,10 +634,13 @@ class DataFrame:
         )
         return self
 
-    @staticmethod
+    @classmethod
     def _read_avro(
-        file: Union[str, BinaryIO], n_rows: Optional[int] = None
-    ) -> "DataFrame":
+        cls: Type[DF],
+        file: Union[str, BinaryIO],
+        columns: Optional[Union[List[int], List[str]]] = None,
+        n_rows: Optional[int] = None,
+    ) -> DF:
         """
         Read into a DataFrame from Apache Avro format.
 
@@ -571,18 +655,20 @@ class DataFrame:
         -------
         DataFrame
         """
-        self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_avro(file, n_rows)
+        projection, columns = handle_projection_columns(columns)
+        self = cls.__new__(cls)
+        self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
         return self
 
-    @staticmethod
+    @classmethod
     def _read_ipc(
+        cls: Type[DF],
         file: Union[str, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
 
@@ -620,7 +706,7 @@ class DataFrame:
                 )
 
         projection, columns = handle_projection_columns(columns)
-        self = DataFrame.__new__(DataFrame)
+        self = cls.__new__(cls)
         self._df = PyDataFrame.read_ipc(
             file,
             columns,
@@ -630,21 +716,20 @@ class DataFrame:
         )
         return self
 
-    @staticmethod
-    def _read_json(file: Union[str, IOBase]) -> "DataFrame":
+    @classmethod
+    def _read_json(
+        cls: Type[DF],
+        file: Union[str, IOBase],
+        json_lines: bool = False,
+    ) -> DF:
         """
-        Read into a DataFrame from JSON format.
-
-        Parameters
-        ----------
-        file
-            Path to a file or a file-like object.
+        See Also pl.read_json
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
 
-        self = DataFrame.__new__(DataFrame)
-        self._df = PyDataFrame.read_json(file)
+        self = cls.__new__(cls)
+        self._df = PyDataFrame.read_json(file, json_lines)
         return self
 
     def to_arrow(self) -> "pa.Table":
@@ -984,11 +1069,11 @@ class DataFrame:
         ]
 
     def transpose(
-        self,
+        self: DF,
         include_header: bool = False,
         header_name: str = "column",
         column_names: Optional[Union[Iterator[str], Sequence[str]]] = None,
-    ) -> "pli.DataFrame":
+    ) -> DF:
         """
         Transpose a DataFrame over the diagonal.
 
@@ -1077,7 +1162,7 @@ class DataFrame:
         └─────────────┴─────────────┴─────────────┘
 
         """
-        df = wrap_df(self._df.transpose(include_header, header_name))
+        df = self._from_pydf(self._df.transpose(include_header, header_name))
         if column_names is not None:
             names = []
             n = df.width
@@ -1196,46 +1281,47 @@ class DataFrame:
         self._df = DataFrame(state)._df
 
     def __mul__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
-    ) -> "DataFrame":
+        self: DF, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> DF:
         if isinstance(other, DataFrame):
-            return wrap_df(self._df.mul_df(other._df))
+            return self._from_pydf(self._df.mul_df(other._df))
 
         other = _prepare_other_arg(other)
-        return wrap_df(self._df.mul(other._s))
+        return self._from_pydf(self._df.mul(other._s))
 
     def __truediv__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
-    ) -> "DataFrame":
+        self: DF, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> DF:
         if isinstance(other, DataFrame):
-            return wrap_df(self._df.div_df(other._df))
+            return self._from_pydf(self._df.div_df(other._df))
 
         other = _prepare_other_arg(other)
-        return wrap_df(self._df.div(other._s))
+        return self._from_pydf(self._df.div(other._s))
 
     def __add__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool, str]
-    ) -> "DataFrame":
+        self: DF,
+        other: Union["DataFrame", "pli.Series", int, float, bool, str],
+    ) -> DF:
         if isinstance(other, DataFrame):
-            return wrap_df(self._df.add_df(other._df))
+            return self._from_pydf(self._df.add_df(other._df))
         other = _prepare_other_arg(other)
-        return wrap_df(self._df.add(other._s))
+        return self._from_pydf(self._df.add(other._s))
 
     def __sub__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
-    ) -> "DataFrame":
+        self: DF, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> DF:
         if isinstance(other, DataFrame):
-            return wrap_df(self._df.sub_df(other._df))
+            return self._from_pydf(self._df.sub_df(other._df))
         other = _prepare_other_arg(other)
-        return wrap_df(self._df.sub(other._s))
+        return self._from_pydf(self._df.sub(other._s))
 
     def __mod__(
-        self, other: Union["DataFrame", "pli.Series", int, float, bool]
-    ) -> "DataFrame":
+        self: DF, other: Union["DataFrame", "pli.Series", int, float, bool]
+    ) -> DF:
         if isinstance(other, DataFrame):
-            return wrap_df(self._df.rem_df(other._df))
+            return self._from_pydf(self._df.rem_df(other._df))
         other = _prepare_other_arg(other)
-        return wrap_df(self._df.rem(other._s))
+        return self._from_pydf(self._df.rem(other._s))
 
     def __str__(self) -> str:
         return self._df.as_str()
@@ -1247,10 +1333,19 @@ class DataFrame:
         """
         Access columns as attribute.
         """
+        # it is important that we return an AttributeError here
+        # this is used by ipython to check some private
+        # `_ipython_canary_method_should_not_exist_`
+        # if we return any other error than AttributeError pretty printing
+        # will not work in notebooks.
+        # See: https://github.com/jupyter/notebook/issues/2014
+        if item.startswith("_"):
+            raise AttributeError(item)
         try:
+            warnings.warn("accessing series as Attribute of a DataFrame is deprecated")
             return pli.wrap_s(self._df.column(item))
-        except RuntimeError:
-            raise AttributeError(f"{item} not found")
+        except Exception:
+            raise AttributeError(item)
 
     def __iter__(self) -> Iterator[Any]:
         return self.get_columns().__iter__()
@@ -1289,19 +1384,19 @@ class DataFrame:
 
     @overload
     def __getitem__(
-        self,
+        self: DF,
         item: Union[
             int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
         ],
-    ) -> "DataFrame":
+    ) -> DF:
         ...
 
     def __getitem__(
-        self,
+        self: DF,
         item: Union[
             str, int, range, slice, np.ndarray, "pli.Expr", "pli.Series", List, tuple
         ],
-    ) -> Union["DataFrame", "pli.Series"]:
+    ) -> Union[DF, "pli.Series"]:
         """
         Does quite a lot. Read the comments.
         """
@@ -1380,7 +1475,7 @@ class DataFrame:
                 # select by column indexes
                 if isinstance(col_selection[0], int):
                     series_list = [self.to_series(i) for i in col_selection]
-                    df = DataFrame(series_list)
+                    df = self.__class__(series_list)
                     return df[row_selection]
             df = self.__getitem__(col_selection)
             return df.__getitem__(row_selection)
@@ -1430,30 +1525,32 @@ class DataFrame:
         # df[[true, false, true]]
         if isinstance(item, np.ndarray):
             if item.dtype == int:
-                return wrap_df(self._df.take(item))
+                return self._from_pydf(self._df.take(item))
             if isinstance(item[0], str):
-                return wrap_df(self._df.select(item))
+                return self._from_pydf(self._df.select(item))
             if item.dtype == bool:
-                return wrap_df(self._df.filter(pli.Series("", item).inner()))
+                return self._from_pydf(self._df.filter(pli.Series("", item).inner()))
 
         if isinstance(item, Sequence):
             if isinstance(item[0], str):
                 # select multiple columns
                 # df[["foo", "bar"]]
-                return wrap_df(self._df.select(item))
+                return self._from_pydf(self._df.select(item))
             elif isinstance(item[0], pli.Expr):
                 return self.select(item)
             elif type(item[0]) == bool:
                 item = pli.Series("", item)  # fall through to next if isinstance
             elif is_int_sequence(item):
-                return wrap_df(self._df.take([self._pos_idx(i, dim=0) for i in item]))
+                return self._from_pydf(
+                    self._df.take([self._pos_idx(i, dim=0) for i in item])
+                )
 
         if isinstance(item, pli.Series):
             dtype = item.dtype
             if dtype == Boolean:
-                return wrap_df(self._df.filter(item.inner()))
+                return self._from_pydf(self._df.filter(item.inner()))
             if dtype == UInt32:
-                return wrap_df(self._df.take_with_series(item.inner()))
+                return self._from_pydf(self._df.take_with_series(item.inner()))
 
         # if no data has been returned, the operation is not supported
         raise NotImplementedError
@@ -1461,6 +1558,9 @@ class DataFrame:
     def __setitem__(
         self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
     ) -> None:
+        warnings.warn(
+            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column"
+        )
         # df["foo"] = series
         if isinstance(key, str):
             try:
@@ -1550,7 +1650,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.select_at_idx(index))
 
-    def rename(self, mapping: Dict[str, str]) -> "DataFrame":
+    def rename(self: DF, mapping: Dict[str, str]) -> DF:
         """
         Rename column names.
 
@@ -1595,7 +1695,7 @@ class DataFrame:
         """
         self._df.insert_at_idx(index, series._s)
 
-    def filter(self, predicate: "pli.Expr") -> "DataFrame":
+    def filter(self: DF, predicate: "pli.Expr") -> DF:
         """
         Filter the rows in the DataFrame based on a predicate expression.
 
@@ -1797,9 +1897,9 @@ class DataFrame:
         {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
 
         """
-        return {c: self[c].dtype for c in self.columns}
+        return dict(zip(self.columns, self.dtypes))
 
-    def describe(self) -> "DataFrame":
+    def describe(self: DF) -> DF:
         """
         Summary statistics for a DataFrame. Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
 
@@ -1832,23 +1932,25 @@ class DataFrame:
 
         """
 
-        def describe_cast(self: "DataFrame") -> "DataFrame":
+        def describe_cast(self: DF) -> DF:
             columns = []
             for s in self:
                 if s.is_numeric() or s.is_boolean():
                     columns.append(s.cast(float))
                 else:
                     columns.append(s)
-            return DataFrame(columns)
+            return self.__class__(columns)
 
-        summary = pli.concat(
-            [
-                describe_cast(self.mean()),
-                describe_cast(self.std()),
-                describe_cast(self.min()),
-                describe_cast(self.max()),
-                describe_cast(self.median()),
-            ]
+        summary = self._from_pydf(
+            pli.concat(
+                [
+                    describe_cast(self.mean()),
+                    describe_cast(self.std()),
+                    describe_cast(self.min()),
+                    describe_cast(self.max()),
+                    describe_cast(self.median()),
+                ]
+            )._df
         )
         summary.insert_at_idx(
             0, pli.Series("describe", ["mean", "std", "min", "max", "median"])
@@ -1896,12 +1998,13 @@ class DataFrame:
 
     @overload
     def sort(
-        self,
+        self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: Literal[False] = ...,
-    ) -> "DataFrame":
+    ) -> DF:
         ...
 
     @overload
@@ -1909,6 +2012,7 @@ class DataFrame:
         self,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: Literal[True],
     ) -> None:
@@ -1916,21 +2020,23 @@ class DataFrame:
 
     @overload
     def sort(
-        self,
+        self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = ...,
+        nulls_last: bool = ...,
         *,
         in_place: bool,
-    ) -> Optional["DataFrame"]:
+    ) -> Optional[DF]:
         ...
 
     def sort(
-        self,
+        self: DF,
         by: Union[str, "pli.Expr", List[str], List["pli.Expr"]],
         reverse: Union[bool, List[bool]] = False,
+        nulls_last: bool = False,
         *,
         in_place: bool = False,
-    ) -> Optional["DataFrame"]:
+    ) -> Optional[DF]:
         """
         Sort the DataFrame by column.
 
@@ -1942,6 +2048,8 @@ class DataFrame:
             Reverse/descending sort.
         in_place
             Perform operation in-place.
+        nulls_last
+            Place null values last. Can only be used if sorted by a single column.
 
         Examples
         --------
@@ -1991,18 +2099,22 @@ class DataFrame:
         if type(by) is list or isinstance(by, pli.Expr):
             df = (
                 self.lazy()
-                .sort(by, reverse)
+                .sort(by, reverse, nulls_last)
                 .collect(no_optimization=True, string_cache=False)
             )
             if in_place:
+                warnings.warn(
+                    "in-place sorting is deprecated; please use default sorting"
+                )
                 self._df = df._df
                 return self
             return df
         if in_place:
+            warnings.warn("in-place sorting is deprecated; please use default sorting")
             self._df.sort_in_place(by, reverse)
             return None
         else:
-            return wrap_df(self._df.sort(by, reverse))
+            return self._from_pydf(self._df.sort(by, reverse, nulls_last))
 
     def frame_equal(self, other: "DataFrame", null_equal: bool = True) -> bool:
         """
@@ -2052,7 +2164,7 @@ class DataFrame:
         """
         self._df.replace(column, new_col.inner())
 
-    def slice(self, offset: int, length: int) -> "DataFrame":
+    def slice(self: DF, offset: int, length: int) -> DF:
         """
         Slice this DataFrame over the rows direction.
 
@@ -2088,9 +2200,9 @@ class DataFrame:
         """
         if length < 0:
             length = self.height - offset + length
-        return wrap_df(self._df.slice(offset, length))
+        return self._from_pydf(self._df.slice(offset, length))
 
-    def limit(self, length: int = 5) -> "DataFrame":
+    def limit(self: DF, length: int = 5) -> DF:
         """
         Get first N rows as DataFrame.
 
@@ -2125,7 +2237,7 @@ class DataFrame:
         """
         return self.head(length)
 
-    def head(self, length: int = 5) -> "DataFrame":
+    def head(self: DF, length: int = 5) -> DF:
         """
         Get first N rows as DataFrame.
 
@@ -2158,9 +2270,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return wrap_df(self._df.head(length))
+        return self._from_pydf(self._df.head(length))
 
-    def tail(self, length: int = 5) -> "DataFrame":
+    def tail(self: DF, length: int = 5) -> DF:
         """
         Get last N rows as DataFrame.
 
@@ -2193,9 +2305,9 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return wrap_df(self._df.tail(length))
+        return self._from_pydf(self._df.tail(length))
 
-    def drop_nulls(self, subset: Optional[Union[str, List[str]]] = None) -> "DataFrame":
+    def drop_nulls(self: DF, subset: Optional[Union[str, List[str]]] = None) -> DF:
         """
         Return a new DataFrame where the null values are dropped.
 
@@ -2291,7 +2403,7 @@ class DataFrame:
         """
         if isinstance(subset, str):
             subset = [subset]
-        return wrap_df(self._df.drop_nulls(subset))
+        return self._from_pydf(self._df.drop_nulls(subset))
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
@@ -2332,7 +2444,7 @@ class DataFrame:
         """
         return func(self, *args, **kwargs)
 
-    def with_row_count(self, name: str = "row_nr", offset: int = 0) -> "DataFrame":
+    def with_row_count(self: DF, name: str = "row_nr", offset: int = 0) -> DF:
         """
         Add a column at index 0 that counts the rows.
 
@@ -2367,7 +2479,7 @@ class DataFrame:
         └────────┴─────┴─────┘
 
         """
-        return wrap_df(self._df.with_row_count(name, offset))
+        return self._from_pydf(self._df.with_row_count(name, offset))
 
     def groupby(
         self,
@@ -2612,7 +2724,7 @@ class DataFrame:
         period
             length of the window, if None it is equal to 'every'
         offset
-            offset of the window
+            offset of the window if None and period is None it will be equal to negative `every`
         truncate
             truncate the time value to the window lower bound
         include_boundaries
@@ -2857,13 +2969,13 @@ class DataFrame:
         )
 
     def upsample(
-        self,
+        self: DF,
         time_column: str,
         every: str,
         offset: Optional[str] = None,
         by: Optional[Union[str, Sequence[str]]] = None,
         maintain_order: bool = False,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Upsample a DataFrame at a regular frequency.
 
@@ -2951,12 +3063,12 @@ class DataFrame:
         if offset is None:
             offset = "0ns"
 
-        return wrap_df(
+        return self._from_pydf(
             self._df.upsample(by, time_column, every, offset, maintain_order)
         )
 
     def join_asof(
-        self,
+        self: DF,
         df: "DataFrame",
         left_on: Optional[str] = None,
         right_on: Optional[str] = None,
@@ -2969,7 +3081,7 @@ class DataFrame:
         tolerance: Optional[Union[str, int, float]] = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Perform an asof join. This is similar to a left-join except that we
         match on nearest key rather than equal keys.
@@ -3051,7 +3163,7 @@ class DataFrame:
         )
 
     def join(
-        self,
+        self: DF,
         df: "DataFrame",
         left_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
         right_on: Optional[Union[str, "pli.Expr", List[Union[str, "pli.Expr"]]]] = None,
@@ -3061,7 +3173,7 @@ class DataFrame:
         asof_by: Optional[Union[str, List[str]]] = None,
         asof_by_left: Optional[Union[str, List[str]]] = None,
         asof_by_right: Optional[Union[str, List[str]]] = None,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         SQL like joins.
 
@@ -3149,7 +3261,7 @@ class DataFrame:
                 "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof"
             )
         if how == "cross":
-            return wrap_df(self._df.join(df._df, [], [], how, suffix))
+            return self._from_pydf(self._df.join(df._df, [], [], how, suffix))
 
         left_on_: Optional[List[Union[str, pli.Expr]]]
         if isinstance(left_on, (str, pli.Expr)):
@@ -3196,14 +3308,16 @@ class DataFrame:
                 .collect(no_optimization=True)
             )
         else:
-            return wrap_df(self._df.join(df._df, left_on_, right_on_, how, suffix))
+            return self._from_pydf(
+                self._df.join(df._df, left_on_, right_on_, how, suffix)
+            )
 
     def apply(
-        self,
+        self: DF,
         f: Callable[[Tuple[Any, ...]], Any],
         return_dtype: Optional[Type[DataType]] = None,
         inference_size: int = 256,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Apply a custom function over the rows of the DataFrame. The rows are passed as tuple.
 
@@ -3222,11 +3336,11 @@ class DataFrame:
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
         if is_df:
-            return wrap_df(out)
+            return self._from_pydf(out)
         else:
-            return pli.wrap_s(out).to_frame()
+            return self._from_pydf(pli.wrap_s(out).to_frame()._df)
 
-    def with_column(self, column: Union["pli.Series", "pli.Expr"]) -> "DataFrame":
+    def with_column(self: DF, column: Union["pli.Series", "pli.Expr"]) -> DF:
         """
         Return a new DataFrame with the column added or replaced.
 
@@ -3275,11 +3389,13 @@ class DataFrame:
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
         else:
-            return wrap_df(self._df.with_column(column._s))
+            return self._from_pydf(self._df.with_column(column._s))
 
     def hstack(
-        self, columns: Union[List["pli.Series"], "DataFrame"], in_place: bool = False
-    ) -> Optional["DataFrame"]:
+        self: DF,
+        columns: Union[List["pli.Series"], "DataFrame"],
+        in_place: bool = False,
+    ) -> Optional[DF]:
         """
         Return a new DataFrame grown horizontally by stacking multiple Series to it.
 
@@ -3321,21 +3437,21 @@ class DataFrame:
             self._df.hstack_mut([s.inner() for s in columns])
             return None
         else:
-            return wrap_df(self._df.hstack([s.inner() for s in columns]))
+            return self._from_pydf(self._df.hstack([s.inner() for s in columns]))
 
     @overload
     def vstack(self, df: "DataFrame", in_place: Literal[True]) -> None:
         ...
 
     @overload
-    def vstack(self, df: "DataFrame", in_place: Literal[False] = ...) -> "DataFrame":
+    def vstack(self: DF, df: "DataFrame", in_place: Literal[False] = ...) -> DF:
         ...
 
     @overload
-    def vstack(self, df: "DataFrame", in_place: bool) -> Optional["DataFrame"]:
+    def vstack(self: DF, df: "DataFrame", in_place: bool) -> Optional[DF]:
         ...
 
-    def vstack(self, df: "DataFrame", in_place: bool = False) -> Optional["DataFrame"]:
+    def vstack(self: DF, df: "DataFrame", in_place: bool = False) -> Optional[DF]:
         """
         Grow this DataFrame vertically by stacking a DataFrame to it.
 
@@ -3384,7 +3500,7 @@ class DataFrame:
             self._df.vstack_mut(df._df)
             return None
         else:
-            return wrap_df(self._df.vstack(df._df))
+            return self._from_pydf(self._df.vstack(df._df))
 
     def extend(self, other: "DataFrame") -> None:
         """
@@ -3410,7 +3526,7 @@ class DataFrame:
         """
         self._df.extend(other._df)
 
-    def drop(self, name: Union[str, List[str]]) -> "DataFrame":
+    def drop(self: DF, name: Union[str, List[str]]) -> DF:
         """
         Remove column from DataFrame and return as new.
 
@@ -3451,7 +3567,7 @@ class DataFrame:
                 df._df.drop_in_place(name)
             return df
 
-        return wrap_df(self._df.drop(name))
+        return self._from_pydf(self._df.drop(name))
 
     def drop_in_place(self, name: str) -> "pli.Series":
         """
@@ -3515,16 +3631,16 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.select_at_idx(idx))
 
-    def clone(self) -> "DataFrame":
+    def clone(self: DF) -> DF:
         """
         Very cheap deep clone.
         """
-        return wrap_df(self._df.clone())
+        return self._from_pydf(self._df.clone())
 
-    def __copy__(self) -> "DataFrame":
+    def __copy__(self: DF) -> DF:
         return self.clone()
 
-    def __deepcopy__(self, memodict={}) -> "DataFrame":  # type: ignore
+    def __deepcopy__(self: DF, memodict={}) -> DF:  # type: ignore
         return self.clone()
 
     def get_columns(self) -> List["pli.Series"]:
@@ -3539,7 +3655,7 @@ class DataFrame:
         """
         return self[name]
 
-    def fill_null(self, strategy: Union[str, "pli.Expr", Any]) -> "DataFrame":
+    def fill_null(self: DF, strategy: Union[str, "pli.Expr", Any]) -> DF:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -3564,9 +3680,9 @@ class DataFrame:
             return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
             return self.fill_null(pli.lit(strategy))
-        return wrap_df(self._df.fill_null(strategy))
+        return self._from_pydf(self._df.fill_null(strategy))
 
-    def fill_nan(self, fill_value: Union["pli.Expr", int, float]) -> "DataFrame":
+    def fill_nan(self: DF, fill_value: Union["pli.Expr", int, float]) -> DF:
         """
         Fill floating point NaN values by an Expression evaluation.
 
@@ -3587,8 +3703,9 @@ class DataFrame:
         return self.lazy().fill_nan(fill_value).collect(no_optimization=True)
 
     def explode(
-        self, columns: Union[str, List[str], "pli.Expr", List["pli.Expr"]]
-    ) -> "DataFrame":
+        self: DF,
+        columns: Union[str, List[str], "pli.Expr", List["pli.Expr"]],
+    ) -> DF:
         """
         Explode `DataFrame` to long format by exploding a column with Lists.
 
@@ -3658,13 +3775,13 @@ class DataFrame:
         return self.lazy().explode(columns).collect(no_optimization=True)
 
     def pivot(
-        self,
+        self: DF,
         values: Union[List[str], str],
         index: Union[List[str], str],
         columns: Union[List[str], str],
         aggregate_fn: str = "first",
         maintain_order: bool = False,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
 
@@ -3723,15 +3840,22 @@ class DataFrame:
             index = [index]
         if isinstance(columns, str):
             columns = [columns]
-        return wrap_df(
+        return self._from_pydf(
             self._df.pivot2(values, index, columns, aggregate_fn, maintain_order)
         )
 
     def melt(
-        self, id_vars: Union[List[str], str], value_vars: Union[List[str], str]
-    ) -> "DataFrame":
+        self: DF,
+        id_vars: Optional[Union[List[str], str]] = None,
+        value_vars: Optional[Union[List[str], str]] = None,
+    ) -> DF:
         """
-        Unpivot DataFrame to long format.
+        Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
+
+        This function is useful to massage a DataFrame into a format where one or more columns are identifier variables
+        (id_vars), while all other columns, considered measured variables (value_vars), are “unpivoted” to the row axis,
+        leaving just two non-identifier columns, ‘variable’ and ‘value’.
+
 
         Parameters
         ----------
@@ -3740,6 +3864,7 @@ class DataFrame:
 
         value_vars
             Values to use as identifier variables.
+            If `value_vars` is empty all columns that are not in `id_vars` will be used.
 
         Examples
         --------
@@ -3776,9 +3901,13 @@ class DataFrame:
             value_vars = [value_vars]
         if isinstance(id_vars, str):
             id_vars = [id_vars]
-        return wrap_df(self._df.melt(id_vars, value_vars))
+        if value_vars is None:
+            value_vars = []
+        if id_vars is None:
+            id_vars = []
+        return self._from_pydf(self._df.melt(id_vars, value_vars))
 
-    def shift(self, periods: int) -> "DataFrame":
+    def shift(self: DF, periods: int) -> DF:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with `Nones`.
@@ -3825,11 +3954,11 @@ class DataFrame:
         └──────┴──────┴──────┘
 
         """
-        return wrap_df(self._df.shift(periods))
+        return self._from_pydf(self._df.shift(periods))
 
     def shift_and_fill(
-        self, periods: int, fill_value: Union[int, str, float]
-    ) -> "DataFrame":
+        self: DF, periods: int, fill_value: Union[int, str, float]
+    ) -> DF:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
         with the result of the `fill_value` expression.
@@ -3923,7 +4052,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.is_unique())
 
-    def lazy(self) -> "pli.LazyFrame":
+    def lazy(self: DF) -> "pli.LazyFrame[DF]":
         """
         Start a lazy query from this point. This returns a `LazyFrame` object.
 
@@ -3937,17 +4066,17 @@ class DataFrame:
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
-        return pli.wrap_ldf(self._df.lazy())
+        return self._lazyframe_class._from_pyldf(self._df.lazy())
 
     def select(
-        self,
+        self: DF,
         exprs: Union[
             str,
             "pli.Expr",
             Sequence[Union[str, "pli.Expr", bool, int, float, "pli.Series"]],
             "pli.Series",
         ],
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Select columns from this DataFrame.
 
@@ -3981,10 +4110,12 @@ class DataFrame:
 
         """
         return (
-            self.lazy().select(exprs).collect(no_optimization=True, string_cache=False)  # type: ignore
+            self.lazy()
+            .select(exprs)  # type: ignore
+            .collect(no_optimization=True, string_cache=False)
         )
 
-    def with_columns(self, exprs: Union["pli.Expr", List["pli.Expr"]]) -> "DataFrame":
+    def with_columns(self: DF, exprs: Union["pli.Expr", List["pli.Expr"]]) -> DF:
         """
         Add or overwrite multiple columns in a DataFrame.
 
@@ -4008,7 +4139,7 @@ class DataFrame:
         return self._df.n_chunks()
 
     @overload
-    def max(self, axis: Literal[0] = ...) -> "DataFrame":
+    def max(self: DF, axis: Literal[0] = ...) -> DF:
         ...
 
     @overload
@@ -4016,10 +4147,10 @@ class DataFrame:
         ...
 
     @overload
-    def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+    def max(self: DF, axis: int = 0) -> Union[DF, "pli.Series"]:
         ...
 
-    def max(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+    def max(self: DF, axis: int = 0) -> Union[DF, "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their maximum value.
 
@@ -4044,13 +4175,13 @@ class DataFrame:
 
         """
         if axis == 0:
-            return wrap_df(self._df.max())
+            return self._from_pydf(self._df.max())
         if axis == 1:
             return pli.wrap_s(self._df.hmax())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
-    def min(self, axis: Literal[0] = ...) -> "DataFrame":
+    def min(self: DF, axis: Literal[0] = ...) -> DF:
         ...
 
     @overload
@@ -4058,10 +4189,10 @@ class DataFrame:
         ...
 
     @overload
-    def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+    def min(self: DF, axis: int = 0) -> Union[DF, "pli.Series"]:
         ...
 
-    def min(self, axis: int = 0) -> Union["DataFrame", "pli.Series"]:
+    def min(self: DF, axis: int = 0) -> Union[DF, "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their minimum value.
 
@@ -4086,15 +4217,13 @@ class DataFrame:
 
         """
         if axis == 0:
-            return wrap_df(self._df.min())
+            return self._from_pydf(self._df.min())
         if axis == 1:
             return pli.wrap_s(self._df.hmin())
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
-    def sum(
-        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
-    ) -> "DataFrame":
+    def sum(self: DF, *, axis: Literal[0] = ..., null_strategy: str = "ignore") -> DF:
         ...
 
     @overload
@@ -4103,13 +4232,13 @@ class DataFrame:
 
     @overload
     def sum(
-        self, *, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pli.Series"]:
+        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union[DF, "pli.Series"]:
         ...
 
     def sum(
-        self, *, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pli.Series"]:
+        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union[DF, "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their sum value.
 
@@ -4142,15 +4271,13 @@ class DataFrame:
 
         """
         if axis == 0:
-            return wrap_df(self._df.sum())
+            return self._from_pydf(self._df.sum())
         if axis == 1:
             return pli.wrap_s(self._df.hsum(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
     @overload
-    def mean(
-        self, *, axis: Literal[0] = ..., null_strategy: str = "ignore"
-    ) -> "DataFrame":
+    def mean(self: DF, *, axis: Literal[0] = ..., null_strategy: str = "ignore") -> DF:
         ...
 
     @overload
@@ -4159,13 +4286,13 @@ class DataFrame:
 
     @overload
     def mean(
-        self, *, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pli.Series"]:
+        self: DF, *, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union[DF, "pli.Series"]:
         ...
 
     def mean(
-        self, axis: int = 0, null_strategy: str = "ignore"
-    ) -> Union["DataFrame", "pli.Series"]:
+        self: DF, axis: int = 0, null_strategy: str = "ignore"
+    ) -> Union[DF, "pli.Series"]:
         """
         Aggregate the columns of this DataFrame to their mean value.
 
@@ -4227,12 +4354,12 @@ class DataFrame:
 
         """
         if axis == 0:
-            return wrap_df(self._df.mean())
+            return self._from_pydf(self._df.mean())
         if axis == 1:
             return pli.wrap_s(self._df.hmean(null_strategy))
         raise ValueError("Axis should be 0 or 1.")  # pragma: no cover
 
-    def std(self) -> "DataFrame":
+    def std(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their standard deviation value.
 
@@ -4256,9 +4383,9 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return wrap_df(self._df.std())
+        return self._from_pydf(self._df.std())
 
-    def var(self) -> "DataFrame":
+    def var(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their variance value.
 
@@ -4282,9 +4409,9 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return wrap_df(self._df.var())
+        return self._from_pydf(self._df.var())
 
-    def median(self) -> "DataFrame":
+    def median(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their median value.
 
@@ -4308,15 +4435,15 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return wrap_df(self._df.median())
+        return self._from_pydf(self._df.median())
 
-    def product(self) -> "DataFrame":
+    def product(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their product values
         """
         return self.select(pli.all().product())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> "DataFrame":
+    def quantile(self: DF, quantile: float, interpolation: str = "nearest") -> DF:
         """
         Aggregate the columns of this DataFrame to their quantile value.
 
@@ -4348,9 +4475,9 @@ class DataFrame:
         └─────┴─────┴──────┘
 
         """
-        return wrap_df(self._df.quantile(quantile, interpolation))
+        return self._from_pydf(self._df.quantile(quantile, interpolation))
 
-    def to_dummies(self) -> "DataFrame":
+    def to_dummies(self: DF) -> DF:
         """
         Get one hot encoded dummy variables.
 
@@ -4378,14 +4505,14 @@ class DataFrame:
         └───────┴───────┴───────┴───────┴─────┴───────┴───────┴───────┴───────┘
 
         """
-        return wrap_df(self._df.to_dummies())
+        return self._from_pydf(self._df.to_dummies())
 
     def distinct(
-        self,
+        self: DF,
         maintain_order: bool = True,
         subset: Optional[Union[str, List[str]]] = None,
         keep: str = "first",
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame or subset.
@@ -4405,17 +4532,17 @@ class DataFrame:
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return wrap_df(self._df.distinct(maintain_order, subset, keep))
+        return self._from_pydf(self._df.distinct(maintain_order, subset, keep))
 
-    def rechunk(self) -> "DataFrame":
+    def rechunk(self: DF) -> DF:
         """
         Rechunk the data in this DataFrame to a contiguous allocation.
 
         This will make sure all subsequent operations have optimal and predictable performance.
         """
-        return wrap_df(self._df.rechunk())
+        return self._from_pydf(self._df.rechunk())
 
-    def null_count(self) -> "DataFrame":
+    def null_count(self: DF) -> DF:
         """
         Create a new DataFrame that shows the null counts per column.
 
@@ -4439,15 +4566,15 @@ class DataFrame:
         └─────┴─────┴─────┘
 
         """
-        return wrap_df(self._df.null_count())
+        return self._from_pydf(self._df.null_count())
 
     def sample(
-        self,
+        self: DF,
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
         seed: int = 0,
-    ) -> "DataFrame":
+    ) -> DF:
         """
         Sample from this DataFrame by setting either `n` or `frac`.
 
@@ -4485,8 +4612,8 @@ class DataFrame:
 
         """
         if n is not None:
-            return wrap_df(self._df.sample_n(n, with_replacement, seed))
-        return wrap_df(self._df.sample_frac(frac, with_replacement, seed))
+            return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
+        return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
 
     def fold(
         self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]
@@ -4625,7 +4752,7 @@ class DataFrame:
         return self._df.row_tuples()
 
     @overload
-    def shrink_to_fit(self, in_place: Literal[False] = ...) -> "DataFrame":
+    def shrink_to_fit(self: DF, in_place: Literal[False] = ...) -> DF:
         ...
 
     @overload
@@ -4633,10 +4760,10 @@ class DataFrame:
         ...
 
     @overload
-    def shrink_to_fit(self, in_place: bool) -> Optional["DataFrame"]:
+    def shrink_to_fit(self: DF, in_place: bool) -> Optional[DF]:
         ...
 
-    def shrink_to_fit(self, in_place: bool = False) -> Optional["DataFrame"]:
+    def shrink_to_fit(self: DF, in_place: bool = False) -> Optional[DF]:
         """
         Shrink memory usage of this DataFrame to fit the exact capacity needed to hold the data.
         """
@@ -4687,7 +4814,7 @@ class DataFrame:
         """
         return pli.wrap_s(self._df.hash_rows(k0, k1, k2, k3))
 
-    def interpolate(self) -> "DataFrame":
+    def interpolate(self: DF) -> DF:
         """
         Interpolate intermediate values. The interpolation method is linear.
 
@@ -4725,6 +4852,31 @@ class DataFrame:
         Check if the dataframe is empty
         """
         return self.height == 0
+
+    def to_struct(self, name: str) -> "pli.Series":
+        """
+        Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+
+        Parameters
+        ----------
+        name
+            Name for the struct Series
+        """
+        return pli.wrap_s(self._df.to_struct(name))
+
+    def unnest(self, names: Union[str, List[str]]) -> "DataFrame":
+        """
+        Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+        location of the `struct` type.
+
+        Parameters
+        ----------
+        names
+           Names of the struct columns that will be decomposed by its fields
+        """
+        if isinstance(names, str):
+            names = [names]
+        return wrap_df(self._df.unnest(names))
 
 
 class RollingGroupBy:

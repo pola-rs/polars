@@ -41,7 +41,7 @@ def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
 
 
 def test_read_web_file() -> None:
-    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv"
+    url = "https://raw.githubusercontent.com/pola-rs/polars/master/examples/datasets/foods1.csv"
     df = pl.read_csv(url)
     assert df.shape == (27, 4)
 
@@ -357,3 +357,28 @@ def test_empty_string_missing_round_trip() -> None:
     f.seek(0)
     df_read = pl.read_csv(f)
     assert df.frame_equal(df_read)
+
+
+def test_write_csv_delimiter() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
+    f = io.BytesIO()
+    df.to_csv(f, sep="\t")
+    f.seek(0)
+    assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
+
+
+def test_escaped_null_values() -> None:
+    csv = """
+"a","b","c"
+"a","n/a","NA"
+"None","2","3.0"
+    """
+    f = io.StringIO(csv)
+    df = pl.read_csv(
+        f,
+        null_values={"a": "None", "b": "n/a", "c": "NA"},
+        dtypes={"a": pl.Utf8, "b": pl.Int64, "c": pl.Float64},
+    )
+    assert df[1, "a"] is None
+    assert df[0, "b"] is None
+    assert df[0, "c"] is None

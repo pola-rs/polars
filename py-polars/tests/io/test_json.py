@@ -38,9 +38,17 @@ def test_to_json() -> None:
         df.to_json() == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
     )
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+    expected = df
 
     out = df.to_json(row_oriented=True)
     assert out == r"""[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
+    # test round trip
+    f = io.BytesIO()
+    f.write(out.encode())  # type: ignore
+    f.seek(0)
+    df = pl.read_json(f, json_lines=False)
+    assert df.frame_equal(expected)
+
     out = df.to_json(json_lines=True)
     assert (
         out
@@ -49,6 +57,13 @@ def test_to_json() -> None:
 {"a":3,"b":null}
 """
     )
+    # test round trip
+    f = io.BytesIO()
+    f.write(out.encode())  # type: ignore
+    f.seek(0)
+    df = pl.read_json(f, json_lines=True)
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+    assert df.frame_equal(expected)
 
 
 def test_to_json2(df: pl.DataFrame) -> None:

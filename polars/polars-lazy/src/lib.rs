@@ -108,7 +108,7 @@
 //!         col("rain").sum(),
 //!         col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
 //!     ])
-//!     .sort("date", false)
+//!     .sort("date", Default::default())
 //!     .collect()
 //!
 //! }
@@ -198,8 +198,6 @@ mod dummies;
 pub mod frame;
 #[cfg(feature = "compile")]
 mod from;
-#[cfg(feature = "compile")]
-pub mod functions;
 #[cfg(feature = "compile")]
 pub mod logical_plan;
 #[cfg(feature = "compile")]

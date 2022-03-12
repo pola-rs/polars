@@ -23,3 +23,32 @@ assert np.isclose(
 assert np.isclose(
     df.with_column(pl.col("value").cast(pl.Int32)).get_column("value").mean(), mean
 )
+
+# https://github.com/pola-rs/polars/issues/2850
+df = pl.DataFrame(
+    {
+        "id": [
+            130352432,
+            130352277,
+            130352611,
+            130352833,
+            130352305,
+            130352258,
+            130352764,
+            130352475,
+            130352368,
+            130352346,
+        ]
+    }
+)
+
+minimum = 130352258
+maximum = 130352833.0
+
+for _ in range(10):
+    permuted = df.sample(frac=1.0)
+    computed = permuted.select(
+        [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
+    )
+    assert computed[0, "min"] == minimum
+    assert computed[0, "max"] == maximum

@@ -1,5 +1,5 @@
 use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
 use crate::series::PySeries;
@@ -14,7 +14,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence, PyTuple};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -146,7 +146,7 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
             Ok(Wrap(NullValues::Named(s)))
         } else {
             Err(
-                PyPolarsEr::Other("could not extract value from null_values argument".into())
+                PyPolarsErr::Other("could not extract value from null_values argument".into())
                     .into(),
             )
         }
@@ -169,6 +169,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::Utf8Owned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(idx);
                 s.into_py(py)
@@ -227,6 +228,12 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     .unwrap();
                 python_series_wrapper.into()
             }
+            AnyValue::Struct(vals) => {
+                // Safety:
+                // Wrap<T> is transparent
+                let vals = unsafe { std::mem::transmute::<_, Vec<Wrap<AnyValue>>>(vals) };
+                PyTuple::new(py, vals).into_py(py)
+            }
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -259,6 +266,7 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
+            DataType::Struct(_) => pl.getattr("Struct").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }
@@ -351,6 +359,28 @@ impl ToPyObject for Wrap<TimeUnit> {
     }
 }
 
+impl ToPyObject for Wrap<&Utf8Chunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let iter = self.0.into_iter();
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&StructChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let s = self.0.clone().into_series();
+        let iter = s.iter().map(|av| {
+            if let AnyValue::Struct(vals) = av {
+                PyTuple::new(py, vals.into_iter().map(Wrap))
+            } else {
+                unreachable!()
+            }
+        });
+
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
@@ -431,8 +461,30 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
+        } else if ob.is_instance::<PyTuple>()? {
+            let tuple = ob.downcast::<PyTuple>().unwrap();
+            let items = tuple
+                .iter()
+                .map(|ob| {
+                    let av = ob.extract::<Wrap<AnyValue>>()?;
+                    Ok(av.0)
+                })
+                .collect::<PyResult<Vec<_>>>()?;
+            Ok(Wrap(AnyValue::Struct(items)))
+        } else if ob.is_instance::<PyList>()? {
+            Python::with_gil(|py| {
+                let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+                let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;
+                let py_pyseries = series.getattr(py, "_s").unwrap();
+                let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
+                Ok(Wrap(AnyValue::List(series)))
+            })
+        } else if ob.hasattr("_s")? {
+            let py_pyseries = ob.getattr("_s").unwrap();
+            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            Ok(Wrap(AnyValue::List(series)))
         } else {
-            Err(PyErr::from(PyPolarsEr::Other(format!(
+            Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",
                 ob
             ))))

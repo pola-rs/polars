@@ -14,7 +14,7 @@ macro_rules! impl_set_at_idx_with {
 
         while let Some(current_idx) = idx_iter.next() {
             if current_idx > $self.len() {
-                return Err(PolarsError::OutOfBounds(
+                return Err(PolarsError::ComputeError(
                     format!(
                         "index: {} outside of ChunkedArray with length: {}",
                         current_idx,
@@ -80,7 +80,7 @@ where
 
                     idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
                         let val = data.get_mut(idx).ok_or_else(|| {
-                            PolarsError::OutOfBounds(
+                            PolarsError::ComputeError(
                                 format!("{} out of bounds on array of length: {}", idx, self.len())
                                     .into(),
                             )
@@ -241,7 +241,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for Utf8Chunked {
 
         for current_idx in idx_iter {
             if current_idx > self.len() {
-                return Err(PolarsError::OutOfBounds(
+                return Err(PolarsError::ComputeError(
                     format!(
                         "index: {} outside of ChunkedArray with length: {}",
                         current_idx,

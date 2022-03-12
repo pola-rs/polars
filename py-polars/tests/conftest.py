@@ -12,7 +12,6 @@ EXAMPLES_DIR = os.path.abspath(
         "..",
         "..",
         "examples",
-        "aggregate_multiple_files_in_chunks",
         "datasets",
     )
 )

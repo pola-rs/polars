@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate core;
-
 #[macro_use]
 pub mod utils;
 pub mod chunked_array;
@@ -14,6 +13,7 @@ pub mod frame;
 pub mod functions;
 mod named_from;
 pub mod prelude;
+pub mod schema;
 #[cfg(feature = "serde")]
 #[cfg_attr(docsrs, doc(cfg(feature = "serde")))]
 pub mod serde;

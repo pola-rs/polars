@@ -143,6 +143,7 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<Result<_>>()
         })?
     };
+    state.clear_schema_cache();
 
     check_expand_literals(selected_columns, zero_length)
 }

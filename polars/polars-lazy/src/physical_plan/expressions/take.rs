@@ -111,7 +111,7 @@ impl PhysicalExpr for TakeExpr {
 
                     return if idx.len() == 1 {
                         match idx.get(0) {
-                            None => Err(PolarsError::ValueError("cannot take by a null".into())),
+                            None => Err(PolarsError::ComputeError("cannot take by a null".into())),
                             Some(idx) => {
                                 if idx != 0 {
                                     // We must make sure that the column we take from is sorted by

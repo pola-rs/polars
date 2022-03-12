@@ -134,18 +134,6 @@ macro_rules! impl_dyn_series {
                     .map(|s| s.$into_logical().into_series())
             }
 
-            fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_inner(&other.as_ref().as_ref())
-            }
-            fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_left(&other.as_ref().as_ref())
-            }
-            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_outer(&other.as_ref().as_ref())
-            }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
@@ -405,8 +393,8 @@ macro_rules! impl_dyn_series {
                 self.0.sort_with(options).$into_logical().into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> IdxCa {
-                self.0.argsort(reverse)
+            fn argsort(&self, options: SortOptions) -> IdxCa {
+                self.0.argsort(options)
             }
 
             fn null_count(&self) -> usize {

@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.9.1"
-source = "git+https://github.com/ritchie46/arrow2?branch=csv_write#d9cccffc22beacf7b966fcaadda5c6242e663614"
+source = "git+https://github.com/ritchie46/arrow2?branch=cherry_pick#dfa1715c2dbf7be4b7f3055a3a40e73cb8e001e5"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -218,9 +218,9 @@ dependencies = [
 
 [[package]]
 name = "bytemuck"
-version = "1.7.3"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439989e6b8c38d1b6570a384ef1e49c8848128f5a97f3914baef02920842712f"
+checksum = "0e851ca7c24871e7336801608a4797d7376545b6928a10d32d75685687141ead"
 dependencies = [
  "bytemuck_derive",
 ]
@@ -900,9 +900,9 @@ dependencies = [
 
 [[package]]
 name = "lz4"
-version = "1.23.2"
+version = "1.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac20ed6991e01bf6a2e68cc73df2b389707403662a8ba89f68511fb340f724c"
+checksum = "4edcb94251b1c375c459e5abe9fb0168c1c826c3370172684844f8f3f8d1a885"
 dependencies = [
  "libc",
  "lz4-sys",
@@ -910,9 +910,9 @@ dependencies = [
 
 [[package]]
 name = "lz4-sys"
-version = "1.9.2"
+version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dca79aa95d8b3226213ad454d328369853be3a1382d89532a854f4d69640acae"
+checksum = "d7be8908e2ed6f31c02db8a9fa962f03e36c53fbfde437363eae3306b85d7e17"
 dependencies = [
  "cc",
  "libc",
@@ -1137,9 +1137,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da32515d9f6e6e489d7bc9d84c71b060db7247dc035bbe44eac88cf87486d8d5"
+checksum = "87f3e037eac156d1775da914196f0f37741a274155e34a0b7e427c35d2a2ecb9"
 
 [[package]]
 name = "ordered-float"
@@ -1223,9 +1223,9 @@ dependencies = [
 
 [[package]]
 name = "parquet2"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe2f206abf5ff36f501e6b6acb646de1d236ca4ecb35dc6a58cbedbf7cab748a"
+checksum = "6b085f9e78e4842865151b693f6d94bdf7b280af66daa6e3587adeb3106a07e9"
 dependencies = [
  "async-stream",
  "bitpacking",
@@ -1317,6 +1317,7 @@ dependencies = [
  "comfy-table",
  "hashbrown 0.12.0",
  "hex",
+ "indexmap",
  "jsonpath_lib",
  "lazy_static",
  "ndarray",
@@ -1331,7 +1332,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "unsafe_unwrap",
 ]
 
 [[package]]
@@ -1355,6 +1355,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
+ "serde_json",
  "simdutf8",
 ]
 
@@ -1364,6 +1365,7 @@ version = "0.19.1"
 dependencies = [
  "ahash",
  "glob",
+ "parking_lot 0.12.0",
  "polars-arrow",
  "polars-core",
  "polars-io",
@@ -1386,7 +1388,7 @@ dependencies = [
 name = "polars-utils"
 version = "0.1.0"
 dependencies = [
- "parking_lot 0.11.2",
+ "parking_lot 0.12.0",
  "rayon",
 ]
 
@@ -1413,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.13.6"
+version = "0.13.10"
 dependencies = [
  "ahash",
  "bincode",
@@ -1555,9 +1557,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.2.10"
+version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8383f39639269cde97d255a32bdb68c047337295414940c68bdd30c2e13203ff"
+checksum = "8380fe0152551244f0747b1bf41737e0f8a74f97a14ccefd1148187271634f3c"
 dependencies = [
  "bitflags",
 ]
@@ -1815,12 +1817,6 @@ name = "unindent"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "514672a55d7380da379785a4d70ca8386c8883ff7eaae877be4d2081cebe73d8"
-
-[[package]]
-name = "unsafe_unwrap"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1230ec65f13e0f9b28d789da20d2d419511893ea9dac2c1f4ef67b8b14e5da80"
 
 [[package]]
 name = "vcpkg"

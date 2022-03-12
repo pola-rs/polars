@@ -77,7 +77,7 @@ impl PhysicalExpr for SortExpr {
                             series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
                         };
 
-                        let sorted_idx = group.argsort(self.options.descending);
+                        let sorted_idx = group.argsort(self.options);
                         let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
                         (new_idx[0], new_idx)
                     })
@@ -87,7 +87,7 @@ impl PhysicalExpr for SortExpr {
                 .iter()
                 .map(|&[first, len]| {
                     let group = series.slice(first as i64, len as usize);
-                    let sorted_idx = group.argsort(self.options.descending);
+                    let sorted_idx = group.argsort(self.options);
                     let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
                     (new_idx[0], new_idx)
                 })

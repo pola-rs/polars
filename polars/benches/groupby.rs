@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
 use polars::prelude::*;
-use polars_lazy::functions::pearson_corr;
+use polars_lazy::dsl::functions::pearson_corr;
 
 lazy_static! {
     static ref DATA: DataFrame = {

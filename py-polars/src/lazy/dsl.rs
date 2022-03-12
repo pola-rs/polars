@@ -592,6 +592,13 @@ impl PyExpr {
         self.inner.clone().str().split_inclusive(by).into()
     }
 
+    pub fn str_split_exact(&self, by: &str, n: usize) -> PyExpr {
+        self.inner.clone().str().split_exact(by, n).into()
+    }
+    pub fn str_split_exact_inclusive(&self, by: &str, n: usize) -> PyExpr {
+        self.inner.clone().str().split_exact_inclusive(by, n).into()
+    }
+
     pub fn arr_lengths(&self) -> PyExpr {
         self.inner.clone().arr().lengths().into()
     }
@@ -671,21 +678,17 @@ impl PyExpr {
             )
             .into()
     }
-    pub fn timestamp(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                |s| s.timestamp().map(|ca| ca.into_series()),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .with_fmt("timestamp")
-            .into()
+    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().timestamp(tu.0).into()
     }
     pub fn dt_epoch_seconds(&self) -> PyExpr {
         self.clone()
             .inner
             .map(
-                |s| s.timestamp().map(|ca| (ca / 1000).into_series()),
+                |s| {
+                    s.timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| (ca / 1000).into_series())
+                },
                 GetOutput::from_type(DataType::Int64),
             )
             .into()
@@ -1110,6 +1113,27 @@ impl PyExpr {
         self.inner.clone().arr().join(separator).into()
     }
 
+    fn lst_arg_min(&self) -> Self {
+        self.inner.clone().arr().arg_min().into()
+    }
+
+    fn lst_arg_max(&self) -> Self {
+        self.inner.clone().arr().arg_max().into()
+    }
+
+    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
+        let null_behavior = str_to_null_behavior(null_behavior)?;
+        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    }
+
+    fn lst_shift(&self, periods: i64) -> Self {
+        self.inner.clone().arr().shift(periods).into()
+    }
+
+    fn lst_slice(&self, offset: i64, length: usize) -> Self {
+        self.inner.clone().arr().slice(offset, length).into()
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {
@@ -1245,6 +1269,14 @@ impl PyExpr {
 
     pub fn all(&self) -> Self {
         self.inner.clone().all().into()
+    }
+
+    pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
+        self.inner.clone().struct_().field_by_name(name).into()
+    }
+
+    pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
+        self.inner.clone().struct_().rename_fields(names).into()
     }
 }
 

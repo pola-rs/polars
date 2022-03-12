@@ -5,15 +5,22 @@ pub mod cat;
 pub use cat::*;
 #[cfg(feature = "temporal")]
 mod dt;
+#[cfg(feature = "compile")]
+mod functions;
 #[cfg(feature = "list")]
 mod list;
 mod options;
 #[cfg(feature = "strings")]
 pub mod string;
+#[cfg(feature = "dtype-struct")]
+mod struct_;
 
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::{has_expr, has_root_literal_expr};
+use crate::utils::has_expr;
+
+#[cfg(feature = "is_in")]
+use crate::utils::has_root_literal_expr;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
@@ -27,8 +34,8 @@ use std::{
 };
 // reexport the lazy method
 pub use crate::frame::IntoLazy;
-pub use crate::functions::*;
 pub use crate::logical_plan::lit;
+pub use functions::*;
 pub use options::*;
 
 use polars_arrow::array::default_arrays::FromData;
@@ -175,6 +182,12 @@ impl GetOutput {
     pub fn map_field<F: 'static + Fn(&Field) -> Field + Send + Sync>(f: F) -> Self {
         NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             f(&flds[0])
+        }))
+    }
+
+    pub fn map_fields<F: 'static + Fn(&[Field]) -> Field + Send + Sync>(f: F) -> Self {
+        NoEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
+            f(flds)
         }))
     }
 
@@ -563,6 +576,7 @@ impl Expr {
     /// Overwrite the function name used for formatting
     /// this is not intended to be used
     #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn with_fmt(self, name: &'static str) -> Expr {
         self.with_function_options(|mut options| {
             options.fmt_str = name;
@@ -809,7 +823,13 @@ impl Expr {
         };
 
         self.function_with_options(
-            move |s: Series| Ok(s.argsort(reverse).into_series()),
+            move |s: Series| {
+                Ok(s.argsort(SortOptions {
+                    descending: reverse,
+                    ..Default::default()
+                })
+                .into_series())
+            },
             GetOutput::from_type(IDX_DTYPE),
             options,
         )
@@ -2042,6 +2062,10 @@ impl Expr {
     pub fn cat(self) -> cat::CategoricalNameSpace {
         cat::CategoricalNameSpace(self)
     }
+    #[cfg(feature = "dtype-struct")]
+    pub fn struct_(self) -> struct_::StructNameSpace {
+        struct_::StructNameSpace(self)
+    }
 }
 
 // Arithmetic ops
@@ -2183,30 +2207,4 @@ pub fn first() -> Expr {
 /// Last column in DataFrame
 pub fn last() -> Expr {
     Expr::Nth(-1)
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use polars_core::df;
-
-    #[test]
-    #[cfg(feature = "is_in")]
-    fn test_is_in() -> Result<()> {
-        let df = df![
-            "x" => [1, 2, 3],
-            "y" => ["a", "b", "c"]
-        ]?;
-        let s = Series::new("a", ["a", "b"]);
-
-        let out = df
-            .lazy()
-            .select([col("y").is_in(lit(s)).alias("isin")])
-            .collect()?;
-        assert_eq!(
-            Vec::from(out.column("isin")?.bool()?),
-            &[Some(true), Some(true), Some(false)]
-        );
-        Ok(())
-    }
 }

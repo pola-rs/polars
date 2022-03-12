@@ -23,7 +23,7 @@ impl ListChunked {
         N: PolarsNumericType,
     {
         if self.null_count() != 0 {
-            Err(PolarsError::HasNullValues(
+            Err(PolarsError::ComputeError(
                 "Creation of ndarray with null values is not supported.".into(),
             ))
         } else {
@@ -127,7 +127,7 @@ impl DataFrame {
 
         columns.par_iter().enumerate().map(|(col_idx, s)| {
             if s.null_count() != 0 {
-                return Err(PolarsError::HasNullValues(
+                return Err(PolarsError::ComputeError(
                     "Creation of ndarray with null values is not supported. Consider using floats and NaNs".into(),
                 ));
             }

@@ -24,6 +24,7 @@ pub use crate::{
         *,
     },
     named_from::{NamedFrom, NamedFromOwned},
+    schema::*,
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, Series, SeriesTrait,

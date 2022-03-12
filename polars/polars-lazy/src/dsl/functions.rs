@@ -410,7 +410,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
     let lf = std::mem::take(
         inputs
             .get_mut(0)
-            .ok_or_else(|| PolarsError::ValueError("empty container given".into()))?,
+            .ok_or_else(|| PolarsError::ComputeError("empty container given".into()))?,
     );
     let opt_state = lf.opt_state;
     let mut lps = Vec::with_capacity(inputs.len());
@@ -489,7 +489,8 @@ pub fn all() -> Expr {
 }
 
 /// Select multiple columns by name
-pub fn cols(names: Vec<String>) -> Expr {
+pub fn cols<I: IntoVec<String>>(names: I) -> Expr {
+    let names = names.into_vec();
     Expr::Columns(names)
 }
 
@@ -731,4 +732,19 @@ impl_into_range!(u32);
 /// Create a range literal.
 pub fn range<T: Range<T>>(low: T, high: T) -> Expr {
     low.into_range(high)
+}
+
+/// Take several expressions and collect them into a [`StructChunked`].
+#[cfg(feature = "dtype-struct")]
+pub fn as_struct(exprs: &[Expr]) -> Expr {
+    map_multiple(
+        |s| StructChunked::new("", s).map(|ca| ca.into_series()),
+        exprs,
+        GetOutput::map_fields(|fld| Field::new("", DataType::Struct(fld.to_vec()))),
+    )
+    .with_function_options(|mut options| {
+        options.input_wildcard_expansion = true;
+        options.fmt_str = "as_struct";
+        options
+    })
 }

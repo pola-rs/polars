@@ -697,7 +697,10 @@ def read_ipc_schema(
 
 
 def read_avro(
-    file: Union[str, Path, BytesIO, BinaryIO], n_rows: Optional[int] = None
+    file: Union[str, Path, BytesIO, BinaryIO],
+    columns: Optional[Union[List[int], List[str]]] = None,
+    n_rows: Optional[int] = None,
+    **kwargs: Any,
 ) -> DataFrame:
     """
     Read into a DataFrame from Apache Avro format.
@@ -706,6 +709,8 @@ def read_avro(
     ----------
     file
         Path to a file or a file-like object.
+    columns
+        Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
     n_rows
         Stop reading from Apache Avro file after reading ``n_rows``.
 
@@ -715,8 +720,10 @@ def read_avro(
     """
     if isinstance(file, Path):
         file = str(file)
+    if columns is None:
+        columns = kwargs.pop("projection", None)
 
-    return DataFrame._read_avro(file, n_rows=n_rows)
+    return DataFrame._read_avro(file, n_rows=n_rows, columns=columns)
 
 
 def read_ipc(
@@ -795,7 +802,7 @@ def read_ipc(
 
 
 def read_parquet(
-    source: Union[str, List[str], Path, BinaryIO, BytesIO, bytes],
+    source: Union[str, Path, BinaryIO, BytesIO, bytes],
     columns: Optional[Union[List[int], List[str]]] = None,
     n_rows: Optional[int] = None,
     use_pyarrow: bool = False,
@@ -812,7 +819,7 @@ def read_parquet(
     Parameters
     ----------
     source
-        Path to a file, list of files, or a file-like object. If the path is a directory, that directory will be used
+        Path to a file, or a file-like object. If the path is a directory, that directory will be used
         as partition aware scan.
         If ``fsspec`` is installed, it will be used to open remote files.
     columns
@@ -878,7 +885,7 @@ def read_parquet(
         )
 
 
-def read_json(source: Union[str, IOBase]) -> DataFrame:
+def read_json(source: Union[str, IOBase], json_lines: bool = False) -> DataFrame:
     """
     Read into a DataFrame from JSON format.
 
@@ -886,8 +893,10 @@ def read_json(source: Union[str, IOBase]) -> DataFrame:
     ----------
     source
         Path to a file or a file-like object.
+    json_lines
+        Toggle between "JSON" and "NDJSON" format
     """
-    return DataFrame._read_json(source)
+    return DataFrame._read_json(source, json_lines)
 
 
 def read_sql(

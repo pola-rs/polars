@@ -19,7 +19,6 @@ pub struct RollingGroupOptions {
 pub use crate::{
     dsl::*,
     frame::*,
-    functions::*,
     logical_plan::{
         optimizer::{type_coercion::TypeCoercionRule, Optimize, *},
         options::*,

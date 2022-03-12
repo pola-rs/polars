@@ -1,7 +1,8 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
-use crate::utils::accumulate_dataframes_vertical_unchecked;
+use crate::utils::get_supertype;
 use arrow::buffer::Buffer;
+use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
@@ -135,6 +136,8 @@ impl DataFrame {
     /// * `id_vars` - String slice that represent the columns to use as id variables.
     /// * `value_vars` - String slice that represent the columns to use as value variables.
     ///
+    /// If `value_vars` is empty all columns that are not in `id_vars` will be used.
+    ///
     /// ```ignore
     /// # use polars_core::prelude::*;
     /// let df = df!("A" => &["a", "b", "a"],
@@ -180,33 +183,90 @@ impl DataFrame {
     ///  | "a" | 5   | "D"      | 6     |
     ///  +-----+-----+----------+-------+
     /// ```
-    pub fn melt<I, J, S>(&self, id_vars: I, value_vars: J) -> Result<Self>
+    pub fn melt<I, J>(&self, id_vars: I, value_vars: J) -> Result<Self>
     where
-        I: IntoIterator<Item = S>,
-        J: IntoIterator<Item = S>,
-        S: AsRef<str>,
+        I: IntoVec<String>,
+        J: IntoVec<String>,
     {
-        let ids = self.select(id_vars)?;
+        let id_vars = id_vars.into_vec();
+        let value_vars = value_vars.into_vec();
+        self.melt2(id_vars, value_vars)
+    }
+
+    /// Similar to melt, but without generics. This may be easier if you want to pass
+    /// an empty `id_vars` or empty `value_vars`.
+    pub fn melt2(&self, id_vars: Vec<String>, mut value_vars: Vec<String>) -> Result<Self> {
         let len = self.height();
 
-        let value_vars = value_vars.into_iter();
-
-        let mut dataframe_chunks = Vec::with_capacity(value_vars.size_hint().0);
-
-        for value_column_name in value_vars {
-            let value_column_name = value_column_name.as_ref();
-            let variable_col = Utf8Chunked::full("variable", value_column_name, len).into_series();
-            let mut value_col = self.column(value_column_name)?.clone();
-            value_col.rename("value");
-
-            let mut df_chunk = ids.clone();
-            df_chunk.hstack_mut(&[variable_col, value_col])?;
-            dataframe_chunks.push(df_chunk)
+        // if value vars is empty we take all columns that are not in id_vars.
+        if value_vars.is_empty() {
+            let id_vars_set = PlHashSet::from_iter(id_vars.iter().map(|s| s.as_str()));
+            value_vars = self
+                .get_columns()
+                .iter()
+                .filter_map(|s| {
+                    if id_vars_set.contains(s.name()) {
+                        None
+                    } else {
+                        Some(s.name().to_string())
+                    }
+                })
+                .collect();
         }
 
-        let mut df = accumulate_dataframes_vertical_unchecked(dataframe_chunks)?;
-        df.rechunk();
-        Ok(df)
+        // values will all be placed in single column, so we must find their supertype
+        let schema = self.schema();
+        let mut iter = value_vars.iter().map(|v| {
+            schema
+                .get(v)
+                .ok_or_else(|| PolarsError::NotFound(v.clone()))
+        });
+        let mut st = iter.next().unwrap()?.clone();
+        for dt in iter {
+            st = get_supertype(&st, dt?)?;
+        }
+
+        let values_len = value_vars.iter().map(|name| name.len()).sum::<usize>();
+
+        // The column name of the variable that is melted
+        let mut variable_col = MutableUtf8Array::<i64>::with_capacities(
+            len * value_vars.len() + 1,
+            len * values_len + 1,
+        );
+        // prepare ids
+        let ids_ = self.select(id_vars)?;
+        let mut ids = ids_.clone();
+        if ids.width() > 0 {
+            for _ in 0..value_vars.len() - 1 {
+                ids.vstack_mut_unchecked(&ids_)
+            }
+        }
+        ids.as_single_chunk_par();
+        drop(ids_);
+
+        let mut values = Vec::with_capacity(value_vars.len());
+
+        for value_column_name in &value_vars {
+            variable_col.extend_trusted_len_values(std::iter::repeat(value_column_name).take(len));
+            let value_col = self.column(value_column_name)?.cast(&st)?;
+            values.extend_from_slice(value_col.chunks())
+        }
+        let values_arr = concatenate_owned_unchecked(&values)?;
+        // Safety
+        // The give dtype is correct
+        let values =
+            unsafe { Series::from_chunks_and_dtype_unchecked("value", vec![values_arr], &st) };
+
+        let variable_col = variable_col.into_arc();
+        // Safety
+        // The give dtype is correct
+        let variables = unsafe {
+            Series::from_chunks_and_dtype_unchecked("variable", vec![variable_col], &DataType::Utf8)
+        };
+
+        ids.hstack_mut(&[variables, values])?;
+
+        Ok(ids)
     }
 }
 
@@ -267,7 +327,7 @@ mod test {
 
     #[test]
     #[cfg_attr(miri, ignore)]
-    fn test_melt() {
+    fn test_melt() -> Result<()> {
         let df = df!("A" => &["a", "b", "a"],
          "B" => &[1, 3, 5],
          "C" => &[10, 11, 12],
@@ -275,10 +335,32 @@ mod test {
         )
         .unwrap();
 
-        let melted = df.melt(&["A", "B"], &["C", "D"]).unwrap();
+        let melted = df.melt(&["A", "B"], &["C", "D"])?;
         assert_eq!(
-            Vec::from(melted.column("value").unwrap().i32().unwrap()),
+            Vec::from(melted.column("value")?.i32()?),
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
-        )
+        );
+
+        let melted = df.melt2(vec![], vec![]).unwrap();
+        let value = melted.column("value")?;
+        // utf8 because of supertype
+        let value = value.utf8()?;
+        let value = value.into_no_null_iter().collect::<Vec<_>>();
+        assert_eq!(
+            value,
+            &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
+        );
+
+        let melted = df.melt2(vec!["A".into()], vec![]).unwrap();
+        let value = melted.column("value")?;
+        let value = value.i32()?;
+        let value = value.into_no_null_iter().collect::<Vec<_>>();
+        assert_eq!(value, &[1, 3, 5, 10, 11, 12, 2, 4, 6]);
+        let variable = melted.column("variable")?;
+        let variable = variable.utf8()?;
+        let variable = variable.into_no_null_iter().collect::<Vec<_>>();
+        assert_eq!(variable, &["B", "B", "B", "C", "C", "C", "D", "D", "D"]);
+        assert!(melted.column("A").is_ok());
+        Ok(())
     }
 }

@@ -1,6 +1,6 @@
 use super::*;
 use crate::conversion::Wrap;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::series::PySeries;
 use crate::PyDataFrame;
 use polars::prelude::*;
@@ -104,23 +104,23 @@ pub fn apply_lambda_unknown<'a>(
                         first_value,
                         inference_size,
                     )
-                    .map_err(PyPolarsEr::from)?,
+                    .map_err(PyPolarsErr::from)?,
                 )
                 .into_py(py),
                 true,
             ));
         } else if out.is_instance::<PyList>().unwrap() {
-            return Err(PyPolarsEr::Other(
+            return Err(PyPolarsErr::Other(
                 "A list output type is invalid. Do you mean to create polars List Series?\
 Then return a Series object."
                     .into(),
             )
             .into());
         } else {
-            return Err(PyPolarsEr::Other("Could not determine output type".into()).into());
+            return Err(PyPolarsErr::Other("Could not determine output type".into()).into());
         }
     }
-    Err(PyPolarsEr::Other("Could not determine output type".into()).into())
+    Err(PyPolarsErr::Other("Could not determine output type".into()).into())
 }
 
 fn apply_iter<'a, T>(

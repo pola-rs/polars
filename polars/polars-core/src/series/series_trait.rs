@@ -5,7 +5,6 @@ pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 #[cfg(feature = "temporal")]
@@ -204,16 +203,6 @@ pub(crate) mod private {
         }
         fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
-        }
-
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(IdxSize, IdxSize)> {
-            invalid_operation_panic!(self)
-        }
-        fn hash_join_left(&self, _other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
-            invalid_operation_panic!(self)
-        }
-        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<IdxSize>, Option<IdxSize>)> {
-            invalid_operation_panic!(self)
         }
         fn zip_outer_join_column(
             &self,
@@ -630,7 +619,8 @@ pub trait SeriesTrait:
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> IdxCa {
+    #[allow(unused)]
+    fn argsort(&self, options: SortOptions) -> IdxCa {
         invalid_operation_panic!(self)
     }
 
@@ -1004,31 +994,10 @@ pub trait SeriesTrait:
         feature = "dtype-datetime"
     ))]
     #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Convert date(time) object to timestamp in ms.
-    fn timestamp(&self) -> Result<Int64Chunked> {
-        match self.dtype() {
-            DataType::Date => self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                .unwrap()
-                .datetime()
-                .map(|ca| (ca.deref().clone())),
-            DataType::Datetime(tu, tz) => {
-                use TimeUnit::*;
-                match (tu, tz.as_deref()) {
-                    (Nanoseconds, None | Some("")) => {
-                        self.datetime().map(|ca| ca.deref().clone() / 1_000_000)
-                    }
-                    (Microseconds, None | Some("")) => {
-                        self.datetime().map(|ca| ca.deref().clone() / 1_000)
-                    }
-                    (Milliseconds, None | Some("")) => self.datetime().map(|ca| ca.deref().clone()),
-                    (_, Some(_)) => panic!("tz not yet supported"),
-                }
-            }
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
+    /// Convert date(time) object to timestamp in [`TimeUnit`].
+    fn timestamp(&self, tu: TimeUnit) -> Result<Int64Chunked> {
+        self.cast(&DataType::Datetime(tu, None))
+            .map(|s| s.datetime().unwrap().deref().clone())
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc
@@ -1045,8 +1014,6 @@ pub trait SeriesTrait:
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
-    #[cfg(feature = "object")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
         invalid_operation_panic!(self)
     }

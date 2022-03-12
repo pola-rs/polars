@@ -22,7 +22,7 @@ default = [
   "csv-file",
   "temporal",
   "performant",
-  "plain_fmt",
+  "fmt",
   "dtype-slim",
 ]
 ndarray = ["polars-core/ndarray"]
@@ -55,11 +55,8 @@ csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 # that fits a TrustedLen iterator.
 performant = ["polars-core/performant"]
 
-# Choose one of those features for dataframe formatting.
-#   - plain_fmt: less compile times, simpler formatting
-#   - pretty_fmt: better looking dataframes for increase compile times
-plain_fmt = ["polars-core/plain_fmt"]
-pretty_fmt = ["polars-core/pretty_fmt"]
+# Dataframe formatting.
+fmt = ["polars-core/fmt"]
 
 # sort by multiple columns
 sort_multiple = ["polars-core/sort_multiple"]
@@ -105,6 +102,8 @@ dot_diagram = ["polars-lazy/dot_diagram"]
 dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
 product = ["polars-core/product"]
 
+series_from_anyvalue = ["polars-core/series_from_anyvalue"]
+
 test = [
   "lazy",
   "private",
@@ -115,7 +114,7 @@ test = [
   "csv-file",
   "dtype-categorical",
   "cum_agg",
-  "polars-core/plain_fmt",
+  "fmt",
   "diff",
   "abs",
   "parquet",
@@ -136,6 +135,7 @@ dtype-full = [
   "dtype-u8",
   "dtype-u16",
   "dtype-categorical",
+  "dtype-struct",
 ]
 
 # sensible minimal set of opt-in datatypes
@@ -160,6 +160,7 @@ dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
 dtype-categorical = ["polars-core/dtype-categorical", "polars-io/dtype-categorical", "polars-lazy/dtype-categorical"]
+dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct"]
 
 docs-selection = [
   "csv-file",

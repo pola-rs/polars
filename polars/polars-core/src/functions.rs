@@ -90,7 +90,7 @@ where
 /// be used and so on.
 pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
     if by.len() != reverse.len() {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             format!(
                 "The amount of ordering booleans: {} does not match amount of Series: {}",
                 reverse.len(),
@@ -149,7 +149,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
         .collect::<Result<Vec<_>>>()?;
 
     if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             "all series in concat_str function should have equal length or unit length".into(),
         ));
     }

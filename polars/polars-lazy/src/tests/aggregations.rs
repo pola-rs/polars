@@ -107,7 +107,7 @@ fn test_cumsum_agg_as_key() -> Result<()> {
             .cumsum(false)
             .alias("key")])
         .agg([col("depth").max().keep_name()])
-        .sort("depth", false)
+        .sort("depth", SortOptions::default())
         .collect()?;
 
     assert_eq!(
@@ -173,7 +173,13 @@ fn test_power_in_agg_list1() -> Result<()> {
             })
             .pow(2.0)
             .alias("foo")])
-        .sort("fruits", true)
+        .sort(
+            "fruits",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .collect()?;
 
     let agg = out.column("foo")?.list()?;
@@ -202,7 +208,13 @@ fn test_power_in_agg_list2() -> Result<()> {
             .pow(2.0)
             .sum()
             .alias("foo")])
-        .sort("fruits", true)
+        .sort(
+            "fruits",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .collect()?;
 
     let agg = out.column("foo")?.f64()?;
@@ -380,7 +392,7 @@ fn test_shift_elementwise_issue_2509() -> Result<()> {
         // Don't use maintain order here! That hides the bug
         .groupby([col("x")])
         .agg(&[(col("y").shift(-1) + col("x")).list().alias("sum")])
-        .sort("x", false)
+        .sort("x", Default::default())
         .collect()?;
 
     let out = out.explode(["sum"])?;
@@ -408,7 +420,7 @@ fn take_aggregations() -> Result<()> {
         .lazy()
         .groupby([col("user")])
         .agg([col("book").take(col("count").arg_max()).alias("fav_book")])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
 
     let s = out.column("fav_book")?;
@@ -426,7 +438,7 @@ fn take_aggregations() -> Result<()> {
                 .take(col("count").arg_sort(true).head(Some(2)))
                 .alias("ordered"),
         ])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
     let s = out.column("ordered")?;
     let flat = s.explode()?;
@@ -438,7 +450,7 @@ fn take_aggregations() -> Result<()> {
         .lazy()
         .groupby([col("user")])
         .agg([col("book").take(lit(0)).alias("take_lit")])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
 
     let taken = out.column("take_lit")?;
@@ -502,7 +514,7 @@ fn test_take_in_groups() -> Result<()> {
 
     let out = df
         .lazy()
-        .sort("fruits", false)
+        .sort("fruits", Default::default())
         .select([col("B")
             .take(lit(Series::new("", &[0u32])))
             .over([col("fruits")])

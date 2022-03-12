@@ -2,8 +2,9 @@ use crate::logical_plan::projection::rewrite_projections;
 use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
-use ahash::RandomState;
+use parking_lot::Mutex;
 use polars_core::prelude::*;
+use polars_core::utils::get_supertype;
 use polars_io::csv::CsvEncoding;
 #[cfg(feature = "csv-file")]
 use polars_io::csv_core::utils::infer_file_schema;
@@ -17,14 +18,13 @@ use polars_io::{
     csv::NullValues,
     csv_core::utils::{get_reader_bytes, is_compressed},
 };
-use std::collections::HashSet;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
-pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> (Vec<Expr>, Schema) {
+pub(crate) fn prepare_projection(exprs: Vec<Expr>, schema: &Schema) -> Result<(Vec<Expr>, Schema)> {
     let exprs = rewrite_projections(exprs, schema, &[]);
-    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default);
-    (exprs, schema)
+    let schema = utils::expressions_to_schema(&exprs, schema, Context::Default)?;
+    Ok((exprs, schema))
 }
 
 pub struct LogicalPlanBuilder(LogicalPlan);
@@ -33,6 +33,21 @@ impl From<LogicalPlan> for LogicalPlanBuilder {
     fn from(lp: LogicalPlan) -> Self {
         LogicalPlanBuilder(lp)
     }
+}
+
+macro_rules! try_delayed {
+    ($fallible:expr, $input:expr, $convert:ident) => {
+        match $fallible {
+            Ok(success) => success,
+            Err(err) => {
+                return LogicalPlan::Error {
+                    input: Box::new($input.clone()),
+                    err: Arc::new(Mutex::new(Some(err))),
+                }
+                .$convert()
+            }
+        }
+    };
 }
 
 impl LogicalPlanBuilder {
@@ -169,7 +184,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
+        let (exprs, schema) =
+            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
 
         if exprs.is_empty() {
             self.map(
@@ -189,7 +205,8 @@ impl LogicalPlanBuilder {
     }
 
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
-        let (exprs, schema) = prepare_projection(exprs, self.0.schema());
+        let (exprs, schema) =
+            try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
         if !exprs.is_empty() {
             LogicalPlan::LocalProjection {
                 expr: exprs,
@@ -205,10 +222,8 @@ impl LogicalPlanBuilder {
     pub fn fill_null(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
         let exprs = schema
-            .fields()
-            .iter()
-            .map(|field| {
-                let name = field.name();
+            .iter_names()
+            .map(|name| {
                 when(col(name).is_null())
                     .then(fill_value.clone())
                     .otherwise(col(name))
@@ -221,10 +236,8 @@ impl LogicalPlanBuilder {
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
         let exprs = schema
-            .fields()
-            .iter()
-            .map(|field| {
-                let name = field.name();
+            .iter_names()
+            .map(|name| {
                 when(col(name).is_nan())
                     .then(fill_value.clone())
                     .otherwise(col(name))
@@ -237,20 +250,13 @@ impl LogicalPlanBuilder {
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
         // current schema
         let schema = self.0.schema();
-        let mut new_fields = schema.fields().clone();
-        let (exprs, _) = prepare_projection(exprs, schema);
+        let mut new_schema = (**schema).clone();
+        let (exprs, _) = try_delayed!(prepare_projection(exprs, schema), &self.0, into);
 
         for e in &exprs {
             let field = e.to_field(schema, Context::Default).unwrap();
-            match schema.index_of(field.name()) {
-                Ok(idx) => {
-                    new_fields[idx] = field;
-                }
-                Err(_) => new_fields.push(field),
-            }
+            new_schema.with_column(field.name().to_string(), field.data_type().clone());
         }
-
-        let new_schema = Schema::new(new_fields);
 
         LogicalPlan::HStack {
             input: Box::new(self.0),
@@ -287,9 +293,17 @@ impl LogicalPlanBuilder {
         let current_schema = self.0.schema();
         let aggs = rewrite_projections(aggs.as_ref().to_vec(), current_schema, keys.as_ref());
 
-        let schema1 = utils::expressions_to_schema(&keys, current_schema, Context::Default);
-        let schema2 = utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation);
-        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+        let mut schema = try_delayed!(
+            utils::expressions_to_schema(&keys, current_schema, Context::Default),
+            &self.0,
+            into
+        );
+        let other = try_delayed!(
+            utils::expressions_to_schema(&aggs, current_schema, Context::Aggregation),
+            &self.0,
+            into
+        );
+        schema.merge(other);
 
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
@@ -321,11 +335,14 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>) -> Self {
+    pub fn sort(self, by_column: Vec<Expr>, reverse: Vec<bool>, null_last: bool) -> Self {
         LogicalPlan::Sort {
             input: Box::new(self.0),
             by_column,
-            reverse,
+            args: SortArguments {
+                reverse,
+                nulls_last: null_last,
+            },
         }
         .into()
     }
@@ -351,7 +368,7 @@ impl LogicalPlanBuilder {
     }
 
     pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&value_vars, self.0.schema());
+        let schema = det_melt_schema(&id_vars, &value_vars, self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
             id_vars,
@@ -389,36 +406,33 @@ impl LogicalPlanBuilder {
         let schema_right = other.schema();
 
         // column names of left table
-        let mut names: HashSet<&String, RandomState> = HashSet::default();
-        // fields of new schema
-        let mut fields = vec![];
+        let mut names: PlHashSet<&str> = PlHashSet::default();
+        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
-        for f in schema_left.fields() {
-            names.insert(f.name());
-            fields.push(f.clone());
+        for (name, dtype) in schema_left.iter() {
+            names.insert(name);
+            new_schema.with_column(name.to_string(), dtype.clone())
         }
 
-        let right_names: HashSet<_, RandomState> = right_on
+        let right_names: PlHashSet<_> = right_on
             .iter()
             .map(|e| utils::expr_output_name(e).expect("could not find name"))
             .collect();
 
-        for f in schema_right.fields() {
-            let name = f.name();
-
+        for (name, dtype) in schema_right.iter() {
             if !right_names.iter().any(|s| s.as_ref() == name) {
-                if names.contains(name) {
+                if names.contains(&**name) {
                     let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    let field = Field::new(&new_name, f.data_type().clone());
-                    fields.push(field)
+                    new_schema.with_column(new_name, dtype.clone())
                 } else {
-                    fields.push(f.clone())
+                    new_schema.with_column(name.to_string(), dtype.clone())
                 }
             }
         }
 
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(new_schema);
 
+        drop(names);
         LogicalPlan::Join {
             input_left: Box::new(self.0),
             input_right: Box::new(other),
@@ -455,23 +469,41 @@ impl LogicalPlanBuilder {
     }
 }
 
-pub(crate) fn det_melt_schema(value_vars: &[String], input_schema: &Schema) -> SchemaRef {
-    let mut fields = input_schema
-        .fields()
-        .iter()
-        .filter(|field| !value_vars.contains(field.name()))
-        .cloned()
-        .collect::<Vec<_>>();
+pub(crate) fn det_melt_schema(
+    id_vars: &[String],
+    value_vars: &[String],
+    input_schema: &Schema,
+) -> SchemaRef {
+    let mut new_schema = Schema::from(
+        id_vars
+            .iter()
+            .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
+    );
+    new_schema.with_column("variable".to_string(), DataType::Utf8);
 
-    fields.reserve(2);
+    // We need to determine the supertype of all value columns.
+    let mut st = None;
 
-    let value_dtype = input_schema
-        .field_with_name(&value_vars[0])
-        .expect("field not found")
-        .data_type();
-
-    fields.push(Field::new("variable", DataType::Utf8));
-    fields.push(Field::new("value", value_dtype.clone()));
-
-    Arc::new(Schema::new(fields))
+    // take all columns that are not in `id_vars` as `value_var`
+    if value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(id_vars);
+        for (name, dtype) in input_schema.iter() {
+            if !id_vars.contains(name) {
+                match &st {
+                    None => st = Some(dtype.clone()),
+                    Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+                }
+            }
+        }
+    } else {
+        for name in value_vars {
+            let dtype = input_schema.get(name).unwrap();
+            match &st {
+                None => st = Some(dtype.clone()),
+                Some(st_) => st = Some(get_supertype(st_, dtype).unwrap()),
+            }
+        }
+    }
+    new_schema.with_column("value".to_string(), st.unwrap());
+    Arc::new(new_schema)
 }

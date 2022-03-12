@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.6"
+version = "0.13.10"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -23,7 +23,7 @@ mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
 numpy = "0.15"
 polars-core = { path = "../polars/polars-core", default-features = false }
-pyo3 = { version = "0.15", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.15", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
@@ -53,7 +53,7 @@ features = [
   "random",
   "object",
   "csv-file",
-  "pretty_fmt",
+  "fmt",
   "performant",
   "dtype-full",
   "rows",
@@ -91,6 +91,7 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
+  "series_from_anyvalue",
 ]
 
 # [patch.crates-io]
@@ -101,10 +102,10 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
-strip = true
-codegen-units = 1
+# strip = true
+# codegen-units = 1
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
-# target-cpu = "native"
-lto = "fat"
+target-cpu = "native"
+# lto = "fat"

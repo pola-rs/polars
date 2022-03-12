@@ -13,7 +13,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-02-23
+          toolchain: nightly-2022-03-03
           override: true
           components: rustfmt, clippy
       - name: Set up Python
@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-02-23 && make build-and-test-no-venv
+          cd py-polars && rustup override set nightly-2022-03-03 && make build-and-test-no-venv
           cargo clippy
       # test if we can import polars without any requirements
       - name: Import polars

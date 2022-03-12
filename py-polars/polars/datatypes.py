@@ -1,6 +1,6 @@
 import ctypes
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Sequence, Type
 
 try:
     import pyarrow as pa
@@ -92,6 +92,11 @@ class Categorical(DataType):
     pass
 
 
+class Struct(DataType):
+    def __init__(self, inner_types: Sequence[Type[DataType]]):
+        self.inner_types = inner_types
+
+
 _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Int8: "i8",
     Int16: "i16",
@@ -112,6 +117,7 @@ _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Time: "time",
     Object: "object",
     Categorical: "categorical",
+    Struct: "struct",
 }
 
 _DTYPE_TO_CTYPE = {

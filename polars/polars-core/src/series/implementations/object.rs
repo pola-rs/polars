@@ -11,7 +11,6 @@ use arrow::array::ArrayRef;
 use std::any::Any;
 use std::borrow::Cow;
 
-#[cfg(feature = "object")]
 impl<T> IntoSeries for ObjectChunked<T>
 where
     T: PolarsObject,
@@ -21,12 +20,8 @@ where
     }
 }
 
-#[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
-#[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
@@ -64,7 +59,6 @@ where
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 }
-#[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where

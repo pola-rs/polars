@@ -29,3 +29,23 @@ fn join_nans_outer() -> Result<()> {
     assert_eq!(res.shape(), (4, 4));
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "lazy")]
+fn join_empty_datasets() -> Result<()> {
+    let a = DataFrame::new(Vec::from([Series::new_empty("foo", &DataType::Int64)])).unwrap();
+    let b = DataFrame::new(Vec::from([
+        Series::new_empty("foo", &DataType::Int64),
+        Series::new_empty("bar", &DataType::Int64),
+    ]))
+    .unwrap();
+
+    a.lazy()
+        .groupby([col("foo")])
+        .agg([all().last()])
+        .inner_join(b.lazy(), "foo", "foo")
+        .collect()
+        .unwrap();
+
+    Ok(())
+}

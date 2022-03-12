@@ -152,7 +152,7 @@ impl LazyFrame {
     pub(crate) fn into_alp(self) -> (Node, Arena<AExpr>, Arena<ALogicalPlan>) {
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena).unwrap();
         (root, expr_arena, lp_arena)
     }
 
@@ -223,14 +223,17 @@ impl LazyFrame {
     /// /// Sort DataFrame by 'sepal.width' column
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///         .sort("sepal.width", false)
+    ///         .sort("sepal.width", Default::default())
     /// }
     /// ```
-    pub fn sort(self, by_column: &str, reverse: bool) -> Self {
+    pub fn sort(self, by_column: &str, options: SortOptions) -> Self {
+        let reverse = options.descending;
+        let nulls_last = options.nulls_last;
+
         let opt_state = self.get_opt_state();
         let lp = self
             .get_plan_builder()
-            .sort(vec![col(by_column)], vec![reverse])
+            .sort(vec![col(by_column)], vec![reverse], nulls_last)
             .build();
         Self::from_logical_plan(lp, opt_state)
     }
@@ -255,7 +258,10 @@ impl LazyFrame {
             self
         } else {
             let opt_state = self.get_opt_state();
-            let lp = self.get_plan_builder().sort(by_exprs, reverse).build();
+            let lp = self
+                .get_plan_builder()
+                .sort(by_exprs, reverse, false)
+                .build();
             Self::from_logical_plan(lp, opt_state)
         }
     }
@@ -279,7 +285,11 @@ impl LazyFrame {
 
     fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
         // schema after renaming
-        let new_schema = self.schema().rename(&existing, &new).unwrap();
+        let mut new_schema = (&*self.schema()).clone();
+
+        for (old, new) in existing.iter().zip(new.iter()) {
+            new_schema.rename(old, new.to_string()).unwrap();
+        }
 
         let prefix = "__POLARS_TEMP_";
 
@@ -328,6 +338,12 @@ impl LazyFrame {
     }
 
     fn rename_imp(self, existing: Vec<String>, new: Vec<String>) -> Self {
+        let mut schema = (*self.schema()).clone();
+
+        for (old, new) in existing.iter().zip(&new) {
+            let _ = schema.rename(old, new.clone());
+        }
+
         self.with_columns(
             existing
                 .iter()
@@ -350,7 +366,7 @@ impl LazyFrame {
                 Ok(df)
             },
             None,
-            None,
+            Some(schema),
             Some("RENAME"),
         )
     }
@@ -377,10 +393,7 @@ impl LazyFrame {
             .collect::<Vec<_>>();
         let schema = &*self.schema();
         // a column gets swapped
-        if new
-            .iter()
-            .any(|name| schema.column_with_name(name).is_some())
-        {
+        if new.iter().any(|name| schema.get(name).is_some()) {
             self.rename_impl_swapping(existing, new)
         } else {
             self.rename_imp(existing, new)
@@ -489,7 +502,7 @@ impl LazyFrame {
         #[cfg(debug_assertions)]
         let prev_schema = logical_plan.schema().clone();
 
-        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena);
+        let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena)?;
 
         // simplify expression is valuable for projection and predicate pushdown optimizers, so we
         // run that first
@@ -553,17 +566,11 @@ impl LazyFrame {
         {
             // only check by names because we may supercast types.
             assert_eq!(
-                prev_schema
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
-                    .collect::<Vec<_>>(),
+                prev_schema.iter_names().collect::<Vec<_>>(),
                 lp_arena
                     .get(lp_top)
                     .schema(lp_arena)
-                    .fields()
-                    .iter()
-                    .map(|f| f.name())
+                    .iter_names()
                     .collect::<Vec<_>>()
             );
         };
@@ -691,7 +698,6 @@ impl LazyFrame {
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
-    ///        .sort("date", false)
     /// }
     /// ```
     pub fn groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
@@ -1076,12 +1082,10 @@ impl LazyFrame {
                 self
             }
             _ => {
-                let schema = self.schema();
-
-                let mut fields = schema.fields().clone();
-                fields.insert(0, Field::new(name, DataType::UInt32));
-                let new_schema = Schema::new(fields);
-
+                let new_schema = self
+                    .schema()
+                    .insert_index(0, name.to_string(), IDX_DTYPE)
+                    .unwrap();
                 let name = name.to_owned();
 
                 let opt = AllowedOptimizations {
@@ -1097,6 +1101,42 @@ impl LazyFrame {
                 )
             }
         }
+    }
+
+    /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
+    /// inserted as columns.
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
+    pub fn unnest<I: IntoVec<String>>(self, cols: I) -> Self {
+        let cols = cols.into_vec();
+        self.unnest_impl(cols.into_iter().collect())
+    }
+
+    #[cfg(feature = "dtype-struct")]
+    fn unnest_impl(self, cols: PlHashSet<String>) -> Self {
+        let schema = self.schema();
+
+        let mut new_schema = Schema::with_capacity(schema.len() * 2);
+        for (name, dtype) in schema.iter() {
+            if cols.contains(name) {
+                if let DataType::Struct(flds) = dtype {
+                    for fld in flds {
+                        new_schema.with_column(fld.name().clone(), fld.data_type().clone())
+                    }
+                } else {
+                    // todo: return lazy error here.
+                    panic!("expected struct dtype")
+                }
+            } else {
+                new_schema.with_column(name.clone(), dtype.clone())
+            }
+        }
+        self.map(
+            move |df| df.unnest(&cols),
+            Some(AllowedOptimizations::default()),
+            Some(new_schema),
+            Some("unnest"),
+        )
     }
 }
 
@@ -1125,13 +1165,12 @@ impl LazyGroupBy {
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
-    ///        .groupby([col("date")])
+    ///        .groupby_stable([col("date")])
     ///        .agg([
     ///            col("rain").min(),
     ///            col("rain").sum(),
     ///            col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
     ///        ])
-    ///        .sort("date", false)
     /// }
     /// ```
     pub fn agg<E: AsRef<[Expr]>>(self, aggs: E) -> LazyFrame {

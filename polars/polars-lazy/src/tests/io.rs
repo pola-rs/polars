@@ -147,7 +147,7 @@ fn test_parquet_globbing() -> Result<()> {
     // for side effects
     init_files();
     let _guard = SINGLE_LOCK.lock().unwrap();
-    let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
+    let glob = "../../examples/datasets/*.parquet";
     let df = LazyFrame::scan_parquet(
         glob.into(),
         ScanArgsParquet {
@@ -172,7 +172,7 @@ fn test_parquet_globbing() -> Result<()> {
 fn test_ipc_globbing() -> Result<()> {
     // for side effects
     init_files();
-    let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
+    let glob = "../../examples/datasets/*.ipc";
     let df = LazyFrame::scan_ipc(
         glob.into(),
         ScanArgsIpc {
@@ -204,7 +204,7 @@ fn slice_at_union(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
 #[test]
 #[cfg(not(target_os = "windows"))]
 fn test_csv_globbing() -> Result<()> {
-    let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
+    let glob = "../../examples/datasets/*.csv";
     let full_df = LazyCsvReader::new(glob.into()).finish()?.collect()?;
 
     // all 5 files * 27 rows
@@ -213,7 +213,7 @@ fn test_csv_globbing() -> Result<()> {
     assert_eq!(cal.get(0), AnyValue::Int64(45));
     assert_eq!(cal.get(53), AnyValue::Int64(194));
 
-    let glob = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
+    let glob = "../../examples/datasets/*.csv";
     let lf = LazyCsvReader::new(glob.into()).finish()?.slice(0, 100);
 
     let df = lf.clone().collect()?;

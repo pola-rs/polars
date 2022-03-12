@@ -1,6 +1,7 @@
 use arrow::array::BooleanArray;
 use arrow::bitmap::utils::BitChunks;
 use std::iter::Enumerate;
+pub mod concatenate;
 pub mod ewm;
 pub mod float;
 pub mod list;

@@ -8,17 +8,17 @@ use crate::physical_plan::executors::union::UnionExec;
 use crate::prelude::count::CountExpr;
 use crate::prelude::shift::ShiftExpr;
 use crate::prelude::*;
-use crate::utils::{expr_to_root_column_name, has_window_aexpr};
+#[cfg(feature = "object")]
+use crate::utils::expr_to_root_column_name;
+use crate::utils::has_window_aexpr;
 use crate::{
     logical_plan::iterator::ArenaExprIter,
     utils::{aexpr_to_root_names, aexpr_to_root_nodes, agg_source_paths, has_aexpr},
 };
-use ahash::RandomState;
 use polars_core::prelude::*;
 use polars_core::{frame::groupby::GroupByMethod, utils::parallel_op_series};
 #[cfg(any(feature = "parquet", feature = "csv-file", feature = "ipc"))]
 use polars_io::aggregations::ScanAggregation;
-use std::collections::HashSet;
 use std::sync::Arc;
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
@@ -197,6 +197,7 @@ impl DefaultPlanner {
                 schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -205,6 +206,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -212,9 +214,12 @@ impl DefaultPlanner {
             LocalProjection {
                 expr,
                 input,
-                schema: _schema,
+                #[cfg(test)]
+                    schema: _schema,
                 ..
             } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
+
                 let has_windows = expr.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -223,6 +228,7 @@ impl DefaultPlanner {
                     input,
                     expr: phys_expr,
                     has_windows,
+                    input_schema,
                     #[cfg(test)]
                     schema: _schema,
                 }))
@@ -259,7 +265,7 @@ impl DefaultPlanner {
             Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let by_column =
@@ -267,7 +273,7 @@ impl DefaultPlanner {
                 Ok(Box::new(SortExec {
                     input,
                     by_column,
-                    reverse,
+                    args,
                 }))
             }
             Explode { input, columns } => {
@@ -275,17 +281,18 @@ impl DefaultPlanner {
                 Ok(Box::new(ExplodeExec { input, columns }))
             }
             Cache { input } => {
-                let fields = lp_arena.get(input).schema(lp_arena).fields();
+                let schema = lp_arena.get(input).schema(lp_arena);
                 // todo! fix the unique constraint in the schema. Probably in projection pushdown at joins
-                let mut unique =
-                    HashSet::with_capacity_and_hasher(fields.len(), RandomState::default());
+                let mut unique = PlHashSet::with_capacity(schema.len());
                 // assumption of 80 characters per column name
-                let mut key = String::with_capacity(fields.len() * 80);
-                for field in fields {
-                    if unique.insert(field.name()) {
-                        key.push_str(field.name())
+                let mut key = String::with_capacity(schema.len() * 80);
+                for name in schema.iter_names() {
+                    if unique.insert(name) {
+                        key.push_str(name)
                     }
                 }
+                // mutable borrow otherwise
+                drop(unique);
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(CacheExec { key, input }))
             }
@@ -302,7 +309,6 @@ impl DefaultPlanner {
                 maintain_order,
                 options,
             } => {
-                #[cfg(feature = "object")]
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
@@ -318,6 +324,7 @@ impl DefaultPlanner {
                         keys: phys_keys,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -326,6 +333,7 @@ impl DefaultPlanner {
                         input,
                         aggs: phys_aggs,
                         options,
+                        input_schema,
                     }));
                 }
 
@@ -367,9 +375,9 @@ impl DefaultPlanner {
                         #[cfg(feature = "object")]
                         {
                             let name = expr_to_root_column_name(&agg).unwrap();
-                            let fld = input_schema.field_with_name(&name).unwrap();
+                            let dtype = input_schema.get(&name).unwrap();
 
-                            if let DataType::Object(_) = fld.data_type() {
+                            if let DataType::Object(_) = dtype {
                                 partitionable = false;
                                 break;
                             }
@@ -412,6 +420,7 @@ impl DefaultPlanner {
                         phys_aggs,
                         apply,
                         maintain_order,
+                        input_schema,
                     )))
                 }
             }
@@ -429,11 +438,9 @@ impl DefaultPlanner {
                     // check if two DataFrames come from a separate source.
                     // If they don't we can parallelize,
                     // Otherwise it is in cache.
-                    let mut sources_left =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_left = PlHashSet::with_capacity(16);
                     agg_source_paths(input_left, &mut sources_left, lp_arena);
-                    let mut sources_right =
-                        HashSet::with_capacity_and_hasher(16, RandomState::default());
+                    let mut sources_right = PlHashSet::with_capacity(16);
                     agg_source_paths(input_right, &mut sources_right, lp_arena);
                     sources_left.intersection(&sources_right).next().is_none()
                 } else {
@@ -457,6 +464,7 @@ impl DefaultPlanner {
                 )))
             }
             HStack { input, exprs, .. } => {
+                let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let has_windows = exprs.iter().any(|node| has_window_aexpr(*node, expr_arena));
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 let phys_expr =
@@ -465,6 +473,7 @@ impl DefaultPlanner {
                     input,
                     has_windows,
                     expr: phys_expr,
+                    input_schema,
                 }))
             }
             Udf {
@@ -508,7 +517,7 @@ impl DefaultPlanner {
                         apply_columns.push(Arc::from("literal"))
                     } else {
                         let e = node_to_expr(function, expr_arena);
-                        return Err(PolarsError::ValueError(
+                        return Err(PolarsError::ComputeError(
                             format!(
                                 "Cannot apply a window function, did not find a root column. \
                             This is likely due to a syntax error in this expression: {:?}",

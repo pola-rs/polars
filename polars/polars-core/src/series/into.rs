@@ -44,6 +44,11 @@ impl Series {
                 let arr = cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap();
                 Arc::from(arr)
             }
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.arrow_array().clone()
+            }
             _ => self.chunks()[chunk_idx].clone(),
         }
     }

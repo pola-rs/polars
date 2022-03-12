@@ -1,6 +1,16 @@
 use super::*;
 use crate::utils::NoNull;
 
+/// Default sorting nulls
+pub fn order_default_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    sort_with_nulls(a, b)
+}
+
+/// Default sorting nulls
+pub fn order_reverse_null<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
+    sort_with_nulls(b, a)
+}
+
 impl CategoricalChunked {
     #[must_use]
     pub fn sort_with(&self, options: SortOptions) -> CategoricalChunked {
@@ -63,31 +73,18 @@ impl CategoricalChunked {
     }
 
     /// Retrieve the indexes needed to sort this array.
-    pub fn argsort(&self, reverse: bool) -> IdxCa {
+    pub fn argsort(&self, options: SortOptions) -> IdxCa {
         if self.use_lexical_sort() {
-            let mut count: IdxSize = 0;
-            // safety: we know the iterators len
-            let mut vals = self
-                .iter_str()
-                .map(|s| {
-                    let i = count;
-                    count += 1;
-                    (i, s)
-                })
-                .collect_trusted::<Vec<_>>();
-
-            argsort_branch(
-                vals.as_mut_slice(),
-                reverse,
-                |(_, a), (_, b)| order_default_null(a, b),
-                |(_, a), (_, b)| order_reverse_null(a, b),
-            );
-            let ca: NoNull<IdxCa> = vals.into_iter().map(|(idx, _v)| idx).collect_trusted();
-            let mut ca = ca.into_inner();
-            ca.rename(self.name());
-            ca
+            let iters = [self.iter_str()];
+            argsort::argsort(
+                self.name(),
+                iters,
+                options,
+                self.logical().null_count(),
+                self.len(),
+            )
         } else {
-            self.logical().argsort(reverse)
+            self.logical().argsort(options)
         }
     }
 
@@ -140,7 +137,10 @@ mod test {
             let out = ca.sort(false);
             assert_order(&out, init);
 
-            let out = ca_lexical.argsort(false);
+            let out = ca_lexical.argsort(SortOptions {
+                descending: false,
+                ..Default::default()
+            });
             assert_eq!(out.into_no_null_iter().collect::<Vec<_>>(), &[2, 1, 0, 3]);
         }
 

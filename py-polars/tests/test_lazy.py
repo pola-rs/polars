@@ -224,7 +224,8 @@ def test_arange() -> None:
 
 def test_arg_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df[col("a").arg_unique()]["a"].series_equal(pl.Series("a", [0, 1]))
+    col_a_unique = df[col("a").arg_unique()]["a"]
+    assert col_a_unique.series_equal(pl.Series("a", [0, 1]).cast(pl.UInt32))
 
 
 def test_is_unique() -> None:
@@ -471,14 +472,14 @@ def test_cum_agg() -> None:
 
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    assert df.select(pl.col("a").floor())["a"].series_equal(pl.Series("a", [1, 1, 3]))
+    col_a_floor = df.select(pl.col("a").floor())["a"]
+    assert col_a_floor.series_equal(pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
 
 def test_round() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    assert df.select(pl.col("a").round(decimals=0))["a"].series_equal(
-        pl.Series("a", [2, 1, 3])
-    )
+    col_a_rounded = df.select(pl.col("a").round(decimals=0))["a"]
+    assert col_a_rounded.series_equal(pl.Series("a", [2, 1, 3]).cast(pl.Float64))
 
 
 def test_dot() -> None:
@@ -587,16 +588,15 @@ def test_fill_null() -> None:
 
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    assert df.select([pl.col("a").backward_fill()])["a"].series_equal(
-        pl.Series("a", [1, 3, 3])
-    )
+    col_a_backward_fill = df.select([pl.col("a").backward_fill()])["a"]
+    assert col_a_backward_fill.series_equal(pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
 def test_take(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # out of bounds error
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
                 [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
@@ -1179,3 +1179,19 @@ def test_self_join() -> None:
         (101, "Alice", "James"),
         (102, "Bob", "Alice"),
     }
+
+
+def test_preservation_of_subclasses() -> None:
+    """Tests for LazyFrame inheritance."""
+
+    # We should be able to inherit from polars.LazyFrame
+    class SubClassedLazyFrame(pl.LazyFrame):
+        pass
+
+    # The constructor creates an object which is an instance of both the
+    # superclass and subclass
+    ldf = pl.DataFrame({"column_1": [1, 2, 3]}).lazy()
+    ldf.__class__ = SubClassedLazyFrame
+    extended_ldf = ldf.with_column(pl.lit(1).alias("column_2"))
+    assert isinstance(extended_ldf, pl.LazyFrame)
+    assert isinstance(extended_ldf, SubClassedLazyFrame)

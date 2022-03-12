@@ -789,9 +789,9 @@ def test_range() -> None:
 
 
 def test_strict_cast() -> None:
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         pl.Series("a", [2 ** 16]).cast(dtype=pl.Int16, strict=True)
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         pl.DataFrame({"a": [2 ** 16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 

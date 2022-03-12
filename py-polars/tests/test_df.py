@@ -4,7 +4,7 @@ import sys
 from builtins import range
 from datetime import datetime
 from io import BytesIO
-from typing import Any, Iterator
+from typing import Any, Iterator, Type
 from unittest.mock import patch
 
 import numpy as np
@@ -197,11 +197,11 @@ def test_init_pandas() -> None:
 
 def test_init_errors() -> None:
     # Length mismatch
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ShapeError):
         pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0, 4.0]})
 
     # Columns don't match data dimensions
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ShapeError):
         pl.DataFrame([[1, 2], [3, 4]], columns=["a", "b", "c"])
 
     # Unmatched input
@@ -705,7 +705,7 @@ def test_file_buffer() -> None:
     f.write(b"1,2,3,4,5,6\n7,8,9,10,11,12")
     f.seek(0)
     # check if not fails on TryClone and Length impl in file.rs
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(pl.ArrowError) as e:
         pl.read_parquet(f)
     assert "Invalid Parquet file" in str(e.value)
 
@@ -761,6 +761,20 @@ def test_melt() -> None:
 
     melted = df.melt(id_vars="A", value_vars="B")
     assert all(melted["value"] == [1, 3, 5])
+    n = 3
+    for melted in [df.melt(), df.lazy().melt().collect()]:
+        assert melted["variable"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+        assert melted["value"].to_list() == [
+            "a",
+            "b",
+            "c",
+            "1",
+            "3",
+            "5",
+            "2",
+            "4",
+            "6",
+        ]
 
 
 def test_shift() -> None:
@@ -1854,3 +1868,48 @@ def test_groupby_slice_expression_args() -> None:
         {"groups": ["a", "a", "b", "b", "b", "b"], "vals": [1, 2, 12, 13, 14, 15]}
     )
     assert out.frame_equal(expected)
+
+
+def test_join_suffixes() -> None:
+    df_a = pl.DataFrame({"A": [1], "B": [1]})
+    df_b = pl.DataFrame({"A": [1], "B": [1]})
+
+    for how in ["left", "inner", "outer", "cross"]:
+        # no need for an essert, we error if wrong
+        df_a.join(df_b, on="A", suffix="_y", how=how)["B_y"]
+
+    df_a.join_asof(df_b, on="A", suffix="_y")["B_y"]
+
+
+def test_preservation_of_subclasses() -> None:
+    """Tests for DataFrame inheritance."""
+
+    # We should be able to inherit from polars.DataFrame
+    class SubClassedDataFrame(pl.DataFrame):
+        pass
+
+    # The constructor creates an object which is an instance of both the
+    # superclass and subclass
+    df = SubClassedDataFrame({"column_1": [1, 2, 3]})
+    assert isinstance(df, pl.DataFrame)
+    assert isinstance(df, SubClassedDataFrame)
+
+    # Methods which yield new dataframes should preserve the subclass,
+    # and here we choose a random method to test with
+    assert isinstance(df.transpose(), SubClassedDataFrame)
+
+    # The type of the dataframe should be preserved when casted to LazyFrame and back
+    assert isinstance(df.lazy().collect(), SubClassedDataFrame)
+
+    # Check if the end user can extend the functionality of both DataFrame and LazyFrame
+    # and connect these classes together
+    class MyLazyFrame(pl.LazyFrame):
+        @property
+        def _dataframe_class(cls) -> "Type[MyDataFrame]":
+            return MyDataFrame
+
+    class MyDataFrame(pl.DataFrame):
+        _lazyframe_class = MyLazyFrame
+
+    assert isinstance(MyDataFrame().lazy(), MyLazyFrame)
+    assert isinstance(MyDataFrame().lazy().collect(), MyDataFrame)

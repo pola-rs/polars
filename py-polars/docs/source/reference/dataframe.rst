@@ -37,6 +37,7 @@ Conversion
     DataFrame.to_parquet
     DataFrame.to_numpy
     DataFrame.to_dict
+    DataFrame.to_struct
 
 Aggregation
 -----------
@@ -127,6 +128,7 @@ Manipulation/ selection
     DataFrame.interpolate
     DataFrame.transpose
     DataFrame.upsample
+    DataFrame.unnest
 
 Apply
 -----

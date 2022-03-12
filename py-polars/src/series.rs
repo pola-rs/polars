@@ -1,7 +1,7 @@
 use crate::apply::series::ApplyLambda;
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
 use crate::utils::{reinterpret, str_to_polarstype};
 use crate::{
@@ -93,6 +93,17 @@ impl PySeries {
                 Series::new(name, val.as_slice().unwrap()).into()
             }
         }
+    }
+
+    pub fn struct_to_frame(&self) -> PyResult<PyDataFrame> {
+        let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
+        let df: DataFrame = ca.clone().into();
+        Ok(df.into())
+    }
+
+    pub fn struct_fields(&self) -> PyResult<Vec<&str>> {
+        let ca = self.series.struct_().map_err(PyPolarsErr::from)?;
+        Ok(ca.fields().iter().map(|s| s.name()).collect())
     }
 }
 
@@ -245,7 +256,7 @@ impl PySeries {
     pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
         let series: Series =
-            std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsEr::from)?;
+            std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
         Ok(series.into())
     }
 
@@ -316,19 +327,22 @@ impl PySeries {
         let out = self
             .series
             .bitand(&other.series)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
     pub fn bitor(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self.series.bitor(&other.series).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .bitor(&other.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
     pub fn bitxor(&self, other: &PySeries) -> PyResult<Self> {
         let out = self
             .series
             .bitxor(&other.series)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
@@ -428,21 +442,21 @@ impl PySeries {
     pub fn append(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .append(&other.series)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
     pub fn extend(&mut self, other: &PySeries) -> PyResult<()> {
         self.series
             .extend(&other.series)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(())
     }
 
     pub fn filter(&self, filter: &PySeries) -> PyResult<Self> {
         let filter_series = &filter.series;
         if let Ok(ca) = filter_series.bool() {
-            let series = self.series.filter(ca).map_err(PyPolarsEr::from)?;
+            let series = self.series.filter(ca).map_err(PyPolarsErr::from)?;
             Ok(PySeries { series })
         } else {
             Err(PyRuntimeError::new_err("Expected a boolean mask"))
@@ -481,22 +495,28 @@ impl PySeries {
         PySeries::new(self.series.sort(reverse))
     }
 
-    pub fn argsort(&self, reverse: bool) -> Self {
-        self.series.argsort(reverse).into_series().into()
+    pub fn argsort(&self, reverse: bool, nulls_last: bool) -> Self {
+        self.series
+            .argsort(SortOptions {
+                descending: reverse,
+                nulls_last,
+            })
+            .into_series()
+            .into()
     }
 
     pub fn unique(&self) -> PyResult<Self> {
-        let unique = self.series.unique().map_err(PyPolarsEr::from)?;
+        let unique = self.series.unique().map_err(PyPolarsErr::from)?;
         Ok(unique.into())
     }
 
     pub fn value_counts(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.value_counts().map_err(PyPolarsEr::from)?;
+        let df = self.series.value_counts().map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
     pub fn arg_unique(&self) -> PyResult<Self> {
-        let arg_unique = self.series.arg_unique().map_err(PyPolarsEr::from)?;
+        let arg_unique = self.series.arg_unique().map_err(PyPolarsErr::from)?;
         Ok(arg_unique.into_series().into())
     }
 
@@ -512,13 +532,13 @@ impl PySeries {
         let indices = indices.0;
         let indices = UInt32Chunked::from_vec("", indices);
 
-        let take = self.series.take(&indices).map_err(PyPolarsEr::from)?;
+        let take = self.series.take(&indices).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.u32().map_err(PyPolarsEr::from)?;
-        let take = self.series.take(idx).map_err(PyPolarsEr::from)?;
+        let idx = indices.series.u32().map_err(PyPolarsErr::from)?;
+        let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }
 
@@ -539,32 +559,32 @@ impl PySeries {
     }
 
     pub fn is_not_nan(&self) -> PyResult<Self> {
-        let ca = self.series.is_not_nan().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_not_nan().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn is_nan(&self) -> PyResult<Self> {
-        let ca = self.series.is_nan().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_nan().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn is_finite(&self) -> PyResult<Self> {
-        let ca = self.series.is_finite().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_finite().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn is_infinite(&self) -> PyResult<Self> {
-        let ca = self.series.is_infinite().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_infinite().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn is_unique(&self) -> PyResult<Self> {
-        let ca = self.series.is_unique().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_unique().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn arg_true(&self) -> PyResult<Self> {
-        let ca = self.series.arg_true().map_err(PyPolarsEr::from)?;
+        let ca = self.series.arg_true().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
@@ -572,7 +592,7 @@ impl PySeries {
         let s = self
             .series
             .sample_n(n, with_replacement, seed)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -580,17 +600,17 @@ impl PySeries {
         let s = self
             .series
             .sample_frac(frac, with_replacement, seed)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     pub fn is_duplicated(&self) -> PyResult<Self> {
-        let ca = self.series.is_duplicated().map_err(PyPolarsEr::from)?;
+        let ca = self.series.is_duplicated().map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn explode(&self) -> PyResult<Self> {
-        let s = self.series.explode().map_err(PyPolarsEr::from)?;
+        let s = self.series.explode().map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -633,7 +653,7 @@ impl PySeries {
     }
 
     pub fn _not(&self) -> PyResult<Self> {
-        let bool = self.series.bool().map_err(PyPolarsEr::from)?;
+        let bool = self.series.bool().map_err(PyPolarsErr::from)?;
         Ok((!bool).into_series().into())
     }
 
@@ -710,6 +730,14 @@ impl PySeries {
                 let ca = series.datetime().unwrap();
                 return Wrap(ca).to_object(python);
             }
+            DataType::Utf8 => {
+                let ca = series.utf8().unwrap();
+                return Wrap(ca).to_object(python);
+            }
+            DataType::Struct(_) => {
+                let ca = series.struct_().unwrap();
+                return Wrap(ca).to_object(python);
+            }
             dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)
@@ -750,7 +778,7 @@ impl PySeries {
     /// Rechunk and return a pointer to the start of the Series.
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> PyResult<usize> {
-        let ptr = self.series.as_single_ptr().map_err(PyPolarsEr::from)?;
+        let ptr = self.series.as_single_ptr().map_err(PyPolarsErr::from)?;
         Ok(ptr)
     }
 
@@ -760,7 +788,7 @@ impl PySeries {
 
     pub fn fill_null(&self, strategy: &str) -> PyResult<Self> {
         let strat = parse_strategy(strategy);
-        let series = self.series.fill_null(strat).map_err(PyPolarsEr::from)?;
+        let series = self.series.fill_null(strat).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(series))
     }
 
@@ -775,7 +803,10 @@ impl PySeries {
 
     #[cfg(feature = "is_in")]
     pub fn is_in(&self, other: &PySeries) -> PyResult<Self> {
-        let out = self.series.is_in(&other.series).map_err(PyPolarsEr::from)?;
+        let out = self
+            .series
+            .is_in(&other.series)
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into_series().into())
     }
 
@@ -978,130 +1009,130 @@ impl PySeries {
     }
 
     pub fn zip_with(&self, mask: &PySeries, other: &PySeries) -> PyResult<Self> {
-        let mask = mask.series.bool().map_err(PyPolarsEr::from)?;
+        let mask = mask.series.bool().map_err(PyPolarsErr::from)?;
         let s = self
             .series
             .zip_with(mask, &other.series)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(s))
     }
 
     pub fn str_lengths(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca.str_lengths().into_series();
         Ok(PySeries::new(s))
     }
 
     pub fn str_contains(&self, pat: &str) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
-        let s = ca.contains(pat).map_err(PyPolarsEr::from)?.into_series();
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
+        let s = ca.contains(pat).map_err(PyPolarsErr::from)?.into_series();
         Ok(s.into())
     }
 
     pub fn str_json_path_match(&self, pat: &str) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .json_path_match(pat)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn str_extract(&self, pat: &str, group_index: usize) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .extract(pat, group_index)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn str_replace(&self, pat: &str, val: &str) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .replace(pat, val)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn str_replace_all(&self, pat: &str, val: &str) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .replace_all(pat, val)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn str_to_uppercase(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca.to_uppercase().into_series();
         Ok(s.into())
     }
 
     pub fn str_to_lowercase(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca.to_lowercase().into_series();
         Ok(s.into())
     }
 
     pub fn str_slice(&self, start: i64, length: Option<u64>) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .str_slice(start, length)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn str_hex_encode(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca.hex_encode().into_series();
         Ok(s.into())
     }
     pub fn str_hex_decode(&self, strict: Option<bool>) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .hex_decode(strict)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
 
         Ok(s.into())
     }
     pub fn str_base64_encode(&self) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca.base64_encode().into_series();
         Ok(s.into())
     }
 
     pub fn str_base64_decode(&self, strict: Option<bool>) -> PyResult<Self> {
-        let ca = self.series.utf8().map_err(PyPolarsEr::from)?;
+        let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .base64_decode(strict)
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(s.into())
     }
 
     pub fn strftime(&self, fmt: &str) -> PyResult<Self> {
-        let s = self.series.strftime(fmt).map_err(PyPolarsEr::from)?;
+        let s = self.series.strftime(fmt).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     pub fn arr_lengths(&self) -> PyResult<Self> {
-        let ca = self.series.list().map_err(PyPolarsEr::from)?;
+        let ca = self.series.list().map_err(PyPolarsErr::from)?;
         let s = ca.lst_lengths().into_series();
         Ok(PySeries::new(s))
     }
 
-    pub fn timestamp(&self) -> PyResult<Self> {
-        let ca = self.series.timestamp().map_err(PyPolarsEr::from)?;
+    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyResult<Self> {
+        let ca = self.series.timestamp(tu.0).map_err(PyPolarsErr::from)?;
         Ok(ca.into_series().into())
     }
 
     pub fn to_dummies(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.to_dummies().map_err(PyPolarsEr::from)?;
+        let df = self.series.to_dummies().map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
@@ -1127,7 +1158,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_sum(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_sum(options)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1148,7 +1182,7 @@ impl PySeries {
         let s = self
             .series
             .rolling_mean(options)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1169,7 +1203,7 @@ impl PySeries {
         let s = self
             .series
             .rolling_median(options)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1193,7 +1227,7 @@ impl PySeries {
         let s = self
             .series
             .rolling_quantile(quantile, interpol, options)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1211,7 +1245,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_max(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_max(options)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
     pub fn rolling_min(
@@ -1228,7 +1265,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_min(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_min(options)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1246,7 +1286,10 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_var(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_var(options)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1264,62 +1307,68 @@ impl PySeries {
             center,
         };
 
-        let s = self.series.rolling_std(options).map_err(PyPolarsEr::from)?;
+        let s = self
+            .series
+            .rolling_std(options)
+            .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     pub fn year(&self) -> PyResult<Self> {
-        let s = self.series.year().map_err(PyPolarsEr::from)?;
+        let s = self.series.year().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn month(&self) -> PyResult<Self> {
-        let s = self.series.month().map_err(PyPolarsEr::from)?;
+        let s = self.series.month().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn weekday(&self) -> PyResult<Self> {
-        let s = self.series.weekday().map_err(PyPolarsEr::from)?;
+        let s = self.series.weekday().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn week(&self) -> PyResult<Self> {
-        let s = self.series.week().map_err(PyPolarsEr::from)?;
+        let s = self.series.week().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn day(&self) -> PyResult<Self> {
-        let s = self.series.day().map_err(PyPolarsEr::from)?;
+        let s = self.series.day().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn ordinal_day(&self) -> PyResult<Self> {
-        let s = self.series.ordinal_day().map_err(PyPolarsEr::from)?;
+        let s = self.series.ordinal_day().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn hour(&self) -> PyResult<Self> {
-        let s = self.series.hour().map_err(PyPolarsEr::from)?;
+        let s = self.series.hour().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn minute(&self) -> PyResult<Self> {
-        let s = self.series.minute().map_err(PyPolarsEr::from)?;
+        let s = self.series.minute().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn second(&self) -> PyResult<Self> {
-        let s = self.series.second().map_err(PyPolarsEr::from)?;
+        let s = self.series.second().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn nanosecond(&self) -> PyResult<Self> {
-        let s = self.series.nanosecond().map_err(PyPolarsEr::from)?;
+        let s = self.series.nanosecond().map_err(PyPolarsErr::from)?;
         Ok(s.into_series().into())
     }
 
     pub fn dt_epoch_seconds(&self) -> PyResult<Self> {
-        let ms = self.series.timestamp().map_err(PyPolarsEr::from)?;
+        let ms = self
+            .series
+            .timestamp(TimeUnit::Milliseconds)
+            .map_err(PyPolarsErr::from)?;
         Ok((ms / 1000).into_series().into())
     }
 
@@ -1332,7 +1381,7 @@ impl PySeries {
     }
 
     pub fn n_unique(&self) -> PyResult<usize> {
-        let n = self.series.n_unique().map_err(PyPolarsEr::from)?;
+        let n = self.series.n_unique().map_err(PyPolarsErr::from)?;
         Ok(n)
     }
 
@@ -1340,18 +1389,18 @@ impl PySeries {
         let out = self
             .series
             .is_first()
-            .map_err(PyPolarsEr::from)?
+            .map_err(PyPolarsErr::from)?
             .into_series();
         Ok(out.into())
     }
 
     pub fn round(&self, decimals: u32) -> PyResult<Self> {
-        let s = self.series.round(decimals).map_err(PyPolarsEr::from)?;
+        let s = self.series.round(decimals).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     pub fn floor(&self) -> PyResult<Self> {
-        let s = self.series.floor().map_err(PyPolarsEr::from)?;
+        let s = self.series.floor().map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1369,12 +1418,12 @@ impl PySeries {
     }
 
     pub fn reinterpret(&self, signed: bool) -> PyResult<Self> {
-        let s = reinterpret(&self.series, signed).map_err(PyPolarsEr::from)?;
+        let s = reinterpret(&self.series, signed).map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
     pub fn mode(&self) -> PyResult<Self> {
-        let s = self.series.mode().map_err(PyPolarsEr::from)?;
+        let s = self.series.mode().map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
 
@@ -1412,7 +1461,7 @@ impl PySeries {
     }
 
     pub fn skew(&self, bias: bool) -> PyResult<Option<f64>> {
-        let out = self.series.skew(bias).map_err(PyPolarsEr::from)?;
+        let out = self.series.skew(bias).map_err(PyPolarsErr::from)?;
         Ok(out)
     }
 
@@ -1420,7 +1469,7 @@ impl PySeries {
         let out = self
             .series
             .kurtosis(fisher, bias)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(out)
     }
 
@@ -1431,17 +1480,17 @@ impl PySeries {
         } else {
             self.series.cast(&dtype)
         };
-        let out = out.map_err(PyPolarsEr::from)?;
+        let out = out.map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
     pub fn abs(&self) -> PyResult<Self> {
-        let out = self.series.abs().map_err(PyPolarsEr::from)?;
+        let out = self.series.abs().map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
     pub fn reshape(&self, dims: Vec<i64>) -> PyResult<Self> {
-        let out = self.series.reshape(&dims).map_err(PyPolarsEr::from)?;
+        let out = self.series.reshape(&dims).map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
     pub fn shuffle(&self, seed: u64) -> Self {
@@ -1452,7 +1501,7 @@ impl PySeries {
         let out = self
             .series
             .extend_constant(value, n)
-            .map_err(PyPolarsEr::from)?;
+            .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }
 
@@ -1469,7 +1518,7 @@ impl PySeries {
     }
 
     pub fn and_time_zone(&self, tz: Option<TimeZone>) -> PyResult<Self> {
-        let mut dt = self.series.datetime().map_err(PyPolarsEr::from)?.clone();
+        let mut dt = self.series.datetime().map_err(PyPolarsErr::from)?.clone();
         dt.set_time_zone(tz);
         Ok(dt.into_series().into())
     }
@@ -1545,7 +1594,7 @@ macro_rules! impl_set_with_mask {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, filter: &PySeries, value: Option<$native>) -> PyResult<Self> {
-                let series = $name(&self.series, filter, value).map_err(PyPolarsEr::from)?;
+                let series = $name(&self.series, filter, value).map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))
             }
         }
@@ -1577,7 +1626,7 @@ macro_rules! impl_set_at_idx {
         impl PySeries {
             pub fn $name(&self, idx: &PyArray1<u32>, value: Option<$native>) -> PyResult<Self> {
                 let idx = unsafe { idx.as_slice().unwrap() };
-                let series = $name(&self.series, &idx, value).map_err(PyPolarsEr::from)?;
+                let series = $name(&self.series, &idx, value).map_err(PyPolarsErr::from)?;
                 Ok(Self::new(series))
             }
         }

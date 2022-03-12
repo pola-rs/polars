@@ -163,13 +163,14 @@ fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> 
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -239,7 +240,7 @@ where
 impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -309,7 +310,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
 impl ChunkQuantile<f64> for Float64Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -623,6 +624,7 @@ macro_rules! impl_quantile_as_series {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,

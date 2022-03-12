@@ -6,9 +6,13 @@ use polars_arrow::array::PolarsArray;
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
+    // a sort of clone
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_>;
 }
 pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_>;
 }
 
 unsafe impl TrustedLen for &mut dyn TakeIterator {}
@@ -20,10 +24,18 @@ impl TakeIterator for &mut dyn TakeIterator {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         (**self).check_bounds(bound)
     }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_> {
+        (**self).boxed_clone()
+    }
 }
 impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         (**self).check_bounds(bound)
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_> {
+        (**self).boxed_clone()
     }
 }
 
@@ -46,10 +58,14 @@ where
         if inbounds {
             Ok(())
         } else {
-            Err(PolarsError::OutOfBounds(
+            Err(PolarsError::ComputeError(
                 "take indices are out of bounds".into(),
             ))
         }
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_> {
+        Box::new(self.clone())
     }
 }
 impl<I> TakeIteratorNulls for I
@@ -70,10 +86,14 @@ where
         if inbounds {
             Ok(())
         } else {
-            Err(PolarsError::OutOfBounds(
+            Err(PolarsError::ComputeError(
                 "take indices are out of bounds".into(),
             ))
         }
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_> {
+        Box::new(self.clone())
     }
 }
 
@@ -122,7 +142,7 @@ where
                 if inbounds {
                     Ok(())
                 } else {
-                    Err(PolarsError::OutOfBounds(
+                    Err(PolarsError::ComputeError(
                         "take indices are out of bounds".into(),
                     ))
                 }

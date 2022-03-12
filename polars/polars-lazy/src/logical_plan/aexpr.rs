@@ -153,10 +153,9 @@ impl AExpr {
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
             )),
-            Column(name) => {
-                let field = schema.field_with_name(name).map(|f| f.clone())?;
-                Ok(field)
-            }
+            Column(name) => schema
+                .get_field(name)
+                .ok_or_else(|| PolarsError::NotFound(name.to_string())),
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

@@ -1,4 +1,3 @@
-use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
@@ -30,7 +29,6 @@ pub struct LazyCsvReader<'a> {
 }
 
 #[cfg(feature = "csv-file")]
-#[must_use]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: String) -> Self {
         LazyCsvReader {
@@ -234,7 +232,7 @@ impl<'a> LazyCsvReader<'a> {
     pub fn finish(self) -> Result<LazyFrame> {
         if self.path.contains('*') {
             let paths = glob::glob(&self.path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
 
             let lfs = paths
                 .map(|r| {

@@ -1,4 +1,3 @@
-use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::RowCount;
@@ -24,7 +23,6 @@ impl Default for ScanArgsIpc {
 
 impl LazyFrame {
     fn scan_ipc_impl(path: String, args: ScanArgsIpc) -> Result<Self> {
-        dbg!(&args.row_count);
         let options = IpcScanOptions {
             n_rows: args.n_rows,
             cache: args.cache,
@@ -41,7 +39,7 @@ impl LazyFrame {
     pub fn scan_ipc(path: String, args: ScanArgsIpc) -> Result<Self> {
         if path.contains('*') {
             let paths = glob::glob(&path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;

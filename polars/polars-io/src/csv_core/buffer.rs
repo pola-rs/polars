@@ -1,6 +1,5 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::csv::RunningSize;
-use crate::csv_core::parser::drop_quotes;
 use crate::csv_core::utils::escape_field;
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
@@ -67,12 +66,17 @@ where
         &mut self,
         bytes: &[u8],
         ignore_errors: bool,
-        _needs_escaping: bool,
+        needs_escaping: bool,
     ) -> Result<()> {
         if bytes.is_empty() {
             self.append_null()
         } else {
-            let bytes = drop_quotes(bytes);
+            let bytes = if needs_escaping {
+                &bytes[1..bytes.len() - 1]
+            } else {
+                bytes
+            };
+
             // legacy comment (remember this if you decide to use Results again):
             // its faster to work on options.
             // if we need to throw an error, we parse again to be able to throw the error
@@ -258,38 +262,24 @@ pub(crate) fn init_buffers(
     projection
         .iter()
         .map(|&i| {
-            let field = schema.field(i).unwrap();
+            let (name, dtype) = schema.get_index(i).unwrap();
             let mut str_capacity = 0;
             // determine the needed capacity for this column
-            if field.data_type() == &DataType::Utf8 {
+            if dtype == &DataType::Utf8 {
                 str_capacity = str_capacities[str_index].size_hint();
                 str_index += 1;
             }
 
-            let builder = match field.data_type() {
-                &DataType::Boolean => {
-                    Buffer::Boolean(BooleanChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Int32 => {
-                    Buffer::Int32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Int64 => {
-                    Buffer::Int64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::UInt32 => {
-                    Buffer::UInt32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::UInt64 => {
-                    Buffer::UInt64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Float32 => {
-                    Buffer::Float32(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
-                &DataType::Float64 => {
-                    Buffer::Float64(PrimitiveChunkedBuilder::new(field.name(), capacity))
-                }
+            let builder = match dtype {
+                &DataType::Boolean => Buffer::Boolean(BooleanChunkedBuilder::new(name, capacity)),
+                &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt32 => Buffer::UInt32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::UInt64 => Buffer::UInt64(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Float32 => Buffer::Float32(PrimitiveChunkedBuilder::new(name, capacity)),
+                &DataType::Float64 => Buffer::Float64(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Utf8 => Buffer::Utf8(Utf8Field::new(
-                    field.name(),
+                    name,
                     capacity,
                     str_capacity,
                     quote_char,

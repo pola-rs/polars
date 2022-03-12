@@ -32,12 +32,21 @@ from polars.datatypes import (
     Int64,
     List,
     Object,
+    Struct,
     Time,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
     Utf8,
+)
+from polars.exceptions import (
+    ArrowError,
+    ComputeError,
+    NoDataError,
+    NotFoundError,
+    SchemaError,
+    ShapeError,
 )
 from polars.internals.expr import Expr
 from polars.internals.frame import (  # flake8: noqa # TODO: remove need for wrap_df
@@ -87,6 +96,7 @@ from polars.internals.lazy_functions import (
     select,
     spearman_rank_corr,
     std,
+    struct,
     sum,
     tail,
 )
@@ -112,6 +122,13 @@ from polars.io import (
 from polars.string_cache import StringCache
 
 __all__ = [
+    "exceptions",
+    "NotFoundError",
+    "ShapeError",
+    "SchemaError",
+    "ArrowError",
+    "ComputeError",
+    "NoDataError",
     "DataFrame",
     "Series",
     "LazyFrame",
@@ -135,6 +152,7 @@ __all__ = [
     "Time",
     "Object",
     "Categorical",
+    "Struct",
     # polars.io
     "read_csv",
     "read_parquet",

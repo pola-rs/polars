@@ -81,17 +81,16 @@ impl PredicatePushDown {
             let new_inputs = inputs
                 .iter()
                 .map(|&node| {
-                    // first we check if we are able to push down the predicate pass this node
+                    // first we check if we are able to push down the predicate passed this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates = optimizer::init_hashmap();
-                    for &predicate in acc_predicates.values() {
+                    for (name, &predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate, input_schema, expr_arena) {
-                            let name = get_insertion_name(expr_arena, predicate, input_schema);
                             insert_and_combine_predicate(
                                 &mut pushdown_predicates,
-                                name,
+                                name.clone(),
                                 predicate,
                                 expr_arena,
                             )

@@ -18,10 +18,19 @@ where
                     let buf = array.values().clone();
                     // Safety:
                     // we just check the size of T::Native to be 64 bits
-                    let buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
+                    // The fields can still be reordered between generic types
+                    // so we do some extra assertions
+                    let len = buf.len();
+                    let offset = buf.offset();
+                    let ptr = buf.as_slice().as_ptr() as usize;
+                    #[allow(clippy::transmute_undefined_repr)]
+                    let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<u64>>(buf) };
+                    assert_eq!(reinterpretted_buf.len(), len);
+                    assert_eq!(reinterpretted_buf.offset(), offset);
+                    assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
                     Arc::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt64,
-                        buf,
+                        reinterpretted_buf,
                         array.validity().cloned(),
                     )) as Arc<dyn Array>
                 })
@@ -40,10 +49,19 @@ where
                     let buf = array.values().clone();
                     // Safety:
                     // we just check the size of T::Native to be 32 bits
-                    let buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
+                    // The fields can still be reordered between generic types
+                    // so we do some extra assertions
+                    let len = buf.len();
+                    let offset = buf.offset();
+                    let ptr = buf.as_slice().as_ptr() as usize;
+                    #[allow(clippy::transmute_undefined_repr)]
+                    let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<u32>>(buf) };
+                    assert_eq!(reinterpretted_buf.len(), len);
+                    assert_eq!(reinterpretted_buf.offset(), offset);
+                    assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
                     Arc::new(PrimitiveArray::from_data(
                         ArrowDataType::UInt32,
-                        buf,
+                        reinterpretted_buf,
                         array.validity().cloned(),
                     )) as Arc<dyn Array>
                 })
@@ -64,10 +82,19 @@ impl Reinterpret for UInt64Chunked {
                 let buf = array.values().clone();
                 // Safety
                 // same bit length u64 <-> i64
-                let buf = unsafe { std::mem::transmute::<_, Buffer<i64>>(buf) };
+                // The fields can still be reordered between generic types
+                // so we do some extra assertions
+                let len = buf.len();
+                let offset = buf.offset();
+                let ptr = buf.as_slice().as_ptr() as usize;
+                #[allow(clippy::transmute_undefined_repr)]
+                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<i64>>(buf) };
+                assert_eq!(reinterpretted_buf.len(), len);
+                assert_eq!(reinterpretted_buf.offset(), offset);
+                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
                 Arc::new(PrimitiveArray::from_data(
                     ArrowDataType::Int64,
-                    buf,
+                    reinterpretted_buf,
                     array.validity().cloned(),
                 )) as Arc<dyn Array>
             })
@@ -98,10 +125,19 @@ impl UInt64Chunked {
                 let buf = array.values().clone();
                 // Safety
                 // same bit length u64 <-> f64
-                let buf = unsafe { std::mem::transmute::<_, Buffer<f64>>(buf) };
+                // The fields can still be reordered between generic types
+                // so we do some extra assertions
+                let len = buf.len();
+                let offset = buf.offset();
+                let ptr = buf.as_slice().as_ptr() as usize;
+                #[allow(clippy::transmute_undefined_repr)]
+                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<f64>>(buf) };
+                assert_eq!(reinterpretted_buf.len(), len);
+                assert_eq!(reinterpretted_buf.offset(), offset);
+                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
                 Arc::new(PrimitiveArray::from_data(
                     ArrowDataType::Float64,
-                    buf,
+                    reinterpretted_buf,
                     array.validity().cloned(),
                 )) as Arc<dyn Array>
             })
@@ -117,10 +153,19 @@ impl UInt32Chunked {
                 let buf = array.values().clone();
                 // Safety
                 // same bit length u32 <-> f32
-                let buf = unsafe { std::mem::transmute::<_, Buffer<f32>>(buf) };
+                // The fields can still be reordered between generic types
+                // so we do some extra assertions
+                let len = buf.len();
+                let offset = buf.offset();
+                let ptr = buf.as_slice().as_ptr() as usize;
+                #[allow(clippy::transmute_undefined_repr)]
+                let reinterpretted_buf = unsafe { std::mem::transmute::<_, Buffer<f32>>(buf) };
+                assert_eq!(reinterpretted_buf.len(), len);
+                assert_eq!(reinterpretted_buf.offset(), offset);
+                assert_eq!(reinterpretted_buf.as_slice().as_ptr() as usize, ptr);
                 Arc::new(PrimitiveArray::from_data(
                     ArrowDataType::Float32,
-                    buf,
+                    reinterpretted_buf,
                     array.validity().cloned(),
                 )) as Arc<dyn Array>
             })

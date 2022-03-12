@@ -48,6 +48,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    exclude
    datetime
    date
+   struct
 
 Constructor
 -----------
@@ -192,6 +193,7 @@ Manipulation/ selection
     Expr.tail
     Expr.reinterpret
     Expr.drop_nulls
+    Expr.drop_nans
     Expr.interpolate
     Expr.argsort
     Expr.clip
@@ -259,6 +261,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.epoch
     ExprDateTimeNameSpace.epoch_days
     ExprDateTimeNameSpace.epoch_milliseconds
     ExprDateTimeNameSpace.epoch_seconds
@@ -294,6 +297,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
     ExprStringNameSpace.split
+    ExprStringNameSpace.split_exact
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
@@ -323,6 +327,13 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.last
     ExprListNameSpace.contains
     ExprListNameSpace.join
+    ExprListNameSpace.arg_min
+    ExprListNameSpace.arg_max
+    ExprListNameSpace.diff
+    ExprListNameSpace.shift
+    ExprListNameSpace.slice
+    ExprListNameSpace.head
+    ExprListNameSpace.tail
 
 Categories
 ----------
@@ -334,3 +345,15 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
 
     ExprCatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `expr.struct` attribute.
+
+.. currentmodule:: polars.internals.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprStructNameSpace.field
+    ExprStructNameSpace.rename_fields

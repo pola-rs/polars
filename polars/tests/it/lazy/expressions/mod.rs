@@ -1,3 +1,4 @@
+mod is_in;
 mod slice;
 mod window;
 

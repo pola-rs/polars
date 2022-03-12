@@ -9,6 +9,7 @@ pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
+    pub(crate) input_schema: SchemaRef,
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
 }
@@ -16,6 +17,7 @@ pub struct ProjectionExec {
 impl Executor for ProjectionExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
         let df = self.input.execute(state)?;
+        state.set_schema(self.input_schema.clone());
 
         let df = evaluate_physical_expressions(&df, &self.expr, state, self.has_windows);
 
@@ -25,8 +27,8 @@ impl Executor for ProjectionExec {
         {
             // TODO: check also the types.
             df.as_ref().map(|df| {
-                for (l, r) in df.schema().fields().iter().zip(self.schema.fields()) {
-                    assert_eq!(l.name(), r.name());
+                for (l, r) in df.iter().zip(self.schema.iter_names()) {
+                    assert_eq!(l.name(), r);
                 }
             });
         }

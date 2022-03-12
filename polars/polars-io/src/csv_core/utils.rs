@@ -137,6 +137,9 @@ pub fn infer_file_schema(
     let encoding = CsvEncoding::LossyUtf8;
 
     let bytes = skip_line_ending(skip_bom(reader_bytes));
+    if bytes.is_empty() {
+        return Err(PolarsError::NoData("empty csv".into()));
+    }
     let mut lines = SplitLines::new(bytes, b'\n').skip(*skip_rows);
     // it can be that we have a single line without eol char
     let has_eol = bytes.contains(&b'\n');
@@ -290,8 +293,8 @@ pub fn infer_file_schema(
         let field_name = &headers[i];
 
         if let Some(schema_overwrite) = schema_overwrite {
-            if let Ok(field_ovw) = schema_overwrite.field_with_name(field_name) {
-                fields.push(field_ovw.clone());
+            if let Some((_, name, dtype)) = schema_overwrite.get_full(field_name) {
+                fields.push(Field::new(name, dtype.clone()));
                 continue;
             }
         }
@@ -338,7 +341,7 @@ pub fn infer_file_schema(
         );
     }
 
-    Ok((Schema::new(fields), rows_count))
+    Ok((Schema::from(fields), rows_count))
 }
 
 // magic numbers
@@ -427,7 +430,7 @@ mod test {
 
     #[test]
     fn test_get_file_chunks() {
-        let path = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+        let path = "../../examples/datasets/foods1.csv";
         let s = std::fs::read_to_string(path).unwrap();
         let bytes = s.as_bytes();
         // can be within -1 / +1 bounds.

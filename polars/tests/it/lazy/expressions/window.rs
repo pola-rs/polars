@@ -78,7 +78,7 @@ fn test_exploded_window_function() -> Result<()> {
     let out = df
         .clone()
         .lazy()
-        .sort("fruits", false)
+        .sort("fruits", Default::default())
         .select([
             col("fruits"),
             col("B")
@@ -99,7 +99,7 @@ fn test_exploded_window_function() -> Result<()> {
     // we implicitly also test that a literal does not upcast a column
     let out = df
         .lazy()
-        .sort("fruits", false)
+        .sort("fruits", Default::default())
         .select([
             col("fruits"),
             col("B")
@@ -124,7 +124,7 @@ fn test_reverse_in_groups() -> Result<()> {
 
     let out = df
         .lazy()
-        .sort("fruits", false)
+        .sort("fruits", Default::default())
         .select([
             col("B"),
             col("fruits"),
@@ -145,7 +145,7 @@ fn test_sort_by_in_groups() -> Result<()> {
 
     let out = df
         .lazy()
-        .sort("cars", false)
+        .sort("cars", Default::default())
         .select([
             col("fruits"),
             col("cars"),

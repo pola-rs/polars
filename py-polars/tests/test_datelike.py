@@ -87,7 +87,7 @@ def test_diff_datetime() -> None:
 
 def test_timestamp() -> None:
     a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
-    assert a.dt.timestamp() == [10000, 20000, 30000]
+    assert a.dt.timestamp("ms") == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
     assert isinstance(out[0], datetime)
     assert a.dt.min() == out[0]
@@ -527,3 +527,41 @@ def test_read_utc_times_parquet() -> None:
     f.seek(0)
     df_in = pl.read_parquet(f)
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
+
+
+def test_epoch() -> None:
+    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+
+    for unit in ["ns", "us", "ms"]:
+        assert dates.dt.epoch(unit).series_equal(dates.dt.timestamp(unit))
+
+    assert dates.dt.epoch("s").series_equal(dates.dt.timestamp("ms") // 1000)
+    assert dates.dt.epoch("d").series_equal(
+        (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32)
+    )
+
+
+def test_default_negative_every_offset_dynamic_groupby() -> None:
+    # 2791
+    dts = [
+        datetime(2020, 1, 1),
+        datetime(2020, 1, 2),
+        datetime(2020, 2, 1),
+        datetime(2020, 3, 1),
+    ]
+    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
+    out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
+        pl.col("idx")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+            ],
+            "idx": [[0], [1, 2], [3]],
+        }
+    )
+    assert out.frame_equal(expected)

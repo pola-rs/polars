@@ -769,6 +769,15 @@ class Expr:
         """
         return self.filter(self.is_not_null())
 
+    def drop_nans(self) -> "Expr":
+        """
+        Syntactic sugar for:
+
+        >>> pl.col("foo").filter(pl.col("foo").is_not_nan())  # doctest: +IGNORE_RESULT
+
+        """
+        return self.filter(self.is_not_nan())
+
     def cumsum(self, reverse: bool = False) -> "Expr":
         """
         Get an array with the cumulative sum computed at every element.
@@ -1059,7 +1068,7 @@ class Expr:
     def shift(self, periods: int = 1) -> "Expr":
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation
-        with `Nones`.
+        with nulls.
 
         Parameters
         ----------
@@ -2820,6 +2829,44 @@ class Expr:
         """
         return ExprCatNameSpace(self)
 
+    @property
+    def struct(self) -> "ExprStructNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return ExprStructNameSpace(self)
+
+
+class ExprStructNameSpace:
+    """
+    Namespace for struct related expressions
+    """
+
+    def __init__(self, expr: Expr):
+        self._pyexpr = expr._pyexpr
+
+    def field(self, name: str) -> Expr:
+        """
+        Retrieve one of the fields of this `Struct` as a new Series
+
+        Parameters
+        ----------
+        name
+            Name of the field
+        """
+        return wrap_expr(self._pyexpr.struct_field_by_name(name))
+
+    def rename_fields(self, names: List[str]) -> Expr:
+        """
+        Rename the fields of the struct
+
+        Parameters
+        ----------
+        names
+            New names in the order of the struct's fields
+        """
+        return wrap_expr(self._pyexpr.struct_rename_fields(names))
+
 
 class ExprListNameSpace:
     """
@@ -3040,6 +3087,151 @@ class ExprListNameSpace:
         """
 
         return wrap_expr(self._pyexpr.lst_join(separator))
+
+    def arg_min(self) -> "Expr":
+        """
+        Retrieve the index of the minimal value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return wrap_expr(self._pyexpr.lst_arg_min())
+
+    def arg_max(self) -> "Expr":
+        """
+        Retrieve the index of the maximum value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return wrap_expr(self._pyexpr.lst_arg_max())
+
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Expr":
+        """
+        Calculate the n-th discrete difference of every sublist.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.diff()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 1]
+            [null, -8, -1]
+        ]
+
+        """
+        return wrap_expr(self._pyexpr.lst_diff(n, null_behavior))
+
+    def shift(self, periods: int = 1) -> "Expr":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with nulls.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 3]
+            [null, 10, 2]
+        ]
+
+        """
+        return wrap_expr(self._pyexpr.lst_shift(periods))
+
+    def slice(self, offset: int, length: int) -> "Expr":
+        """
+        Slice every sublist
+
+        Parameters
+        ----------
+        offset
+            Take the values from this index offset
+        length
+            The length of the slice to take
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [2, 3]
+            [2, 1]
+        ]
+
+        """
+        return wrap_expr(self._pyexpr.lst_slice(offset, length))
+
+    def head(self, n: int = 5) -> "Expr":
+        """
+        Slice the head of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.head(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [1, 2]
+            [10, 2]
+        ]
+
+        """
+        return self.slice(0, n)
+
+    def tail(self, n: int = 5) -> "Expr":
+        """
+        Slice the tail of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.tail(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [3, 4]
+            [2, 1]
+        ]
+
+        """
+        return self.slice(-n, n)
 
 
 class ExprStringNameSpace:
@@ -3404,6 +3596,52 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_split_inclusive(by))
         return wrap_expr(self._pyexpr.str_split(by))
 
+    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Expr:
+        """
+        Split the string by a substring into a struct of `n` fields.
+        The return type will by of type Struct<Utf8>
+
+        If it cannot make `n` splits, the remaiming field elements will be null
+
+        Parameters
+        ----------
+        by
+            substring
+        n
+            Number of splits to make
+        inclusive
+            Include the split character/string in the results
+
+        Examples
+        --------
+
+        >>> (
+        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
+        ...         [
+        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...         ]
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌───────────────────────────────────────────┐
+        │ fields                                    │
+        │ ---                                       │
+        │ struct[2]{'field_0': str, 'field_1': str} │
+        ╞═══════════════════════════════════════════╡
+        │ {"a","1"}                                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null}                               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}                                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}                                 │
+        └───────────────────────────────────────────┘
+
+        """
+        if inclusive:
+            return wrap_expr(self._pyexpr.str_split_exact_inclusive(by, n))
+        return wrap_expr(self._pyexpr.str_split_exact(by, n))
+
     def replace(self, pattern: str, value: str) -> Expr:
         """
         Replace first regex match with a string value.
@@ -3722,10 +3960,31 @@ class ExprDateTimeNameSpace:
             lambda s: s.dt.to_python_datetime(), return_dtype=Object
         )
 
+    def epoch(self, tu: str = "us") -> Expr:
+        """
+        Get the time passed since the Unix EPOCH in the give time unit
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms', 's', 'd'}
+        """
+        if tu in ["ns", "us", "ms"]:
+            return self.timestamp(tu)
+        if tu == "s":
+            return wrap_expr(self._pyexpr.dt_epoch_seconds())
+        if tu == "d":
+            return wrap_expr(self._pyexpr).cast(Date).cast(Int32)
+        else:
+            raise ValueError(f"time unit {tu} not understood")
+
     def epoch_days(self) -> Expr:
         """
         Get the number of days since the unix EPOCH.
         If the date is before the unix EPOCH, the number of days will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -3738,16 +3997,22 @@ class ExprDateTimeNameSpace:
         Get the number of milliseconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of milliseconds will be negative.
 
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
+
         Returns
         -------
         Milliseconds as Int64
         """
-        return self.timestamp()
+        return self.timestamp("ms")
 
     def epoch_seconds(self) -> Expr:
         """
         Get the number of seconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -3755,9 +4020,16 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.dt_epoch_seconds())
 
-    def timestamp(self) -> Expr:
-        """Return timestamp in milliseconds as Int64 type."""
-        return wrap_expr(self._pyexpr.timestamp())
+    def timestamp(self, tu: str = "us") -> Expr:
+        """
+        Return a timestamp in the given time unit.
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms'}
+        """
+        return wrap_expr(self._pyexpr.timestamp(tu))
 
     def with_time_unit(self, tu: str) -> Expr:
         """
@@ -3767,7 +4039,7 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         tu
-            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+            Time unit for the `Datetime` Series: one of {"ns", "us", "ms"}
         """
         return wrap_expr(self._pyexpr.dt_with_time_unit(tu))
 

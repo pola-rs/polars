@@ -2,7 +2,7 @@ use super::*;
 use polars::io::RowCount;
 use std::io::Cursor;
 
-const FOODS_CSV: &str = "../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
+const FOODS_CSV: &str = "../examples/datasets/foods1.csv";
 
 #[test]
 fn write_csv() {
@@ -146,6 +146,7 @@ fn test_tab_sep() {
         .with_ignore_parser_errors(true)
         .finish()
         .unwrap();
+    assert_eq!(df.shape(), (8, 26))
 }
 
 #[test]
@@ -179,15 +180,15 @@ fn test_missing_data() {
     assert!(df
         .column("column_1")
         .unwrap()
-        .series_equal(&Series::new("column_1", &[1, 1])));
+        .series_equal(&Series::new("column_1", &[1_i64, 1])));
     assert!(df
         .column("column_2")
         .unwrap()
-        .series_equal_missing(&Series::new("column_2", &[Some(2), None])));
+        .series_equal_missing(&Series::new("column_2", &[Some(2_i64), None])));
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[3, 3])));
+        .series_equal(&Series::new("column_3", &[3_i64, 3])));
 }
 
 #[test]
@@ -202,7 +203,7 @@ fn test_escape_comma() {
     assert!(df
         .column("column_3")
         .unwrap()
-        .series_equal(&Series::new("column_3", &[11, 12])));
+        .series_equal(&Series::new("column_3", &[11_i64, 12])));
 }
 
 #[test]
@@ -337,18 +338,12 @@ fn test_quoted_numeric() {
 #[test]
 fn test_empty_bytes_to_dataframe() {
     let fields = vec![Field::new("test_field", DataType::Utf8)];
-    let schema = Schema::new(fields);
+    let schema = Schema::from(fields);
     let file = Cursor::new(vec![]);
 
     let result = CsvReader::new(file)
         .has_header(false)
-        .with_columns(Some(
-            schema
-                .fields()
-                .iter()
-                .map(|s| s.name().to_string())
-                .collect(),
-        ))
+        .with_columns(Some(schema.iter_names().cloned().collect()))
         .with_schema(&schema)
         .finish();
     assert!(result.is_ok())
@@ -378,7 +373,7 @@ fn test_missing_value() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_schema(&Schema::new(vec![
+        .with_schema(&Schema::from(vec![
             Field::new("foo", DataType::UInt32),
             Field::new("bar", DataType::UInt32),
             Field::new("ham", DataType::UInt32),
@@ -400,7 +395,7 @@ AUDCAD,1616455921,0.96212,0.95666,1
     let file = Cursor::new(csv);
     let df = CsvReader::new(file)
         .has_header(true)
-        .with_dtypes(Some(&Schema::new(vec![Field::new(
+        .with_dtypes(Some(&Schema::from(vec![Field::new(
             "b",
             DataType::Datetime(TimeUnit::Nanoseconds, None),
         )])))
@@ -957,4 +952,16 @@ fn test_header_only() -> Result<()> {
     let df = CsvReader::new(file).has_header(false).finish()?;
     assert_eq!(df.shape(), (1, 3));
     Ok(())
+}
+
+#[test]
+fn test_empty_csv() {
+    let csv = "";
+    let file = Cursor::new(csv);
+    for h in [true, false] {
+        assert!(matches!(
+            CsvReader::new(file.clone()).has_header(h).finish(),
+            Err(PolarsError::NoData(_))
+        ))
+    }
 }

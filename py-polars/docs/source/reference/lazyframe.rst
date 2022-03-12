@@ -61,6 +61,7 @@ Manipulation/ selection
     LazyFrame.sort
     LazyFrame.melt
     LazyFrame.interpolate
+    LazyFrame.unnest
 
 Apply
 -----
