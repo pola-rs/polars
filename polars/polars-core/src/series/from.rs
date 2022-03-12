@@ -69,6 +69,9 @@ impl Series {
             Struct(_) => Series::try_from_arrow_unchecked(name, chunks, &dtype.to_arrow()).unwrap(),
             #[cfg(feature = "object")]
             Object(_) => todo!(),
+            Null => panic!("null type not supported"),
+            Unknown => panic!("uh oh, somehow we don't know the dtype?"),
+            #[allow(unreachable_patterns)]
             _ => unreachable!(),
         }
     }

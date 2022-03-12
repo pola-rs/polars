@@ -1786,7 +1786,9 @@ class Series:
 
     def cast(
         self,
-        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+        dtype: Union[
+            Type[DataType], Type[int], Type[float], Type[str], Type[bool], DataType
+        ],
         strict: bool = True,
     ) -> "Series":
         """
@@ -1821,8 +1823,8 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(str(pl_dtype), strict))
+        pl_dtype = py_type_to_dtype(dtype)  # type: ignore
+        return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> "Series":
         """

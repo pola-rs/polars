@@ -171,3 +171,11 @@ def test_slice() -> None:
     assert s.arr.tail(200).to_list() == vals
     assert s.arr.head(200).to_list() == vals
     assert s.arr.slice(1, 2).to_list() == [[2, 3], [2, 1]]
+
+
+def test_cast_inner() -> None:
+    a = pl.Series([[1, 2]])
+    for t in [bool, pl.Boolean]:
+        b = a.cast(pl.List(t))
+        assert b.dtype == pl.List(pl.Boolean)
+        assert b.to_list() == [[True, True]]
