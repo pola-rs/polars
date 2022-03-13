@@ -888,7 +888,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed.
     ///
-    /// This function is very similar to [`apply`], but differs in how it handles aggregations.
+    /// This function is very similar to [`Expr::apply`], but differs in how it handles aggregations.
     ///
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -916,7 +916,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed with many arguments
     ///
-    /// See the [`map`] function for the differences between [`map`] and [`apply`].
+    /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
@@ -1013,7 +1013,7 @@ impl Expr {
 
     /// Apply a function/closure over the groups with many arguments. This should only be used in a groupby aggregation.
     ///
-    /// See the [`apply`] function for the differences between [`map`] and [`apply`].
+    /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
@@ -1641,7 +1641,7 @@ impl Expr {
     }
 
     /// Apply a rolling median See:
-    /// [ChunkedArray::rolling_median](polars::prelude::ChunkWindow::rolling_median).
+    /// [`ChunkedArray::rolling_median`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
@@ -1653,7 +1653,7 @@ impl Expr {
     }
 
     /// Apply a rolling quantile See:
-    /// [ChunkedArray::rolling_quantile](polars::prelude::ChunkWindow::rolling_quantile).
+    /// [`ChunkedArray::rolling_quantile`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(
