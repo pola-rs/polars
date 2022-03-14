@@ -49,7 +49,9 @@ lazy_static! {
         .num_threads(
             std::env::var("POLARS_MAX_THREADS")
                 .map(|s| s.parse::<usize>().expect("integer"))
-                .unwrap_or_else(|_| num_cpus::get())
+                .unwrap_or_else(|_| std::thread::available_parallelism()
+                    .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
+                    .get())
         )
         .build()
         .expect("could not spawn threads");
