@@ -45,7 +45,6 @@ lexical = { version = "6", optional = true, default-features = false, features =
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
-num_cpus = "1"
 polars-arrow = { version = "0.20.0", path = "../polars-arrow" }
 polars-core = { version = "0.20.0", path = "../polars-core", features = ["private"], default-features = false }
 polars-utils = { version = "0.20.0", path = "../polars-utils", optional = true }
