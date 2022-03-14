@@ -45,6 +45,7 @@
 //!     - [ChunkedArray](#chunkedarray)
 //! * [SIMD](#simd)
 //! * [API](#api)
+//! * [Expressions](#expressions)
 //! * [Compile times](#compile-times)
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
@@ -64,9 +65,7 @@
 //! ### DataFrame
 //! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
 //! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
-//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The
-//! closest arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
-//! and Polars provides zero copy coercion.
+//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc.
 //!
 //! ### Series
 //! `Series` are the type agnostic columnar data representation of Polars. They provide many
@@ -90,6 +89,42 @@
 //! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
+//!
+//! ## Expressions
+//! Polars has a powerful concept called expressions.
+//! Polars expressions can be used in various contexts and are a functional mapping of
+//! `Fn(Series) -> Series`, meaning that they have Series as input and Series as output.
+//! By looking at this functional definition, we can see that the output of an `Expr` also can serve
+//! as the input of an `Expr`.
+//!
+//! That may sound a bit strange, so lets give an example. The following is an expression:
+//!
+//! `col("foo").sort().head(2)`
+//!
+//! The snippet above says select column `"foo"` then sort this column and then take first 2 values
+//! of the sorted output.
+//! The power of expressions is that every expression produces a new expression and that they can
+//! be piped together.
+//! You can run an expression by passing them on one of polars execution contexts.
+//! Here we run two expressions in the **select** context:
+//!
+//! ```no_run
+//! # use polars::prelude::*;
+//! # let df = DataFrame::default();
+//!   df.lazy()
+//!    .select([
+//!        col("foo").sort(Default::default()).head(None),
+//!        col("bar").filter(col("foo").eq(lit(1))).sum(),
+//!    ])
+//!    .collect()?;
+//! ```
+//! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
+//! (Note that within an expression there may be more parallelization going on).
+//!
+//! Understanding polars expressions is most important when starting with the polars library. Read more
+//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/dsl/intro.html).
+//! Though the examples given there are in python. The expressions API is almost identical and the
+//! the read should certainly be valuable to rust users as well.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -181,7 +216,7 @@
 //!     - `abs` - Get absolute values of Series
 //!     - `arange` - Range operation on Series
 //!     - `product` - Compute the product of a Series.
-//!     - `diff` - [`diff`] operation.
+//!     - `diff` - `diff` operation.
 //!     - `pct_change` - Compute change percentages.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `fmt` - Activate DataFrame formatting

@@ -259,6 +259,7 @@ where
     }
 }
 
+#[cfg(feature = "sort_multiple")]
 fn argsort_multiple_numeric<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
     other: &[Series],

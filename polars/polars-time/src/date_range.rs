@@ -21,7 +21,7 @@ pub fn date_range_impl(
         .into_datetime(tu, None)
 }
 
-/// Create a [`DateTimeChunked`] from a given `start` and `stop` date and a given `every` interval.
+/// Create a [`DatetimeChunked`] from a given `start` and `stop` date and a given `every` interval.
 pub fn date_range(
     name: &str,
     start: NaiveDateTime,
