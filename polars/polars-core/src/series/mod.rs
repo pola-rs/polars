@@ -684,7 +684,7 @@ impl Series {
         }
     }
     /// Apply a rolling median to a Series. See:
-    /// [ChunkedArray::rolling_median](crate::prelude::ChunkWindow::rolling_median).
+    /// [`ChunkedArray::rolling_median`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_median(&self, _options: RollingOptions) -> Result<Series> {
         #[cfg(feature = "rolling_window")]
@@ -697,7 +697,7 @@ impl Series {
         }
     }
     /// Apply a rolling quantile to a Series. See:
-    /// [ChunkedArray::rolling_quantile](crate::prelude::ChunkWindow::rolling_quantile).
+    /// [`ChunkedArray::rolling_quantile`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     pub fn rolling_quantile(
         &self,
@@ -937,7 +937,7 @@ impl Series {
     }
 
     /// Compute the unique elements, but maintain order. This requires more work
-    /// than a naive [`Series::unique`].
+    /// than a naive [`Series::unique`](SeriesTrait::unique).
     pub fn unique_stable(&self) -> Result<Series> {
         let idx = self.arg_unique()?;
         // Safety:
