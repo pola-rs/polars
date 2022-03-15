@@ -11,6 +11,7 @@ from typing import (
     BinaryIO,
     Callable,
     Dict,
+    Generic,
     Iterable,
     Iterator,
     List,
@@ -2482,10 +2483,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self._from_pydf(self._df.with_row_count(name, offset))
 
     def groupby(
-        self,
+        self: DF,
         by: Union[str, "pli.Expr", Sequence[str], Sequence["pli.Expr"]],
         maintain_order: bool = False,
-    ) -> "GroupBy":
+    ) -> "GroupBy[DF]":
         """
         Start a groupby operation.
 
@@ -2551,15 +2552,20 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(by, str):
             by = [by]
-        return GroupBy(self._df, by, maintain_order=maintain_order)  # type: ignore
+        return GroupBy(
+            self._df,
+            by,  # type: ignore
+            dataframe_class=self.__class__,
+            maintain_order=maintain_order,
+        )
 
     def groupby_rolling(
-        self,
+        self: DF,
         index_column: str,
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
-    ) -> "RollingGroupBy":
+    ) -> "RollingGroupBy[DF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
 
@@ -4885,7 +4891,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return pli.wrap_s(self._df.to_struct(name))
 
-    def unnest(self, names: Union[str, List[str]]) -> "DataFrame":
+    def unnest(self: DF, names: Union[str, List[str]]) -> DF:
         """
         Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
         location of the `struct` type.
@@ -4936,10 +4942,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(names, str):
             names = [names]
-        return wrap_df(self._df.unnest(names))
+        return self._from_pydf(self._df.unnest(names))
 
 
-class RollingGroupBy:
+class RollingGroupBy(Generic[DF]):
     """
     A rolling grouper. This has an `.agg` method which will allow you to run all polars expressions
     in a groupby context.
@@ -4947,7 +4953,7 @@ class RollingGroupBy:
 
     def __init__(
         self,
-        df: "DataFrame",
+        df: DF,
         index_column: str,
         period: str,
         offset: Optional[str],
@@ -4967,7 +4973,7 @@ class RollingGroupBy:
             List["pli.Expr"],
             "pli.Expr",
         ],
-    ) -> DataFrame:
+    ) -> DF:
         return (
             self.df.lazy()
             .groupby_rolling(
@@ -4981,7 +4987,7 @@ class RollingGroupBy:
         )
 
 
-class DynamicGroupBy:
+class DynamicGroupBy(Generic[DF]):
     """
     A dynamic grouper. This has an `.agg` method which will allow you to run all polars expressions
     in a groupby context.
@@ -4989,7 +4995,7 @@ class DynamicGroupBy:
 
     def __init__(
         self,
-        df: "DataFrame",
+        df: DF,
         index_column: str,
         every: str,
         period: Optional[str],
@@ -5017,7 +5023,7 @@ class DynamicGroupBy:
             List["pli.Expr"],
             "pli.Expr",
         ],
-    ) -> DataFrame:
+    ) -> DF:
         return (
             self.df.lazy()
             .groupby_dynamic(
@@ -5035,7 +5041,7 @@ class DynamicGroupBy:
         )
 
 
-class GroupBy:
+class GroupBy(Generic[DF]):
     """
     Starts a new GroupBy operation.
 
@@ -5074,19 +5080,38 @@ class GroupBy:
         self,
         df: "PyDataFrame",
         by: Union[str, List[str]],
+        dataframe_class: Type[DF],
         maintain_order: bool = False,
     ):
+        """
+        Construct class representing a group by operation over the given dataframe.
+
+        Parameters
+        ----------
+        df
+            PyDataFrame to perform operation over.
+        by
+            Column(s) to group by.
+        dataframe_class
+            The class used to wrap around the given dataframe. Used to construct new
+            dataframes returned from the group by operation.
+        maintain_order
+            Make sure that the order of the groups remain consistent. This is more
+            expensive than a default groupby. Note that this only works in expression
+            aggregations.
+        """
         self._df = df
+        self._dataframe_class = dataframe_class
         self.by = by
         self.maintain_order = maintain_order
 
-    def __getitem__(self, item: Any) -> "GBSelection":
+    def __getitem__(self, item: Any) -> "GBSelection[DF]":
         print(
             "accessing GroupBy by index is deprecated, consider using the `.agg` method"
         )
         return self._select(item)
 
-    def _select(self, columns: Union[str, List[str]]) -> "GBSelection":
+    def _select(self, columns: Union[str, List[str]]) -> "GBSelection[DF]":
         """
         Select the columns that will be aggregated.
 
@@ -5100,16 +5125,21 @@ class GroupBy:
         )
         if isinstance(columns, str):
             columns = [columns]
-        return GBSelection(self._df, self.by, columns)
+        return GBSelection(
+            self._df,
+            self.by,
+            columns,
+            dataframe_class=self._dataframe_class,
+        )
 
     def __iter__(self) -> Iterable[Any]:
         groups_df = self.groups()
         groups = groups_df["groups"]
-        df = wrap_df(self._df)
+        df = self._dataframe_class._from_pydf(self._df)
         for i in range(groups_df.height):
             yield df[groups[i]]
 
-    def get_group(self, group_value: Union[Any, Tuple[Any]]) -> DataFrame:
+    def get_group(self, group_value: Union[Any, Tuple[Any]]) -> DF:
         """
         Select a single group as a new DataFrame.
 
@@ -5167,10 +5197,10 @@ class GroupBy:
         except IndexError:
             raise ValueError(f"no group: {group_value} found")
 
-        df = wrap_df(self._df)
+        df = self._dataframe_class._from_pydf(self._df)
         return df[groups_idx]
 
-    def groups(self) -> DataFrame:
+    def groups(self) -> DF:
         """
         Return a `DataFrame` with:
 
@@ -5180,9 +5210,11 @@ class GroupBy:
         warnings.warn(
             "accessing GroupBy by index is deprecated, consider using the `.agg` method"
         )
-        return wrap_df(self._df.groupby(self.by, None, "groups"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, None, "groups")
+        )
 
-    def apply(self, f: Callable[[DataFrame], DataFrame]) -> DataFrame:
+    def apply(self, f: Callable[[DataFrame], DataFrame]) -> DF:
         """
         Apply a function over the groups as a sub-DataFrame.
 
@@ -5197,7 +5229,7 @@ class GroupBy:
         -------
         DataFrame
         """
-        return wrap_df(self._df.groupby_apply(self.by, f))
+        return self._dataframe_class._from_pydf(self._df.groupby_apply(self.by, f))
 
     def agg(
         self,
@@ -5207,7 +5239,7 @@ class GroupBy:
             List["pli.Expr"],
             "pli.Expr",
         ],
-    ) -> DataFrame:
+    ) -> DF:
         """
         Use multiple aggregations on columns. This can be combined with complete lazy API
         and is considered idiomatic polars.
@@ -5254,7 +5286,7 @@ class GroupBy:
 
             elif isinstance(column_to_agg[0], pli.Expr):
                 return (
-                    wrap_df(self._df)
+                    self._dataframe_class._from_pydf(self._df)
                     .lazy()
                     .groupby(self.by, maintain_order=self.maintain_order)
                     .agg(column_to_agg)  # type: ignore[arg-type]
@@ -5271,9 +5303,11 @@ class GroupBy:
                 f"argument: {column_to_agg} not understood, have you passed a list of expressions?"
             )
 
-        return wrap_df(self._df.groupby_agg(self.by, column_to_agg))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby_agg(self.by, column_to_agg)
+        )
 
-    def head(self, n: int = 5) -> DataFrame:
+    def head(self, n: int = 5) -> DF:
         """
         Return first n rows of each group.
 
@@ -5331,14 +5365,14 @@ class GroupBy:
 
         """
         return (
-            wrap_df(self._df)
+            self._dataframe_class._from_pydf(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
             .head(n)
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def tail(self, n: int = 5) -> DataFrame:
+    def tail(self, n: int = 5) -> DF:
         """
         Return last n rows of each group.
 
@@ -5395,22 +5429,27 @@ class GroupBy:
 
         """
         return (
-            wrap_df(self._df)
+            self._dataframe_class._from_pydf(self._df)
             .lazy()
             .groupby(self.by, self.maintain_order)
             .tail(n)
             .collect(no_optimization=True, string_cache=False)
         )
 
-    def _select_all(self) -> "GBSelection":
+    def _select_all(self) -> "GBSelection[DF]":
         """
         Select all columns for aggregation.
         """
-        return GBSelection(self._df, self.by, None)
+        return GBSelection(
+            self._df,
+            self.by,
+            None,
+            dataframe_class=self._dataframe_class,
+        )
 
     def pivot(
         self, pivot_column: Union[str, List[str]], values_column: Union[str, List[str]]
-    ) -> "PivotOps":
+    ) -> "PivotOps[DF]":
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
 
@@ -5448,57 +5487,63 @@ class GroupBy:
             pivot_column = [pivot_column]
         if isinstance(values_column, str):
             values_column = [values_column]
-        return PivotOps(self._df, self.by, pivot_column, values_column)
+        return PivotOps(
+            self._df,
+            self.by,
+            pivot_column,
+            values_column,
+            dataframe_class=self._dataframe_class,
+        )
 
-    def first(self) -> DataFrame:
+    def first(self) -> DF:
         """
         Aggregate the first values in the group.
         """
         return self.agg(pli.all().first())
 
-    def last(self) -> DataFrame:
+    def last(self) -> DF:
         """
         Aggregate the last values in the group.
         """
         return self.agg(pli.all().last())
 
-    def sum(self) -> DataFrame:
+    def sum(self) -> DF:
         """
         Reduce the groups to the sum.
         """
         return self.agg(pli.all().sum())
 
-    def min(self) -> DataFrame:
+    def min(self) -> DF:
         """
         Reduce the groups to the minimal value.
         """
         return self.agg(pli.all().min())
 
-    def max(self) -> DataFrame:
+    def max(self) -> DF:
         """
         Reduce the groups to the maximal value.
         """
         return self.agg(pli.all().max())
 
-    def count(self) -> DataFrame:
+    def count(self) -> DF:
         """
         Count the number of values in each group.
         """
         return self.agg(pli.lazy_functions.count())
 
-    def mean(self) -> DataFrame:
+    def mean(self) -> DF:
         """
         Reduce the groups to the mean values.
         """
         return self.agg(pli.all().mean())
 
-    def n_unique(self) -> DataFrame:
+    def n_unique(self) -> DF:
         """
         Count the unique values per group.
         """
         return self.agg(pli.all().n_unique())
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
         """
         Compute the quantile per group.
 
@@ -5513,13 +5558,13 @@ class GroupBy:
         """
         return self.agg(pli.all().quantile(quantile, interpolation))
 
-    def median(self) -> DataFrame:
+    def median(self) -> DF:
         """
         Return the median per group.
         """
         return self.agg(pli.all().median())
 
-    def agg_list(self) -> DataFrame:
+    def agg_list(self) -> DF:
         """
         Aggregate the groups into Series.
 
@@ -5543,7 +5588,7 @@ class GroupBy:
         return self.agg(pli.all().list())
 
 
-class PivotOps:
+class PivotOps(Generic[DF]):
     """
     Utility class returned in a pivot operation.
     """
@@ -5554,78 +5599,80 @@ class PivotOps:
         by: Union[str, List[str]],
         pivot_column: Union[str, List[str]],
         values_column: Union[str, List[str]],
+        dataframe_class: Type[DF],
     ):
         self._df = df
         self.by = by
         self.pivot_column = pivot_column
         self.values_column = values_column
+        self._dataframe_class = dataframe_class
 
-    def first(self) -> DataFrame:
+    def first(self) -> DF:
         """
         Get the first value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "first")
         )
 
-    def sum(self) -> DataFrame:
+    def sum(self) -> DF:
         """
         Get the sum per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "sum")
         )
 
-    def min(self) -> DataFrame:
+    def min(self) -> DF:
         """
         Get the minimal value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "min")
         )
 
-    def max(self) -> DataFrame:
+    def max(self) -> DF:
         """
         Get the maximal value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "max")
         )
 
-    def mean(self) -> DataFrame:
+    def mean(self) -> DF:
         """
         Get the mean value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "mean")
         )
 
-    def count(self) -> DataFrame:
+    def count(self) -> DF:
         """
         Count the values per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "count")
         )
 
-    def median(self) -> DataFrame:
+    def median(self) -> DF:
         """
         Get the median value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "median")
         )
 
-    def last(self) -> DataFrame:
+    def last(self) -> DF:
         """
         Get the last value per group.
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.pivot(self.by, self.pivot_column, self.values_column, "last")
         )
 
 
-class GBSelection:
+class GBSelection(Generic[DF]):
     """
     Utility class returned in a groupby operation.
     """
@@ -5635,42 +5682,54 @@ class GBSelection:
         df: "PyDataFrame",
         by: Union[str, List[str]],
         selection: Optional[List[str]],
+        dataframe_class: Type[DF],
     ):
         self._df = df
         self.by = by
         self.selection = selection
+        self._dataframe_class = dataframe_class
 
-    def first(self) -> DataFrame:
+    def first(self) -> DF:
         """
         Aggregate the first values in the group.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "first"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "first")
+        )
 
-    def last(self) -> DataFrame:
+    def last(self) -> DF:
         """
         Aggregate the last values in the group.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "last"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "last")
+        )
 
-    def sum(self) -> DataFrame:
+    def sum(self) -> DF:
         """
         Reduce the groups to the sum.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "sum"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "sum")
+        )
 
-    def min(self) -> DataFrame:
+    def min(self) -> DF:
         """
         Reduce the groups to the minimal value.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "min"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "min")
+        )
 
-    def max(self) -> DataFrame:
+    def max(self) -> DF:
         """
         Reduce the groups to the maximal value.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "max"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "max")
+        )
 
-    def count(self) -> DataFrame:
+    def count(self) -> DF:
         """
         Count the number of values in each group.
 
@@ -5698,21 +5757,27 @@ class GBSelection:
         └─────┴───────┘
 
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "count"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "count")
+        )
 
-    def mean(self) -> DataFrame:
+    def mean(self) -> DF:
         """
         Reduce the groups to the mean values.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "mean"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "mean")
+        )
 
-    def n_unique(self) -> DataFrame:
+    def n_unique(self) -> DF:
         """
         Count the unique values per group.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "n_unique"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "n_unique")
+        )
 
-    def quantile(self, quantile: float, interpolation: str = "nearest") -> DataFrame:
+    def quantile(self, quantile: float, interpolation: str = "nearest") -> DF:
         """
         Compute the quantile per group.
 
@@ -5725,27 +5790,31 @@ class GBSelection:
             interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
 
         """
-        return wrap_df(
+        return self._dataframe_class._from_pydf(
             self._df.groupby_quantile(self.by, self.selection, quantile, interpolation)
         )
 
-    def median(self) -> DataFrame:
+    def median(self) -> DF:
         """
         Return the median per group.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "median"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "median")
+        )
 
-    def agg_list(self) -> DataFrame:
+    def agg_list(self) -> DF:
         """
         Aggregate the groups into Series.
         """
-        return wrap_df(self._df.groupby(self.by, self.selection, "agg_list"))
+        return self._dataframe_class._from_pydf(
+            self._df.groupby(self.by, self.selection, "agg_list")
+        )
 
     def apply(
         self,
         func: Callable[[Any], Any],
         return_dtype: Optional[Type[DataType]] = None,
-    ) -> DataFrame:
+    ) -> DF:
         """
         Apply a function over the groups.
         """
