@@ -1913,3 +1913,24 @@ def test_preservation_of_subclasses() -> None:
 
     assert isinstance(MyDataFrame().lazy(), MyLazyFrame)
     assert isinstance(MyDataFrame().lazy().collect(), MyDataFrame)
+
+
+def test_preservation_of_subclasses_after_groupby_statements() -> None:
+    """Group by operations should preserve inherited datframe classes."""
+
+    class SubClassedDataFrame(pl.DataFrame):
+        pass
+
+    # A group by operation should preserve the subclass
+    subclassed_df = SubClassedDataFrame({"a": [1, 2], "b": [3, 4]})
+    groupby = subclassed_df.groupby("a")
+    assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
+
+    # Round-trips to GBSelection and back should also preserve subclass
+    assert isinstance(groupby["a"].count(), SubClassedDataFrame)
+
+    # Round-trips to PivotOps and back should also preserve subclass
+    assert isinstance(
+        groupby.pivot(pivot_column="a", values_column="b").first(),
+        SubClassedDataFrame,
+    )

@@ -655,10 +655,10 @@ class LazyFrame(Generic[DF]):
         return self._from_pyldf(self._ldf.select(exprs))
 
     def groupby(
-        self,
+        self: LDF,
         by: Union[str, List[str], "pli.Expr", List["pli.Expr"]],
         maintain_order: bool = False,
-    ) -> "LazyGroupBy":
+    ) -> "LazyGroupBy[LDF]":
         """
         Start a groupby operation.
 
@@ -700,15 +700,15 @@ class LazyFrame(Generic[DF]):
         """
         new_by = _prepare_groupby_inputs(by)
         lgb = self._ldf.groupby(new_by, maintain_order)
-        return LazyGroupBy(lgb)
+        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_rolling(
-        self,
+        self: LDF,
         index_column: str,
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
-    ) -> "LazyGroupBy":
+    ) -> "LazyGroupBy[LDF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
 
@@ -816,10 +816,10 @@ class LazyFrame(Generic[DF]):
             offset,
             closed,
         )
-        return LazyGroupBy(lgb)
+        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
-        self,
+        self: LDF,
         index_column: str,
         every: str,
         period: Optional[str] = None,
@@ -828,7 +828,7 @@ class LazyFrame(Generic[DF]):
         include_boundaries: bool = False,
         closed: str = "right",
         by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
-    ) -> "LazyGroupBy":
+    ) -> "LazyGroupBy[LDF]":
         """
         Groups based on a time value (or index value of type Int32, Int64). Time windows are calculated and rows are assigned to windows.
         Different from a normal groupby is that a row can be member of multiple groups. The time/index window could
@@ -913,7 +913,7 @@ class LazyFrame(Generic[DF]):
             closed,
             by,
         )
-        return LazyGroupBy(lgb)
+        return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def join_asof(
         self: LDF,
@@ -1941,7 +1941,7 @@ class LazyFrame(Generic[DF]):
         """
         return self.select(pli.col("*").interpolate())
 
-    def unnest(self, names: Union[str, List[str]]) -> "LazyFrame":
+    def unnest(self: LDF, names: Union[str, List[str]]) -> LDF:
         """
         Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
         location of the `struct` type.
@@ -1953,18 +1953,19 @@ class LazyFrame(Generic[DF]):
         """
         if isinstance(names, str):
             names = [names]
-        return wrap_ldf(self._ldf.unnest(names))
+        return self._from_pyldf(self._ldf.unnest(names))
 
 
-class LazyGroupBy:
+class LazyGroupBy(Generic[LDF]):
     """
     Created by `df.lazy().groupby("foo)"`
     """
 
-    def __init__(self, lgb: "PyLazyGroupBy"):
+    def __init__(self, lgb: "PyLazyGroupBy", lazyframe_class: Type[LDF]) -> None:
         self.lgb = lgb
+        self._lazyframe_class = lazyframe_class
 
-    def agg(self, aggs: Union[List["pli.Expr"], "pli.Expr"]) -> "LazyFrame":
+    def agg(self, aggs: Union[List["pli.Expr"], "pli.Expr"]) -> LDF:
         """
         Describe the aggregation that need to be done on a group.
 
@@ -1989,9 +1990,9 @@ class LazyGroupBy:
 
         """
         aggs = pli.selection_to_pyexpr_list(aggs)
-        return wrap_ldf(self.lgb.agg(aggs))
+        return self._lazyframe_class._from_pyldf(self.lgb.agg(aggs))
 
-    def head(self, n: int = 5) -> "LazyFrame":
+    def head(self, n: int = 5) -> LDF:
         """
         Return first n rows of each group.
 
@@ -2047,9 +2048,9 @@ class LazyGroupBy:
         └─────────┴─────┘
 
         """
-        return wrap_ldf(self.lgb.head(n))
+        return self._lazyframe_class._from_pyldf(self.lgb.head(n))
 
-    def tail(self, n: int = 5) -> "LazyFrame":
+    def tail(self, n: int = 5) -> LDF:
         """
         Return last n rows of each group.
 
@@ -2105,9 +2106,9 @@ class LazyGroupBy:
         └─────────┴─────┘
 
         """
-        return wrap_ldf(self.lgb.tail(n))
+        return self._lazyframe_class._from_pyldf(self.lgb.tail(n))
 
-    def apply(self, f: Callable[["pli.DataFrame"], "pli.DataFrame"]) -> "LazyFrame":
+    def apply(self, f: Callable[["pli.DataFrame"], "pli.DataFrame"]) -> LDF:
         """
         Apply a function over the groups as a new `DataFrame`. It is not recommended that you use
         this as materializing the `DataFrame` is quite expensive.
@@ -2117,4 +2118,4 @@ class LazyGroupBy:
         f
             Function to apply over the `DataFrame`.
         """
-        return wrap_ldf(self.lgb.apply(f))
+        return self._lazyframe_class._from_pyldf(self.lgb.apply(f))
