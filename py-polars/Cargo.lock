@@ -1273,6 +1273,7 @@ dependencies = [
 name = "polars"
 version = "0.20.0"
 dependencies = [
+ "crossbeam-epoch",
  "polars-core",
  "polars-io",
  "polars-lazy",
