@@ -219,6 +219,8 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
