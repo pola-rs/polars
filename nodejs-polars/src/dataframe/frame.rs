@@ -182,9 +182,9 @@ pub fn schema(cx: CallContext) -> JsResult<JsObject> {
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let mut obj = cx.env.create_object()?;
 
-    for field in df.schema().fields() {
-        let field_name = format!("{}", field.name()).try_into_js(&cx)?;
-        let dtype: JsDataType = field.data_type().clone().into();
+    for (name, dtype) in df.schema().iter() {
+        let field_name = format!("{}", name).try_into_js(&cx)?;
+        let dtype: JsDataType = dtype.clone().into();
         let js_string = dtype.to_string().try_into_js(&cx)?;
         obj.set_property(field_name, js_string).unwrap();
     }
@@ -421,7 +421,7 @@ pub fn sort_in_place(cx: CallContext) -> JsResult<JsUndefined> {
     let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let by_column = params.get_as::<&str>("by")?;
     let reverse = params.get_as::<bool>("reverse")?;
-    
+
     df.sort_in_place([by_column], reverse)
         .map_err(JsPolarsEr::from)?;
 

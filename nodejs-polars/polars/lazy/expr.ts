@@ -459,8 +459,8 @@ export interface Expr extends
   skew(bias?: boolean): Expr
   skew({bias}: {bias: boolean}): Expr
   /** Slice the Series. */
-  slice(offset: number, length: number): Expr
-  slice({offset, length}: {offset: number, length: number}): Expr
+  slice(offset: number | Expr, length: number | Expr): Expr
+  slice({offset, length}: {offset: number | Expr, length: number | Expr}): Expr
   /**
    * Sort this column. In projection/ selection context the whole column is sorted.
    * @param reverse
@@ -508,7 +508,6 @@ export interface Expr extends
 const _Expr = (_expr: any): Expr => {
 
   const wrap = (method, args?): Expr => {
-
     return Expr(pli.expr[method]({_expr, ...args }));
   };
 
@@ -744,7 +743,13 @@ const _Expr = (_expr: any): Expr => {
       }
     },
     skew: wrapUnaryWithDefault("skew", "bias", true),
-    slice: wrapBinary("slice", "offset", "length"),
+    slice(arg, len?) {
+      if(typeof arg === "number") {
+        return wrap("slice", {offset: lit(arg)._expr, length: lit(len)._expr});
+      }
+
+      return wrap("slice", {offset: lit(arg.offset)._expr, length: lit(arg.length)._expr});
+    },
     sort(reverse: any = false, nullsLast=false) {
       if(typeof reverse === "boolean") {
         return wrap("sortWith", {reverse, nullsLast});

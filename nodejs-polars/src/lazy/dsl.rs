@@ -216,8 +216,8 @@ pub fn take_every(cx: CallContext) -> JsResult<JsExternal> {
 pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let offset = params.get_as::<i64>("offset")?;
-    let length = params.get_as::<usize>("length")?;
+    let offset = params.get_external::<Expr>(&cx, "offset")?.clone();
+    let length = params.get_external::<Expr>(&cx, "length")?.clone();
 
     expr.clone().slice(offset, length).try_into_js(&cx)
 }
@@ -522,7 +522,10 @@ pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     expr.clone()
         .map(
-            |s| s.timestamp().map(|ca| ca.into_series()),
+            |s| {
+                s.timestamp(TimeUnit::Milliseconds)
+                    .map(|ca| ca.into_series())
+            },
             GetOutput::from_type(DataType::Int64),
         )
         .try_into_js(&cx)

@@ -42,7 +42,6 @@ features = [
   "random",
   "object",
   "csv-file",
-  "pretty_fmt",
   "performant",
   "dtype-full",
   "rows",
