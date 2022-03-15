@@ -4891,7 +4891,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return pli.wrap_s(self._df.to_struct(name))
 
-    def unnest(self, names: Union[str, List[str]]) -> "DataFrame":
+    def unnest(self: DF, names: Union[str, List[str]]) -> DF:
         """
         Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
         location of the `struct` type.
@@ -4942,7 +4942,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(names, str):
             names = [names]
-        return wrap_df(self._df.unnest(names))
+        return self._from_pydf(self._df.unnest(names))
 
 
 class RollingGroupBy(Generic[DF]):
