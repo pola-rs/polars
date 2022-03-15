@@ -1,11 +1,11 @@
 use crate::conversion::prelude::*;
 use crate::prelude::{JsPolarsEr, JsResult};
 use napi::{CallContext, JsExternal, JsObject, JsString};
+use polars::io::RowCount;
 use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::NullValues;
 use polars::prelude::*;
-use polars::io::RowCount;
 
 impl IntoJs<JsExternal> for LazyFrame {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
@@ -92,7 +92,7 @@ pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
     let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
-    
+
     let args = ScanArgsIpc {
         n_rows,
         cache,
@@ -157,7 +157,12 @@ pub fn sort(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?;
     let by_column = params.get_as::<String>("by")?;
     let reverse = params.get_or("reverse", false)?;
-    ldf.clone().sort(&by_column, reverse).try_into_js(&cx)
+    let sort_opts = SortOptions {
+        descending: reverse,
+        nulls_last: true,
+    };
+
+    ldf.clone().sort(&by_column, sort_opts).try_into_js(&cx)
 }
 
 #[js_function(1)]

@@ -114,7 +114,6 @@ impl JsDataFrame {
             napi::Property::new(env, "readIPCBuffer")?.with_method(io::read_ipc_buffer),
             napi::Property::new(env, "write_ipc_path")?.with_method(io::write_ipc_path),
             napi::Property::new(env, "write_ipc_stream")?.with_method(io::write_ipc_stream),
-            
         ])?;
         Ok(df_obj)
     }

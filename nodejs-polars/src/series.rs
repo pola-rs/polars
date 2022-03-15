@@ -806,8 +806,11 @@ pub fn argsort(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     let val = params.get_as::<bool>("reverse")?;
-
-    series.argsort(val).into_series().try_into_js(&cx)
+    let sort_opts = SortOptions {
+        descending: val,
+        nulls_last: true,
+    };
+    series.argsort(sort_opts).into_series().try_into_js(&cx)
 }
 #[js_function(1)]
 pub fn n_chunks(cx: CallContext) -> JsResult<JsNumber> {
@@ -1054,7 +1057,7 @@ pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
 
-        series
+    series
         .timestamp(TimeUnit::Milliseconds)
         .map_err(JsPolarsEr::from)?
         .into_series()

@@ -156,7 +156,6 @@ impl From<napi::ValueType> for Wrap<DataType> {
     }
 }
 
-
 impl From<DataType> for JsDataType {
     fn from(dt: DataType) -> Self {
         (&dt).into()

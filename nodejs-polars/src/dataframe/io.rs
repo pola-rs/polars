@@ -3,7 +3,7 @@ use crate::error::JsPolarsEr;
 use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
-use polars::frame::row::{rows_to_schema, Row, infer_schema};
+use polars::frame::row::{infer_schema, rows_to_schema, Row};
 use polars::io::RowCount;
 use polars::prelude::*;
 use std::borrow::Borrow;
@@ -276,7 +276,7 @@ pub(crate) fn read_parquet_buffer(cx: CallContext) -> JsResult<JsExternal> {
 pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
     let compression = params.get_as::<String>("compression")?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let path = params.get_as::<String>("path")?;
     let compression = match compression.as_str() {
         "uncompressed" => ParquetCompression::Uncompressed,
@@ -301,7 +301,7 @@ pub(crate) fn write_parquet_path(cx: CallContext) -> JsResult<JsUndefined> {
 #[js_function(1)]
 pub(crate) fn write_parquet_stream(cx: CallContext) -> JsResult<JsUndefined> {
     let params = get_params(&cx)?;
-    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let stream = params.get::<JsObject>("writeStream")?;
     let writeable = JsWriteStream {
         inner: stream,
@@ -439,6 +439,7 @@ pub(crate) fn read_json_buffer(cx: CallContext) -> JsResult<JsExternal> {
     JsonReader::new(reader)
         .infer_schema_len(infer_schema_length)
         .with_batch_size(batch_size)
+        .with_json_format(JsonFormat::JsonLines)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
@@ -456,6 +457,7 @@ pub(crate) fn read_json_path(cx: CallContext) -> JsResult<JsExternal> {
     JsonReader::new(reader)
         .infer_schema_len(infer_schema_length)
         .with_batch_size(batch_size)
+        .with_json_format(JsonFormat::JsonLines)
         .finish()
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)

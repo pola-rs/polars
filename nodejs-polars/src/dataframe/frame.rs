@@ -421,7 +421,7 @@ pub fn sort_in_place(cx: CallContext) -> JsResult<JsUndefined> {
     let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
     let by_column = params.get_as::<&str>("by")?;
     let reverse = params.get_as::<bool>("reverse")?;
-    
+
     df.sort_in_place([by_column], reverse)
         .map_err(JsPolarsEr::from)?;
 

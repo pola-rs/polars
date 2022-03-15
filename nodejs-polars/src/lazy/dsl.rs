@@ -522,7 +522,10 @@ pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     expr.clone()
         .map(
-            |s| s.timestamp(TimeUnit::Milliseconds).map(|ca| ca.into_series()),
+            |s| {
+                s.timestamp(TimeUnit::Milliseconds)
+                    .map(|ca| ca.into_series())
+            },
             GetOutput::from_type(DataType::Int64),
         )
         .try_into_js(&cx)
