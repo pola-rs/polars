@@ -42,14 +42,6 @@ pub unsafe fn aligned_array<T: Element + NativeType>(
     );
     (PyArray1::from_owned_ptr(py, ptr), buf)
 }
-/// TODO: needs more explanation
-/// # Safety
-///
-/// Create a vector from raw parts.
-pub unsafe fn vec_from_ptr<T>(ptr: usize, len: usize) -> Vec<T> {
-    let ptr = ptr as *mut T;
-    Vec::from_raw_parts(ptr, len, len)
-}
 
 /// Get reference counter for numpy arrays.
 ///   - For CPython: Get reference counter.
