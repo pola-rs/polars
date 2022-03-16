@@ -74,8 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72c82e291b9b7107a4a2d9d65ee7fa9ceefcf395d791cd9283ee56b29d6d73d4"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=5658512460d64f8eca0d0ce0ae53aea41c35ab9d#5658512460d64f8eca0d0ce0ae53aea41c35ab9d"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -1273,7 +1272,6 @@ dependencies = [
 name = "polars"
 version = "0.20.0"
 dependencies = [
- "crossbeam-epoch",
  "polars-core",
  "polars-io",
  "polars-lazy",

@@ -181,7 +181,8 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                         Excluded::Name(name) => {
                             let e = Expr::Column(name.clone());
                             replace_regex(&e, &mut buf, schema);
-                            for col in buf.drain(..) {
+                            // we cannot loop because of bchck
+                            while let Some(col) = buf.pop() {
                                 if let Expr::Column(name) = col {
                                     exclude.push(name)
                                 }
