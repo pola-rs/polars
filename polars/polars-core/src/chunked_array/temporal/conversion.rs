@@ -1,4 +1,3 @@
-use super::*;
 use crate::prelude::{AnyValue, TimeUnit};
 #[cfg(feature = "dtype-time")]
 use arrow::temporal_conversions::time64ns_to_time;
@@ -59,11 +58,6 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
     (datetime_to_timestamp_ms(v) / (MILLISECONDS * SECONDS_IN_DAY)) as i32
 }
 
-pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
-    let nt = NaiveTime::from_hms(0, 0, 0);
-    let ndt = NaiveDateTime::new(nd, nt);
-    naive_datetime_to_date(ndt)
-}
 pub(crate) const NS_IN_DAY: i64 = 86_400_000_000_000;
 pub(crate) const US_IN_DAY: i64 = 86_400_000_000;
 pub(crate) const MS_IN_DAY: i64 = 86_400_000;

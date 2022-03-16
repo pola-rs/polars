@@ -1,7 +1,6 @@
 use super::*;
 use crate::prelude::*;
 use arrow::temporal_conversions::date32_to_date;
-use std::fmt::Write;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
     let nt = NaiveTime::from_hms(0, 0, 0);

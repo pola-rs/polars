@@ -49,6 +49,7 @@ use crate::utils::resolve_homedir;
 use crate::{RowCount, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
+use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
 #[cfg(feature = "temporal")]
@@ -56,7 +57,6 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use polars_time::prelude::*;
 
 /// Write a DataFrame to csv.
 #[must_use]
@@ -617,13 +617,15 @@ fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
                 if let Ok(ca) = ca.as_time(None) {
                     return ca.into_series();
                 }
+                #[cfg(feature = "dtype-date")]
                 if let Ok(ca) = ca.as_date(None) {
-                    ca.into_series()
-                } else if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
-                    ca.into_series()
-                } else {
-                    s.clone()
+                    return ca.into_series();
                 }
+                #[cfg(feature = "dtype-datetime")]
+                if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
+                    return ca.into_series();
+                }
+                s.clone()
             } else {
                 s.clone()
             }

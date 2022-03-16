@@ -11,7 +11,6 @@ mod time;
 mod utf8;
 
 pub use self::conversion::*;
-use crate::chunked_array::kernels::temporal::*;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
 pub fn unix_time() -> NaiveDateTime {

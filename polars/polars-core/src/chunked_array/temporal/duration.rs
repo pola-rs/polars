@@ -1,10 +1,6 @@
 use crate::export::chrono::Duration as ChronoDuration;
 use crate::prelude::DataType::Duration;
 use crate::prelude::*;
-use arrow::temporal_conversions::{MICROSECONDS, MILLISECONDS, MILLISECONDS_IN_DAY, NANOSECONDS};
-
-const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
-const SECONDS_IN_HOUR: i64 = 3600;
 
 impl DurationChunked {
     pub fn time_unit(&self) -> TimeUnit {

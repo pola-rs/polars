@@ -1,6 +1,6 @@
+use crate::chunkedarray::*;
 use polars_core::prelude::*;
 use std::ops::Deref;
-use crate::chunkedarray::*;
 
 pub trait TemporalMethods: SeriesTrait {
     /// Extract hour from underlying NaiveDateTime representation.
@@ -161,16 +161,12 @@ pub trait TemporalMethods: SeriesTrait {
         }
     }
 
-    #[cfg(all(
-    feature = "dtype-date",
-    feature = "dtype-datetime"
-    ))]
+    #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
     /// Convert date(time) object to timestamp in [`TimeUnit`].
     fn timestamp(&self, tu: TimeUnit) -> Result<Int64Chunked> {
         self.cast(&DataType::Datetime(tu, None))
             .map(|s| s.datetime().unwrap().deref().clone())
     }
-
 }
 
 impl<T: ?Sized + SeriesTrait> TemporalMethods for T {}

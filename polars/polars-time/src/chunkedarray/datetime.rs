@@ -1,12 +1,11 @@
 use super::*;
+use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
 use polars_arrow::export::arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
 use std::fmt::Write;
 
 pub trait DatetimeMethods {
-
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked;
@@ -62,7 +61,7 @@ pub trait DatetimeMethods {
 impl DatetimeMethods for DatetimeChunked {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
-     fn year(&self) -> Int32Chunked {
+    fn year(&self) -> Int32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_year_ns,
             TimeUnit::Microseconds => datetime_to_year_us,
@@ -75,7 +74,7 @@ impl DatetimeMethods for DatetimeChunked {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-     fn month(&self) -> UInt32Chunked {
+    fn month(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_month_ns,
             TimeUnit::Microseconds => datetime_to_month_us,
@@ -86,7 +85,7 @@ impl DatetimeMethods for DatetimeChunked {
 
     /// Extract weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 0 and sunday = 6
-     fn weekday(&self) -> UInt32Chunked {
+    fn weekday(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_weekday_ns,
             TimeUnit::Microseconds => datetime_to_weekday_us,
@@ -97,7 +96,7 @@ impl DatetimeMethods for DatetimeChunked {
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-     fn week(&self) -> UInt32Chunked {
+    fn week(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_week_ns,
             TimeUnit::Microseconds => datetime_to_week_us,
@@ -110,7 +109,7 @@ impl DatetimeMethods for DatetimeChunked {
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-     fn day(&self) -> UInt32Chunked {
+    fn day(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_day_ns,
             TimeUnit::Microseconds => datetime_to_day_us,
@@ -121,7 +120,7 @@ impl DatetimeMethods for DatetimeChunked {
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-     fn hour(&self) -> UInt32Chunked {
+    fn hour(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_hour_ns,
             TimeUnit::Microseconds => datetime_to_hour_us,
@@ -132,7 +131,7 @@ impl DatetimeMethods for DatetimeChunked {
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-     fn minute(&self) -> UInt32Chunked {
+    fn minute(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_minute_ns,
             TimeUnit::Microseconds => datetime_to_minute_us,
@@ -143,7 +142,7 @@ impl DatetimeMethods for DatetimeChunked {
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-     fn second(&self) -> UInt32Chunked {
+    fn second(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_second_ns,
             TimeUnit::Microseconds => datetime_to_second_us,
@@ -155,7 +154,7 @@ impl DatetimeMethods for DatetimeChunked {
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-     fn nanosecond(&self) -> UInt32Chunked {
+    fn nanosecond(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_nanosecond_ns,
             TimeUnit::Microseconds => datetime_to_nanosecond_us,
@@ -167,7 +166,7 @@ impl DatetimeMethods for DatetimeChunked {
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-     fn ordinal(&self) -> UInt32Chunked {
+    fn ordinal(&self) -> UInt32Chunked {
         let f = match self.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
             TimeUnit::Microseconds => datetime_to_ordinal_us,
@@ -177,7 +176,7 @@ impl DatetimeMethods for DatetimeChunked {
     }
 
     /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-     fn strftime(&self, fmt: &str) -> Utf8Chunked {
+    fn strftime(&self, fmt: &str) -> Utf8Chunked {
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
             TimeUnit::Microseconds => timestamp_us_to_datetime,
@@ -211,7 +210,7 @@ impl DatetimeMethods for DatetimeChunked {
         ca
     }
 
-     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
+    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
             TimeUnit::Microseconds => datetime_to_timestamp_us,
@@ -229,7 +228,7 @@ impl DatetimeMethods for DatetimeChunked {
 
 #[cfg(test)]
 mod test {
-    use crate::prelude::*;
+    use super::*;
     use chrono::NaiveDateTime;
 
     #[test]

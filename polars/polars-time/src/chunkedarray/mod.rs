@@ -5,33 +5,25 @@ mod date;
 mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+mod kernels;
 #[cfg(feature = "dtype-time")]
 mod time;
 mod utf8;
-mod kernels;
 
-use std::ops::Deref;
-use polars_core::prelude::*;
-use kernels::*;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_arrow::trusted_len::TrustedLen;
-use polars_arrow::utils::CustomIterTools;
+#[cfg(feature = "dtype-date")]
 pub use date::DateMethods;
+#[cfg(feature = "dtype-datetime")]
 pub use datetime::DatetimeMethods;
+#[cfg(feature = "dtype-duration")]
 pub use duration::DurationMethods;
+use kernels::*;
+use polars_arrow::utils::CustomIterTools;
+use polars_core::prelude::*;
+#[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;
 pub use utf8::Utf8Methods;
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)
-}
-
-pub struct TemporalMethods<T>(T);
-
-impl<T> Deref for TemporalMethods<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
 }
