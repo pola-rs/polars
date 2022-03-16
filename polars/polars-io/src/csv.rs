@@ -56,6 +56,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use polars_time::prelude::*;
 
 /// Write a DataFrame to csv.
 #[must_use]

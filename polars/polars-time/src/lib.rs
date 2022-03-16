@@ -1,9 +1,11 @@
 mod date_range;
 mod groupby;
-mod prelude;
+pub mod prelude;
 mod truncate;
 mod upsample;
 mod windows;
+mod series;
+mod chunkedarray;
 
 pub use {
     date_range::*, groupby::dynamic::*, truncate::*, upsample::*,

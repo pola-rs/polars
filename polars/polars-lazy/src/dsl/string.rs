@@ -1,6 +1,7 @@
 use super::*;
 use polars_arrow::array::ValueSize;
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use polars_time::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);

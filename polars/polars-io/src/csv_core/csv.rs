@@ -15,6 +15,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
+use polars_time::prelude::*;
 
 pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
     use DataType::*;

@@ -1335,6 +1335,7 @@ dependencies = [
  "num",
  "polars-arrow",
  "polars-core",
+ "polars-time",
  "polars-utils",
  "rayon",
  "regex",
