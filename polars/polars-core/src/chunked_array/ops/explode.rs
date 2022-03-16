@@ -211,6 +211,22 @@ impl ChunkExplode for ListChunked {
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
+
+        // all empty
+        if offsets[offsets.len() - 1] == 0 {
+            // Safety: empty dtype is correct
+            return unsafe {
+                Ok((
+                    Series::from_chunks_and_dtype_unchecked(
+                        self.name(),
+                        vec![values],
+                        &self.inner_dtype(),
+                    ),
+                    Buffer::from_slice(&[]),
+                ))
+            };
+        }
+
         if !offsets.is_empty() {
             let offset = offsets[0];
             values = Arc::from(values.slice(offset as usize, offsets[offsets.len() - 1] as usize));
@@ -348,6 +364,23 @@ mod test {
         let exploded = ca.slice(0, 1).explode()?;
         let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
         assert_eq!(out, &[1, 2, 3, 3]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_explode_empty_list() -> Result<()> {
+        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a");
+
+        let vals: [i32; 0] = [];
+
+        builder.append_series(&Series::new("", &vals));
+        let ca = builder.finish();
+
+        // normal explode
+        let exploded = ca.explode()?;
+        assert_eq!(exploded.len(), 0);
+        assert_eq!(exploded.dtype(), &DataType::Int32);
 
         Ok(())
     }
