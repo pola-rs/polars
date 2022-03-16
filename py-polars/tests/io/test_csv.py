@@ -15,7 +15,7 @@ from polars import DataType
 
 def test_to_from_buffer(df: pl.DataFrame) -> None:
     buf = io.BytesIO()
-    df.to_csv(buf)
+    df.write_csv(buf)
     buf.seek(0)
 
     read_df = pl.read_csv(buf, parse_dates=True)
@@ -30,7 +30,7 @@ def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
     df = df.drop("strings_nulls")
 
     f = os.path.join(io_test_dir, "small.csv")
-    df.to_csv(f)
+    df.write_csv(f)
 
     read_df = pl.read_csv(f, parse_dates=True)
 
@@ -353,7 +353,7 @@ foo,bar
 def test_empty_string_missing_round_trip() -> None:
     df = pl.DataFrame({"varA": ["A", "", None], "varB": ["B", "", None]})
     f = io.BytesIO()
-    df.to_csv(f)
+    df.write_csv(f)
     f.seek(0)
     df_read = pl.read_csv(f)
     assert df.frame_equal(df_read)
@@ -362,7 +362,7 @@ def test_empty_string_missing_round_trip() -> None:
 def test_write_csv_delimiter() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]})
     f = io.BytesIO()
-    df.to_csv(f, sep="\t")
+    df.write_csv(f, sep="\t")
     f.seek(0)
     assert f.read() == b"a\tb\n1\t1\n2\t2\n3\t3\n"
 

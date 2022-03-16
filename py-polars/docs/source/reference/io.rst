@@ -12,7 +12,7 @@ CSV
 
    read_csv
    scan_csv
-   DataFrame.to_csv
+   DataFrame.write_csv
 
 Feather/ IPC
 ~~~~~~~~~~~~
@@ -22,7 +22,7 @@ Feather/ IPC
    read_ipc
    scan_ipc
    read_ipc_schema
-   DataFrame.to_ipc
+   DataFrame.write_ipc
 
 Parquet
 ~~~~~~~
@@ -31,7 +31,7 @@ Parquet
 
    read_parquet
    scan_parquet
-   DataFrame.to_parquet
+   DataFrame.write_parquet
 
 SQL
 ~~~
@@ -46,7 +46,7 @@ JSON
    :toctree: api/
 
    read_json
-   DataFrame.to_json
+   DataFrame.write_json
 
 AVRO
 ~~~~
@@ -54,4 +54,4 @@ AVRO
    :toctree: api/
 
    read_avro
-   DataFrame.to_avro
+   DataFrame.write_avro

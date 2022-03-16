@@ -9,7 +9,7 @@ import polars as pl
 
 def test_to_from_buffer(df: pl.DataFrame) -> None:
     for buf in (io.BytesIO(), io.StringIO()):
-        df.to_json(buf)
+        df.write_json(buf)
         buf.seek(0)
         read_df = pl.read_json(buf)
         read_df = read_df.with_columns(
@@ -20,7 +20,7 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
 
 def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
     f = os.path.join(io_test_dir, "small.json")
-    df.to_json(f)
+    df.write_json(f)
 
     out = pl.read_json(f)
     assert out.frame_equal(df)
@@ -31,16 +31,17 @@ def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
     # assert df.frame_equal(read_df)
 
 
-def test_to_json() -> None:
+def test_write_json() -> None:
     # tests if it runs if no arg given
     df = pl.DataFrame({"a": [1, 2, 3]})
     assert (
-        df.to_json() == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
+        df.write_json()
+        == '{"columns":[{"name":"a","datatype":"Int64","values":[1,2,3]}]}'
     )
     df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
     expected = df
 
-    out = df.to_json(row_oriented=True)
+    out = df.write_json(row_oriented=True)
     assert out == r"""[{"a":1,"b":"a"},{"a":2,"b":"b"},{"a":3,"b":null}]"""
     # test round trip
     f = io.BytesIO()
@@ -49,7 +50,7 @@ def test_to_json() -> None:
     df = pl.read_json(f, json_lines=False)
     assert df.frame_equal(expected)
 
-    out = df.to_json(json_lines=True)
+    out = df.write_json(json_lines=True)
     assert (
         out
         == r"""{"a":1,"b":"a"}
@@ -66,10 +67,10 @@ def test_to_json() -> None:
     assert df.frame_equal(expected)
 
 
-def test_to_json2(df: pl.DataFrame) -> None:
+def test_write_json2(df: pl.DataFrame) -> None:
     # text-based conversion loses time info
     df = df.select(pl.all().exclude(["cat", "time"]))
-    s = df.to_json(to_string=True)
+    s = df.write_json(to_string=True)
     f = io.BytesIO()
     f.write(s.encode())
     f.seek(0)
@@ -77,7 +78,7 @@ def test_to_json2(df: pl.DataFrame) -> None:
     assert df.frame_equal(out, null_equal=True)
 
     file = io.BytesIO()
-    df.to_json(file)
+    df.write_json(file)
     file.seek(0)
     out = pl.read_json(file)
     assert df.frame_equal(out, null_equal=True)
