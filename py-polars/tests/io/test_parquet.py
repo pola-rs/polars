@@ -21,18 +21,18 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
             # lzo compression is not supported now
             with pytest.raises(pl.ArrowError):
                 buf = io.BytesIO()
-                df.to_parquet(buf, compression=compression)
+                df.write_parquet(buf, compression=compression)
                 buf.seek(0)
                 _ = pl.read_parquet(buf)
 
             with pytest.raises(OSError):
                 buf = io.BytesIO()
-                df.to_parquet(buf, compression=compression, use_pyarrow=True)
+                df.write_parquet(buf, compression=compression, use_pyarrow=True)
                 buf.seek(0)
                 _ = pl.read_parquet(buf)
         else:
             buf = io.BytesIO()
-            df.to_parquet(buf, compression=compression)
+            df.write_parquet(buf, compression=compression)
             buf.seek(0)
             read_df = pl.read_parquet(buf)
             assert df.frame_equal(read_df)
@@ -46,14 +46,14 @@ def test_to_from_file(
         if compression == "lzo":
             # lzo compression is not supported now
             with pytest.raises(pl.ArrowError):
-                df.to_parquet(f, compression=compression)
+                df.write_parquet(f, compression=compression)
                 _ = pl.read_parquet(f)
 
             with pytest.raises(OSError):
-                df.to_parquet(f, compression=compression, use_pyarrow=True)
+                df.write_parquet(f, compression=compression, use_pyarrow=True)
                 _ = pl.read_parquet(f)
         else:
-            df.to_parquet(f, compression=compression)
+            df.write_parquet(f, compression=compression)
             read_df = pl.read_parquet(f)
             assert df.frame_equal(read_df)
 
@@ -63,7 +63,7 @@ def test_select_columns() -> None:
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.to_parquet(f)
+    df.write_parquet(f)
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=["b", "c"], use_pyarrow=False)
@@ -74,7 +74,7 @@ def test_select_projection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
     f = io.BytesIO()
-    df.to_parquet(f)
+    df.write_parquet(f)
     f.seek(0)
 
     read_df = pl.read_parquet(f, columns=[1, 2], use_pyarrow=False)
@@ -126,7 +126,7 @@ def test_parquet_datetime() -> None:
     df = pl.DataFrame(data)
     df = df.with_column(df["datetime"].cast(pl.Datetime))
 
-    df.to_parquet(f, use_pyarrow=True)
+    df.write_parquet(f, use_pyarrow=True)
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)

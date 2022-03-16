@@ -441,6 +441,8 @@ class LazyFrame(Generic[DF]):
         simplify_expression
             Run simplify expressions optimization.
         string_cache
+            This argument is deprecated. Please set the string cache globally.
+
             Use a global string cache in this query.
             This is needed if you want to join on categorical columns.
 
@@ -478,7 +480,7 @@ class LazyFrame(Generic[DF]):
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
-        string_cache: bool = True,
+        string_cache: bool = False,
         no_optimization: bool = False,
         slice_pushdown: bool = True,
     ) -> DF:
@@ -503,6 +505,8 @@ class LazyFrame(Generic[DF]):
         simplify_expression
             Run simplify expressions optimization.
         string_cache
+            This argument is deprecated. Please set the string cache globally.
+
             Use a global string cache in this query.
             This is needed if you want to join on categorical columns.
         no_optimization

@@ -904,6 +904,60 @@ class DataFrame(metaclass=DataFrameMetaClass):
         to_string: bool = False,
     ) -> Optional[str]:
         """
+        .. deprecated:: 0.13.12
+            Please use `write_json`
+        """
+        warnings.warn("'to_json' is deprecated. please use 'write_json'")
+        return self.write_json(
+            file, pretty, row_oriented, json_lines, to_string=to_string
+        )
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: Literal[True],
+    ) -> str:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: Literal[False] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        pretty: bool = ...,
+        row_oriented: bool = ...,
+        json_lines: bool = ...,
+        *,
+        to_string: bool = ...,
+    ) -> Optional[str]:
+        ...
+
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = None,
+        pretty: bool = False,
+        row_oriented: bool = False,
+        json_lines: bool = False,
+        *,
+        to_string: bool = False,
+    ) -> Optional[str]:
+        """
         Serialize to JSON representation.
 
         Parameters
@@ -970,7 +1024,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
 
-    def to_csv(
+    def write_csv(
         self,
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
         has_header: bool = True,
@@ -984,7 +1038,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file
             File path to which the file should be written.
         has_header
-            Whether or not to include header in the CSV output.
+            Whether to include header in the CSV output.
         sep
             Separate CSV fields with this symbol.
 
@@ -998,7 +1052,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", "c", "d", "e"],
         ...     }
         ... )
-        >>> df.to_csv("new_file.csv", sep=",")
+        >>> df.write_csv("new_file.csv", sep=",")
 
         """
         if file is None:
@@ -1012,7 +1066,20 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self._df.to_csv(file, has_header, ord(sep))
         return None
 
-    def to_avro(
+    def to_csv(
+        self,
+        file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
+        has_header: bool = True,
+        sep: str = ",",
+    ) -> Optional[str]:
+        """
+        .. deprecated:: 0.13.12
+            Please use `write_csv`
+        """
+        warnings.warn("'to_csv' is deprecated. please use 'write_csv'")
+        return self.write_csv(file, has_header, sep)
+
+    def write_avro(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
         compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
@@ -1035,7 +1102,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         self._df.to_avro(file, compression)
 
-    def to_ipc(
+    def to_avro(
+        self,
+        file: Union[BinaryIO, BytesIO, str, Path],
+        compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
+    ) -> None:
+        """
+        .. deprecated:: 0.13.12
+            Please use `write_avro`
+        """
+        warnings.warn("'to_avro' is deprecated. please use 'write_avro'")
+        return self.write_avro(file, compression)
+
+    def write_ipc(
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
         compression: Optional[Literal["uncompressed", "lz4", "zstd"]] = "uncompressed",
@@ -1059,6 +1138,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
             file = str(file)
 
         self._df.to_ipc(file, compression)
+
+    def to_ipc(
+        self,
+        file: Union[BinaryIO, BytesIO, str, Path],
+        compression: Optional[Literal["uncompressed", "lz4", "zstd"]] = "uncompressed",
+    ) -> None:
+        """
+        .. deprecated:: 0.13.12
+            Please use `write_ipc`
+        """
+        warnings.warn("'to_ipc' is deprecated. please use 'write_ipc'")
+        return self.write_ipc(file, compression)
 
     def to_dicts(self) -> List[Dict[str, Any]]:
         pydf = self._df
@@ -1177,7 +1268,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             df.columns = names
         return df
 
-    def to_parquet(
+    def write_parquet(
         self,
         file: Union[str, Path, BytesIO],
         compression: Optional[
@@ -1224,7 +1315,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
                 raise ImportError(  # pragma: no cover
-                    "'pyarrow' is required when using 'to_parquet(..., use_pyarrow=True)'."
+                    "'pyarrow' is required when using 'write_parquet(..., use_pyarrow=True)'."
                 )
 
             tbl = self.to_arrow()
@@ -1250,6 +1341,28 @@ class DataFrame(metaclass=DataFrameMetaClass):
             )
         else:
             self._df.to_parquet(file, compression, statistics)
+
+    def to_parquet(
+        self,
+        file: Union[str, Path, BytesIO],
+        compression: Optional[
+            Union[
+                Literal[
+                    "uncompressed", "snappy", "gzip", "lzo", "brotli", "lz4", "zstd"
+                ],
+                str,
+            ]
+        ] = "snappy",
+        statistics: bool = False,
+        use_pyarrow: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        """
+        .. deprecated:: 0.13.12
+            Please use `write_parquet`
+        """
+        warnings.warn("'to_parquet' is deprecated. please use 'write_parquet'")
+        return self.write_parquet(file, compression, statistics, use_pyarrow, **kwargs)
 
     def to_numpy(self) -> np.ndarray:
         """
