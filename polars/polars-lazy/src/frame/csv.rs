@@ -192,13 +192,22 @@ impl<'a> LazyCsvReader<'a> {
             self.delimiter,
             self.infer_schema_length,
             self.has_header,
-            self.schema_overwrite,
+            // we set it to None and modify them after the schema is updated
+            None,
             &mut skip_rows,
             self.comment_char,
             self.quote_char,
             None,
         )?;
-        let schema = f(schema)?;
+        let mut schema = f(schema)?;
+
+        // the dtypes set may be for the new names, so update again
+        if let Some(overwrite_schema) = self.schema_overwrite {
+            for (name, dtype) in overwrite_schema.iter() {
+                schema.with_column(name.clone(), dtype.clone())
+            }
+        }
+
         Ok(self.with_schema(Arc::new(schema)))
     }
 
