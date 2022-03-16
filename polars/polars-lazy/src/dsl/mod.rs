@@ -26,7 +26,7 @@ use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
+use std::ops::{Deref, Not};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -635,6 +635,31 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     pub fn is_not_null(self) -> Self {
         Expr::IsNotNull(Box::new(self))
+    }
+
+    /// Drop null values
+    pub fn drop_nulls(self) -> Self {
+        self.map(|s| Ok(s.drop_nulls()), GetOutput::same_type())
+    }
+
+    /// Drop NaN values
+    pub fn drop_nans(self) -> Self {
+        self.map(
+            |s| match s.dtype() {
+                DataType::Float32 => {
+                    let ca = s.f32()?;
+                    let mask = ca.is_nan().not();
+                    ca.filter(&mask).map(|ca| ca.into_series())
+                }
+                DataType::Float64 => {
+                    let ca = s.f64()?;
+                    let mask = ca.is_nan().not();
+                    ca.filter(&mask).map(|ca| ca.into_series())
+                }
+                _ => Ok(s),
+            },
+            GetOutput::same_type(),
+        )
     }
 
     /// Reduce groups to minimal value.

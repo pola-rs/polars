@@ -236,15 +236,23 @@ impl PyExpr {
 
     pub fn fill_null_with_strategy(&self, strategy: &str) -> PyExpr {
         let strat = parse_strategy(strategy);
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .apply(move |s| s.fill_null(strat), GetOutput::same_type())
             .with_fmt("fill_null")
             .into()
     }
 
     pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {
-        self.clone().inner.fill_nan(expr.inner).into()
+        self.inner.clone().fill_nan(expr.inner).into()
+    }
+
+    pub fn drop_nulls(&self) -> PyExpr {
+        self.inner.clone().drop_nulls().into()
+    }
+
+    pub fn drop_nans(&self) -> PyExpr {
+        self.inner.clone().drop_nans().into()
     }
 
     pub fn filter(&self, predicate: PyExpr) -> PyExpr {

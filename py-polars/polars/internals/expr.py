@@ -762,21 +762,15 @@ class Expr:
 
     def drop_nulls(self) -> "Expr":
         """
-        Syntactic sugar for:
-
-        >>> pl.col("foo").filter(pl.col("foo").is_not_null())  # doctest: +IGNORE_RESULT
-
+        Drop null values
         """
-        return self.filter(self.is_not_null())
+        return wrap_expr(self._pyexpr.drop_nulls())
 
     def drop_nans(self) -> "Expr":
         """
-        Syntactic sugar for:
-
-        >>> pl.col("foo").filter(pl.col("foo").is_not_nan())  # doctest: +IGNORE_RESULT
-
+        Drop floating point NaN values
         """
-        return self.filter(self.is_not_nan())
+        return wrap_expr(self._pyexpr.drop_nans())
 
     def cumsum(self, reverse: bool = False) -> "Expr":
         """
