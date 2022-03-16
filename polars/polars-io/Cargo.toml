@@ -19,15 +19,15 @@ avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
 lazy = []
 parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "polars-utils", "memmap"]
-dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
-dtype-date = ["polars-core/dtype-date"]
-dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
+dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
+dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv_write"]
 fmt = ["polars-core/fmt"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng-compat"]
-temporal = ["polars-core/dtype-date", "polars-core/dtype-datetime"]
+temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 # don't use this
 private = []
 
@@ -47,6 +47,7 @@ memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
 polars-arrow = { version = "0.20.0", path = "../polars-arrow" }
 polars-core = { version = "0.20.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-time = { version = "0.20.0", path = "../polars-time", default-features = false }
 polars-utils = { version = "0.20.0", path = "../polars-utils", optional = true }
 rayon = "1.5"
 regex = "1.5"

@@ -16,6 +16,8 @@ polars-core = { version = "0.20.0", path = "../polars-core", features = ["tempor
 [features]
 dtype-date = []
 dtype-datetime = []
+dtype-time = []
+dtype-duration = []
 private = []
 
 default = ["private"]

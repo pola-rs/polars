@@ -1,15 +1,15 @@
 //! macros that define kernels for extracting
 //! `week`, `weekday`, `year`, `hour` etc. from primitive arrays.
-use crate::prelude::*;
-use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::compute::arity::unary;
+use super::*;
+use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
+use polars_arrow::export::arrow::array::{ArrayRef, PrimitiveArray};
+use polars_arrow::export::arrow::compute::arity::unary;
 #[cfg(feature = "dtype-time")]
-use arrow::temporal_conversions::time64ns_to_time;
-use arrow::temporal_conversions::{
+use polars_arrow::export::arrow::temporal_conversions::time64ns_to_time;
+use polars_arrow::export::arrow::temporal_conversions::{
     date32_to_datetime, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
     timestamp_us_to_datetime,
 };
-use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
 use std::sync::Arc;
 
 trait PolarsWeekDay {

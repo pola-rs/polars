@@ -1,6 +1,7 @@
 use super::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::series::ops::NullBehavior;
+use polars_time::prelude::DateMethods;
 
 #[test]
 fn test_lazy_with_column() {
