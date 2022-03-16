@@ -1934,3 +1934,12 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
         groupby.pivot(pivot_column="a", values_column="b").first(),
         SubClassedDataFrame,
     )
+
+
+def test_explode_empty() -> None:
+    df = (
+        pl.DataFrame(dict(x=["a", "a", "b", "b"], y=[1, 1, 2, 2]))
+        .groupby("x")
+        .agg(pl.col("y").take([]))
+    )
+    assert df.explode("y").shape == (0, 2)
