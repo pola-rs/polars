@@ -219,6 +219,8 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
@@ -1786,7 +1788,9 @@ class Series:
 
     def cast(
         self,
-        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+        dtype: Union[
+            Type[DataType], Type[int], Type[float], Type[str], Type[bool], DataType
+        ],
         strict: bool = True,
     ) -> "Series":
         """
@@ -1821,8 +1825,8 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(str(pl_dtype), strict))
+        pl_dtype = py_type_to_dtype(dtype)  # type: ignore
+        return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> "Series":
         """

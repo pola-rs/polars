@@ -54,7 +54,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
             }
         )
         .with_column(pl.col("book").cast(pl.Categorical))
-        .to_parquet(file, statistics=True)
+        .write_parquet(file, statistics=True)
     )
 
     for par in [True, False]:
@@ -69,7 +69,7 @@ def test_categorical_parquet_statistics(io_test_dir: str) -> None:
 def test_null_parquet(io_test_dir: str) -> None:
     file = path.join(io_test_dir, "null.parquet")
     df = pl.DataFrame([pl.Series("foo", [], dtype=pl.Int8)])
-    df.to_parquet(file)
+    df.write_parquet(file)
     out = pl.read_parquet(file)
     assert out.frame_equal(df)
 

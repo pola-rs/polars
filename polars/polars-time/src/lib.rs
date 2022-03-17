@@ -1,6 +1,8 @@
+mod chunkedarray;
 mod date_range;
 mod groupby;
-mod prelude;
+pub mod prelude;
+mod series;
 mod truncate;
 mod upsample;
 mod windows;

@@ -259,14 +259,26 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
-            DataType::List(_) => pl.getattr("List").unwrap().into(),
+            DataType::List(inner) => {
+                let inner = Wrap(*inner.clone()).to_object(py);
+                let list_class = pl.getattr("List").unwrap();
+                list_class.call1((inner,)).unwrap().into()
+            }
             DataType::Date => pl.getattr("Date").unwrap().into(),
             DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
             DataType::Duration(_) => pl.getattr("Duration").unwrap().into(),
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
-            DataType::Struct(_) => pl.getattr("Struct").unwrap().into(),
+            DataType::Struct(inners) => {
+                let iter = inners
+                    .iter()
+                    .map(|fld| Wrap(fld.data_type().clone()).to_object(py));
+                let inners = PyList::new(py, iter);
+                let struct_class = pl.getattr("Struct").unwrap();
+                struct_class.call1((inners,)).unwrap().into()
+            }
+            DataType::Null => pl.getattr("Null").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }
@@ -299,32 +311,58 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
+static PREFIX_LEN: usize = "<class 'polars.datatypes.".len();
+
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let dtype = match ob.repr().unwrap().to_str().unwrap() {
-            "<class 'polars.datatypes.UInt8'>" => DataType::UInt8,
-            "<class 'polars.datatypes.UInt16'>" => DataType::UInt16,
-            "<class 'polars.datatypes.UInt32'>" => DataType::UInt32,
-            "<class 'polars.datatypes.UInt64'>" => DataType::UInt64,
-            "<class 'polars.datatypes.Int8'>" => DataType::Int8,
-            "<class 'polars.datatypes.Int16'>" => DataType::Int16,
-            "<class 'polars.datatypes.Int32'>" => DataType::Int32,
-            "<class 'polars.datatypes.Int64'>" => DataType::Int64,
-            "<class 'polars.datatypes.Utf8'>" => DataType::Utf8,
-            "<class 'polars.datatypes.List'>" => DataType::List(Box::new(DataType::Boolean)),
-            "<class 'polars.datatypes.Boolean'>" => DataType::Boolean,
-            "<class 'polars.datatypes.Categorical'>" => DataType::Categorical(None),
-            "<class 'polars.datatypes.Date'>" => DataType::Date,
-            "<class 'polars.datatypes.Datetime'>" => {
-                DataType::Datetime(TimeUnit::Milliseconds, None)
+        let str_rep = ob.repr().unwrap().to_str().unwrap();
+
+        // slice off unneeded parts
+        let dtype = match &str_rep[PREFIX_LEN..str_rep.len() - 2] {
+            "UInt8" => DataType::UInt8,
+            "UInt16" => DataType::UInt16,
+            "UInt32" => DataType::UInt32,
+            "UInt64" => DataType::UInt64,
+            "Int8" => DataType::Int8,
+            "Int16" => DataType::Int16,
+            "Int32" => DataType::Int32,
+            "Int64" => DataType::Int64,
+            "Utf8" => DataType::Utf8,
+            "Boolean" => DataType::Boolean,
+            "Categorical" => DataType::Categorical(None),
+            "Date" => DataType::Date,
+            "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
+            "Time" => DataType::Time,
+            "Duration" => DataType::Duration(TimeUnit::Microseconds),
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Object" => DataType::Object("unknown"),
+            // just the class, not an object
+            "List" => DataType::List(Box::new(DataType::Boolean)),
+            "Null" => DataType::Null,
+            dt => {
+                let out: PyResult<_> = Python::with_gil(|py| {
+                    let builtins = PyModule::import(py, "builtins")?;
+                    let polars = PyModule::import(py, "polars")?;
+                    let list_class = polars.getattr("List").unwrap();
+                    if builtins
+                        .getattr("isinstance")
+                        .unwrap()
+                        .call1((ob, list_class))?
+                        .extract::<bool>()?
+                    {
+                        let inner = ob.getattr("inner")?;
+                        let inner = inner.extract::<Wrap<DataType>>()?;
+                        Ok(DataType::List(Box::new(inner.0)))
+                    } else {
+                        panic!(
+                            "{} not expected in python dtype to rust dtype conversion",
+                            dt
+                        )
+                    }
+                });
+                out?
             }
-            "<class 'polars.datatypes.Float32'>" => DataType::Float32,
-            "<class 'polars.datatypes.Float64'>" => DataType::Float64,
-            "<class 'polars.datatypes.Object'>" => DataType::Object("unknown"),
-            dt => panic!(
-                "{} not expected in python dtype to rust dtype conversion",
-                dt
-            ),
         };
         Ok(Wrap(dtype))
     }

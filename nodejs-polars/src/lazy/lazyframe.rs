@@ -1,11 +1,11 @@
 use crate::conversion::prelude::*;
 use crate::prelude::{JsPolarsEr, JsResult};
 use napi::{CallContext, JsExternal, JsObject, JsString};
+use polars::io::RowCount;
 use polars::lazy::frame::{LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
 use polars::prelude::NullValues;
 use polars::prelude::*;
-use polars::io::RowCount;
 
 impl IntoJs<JsExternal> for LazyFrame {
     fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
@@ -92,7 +92,7 @@ pub fn scan_ipc(cx: CallContext) -> JsResult<JsExternal> {
     let cache: bool = params.get_or("cache", true)?;
     let rechunk: bool = params.get_or("rechunk", true)?;
     let row_count = params.get_as::<Option<RowCount>>("rowCount")?;
-    
+
     let args = ScanArgsIpc {
         n_rows,
         cache,
@@ -157,7 +157,12 @@ pub fn sort(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?;
     let by_column = params.get_as::<String>("by")?;
     let reverse = params.get_or("reverse", false)?;
-    ldf.clone().sort(&by_column, reverse).try_into_js(&cx)
+    let sort_opts = SortOptions {
+        descending: reverse,
+        nulls_last: true,
+    };
+
+    ldf.clone().sort(&by_column, sort_opts).try_into_js(&cx)
 }
 
 #[js_function(1)]
@@ -492,15 +497,9 @@ pub fn drop_columns(cx: CallContext) -> JsResult<JsExternal> {
 pub fn columns(cx: CallContext) -> JsResult<JsObject> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
-    let columns: Vec<String> = ldf
-        .schema()
-        .fields()
-        .iter()
-        .map(|fld| fld.name().to_string())
-        .collect();
-    let mut arr = cx.env.create_array_with_length(columns.len())?;
-    for (idx, item) in columns.into_iter().enumerate() {
-        arr.set_element(idx as u32, cx.env.create_string_from_std(item)?)?;
+    let mut arr = cx.env.create_array()?;
+    for (idx, item) in ldf.schema().iter_names().enumerate() {
+        arr.set_element(idx as u32, cx.env.create_string_from_std(item.clone())?)?;
     }
     Ok(arr)
 }

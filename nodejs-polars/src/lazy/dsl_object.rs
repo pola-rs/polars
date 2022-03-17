@@ -187,7 +187,6 @@ impl dsl::JsExpr {
             napi::Property::new(env, "sortWith")?.with_method(dsl::sort_with),
             napi::Property::new(env, "std")?.with_method(dsl::std),
             napi::Property::new(env, "suffix")?.with_method(dsl::suffix),
-
             napi::Property::new(env, "sum")?.with_method(dsl::sum),
             napi::Property::new(env, "tail")?.with_method(dsl::tail),
             napi::Property::new(env, "takeEvery")?.with_method(dsl::take_every),

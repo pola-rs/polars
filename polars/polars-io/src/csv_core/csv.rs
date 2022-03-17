@@ -9,6 +9,7 @@ use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
+use polars_time::prelude::*;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::borrow::Cow;

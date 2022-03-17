@@ -3,7 +3,7 @@ use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::list_construction::py_seq_to_list;
-use crate::utils::{reinterpret, str_to_polarstype};
+use crate::utils::reinterpret;
 use crate::{
     arrow_interop,
     npy::{aligned_array, get_refcnt},
@@ -217,11 +217,8 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: &PyAny) -> Self {
-        let str_repr = dtype.str().unwrap().to_str().unwrap();
-        let dtype = str_to_polarstype(str_repr);
-
-        match dtype {
+    pub fn repeat(name: &str, val: &PyAny, n: usize, dtype: Wrap<DataType>) -> Self {
+        match dtype.0 {
             DataType::Utf8 => {
                 let val = val.extract::<&str>().unwrap();
                 let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
@@ -261,8 +258,8 @@ impl PySeries {
     }
 
     #[staticmethod]
-    pub fn new_list(name: &str, seq: &PyAny, dtype: &PyAny) -> PyResult<Self> {
-        py_seq_to_list(name, seq, dtype).map(|s| s.into())
+    pub fn new_list(name: &str, seq: &PyAny, dtype: Wrap<DataType>) -> PyResult<Self> {
+        py_seq_to_list(name, seq, &dtype.0).map(|s| s.into())
     }
 
     /// Should only be called for Series with null types.
@@ -814,18 +811,16 @@ impl PySeries {
         PySeries::new(self.series.clone())
     }
 
-    pub fn apply_lambda(&self, lambda: &PyAny, output_type: &PyAny) -> PyResult<PySeries> {
+    pub fn apply_lambda(
+        &self,
+        lambda: &PyAny,
+        output_type: Option<Wrap<DataType>>,
+    ) -> PyResult<PySeries> {
         let gil = Python::acquire_gil();
         let py = gil.python();
         let series = &self.series;
 
-        let output_type = match output_type.is_none() {
-            true => None,
-            false => {
-                let str_repr = output_type.str().unwrap().to_str().unwrap();
-                Some(str_to_polarstype(str_repr))
-            }
-        };
+        let output_type = output_type.map(|dt| dt.0);
 
         let out = match output_type {
             Some(DataType::Int8) => {
@@ -1473,8 +1468,8 @@ impl PySeries {
         Ok(out)
     }
 
-    pub fn cast(&self, dtype: &str, strict: bool) -> PyResult<Self> {
-        let dtype = str_to_polarstype(dtype);
+    pub fn cast(&self, dtype: Wrap<DataType>, strict: bool) -> PyResult<Self> {
+        let dtype = dtype.0;
         let out = if strict {
             self.series.strict_cast(&dtype)
         } else {

@@ -103,10 +103,10 @@ pub struct FunctionOptions {
     /// We need to know this because we cannot see the difference between
     /// the following functions based on the output type and number of elements:
     ///
-    /// x: [1, 2, 3]
+    /// x: {1, 2, 3}
     ///
-    /// head_1(x) -> [1]
-    /// sum(x) -> [4]
+    /// head_1(x) -> {1}
+    /// sum(x) -> {4}
     pub(crate) auto_explode: bool,
     // used for formatting
     pub(crate) fmt_str: &'static str,

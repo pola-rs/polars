@@ -115,9 +115,9 @@ fn binary_function(
     a: dsl::PyExpr,
     b: dsl::PyExpr,
     lambda: PyObject,
-    output_type: &PyAny,
+    output_type: Option<Wrap<DataType>>,
 ) -> dsl::PyExpr {
-    lazy::binary_function(a, b, lambda, output_type)
+    lazy::binary_function(a, b, lambda, output_type.map(|dt| dt.0))
 }
 
 #[pyfunction]

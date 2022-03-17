@@ -1001,7 +1001,7 @@ mod test {
     #[cfg(feature = "dtype-date")]
     #[cfg_attr(miri, ignore)]
     fn test_group_by() -> Result<()> {
-        let s0 = DateChunked::parse_from_str_slice(
+        let s0 = Series::new(
             "date",
             &[
                 "2020-08-21",
@@ -1010,9 +1010,7 @@ mod test {
                 "2020-08-23",
                 "2020-08-22",
             ],
-            "%Y-%m-%d",
-        )
-        .into_series();
+        );
         let s1 = Series::new("temp", [20, 10, 7, 9, 1]);
         let s2 = Series::new("rain", [0.2, 0.1, 0.3, 0.1, 0.01]);
         let df = DataFrame::new(vec![s0, s1, s2]).unwrap();

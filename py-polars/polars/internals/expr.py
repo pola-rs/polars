@@ -762,21 +762,15 @@ class Expr:
 
     def drop_nulls(self) -> "Expr":
         """
-        Syntactic sugar for:
-
-        >>> pl.col("foo").filter(pl.col("foo").is_not_null())  # doctest: +IGNORE_RESULT
-
+        Drop null values
         """
-        return self.filter(self.is_not_null())
+        return wrap_expr(self._pyexpr.drop_nulls())
 
     def drop_nans(self) -> "Expr":
         """
-        Syntactic sugar for:
-
-        >>> pl.col("foo").filter(pl.col("foo").is_not_nan())  # doctest: +IGNORE_RESULT
-
+        Drop floating point NaN values
         """
-        return self.filter(self.is_not_nan())
+        return wrap_expr(self._pyexpr.drop_nans())
 
     def cumsum(self, reverse: bool = False) -> "Expr":
         """
@@ -909,7 +903,7 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.mode())
 
-    def cast(self, dtype: Type[Any], strict: bool = True) -> "Expr":
+    def cast(self, dtype: Union[Type[Any], DataType], strict: bool = True) -> "Expr":
         """
         Cast between data types.
 
@@ -944,7 +938,7 @@ class Expr:
         └─────┴─────┘
 
         """
-        dtype = py_type_to_dtype(dtype)
+        dtype = py_type_to_dtype(dtype)  # type: ignore
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> "Expr":
@@ -2832,7 +2826,7 @@ class Expr:
     @property
     def struct(self) -> "ExprStructNameSpace":
         """
-        Create an object namespace of all categorical related methods.
+        Create an object namespace of all struct related methods.
         """
         return ExprStructNameSpace(self)
 
@@ -2853,6 +2847,34 @@ class ExprStructNameSpace:
         ----------
         name
             Name of the field
+
+        Examples
+        --------
+
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df.select(pl.col("my_struct").struct.field("str"))
+        shape: (2, 1)
+        ┌─────┐
+        │ str │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ a   │
+        ├╌╌╌╌╌┤
+        │ b   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.struct_field_by_name(name))
 
@@ -2864,6 +2886,40 @@ class ExprStructNameSpace:
         ----------
         names
             New names in the order of the struct's fields
+
+        Examples
+        --------
+
+        >>> df = (
+        ...     pl.DataFrame(
+        ...         {
+        ...             "int": [1, 2],
+        ...             "str": ["a", "b"],
+        ...             "bool": [True, None],
+        ...             "list": [[1, 2], [3]],
+        ...         }
+        ...     )
+        ...     .to_struct("my_struct")
+        ...     .to_frame()
+        ... )
+        >>> df = df.with_column(
+        ...     pl.col("my_struct").struct.rename_fields(["INT", "STR", "BOOL", "LIST"])
+        ... )
+        # does NOT work anymore:
+        # df.select(pl.col("my_struct").struct.field("int"))
+        #               PanicException: int not found ^^^
+        >>> df.select(pl.col("my_struct").struct.field("INT"))
+        shape: (2, 1)
+        ┌─────┐
+        │ INT │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.struct_rename_fields(names))
 

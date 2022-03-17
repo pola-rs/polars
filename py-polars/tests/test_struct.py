@@ -91,3 +91,13 @@ def struct_unnesting() -> None:
         .collect()
     )
     out.frame_equal(expected)
+
+
+def test_struct_function_expansion() -> None:
+    df = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
+    )
+    assert df.with_column(pl.struct(pl.col(["a", "b"])))["a"].struct.fields == [
+        "a",
+        "b",
+    ]

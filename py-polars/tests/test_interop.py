@@ -262,3 +262,7 @@ def test_from_null_column() -> None:
 
 def test_to_pandas_series() -> None:
     assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
+
+
+def test_respect_dtype_with_series_from_numpy() -> None:
+    assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32

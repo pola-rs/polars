@@ -21,7 +21,7 @@ def compressions() -> List[str]:
 def test_from_to_buffer(example_df: pl.DataFrame, compressions: List[str]) -> None:
     for compression in compressions:
         buf = io.BytesIO()
-        example_df.to_avro(buf, compression=compression)  # type: ignore
+        example_df.write_avro(buf, compression=compression)  # type: ignore
         buf.seek(0)
         read_df = pl.read_avro(buf)
         assert example_df.frame_equal(read_df)
@@ -33,7 +33,7 @@ def test_from_to_file(
     f = os.path.join(io_test_dir, "small.avro")
 
     for compression in compressions:
-        example_df.to_avro(f, compression=compression)  # type: ignore
+        example_df.write_avro(f, compression=compression)  # type: ignore
         df_read = pl.read_avro(str(f))
         assert example_df.frame_equal(df_read)
 
@@ -43,7 +43,7 @@ def test_select_columns() -> None:
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.to_avro(f)
+    df.write_avro(f)
     f.seek(0)
 
     read_df = pl.read_avro(f, columns=["b", "c"])
@@ -55,7 +55,7 @@ def test_select_projection() -> None:
     expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
 
     f = io.BytesIO()
-    df.to_avro(f)
+    df.write_avro(f)
     f.seek(0)
 
     read_df = pl.read_avro(f, columns=[1, 2])

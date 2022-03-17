@@ -3,7 +3,6 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
 use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
-use crate::utils::str_to_polarstype;
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -11,7 +10,7 @@ use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Sch
 use polars::time::*;
 use polars_core::frame::DistinctKeepStrategy;
 use polars_core::prelude::{
-    AnyValue, AsOfOptions, AsofStrategy, QuantileInterpolOptions, SortOptions,
+    AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
 };
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -101,7 +100,7 @@ impl PyLazyFrame {
         skip_rows: usize,
         n_rows: Option<usize>,
         cache: bool,
-        overwrite_dtype: Option<Vec<(&str, &PyAny)>>,
+        overwrite_dtype: Option<Vec<(&str, Wrap<DataType>)>>,
         low_memory: bool,
         comment_char: Option<&str>,
         quote_char: Option<&str>,
@@ -131,11 +130,9 @@ impl PyLazyFrame {
         };
 
         let overwrite_dtype = overwrite_dtype.map(|overwrite_dtype| {
-            let fields = overwrite_dtype.iter().map(|(name, dtype)| {
-                let str_repr = dtype.str().unwrap().to_str().unwrap();
-                let dtype = str_to_polarstype(str_repr);
-                Field::new(name, dtype)
-            });
+            let fields = overwrite_dtype
+                .into_iter()
+                .map(|(name, dtype)| Field::new(name, dtype.0));
             Schema::from(fields)
         });
         let mut r = LazyCsvReader::new(path)

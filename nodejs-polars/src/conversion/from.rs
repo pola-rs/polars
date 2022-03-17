@@ -388,7 +388,7 @@ impl FromJsUnknown for Schema {
                     })
                     .collect();
 
-                Ok(Schema::new(fields))
+                Ok(Schema::from(fields))
             }
             dt => {
                 return Err(JsPolarsEr::Other(format!(

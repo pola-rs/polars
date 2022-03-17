@@ -3,7 +3,6 @@ pub(crate) mod series;
 use crate::prelude::*;
 use crate::POOL;
 pub use arrow;
-pub use num_cpus;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;

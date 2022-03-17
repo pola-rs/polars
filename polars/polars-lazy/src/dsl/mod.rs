@@ -26,7 +26,7 @@ use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 use std::fmt::{Debug, Formatter};
-use std::ops::Deref;
+use std::ops::{Deref, Not};
 use std::{
     fmt,
     ops::{Add, Div, Mul, Rem, Sub},
@@ -637,6 +637,31 @@ impl Expr {
         Expr::IsNotNull(Box::new(self))
     }
 
+    /// Drop null values
+    pub fn drop_nulls(self) -> Self {
+        self.map(|s| Ok(s.drop_nulls()), GetOutput::same_type())
+    }
+
+    /// Drop NaN values
+    pub fn drop_nans(self) -> Self {
+        self.map(
+            |s| match s.dtype() {
+                DataType::Float32 => {
+                    let ca = s.f32()?;
+                    let mask = ca.is_nan().not();
+                    ca.filter(&mask).map(|ca| ca.into_series())
+                }
+                DataType::Float64 => {
+                    let ca = s.f64()?;
+                    let mask = ca.is_nan().not();
+                    ca.filter(&mask).map(|ca| ca.into_series())
+                }
+                _ => Ok(s),
+            },
+            GetOutput::same_type(),
+        )
+    }
+
     /// Reduce groups to minimal value.
     pub fn min(self) -> Self {
         AggExpr::Min(Box::new(self)).into()
@@ -888,7 +913,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed.
     ///
-    /// This function is very similar to [`apply`], but differs in how it handles aggregations.
+    /// This function is very similar to [`Expr::apply`], but differs in how it handles aggregations.
     ///
     ///  * `map` should be used for operations that are independent of groups, e.g. `multiply * 2`, or `raise to the power`
     ///  * `apply` should be used for operations that work on a group of data. e.g. `sum`, `count`, etc.
@@ -916,7 +941,7 @@ impl Expr {
 
     /// Apply a function/closure once the logical plan get executed with many arguments
     ///
-    /// See the [`map`] function for the differences between [`map`] and [`apply`].
+    /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn map_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
@@ -1013,7 +1038,7 @@ impl Expr {
 
     /// Apply a function/closure over the groups with many arguments. This should only be used in a groupby aggregation.
     ///
-    /// See the [`apply`] function for the differences between [`map`] and [`apply`].
+    /// See the [`Expr::apply`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
     pub fn apply_many<F>(self, function: F, arguments: &[Expr], output_type: GetOutput) -> Self
     where
         F: Fn(&mut [Series]) -> Result<Series> + 'static + Send + Sync,
@@ -1641,7 +1666,7 @@ impl Expr {
     }
 
     /// Apply a rolling median See:
-    /// [ChunkedArray::rolling_median](polars::prelude::ChunkWindow::rolling_median).
+    /// [`ChunkedArray::rolling_median`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
@@ -1653,7 +1678,7 @@ impl Expr {
     }
 
     /// Apply a rolling quantile See:
-    /// [ChunkedArray::rolling_quantile](polars::prelude::ChunkWindow::rolling_quantile).
+    /// [`ChunkedArray::rolling_quantile`]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_quantile(

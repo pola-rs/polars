@@ -1,6 +1,7 @@
 use super::*;
 use polars_arrow::array::ValueSize;
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use polars_time::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
 pub struct StringNameSpace(pub(crate) Expr);
@@ -86,6 +87,7 @@ impl StringNameSpace {
     }
 
     /// Split the string by a substring.
+    // Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
     pub fn split(self, by: &str) -> Expr {
         let by = by.to_string();
 
@@ -110,6 +112,8 @@ impl StringNameSpace {
             .with_fmt("str.split")
     }
 
+    #[cfg(feature = "dtype-struct")]
+    // Split exactly `n` times by a given substring. The resulting dtype is [`DataType::Struct`].
     pub fn split_exact(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
@@ -159,6 +163,9 @@ impl StringNameSpace {
             .with_fmt("str.split_exact")
     }
 
+    #[cfg(feature = "dtype-struct")]
+    // Split exactly `n` times by a given substring and keep the substring.
+    // The resulting dtype is [`DataType::Struct`].
     pub fn split_exact_inclusive(self, by: &str, n: usize) -> Expr {
         let by = by.to_string();
 
@@ -208,7 +215,8 @@ impl StringNameSpace {
             .with_fmt("str.split_exact")
     }
 
-    /// Split the string by a substring.
+    /// Split the string by a substring and keep the substring.
+    // Split exactly `n` times by a given substring. The resulting dtype is `List<Utf8>`.
     pub fn split_inclusive(self, by: &str) -> Expr {
         let by = by.to_string();
 

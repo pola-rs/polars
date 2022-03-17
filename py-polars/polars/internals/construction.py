@@ -128,7 +128,7 @@ def sequence_to_pyseries(
         pyseries = constructor(name, values, strict)
 
         if dtype in (Date, Datetime, Duration, Time, Categorical):
-            pyseries = pyseries.cast(str(dtype), True)
+            pyseries = pyseries.cast(dtype, True)
 
         return pyseries
 

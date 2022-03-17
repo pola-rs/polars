@@ -1,6 +1,6 @@
 [package]
 name = "polars"
-version = "0.19.1"
+version = "0.20.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 keywords = ["dataframe", "query-engine", "arrow"]
@@ -153,8 +153,8 @@ dtype-datetime = [
   "polars-io/dtype-datetime",
   "polars-time/dtype-datetime",
 ]
-dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration"]
-dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time"]
+dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration", "polars-time/dtype-duration"]
+dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
 dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
@@ -211,10 +211,10 @@ bench = [
 ]
 
 [dependencies]
-polars-core = { version = "0.19.1", path = "./polars-core", features = ["docs", "private"], default-features = false }
-polars-io = { version = "0.19.1", path = "./polars-io", features = ["private"], default-features = false, optional = true }
-polars-lazy = { version = "0.19.1", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
-polars-time = { version = "0.1.1", path = "./polars-time", default-features = false, optional = true }
+polars-core = { version = "0.20.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
+polars-io = { version = "0.20.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
+polars-lazy = { version = "0.20.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-time = { version = "0.20.0", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]
 ahash = "0.7"

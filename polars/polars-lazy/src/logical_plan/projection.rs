@@ -181,7 +181,8 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
                         Excluded::Name(name) => {
                             let e = Expr::Column(name.clone());
                             replace_regex(&e, &mut buf, schema);
-                            for col in buf.drain(..) {
+                            // we cannot loop because of bchck
+                            while let Some(col) = buf.pop() {
                                 if let Expr::Column(name) = col {
                                     exclude.push(name)
                                 }
@@ -235,12 +236,104 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
     exclude
 }
 
+// functions can have col(["a", "b"]) or col(Utf8) as inputs
+fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
+    expr.mutate().apply(|e| {
+        match e {
+            Expr::Function { input, .. } => {
+                if input
+                    .iter()
+                    .any(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
+                {
+                    let mut new_inputs = Vec::with_capacity(input.len());
+
+                    input.iter_mut().for_each(|e| {
+                        match e {
+                            // col([foo, bar]) -> [col(foo), col(bar)]
+                            // just add them to the inputs, so that we don't expand the whole function
+                            Expr::Columns(names) => {
+                                for name in names {
+                                    new_inputs.push(col(name))
+                                }
+                            }
+                            Expr::DtypeColumn(dtypes) => {
+                                for dtype in dtypes {
+                                    for field in
+                                        schema.iter_fields().filter(|f| f.data_type() == dtype)
+                                    {
+                                        let name = field.name();
+                                        new_inputs.push(col(name))
+                                    }
+                                }
+                            }
+                            e => new_inputs.push(e.clone()),
+                        }
+                    });
+
+                    *input = new_inputs;
+                };
+
+                // continue there can be more functions that require expansion
+                true
+            }
+            _ => true,
+        }
+    });
+    expr
+}
+
+// functions can have wildcards as inputs
+fn function_wildcard_expansion(mut expr: Expr, schema: &Schema, exclude: &[Arc<str>]) -> Expr {
+    expr.mutate().apply(|e| {
+        match e {
+            Expr::Function { input, options, .. } if options.input_wildcard_expansion => {
+                let mut new_inputs = Vec::with_capacity(input.len());
+
+                input.iter_mut().for_each(|e| {
+                    match e {
+                        // col([foo, bar]) -> [col(foo), col(bar)]
+                        // just add them to the inputs, so that we don't expand the whole function
+                        Expr::Columns(names) => {
+                            for name in names {
+                                new_inputs.push(col(name))
+                            }
+                        }
+                        _ => {
+                            if has_wildcard(e) {
+                                replace_wilcard(e, &mut new_inputs, exclude, schema)
+                            } else {
+                                #[cfg(feature = "regex")]
+                                {
+                                    replace_regex(e, &mut new_inputs, schema)
+                                }
+                                #[cfg(not(feature = "regex"))]
+                                {
+                                    new_inputs.push(e.clone())
+                                }
+                            };
+                        }
+                    }
+                });
+
+                *input = new_inputs;
+                // continue there can be more functions that require expansion
+                true
+            }
+            _ => true,
+        }
+    });
+    expr
+}
+
 /// In case of single col(*) -> do nothing, no selection is the same as select all
 /// In other cases replace the wildcard with an expression with all columns
 pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Expr]) -> Vec<Expr> {
     let mut result = Vec::with_capacity(exprs.len() + schema.len());
 
     for mut expr in exprs {
+        // functions can have col(["a", "b"]) or col(Utf8) as inputs
+        expr = expand_function_list_inputs(expr, schema);
+
         // has multiple column names
         if let Some(e) = expr
             .into_iter()
@@ -266,35 +359,7 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
                 &expr,
                 |e| matches!(e, Expr::Function { options,  .. } if options.input_wildcard_expansion),
             ) {
-                expr.mutate().apply(|e| {
-                    match e {
-                        Expr::Function { input, options, .. }
-                            if options.input_wildcard_expansion =>
-                        {
-                            let mut new_inputs = Vec::with_capacity(input.len());
-
-                            input.iter_mut().for_each(|e| {
-                                if has_wildcard(e) {
-                                    replace_wilcard(e, &mut new_inputs, &exclude, schema)
-                                } else {
-                                    #[cfg(feature = "regex")]
-                                    {
-                                        replace_regex(e, &mut new_inputs, schema)
-                                    }
-                                    #[cfg(not(feature = "regex"))]
-                                    {
-                                        new_inputs.push(e.clone())
-                                    }
-                                };
-                            });
-
-                            *input = new_inputs;
-                            // continue there can be more functions that require expansion
-                            true
-                        }
-                        _ => true,
-                    }
-                });
+                expr = function_wildcard_expansion(expr, schema, &exclude);
                 result.push(expr);
                 continue;
             }

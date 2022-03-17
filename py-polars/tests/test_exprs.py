@@ -146,3 +146,13 @@ def test_split_exact() -> None:
     assert out.frame_equal(expected)
     assert df["x"].str.split_exact("_", 1).dtype == pl.Struct
     assert df["x"].str.split_exact("_", 1, inclusive=False).dtype == pl.Struct
+
+
+def test_unique_and_drop_stability() -> None:
+    # see: 2898
+    # the original cause was that we wrote:
+    # expr_a = a.unique()
+    # expr_a.filter(a.unique().is_not_null())
+    # meaning that the a.unique was executed twice, which is an unstable algorithm
+    df = pl.DataFrame({"a": [1, None, 1, None]})
+    assert df.select(pl.col("a").unique().drop_nulls()).to_series()[0] == 1
