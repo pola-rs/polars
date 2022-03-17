@@ -1337,6 +1337,27 @@ def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
     │ {2,"b",null,[3]}      │
     └───────────────────────┘
 
+    Only collect specific columns as a struct:
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
+    ... )
+    >>> df.with_column(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
+    shape: (4, 4)
+    ┌─────┬───────┬─────┬───────────────────────────────┐
+    │ a   ┆ b     ┆ c   ┆ a_and_b                       │
+    │ --- ┆ ---   ┆ --- ┆ ---                           │
+    │ i64 ┆ str   ┆ i64 ┆ struct[2]{'a': i64, 'b': str} │
+    ╞═════╪═══════╪═════╪═══════════════════════════════╡
+    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ three ┆ 7   ┆ {3,"three"}                   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}                    │
+    └─────┴───────┴─────┴───────────────────────────────┘
+
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_as_struct(exprs))
