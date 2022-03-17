@@ -19,6 +19,7 @@ pub struct CsvParserOptions {
     pub(crate) rechunk: bool,
     pub(crate) encoding: CsvEncoding,
     pub(crate) row_count: Option<RowCount>,
+    pub(crate) parse_dates: bool,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]

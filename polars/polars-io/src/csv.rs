@@ -49,10 +49,10 @@ use crate::utils::resolve_homedir;
 use crate::{RowCount, SerReader, SerWriter};
 pub use arrow::io::csv::write;
 use polars_core::prelude::*;
+#[cfg(feature = "temporal")]
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
-#[cfg(feature = "temporal")]
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
@@ -225,7 +225,6 @@ where
     aggregate: Option<&'a [ScanAggregation]>,
     quote_char: Option<u8>,
     skip_rows_after_header: usize,
-    #[cfg(feature = "temporal")]
     parse_dates: bool,
     row_count: Option<RowCount>,
 }
@@ -393,7 +392,6 @@ where
     }
 
     /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
-    #[cfg(feature = "temporal")]
     pub fn with_parse_dates(mut self, toggle: bool) -> Self {
         self.parse_dates = toggle;
         self
@@ -452,7 +450,6 @@ where
             aggregate: None,
             quote_char: Some(b'"'),
             skip_rows_after_header: 0,
-            #[cfg(feature = "temporal")]
             parse_dates: false,
             row_count: None,
         }
@@ -534,6 +531,7 @@ where
                 &to_cast,
                 self.skip_rows_after_header,
                 self.row_count,
+                self.parse_dates,
             )?;
             csv_reader.as_df()?
         } else {
@@ -564,6 +562,7 @@ where
                 &[],
                 self.skip_rows_after_header,
                 self.row_count,
+                self.parse_dates,
             )?;
             csv_reader.as_df()?
         };
@@ -577,7 +576,9 @@ where
                 df.as_single_chunk_par();
             }
         }
+
         #[cfg(feature = "temporal")]
+        // only needed until we also can parse time columns in place
         if self.parse_dates {
             // determine the schema that's given by the user. That should not be changed
             let fixed_schema = match (self.schema_overwrite, self.dtype_overwrite) {
@@ -602,32 +603,23 @@ where
 }
 
 #[cfg(feature = "temporal")]
-fn parse_dates(df: DataFrame, fixed_schema: &Schema) -> DataFrame {
-    let cols = df
-        .get_columns()
-        .par_iter()
+fn parse_dates(mut df: DataFrame, fixed_schema: &Schema) -> DataFrame {
+    let cols = std::mem::take(df.get_columns_mut())
+        .into_par_iter()
         .map(|s| {
             if let Ok(ca) = s.utf8() {
                 // don't change columns that are in the fixed schema.
                 if fixed_schema.index_of(s.name()).is_some() {
-                    return s.clone();
+                    return s;
                 }
 
                 #[cfg(feature = "dtype-time")]
                 if let Ok(ca) = ca.as_time(None) {
                     return ca.into_series();
                 }
-                #[cfg(feature = "dtype-date")]
-                if let Ok(ca) = ca.as_date(None) {
-                    return ca.into_series();
-                }
-                #[cfg(feature = "dtype-datetime")]
-                if let Ok(ca) = ca.as_datetime(None, TimeUnit::Milliseconds) {
-                    return ca.into_series();
-                }
-                s.clone()
+                s
             } else {
-                s.clone()
+                s
             }
         })
         .collect::<Vec<_>>();

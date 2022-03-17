@@ -5,6 +5,10 @@ use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
 use polars_arrow::prelude::FromDataUtf8;
 use polars_core::prelude::*;
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_time::chunkedarray::utf8::Pattern;
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_time::prelude::utf8::infer::{compile_single, DatetimeInfer};
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
@@ -48,7 +52,7 @@ impl PrimitiveParser for Int64Type {
     }
 }
 
-trait ParsedBuffer<T> {
+trait ParsedBuffer {
     fn parse_bytes(
         &mut self,
         bytes: &[u8],
@@ -57,7 +61,7 @@ trait ParsedBuffer<T> {
     ) -> Result<()>;
 }
 
-impl<T> ParsedBuffer<T> for PrimitiveChunkedBuilder<T>
+impl<T> ParsedBuffer for PrimitiveChunkedBuilder<T>
 where
     T: PolarsNumericType + PrimitiveParser,
 {
@@ -133,7 +137,7 @@ fn delay_utf8_validation(encoding: CsvEncoding, ignore_errors: bool) -> bool {
     !(matches!(encoding, CsvEncoding::LossyUtf8) || ignore_errors)
 }
 
-impl ParsedBuffer<Utf8Type> for Utf8Field {
+impl ParsedBuffer for Utf8Field {
     #[inline]
     fn parse_bytes(
         &mut self,
@@ -215,7 +219,7 @@ impl ParsedBuffer<Utf8Type> for Utf8Field {
     }
 }
 
-impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
+impl ParsedBuffer for BooleanChunkedBuilder {
     #[inline]
     fn parse_bytes(
         &mut self,
@@ -243,6 +247,82 @@ impl ParsedBuffer<BooleanType> for BooleanChunkedBuilder {
             ));
         }
         Ok(())
+    }
+}
+
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+pub(crate) struct DatetimeField<T: PolarsNumericType> {
+    compiled: Option<DatetimeInfer<T::Native>>,
+    builder: PrimitiveChunkedBuilder<T>,
+}
+
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+impl<T: PolarsNumericType> DatetimeField<T> {
+    fn new(name: &str, capacity: usize) -> Self {
+        let builder = PrimitiveChunkedBuilder::<T>::new(name, capacity);
+
+        Self {
+            compiled: None,
+            builder,
+        }
+    }
+}
+
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+impl<T> ParsedBuffer for DatetimeField<T>
+where
+    T: PolarsNumericType,
+    DatetimeInfer<T::Native>: TryFrom<Pattern>,
+{
+    #[inline]
+    fn parse_bytes(
+        &mut self,
+        bytes: &[u8],
+        ignore_errors: bool,
+        _needs_escaping: bool,
+    ) -> Result<()> {
+        // we only check ascii, as we don't expect non ascii values in dates
+        if bytes.is_ascii() {
+            // Safety:
+            // we just checked it is ascii
+            let val = unsafe { std::str::from_utf8_unchecked(bytes) };
+            match &mut self.compiled {
+                None => match compile_single(val) {
+                    None => {
+                        self.builder.append_null();
+                        Ok(())
+                    }
+                    Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
+                        Ok(mut infer) => {
+                            let parsed = infer.parse(val);
+                            self.compiled = Some(infer);
+                            self.builder.append_option(parsed);
+                            Ok(())
+                        }
+                        Err(_) => {
+                            self.builder.append_null();
+                            Ok(())
+                        }
+                    },
+                },
+                Some(compiled) => {
+                    let parsed = compiled.parse(val);
+                    self.builder.append_option(parsed);
+                    Ok(())
+                }
+            }
+        } else if ignore_errors {
+            self.builder.append_null();
+            Ok(())
+        } else {
+            Err(PolarsError::ComputeError(
+                format!(
+                    "could not parse {:?} as date/time",
+                    std::str::from_utf8(bytes)
+                )
+                .into(),
+            ))
+        }
     }
 }
 
@@ -286,6 +366,10 @@ pub(crate) fn init_buffers(
                     encoding,
                     ignore_errors,
                 )),
+                #[cfg(feature = "dtype-datetime")]
+                &DataType::Datetime(_, _) => Buffer::Datetime(DatetimeField::new(name, capacity)),
+                #[cfg(feature = "dtype-date")]
+                &DataType::Date => Buffer::Date(DatetimeField::new(name, capacity)),
                 other => {
                     return Err(PolarsError::ComputeError(
                         format!("Unsupported data type {:?} when reading a csv", other).into(),
@@ -308,6 +392,10 @@ pub(crate) enum Buffer {
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     /// Stores the Utf8 fields and the total string length seen for that column
     Utf8(Utf8Field),
+    #[cfg(feature = "dtype-datetime")]
+    Datetime(DatetimeField<Int64Type>),
+    #[cfg(feature = "dtype-date")]
+    Date(DatetimeField<Int32Type>),
 }
 
 impl Buffer {
@@ -320,6 +408,20 @@ impl Buffer {
             Buffer::UInt64(v) => v.finish().into_series(),
             Buffer::Float32(v) => v.finish().into_series(),
             Buffer::Float64(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-datetime")]
+            Buffer::Datetime(v) => v
+                .builder
+                .finish()
+                .into_series()
+                .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                .unwrap(),
+            #[cfg(feature = "dtype-date")]
+            Buffer::Date(v) => v
+                .builder
+                .finish()
+                .into_series()
+                .cast(&DataType::Date)
+                .unwrap(),
             // Safety:
             // We already checked utf8 validity during parsing
             Buffer::Utf8(mut v) => unsafe {
@@ -383,6 +485,10 @@ impl Buffer {
                 v.offsets.push(v.data.len() as i64);
                 v.validity.push(false);
             }
+            #[cfg(feature = "dtype-datetime")]
+            Buffer::Datetime(v) => v.builder.append_null(),
+            #[cfg(feature = "dtype-date")]
+            Buffer::Date(v) => v.builder.append_null(),
         };
     }
 
@@ -396,6 +502,10 @@ impl Buffer {
             Buffer::Float32(_) => DataType::Float32,
             Buffer::Float64(_) => DataType::Float64,
             Buffer::Utf8(_) => DataType::Utf8,
+            #[cfg(feature = "dtype-datetime")]
+            Buffer::Datetime(_) => DataType::Datetime(TimeUnit::Microseconds, None),
+            #[cfg(feature = "dtype-date")]
+            Buffer::Date(_) => DataType::Date,
         }
     }
 
@@ -408,61 +518,60 @@ impl Buffer {
     ) -> Result<()> {
         use Buffer::*;
         match self {
-            Boolean(buf) => <BooleanChunkedBuilder as ParsedBuffer<BooleanType>>::parse_bytes(
+            Boolean(buf) => <BooleanChunkedBuilder as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,
                 needs_escaping,
             ),
-            Int32(buf) => {
-                <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer<Int32Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
+            Int32(buf) => <PrimitiveChunkedBuilder<Int32Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            UInt64(buf) => <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            UInt32(buf) => <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            Float32(buf) => <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            Float64(buf) => <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            Utf8(buf) => {
+                <Utf8Field as ParsedBuffer>::parse_bytes(buf, bytes, ignore_errors, needs_escaping)
             }
-            Int64(buf) => {
-                <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer<Int64Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
-            }
-            UInt64(buf) => {
-                <PrimitiveChunkedBuilder<UInt64Type> as ParsedBuffer<UInt64Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
-            }
-            UInt32(buf) => {
-                <PrimitiveChunkedBuilder<UInt32Type> as ParsedBuffer<UInt32Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
-            }
-            Float32(buf) => {
-                <PrimitiveChunkedBuilder<Float32Type> as ParsedBuffer<Float32Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
-            }
-            Float64(buf) => {
-                <PrimitiveChunkedBuilder<Float64Type> as ParsedBuffer<Float64Type>>::parse_bytes(
-                    buf,
-                    bytes,
-                    ignore_errors,
-                    needs_escaping,
-                )
-            }
-            Utf8(buf) => <Utf8Field as ParsedBuffer<Utf8Type>>::parse_bytes(
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(buf) => <DatetimeField<Int64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+            ),
+            #[cfg(feature = "dtype-date")]
+            Date(buf) => <DatetimeField<Int32Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

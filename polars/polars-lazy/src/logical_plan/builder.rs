@@ -122,6 +122,7 @@ impl LogicalPlanBuilder {
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
         row_count: Option<RowCount>,
+        parse_dates: bool,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
@@ -146,6 +147,7 @@ impl LogicalPlanBuilder {
                 comment_char,
                 quote_char,
                 null_values.as_ref(),
+                parse_dates,
             )
             .expect("could not read schema");
             Arc::new(schema)
@@ -169,6 +171,7 @@ impl LogicalPlanBuilder {
                 rechunk,
                 encoding,
                 row_count,
+                parse_dates,
             },
             predicate: None,
             aggregate: vec![],

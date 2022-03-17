@@ -89,6 +89,7 @@ impl CategoricalChunked {
     }
 
     /// Retrieve the indexes need to sort this and the other arrays.
+    #[cfg(feature = "sort_multiple")]
     pub(crate) fn argsort_multiple(&self, other: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         if self.use_lexical_sort() {
             args_validate(self.logical(), other, reverse)?;

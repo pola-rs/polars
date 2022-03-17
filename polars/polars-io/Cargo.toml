@@ -29,7 +29,7 @@ decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng-compat"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 # don't use this
-private = []
+private = ["polars-time/private"]
 
 [dependencies]
 ahash = "0.7"
