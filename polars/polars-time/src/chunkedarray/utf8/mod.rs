@@ -1,9 +1,13 @@
+pub mod infer;
+mod patterns;
+
 use super::*;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
 #[cfg(feature = "dtype-time")]
 use crate::chunkedarray::time::time_to_time64ns;
 use chrono::ParseError;
+pub use patterns::Pattern;
 
 #[cfg(feature = "dtype-time")]
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
@@ -28,7 +32,7 @@ where
         // 21/12/31 12:54:98
         "%y/%m/%d %H:%M:%S",
         // 2021-12-31 24:58:01
-        "%y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
         // 21/12/31 24:58:01
         "%y/%m/%d %H:%M:%S",
         //210319 23:58:50

@@ -117,6 +117,7 @@ class LazyFrame(Generic[DF]):
         skip_rows_after_header: int = 0,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        parse_dates: bool = False,
     ) -> LDF:
         """
         See Also: `pl.scan_csv`
@@ -148,6 +149,7 @@ class LazyFrame(Generic[DF]):
             skip_rows_after_header,
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            parse_dates,
         )
         return self
 

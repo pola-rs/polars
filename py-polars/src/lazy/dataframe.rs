@@ -111,6 +111,7 @@ impl PyLazyFrame {
         skip_rows_after_header: usize,
         encoding: &str,
         row_count: Option<(String, u32)>,
+        parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -151,6 +152,7 @@ impl PyLazyFrame {
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding)
             .with_row_count(row_count)
+            .with_parse_dates(parse_dates)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
