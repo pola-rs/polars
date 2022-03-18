@@ -56,7 +56,7 @@ pub struct GroupbyOptions {
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,
     pub(crate) maintain_order: bool,
-    pub(crate) keep_strategy: DistinctKeepStrategy,
+    pub(crate) keep_strategy: UniqueKeepStrategy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

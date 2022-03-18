@@ -1725,6 +1725,18 @@ class LazyFrame(Generic[DF]):
         keep: str = "first",
     ) -> LDF:
         """
+        .. deprecated:: 0.13.13
+            Please use `unique`
+        """
+        return self.unique(maintain_order, subset, keep)
+
+    def unique(
+        self: LDF,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
+        keep: str = "first",
+    ) -> LDF:
+        """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame or subset.
 
@@ -1743,7 +1755,7 @@ class LazyFrame(Generic[DF]):
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return self._from_pyldf(self._ldf.distinct(maintain_order, subset, keep))
+        return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
     def drop_nulls(self: LDF, subset: Optional[Union[List[str], str]] = None) -> LDF:
         """

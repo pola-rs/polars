@@ -74,11 +74,11 @@ impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<DistinctKeepStrategy> {
+impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         match ob.extract::<&str>()? {
-            "first" => Ok(Wrap(DistinctKeepStrategy::First)),
-            "last" => Ok(Wrap(DistinctKeepStrategy::Last)),
+            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
+            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
             s => panic!("keep strategy {} is not supported", s),
         }
     }

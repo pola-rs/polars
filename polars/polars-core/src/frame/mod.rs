@@ -46,7 +46,7 @@ pub enum NullStrategy {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum DistinctKeepStrategy {
+pub enum UniqueKeepStrategy {
     First,
     Last,
 }
@@ -2701,8 +2701,8 @@ impl DataFrame {
     #[deprecated(note = "use distinct")]
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
         match maintain_order {
-            true => self.distinct_stable(subset, DistinctKeepStrategy::First),
-            false => self.distinct(subset, DistinctKeepStrategy::First),
+            true => self.unique_stable(subset, UniqueKeepStrategy::First),
+            false => self.unique(subset, UniqueKeepStrategy::First),
         }
     }
 
@@ -2721,7 +2721,7 @@ impl DataFrame {
     ///               "str" => ["a", "a", "b", "b", "c", "c"]
     ///           }?;
     ///
-    /// println!("{}", df.distinct_stable(None, DistinctKeepStrategy::First)?);
+    /// println!("{}", df.unique_stable(None, UniqueKeepStrategy::First)?);
     /// # Ok::<(), PolarsError>(())
     /// ```
     /// Returns
@@ -2739,20 +2739,16 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn distinct_stable(
+    pub fn unique_stable(
         &self,
         subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
+        keep: UniqueKeepStrategy,
     ) -> Result<DataFrame> {
         self.distinct_impl(true, subset, keep)
     }
 
     /// Unstable distinct. See [`DataFrame::distinct_stable`].
-    pub fn distinct(
-        &self,
-        subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
-    ) -> Result<DataFrame> {
+    pub fn unique(&self, subset: Option<&[String]>, keep: UniqueKeepStrategy) -> Result<DataFrame> {
         self.distinct_impl(false, subset, keep)
     }
 
@@ -2760,9 +2756,9 @@ impl DataFrame {
         &self,
         maintain_order: bool,
         subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
+        keep: UniqueKeepStrategy,
     ) -> Result<Self> {
-        use DistinctKeepStrategy::*;
+        use UniqueKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
@@ -3113,7 +3109,7 @@ mod test {
         .unwrap();
         dbg!(&df);
         let df = df
-            .distinct_stable(None, DistinctKeepStrategy::First)
+            .unique_stable(None, UniqueKeepStrategy::First)
             .unwrap()
             .sort(["flt"], false)
             .unwrap();
