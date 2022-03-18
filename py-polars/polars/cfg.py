@@ -64,6 +64,14 @@ class Config:
         ----------
         n
             number of columns to print
+        
+        Examples
+        --------
+>>> import polars as pl
+>>> pl.cfg.Config.set_tbl_cols(1000)
+>>> df = pl.DataFrame({str(i):[i] for i in range(100)})
+>>> df
+        
         """
 
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
