@@ -120,6 +120,7 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.to_dummies
     DataFrame.distinct
+    DataFrame.unique
     DataFrame.shrink_to_fit
     DataFrame.rechunk
     DataFrame.pipe

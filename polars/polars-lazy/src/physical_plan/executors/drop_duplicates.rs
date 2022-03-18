@@ -14,8 +14,8 @@ impl Executor for DropDuplicatesExec {
         let keep = self.options.keep_strategy;
 
         match self.options.maintain_order {
-            true => df.distinct_stable(subset, keep),
-            false => df.distinct(subset, keep),
+            true => df.unique_stable(subset, keep),
+            false => df.unique(subset, keep),
         }
     }
 }

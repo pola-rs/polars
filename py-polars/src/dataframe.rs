@@ -1043,18 +1043,18 @@ impl PyDataFrame {
         self.df.shift(periods).into()
     }
 
-    pub fn distinct(
+    pub fn unique(
         &self,
         py: Python,
         maintain_order: bool,
         subset: Option<Vec<String>>,
-        keep: Wrap<DistinctKeepStrategy>,
+        keep: Wrap<UniqueKeepStrategy>,
     ) -> PyResult<Self> {
         let df = py.allow_threads(|| {
             let subset = subset.as_ref().map(|v| v.as_ref());
             match maintain_order {
-                true => self.df.distinct_stable(subset, keep.0),
-                false => self.df.distinct(subset, keep.0),
+                true => self.df.unique_stable(subset, keep.0),
+                false => self.df.unique(subset, keep.0),
             }
             .map_err(PyPolarsErr::from)
         })?;

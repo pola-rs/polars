@@ -939,10 +939,10 @@ impl LazyFrame {
     }
 
     /// Keep unique rows and maintain order
-    pub fn distinct_stable(
+    pub fn unique_stable(
         self,
         subset: Option<Vec<String>>,
-        keep_strategy: DistinctKeepStrategy,
+        keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptions {
@@ -955,10 +955,10 @@ impl LazyFrame {
     }
 
     /// Keep unique rows, do not maintain order
-    pub fn distinct(
+    pub fn unique(
         self,
         subset: Option<Vec<String>>,
-        keep_strategy: DistinctKeepStrategy,
+        keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptions {

@@ -8,7 +8,7 @@ use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGr
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
-use polars_core::frame::DistinctKeepStrategy;
+use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::{
     AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
 };
@@ -571,16 +571,16 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
-    pub fn distinct(
+    pub fn unique(
         &self,
         maintain_order: bool,
         subset: Option<Vec<String>>,
-        keep: Wrap<DistinctKeepStrategy>,
+        keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.clone();
         match maintain_order {
-            true => ldf.distinct_stable(subset, keep.0),
-            false => ldf.distinct(subset, keep.0),
+            true => ldf.unique_stable(subset, keep.0),
+            false => ldf.unique(subset, keep.0),
         }
         .into()
     }
