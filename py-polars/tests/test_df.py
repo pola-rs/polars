@@ -1612,6 +1612,13 @@ def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
     assert df.fill_nan(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
     assert df["b"].fill_nan(5.0).to_list() == [3.0, 5.0]
+    df = pl.DataFrame(
+        {
+            "a": [1.0, np.nan, 3.0],
+            "b": [datetime(1, 2, 2), datetime(2, 2, 2), datetime(3, 2, 2)],
+        }
+    )
+    assert df.fill_nan(2.0).dtypes == [pl.Float64, pl.Datetime]
 
 
 def test_shift_and_fill() -> None:
