@@ -238,16 +238,17 @@ impl LogicalPlanBuilder {
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
+
         let exprs = schema
-            .iter_names()
-            .map(|name| {
-                when(col(name).is_nan())
-                    .then(fill_value.clone())
-                    .otherwise(col(name))
-                    .alias(name)
+            .iter()
+            .filter_map(|(name, dtype)| match dtype {
+                DataType::Float32 | DataType::Float64 => {
+                    Some(col(name).fill_nan(fill_value.clone()).alias(name))
+                }
+                _ => None,
             })
             .collect();
-        self.project_local(exprs)
+        self.with_columns(exprs)
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
