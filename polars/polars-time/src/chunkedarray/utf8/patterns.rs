@@ -31,6 +31,11 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
     // nanoseconds
     "%d-%m-%YT%H:%M:%S.%9f",
     "%d-%m-%yT%H:%M:%S.%9f",
+    "%d/%m/%Y 00:00:00",
+    "%d-%m-%Y 00:00:00",
+    // no times
+    "%d-%m-%Y",
+    "%d-%m-%y",
 ];
 
 pub(super) static DATETIME_Y_M_D: &[&str] = &[
@@ -58,9 +63,12 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%FT%H:%M:%S.%6f",
     // nanoseconds
     "%FT%H:%M:%S.%9f",
+    // no times
+    "%F",
+    "%Y/%m/%d",
 ];
 
-#[derive(Eq, Hash, PartialEq)]
+#[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]
 pub enum Pattern {
     DateDMY,
     DateYMD,

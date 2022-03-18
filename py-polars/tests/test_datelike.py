@@ -565,3 +565,11 @@ def test_default_negative_every_offset_dynamic_groupby() -> None:
         }
     )
     assert out.frame_equal(expected)
+
+
+def test_strptime_dates_datetimes() -> None:
+    s = pl.Series("date", ["2021-04-22", "2022-01-04 00:00:00"])
+    assert s.str.strptime(pl.Datetime).to_list() == [
+        datetime(2021, 4, 22, 0, 0),
+        datetime(2022, 1, 4, 0, 0),
+    ]
