@@ -90,7 +90,7 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
     // Utf8 for them
     if string.starts_with('"') {
         if parse_dates {
-            match date_infer::compile_single(&string[1..string.len() - 1]) {
+            match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
                 Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
                     DataType::Datetime(TimeUnit::Microseconds, None)
                 }
@@ -109,7 +109,7 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
     } else if parse_dates {
-        match date_infer::compile_single(string) {
+        match date_infer::infer_pattern_single(string) {
             Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
                 DataType::Datetime(TimeUnit::Microseconds, None)
             }

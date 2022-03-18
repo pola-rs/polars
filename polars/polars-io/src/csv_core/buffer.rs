@@ -8,7 +8,7 @@ use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::chunkedarray::utf8::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::utf8::infer::{compile_single, DatetimeInfer};
+use polars_time::prelude::utf8::infer::{infer_pattern_single, DatetimeInfer};
 
 pub(crate) trait PrimitiveParser: PolarsNumericType {
     fn parse(bytes: &[u8]) -> Option<Self::Native>;
@@ -287,7 +287,7 @@ where
             // we just checked it is ascii
             let val = unsafe { std::str::from_utf8_unchecked(bytes) };
             match &mut self.compiled {
-                None => match compile_single(val) {
+                None => match infer_pattern_single(val) {
                     None => {
                         self.builder.append_null();
                         Ok(())

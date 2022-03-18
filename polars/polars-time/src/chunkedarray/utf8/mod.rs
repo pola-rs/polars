@@ -311,7 +311,7 @@ impl Utf8Methods for Utf8Chunked {
     fn as_date(&self, fmt: Option<&str>) -> Result<DateChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => sniff_fmt_date(self)?,
+            None => return infer::to_date(self),
         };
 
         let mut ca: Int32Chunked = match self.has_validity() {
@@ -348,7 +348,7 @@ impl Utf8Methods for Utf8Chunked {
     fn as_datetime(&self, fmt: Option<&str>, tu: TimeUnit) -> Result<DatetimeChunked> {
         let fmt = match fmt {
             Some(fmt) => fmt,
-            None => sniff_fmt_datetime(self)?,
+            None => return infer::to_datetime(self, tu),
         };
 
         let func = match tu {
