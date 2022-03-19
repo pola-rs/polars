@@ -127,7 +127,9 @@ impl LogicalPlanBuilder {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
         let mut magic_nr = [0u8; 2];
-        file.read_exact(&mut magic_nr)?;
+        file.read_exact(&mut magic_nr)
+            .map_err(|_| PolarsError::NoData("empty csv".into()))?;
+
         if is_compressed(&magic_nr) {
             return Err(PolarsError::ComputeError(
                 "cannot scan compressed csv; use read_csv for compressed data".into(),
