@@ -3205,7 +3205,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Perform an asof join. This is similar to a left-join except that we
         match on nearest key rather than equal keys.
 
-        Both DataFrames must be sorted by the key.
+        Both DataFrames must be sorted by the asof_join key.
 
         For each row in the left DataFrame:
 
