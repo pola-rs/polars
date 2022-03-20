@@ -303,6 +303,7 @@ impl DataFrame {
                             left_by,
                             right_by,
                             options.strategy,
+                            options.tolerance,
                         ),
                         (None, None) => self.join_asof(
                             other,
