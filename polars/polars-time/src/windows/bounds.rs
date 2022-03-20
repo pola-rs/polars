@@ -8,7 +8,7 @@ pub struct Bounds {
 
 impl Bounds {
     /// Create a new `Bounds` and check the input is correct.
-    pub fn new_checked(start: i64, stop: i64) -> Self {
+    pub(crate) fn new_checked(start: i64, stop: i64) -> Self {
         assert!(
             start <= stop,
             "boundary start must be smaller than stop; is your time column sorted in ascending order?\
@@ -18,21 +18,17 @@ impl Bounds {
     }
 
     /// Create a new `Bounds` without checking input correctness.
-    pub fn new(start: i64, stop: i64) -> Self {
+    pub(crate) fn new(start: i64, stop: i64) -> Self {
         Bounds { start, stop }
     }
 
     /// Duration in unit for this Boundary
-    pub fn duration(&self) -> i64 {
+    pub(crate) fn duration(&self) -> i64 {
         self.stop - self.start
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.stop == self.start
-    }
-
     // check if unit is within bounds
-    pub fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
+    pub(crate) fn is_member(&self, t: i64, closed: ClosedWindow) -> bool {
         match closed {
             ClosedWindow::Right => t > self.start && t <= self.stop,
             ClosedWindow::Left => t >= self.start && t < self.stop,
@@ -41,10 +37,10 @@ impl Bounds {
         }
     }
 
-    pub fn is_future(&self, t: i64) -> bool {
-        t > self.stop
-    }
-    pub fn is_past(&self, t: i64) -> bool {
-        t < self.start
+    pub(crate) fn is_future(&self, t: i64, closed: ClosedWindow) -> bool {
+        match closed {
+            ClosedWindow::Left | ClosedWindow::None => self.stop <= t,
+            ClosedWindow::Both | ClosedWindow::Right => t > self.stop,
+        }
     }
 }
