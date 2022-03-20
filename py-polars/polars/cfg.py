@@ -64,12 +64,12 @@ class Config:
         ----------
         n
             number of columns to print
-        
+
         Examples
         --------
 
         >>> pl.cfg.Config.set_tbl_cols(5)
-        >>> df = pl.DataFrame({str(i):[i] for i in range(100)})
+        >>> df = pl.DataFrame({str(i): [i] for i in range(100)})
         >>> df
         shape: (1, 100)
         ┌─────┬─────┬─────┬─────┬─────┬─────┐
@@ -78,7 +78,7 @@ class Config:
         │ i64 ┆ i64 ┆ i64 ┆     ┆ i64 ┆ i64 │
         ╞═════╪═════╪═════╪═════╪═════╪═════╡
         │ 0   ┆ 1   ┆ 2   ┆ ... ┆ 98  ┆ 99  │
-        └─────┴─────┴─────┴─────┴─────┴─────┘        
+        └─────┴─────┴─────┴─────┴─────┴─────┘
         """
 
         os.environ["POLARS_FMT_MAX_COLS"] = str(n)
