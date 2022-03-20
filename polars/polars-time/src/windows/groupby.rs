@@ -67,7 +67,7 @@ pub fn groupby_windows(
         // find starting point of window
         while start_offset < time.len() {
             let t = time[start_offset];
-            if bi.is_future(t) {
+            if bi.is_future(t, closed_window) {
                 // the window is behind the time values.
                 skip_window = true;
                 break;
@@ -105,6 +105,8 @@ pub fn groupby_windows(
         }
 
         let first = i as IdxSize;
+        dbg!(start_offset);
+        dbg!(first);
 
         while i < time.len() {
             let t = time[i];
