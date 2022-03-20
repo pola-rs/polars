@@ -1,8 +1,10 @@
 # flake8: noqa: W191,E101
+import io
 from os import path
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 import polars as pl
 
@@ -10,6 +12,12 @@ import polars as pl
 def test_scan_csv() -> None:
     df = pl.scan_csv(Path(__file__).parent.parent / "files" / "small.csv")
     assert df.collect().shape == (4, 3)
+
+
+def test_scan_empty_csv() -> None:
+    with pytest.raises(Exception) as excinfo:
+        pl.scan_csv(Path(__file__).parent.parent / "files" / "empty.csv").collect()
+    assert str(excinfo.value) == "empty csv"
 
 
 def test_invalid_utf8() -> None:
