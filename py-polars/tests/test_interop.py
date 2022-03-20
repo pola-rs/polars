@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -59,7 +59,7 @@ def test_from_pandas_nan_to_none() -> None:
 
 
 def test_from_pandas_datetime() -> None:
-    ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
+    ts = datetime(2021, 1, 1, 20, 20, 20, 20)
     pl_s = pd.Series([ts, ts])
     tmp = pl.from_pandas(pl_s.to_frame("a"))
     s = tmp["a"]
@@ -71,8 +71,8 @@ def test_from_pandas_datetime() -> None:
         "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
-    assert s[0] == datetime.datetime(2021, 6, 24, 0, 0)
-    assert s[-1] == datetime.datetime(2021, 6, 24, 9, 0)
+    assert s[0] == datetime(2021, 6, 24, 0, 0)
+    assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -266,3 +266,11 @@ def test_to_pandas_series() -> None:
 
 def test_respect_dtype_with_series_from_numpy() -> None:
     assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32
+
+
+def test_from_pandas_ns_resolution() -> None:
+    df = pd.DataFrame(
+        [pd.Timestamp(year=2021, month=1, day=1, hour=1, second=1, nanosecond=1)],
+        columns=["date"],
+    )
+    assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)

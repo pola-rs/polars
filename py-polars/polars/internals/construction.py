@@ -232,16 +232,7 @@ def _pandas_series_to_arrow(
     -------
     """
     dtype = values.dtype
-    if dtype == "datetime64[ns]":
-        # We first cast to ms because that's the unit of Datetime,
-        # Then we cast to via int64 to datetime. Casting directly to Datetime lead to
-        # loss of time information https://github.com/pola-rs/polars/issues/476
-        arr = pa.array(
-            np.array(values.values, dtype="datetime64[ms]"), from_pandas=nan_to_none
-        )
-        arr = pa.compute.cast(arr, pa.int64())
-        return pa.compute.cast(arr, pa.timestamp("ms"))
-    elif dtype == "object" and len(values) > 0:
+    if dtype == "object" and len(values) > 0:
         if isinstance(values.values[0], str):
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
 
