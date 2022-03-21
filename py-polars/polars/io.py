@@ -268,7 +268,7 @@ def read_csv(
     projection, columns = handle_projection_columns(columns)
 
     if isinstance(file, bytes) and len(file) == 0:
-        raise ValueError("no date in bytes")
+        raise ValueError("Empty bytes data provided")
 
     storage_options = storage_options or {}
 
