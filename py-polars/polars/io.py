@@ -1,3 +1,4 @@
+import os
 from contextlib import contextmanager
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
@@ -61,6 +62,13 @@ def _process_http_file(path: str) -> BytesIO:
         return BytesIO(f.read())
 
 
+def _format_path(path: str) -> str:
+    """
+    Returns a string path, expanding the home directory if present.
+    """
+    return os.path.expanduser(path)
+
+
 @overload
 def _prepare_file_arg(
     file: Union[str, List[str], Path, BinaryIO, bytes], **kwargs: Any
@@ -114,15 +122,17 @@ def _prepare_file_arg(
     if isinstance(file, str):
         if _WITH_FSSPEC:
             if infer_storage_options(file)["protocol"] == "file":
-                return managed_file(file)
+                return managed_file(_format_path(file))
             return fsspec.open(file, **kwargs)
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
             if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                return managed_file(file)
+                return managed_file([_format_path(f) for f in file])
             return fsspec.open_files(file, **kwargs)
+    if isinstance(file, str):
+        file = _format_path(file)
     return managed_file(file)
 
 
