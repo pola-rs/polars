@@ -167,11 +167,11 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
     Expr::Function {
         input: by.as_ref().to_vec(),
         function,
-        output_type: GetOutput::from_type(DataType::UInt32),
+        output_type: GetOutput::from_type(IDX_DTYPE),
         options: FunctionOptions {
-            collect_groups: ApplyOptions::ApplyFlat,
+            collect_groups: ApplyOptions::ApplyGroups,
             input_wildcard_expansion: false,
-            auto_explode: true,
+            auto_explode: false,
             fmt_str: "argsort_by",
         },
     }
