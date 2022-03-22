@@ -175,8 +175,11 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn value_counts(&self) -> PyExpr {
-        self.inner.clone().value_counts().into()
+    pub fn value_counts(&self, multithreaded: bool) -> PyExpr {
+        self.inner.clone().value_counts(multithreaded).into()
+    }
+    pub fn unique_counts(&self) -> PyExpr {
+        self.inner.clone().unique_counts().into()
     }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;

@@ -92,6 +92,7 @@ features = [
   "product",
   "ndarray",
   "series_from_anyvalue",
+  "unique_counts",
 ]
 
 # [patch.crates-io]

@@ -61,6 +61,7 @@ random = ["polars-core/random"]
 dynamic_groupby = ["polars-core/dynamic_groupby"]
 ewma = ["polars-core/ewma"]
 dot_diagram = []
+unique_counts = ["polars-core/unique_counts"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]

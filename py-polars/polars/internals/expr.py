@@ -2786,9 +2786,14 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
-    def value_counts(self) -> "Expr":
+    def value_counts(self, multithreaded: bool = False) -> "Expr":
         """
         Count all unique values and create a struct mapping value to count
+
+        Parameters
+        ----------
+        multithreaded:
+            Better to turn this off in the aggregation context, as it can lead to contention.
 
         Returns
         -------
@@ -2821,7 +2826,43 @@ class Expr:
         └─────────────────────────────────────┘
 
         """
-        return wrap_expr(self._pyexpr.value_counts())
+        return wrap_expr(self._pyexpr.value_counts(multithreaded))
+
+    def unique_counts(self) -> "Expr":
+        """
+        Returns a count of the unique values in the order of appearance.
+
+        This method differs from `value_counts` in that it does not return the
+        values, only the counts and might be faster
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["a", "b", "b", "c", "c", "c"],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("id").unique_counts(),
+        ...     ]
+        ... )
+        shape: (3, 1)
+        ┌─────┐
+        │ id  │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
+        """
+        return wrap_expr(self._pyexpr.unique_counts())
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
