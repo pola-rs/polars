@@ -2070,6 +2070,24 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
+    /// Count all unique values and create a struct mapping value to count
+    pub fn value_counts(self) -> Self {
+        self.apply(
+            |s| {
+                s.value_counts()
+                    .map(|df| df.into_struct(s.name()).into_series())
+            },
+            GetOutput::map_field(|fld| {
+                Field::new(
+                    fld.name(),
+                    DataType::Struct(vec![fld.clone(), Field::new("counts", IDX_DTYPE)]),
+                )
+            }),
+        )
+    }
+
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)

@@ -175,6 +175,9 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
+    pub fn value_counts(&self) -> PyExpr {
+        self.inner.clone().value_counts().into()
+    }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;
         let expr = if strict {
