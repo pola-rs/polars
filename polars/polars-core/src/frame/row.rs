@@ -280,6 +280,7 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             Null => DataType::Null,
             Boolean(_) => DataType::Boolean,
             Utf8(_) => DataType::Utf8,
+            Utf8Owned(_) => DataType::Utf8,
             UInt32(_) => DataType::UInt32,
             UInt64(_) => DataType::UInt64,
             Int32(_) => DataType::Int32,
