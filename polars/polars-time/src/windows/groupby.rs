@@ -105,8 +105,6 @@ pub fn groupby_windows(
         }
 
         let first = i as IdxSize;
-        dbg!(start_offset);
-        dbg!(first);
 
         while i < time.len() {
             let t = time[i];
