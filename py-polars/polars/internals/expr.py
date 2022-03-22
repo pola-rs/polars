@@ -2786,6 +2786,43 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
 
+    def value_counts(self) -> "Expr":
+        """
+        Count all unique values and create a struct mapping value to count
+
+        Returns
+        -------
+        Dtype Struct
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["a", "b", "b", "c", "c", "c"],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("id").value_counts(),
+        ...     ]
+        ... )
+        shape: (3, 1)
+        ┌─────────────────────────────────────┐
+        │ id                                  │
+        │ ---                                 │
+        │ struct[2]{'id': str, 'counts': u32} │
+        ╞═════════════════════════════════════╡
+        │ {"c",3}                             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"b",2}                             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"a",1}                             │
+        └─────────────────────────────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.value_counts())
+
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
 

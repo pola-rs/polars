@@ -101,3 +101,24 @@ def test_struct_function_expansion() -> None:
         "a",
         "b",
     ]
+
+
+def test_value_counts_expr() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "b", "b", "c", "c", "c"],
+        }
+    )
+
+    out = (
+        df.select(
+            [
+                pl.col("id").value_counts(),
+            ]
+        )
+        .to_series()
+        .to_list()
+    )
+
+    out = sorted(out)  # type: ignore
+    assert out == [("a", 1), ("b", 2), ("c", 3)]

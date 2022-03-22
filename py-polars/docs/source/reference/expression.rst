@@ -160,6 +160,7 @@ Computations
     Expr.log
     Expr.log10
     Expr.exp
+    Expr.value_counts
 
 Manipulation/ selection
 -----------------------
