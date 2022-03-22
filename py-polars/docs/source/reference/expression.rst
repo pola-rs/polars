@@ -178,6 +178,7 @@ Manipulation/ selection
     Expr.cast
     Expr.sort
     Expr.arg_sort
+    Expr.argsort
     Expr.sort_by
     Expr.take
     Expr.shift

@@ -2233,9 +2233,7 @@ class Expr:
 
     def argsort(self, reverse: bool = False) -> "Expr":
         """
-        .. deprecated:: 0.13.14
-            Use :func:`arg_sort` instead.
-
+        alias for `arg_sort`
         """
         return self.arg_sort(reverse)
 
