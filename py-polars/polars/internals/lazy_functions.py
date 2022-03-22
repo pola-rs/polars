@@ -966,7 +966,8 @@ def arange(
 
 
 def argsort_by(
-    exprs: List[Union["pli.Expr", str]], reverse: Union[List[bool], bool] = False
+    exprs: Union[Union["pli.Expr", str], Sequence[Union["pli.Expr", str]]],
+    reverse: Union[List[bool], bool] = False,
 ) -> "pli.Expr":
     """
     Find the indexes that would sort the columns.
@@ -982,6 +983,8 @@ def argsort_by(
     reverse
         Default is ascending.
     """
+    if not isinstance(exprs, list):
+        exprs = [exprs]  # type: ignore
     if not isinstance(reverse, list):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)

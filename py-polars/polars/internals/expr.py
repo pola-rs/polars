@@ -970,6 +970,28 @@ class Expr:
         -------
         out
             Series of type UInt32
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arg_sort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
@@ -2211,37 +2233,9 @@ class Expr:
 
     def argsort(self, reverse: bool = False) -> "Expr":
         """
-        Index location of the sorted variant of this Series.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the ordering. Default is from low to high.
-
-        Examples
-        --------
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").arg_sort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 0   │
-        ├╌╌╌╌╌┤
-        │ 2   │
-        └─────┘
-
+        alias for `arg_sort`
         """
-        return pli.argsort_by([self], [reverse])
+        return self.arg_sort(reverse)
 
     def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
         """

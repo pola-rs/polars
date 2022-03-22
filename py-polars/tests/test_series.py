@@ -1032,10 +1032,10 @@ def test_argsort() -> None:
     s = pl.Series("a", [5, 3, 4, 1, 2])
     expected = pl.Series("a", [3, 4, 1, 2, 0], dtype=UInt32)
 
-    verify_series_and_expr_api(s, expected, "argsort")
+    assert s.argsort().series_equal(expected)
 
     expected_reverse = pl.Series("a", [0, 2, 1, 4, 3], dtype=UInt32)
-    verify_series_and_expr_api(s, expected_reverse, "argsort", True)
+    assert s.argsort(True).series_equal(expected_reverse)
 
 
 def test_arg_min_and_arg_max() -> None:

@@ -842,7 +842,7 @@ impl Expr {
         );
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
-            input_wildcard_expansion: false,
+            input_wildcard_expansion: true,
             auto_explode: false,
             fmt_str: "arg_sort",
         };

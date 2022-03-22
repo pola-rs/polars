@@ -95,3 +95,17 @@ def test_argsort_nulls() -> None:
     ]
     with pytest.raises(ValueError):
         a.to_frame().sort(by=["a", "b"], nulls_last=True)
+
+
+def test_argsort_window_functions() -> None:
+    df = pl.DataFrame({"Id": [1, 1, 2, 2, 3, 3], "Age": [1, 2, 3, 4, 5, 6]})
+    out = df.select(
+        [
+            pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
+            pl.argsort_by("Age").over("Id").alias("argsort_by"),
+        ]
+    )
+
+    assert (
+        out["arg_sort"].to_list() == out["argsort_by"].to_list() == [0, 1, 0, 1, 0, 1]
+    )
