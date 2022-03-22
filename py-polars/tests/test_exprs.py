@@ -156,3 +156,9 @@ def test_unique_and_drop_stability() -> None:
     # meaning that the a.unique was executed twice, which is an unstable algorithm
     df = pl.DataFrame({"a": [1, None, 1, None]})
     assert df.select(pl.col("a").unique().drop_nulls()).to_series()[0] == 1
+
+
+def test_unique_counts() -> None:
+    s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
+    expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "unique_counts")

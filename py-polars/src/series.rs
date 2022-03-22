@@ -508,7 +508,7 @@ impl PySeries {
     }
 
     pub fn value_counts(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.value_counts().map_err(PyPolarsErr::from)?;
+        let df = self.series.value_counts(true).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 

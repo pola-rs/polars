@@ -901,6 +901,25 @@ class Series:
         """
         return pli.wrap_df(self._s.value_counts())
 
+    def unique_counts(self) -> "Series":
+        """
+        Returns a count of the unique values in the order of appearance.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
+        >>> s.unique_counts()
+        shape: (3,)
+        Series: 'id' [u32]
+        [
+            1
+            2
+            3
+        ]
+        """
+        return pli.select(pli.lit(self).unique_counts()).to_series()
+
     @property
     def name(self) -> str:
         """

@@ -2073,10 +2073,11 @@ impl Expr {
     #[cfg(feature = "dtype-struct")]
     #[cfg_attr(docsrs, doc(cfg(feature = "dtype-struct")))]
     /// Count all unique values and create a struct mapping value to count
-    pub fn value_counts(self) -> Self {
+    /// Note that it is better to turn multithreaded off in the aggregation context
+    pub fn value_counts(self, multithreaded: bool) -> Self {
         self.apply(
-            |s| {
-                s.value_counts()
+            move |s| {
+                s.value_counts(multithreaded)
                     .map(|df| df.into_struct(s.name()).into_series())
             },
             GetOutput::map_field(|fld| {
@@ -2086,6 +2087,20 @@ impl Expr {
                 )
             }),
         )
+        .with_fmt("value_counts")
+    }
+
+    #[cfg(feature = "unique_counts")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "unique_counts")))]
+    /// Returns a count of the unique values in the order of appearance.
+    /// This method differs from [`Expr::value_counts]` in that it does not return the
+    /// values, only the counts and might be faster
+    pub fn unique_counts(self) -> Self {
+        self.apply(
+            |s| Ok(s.unique_counts().into_series()),
+            GetOutput::from_type(IDX_DTYPE),
+        )
+        .with_fmt("unique_counts")
     }
 
     #[cfg(feature = "strings")]
