@@ -162,3 +162,23 @@ def test_unique_counts() -> None:
     s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
     expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
     verify_series_and_expr_api(s, expected, "unique_counts")
+
+
+def test_entropy() -> None:
+    df = pl.DataFrame({"id": [1, 1, 2, 2, 3]})
+    assert (
+        df.select(
+            [
+                (
+                    -(
+                        pl.col("id").unique_counts()
+                        / pl.count()
+                        * (pl.col("id").unique_counts() / pl.count()).log()
+                    ).sum()
+                ).alias("e0"),
+                ((pl.col("id").unique_counts() / pl.count()).entropy()).alias("e1"),
+            ]
+        ).rows()
+        == [(1.0549201679861442, 1.0549201679861442)]
+    )
+    assert df["id"].entropy() == -6.068425588244111

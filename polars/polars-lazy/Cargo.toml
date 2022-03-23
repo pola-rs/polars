@@ -62,6 +62,7 @@ dynamic_groupby = ["polars-core/dynamic_groupby"]
 ewma = ["polars-core/ewma"]
 dot_diagram = []
 unique_counts = ["polars-core/unique_counts"]
+log = ["polars-core/log"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
