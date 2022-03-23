@@ -288,29 +288,9 @@ impl PhysicalAggregation for BinaryExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
-            (Ok(left), Ok(right)) => {
-                let (left_agg, right_agg) = POOL.install(|| {
-                    rayon::join(
-                        || left.aggregate(df, groups, state),
-                        || right.aggregate(df, groups, state),
-                    )
-                });
-                let right_agg = right_agg?;
-                left_agg?
-                    .and_then(|left| right_agg.map(|right| apply_operator(&left, &right, self.op)))
-                    .transpose()
-            }
-            (_, _) => Err(PolarsError::ComputeError(
-                format!(
-                    "this binary expression is not an aggregation: {:?}
-                pherhaps you should add an aggregation like, '.sum()', '.min()', '.mean()', etc.
-                if you really want to collect this binary expression, use `.list()`",
-                    self.expr
-                )
-                .into(),
-            )),
-        }
+        let mut ac = self.evaluate_on_groups(df, groups, state)?;
+        let s = ac.aggregated();
+        Ok(Some(s))
     }
 }
 

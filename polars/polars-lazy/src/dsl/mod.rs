@@ -639,12 +639,12 @@ impl Expr {
 
     /// Drop null values
     pub fn drop_nulls(self) -> Self {
-        self.map(|s| Ok(s.drop_nulls()), GetOutput::same_type())
+        self.apply(|s| Ok(s.drop_nulls()), GetOutput::same_type())
     }
 
     /// Drop NaN values
     pub fn drop_nans(self) -> Self {
-        self.map(
+        self.apply(
             |s| match s.dtype() {
                 DataType::Float32 => {
                     let ca = s.f32()?;
