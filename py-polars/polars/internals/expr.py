@@ -13,6 +13,8 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+import math
+
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -232,20 +234,11 @@ class Expr:
         """
         return self ** 0.5
 
-    def log(self) -> "Expr":
-        """
-        Natural logarithm, element-wise.
-
-        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
-        The natural logarithm is logarithm in base e.
-        """
-        return np.log(self)  # type: ignore
-
     def log10(self) -> "Expr":
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
-        return np.log10(self)  # type: ignore
+        return self.log(10.0)
 
     def exp(self) -> "Expr":
         """
@@ -2863,6 +2856,29 @@ class Expr:
 
         """
         return wrap_expr(self._pyexpr.unique_counts())
+
+    def log(self, base: float = math.e) -> "Expr":
+        """
+        Compute the logarithm to a given base
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        """
+        return wrap_expr(self._pyexpr.log(base))
+
+    def entropy(self, base: float = math.e) -> "Expr":
+        """
+        Compute the entropy as `-sum(pk * log(pk)`.
+        where `pk` are discrete probabilities.
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        """
+        return wrap_expr(self._pyexpr.entropy(base))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"

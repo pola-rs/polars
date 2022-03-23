@@ -23,6 +23,8 @@ try:
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
+import math
+
 from polars import internals as pli
 from polars.internals.construction import (
     arrow_to_pyseries,
@@ -539,14 +541,11 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).all()).to_series()
 
-    def log(self) -> "Series":
+    def log(self, base: float = math.e) -> "Series":
         """
-        Natural logarithm, element-wise.
-
-        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
-        The natural logarithm is logarithm in base e.
+        Compute the logarithm to a given base
         """
-        return np.log(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> "Series":
         """
@@ -919,6 +918,13 @@ class Series:
         ]
         """
         return pli.select(pli.lit(self).unique_counts()).to_series()
+
+    def entropy(self, base: float = math.e) -> Optional[float]:
+        """
+        Compute the entropy as `-sum(pk * log(pk)`.
+        where `pk` are discrete probabilities.
+        """
+        return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
     @property
     def name(self) -> str:

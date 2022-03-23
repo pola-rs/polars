@@ -219,6 +219,7 @@
 //!     - `diff` - `diff` operation.
 //!     - `pct_change` - Compute change percentages.
 //!     - `unique_counts` - Count unique values in expressions.
+//!     - `log` - Logarithms for `Series`.
 //! * `DataFrame` pretty printing (Choose one or none, but not both):
 //!     - `fmt` - Activate DataFrame formatting
 //!

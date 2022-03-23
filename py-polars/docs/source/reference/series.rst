@@ -129,6 +129,7 @@ Computations
     Series.pct_change
     Series.skew
     Series.kurtosis
+    Series.entropy
     Series.sqrt
     Series.sin
     Series.cos

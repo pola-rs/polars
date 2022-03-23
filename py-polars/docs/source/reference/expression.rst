@@ -150,6 +150,7 @@ Computations
     Expr.pct_change
     Expr.skew
     Expr.kurtosis
+    Expr.entropy
     Expr.sqrt
     Expr.sin
     Expr.cos

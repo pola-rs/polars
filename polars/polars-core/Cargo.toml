@@ -76,6 +76,7 @@ ewma = ["polars-utils"]
 dataframe_arithmetic = []
 product = []
 unique_counts = []
+log = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -135,6 +136,7 @@ docs-selection = [
   "string_encoding",
   "product",
   "unique_counts",
+  "log",
 ]
 
 [dependencies]

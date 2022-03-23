@@ -2103,6 +2103,41 @@ impl Expr {
         .with_fmt("unique_counts")
     }
 
+    #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
+    /// Compute the logarithm to a given base
+    pub fn log(self, base: f64) -> Self {
+        self.map(
+            move |s| Ok(s.log(base)),
+            GetOutput::map_dtype(|dt| {
+                if matches!(dt, DataType::Float32) {
+                    DataType::Float32
+                } else {
+                    DataType::Float64
+                }
+            }),
+        )
+        .with_fmt("log")
+    }
+
+    #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
+    /// Compute the entropy as `-sum(pk * log(pk)`.
+    /// where `pk` are discrete probabilities.
+    pub fn entropy(self, base: f64) -> Self {
+        self.apply(
+            move |s| Ok(Series::new(s.name(), [s.entropy(base)])),
+            GetOutput::map_dtype(|dt| {
+                if matches!(dt, DataType::Float32) {
+                    DataType::Float32
+                } else {
+                    DataType::Float64
+                }
+            }),
+        )
+        .with_fmt("entropy")
+    }
+
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)

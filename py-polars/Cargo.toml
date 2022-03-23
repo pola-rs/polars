@@ -93,6 +93,7 @@ features = [
   "ndarray",
   "series_from_anyvalue",
   "unique_counts",
+  "log",
 ]
 
 # [patch.crates-io]
