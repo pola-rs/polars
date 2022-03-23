@@ -31,8 +31,9 @@ impl Executor for StackExec {
         state.clear_schema_cache();
         state.clear_expr_cache();
 
+        let schema = &*self.input_schema;
         for s in res {
-            df.with_column(s)?;
+            df.with_column_and_schema(s, schema)?;
         }
 
         Ok(df)

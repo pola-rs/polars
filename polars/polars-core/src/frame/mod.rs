@@ -1006,6 +1006,15 @@ impl DataFrame {
         self.insert_at_idx_no_name_check(index, series)
     }
 
+    fn add_column_by_search(&mut self, series: Series) -> Result<()> {
+        if let Some(idx) = self.find_idx_by_name(series.name()) {
+            self.replace_at_idx(idx, series)?;
+        } else {
+            self.columns.push(series);
+        }
+        Ok(())
+    }
+
     /// Add a new column to this `DataFrame` or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let mut series = column.into_series();
@@ -1016,17 +1025,13 @@ impl DataFrame {
         }
 
         if series.len() == height || self.is_empty() {
-            if let Some(idx) = self.find_idx_by_name(series.name()) {
-                self.replace_at_idx(idx, series)?;
-            } else {
-                self.columns.push(series);
-            }
+            self.add_column_by_search(series)?;
             Ok(self)
         }
         // special case for literals
         else if height == 0 && series.len() == 1 {
             let s = series.slice(0, 0);
-            self.columns.push(s);
+            self.add_column_by_search(s)?;
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -1036,6 +1041,56 @@ impl DataFrame {
                     self.height()
                 )
                 .into(),
+            ))
+        }
+    }
+
+    fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> Result<()> {
+        if let Some((idx, name, _)) = schema.get_full(s.name()) {
+            // schema is incorrect fallback to search
+            if name != s.name() {
+                self.add_column_by_search(s)?;
+            } else {
+                self.replace_at_idx(idx, s)?;
+            }
+        } else {
+            self.columns.push(s);
+        }
+        Ok(())
+    }
+
+    /// Add a new column to this `DataFrame` or replace an existing one.
+    /// Uses an existing schema to amortize lookups.
+    /// If the schema is incorrect, we will fallback to linear search.
+    pub fn with_column_and_schema<S: IntoSeries>(
+        &mut self,
+        column: S,
+        schema: &Schema,
+    ) -> Result<&mut Self> {
+        let mut series = column.into_series();
+
+        let height = self.height();
+        if series.len() == 1 && height > 1 {
+            series = series.expand_at_index(0, height);
+        }
+
+        if series.len() == height || self.is_empty() {
+            self.add_column_by_schema(series, schema)?;
+            Ok(self)
+        }
+        // special case for literals
+        else if height == 0 && series.len() == 1 {
+            let s = series.slice(0, 0);
+            self.add_column_by_schema(s, schema)?;
+            Ok(self)
+        } else {
+            Err(PolarsError::ShapeMisMatch(
+                format!(
+                    "Could not add column. The Series length {} differs from the DataFrame height: {}",
+                    series.len(),
+                    self.height()
+                )
+                    .into(),
             ))
         }
     }
