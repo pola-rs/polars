@@ -11,6 +11,8 @@ description = "private utils for the polars dataframe library"
 [dependencies]
 parking_lot = "0.12"
 rayon = "1.5"
+chrono = "0.4"
+lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 
 [features]
 bigidx = []
