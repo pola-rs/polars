@@ -86,6 +86,7 @@ test = [
   "abs",
   "parquet",
   "ipc",
+  "dtype-date",
 ]
 
 [dependencies]
