@@ -983,3 +983,18 @@ fn test_parse_dates() -> Result<()> {
     assert_eq!(out.column("date")?.null_count(), 1);
     Ok(())
 }
+
+#[test]
+fn test_whitespace_skipping() -> Result<()> {
+    let csv = "a,b
+  12,   1435";
+    let file = Cursor::new(csv);
+    let out = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [12i64],
+        "b" => [1435i64],
+    ]?;
+    assert!(out.frame_equal(&expected));
+
+    Ok(())
+}
