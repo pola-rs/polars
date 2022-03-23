@@ -1,5 +1,6 @@
 use crate::csv::CsvEncoding;
 use crate::csv_core::csv::RunningSize;
+use crate::csv_core::parser::{is_whitespace, skip_whitespace};
 use crate::csv_core::utils::escape_field;
 use arrow::array::Utf8Array;
 use arrow::bitmap::MutableBitmap;
@@ -85,10 +86,20 @@ where
             // its faster to work on options.
             // if we need to throw an error, we parse again to be able to throw the error
 
-            match (T::parse(bytes), ignore_errors) {
-                (Some(value), _) => self.append_value(value),
-                (None, true) => self.append_null(),
-                (None, _) => return Err(PolarsError::ComputeError("".into())),
+            match T::parse(bytes) {
+                Some(value) => self.append_value(value),
+                None => {
+                    // try again without whitespace
+                    if is_whitespace(bytes[0]) {
+                        let bytes = skip_whitespace(bytes);
+                        return self.parse_bytes(bytes, ignore_errors, needs_escaping);
+                    }
+                    if ignore_errors {
+                        self.append_null()
+                    } else {
+                        return Err(PolarsError::ComputeError("".into()));
+                    }
+                }
             };
         }
         Ok(())
