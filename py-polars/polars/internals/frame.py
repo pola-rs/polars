@@ -1029,6 +1029,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
         has_header: bool = True,
         sep: str = ",",
+        quote: str = '"',
     ) -> Optional[str]:
         """
         Write Dataframe to comma-separated values file (csv).
@@ -1041,6 +1042,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Whether to include header in the CSV output.
         sep
             Separate CSV fields with this symbol.
+        quote
+            byte to use as quoting character
 
         Examples
         --------
@@ -1055,15 +1058,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
         >>> df.write_csv("new_file.csv", sep=",")
 
         """
+        if len(sep) > 1:
+            raise ValueError("only single byte separator is allowed")
+        if len(quote) > 1:
+            raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_header, ord(sep))
+            self._df.to_csv(buffer, has_header, ord(sep), ord(quote))
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, Path):
             file = str(file)
 
-        self._df.to_csv(file, has_header, ord(sep))
+        self._df.to_csv(file, has_header, ord(sep), ord(quote))
         return None
 
     def to_csv(

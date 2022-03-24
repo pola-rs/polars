@@ -135,6 +135,12 @@ where
         self.options.timestamp_format = format;
         self
     }
+
+    /// Set the single byte character used for quoting
+    pub fn with_quoting_char(mut self, char: u8) -> Self {
+        self.options.quote = char;
+        self
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
