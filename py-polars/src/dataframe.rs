@@ -358,11 +358,12 @@ impl PyDataFrame {
         Ok(pydf)
     }
 
-    pub fn to_csv(&mut self, py_f: PyObject, has_header: bool, sep: u8) -> PyResult<()> {
+    pub fn to_csv(&mut self, py_f: PyObject, has_header: bool, sep: u8, quote: u8) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
         CsvWriter::new(&mut buf)
             .has_header(has_header)
             .with_delimiter(sep)
+            .with_quoting_char(quote)
             .finish(&mut self.df)
             .map_err(PyPolarsErr::from)?;
         Ok(())
