@@ -155,7 +155,7 @@ impl PhysicalExpr for BinaryExpr {
                         opt_s
                             .map(|s| {
                                 let r = s.as_ref();
-                                // TODO: optimize this? Its slow and unsafe.
+                                // TODO: optimize this?
 
                                 // Safety:
                                 // we are in bounds
@@ -221,7 +221,14 @@ impl PhysicalExpr for BinaryExpr {
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
-                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                // Todo! maybe always update with groups len here?
+                if matches!(ac_l.update_groups, UpdateGroups::WithSeriesLen)
+                    || matches!(ac_r.update_groups, UpdateGroups::WithSeriesLen)
+                {
+                    ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+                } else {
+                    ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                }
                 Ok(ac_l)
             }
             (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_), _)

@@ -89,7 +89,7 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &keep_name))
             }
             GroupByMethod::Count => {
-                let mut ca = ac.groups.group_count();
+                let mut ca = ac.groups().group_count();
                 ca.rename(&keep_name);
                 Ok(Some(ca.into_series()))
             }
