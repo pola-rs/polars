@@ -28,7 +28,7 @@ fn any_values_to_bool(avs: &[AnyValue]) -> BooleanChunked {
 fn any_values_to_list(avs: &[AnyValue]) -> ListChunked {
     avs.iter()
         .map(|av| match av {
-            AnyValue::List(b) => Some(b),
+            AnyValue::List(b) => Some(b.clone()),
             _ => None,
         })
         .collect_trusted()

@@ -122,8 +122,8 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         let dt = series_slice[0].dtype();
 
         // inner type is also list so we need the anonymous builder
-        if matches!(dt, DataType::List(_)) {
-            let mut builder = AnonymousListBuilder::new(name, list_cap);
+        if let DataType::List(inner) = dt {
+            let mut builder = AnonymousListBuilder::new(name, list_cap, *inner.clone());
             for s in series_slice {
                 builder.append_series(s)
             }

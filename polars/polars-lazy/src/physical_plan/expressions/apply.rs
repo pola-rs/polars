@@ -49,6 +49,13 @@ impl ApplyExpr {
     }
 }
 
+fn all_unit_length(ca: &ListChunked) -> bool {
+    assert_eq!(ca.chunks().len(), 1);
+    let list_arr = ca.downcast_iter().next().unwrap();
+    let offset = list_arr.offsets().as_slice();
+    (offset[offset.len() - 1] as usize) == list_arr.len() as usize
+}
+
 impl PhysicalExpr for ApplyExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
@@ -77,39 +84,24 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            // a unique or a sort
-            let mut update_group_tuples = false;
-
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
-                    let mut container = [Default::default()];
                     let name = ac.series().name().to_string();
-
-                    let mut all_unit_len = true;
 
                     let mut ca: ListChunked = ac
                         .aggregated()
                         .list()
                         .unwrap()
-                        .into_iter()
+                        .par_iter()
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
-                                let in_len = s.len();
-                                container[0] = s;
-                                self.function.call_udf(&mut container).ok().map(|s| {
-                                    let len = s.len();
-                                    if len != in_len {
-                                        update_group_tuples = true;
-                                    };
-                                    if len != 1 {
-                                        all_unit_len = false;
-                                    }
-
-                                    s
-                                })
+                                let mut container = [s];
+                                self.function.call_udf(&mut container).ok()
                             })
                         })
                         .collect();
+
+                    let all_unit_len = all_unit_length(&ca);
 
                     ca.rename(&name);
                     let ac = self.finish_apply_groups(ac, ca, all_unit_len);
@@ -145,7 +137,7 @@ impl PhysicalExpr for ApplyExpr {
                     let name = acs[0].series().name().to_string();
 
                     // aggregate representation of the aggregation contexts
-                    // then unpack the lists and finaly create iterators from this list chunked arrays.
+                    // then unpack the lists and finally create iterators from this list chunked arrays.
                     let lists = acs
                         .iter_mut()
                         .map(|ac| {
@@ -160,7 +152,6 @@ impl PhysicalExpr for ApplyExpr {
 
                     // length of the items to iterate over
                     let len = lists[0].len();
-                    let mut all_unit_len = true;
 
                     let mut ca: ListChunked = (0..len)
                         .map(|_| {
@@ -171,15 +162,11 @@ impl PhysicalExpr for ApplyExpr {
                                     Some(s) => container.push(s),
                                 }
                             }
-                            self.function.call_udf(&mut container).ok().map(|s| {
-                                if s.len() != 1 {
-                                    all_unit_len = false;
-                                }
-                                s
-                            })
+                            self.function.call_udf(&mut container).ok()
                         })
                         .collect_trusted();
                     ca.rename(&name);
+                    let all_unit_len = all_unit_length(&ca);
                     let ac = acs.pop().unwrap();
                     let ac = self.finish_apply_groups(ac, ca, all_unit_len);
                     Ok(ac)
