@@ -94,3 +94,15 @@ def test_window_function_cache() -> None:
     ]
     assert out["values_flat"].to_list() == [0, 1, 2, 3, 4]
     assert out["values_rev"].to_list() == [1, 0, 4, 3, 2]
+
+
+def test_arange_no_rows() -> None:
+    df = pl.DataFrame(dict(x=[5, 5, 4, 4, 2, 2]))
+    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore
+    assert out.frame_equal(
+        pl.DataFrame({"x": [5, 5, 4, 4, 2, 2], "literal": [0, 1, 0, 1, 0, 1]})
+    )
+
+    df = pl.DataFrame(dict(x=[]))
+    out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore
+    assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))

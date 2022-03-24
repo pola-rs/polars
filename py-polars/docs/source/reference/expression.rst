@@ -40,6 +40,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    groups
    quantile
    arange
+   repeat
    argsort_by
    concat_str
    concat_list

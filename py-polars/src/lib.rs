@@ -41,10 +41,11 @@ use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
 use dsl::ToExprs;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
+use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -106,8 +107,36 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
+fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
     polars::lazy::dsl::arange(low.inner, high.inner, step).into()
+}
+
+#[pyfunction]
+fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
+    if let Ok(true) = value.is_instance::<PyBool>() {
+        let val = value.extract::<bool>().unwrap();
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if let Ok(int) = value.downcast::<PyInt>() {
+        let val = int.extract::<i64>().unwrap();
+
+        if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+            polars::lazy::dsl::repeat(val as i32, n_times.inner).into()
+        } else {
+            polars::lazy::dsl::repeat(val, n_times.inner).into()
+        }
+    } else if let Ok(float) = value.downcast::<PyFloat>() {
+        let val = float.extract::<f64>().unwrap();
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        let val = pystr
+            .to_str()
+            .expect("could not transform Python string to Rust Unicode");
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if value.is_none() {
+        polars::lazy::dsl::repeat(Null {}, n_times.inner).into()
+    } else {
+        panic!("could not convert value {:?} as a Literal", value)
+    }
 }
 
 #[pyfunction]
@@ -412,5 +441,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     Ok(())
 }

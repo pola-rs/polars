@@ -38,3 +38,13 @@ def test_type_coercion_when_then_otherwise_2806() -> None:
         .to_frame()
         .select(pl.when(pl.col("a") > 2.0).then(pl.col("a")).otherwise(0.0))
     ).to_series().dtype == pl.Float32
+
+
+def test_repeat_expansion_in_groupby() -> None:
+    out = (
+        pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
+        .groupby("g", maintain_order=True)
+        .agg(pl.repeat(1, pl.count()).cumsum())
+        .to_dict()
+    )
+    assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}

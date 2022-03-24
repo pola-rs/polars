@@ -54,13 +54,7 @@ from polars.internals.frame import (  # flake8: noqa # TODO: remove need for wra
     DataFrame,
     wrap_df,
 )
-from polars.internals.functions import (
-    arg_where,
-    concat,
-    date_range,
-    get_dummies,
-    repeat,
-)
+from polars.internals.functions import arg_where, concat, date_range, get_dummies
 from polars.internals.lazy_frame import LazyFrame
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
@@ -94,6 +88,7 @@ from polars.internals.lazy_functions import (
     n_unique,
     pearson_corr,
     quantile,
+    repeat,
     select,
     spearman_rank_corr,
     std,

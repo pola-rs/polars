@@ -381,10 +381,31 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
             AggState::Literal(s) => {
                 self.groups();
-                // todo! optimize this, we don't have to call agg_list, create the list directly.
-                let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
-                s.agg_list(&self.groups).unwrap()
+                let rows = self.groups.len();
+                let s = s.expand_at_index(0, rows);
+                s.reshape(&[rows as i64, -1]).unwrap()
             }
+        }
+    }
+
+    /// Different from aggregated, in arity operations we expect literals to expand to the size of the
+    /// group
+    /// eg:
+    ///
+    /// lit(9) in groups [[1, 1], [2, 2, 2]]
+    /// becomes: [[9, 9], [9, 9, 9]]
+    ///
+    /// where in [`Self::aggregated`] this becomes [9, 9]
+    ///
+    /// this is because comparisons need to create mask that have a correct length.
+    fn aggregated_arity_operation(&mut self) -> Series {
+        if let AggState::Literal(s) = self.agg_state() {
+            let s = s.clone();
+            // // todo! optimize this, we don't have to call agg_list, create the list directly.
+            let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
+            s.agg_list(&self.groups).unwrap()
+        } else {
+            self.aggregated()
         }
     }
 

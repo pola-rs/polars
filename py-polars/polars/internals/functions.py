@@ -2,7 +2,6 @@ from datetime import datetime, timedelta
 from typing import Optional, Sequence, Union, overload
 
 from polars import internals as pli
-from polars.datatypes import py_type_to_dtype
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_duration,
@@ -126,29 +125,6 @@ def concat(
     if rechunk:
         return out.rechunk()
     return out
-
-
-def repeat(
-    val: Union[int, float, str, bool], n: int, name: Optional[str] = None
-) -> "pli.Series":
-    """
-    Repeat a single value n times and collect into a Series.
-
-    Parameters
-    ----------
-    val
-        Value to repeat.
-    n
-        Number of repeats.
-    name
-        Optional name of the Series.
-    """
-    if name is None:
-        name = ""
-
-    dtype = py_type_to_dtype(type(val))
-    s = pli.Series._repeat(name, val, n, dtype)
-    return s
 
 
 def arg_where(mask: "pli.Series") -> "pli.Series":

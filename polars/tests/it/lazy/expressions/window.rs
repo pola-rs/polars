@@ -172,7 +172,7 @@ fn test_literal_window_fn() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([lit(1)
+        .select([repeat(1, count())
             .cumsum(false)
             .list()
             .over([col("chars")])
