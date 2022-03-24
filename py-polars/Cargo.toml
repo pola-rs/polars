@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.14"
+version = "0.13.15"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -104,10 +104,10 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
-# strip = true
-# codegen-units = 1
-# lto = "fat"
+strip = true
+codegen-units = 1
+lto = "fat"
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
-target-cpu = "native"
+# target-cpu = "native"
