@@ -512,17 +512,17 @@ def test_object() -> None:
 
 
 def test_repeat() -> None:
-    s = pl.repeat(1, 10)
+    s = pl.repeat(1, 10, eager=True)
     assert s.dtype == pl.Int64
     assert s.len() == 10
-    s = pl.repeat("foo", 10)
+    s = pl.repeat("foo", 10, eager=True)
     assert s.dtype == pl.Utf8
     assert s.len() == 10
-    s = pl.repeat(1.0, 5)
+    s = pl.repeat(1.0, 5, eager=True)
     assert s.dtype == pl.Float64
     assert s.len() == 5
     assert s == [1.0, 1.0, 1.0, 1.0, 1.0]
-    s = pl.repeat(True, 5)
+    s = pl.repeat(True, 5, eager=True)
     assert s.dtype == pl.Boolean
     assert s.len() == 5
 
@@ -619,8 +619,8 @@ def test_arange_expr() -> None:
     assert out2 == [0, 2, 4, 8, 8]
 
     out3 = pl.arange(pl.Series([0, 19]), pl.Series([3, 39]), step=2, eager=True)
-    assert out3.dtype == pl.List  # type: ignore
-    assert out3[0].to_list() == [0, 2]  # type: ignore
+    assert out3.dtype == pl.List
+    assert out3[0].to_list() == [0, 2]
 
 
 def test_round() -> None:
@@ -631,7 +631,7 @@ def test_round() -> None:
 
 def test_apply_list_out() -> None:
     s = pl.Series("count", [3, 2, 2])
-    out = s.apply(lambda val: pl.repeat(val, val))
+    out = s.apply(lambda val: pl.repeat(val, val, eager=True))
     assert out[0] == [3, 3, 3]
     assert out[1] == [2, 2]
     assert out[2] == [2, 2]

@@ -132,7 +132,7 @@ impl PhysicalExpr for BinaryExpr {
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
-                let l = ac_l.aggregated();
+                let l = ac_l.aggregated_arity_operation();
                 let l = l.as_ref();
                 let arr_l = &l.chunks()[0];
 
@@ -145,7 +145,7 @@ impl PhysicalExpr for BinaryExpr {
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
-                let r = ac_r.aggregated();
+                let r = ac_r.aggregated_arity_operation();
                 let r = r.list().unwrap();
 
                 let mut ca: ListChunked = r
@@ -182,11 +182,11 @@ impl PhysicalExpr for BinaryExpr {
                 _,
             ) if s.len() != df.height() => {
                 // this is now a list
-                let l = ac_l.aggregated();
+                let l = ac_l.aggregated_arity_operation();
                 let l = l.list().unwrap();
 
                 // this is a flat series of len eq to group tuples
-                let r = ac_r.aggregated();
+                let r = ac_r.aggregated_arity_operation();
                 assert_eq!(l.len(), groups.len());
                 let r = r.as_ref();
                 let arr_r = &r.chunks()[0];
@@ -289,7 +289,7 @@ impl PhysicalAggregation for BinaryExpr {
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
         let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
+        let s = ac.aggregated_arity_operation();
         Ok(Some(s))
     }
 }

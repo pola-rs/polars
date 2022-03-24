@@ -1483,6 +1483,8 @@ impl Expr {
 
     #[cfg(feature = "repeat_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    /// Repeat the column `n` times, where `n` is determined by the values in `by`.
+    /// This yields an `Expr` of dtype `List`
     pub fn repeat_by(self, by: Expr) -> Expr {
         let function = |s: &mut [Series]| {
             let by = &s[1];
@@ -1491,7 +1493,7 @@ impl Expr {
             Ok(s.repeat_by(by.idx()?).into_series())
         };
 
-        self.map_many(
+        self.apply_many(
             function,
             &[by],
             GetOutput::map_dtype(|dt| DataType::List(dt.clone().into())),

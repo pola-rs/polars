@@ -69,7 +69,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
-                let truthy = ac_truthy.aggregated();
+                let truthy = ac_truthy.aggregated_arity_operation();
                 let truthy = truthy.as_ref();
                 let arr_truthy = &truthy.chunks()[0];
                 assert_eq!(truthy.len(), groups.len());
@@ -81,11 +81,11 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
-                let falsy = ac_falsy.aggregated();
+                let falsy = ac_falsy.aggregated_arity_operation();
                 let falsy = falsy.as_ref();
                 let falsy = falsy.list().unwrap();
 
-                let mask = ac_mask.aggregated();
+                let mask = ac_mask.aggregated_arity_operation();
                 let mask = mask.as_ref();
                 let mask = mask.list()?;
                 if !matches!(mask.inner_dtype(), DataType::Boolean) {
@@ -128,12 +128,12 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 if s.len() != df.height() =>
             {
                 // this is now a list
-                let truthy = ac_truthy.aggregated();
+                let truthy = ac_truthy.aggregated_arity_operation();
                 let truthy = truthy.as_ref();
                 let truthy = truthy.list().unwrap();
 
                 // this is a flat series of len eq to group tuples
-                let falsy = ac_falsy.aggregated();
+                let falsy = ac_falsy.aggregated_arity_operation();
                 assert_eq!(falsy.len(), groups.len());
                 let falsy = falsy.as_ref();
                 let arr_falsy = &falsy.chunks()[0];
@@ -144,7 +144,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 let dummy = Series::try_from(("dummy", vec![arr_falsy.clone()])).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
-                let mask = ac_mask.aggregated();
+                let mask = ac_mask.aggregated_arity_operation();
                 let mask = mask.as_ref();
                 let mask = mask.list()?;
                 if !matches!(mask.inner_dtype(), DataType::Boolean) {

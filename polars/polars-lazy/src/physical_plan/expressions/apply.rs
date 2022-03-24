@@ -149,7 +149,10 @@ impl PhysicalExpr for ApplyExpr {
                     let lists = acs
                         .iter_mut()
                         .map(|ac| {
-                            let s = ac.aggregated();
+                            let s = match ac.agg_state() {
+                                AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                                _ => ac.aggregated(),
+                            };
                             s.list().unwrap().clone()
                         })
                         .collect::<Vec<_>>();

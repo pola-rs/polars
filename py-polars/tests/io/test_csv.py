@@ -382,3 +382,21 @@ def test_escaped_null_values() -> None:
     assert df[1, "a"] is None
     assert df[0, "b"] is None
     assert df[0, "c"] is None
+
+
+def quoting_round_trip() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame(
+        {
+            "a": [
+                "tab,separated,field",
+                "newline\nseparated\nfield",
+                'quote"separated"field',
+            ]
+        }
+    )
+    df.write_csv(f)
+    f.seek(0)
+    read_df = pl.read_csv(f)
+
+    assert read_df.frame_equal(df)

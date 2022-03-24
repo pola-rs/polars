@@ -1,11 +1,17 @@
+import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
+
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import DataType, Date, Datetime, Duration
+from polars.datatypes import DataType, Date, Datetime, Duration, py_type_to_dtype
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
@@ -35,6 +41,7 @@ try:
     from polars.polars import min_exprs as _min_exprs
     from polars.polars import pearson_corr as pypearson_corr
     from polars.polars import py_datetime
+    from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
@@ -930,10 +937,44 @@ def quantile(
     return col(column).quantile(quantile, interpolation)
 
 
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: Literal[False],
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: Literal[True],
+) -> "pli.Series":
+    ...
+
+
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
 def arange(
     low: Union[int, "pli.Expr", "pli.Series"],
     high: Union[int, "pli.Expr", "pli.Series"],
     step: int = 1,
+    *,
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     """
@@ -1364,3 +1405,69 @@ def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
     """
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_as_struct(exprs))
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: Literal[False] = ...,
+    name: Optional[str] = ...,
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: Literal[True],
+    name: Optional[str] = ...,
+) -> "pli.Series":
+    ...
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: bool,
+    name: Optional[str],
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: bool = False,
+    name: Optional[str] = None,
+) -> Union["pli.Expr", "pli.Series"]:
+    """
+    Repeat a single value n times.
+
+    Parameters
+    ----------
+    value
+        Value to repeat.
+    n
+        repeat `n` times
+    eager
+        Run eagerly and collect into a `Series`
+    name
+        Only used in `eager` mode. As expression, us `alias`
+    """
+    if eager:
+        if name is None:
+            name = ""
+        dtype = py_type_to_dtype(type(value))
+        s = pli.Series._repeat(name, value, n, dtype)  # type: ignore
+        return s
+    else:
+        if isinstance(n, int):
+            n = lit(n)
+        return pli.wrap_expr(_repeat(value, n._pyexpr))

@@ -259,7 +259,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
                 Ok(Int64Chunked::from_iter_values("arange", low..high).into_series())
             }
         };
-        map_binary(
+        apply_binary(
             low,
             high,
             f,
@@ -293,7 +293,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
 
             Ok(builder.finish().into_series())
         };
-        map_binary(
+        apply_binary(
             low,
             high,
             f,
@@ -747,4 +747,14 @@ pub fn as_struct(exprs: &[Expr]) -> Expr {
         options.fmt_str = "as_struct";
         options
     })
+}
+
+pub fn repeat<L: Literal>(value: L, n_times: Expr) -> Expr {
+    let function = |s: Series, n: Series| {
+        let n = n.get(0).extract::<usize>().ok_or_else(|| {
+            PolarsError::ComputeError(format!("could not extract a size from {:?}", n).into())
+        })?;
+        Ok(s.expand_at_index(0, n))
+    };
+    apply_binary(lit(value), n_times, function, GetOutput::same_type())
 }
