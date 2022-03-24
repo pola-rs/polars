@@ -1195,3 +1195,33 @@ def test_preservation_of_subclasses() -> None:
     extended_ldf = ldf.with_column(pl.lit(1).alias("column_2"))
     assert isinstance(extended_ldf, pl.LazyFrame)
     assert isinstance(extended_ldf, SubClassedLazyFrame)
+
+
+def test_group_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": ["1", "1", "2", "3", "4", "3", "5"],
+        }
+    )
+
+    assert (
+        df.groupby(["group"], maintain_order=True)
+        .agg(
+            [
+                (pl.col("id").unique_counts() / pl.col("id").len())
+                .sum()
+                .alias("unique_counts_sum"),
+                pl.col("id").unique().len().alias("unique_len"),
+            ]
+        )
+        .frame_equal(
+            pl.DataFrame(
+                {
+                    "group": ["A", "B"],
+                    "unique_counts_sum": [1.0, 1.0],
+                    "unique_len": [2, 3],
+                }
+            )
+        )
+    )

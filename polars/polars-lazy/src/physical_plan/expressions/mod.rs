@@ -64,6 +64,7 @@ pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
     /// use the length of the current groups to determine new sorted indexes, preferred
+    /// for performance
     WithGroupsLen,
     /// use the series list offsets to determine the new group lengths
     /// this one should be used when the length has changed. Note that
