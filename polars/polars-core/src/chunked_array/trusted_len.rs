@@ -110,11 +110,8 @@ where
     }
 }
 
-impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for ListChunked
-where
-    Ptr: Borrow<Series>,
-{
-    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+impl FromTrustedLenIterator<Option<Series>> for ListChunked {
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         let iter = iter.into_iter();
         iter.collect()
     }

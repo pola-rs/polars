@@ -5,10 +5,6 @@ use std::convert::TryFrom;
 
 type LargeStringArray = Utf8Array<i64>;
 type LargeListArray = ListArray<i64>;
-
-// If parallel feature is enable, then, activate the parallel module.
-#[cfg(feature = "parallel")]
-#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 pub mod par;
 
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
