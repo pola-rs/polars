@@ -5585,6 +5585,10 @@ class GroupBy(Generic[DF]):
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
 
+        .. note::
+            Polars'/arrow memory is not ideal for transposing operations like pivots. If you have a relatively large
+            table, consider using a groupby over a pivot.
+
         Parameters
         ----------
         pivot_column
