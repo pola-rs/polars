@@ -23,6 +23,11 @@ pub enum PivotAgg {
 }
 
 impl DataFrame {
+    /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+    ///
+    /// # Note
+    /// Polars'/arrow memory is not ideal for transposing operations like pivots.
+    /// If you have a relatively large table, consider using a groupby over a pivot.
     pub fn pivot<I0, S0, I1, S1, I2, S2>(
         &self,
         values: I0,
