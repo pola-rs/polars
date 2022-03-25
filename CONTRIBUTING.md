@@ -52,7 +52,7 @@ We use GitHub to host code, to track issues and feature requests, as well as acc
 ## Want to discuss something?
 
 I can imagine that some questions don't fit an issue.
-Therefore there is also a [Polars Dicsord server](https://discord.gg/4UfP5cfBE7).
+Therefore there is also a [Polars Discord server](https://discord.gg/4UfP5cfBE7).
 
 
 ## Any contributions you make will be under the MIT Software License
