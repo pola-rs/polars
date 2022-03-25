@@ -140,6 +140,7 @@ Computations
     Series.log
     Series.log10
     Series.exp
+    Series.sign
 
 Manipulation/ selection
 -----------------------

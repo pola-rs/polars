@@ -2446,6 +2446,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
+    def sign(self) -> "Expr":
+        """
+        Returns an element-wise indication of the sign of a number.
+        """
+        return np.sign(self)  # type: ignore
+
     def sin(self) -> "Expr":
         """
         Compute the element-wise value for Trigonometric sine on an array

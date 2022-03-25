@@ -2355,6 +2355,12 @@ class Series:
         """
         return wrap_s(self._s.mode())
 
+    def sign(self) -> "Series":
+        """
+        Returns an element-wise indication of the sign of a number.
+        """
+        return np.sign(self)  # type: ignore
+
     def sin(self) -> "Series":
         """
         Compute the element-wise value for Trigonometric sine.
