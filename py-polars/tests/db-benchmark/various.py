@@ -1,5 +1,6 @@
 # may contain many things that seemed to go wrong at scale
 
+import os
 import time
 
 import numpy as np
