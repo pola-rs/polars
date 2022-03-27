@@ -20,7 +20,7 @@ from typing import (
 )
 from urllib.request import urlopen
 
-from polars.utils import handle_projection_columns
+from polars.utils import handle_projection_columns, format_path
 
 try:
     import pyarrow as pa
@@ -60,13 +60,6 @@ except ImportError:
 def _process_http_file(path: str) -> BytesIO:
     with urlopen(path) as f:
         return BytesIO(f.read())
-
-
-def _format_path(path: str) -> str:
-    """
-    Returns a string path, expanding the home directory if present.
-    """
-    return os.path.expanduser(path)
 
 
 @overload
@@ -118,21 +111,21 @@ def _prepare_file_arg(
     if isinstance(file, BytesIO):
         return managed_file(file)
     if isinstance(file, Path):
-        return managed_file(str(file))
+        return managed_file(format_path(file))
     if isinstance(file, str):
         if _WITH_FSSPEC:
             if infer_storage_options(file)["protocol"] == "file":
-                return managed_file(_format_path(file))
+                return managed_file(format_path(file))
             return fsspec.open(file, **kwargs)
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
             if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                return managed_file([_format_path(f) for f in file])
+                return managed_file([format_path(f) for f in file])
             return fsspec.open_files(file, **kwargs)
     if isinstance(file, str):
-        file = _format_path(file)
+        file = format_path(file)
     return managed_file(file)
 
 
