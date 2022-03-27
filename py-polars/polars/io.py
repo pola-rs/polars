@@ -1,4 +1,3 @@
-import os
 from contextlib import contextmanager
 from io import BytesIO, IOBase, StringIO
 from pathlib import Path
