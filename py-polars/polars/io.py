@@ -19,7 +19,7 @@ from typing import (
 )
 from urllib.request import urlopen
 
-from polars.utils import handle_projection_columns, format_path
+from polars.utils import format_path, handle_projection_columns
 
 try:
     import pyarrow as pa

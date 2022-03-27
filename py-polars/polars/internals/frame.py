@@ -66,11 +66,11 @@ from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    format_path,
     handle_projection_columns,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
-    format_path,
 )
 
 try:
