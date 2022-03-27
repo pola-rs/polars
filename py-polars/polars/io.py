@@ -560,8 +560,8 @@ def scan_csv(
     dtypes = kwargs.pop("dtype", dtypes)
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_csv(
         file=file,
@@ -621,8 +621,8 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_ipc(
         file=file,
@@ -671,8 +671,8 @@ def scan_parquet(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_parquet(
         file=file,
@@ -725,8 +725,8 @@ def read_avro(
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
     if columns is None:
         columns = kwargs.pop("projection", None)
 
