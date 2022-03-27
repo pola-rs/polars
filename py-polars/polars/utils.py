@@ -1,5 +1,7 @@
+import os
 import ctypes
 import sys
+from pathlib import Path
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
@@ -201,3 +203,10 @@ def _in_notebook() -> bool:
     except AttributeError:
         return False
     return True
+
+
+def format_path(path: Union[str, Path])-> str:
+    """
+    Returnsa string path, expanding the home directory if present.
+    """
+    return os.path.expanduser(path)
