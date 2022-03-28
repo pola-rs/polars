@@ -1841,7 +1841,11 @@ impl Expr {
             },
             GetOutput::from_type(DataType::Float64),
         )
-        .with_fmt("kurtosis")
+        .with_function_options(|mut options| {
+            options.fmt_str = "kurtosis";
+            options.auto_explode = true;
+            options
+        })
     }
 
     /// Get maximal value that could be hold by this dtype.
