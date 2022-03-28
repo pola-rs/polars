@@ -70,7 +70,7 @@ impl PhysicalExpr for SortExpr {
             GroupsProxy::Idx(groups) => {
                 groups
                     .iter()
-                    .map(|(_first, idx)| {
+                    .map(|(first, idx)| {
                         // Safety:
                         // Group tuples are always in bounds
                         let group = unsafe {
@@ -79,7 +79,7 @@ impl PhysicalExpr for SortExpr {
 
                         let sorted_idx = group.argsort(self.options);
                         let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
-                        (new_idx[0], new_idx)
+                        (new_idx.get(0).copied().unwrap_or(first), new_idx)
                     })
                     .collect()
             }
@@ -89,7 +89,7 @@ impl PhysicalExpr for SortExpr {
                     let group = series.slice(first as i64, len as usize);
                     let sorted_idx = group.argsort(self.options);
                     let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
-                    (new_idx[0], new_idx)
+                    (new_idx.get(0).copied().unwrap_or(first), new_idx)
                 })
                 .collect(),
         };
