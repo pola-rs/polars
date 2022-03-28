@@ -36,15 +36,15 @@ impl ApplyExpr {
         &self,
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
-        all_unit_len: bool,
     ) -> AggregationContext<'a> {
+        let all_unit_len = all_unit_length(&ca);
         if all_unit_len && self.auto_explode {
             ac.with_series(ca.explode().unwrap().into_series(), true);
+            ac.update_groups = UpdateGroups::No;
         } else {
             ac.with_series(ca.into_series(), true);
+            ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
-        ac.with_all_unit_len(all_unit_len);
-        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         ac
     }
 }
@@ -101,13 +101,16 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect();
 
-                    let all_unit_len = all_unit_length(&ca);
-
                     ca.rename(&name);
-                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
+                    let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
+                    // make sure the groups are updated because we are about to throw away
+                    // the series length information
+                    if let UpdateGroups::WithSeriesLen = ac.update_groups {
+                        ac.groups();
+                    }
                     let input = ac.flat_naive().into_owned();
                     let input_len = input.len();
                     let s = self.function.call_udf(&mut [input])?;
@@ -116,9 +119,6 @@ impl PhysicalExpr for ApplyExpr {
                         return Err(PolarsError::ComputeError("A map function may never return a Series of a different length than its input".into()));
                     }
 
-                    if ac.is_aggregated() {
-                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    }
                     ac.with_series(s, false);
                     Ok(ac)
                 }
@@ -166,9 +166,8 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect_trusted();
                     ca.rename(&name);
-                    let all_unit_len = all_unit_length(&ca);
                     let ac = acs.pop().unwrap();
-                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
+                    let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
