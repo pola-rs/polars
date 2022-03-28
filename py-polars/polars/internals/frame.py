@@ -66,6 +66,7 @@ from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    format_path,
     handle_projection_columns,
     is_int_sequence,
     is_str_sequence,
@@ -459,7 +460,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_csv(
         cls: Type[DF],
-        file: Union[str, BinaryIO, bytes],
+        file: Union[str, Path, BinaryIO, bytes],
         has_header: bool = True,
         columns: Optional[Union[List[int], List[str]]] = None,
         sep: str = ",",
@@ -489,8 +490,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self = cls.__new__(cls)
 
         path: Optional[str]
-        if isinstance(file, str):
-            path = file
+        if isinstance(file, (str, Path)):
+            path = format_path(file)
         else:
             path = None
             if isinstance(file, BytesIO):
@@ -581,7 +582,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_parquet(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         parallel: bool = True,
@@ -602,6 +603,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         parallel
             Read the parquet file in parallel. The single threaded reader consumes less memory.
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         if isinstance(file, str) and "*" in file:
             from polars import scan_parquet
 
@@ -638,7 +641,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_avro(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
     ) -> DF:
@@ -656,6 +659,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         -------
         DataFrame
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
@@ -664,7 +669,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_ipc(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         row_count_name: Optional[str] = None,
@@ -687,6 +692,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         DataFrame
         """
 
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         if isinstance(file, str) and "*" in file:
             from polars import scan_ipc
 
@@ -720,7 +727,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_json(
         cls: Type[DF],
-        file: Union[str, IOBase],
+        file: Union[str, Path, IOBase],
         json_lines: bool = False,
     ) -> DF:
         """
@@ -728,6 +735,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(file, json_lines)
@@ -973,6 +982,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         to_string
             Ignore file argument and return a string.
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
@@ -1067,8 +1078,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df.to_csv(buffer, has_header, ord(sep), ord(quote))
             return str(buffer.getvalue(), encoding="utf-8")
 
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self._df.to_csv(file, has_header, ord(sep), ord(quote))
         return None
@@ -1104,8 +1115,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "snappy"
                 - "deflate"
         """
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self._df.to_avro(file, compression)
 
@@ -1141,8 +1152,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self._df.to_ipc(file, compression)
 
@@ -1316,8 +1327,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:

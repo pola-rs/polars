@@ -19,7 +19,7 @@ from typing import (
 )
 from urllib.request import urlopen
 
-from polars.utils import handle_projection_columns
+from polars.utils import format_path, handle_projection_columns
 
 try:
     import pyarrow as pa
@@ -110,19 +110,21 @@ def _prepare_file_arg(
     if isinstance(file, BytesIO):
         return managed_file(file)
     if isinstance(file, Path):
-        return managed_file(str(file))
+        return managed_file(format_path(file))
     if isinstance(file, str):
         if _WITH_FSSPEC:
             if infer_storage_options(file)["protocol"] == "file":
-                return managed_file(file)
+                return managed_file(format_path(file))
             return fsspec.open(file, **kwargs)
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
             if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                return managed_file(file)
+                return managed_file([format_path(f) for f in file])
             return fsspec.open_files(file, **kwargs)
+    if isinstance(file, str):
+        file = format_path(file)
     return managed_file(file)
 
 
@@ -558,8 +560,8 @@ def scan_csv(
     dtypes = kwargs.pop("dtype", dtypes)
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_csv(
         file=file,
@@ -619,8 +621,8 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_ipc(
         file=file,
@@ -669,8 +671,8 @@ def scan_parquet(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_parquet(
         file=file,
@@ -723,8 +725,8 @@ def read_avro(
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
     if columns is None:
         columns = kwargs.pop("projection", None)
 

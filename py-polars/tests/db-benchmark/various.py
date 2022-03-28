@@ -1,5 +1,6 @@
 # may contain many things that seemed to go wrong at scale
 
+import os
 import time
 
 import numpy as np
@@ -52,3 +53,12 @@ for _ in range(10):
     )
     assert computed[0, "min"] == minimum
     assert computed[0, "max"] == maximum
+
+# test home directory support
+# https://github.com/pola-rs/polars/pull/2940
+filename = "~/test.parquet"
+
+df.to_parquet(filename)
+df = pl.read_parquet(filename)
+
+os.remove(filename)
