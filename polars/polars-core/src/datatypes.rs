@@ -953,6 +953,11 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
+            #[cfg(feature = "dtype-struct")]
+            ArrowDataType::Struct(fields) => {
+                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
+                DataType::Struct(fields)
+            }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
