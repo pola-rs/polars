@@ -28,3 +28,9 @@ pub enum NullBehavior {
     /// ignore nulls
     Ignore,
 }
+
+impl Default for NullBehavior {
+    fn default() -> Self {
+        NullBehavior::Ignore
+    }
+}
