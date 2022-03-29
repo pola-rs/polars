@@ -142,5 +142,6 @@ def test_nested_parquet() -> None:
     df.to_parquet(f)
 
     read = pl.read_parquet(f, use_pyarrow=True)
-    assert read.columns == ['a']
+    assert read.columns == ["a"]
+    assert isinstance(read.dtypes[0], pl.datatypes.List)
     assert isinstance(read.dtypes[0].inner, pl.datatypes.Struct)
