@@ -346,10 +346,19 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-        other = maybe_cast(other, self.dtype, self.time_unit)
-        f = get_ffi_func(op_ffi, self.dtype, self._s)
+        if isinstance(other, float) and not self.is_float():
+            _s = sequence_to_pyseries("", [other])
+            if "rhs" in op_ffi:
+                return wrap_s(getattr(_s, op_s)(self._s))
+            else:
+                return wrap_s(getattr(self._s, op_s)(_s))
+        else:
+            other = maybe_cast(other, self.dtype, self.time_unit)
+            f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            raise ValueError(
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument of type: {type(other)}"
+            )
         return wrap_s(f(other))
 
     def __add__(self, other: Any) -> "Series":
@@ -374,7 +383,8 @@ class Series:
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         result = self._arithmetic(other, "div", "div_<>")
-        if self.is_float():
+        # todo! in place, saves allocation
+        if self.is_float() or isinstance(other, float):
             result = result.floor()
         return result
 
