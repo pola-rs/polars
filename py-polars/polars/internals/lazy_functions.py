@@ -1350,7 +1350,7 @@ def select(
     return pli.DataFrame([]).select(exprs)
 
 
-def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
+def struct(exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"]) -> "pli.Expr":
     """
     Collect several columns into a Series of dtype Struct
 

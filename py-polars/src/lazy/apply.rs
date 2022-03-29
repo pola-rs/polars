@@ -15,12 +15,20 @@ impl ToSeries for PyObject {
             Ok(s) => s,
             // the lambda did not return a series, we try to create a new python Series
             _ => {
-                let python_s = py_polars_module
+                let res = py_polars_module
                     .getattr(py, "Series")
                     .unwrap()
-                    .call1(py, (name, PyList::new(py, [self])))
-                    .unwrap();
-                python_s.getattr(py, "_s").unwrap()
+                    .call1(py, (name, PyList::new(py, [self])));
+
+                match res {
+                    Ok(python_s) => python_s.getattr(py, "_s").unwrap(),
+                    Err(_) => {
+                        panic!(
+                            "expected a something that could convert to a `Series` but got: {}",
+                            self.as_ref(py).get_type()
+                        )
+                    }
+                }
             }
         };
         let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();

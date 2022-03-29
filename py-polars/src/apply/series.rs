@@ -1,4 +1,5 @@
 use super::*;
+use crate::conversion::to_wrapped;
 use crate::series::PySeries;
 use crate::Wrap;
 use polars::chunked_array::builder::get_list_builder;
@@ -14,15 +15,10 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     out: &'a PyAny,
     null_count: usize,
 ) -> PyResult<PySeries> {
-    if out.is_instance::<PyInt>().unwrap() {
-        let first_value = out.extract::<i64>().unwrap();
+    if out.is_instance::<PyBool>().unwrap() {
+        let first_value = out.extract::<bool>().unwrap();
         applyer
-            .apply_lambda_with_primitive_out_type::<Int64Type>(
-                py,
-                lambda,
-                null_count,
-                Some(first_value),
-            )
+            .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
             .map(|ca| ca.into_series().into())
     } else if out.is_instance::<PyFloat>().unwrap() {
         let first_value = out.extract::<f64>().unwrap();
@@ -34,10 +30,15 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyBool>().unwrap() {
-        let first_value = out.extract::<bool>().unwrap();
+    } else if out.is_instance::<PyInt>().unwrap() {
+        let first_value = out.extract::<i64>().unwrap();
         applyer
-            .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
+            .apply_lambda_with_primitive_out_type::<Int64Type>(
+                py,
+                lambda,
+                null_count,
+                Some(first_value),
+            )
             .map(|ca| ca.into_series().into())
     } else if out.is_instance::<PyString>().unwrap() {
         let first_value = out.extract::<&str>().unwrap();
@@ -1681,5 +1682,207 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 self.len(),
             ))
         }
+    }
+}
+
+impl<'a> ApplyLambda<'a> for StructChunked {
+    fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let mut null_count = 0;
+        for val in self.into_iter() {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            let out = lambda.call1((arg,))?;
+            if out.is_none() {
+                null_count += 1;
+                continue;
+            }
+            return infer_and_finish(self, py, lambda, out, null_count);
+        }
+
+        // todo! full null
+        Ok(self.clone().into_series().into())
+    }
+
+    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        self.apply_lambda_unknown(py, lambda)
+    }
+
+    fn apply_to_struct(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<PySeries> {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let skip = 1;
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            let out = lambda.call1((arg,)).unwrap();
+            Some(out)
+        });
+        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+    }
+
+    fn apply_lambda_with_primitive_out_type<D>(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
+    ) -> PyResult<ChunkedArray<D>>
+    where
+        D: PyArrowPrimitiveType,
+        D::Native: ToPyObject + FromPyObject<'a>,
+    {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_primitive(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_bool(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+
+    fn apply_lambda_with_utf8_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<&str>,
+    ) -> PyResult<Utf8Chunked> {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_utf8(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+    fn apply_lambda_with_list_out_type(
+        &'a self,
+        py: Python,
+        lambda: PyObject,
+        init_null_count: usize,
+        first_value: &Series,
+        dt: &DataType,
+    ) -> PyResult<ListChunked> {
+        let skip = 1;
+
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let lambda = lambda.as_ref(py);
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            call_lambda_series_out(py, lambda, arg).ok()
+        });
+        Ok(iterator_to_list(
+            dt,
+            it,
+            init_null_count,
+            Some(first_value),
+            self.name(),
+            self.len(),
+        ))
+    }
+    fn apply_lambda_with_object_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<ObjectValue>,
+    ) -> PyResult<ObjectChunked<ObjectValue>> {
+        let collections_module = PyModule::import(py, "collections").unwrap();
+        let namedtuple = collections_module.getattr("namedtuple").unwrap();
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let names = names.join(" ");
+        let namedtuple_constructor = namedtuple.call1(("struct", names)).unwrap();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let val = to_wrapped(val);
+            let arg = namedtuple_constructor.call1(PyTuple::new(py, val)).unwrap();
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_object(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
     }
 }

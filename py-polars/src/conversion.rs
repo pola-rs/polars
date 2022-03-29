@@ -19,6 +19,12 @@ use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
+pub(crate) fn to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
+    // Safety:
+    // Wrap is transparent.
+    unsafe { std::mem::transmute(slice) }
+}
+
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
 
