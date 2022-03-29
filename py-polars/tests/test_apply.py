@@ -76,3 +76,10 @@ def test_apply_infer_list() -> None:
         }
     )
     assert df.select([pl.all().apply(lambda x: [x])]).dtypes == [pl.List] * 3
+
+
+def test_apply_arithmetic_consistency() -> None:
+    df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
+    assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))["B"].to_list() == [
+        [3.0, 4.0]
+    ]

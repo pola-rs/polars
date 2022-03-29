@@ -186,7 +186,7 @@ def test_arithmetic(s: pl.Series) -> None:
     # negate
     assert (-a == [-1, -2]).sum() == 2
     # wrong dtypes in rhs operands
-    assert ((1.0 - a) == [0, -1]).sum() == 2
+    assert ((1.0 - a) == [0.0, -1.0]).sum() == 2
     assert ((1.0 / a) == [1.0, 0.5]).sum() == 2
     assert ((1.0 * a) == [1, 2]).sum() == 2
     assert ((1.0 + a) == [2, 3]).sum() == 2
@@ -902,15 +902,14 @@ def test_from_sequences() -> None:
 
 def test_comparisons_int_series_to_float() -> None:
     srs_int = pl.Series([1, 2, 3, 4])
-    testing.assert_series_equal(srs_int - 1.0, pl.Series([0, 1, 2, 3]))
-    testing.assert_series_equal(srs_int + 1.0, pl.Series([2, 3, 4, 5]))
-    testing.assert_series_equal(srs_int * 2.0, pl.Series([2, 4, 6, 8]))
-    # todo: this is inconsistent
+    testing.assert_series_equal(srs_int - 1.0, pl.Series([0.0, 1.0, 2.0, 3.0]))
+    testing.assert_series_equal(srs_int + 1.0, pl.Series([2.0, 3.0, 4.0, 5.0]))
+    testing.assert_series_equal(srs_int * 2.0, pl.Series([2.0, 4.0, 6.0, 8.0]))
     testing.assert_series_equal(srs_int / 2.0, pl.Series([0.5, 1.0, 1.5, 2.0]))
-    testing.assert_series_equal(srs_int % 2.0, pl.Series([1, 0, 1, 0]))
-    testing.assert_series_equal(4.0 % srs_int, pl.Series([0, 0, 1, 0]))
+    testing.assert_series_equal(srs_int % 2.0, pl.Series([1.0, 0.0, 1.0, 0.0]))
+    testing.assert_series_equal(4.0 % srs_int, pl.Series([0.0, 0.0, 1.0, 0.0]))
 
-    testing.assert_series_equal(srs_int // 2.0, pl.Series([0, 1, 1, 2]))
+    testing.assert_series_equal(srs_int // 2.0, pl.Series([0.0, 1.0, 1.0, 2.0]))
     testing.assert_series_equal(srs_int < 3.0, pl.Series([True, True, False, False]))
     testing.assert_series_equal(srs_int <= 3.0, pl.Series([True, True, True, False]))
     testing.assert_series_equal(srs_int > 3.0, pl.Series([False, False, False, True]))
@@ -941,13 +940,15 @@ def test_comparisons_bool_series_to_int() -> None:
     srs_bool = pl.Series([True, False])
     # todo: do we want this to work?
     testing.assert_series_equal(srs_bool / 1, pl.Series([True, False], dtype=Float64))
-    with pytest.raises(TypeError, match=r"\-: 'Series' and 'int'"):
+    match = r"cannot do arithmetic with series of dtype: <class 'polars.datatypes.Boolean'> and argument of type: <class 'bool'>"
+    with pytest.raises(ValueError, match=match):
         srs_bool - 1
-    with pytest.raises(TypeError, match=r"\+: 'Series' and 'int'"):
+    with pytest.raises(ValueError, match=match):
         srs_bool + 1
-    with pytest.raises(TypeError, match=r"\%: 'Series' and 'int'"):
+    match = r"cannot do arithmetic with series of dtype: <class 'polars.datatypes.Boolean'> and argument of type: <class 'bool'>"
+    with pytest.raises(ValueError, match=match):
         srs_bool % 2
-    with pytest.raises(TypeError, match=r"\*: 'Series' and 'int'"):
+    with pytest.raises(ValueError, match=match):
         srs_bool * 1
     with pytest.raises(
         TypeError, match=r"'<' not supported between instances of 'Series' and 'int'"
