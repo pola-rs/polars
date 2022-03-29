@@ -43,6 +43,9 @@ fn slice(
             break;
         }
     }
+    if new_chunks.is_empty() {
+        new_chunks.push(chunks[0].slice(0, 0).into());
+    }
     new_chunks
 }
 

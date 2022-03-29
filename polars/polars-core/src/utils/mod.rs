@@ -296,6 +296,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Date => $self.date().unwrap().$method($($args),*),
             DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
+            DataType::Struct(_) => $self.struct_().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
     }

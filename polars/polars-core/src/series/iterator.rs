@@ -57,7 +57,7 @@ impl FromIterator<String> for Series {
     }
 }
 
-#[cfg(feature = "rows")]
+#[cfg(any(feature = "rows", feature = "dtype-struct"))]
 impl Series {
     pub fn iter(&self) -> SeriesIter<'_> {
         let dtype = self.dtype();
