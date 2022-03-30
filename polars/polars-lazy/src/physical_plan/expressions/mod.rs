@@ -140,7 +140,10 @@ impl<'a> AggregationContext<'a> {
                             .iter()
                             .map(|&o| {
                                 let len = (o - previous) as IdxSize;
-                                let new_offset = offset + len;
+                                // explode will fill empty rows with null, so we must increment the group
+                                // offset accordingly
+                                let new_offset = offset + len + (len == 0) as IdxSize;
+
                                 previous = o;
                                 let out = [offset, len];
                                 offset = new_offset;

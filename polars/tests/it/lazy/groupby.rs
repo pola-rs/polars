@@ -14,12 +14,12 @@ fn test_filter_sort_diff_2984() -> Result<()> {
         .groupby([col("group")])
         .agg([col("id")
             .filter(col("id").lt(lit(3)))
-            .sort(true)
+            .sort(false)
             .diff(1, Default::default())
             .sum()])
         .sort("group", Default::default())
         .collect()?;
 
-    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(-1), None]);
+    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(1), None]);
     Ok(())
 }
