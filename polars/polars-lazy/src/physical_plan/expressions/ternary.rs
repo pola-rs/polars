@@ -8,10 +8,41 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 pub struct TernaryExpr {
-    pub predicate: Arc<dyn PhysicalExpr>,
-    pub truthy: Arc<dyn PhysicalExpr>,
-    pub falsy: Arc<dyn PhysicalExpr>,
-    pub expr: Expr,
+    predicate: Arc<dyn PhysicalExpr>,
+    truthy: Arc<dyn PhysicalExpr>,
+    falsy: Arc<dyn PhysicalExpr>,
+    expr: Expr,
+}
+
+impl TernaryExpr {
+    pub fn new(
+        predicate: Arc<dyn PhysicalExpr>,
+        truthy: Arc<dyn PhysicalExpr>,
+        falsy: Arc<dyn PhysicalExpr>,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            predicate,
+            truthy,
+            falsy,
+            expr,
+        }
+    }
+}
+
+fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
+    let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
+    if len > 1 {
+        if falsy.len() == 1 {
+            *falsy = falsy.expand_at_index(0, len);
+        }
+        if truthy.len() == 1 {
+            *truthy = truthy.expand_at_index(0, len);
+        }
+        if mask.len() == 1 {
+            *mask = mask.expand_at_index(0, len);
+        }
+    }
 }
 
 impl PhysicalExpr for TernaryExpr {
@@ -20,10 +51,17 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let mask_series = self.predicate.evaluate(df, state)?;
-        let mask = mask_series.bool()?;
-        let truthy = self.truthy.evaluate(df, state)?;
-        let falsy = self.falsy.evaluate(df, state)?;
-        truthy.zip_with(mask, &falsy)
+        let mut mask = mask_series.bool()?.clone();
+
+        let op_truthy = || self.truthy.evaluate(df, state);
+        let op_falsy = || self.falsy.evaluate(df, state);
+
+        let (truthy, falsy) = POOL.install(|| rayon::join(op_truthy, op_falsy));
+        let mut truthy = truthy?;
+        let mut falsy = falsy?;
+        expand_lengths(&mut truthy, &mut falsy, &mut mask);
+
+        truthy.zip_with(&mask, &falsy)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.truthy.to_field(input_schema)
