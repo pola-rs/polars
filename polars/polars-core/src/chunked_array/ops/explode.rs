@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use arrow::bitmap::Bitmap;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
@@ -7,6 +8,20 @@ use std::convert::TryFrom;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
+}
+
+unsafe fn unset_nulls(
+    start: usize,
+    last: usize,
+    validity_values: &Bitmap,
+    nulls: &mut Vec<usize>,
+    empty_row_idx: &[usize],
+) {
+    for i in start..last {
+        if !validity_values.get_bit_unchecked(i) {
+            nulls.push(i + empty_row_idx.len());
+        }
+    }
 }
 
 impl<T> ExplodeByOffsets for ChunkedArray<T>
@@ -24,6 +39,7 @@ where
 
         let mut start = offsets[0] as usize;
         let mut last = start;
+
         // we check all the offsets and in the case a consecutive offset is the same,
         // e.g. 0, 1, 4, 4, 6
         // the 4 4, means that that is an empty row.
@@ -43,7 +59,12 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        new_values.extend_from_slice(&values[start..last])
+                        new_values.extend_from_slice(&values[start..last]);
+                        // Safety:
+                        // we are in bounds
+                        unsafe {
+                            unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx)
+                        }
                     }
 
                     empty_row_idx.push(o + empty_row_idx.len());
@@ -52,12 +73,11 @@ where
                 }
                 last = o;
             }
+
             // final null check
-            for i in start..last {
-                if unsafe { !validity_values.get_bit_unchecked(i) } {
-                    nulls.push(i + empty_row_idx.len());
-                }
-            }
+            // Safety:
+            // we are in bounds
+            unsafe { unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx) }
         } else {
             for &o in &offsets[1..] {
                 let o = o as usize;
@@ -365,6 +385,32 @@ mod test {
         let out: Vec<_> = exploded.i32()?.into_no_null_iter().collect();
         assert_eq!(out, &[1, 2, 3, 3]);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_explode_list_nulls() -> Result<()> {
+        let ca = Int32Chunked::from_slice_options("", &[None, Some(1), Some(2)]);
+        let offsets = &[0, 3, 3];
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.i32().unwrap()),
+            &[None, Some(1), Some(2), None]
+        );
+
+        let ca = BooleanChunked::from_slice_options("", &[None, Some(true), Some(false)]);
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.bool().unwrap()),
+            &[None, Some(true), Some(false), None]
+        );
+
+        let ca = Utf8Chunked::from_slice_options("", &[None, Some("b"), Some("c")]);
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.utf8().unwrap()),
+            &[None, Some("b"), Some("c"), None]
+        );
         Ok(())
     }
 
