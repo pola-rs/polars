@@ -10,14 +10,16 @@ fn test_filter_sort_diff_2984() -> Result<()> {
 
     let out = df
         .lazy()
-        .groupby_stable([col("group")])
+        // don't use stable in this test, it hides wrong state
+        .groupby([col("group")])
         .agg([col("id")
             .filter(col("id").lt(lit(3)))
             .sort(true)
             .diff(1, Default::default())
-            .first()])
+            .sum()])
+        .sort("group", Default::default())
         .collect()?;
 
-    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(2), None]);
+    assert_eq!(Vec::from(out.column("id")?.i32()?), &[Some(-1), None]);
     Ok(())
 }
