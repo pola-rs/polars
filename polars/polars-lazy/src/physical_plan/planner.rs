@@ -960,12 +960,12 @@ impl DefaultPlanner {
                 let predicate = self.create_physical_expr(predicate, ctxt, expr_arena)?;
                 let truthy = self.create_physical_expr(truthy, ctxt, expr_arena)?;
                 let falsy = self.create_physical_expr(falsy, ctxt, expr_arena)?;
-                Ok(Arc::new(TernaryExpr {
+                Ok(Arc::new(TernaryExpr::new(
                     predicate,
                     truthy,
                     falsy,
-                    expr: node_to_expr(expression, expr_arena),
-                }))
+                    node_to_expr(expression, expr_arena),
+                )))
             }
             Function {
                 input,

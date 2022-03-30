@@ -251,6 +251,16 @@ impl BitAnd for &BooleanChunked {
             .downcast_iter()
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| {
+                // early return from all `false` paths
+                if lhs.null_count() == 0 && rhs.null_count() == 0 {
+                    if lhs.values().null_count() == lhs.len() {
+                        return Arc::new(lhs.clone()) as ArrayRef;
+                    }
+                    if rhs.values().null_count() == rhs.len() {
+                        return Arc::new(rhs.clone()) as ArrayRef;
+                    }
+                }
+
                 Arc::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
                     as ArrayRef
             })
