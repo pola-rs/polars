@@ -274,7 +274,9 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let predicate = if has_expr(&predicate, |e| matches!(e, Expr::Wildcard)) {
+        let predicate = if has_expr(&predicate, |e| {
+            matches!(e, Expr::Wildcard | Expr::RenameAlias { .. })
+        }) {
             let rewritten = rewrite_projections(vec![predicate], self.0.schema(), &[]);
             combine_predicates_expr(rewritten.into_iter())
         } else {
