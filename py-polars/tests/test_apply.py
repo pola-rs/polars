@@ -91,10 +91,10 @@ def test_apply_struct() -> None:
     )
     out = df.with_column(pl.struct(df.columns).alias("struct")).select(
         [
-            pl.col("struct").apply(lambda x: x.A).alias("A_field"),
-            pl.col("struct").apply(lambda x: x.B).alias("B_field"),
-            pl.col("struct").apply(lambda x: x.C).alias("C_field"),
-            pl.col("struct").apply(lambda x: x.D).alias("D_field"),
+            pl.col("struct").apply(lambda x: x["A"]).alias("A_field"),
+            pl.col("struct").apply(lambda x: x["B"]).alias("B_field"),
+            pl.col("struct").apply(lambda x: x["C"]).alias("C_field"),
+            pl.col("struct").apply(lambda x: x["D"]).alias("D_field"),
         ]
     )
     expected = pl.DataFrame(
