@@ -391,7 +391,7 @@ impl DataFrame {
                 let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
 
                 // Take the left and right dataframes by join tuples
-                let (mut df_left, df_right) = POOL.join(
+                let (df_left, df_right) = POOL.join(
                     || unsafe {
                         remove_selected(self, &selected_left).take_opt_iter_unchecked(
                             opt_join_tuples
@@ -407,11 +407,15 @@ impl DataFrame {
                         )
                     },
                 );
+                // Allocate a new vec for df_left so that the keys are left and then other values.
+                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
                     let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
                     s.rename(s_left.name());
-                    df_left.with_column(s)?;
+                    keys.push(s)
                 }
+                keys.extend_from_slice(df_left.get_columns());
+                let df_left = DataFrame::new_no_checks(keys);
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
@@ -1198,9 +1202,9 @@ mod test {
         assert_eq!(
             out.dtypes(),
             &[
+                DataType::Float64,
+                DataType::Float64,
                 DataType::Utf8,
-                DataType::Float64,
-                DataType::Float64,
                 DataType::Utf8
             ]
         );

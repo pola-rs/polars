@@ -1046,9 +1046,10 @@ impl DataFrame {
     }
 
     fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> Result<()> {
-        if let Some((idx, name, _)) = schema.get_full(s.name()) {
+        let name = s.name();
+        if let Some((idx, _, _)) = schema.get_full(name) {
             // schema is incorrect fallback to search
-            if name != s.name() {
+            if self.columns.get(idx).map(|s| s.name()) != Some(name) {
                 self.add_column_by_search(s)?;
             } else {
                 self.replace_at_idx(idx, s)?;
