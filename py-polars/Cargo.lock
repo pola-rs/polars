@@ -1868,8 +1868,3 @@ dependencies = [
  "cc",
  "libc",
 ]
-
-[[patch.unused]]
-name = "pyo3"
-version = "0.15.1"
-source = "git+https://github.com/ghuls/pyo3?branch=polars_pypy_hasattr#5357442504126fcd61618bf809c737a8c702156b"

@@ -1170,6 +1170,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
         return self.write_ipc(file, compression)
 
     def to_dicts(self) -> List[Dict[str, Any]]:
+        """
+        Convert every row to a dictionary.
+
+        Note that this is slow.
+        """
+
         pydf = self._df
         names = self.columns
 

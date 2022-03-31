@@ -27,9 +27,6 @@ pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multipl
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
-[patch.crates-io]
-pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
-
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
 avro = ["polars/avro"]
