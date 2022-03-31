@@ -21,14 +21,11 @@ bincode = "1.3"
 libc = "0.2"
 mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
-numpy = "0.15"
+numpy = "0.16"
 polars-core = { path = "../polars/polars-core", default-features = false }
-pyo3 = { version = "0.15", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
-
-[patch.crates-io]
-pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
 
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]

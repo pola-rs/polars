@@ -9,9 +9,9 @@ use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
+use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
-use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
 use std::borrow::Cow;
 
 #[pyclass]
@@ -34,31 +34,9 @@ impl ToExprs for Vec<PyExpr> {
     }
 }
 
-#[pyproto]
-impl PyNumberProtocol for PyExpr {
-    fn __add__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Plus, rhs.inner).into())
-    }
-    fn __sub__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Minus, rhs.inner).into())
-    }
-    fn __mul__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Multiply, rhs.inner).into())
-    }
-    fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::TrueDivide, rhs.inner).into())
-    }
-    fn __mod__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Modulus, rhs.inner).into())
-    }
-    fn __floordiv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
-    }
-}
-
-#[pyproto]
-impl<'p> PyObjectProtocol<'p> for PyExpr {
-    fn __richcmp__(&'p self, other: PyExpr, op: CompareOp) -> PyExpr {
+#[pymethods]
+impl PyExpr {
+    fn __richcmp__(&self, other: Self, op: CompareOp) -> PyExpr {
         match op {
             CompareOp::Eq => self.eq(other),
             CompareOp::Ne => self.neq(other),
@@ -68,10 +46,26 @@ impl<'p> PyObjectProtocol<'p> for PyExpr {
             CompareOp::Le => self.lt_eq(other),
         }
     }
-}
 
-#[pymethods]
-impl PyExpr {
+    fn __add__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner).into())
+    }
+    fn __sub__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner).into())
+    }
+    fn __mul__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner).into())
+    }
+    fn __truediv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner).into())
+    }
+    fn __mod__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
+    }
+    fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+    }
+
     pub fn to_str(&self) -> String {
         format!("{:?}", self.inner)
     }
@@ -746,7 +740,7 @@ impl PyExpr {
                 }
                 Err(_) => {
                     let obj = out;
-                    let is_float = obj.as_ref(py).is_instance::<PyFloat>().unwrap();
+                    let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
 
                     let dtype = s.dtype();
 
@@ -1432,7 +1426,7 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
-    if let Ok(true) = value.is_instance::<PyBool>() {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {

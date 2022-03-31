@@ -461,7 +461,7 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance::<PyBool>().unwrap() {
+        if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
@@ -505,7 +505,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
-        } else if ob.is_instance::<PyTuple>()? {
+        } else if ob.is_instance_of::<PyTuple>()? {
             let tuple = ob.downcast::<PyTuple>().unwrap();
             let items = tuple
                 .iter()
@@ -515,7 +515,7 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
                 })
                 .collect::<PyResult<Vec<_>>>()?;
             Ok(Wrap(AnyValue::Struct(items)))
-        } else if ob.is_instance::<PyList>()? {
+        } else if ob.is_instance_of::<PyList>()? {
             Python::with_gil(|py| {
                 let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
                 let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;

@@ -29,14 +29,14 @@ pub unsafe fn aligned_array<T: Element + NativeType>(
     let dims = [len].into_dimension();
     let strides = [mem::size_of::<T>() as npy_intp];
 
-    let ptr = PY_ARRAY_API.PyArray_New(
-        PY_ARRAY_API.get_type_object(npyffi::NpyTypes::PyArray_Type),
+    let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
+        py,
+        PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        T::get_dtype(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
-        T::npy_type() as i32,
         strides.as_ptr() as *mut _, // strides
         buffer_ptr as _,            // data
-        mem::size_of::<T>() as i32, // itemsize
         flags::NPY_ARRAY_OUT_ARRAY, // flag
         ptr::null_mut(),            //obj
     );

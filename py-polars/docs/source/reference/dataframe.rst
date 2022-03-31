@@ -37,6 +37,7 @@ Conversion
     DataFrame.to_parquet
     DataFrame.to_numpy
     DataFrame.to_dict
+    DataFrame.to_dicts
     DataFrame.to_struct
 
 Aggregation
