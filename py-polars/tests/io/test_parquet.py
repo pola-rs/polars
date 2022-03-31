@@ -130,3 +130,18 @@ def test_parquet_datetime() -> None:
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)
+
+
+def test_nested_parquet() -> None:
+    f = io.BytesIO()
+    data = [
+        {"a": [{"b": 0}]},
+        {"a": [{"b": 1}, {"b": 2}]},
+    ]
+    df = pd.DataFrame(data)
+    df.to_parquet(f)
+
+    read = pl.read_parquet(f, use_pyarrow=True)
+    assert read.columns == ["a"]
+    assert isinstance(read.dtypes[0], pl.datatypes.List)
+    assert isinstance(read.dtypes[0].inner, pl.datatypes.Struct)
