@@ -6,7 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-sqlparser = { version= "0.15.0" }
+sqlparser = { version = "0.15.0" }
 serde = "1"
 serde_json = { version = "1" }
 
