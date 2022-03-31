@@ -1252,6 +1252,8 @@ class LazyFrame(Generic[DF]):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)
+            else:
+                raise ValueError(f"expected and expression, got {e}")
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 

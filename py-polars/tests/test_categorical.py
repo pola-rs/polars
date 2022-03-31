@@ -22,7 +22,7 @@ def test_categorical_outer_join() -> None:
         ).lazy()
 
     out = df1.join(df2, on=["key1", "key2"], how="outer").collect()
-    expected = pl.DataFrame({"val1": [1], "key1": [42], "key2": ["bar"], "val2": [2]})
+    expected = pl.DataFrame({"key1": [42], "key2": ["bar"], "val1": [1], "val2": [2]})
 
     assert out.frame_equal(expected)
     with pl.StringCache():
