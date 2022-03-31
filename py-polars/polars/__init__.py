@@ -71,6 +71,7 @@ from polars.internals.lazy_functions import (
     concat_str,
     count,
     cov,
+    duration,
     exclude,
     first,
     fold,
