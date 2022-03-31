@@ -598,3 +598,42 @@ def test_asof_join_tolerance_grouper() -> None:
     )
 
     assert out.frame_equal(expected)
+
+
+def test_duration_function() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+            "add": [1, 2],
+        }
+    )
+
+    out = df.select(
+        [
+            (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
+            (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
+            (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
+            (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
+                "add_milliseconds"
+            ),
+            (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {
+            "add_weeks": [datetime(2022, 1, 8), datetime(2022, 1, 16)],
+            "add_days": [datetime(2022, 1, 2), datetime(2022, 1, 4)],
+            "add_seconds": [
+                datetime(2022, 1, 1, second=1),
+                datetime(2022, 1, 2, second=2),
+            ],
+            "add_milliseconds": [
+                datetime(2022, 1, 1, microsecond=1000),
+                datetime(2022, 1, 2, microsecond=2000),
+            ],
+            "add_hours": [datetime(2022, 1, 1, hour=1), datetime(2022, 1, 2, hour=2)],
+        }
+    )
+
+    assert out.frame_equal(expected)

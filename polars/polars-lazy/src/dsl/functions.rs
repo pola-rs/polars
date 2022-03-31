@@ -4,7 +4,9 @@
 //!
 use crate::prelude::*;
 use crate::utils::has_wildcard;
+use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::prelude::*;
+use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::utils::get_supertype;
 use rayon::prelude::*;
 use std::ops::{BitAnd, BitOr};
@@ -302,18 +304,29 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
     }
 }
 
+#[derive(Default)]
+pub struct DatetimeArgs {
+    pub year: Expr,
+    pub month: Expr,
+    pub day: Expr,
+    pub hour: Option<Expr>,
+    pub minute: Option<Expr>,
+    pub second: Option<Expr>,
+    pub millisecond: Option<Expr>,
+}
+
 #[cfg(feature = "temporal")]
-pub fn datetime(
-    year: Expr,
-    month: Expr,
-    day: Expr,
-    hour: Option<Expr>,
-    minute: Option<Expr>,
-    second: Option<Expr>,
-    millisecond: Option<Expr>,
-) -> Expr {
+pub fn datetime(args: DatetimeArgs) -> Expr {
     use polars_core::export::chrono::NaiveDate;
     use polars_core::utils::CustomIterTools;
+
+    let year = args.year;
+    let month = args.month;
+    let day = args.day;
+    let hour = args.hour;
+    let minute = args.minute;
+    let second = args.second;
+    let millisecond = args.millisecond;
 
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         assert_eq!(s.len(), 7);
@@ -402,6 +415,83 @@ pub fn datetime(
         },
     }
     .alias("datetime")
+}
+
+#[derive(Default)]
+pub struct DurationArgs {
+    pub days: Option<Expr>,
+    pub seconds: Option<Expr>,
+    pub nanoseconds: Option<Expr>,
+    pub milliseconds: Option<Expr>,
+    pub minutes: Option<Expr>,
+    pub hours: Option<Expr>,
+    pub weeks: Option<Expr>,
+}
+
+#[cfg(feature = "temporal")]
+pub fn duration(args: DurationArgs) -> Expr {
+    let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
+        assert_eq!(s.len(), 7);
+        let days = s[0].cast(&DataType::Int64).unwrap();
+        let seconds = s[1].cast(&DataType::Int64).unwrap();
+        let mut nanoseconds = s[2].cast(&DataType::Int64).unwrap();
+        let milliseconds = s[3].cast(&DataType::Int64).unwrap();
+        let minutes = s[4].cast(&DataType::Int64).unwrap();
+        let hours = s[5].cast(&DataType::Int64).unwrap();
+        let weeks = s[6].cast(&DataType::Int64).unwrap();
+
+        let max_len = s.iter().map(|s| s.len()).max().unwrap();
+
+        let condition = |s: &Series| {
+            // check if not literal 0 || full column
+            (s.len() != max_len && s.get(0) != AnyValue::Int64(0)) || s.len() == max_len
+        };
+
+        if nanoseconds.len() != max_len {
+            nanoseconds = nanoseconds.expand_at_index(0, max_len);
+        }
+        if condition(&days) {
+            nanoseconds = (&nanoseconds + &days) * NANOSECONDS * SECONDS_IN_DAY;
+        }
+        if condition(&seconds) {
+            nanoseconds = (&nanoseconds + &seconds) * NANOSECONDS;
+        }
+        if condition(&milliseconds) {
+            nanoseconds = (&nanoseconds + &milliseconds) * 1_000_000;
+        }
+        if condition(&minutes) {
+            nanoseconds = (&nanoseconds + &minutes) * NANOSECONDS * 60;
+        }
+        if condition(&hours) {
+            nanoseconds = (&nanoseconds + &hours) * NANOSECONDS * 60 * 60;
+        }
+        if condition(&weeks) {
+            nanoseconds = (&nanoseconds + &weeks) * NANOSECONDS * SECONDS_IN_DAY * 7;
+        }
+
+        nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
+    }) as Arc<dyn SeriesUdf>);
+
+    Expr::Function {
+        input: vec![
+            args.days.unwrap_or_else(|| lit(0i64)),
+            args.seconds.unwrap_or_else(|| lit(0i64)),
+            args.nanoseconds.unwrap_or_else(|| lit(0i64)),
+            args.milliseconds.unwrap_or_else(|| lit(0i64)),
+            args.minutes.unwrap_or_else(|| lit(0i64)),
+            args.hours.unwrap_or_else(|| lit(0i64)),
+            args.weeks.unwrap_or_else(|| lit(0i64)),
+        ],
+        function,
+        output_type: GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::ApplyFlat,
+            input_wildcard_expansion: true,
+            auto_explode: false,
+            fmt_str: "duration",
+        },
+    }
+    .alias("duration")
 }
 
 /// Concat multiple

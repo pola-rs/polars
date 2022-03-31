@@ -48,6 +48,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    when
    exclude
    datetime
+   duration
    date
    struct
 

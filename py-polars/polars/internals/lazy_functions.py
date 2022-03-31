@@ -40,7 +40,7 @@ try:
     from polars.polars import max_exprs as _max_exprs
     from polars.polars import min_exprs as _min_exprs
     from polars.polars import pearson_corr as pypearson_corr
-    from polars.polars import py_datetime
+    from polars.polars import py_datetime, py_duration
     from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
@@ -1032,6 +1032,76 @@ def argsort_by(
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
 
 
+def duration(
+    days: Optional[Union["pli.Expr", str]] = None,
+    seconds: Optional[Union["pli.Expr", str]] = None,
+    nanoseconds: Optional[Union["pli.Expr", str]] = None,
+    milliseconds: Optional[Union["pli.Expr", str]] = None,
+    minutes: Optional[Union["pli.Expr", str]] = None,
+    hours: Optional[Union["pli.Expr", str]] = None,
+    weeks: Optional[Union["pli.Expr", str]] = None,
+) -> "pli.Expr":
+    """
+    Create polars `Duration` from distinct time components.
+
+    Returns
+    -------
+    Expr of type `pl.Duration`
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+    ...         "add": [1, 2],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     [
+    ...         (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
+    ...         (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
+    ...         (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
+    ...         (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
+    ...             "add_milliseconds"
+    ...         ),
+    ...         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
+    ...     ]
+    ... )
+    shape: (2, 5)
+    ┌────────────┬────────────┬─────────────────────┬──────────────┬─────────────────────┐
+    │ add_weeks  ┆ add_days   ┆ add_seconds         ┆ add_millisec ┆ add_hours           │
+    │ ---        ┆ ---        ┆ ---                 ┆ onds         ┆ ---                 │
+    │ datetime[m ┆ datetime[m ┆ datetime[ms]        ┆ ---          ┆ datetime[ms]        │
+    │ s]         ┆ s]         ┆                     ┆ datetime[ms] ┆                     │
+    ╞════════════╪════════════╪═════════════════════╪══════════════╪═════════════════════╡
+    │ 2022-01-08 ┆ 2022-01-02 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01   ┆ 2022-01-01 01:00:00 │
+    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.001 ┆                     │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2022-01-16 ┆ 2022-01-04 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02   ┆ 2022-01-02 02:00:00 │
+    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
+    └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
+
+    """
+    if hours is not None:
+        hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
+    if minutes is not None:
+        minutes = pli.expr_to_lit_or_expr(minutes, str_to_lit=False)._pyexpr
+    if seconds is not None:
+        seconds = pli.expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
+    if milliseconds is not None:
+        milliseconds = pli.expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+    if nanoseconds is not None:
+        nanoseconds = pli.expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
+    if days is not None:
+        days = pli.expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
+    if weeks is not None:
+        weeks = pli.expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+    return pli.wrap_expr(
+        py_duration(days, seconds, nanoseconds, milliseconds, minutes, hours, weeks)
+    )
+
+
 def _datetime(
     year: Union["pli.Expr", str],
     month: Union["pli.Expr", str],
@@ -1042,7 +1112,7 @@ def _datetime(
     millisecond: Optional[Union["pli.Expr", str]] = None,
 ) -> "pli.Expr":
     """
-    Create polars Datetime from distinct time components.
+    Create polars `Datetime` from distinct time components.
 
     Parameters
     ----------
@@ -1063,7 +1133,7 @@ def _datetime(
 
     Returns
     -------
-    Expr of type pl.Datetime
+    Expr of type `pl.Datetime`
     """
 
     year_expr = pli.expr_to_lit_or_expr(year, str_to_lit=False)

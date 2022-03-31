@@ -37,7 +37,7 @@ use crate::error::{
     ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
 };
 use crate::file::get_either_file;
-use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
+use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
@@ -215,16 +215,41 @@ fn py_datetime(
     let minute = minute.map(|e| e.inner);
     let second = second.map(|e| e.inner);
     let millisecond = millisecond.map(|e| e.inner);
-    polars::lazy::dsl::datetime(
-        year.inner,
-        month.inner,
-        day.inner,
+
+    let args = DatetimeArgs {
+        year: year.inner,
+        month: month.inner,
+        day: day.inner,
         hour,
         minute,
         second,
         millisecond,
-    )
-    .into()
+    };
+
+    polars::lazy::dsl::datetime(args).into()
+}
+
+#[pyfunction]
+fn py_duration(
+    days: Option<PyExpr>,
+    seconds: Option<PyExpr>,
+    nanoseconds: Option<PyExpr>,
+    milliseconds: Option<PyExpr>,
+    minutes: Option<PyExpr>,
+    hours: Option<PyExpr>,
+    weeks: Option<PyExpr>,
+) -> dsl::PyExpr {
+    let args = DurationArgs {
+        days: days.map(|e| e.inner),
+        seconds: seconds.map(|e| e.inner),
+        nanoseconds: nanoseconds.map(|e| e.inner),
+        milliseconds: milliseconds.map(|e| e.inner),
+        minutes: minutes.map(|e| e.inner),
+        hours: hours.map(|e| e.inner),
+        weeks: weeks.map(|e| e.inner),
+    };
+
+    polars::lazy::dsl::duration(args).into()
 }
 
 #[pyfunction]
@@ -437,6 +462,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
