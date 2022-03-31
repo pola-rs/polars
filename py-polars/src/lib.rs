@@ -113,7 +113,7 @@ fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
 
 #[pyfunction]
 fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
-    if let Ok(true) = value.is_instance::<PyBool>() {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         polars::lazy::dsl::repeat(val, n_times.inner).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {

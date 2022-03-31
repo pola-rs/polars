@@ -746,7 +746,7 @@ impl PyExpr {
                 }
                 Err(_) => {
                     let obj = out;
-                    let is_float = obj.as_ref(py).is_instance::<PyFloat>().unwrap();
+                    let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
 
                     let dtype = s.dtype();
 
@@ -1432,7 +1432,7 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
-    if let Ok(true) = value.is_instance::<PyBool>() {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {

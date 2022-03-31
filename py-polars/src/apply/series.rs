@@ -15,12 +15,12 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     out: &'a PyAny,
     null_count: usize,
 ) -> PyResult<PySeries> {
-    if out.is_instance::<PyBool>().unwrap() {
+    if out.is_instance_of::<PyBool>().unwrap() {
         let first_value = out.extract::<bool>().unwrap();
         applyer
             .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyFloat>().unwrap() {
+    } else if out.is_instance_of::<PyFloat>().unwrap() {
         let first_value = out.extract::<f64>().unwrap();
         applyer
             .apply_lambda_with_primitive_out_type::<Float64Type>(
@@ -30,7 +30,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyInt>().unwrap() {
+    } else if out.is_instance_of::<PyInt>().unwrap() {
         let first_value = out.extract::<i64>().unwrap();
         applyer
             .apply_lambda_with_primitive_out_type::<Int64Type>(
@@ -40,7 +40,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyString>().unwrap() {
+    } else if out.is_instance_of::<PyString>().unwrap() {
         let first_value = out.extract::<&str>().unwrap();
         applyer
             .apply_lambda_with_utf8_out_type(py, lambda, null_count, Some(first_value))
@@ -52,7 +52,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyList>().unwrap() {
+    } else if out.is_instance_of::<PyList>().unwrap() {
         let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
         let series = pypolars.getattr(py, "Series").unwrap().call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
@@ -77,7 +77,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, new_lambda, null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyTuple>().unwrap() {
+    } else if out.is_instance_of::<PyTuple>().unwrap() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
     } else {
