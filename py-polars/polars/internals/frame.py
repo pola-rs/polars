@@ -2702,6 +2702,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "RollingGroupBy[DF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
@@ -2753,6 +2754,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
+        by
+            Also group by this column/these columns
 
         Examples
         --------
@@ -2800,13 +2803,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         """
 
-        return RollingGroupBy(
-            self,
-            index_column,
-            period,
-            offset,
-            closed,
-        )
+        return RollingGroupBy(self, index_column, period, offset, closed, by)
 
     def groupby_dynamic(
         self,
@@ -5107,12 +5104,14 @@ class RollingGroupBy(Generic[DF]):
         period: str,
         offset: Optional[str],
         closed: str = "none",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ):
         self.df = df
         self.time_column = index_column
         self.period = period
         self.offset = offset
         self.closed = closed
+        self.by = by
 
     def agg(
         self,
@@ -5126,10 +5125,7 @@ class RollingGroupBy(Generic[DF]):
         return (
             self.df.lazy()
             .groupby_rolling(
-                self.time_column,
-                self.period,
-                self.offset,
-                self.closed,
+                self.time_column, self.period, self.offset, self.closed, self.by
             )
             .agg(column_to_agg)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)

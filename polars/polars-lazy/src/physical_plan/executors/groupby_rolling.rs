@@ -3,6 +3,7 @@ use super::*;
 #[cfg_attr(not(feature = "dynamic_groupby"), allow(dead_code))]
 pub(crate) struct GroupByRollingExec {
     pub(crate) input: Box<dyn Executor>,
+    pub(crate) keys: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
@@ -21,7 +22,13 @@ impl Executor for GroupByRollingExec {
         let df = self.input.execute(state)?;
         state.set_schema(self.input_schema.clone());
 
-        let (time_key, groups) = df.groupby_rolling(&self.options)?;
+        let keys = self
+            .keys
+            .iter()
+            .map(|e| e.evaluate(&df, state))
+            .collect::<Result<Vec<_>>>()?;
+
+        let (time_key, keys, groups) = df.groupby_rolling(keys, &self.options)?;
 
         let agg_columns = POOL.install(|| {
                     self.aggs
@@ -43,7 +50,8 @@ impl Executor for GroupByRollingExec {
                 })?;
 
         state.clear_schema_cache();
-        let mut columns = Vec::with_capacity(agg_columns.len() + 1);
+        let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
+        columns.extend_from_slice(&keys);
         columns.push(time_key);
         columns.extend(agg_columns.into_iter().flatten());
 

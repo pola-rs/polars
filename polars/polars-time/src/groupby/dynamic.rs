@@ -39,7 +39,11 @@ const LB_NAME: &str = "_lower_boundary";
 const UP_NAME: &str = "_upper_boundary";
 
 pub trait PolarsTemporalGroupby {
-    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)>;
+    fn groupby_rolling(
+        &self,
+        by: Vec<Series>,
+        options: &RollingGroupOptions,
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)>;
 
     fn groupby_dynamic(
         &self,
@@ -49,8 +53,12 @@ pub trait PolarsTemporalGroupby {
 }
 
 impl PolarsTemporalGroupby for DataFrame {
-    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)> {
-        Wrap(self).groupby_rolling(options)
+    fn groupby_rolling(
+        &self,
+        by: Vec<Series>,
+        options: &RollingGroupOptions,
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+        Wrap(self).groupby_rolling(by, options)
     }
 
     fn groupby_dynamic(
@@ -63,7 +71,11 @@ impl PolarsTemporalGroupby for DataFrame {
 }
 
 impl Wrap<&DataFrame> {
-    fn groupby_rolling(&self, options: &RollingGroupOptions) -> Result<(Series, GroupsProxy)> {
+    fn groupby_rolling(
+        &self,
+        by: Vec<Series>,
+        options: &RollingGroupOptions,
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
         let time = self.0.column(&options.index_column)?;
         let time_type = time.dtype();
 
@@ -81,18 +93,18 @@ impl Wrap<&DataFrame> {
             Int32 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type).unwrap();
-                let (out, gt) =
-                    self.impl_groupby_rolling(dt, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, by, gt) =
+                    self.impl_groupby_rolling(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
                 let out = out.cast(&Int64).unwrap().cast(&Int32).unwrap();
-                return Ok((out, gt));
+                return Ok((out, by, gt));
             }
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, gt) =
-                    self.impl_groupby_rolling(dt, options, TimeUnit::Nanoseconds, &time_type)?;
+                let (out, by, gt) =
+                    self.impl_groupby_rolling(dt, by, options, TimeUnit::Nanoseconds, &time_type)?;
                 let out = out.cast(&Int64).unwrap();
-                return Ok((out, gt));
+                return Ok((out, by, gt));
             }
             dt => {
                 return Err(PolarsError::ComputeError(
@@ -104,7 +116,7 @@ impl Wrap<&DataFrame> {
                 ))
             }
         };
-        self.impl_groupby_rolling(dt, options, tu, time_type)
+        self.impl_groupby_rolling(dt, by, options, tu, time_type)
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -303,37 +315,63 @@ impl Wrap<&DataFrame> {
             .map(|s| (s, by, groups))
     }
 
+    /// Returns: time_keys, keys, groupsproxy
     fn impl_groupby_rolling(
         &self,
         dt: Series,
+        mut by: Vec<Series>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> Result<(Series, GroupsProxy)> {
-        let dt = dt.datetime().unwrap().clone();
+    ) -> Result<(Series, Vec<Series>, GroupsProxy)> {
+        let dt = dt.rechunk();
+        let dt = dt.datetime().unwrap();
 
-        let mut groups = dt
-            .downcast_iter()
-            .map(|vals| {
-                let ts = vals.values().as_slice();
-                groupby_values(
-                    options.period,
-                    options.offset,
-                    ts,
-                    options.closed_window,
-                    tu,
-                )
-            })
-            .collect::<Vec<_>>();
-
-        // we don't flatmap because in case of a single chunk we don't need to reallocate the inner vec,
-        // just pop it.
-        let groups = if groups.len() == 1 {
-            GroupsProxy::Slice(groups.pop().unwrap())
+        let groups = if by.is_empty() {
+            let vals = dt.downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
+            GroupsProxy::Slice(groupby_values(
+                options.period,
+                options.offset,
+                ts,
+                options.closed_window,
+                tu,
+            ))
         } else {
-            GroupsProxy::Slice(groups.into_iter().flatten().collect())
+            let groups = self
+                .0
+                .groupby_with_series(by.clone(), true, true)?
+                .take_groups();
+            let groups = groups.into_idx();
+
+            let groupsidx = POOL.install(|| {
+                groups
+                    .par_iter()
+                    .flat_map(|base_g| {
+                        let dt = unsafe { dt.take_unchecked(base_g.1.into()) };
+                        let vals = dt.downcast_iter().next().unwrap();
+                        let ts = vals.values().as_slice();
+                        let sub_groups = groupby_values(
+                            options.period,
+                            options.offset,
+                            ts,
+                            options.closed_window,
+                            tu,
+                        );
+
+                        update_subgroups(&sub_groups, base_g)
+                    })
+                    .collect()
+            });
+            GroupsProxy::Idx(groupsidx)
         };
-        dt.cast(time_type).map(|s| (s, groups))
+
+        if !by.is_empty() {
+            for key in by.iter_mut() {
+                *key = key.agg_first(&groups)
+            }
+        }
+        dt.cast(time_type).map(|s| (s, by, groups))
     }
 }
 
@@ -387,13 +425,16 @@ mod test {
             let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
 
-            let (_, groups) = df
-                .groupby_rolling(&RollingGroupOptions {
-                    index_column: "dt".into(),
-                    period: Duration::parse("2d"),
-                    offset: Duration::parse("-2d"),
-                    closed_window: ClosedWindow::Right,
-                })
+            let (_, _, groups) = df
+                .groupby_rolling(
+                    vec![],
+                    &RollingGroupOptions {
+                        index_column: "dt".into(),
+                        period: Duration::parse("2d"),
+                        offset: Duration::parse("-2d"),
+                        closed_window: ClosedWindow::Right,
+                    },
+                )
                 .unwrap();
             let sum = a.agg_sum(&groups).unwrap();
             let expected = Series::new("", [3, 10, 15, 24, 11, 1]);

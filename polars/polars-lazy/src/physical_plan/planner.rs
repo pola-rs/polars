@@ -331,6 +331,7 @@ impl DefaultPlanner {
                 if let Some(options) = options.rolling {
                     return Ok(Box::new(GroupByRollingExec {
                         input,
+                        keys: phys_keys,
                         aggs: phys_aggs,
                         options,
                         input_schema,
