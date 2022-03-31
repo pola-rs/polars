@@ -212,16 +212,12 @@ impl LogicalPlanBuilder {
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
         let (exprs, schema) =
             try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
-        if !exprs.is_empty() {
-            LogicalPlan::LocalProjection {
-                expr: exprs,
-                input: Box::new(self.0),
-                schema: Arc::new(schema),
-            }
-            .into()
-        } else {
-            self
+        LogicalPlan::LocalProjection {
+            expr: exprs,
+            input: Box::new(self.0),
+            schema: Arc::new(schema),
         }
+        .into()
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
