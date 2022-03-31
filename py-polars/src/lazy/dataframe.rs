@@ -327,15 +327,23 @@ impl PyLazyFrame {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
+        by: Vec<PyExpr>,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
-        let lazy_gb = ldf.groupby_rolling(RollingGroupOptions {
-            index_column,
-            period: Duration::parse(period),
-            offset: Duration::parse(offset),
-            closed_window,
-        });
+        let by = by
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
+        let lazy_gb = ldf.groupby_rolling(
+            by,
+            RollingGroupOptions {
+                index_column,
+                period: Duration::parse(period),
+                offset: Duration::parse(offset),
+                closed_window,
+            },
+        );
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }

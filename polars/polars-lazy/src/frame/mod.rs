@@ -716,12 +716,16 @@ impl LazyFrame {
         }
     }
 
-    pub fn groupby_rolling(self, options: RollingGroupOptions) -> LazyGroupBy {
+    pub fn groupby_rolling<E: AsRef<[Expr]>>(
+        self,
+        by: E,
+        options: RollingGroupOptions,
+    ) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: vec![],
+            keys: by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
             rolling_options: Some(options),

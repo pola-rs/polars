@@ -20,4 +20,10 @@ dtype-time = []
 dtype-duration = []
 private = []
 
+test = [
+  "dtype-date",
+  "dtype-datetime",
+  "polars-core/fmt",
+]
+
 default = ["private"]

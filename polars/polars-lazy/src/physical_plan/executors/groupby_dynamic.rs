@@ -52,7 +52,7 @@ impl Executor for GroupByDynamicExec {
 
         state.clear_schema_cache();
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
-        columns.extend(keys);
+        columns.extend_from_slice(&keys);
         columns.push(time_key);
         columns.extend(agg_columns.into_iter().flatten());
 

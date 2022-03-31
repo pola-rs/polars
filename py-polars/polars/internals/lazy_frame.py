@@ -714,6 +714,7 @@ class LazyFrame(Generic[DF]):
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy[LDF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
@@ -765,6 +766,8 @@ class LazyFrame(Generic[DF]):
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
+        by
+            Also group by this column/these columns
 
         Examples
         --------
@@ -815,13 +818,9 @@ class LazyFrame(Generic[DF]):
 
         if offset is None:
             offset = f"-{period}"
+        by = _prepare_groupby_inputs(by)
 
-        lgb = self._ldf.groupby_rolling(
-            index_column,
-            period,
-            offset,
-            closed,
-        )
+        lgb = self._ldf.groupby_rolling(index_column, period, offset, closed, by)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(

@@ -637,3 +637,32 @@ def test_duration_function() -> None:
     )
 
     assert out.frame_equal(expected)
+
+
+def test_rolling_groupby_by_argument() -> None:
+    df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
+
+    out = df.groupby_rolling("times", "5i", by=["groups"]).agg(
+        pl.col("times").list().alias("agg_list")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "groups": [1, 1, 1, 1, 2, 2, 2, 2, 2, 2],
+            "times": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "agg_list": [
+                [0],
+                [0, 1],
+                [0, 1, 2],
+                [0, 1, 2, 3],
+                [4],
+                [4, 5],
+                [4, 5, 6],
+                [4, 5, 6, 7],
+                [4, 5, 6, 7, 8],
+                [5, 6, 7, 8, 9],
+            ],
+        }
+    )
+
+    assert out.frame_equal(expected)
