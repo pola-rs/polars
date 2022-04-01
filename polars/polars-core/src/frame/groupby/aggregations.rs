@@ -598,7 +598,7 @@ where
             GroupsProxy::Slice(groups) => {
                 agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
                     debug_assert!(len < self.len() as IdxSize);
-                    match first - len {
+                    match len {
                         0 => None,
                         1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
                         _ => {
