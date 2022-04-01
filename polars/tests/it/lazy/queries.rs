@@ -108,3 +108,19 @@ fn max_on_empty_df_3027() -> Result<()> {
     assert_eq!(out.shape(), (0, 3));
     Ok(())
 }
+
+#[test]
+fn test_alias_before_cast() -> Result<()> {
+    let out = df![
+        "a" => [1, 2, 3],
+    ]?
+    .lazy()
+    .select([col("a").alias("d").cast(DataType::Int32)])
+    .select([all()])
+    .collect()?;
+    assert_eq!(
+        Vec::from(out.column("d")?.i32()?),
+        &[Some(1), Some(2), Some(3)]
+    );
+    Ok(())
+}

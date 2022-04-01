@@ -1,4 +1,5 @@
 use crate::logical_plan::Context;
+use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
@@ -255,16 +256,30 @@ impl ProjectionPushDown {
                     //
                     // In this query, bar cannot pass this projection, as it would not exist in DF.
                     if !acc_projections.is_empty() {
-                        if let AExpr::Alias(_, name) = expr_arena.get(*e) {
-                            if projected_names.remove(name) {
-                                acc_projections = acc_projections
-                                    .into_iter()
-                                    .filter(|expr| {
-                                        !aexpr_to_root_names(*expr, expr_arena).contains(name)
-                                    })
-                                    .collect();
+                        for (_, ae) in (&*expr_arena).iter(*e) {
+                            if let AExpr::Alias(_, name) = ae {
+                                if projected_names.remove(name) {
+                                    acc_projections = acc_projections
+                                        .into_iter()
+                                        .filter(|expr| {
+                                            !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                                        })
+                                        .collect();
+                                }
                             }
                         }
+                        // if has_aexpr(*e, expr_arena, |ae| matches!(ae, AExpr::Alias(_, _))) {}
+                        //
+                        // if let AExpr::Alias(_, name) = expr_arena.get(*e) {
+                        //     if projected_names.remove(name) {
+                        //         acc_projections = acc_projections
+                        //             .into_iter()
+                        //             .filter(|expr| {
+                        //                 !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                        //             })
+                        //             .collect();
+                        //     }
+                        // }
                     }
 
                     add_expr_to_accumulated(
