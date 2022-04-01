@@ -90,3 +90,21 @@ fn test_special_groupby_schemas() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn max_on_empty_df_3027() -> Result<()> {
+    let df = df! {
+        "id" => ["1"],
+        "name" => ["one"],
+        "numb" => [1]
+    }?
+    .head(Some(0));
+
+    let out = df
+        .lazy()
+        .groupby(&[col("id"), col("name")])
+        .agg(&[col("numb").max()])
+        .collect()?;
+    assert_eq!(out.shape(), (0, 3));
+    Ok(())
+}

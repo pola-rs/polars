@@ -144,7 +144,7 @@ impl DataFrame {
 
                     // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
                     // value we fall back to default groupby
-                    if (lhs.get_values_size() + rhs.get_values_size()) / lhs.len() < 128 {
+                    if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
                         pack_utf8_columns(lhs, rhs, n_partitions, sorted)
                     } else {
                         groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
