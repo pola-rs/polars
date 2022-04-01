@@ -309,6 +309,25 @@ impl LogicalPlanBuilder {
         );
         schema.merge(other);
 
+        let index_columns = &[
+            rolling_options
+                .as_ref()
+                .map(|options| &options.index_column),
+            dynamic_options
+                .as_ref()
+                .map(|options| &options.index_column),
+        ];
+        for &name in index_columns.iter().flatten() {
+            let dtype = try_delayed!(
+                current_schema
+                    .get(name)
+                    .ok_or_else(|| PolarsError::NotFound(name.clone())),
+                self.0,
+                into
+            );
+            schema.with_column(name.clone(), dtype.clone());
+        }
+
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
             keys,
