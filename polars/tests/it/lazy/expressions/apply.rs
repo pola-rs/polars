@@ -41,3 +41,24 @@ fn test_groups_update() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "log")]
+fn test_groups_update_binary_shift_log() -> Result<()> {
+    let out = df![
+        "a" => [1, 2, 3, 5],
+        "b" => [1, 2, 1, 2],
+    ]?
+    .lazy()
+    .groupby([col("b")])
+    .agg([col("a") - col("a").shift(1).log(2.0)])
+    .sort("b", Default::default())
+    .explode([col("a")])
+    .collect()?;
+    assert_eq!(
+        Vec::from(out.column("a")?.f64()?),
+        &[None, Some(3.0), None, Some(4.0)]
+    );
+
+    Ok(())
+}

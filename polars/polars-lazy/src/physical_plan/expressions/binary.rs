@@ -263,14 +263,28 @@ impl PhysicalExpr for BinaryExpr {
             // Both are or a flat series
             // so we can flatten the Series and apply the operators
             _ => {
-                let out = apply_operator(
-                    ac_l.flat_naive().as_ref(),
-                    ac_r.flat_naive().as_ref(),
-                    self.op,
-                )?;
+                // the groups state differs, so we aggregate both and flatten again to make them align
+                if ac_l.update_groups != UpdateGroups::No || ac_r.update_groups != UpdateGroups::No
+                {
+                    // use the aggregated state to determine the new groups
+                    let lhs = ac_l.aggregated();
+                    ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));
 
-                ac_l.combine_groups(ac_r).with_series(out, false);
-                Ok(ac_l)
+                    let out =
+                        apply_operator(&lhs.explode()?, &ac_r.aggregated().explode()?, self.op)?;
+                    ac_l.with_series(out, false);
+                    Ok(ac_l)
+                } else {
+                    let out = apply_operator(
+                        ac_l.flat_naive().as_ref(),
+                        ac_r.flat_naive().as_ref(),
+                        self.op,
+                    )?;
+
+                    ac_l.combine_groups(ac_r).with_series(out, false);
+
+                    Ok(ac_l)
+                }
             }
         }
     }
