@@ -268,18 +268,6 @@ impl ProjectionPushDown {
                                 }
                             }
                         }
-                        // if has_aexpr(*e, expr_arena, |ae| matches!(ae, AExpr::Alias(_, _))) {}
-                        //
-                        // if let AExpr::Alias(_, name) = expr_arena.get(*e) {
-                        //     if projected_names.remove(name) {
-                        //         acc_projections = acc_projections
-                        //             .into_iter()
-                        //             .filter(|expr| {
-                        //                 !aexpr_to_root_names(*expr, expr_arena).contains(name)
-                        //             })
-                        //             .collect();
-                        //     }
-                        // }
                     }
 
                     add_expr_to_accumulated(
