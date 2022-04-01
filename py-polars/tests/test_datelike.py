@@ -666,3 +666,40 @@ def test_rolling_groupby_by_argument() -> None:
     )
 
     assert out.frame_equal(expected)
+
+
+def test_groupby_rolling_mean_3020() -> None:
+    df = pl.DataFrame(
+        {
+            "Date": [
+                "1998-04-12",
+                "1998-04-19",
+                "1998-04-26",
+                "1998-05-03",
+                "1998-05-10",
+                "1998-05-17",
+                "1998-05-24",
+            ],
+            "val": range(7),
+        }
+    ).with_column(pl.col("Date").str.strptime(pl.Date))
+    assert (
+        df.groupby_rolling(index_column="Date", period="1w")
+        .agg(pl.col("val").mean().alias("val_mean"))
+        .frame_equal(
+            pl.DataFrame(
+                {
+                    "Date": [
+                        date(1998, 4, 12),
+                        date(1998, 4, 19),
+                        date(1998, 4, 26),
+                        date(1998, 5, 3),
+                        date(1998, 5, 10),
+                        date(1998, 5, 17),
+                        date(1998, 5, 24),
+                    ],
+                    "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                }
+            )
+        )
+    )
