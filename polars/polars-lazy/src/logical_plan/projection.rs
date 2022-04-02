@@ -240,7 +240,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
 fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
     expr.mutate().apply(|e| {
         match e {
-            Expr::Function { input, .. } => {
+            Expr::Function { input, options, .. } if options.input_wildcard_expansion => {
                 if input
                     .iter()
                     .any(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
