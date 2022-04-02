@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, U
 import numpy as np
 
 from polars.datatypes import DataType, Date, Datetime
+from random import SystemRandom
 
 if sys.version_info >= (3, 10):
     from typing import TypeGuard
@@ -210,3 +211,12 @@ def format_path(path: Union[str, Path]) -> str:
     Returnsa string path, expanding the home directory if present.
     """
     return os.path.expanduser(path)
+
+def get_random_seed() -> int:
+    """
+    Returns a randomly generated unsigned integer.
+    """
+    generator = SystemRandom()
+    seed = generator.randint(0, sys.maxsize * 2)
+
+    return seed

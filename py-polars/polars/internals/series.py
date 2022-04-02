@@ -74,6 +74,7 @@ from polars.utils import (
     _ptr_to_numpy,
     _to_python_datetime,
     range_to_slice,
+    get_random_seed
 )
 
 try:
@@ -3015,7 +3016,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -3034,7 +3035,7 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)  # doctest: +IGNORE_RESULT
+        >>> s.sample(2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -3043,6 +3044,9 @@ class Series:
         ]
 
         """
+        if seed is None:
+            seed = get_random_seed()
+
         if n is not None:
             return wrap_s(self._s.sample_n(n, with_replacement, seed))
         return wrap_s(self._s.sample_frac(frac, with_replacement, seed))

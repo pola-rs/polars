@@ -71,6 +71,7 @@ from polars.utils import (
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
+    get_random_seed
 )
 
 try:
@@ -4725,7 +4726,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> DF:
         """
         Sample from this DataFrame by setting either `n` or `frac`.
@@ -4750,7 +4751,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.sample(n=2)  # doctest: +IGNORE_RESULT
+        >>> df.sample(n=2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4763,6 +4764,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
+        if seed is None:
+            seed = get_random_seed()
+
         if n is not None:
             return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
         return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
