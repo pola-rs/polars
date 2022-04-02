@@ -207,6 +207,6 @@ def _in_notebook() -> bool:
 
 def format_path(path: Union[str, Path]) -> str:
     """
-    Returnsa string path, expanding the home directory if present.
+    Returns a string path, expanding the home directory if present.
     """
     return os.path.expanduser(path)
