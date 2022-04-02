@@ -13,15 +13,15 @@ fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
 
 fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
     // make sure that zip works same as master branch
-    // that is that null are ignored from mask and that we take from the left array
+    // that is that null are ignored from mask and that we take from the right array
 
     match mask.validity() {
-        // nulls are set to true meaning we take from the left in the zip/ if_then_else kernel
-        Some(validity) => {
-            let mask = mask.values() | &(!validity);
+        // nulls are set to true meaning we take from the right in the zip/ if_then_else kernel
+        Some(validity) if validity.null_count() == 0 => {
+            let mask = mask.values() & validity;
             BooleanArray::from_data_default(mask, None)
         }
-        None => mask.clone(),
+        _ => mask.clone(),
     }
 }
 
