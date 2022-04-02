@@ -73,8 +73,8 @@ from polars.utils import (
     _datetime_to_pl_timestamp,
     _ptr_to_numpy,
     _to_python_datetime,
+    get_random_seed,
     range_to_slice,
-    get_random_seed
 )
 
 try:

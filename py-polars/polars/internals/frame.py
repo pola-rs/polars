@@ -67,11 +67,11 @@ from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
     format_path,
+    get_random_seed,
     handle_projection_columns,
     is_int_sequence,
     is_str_sequence,
     range_to_slice,
-    get_random_seed
 )
 
 try:
