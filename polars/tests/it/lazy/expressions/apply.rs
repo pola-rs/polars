@@ -62,3 +62,23 @@ fn test_groups_update_binary_shift_log() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_expand_list() -> Result<()> {
+    let out = df![
+        "a" => [1, 2],
+        "b" => [2, 3],
+    ]?
+    .lazy()
+    .select([cols(["a", "b"]).cumsum(false)])
+    .collect()?;
+
+    let expected = df![
+        "a" => [1, 3],
+        "b" => [2, 5]
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+
+    Ok(())
+}
