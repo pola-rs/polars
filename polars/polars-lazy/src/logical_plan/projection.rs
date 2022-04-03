@@ -145,7 +145,12 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
 /// replace `DtypeColumn` with `col("foo")..col("bar")`
 fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &[DataType]) {
     for dtype in dtypes {
-        for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
+        // we compare by variant not by exact datatype as units/ refmaps etc may differ.
+        let variant = std::mem::discriminant(dtype);
+        for field in schema
+            .iter_fields()
+            .filter(|f| std::mem::discriminant(f.data_type()) == variant)
+        {
             let name = field.name();
 
             let mut new_expr = expr.clone();
