@@ -56,6 +56,14 @@ fn all_unit_length(ca: &ListChunked) -> bool {
     (offset[offset.len() - 1] as usize) == list_arr.len() as usize
 }
 
+fn check_map_output_len(input_len: usize, output_len: usize) -> Result<()> {
+    if input_len != output_len {
+        Err(PolarsError::ComputeError("A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.".into()))
+    } else {
+        Ok(())
+    }
+}
+
 impl PhysicalExpr for ApplyExpr {
     fn as_expression(&self) -> &Expr {
         &self.expr
@@ -115,10 +123,7 @@ impl PhysicalExpr for ApplyExpr {
                     let input_len = input.len();
                     let s = self.function.call_udf(&mut [input])?;
 
-                    if s.len() != input_len {
-                        return Err(PolarsError::ComputeError("A map function may never return a Series of a different length than its input".into()));
-                    }
-
+                    check_map_output_len(input_len, s.len())?;
                     ac.with_series(s, false);
                     Ok(ac)
                 }
@@ -176,7 +181,10 @@ impl PhysicalExpr for ApplyExpr {
                         .map(|ac| ac.flat_naive().into_owned())
                         .collect::<Vec<_>>();
 
+                    let input_len = s.iter().map(|s| s.len()).max().unwrap();
                     let s = self.function.call_udf(&mut s)?;
+                    check_map_output_len(input_len, s.len())?;
+
                     let mut ac = acs.pop().unwrap();
                     if ac.is_aggregated() {
                         ac.with_update_groups(UpdateGroups::WithGroupsLen);
