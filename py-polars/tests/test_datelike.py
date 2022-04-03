@@ -703,3 +703,94 @@ def test_groupby_rolling_mean_3020() -> None:
             )
         )
     )
+
+
+def test_asof_join() -> None:
+    fmt = "%F %T%.3f"
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.023
+2016-05-25 13:30:00.030
+2016-05-25 13:30:00.041
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.049
+2016-05-25 13:30:00.072
+2016-05-25 13:30:00.075""".split(
+        "\n"
+    )
+
+    ticker = """GOOG
+MSFT
+MSFT
+MSFT
+GOOG
+AAPL
+GOOG
+MSFT""".split(
+        "\n"
+    )
+
+    quotes = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+        }
+    )
+
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.038
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048""".split(
+        "\n"
+    )
+
+    ticker = """MSFT
+MSFT
+GOOG
+GOOG
+AAPL""".split(
+        "\n"
+    )
+
+    trades = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
+        }
+    )
+
+    out = trades.join_asof(quotes, on="dates", strategy="backward")
+    assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
+    assert (out["dates"].cast(int) / 1000).to_list() == [
+        1464183000023,
+        1464183000038,
+        1464183000048,
+        1464183000048,
+        1464183000048,
+    ]
+    assert trades.join_asof(quotes, on="dates", strategy="forward")[
+        "bid_right"
+    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+
+    out = trades.join_asof(quotes, on="dates", by="ticker")
+    assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
+
+    out = quotes.join_asof(trades, on="dates", by="ticker")
+    assert out["bid_right"].to_list() == [
+        None,
+        51.95,
+        51.95,
+        51.95,
+        720.92,
+        98.0,
+        720.92,
+        51.95,
+    ]
+    assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
+    assert quotes.join_asof(trades, on="dates", strategy="forward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
