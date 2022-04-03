@@ -182,3 +182,19 @@ def test_entropy() -> None:
         == [(1.0549201679861442, 1.0549201679861442)]
     )
     assert df["id"].entropy() == -6.068425588244111
+
+
+def test_dot_in_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "x": [1, 1, 1, 1, 1, 1],
+            "y": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    assert (
+        df.groupby("group", maintain_order=True)
+        .agg(pl.col("x").dot("y").alias("dot"))
+        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    )

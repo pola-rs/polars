@@ -1518,7 +1518,7 @@ impl Expr {
     pub fn dot(self, other: Expr) -> Expr {
         let function = |s: &mut [Series]| Ok((&s[0] * &s[1]).sum_as_series());
 
-        self.map_many(function, &[other], GetOutput::same_type())
+        self.apply_many(function, &[other], GetOutput::same_type())
             .with_fmt("dot")
     }
 
