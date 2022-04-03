@@ -75,5 +75,40 @@ fn includes_null_predicate_3038() -> Result<()> {
         "b" => [Some("good hit"), None, None],
     }?;
     assert!(res.frame_equal_missing(&exp_df));
+
+    let df = df! {
+        "a" => ["a1", "a2", "a3", "a4", "a2"],
+        "b" => [Some("tree"), None, None, None, None],
+    }?;
+    let res = df
+        .lazy()
+        .with_column(
+            when(col("b").map(
+                move |s| {
+                    s.utf8()?
+                        .to_lowercase()
+                        .contains("non-existent")
+                        .map(Into::into)
+                },
+                GetOutput::from_type(DataType::Boolean),
+            ))
+            .then(lit("weird-1"))
+            .when(col("a").eq(lit("a1".to_string())))
+            .then(lit("ok1"))
+            .when(col("a").eq(lit("a2".to_string())))
+            .then(lit("ok2"))
+            .when(lit(true))
+            .then(lit("ft"))
+            .otherwise(Expr::Literal(LiteralValue::Null))
+            .alias("c"),
+        )
+        .collect()?;
+    let exp_df = df! {
+        "a" => ["a1", "a2", "a3", "a4", "a2"],
+        "b" => [Some("tree"), None, None, None, None],
+        "c" => ["ok1", "ok2", "ft", "ft", "ok2"]
+    }?;
+    assert!(res.frame_equal_missing(&exp_df));
+
     Ok(())
 }
