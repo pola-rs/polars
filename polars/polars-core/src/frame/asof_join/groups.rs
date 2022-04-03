@@ -9,6 +9,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Sub;
 
+#[cfg(feature = "dtype-categorical")]
+use crate::frame::hash_join::check_categorical_src;
 use crate::frame::hash_join::{
     create_probe_table, get_hash_tbl_threaded_join_partitioned, multiple_keys as mk, prepare_strs,
 };
@@ -504,6 +506,11 @@ impl DataFrame {
                     }
                 }
             } else {
+                for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
+                    check_asof_columns(lhs, rhs)?;
+                    #[cfg(feature = "dtype-categorical")]
+                    check_categorical_src(lhs.dtype(), rhs.dtype())?;
+                }
                 asof_join_by_multiple(&left_by, &right_by, left_asof, right_asof)
             }
         } else {
