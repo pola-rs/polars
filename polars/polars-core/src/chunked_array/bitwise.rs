@@ -1,6 +1,5 @@
 use super::*;
 use crate::utils::{align_chunks_binary, combine_validities, CustomIterTools};
-use arrow::bitmap::MutableBitmap;
 use arrow::compute;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
@@ -19,7 +18,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -27,8 +26,7 @@ where
                     .map(|(l, r)| *l & *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr =
-                    PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -52,7 +50,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -60,8 +58,7 @@ where
                     .map(|(l, r)| *l | *r)
                     .collect_trusted::<Vec<_>>();
 
-                let arr =
-                    PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -85,7 +82,7 @@ where
             .map(|(l_arr, r_arr)| {
                 let l_vals = l_arr.values().as_slice();
                 let r_vals = r_arr.values().as_slice();
-                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities(l_arr.validity(), r_arr.validity());
 
                 let av = l_vals
                     .iter()
@@ -93,8 +90,7 @@ where
                     .map(|(l, r)| l.bitxor(*r))
                     .collect_trusted::<Vec<_>>();
 
-                let arr =
-                    PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), valididity);
+                let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), av.into(), validity);
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -191,20 +187,10 @@ impl BitXor for &BooleanChunked {
             .downcast_iter()
             .zip(r.downcast_iter())
             .map(|(l_arr, r_arr)| {
-                let valididity = combine_validities(l_arr.validity(), r_arr.validity());
+                let validity = combine_validities(l_arr.validity(), r_arr.validity());
+                let values = l_arr.values() ^ r_arr.values();
 
-                let mut vals = MutableBitmap::with_capacity(l_arr.len());
-
-                let iter = l_arr
-                    .values_iter()
-                    .zip(r_arr.values_iter())
-                    .map(|(l, r)| l.bitxor(r));
-
-                // Safety:
-                // length can be trusted
-                unsafe { vals.extend_from_trusted_len_iter_unchecked(iter) };
-
-                let arr = BooleanArray::from_data_default(vals.into(), valididity);
+                let arr = BooleanArray::from_data_default(values, validity);
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
@@ -251,16 +237,6 @@ impl BitAnd for &BooleanChunked {
             .downcast_iter()
             .zip(rhs.downcast_iter())
             .map(|(lhs, rhs)| {
-                // early return from all `false` paths
-                if lhs.null_count() == 0 && rhs.null_count() == 0 {
-                    if lhs.values().null_count() == lhs.len() {
-                        return Arc::new(lhs.clone()) as ArrayRef;
-                    }
-                    if rhs.values().null_count() == rhs.len() {
-                        return Arc::new(rhs.clone()) as ArrayRef;
-                    }
-                }
-
                 Arc::new(compute::boolean_kleene::and(lhs, rhs).expect("should be same size"))
                     as ArrayRef
             })
