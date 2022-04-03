@@ -2,9 +2,8 @@ use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::Buffer;
 use polars_arrow::bit_util::unset_bit_raw;
-use polars_arrow::trusted_len::FromIteratorReversed;
+use polars_arrow::trusted_len::{FromIteratorReversed, PushUnchecked};
 use std::borrow::Borrow;
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
@@ -30,7 +29,7 @@ where
     // know we don't have null values.
     fn from_iter_trusted_length<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let values = unsafe { Buffer::from_trusted_len_iter_unchecked(iter) };
+        let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
         let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), values, None);
 
         NoNull::new(ChunkedArray::from_chunks("", vec![Arc::new(arr)]))
