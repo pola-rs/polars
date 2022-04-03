@@ -36,6 +36,12 @@ impl DataFrame {
         multithreaded: bool,
         sorted: bool,
     ) -> Result<GroupBy> {
+        if by.is_empty() {
+            return Err(PolarsError::ComputeError(
+                "expected keys in groupby operation, got nothing".into(),
+            ));
+        }
+
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();
