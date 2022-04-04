@@ -94,16 +94,10 @@ See the results in [h2oai's db-benchmark](https://h2oai.github.io/db-benchmark/)
 Install the latest polars version with:
 
 ```
-$ pip3 install polars
-```
-
-Update existing polars installation to the lastest version with:
-
-```
 $ pip3 install -U polars
 ```
 
-Releases happen quite often (weekly / every few days) at the moment, so updating polars regularily to get the latest bugfixes / features might not be a bad idea.
+Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 
 
 ## Rust setup
@@ -179,6 +173,13 @@ Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 
 ## Use custom Rust function in python?
 See [this example](./examples/python_rust_compiled_function).
+
+# Going big...
+Do you expect more than `32^2` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
+
+Or for python users install `$ pip install -U polars-64`.
+
+Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
 ## Acknowledgements
 
