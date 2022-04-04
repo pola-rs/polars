@@ -1,6 +1,8 @@
 from functools import reduce
 from typing import List, Optional
 
+import numpy as np
+
 import polars as pl
 
 
@@ -107,3 +109,21 @@ def test_apply_struct() -> None:
     )
 
     assert out.frame_equal(expected)
+
+
+def test_apply_numpy_out_3057() -> None:
+    df = pl.DataFrame(
+        dict(
+            id=[0, 0, 0, 1, 1, 1], t=[2.0, 4.3, 5, 10, 11, 14], y=[0.0, 1, 1.3, 2, 3, 4]
+        )
+    )
+
+    assert (
+        df.groupby("id", maintain_order=True)
+        .agg(
+            pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
+                "result"
+            )
+        )
+        .frame_equal(pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]}))
+    )
