@@ -208,6 +208,13 @@ def sequence_to_pyseries(
 
         else:
             constructor = py_type_to_constructor(dtype_)
+
+            if constructor == PySeries.new_object:
+                np_constructor = numpy_type_to_constructor(dtype_)
+                if np_constructor is not None:
+                    values = np.array(values)  # type: ignore
+                    constructor = np_constructor
+
             return constructor(name, values, strict)
 
 
