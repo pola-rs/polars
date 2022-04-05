@@ -14,7 +14,7 @@ mod test {
     fn test_expr() {
         let dialect = GenericDialect {};
         let sql =
-            "SELECT a, (b::int + a)/a as c, count(b) + (-1.0) as b1 FROM t group by a limit 100;";
+            "SELECT a, (b::int + a)/a as c, count(b) + (-1.0) as b1 FROM t WHERE a > 0 and a < 10 group by a limit 100;";
         let ast = Parser::parse_sql(&dialect, sql).unwrap();
         if !ast.is_empty() {
             println!("{:?}", ast);
@@ -37,15 +37,19 @@ mod test {
                 r#"
             SELECT a, b, a + b as c
             FROM df
+            where a > 10 and a < 20
             LIMIT 100
         "#,
             )?
             .collect()?;
         let df_pl = df
             .lazy()
+            .filter(col("a").gt(lit(10)).and(col("a").lt(lit(20))))
             .select(&[col("a"), col("b"), (col("a") + col("b")).alias("c")])
             .limit(100)
             .collect()?;
+        println!("{:?}", df_sql);
+        println!("{:?}", df_pl);
         assert_eq!(df_sql, df_pl);
         Ok(())
     }

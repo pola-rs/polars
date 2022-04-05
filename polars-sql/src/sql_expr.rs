@@ -3,23 +3,17 @@ use polars::prelude::{col, lit, DataType, Expr, LiteralValue, Result, TimeUnit};
 
 use sqlparser::ast::{
     BinaryOperator as SQLBinaryOperator, DataType as SQLDataType, Expr as SqlExpr,
-    Function as SQLFunction, Value as SqlValue,
+    Function as SQLFunction, Value as SqlValue, WindowSpec,
 };
 
-fn cast_(expr: Expr, data_type: &SQLDataType) -> Result<Expr> {
-    let polars_type = match data_type {
+fn map_sql_polars_datatype(data_type: &SQLDataType) -> Result<DataType> {
+    Ok(match data_type {
         SQLDataType::Char(_)
         | SQLDataType::Varchar(_)
         | SQLDataType::Uuid
         | SQLDataType::Clob(_)
         | SQLDataType::Text
         | SQLDataType::String => DataType::Utf8,
-
-        // SQLDataType::Binary(_) => todo!(),
-        // SQLDataType::Varbinary(_) => todo!(),
-        // SQLDataType::Blob(_) => todo!(),
-        // SQLDataType::Bytea => todo!(),
-        // SQLDataType::Decimal(_, _) => todo!(),
         SQLDataType::Float(_) => DataType::Float32,
         SQLDataType::Real => DataType::Float32,
         SQLDataType::Double => DataType::Float64,
@@ -37,67 +31,48 @@ fn cast_(expr: Expr, data_type: &SQLDataType) -> Result<Expr> {
         SQLDataType::Time => DataType::Time,
         SQLDataType::Timestamp => DataType::Datetime(TimeUnit::Milliseconds, None),
         SQLDataType::Interval => DataType::Duration(TimeUnit::Milliseconds),
-        // SQLDataType::Regclass => todo!(),
-        // SQLDataType::Custom(_) => todo!(),
-        // SQLDataType::Array(_) => todo!(),
-        // SQLDataType::Enum(_) => todo!(),
-        // SQLDataType::Set(_) => todo!(),
+        SQLDataType::Array(inner_type) => {
+            DataType::List(Box::new(map_sql_polars_datatype(inner_type)?))
+        }
         _ => {
             return Err(PolarsError::ComputeError(
                 format!(
-                    "Casting for SQL Datatype {:?} was not supported in polars-sql yet!",
+                    "SQL Datatype {:?} was not supported in polars-sql yet!",
                     data_type
                 )
                 .into(),
             ))
         }
-    };
+    })
+}
+
+fn cast_(expr: Expr, data_type: &SQLDataType) -> Result<Expr> {
+    let polars_type = map_sql_polars_datatype(data_type)?;
     Ok(expr.cast(polars_type))
 }
 
 fn binary_op_(left: Expr, right: Expr, op: &SQLBinaryOperator) -> Result<Expr> {
     Ok(match op {
-        SQLBinaryOperator::Plus => {
-            left + right
-        },
-        SQLBinaryOperator::Minus => {
-            left -  right
-        },
-        SQLBinaryOperator::Multiply => {
-            left * right
-        },
-        SQLBinaryOperator::Divide => {
-            left / right
-        },
-        SQLBinaryOperator::Modulo => {
-            left % right
-        },
-        _ => return Err(PolarsError::ComputeError(format!("SQL Operator {:?} was not supported in polars-sql yet!", op).into()))
-        // SQLBinaryOperator::StringConcat => todo!(),
-        // SQLBinaryOperator::Gt => todo!(),
-        // SQLBinaryOperator::Lt => todo!(),
-        // SQLBinaryOperator::GtEq => todo!(),
-        // SQLBinaryOperator::LtEq => todo!(),
-        // SQLBinaryOperator::Spaceship => todo!(),
-        // SQLBinaryOperator::Eq => todo!(),
-        // SQLBinaryOperator::NotEq => todo!(),
-        // SQLBinaryOperator::And => todo!(),
-        // SQLBinaryOperator::Or => todo!(),
-        // SQLBinaryOperator::Xor => todo!(),
-        // SQLBinaryOperator::Like => todo!(),
-        // SQLBinaryOperator::NotLike => todo!(),
-        // SQLBinaryOperator::ILike => todo!(),
-        // SQLBinaryOperator::NotILike => todo!(),
-        // SQLBinaryOperator::BitwiseOr => todo!(),
-        // SQLBinaryOperator::BitwiseAnd => todo!(),
-        // SQLBinaryOperator::BitwiseXor => todo!(),
-        // SQLBinaryOperator::PGBitwiseXor => todo!(),
-        // SQLBinaryOperator::PGBitwiseShiftLeft => todo!(),
-        // SQLBinaryOperator::PGBitwiseShiftRight => todo!(),
-        // SQLBinaryOperator::PGRegexMatch => todo!(),
-        // SQLBinaryOperator::PGRegexIMatch => todo!(),
-        // SQLBinaryOperator::PGRegexNotMatch => todo!(),
-        // SQLBinaryOperator::PGRegexNotIMatch => todo!(),
+        SQLBinaryOperator::Plus => left + right,
+        SQLBinaryOperator::Minus => left - right,
+        SQLBinaryOperator::Multiply => left * right,
+        SQLBinaryOperator::Divide => left / right,
+        SQLBinaryOperator::Modulo => left % right,
+        SQLBinaryOperator::StringConcat => left.cast(DataType::Utf8) + right.cast(DataType::Utf8),
+        SQLBinaryOperator::Gt => left.gt(right),
+        SQLBinaryOperator::Lt => left.lt(right),
+        SQLBinaryOperator::GtEq => left.gt_eq(right),
+        SQLBinaryOperator::LtEq => left.lt_eq(right),
+        SQLBinaryOperator::Eq => left.eq(right),
+        SQLBinaryOperator::NotEq => left.eq(right).not(),
+        SQLBinaryOperator::And => left.and(right),
+        SQLBinaryOperator::Or => left.or(right),
+        SQLBinaryOperator::Xor => left.xor(right),
+        _ => {
+            return Err(PolarsError::ComputeError(
+                format!("SQL Operator {:?} was not supported in polars-sql yet!", op).into(),
+            ))
+        }
     })
 }
 
@@ -120,9 +95,7 @@ fn literal_expr(value: &SqlValue) -> Result<Expr> {
         SqlValue::HexStringLiteral(s) => lit(s.clone()),
         SqlValue::DoubleQuotedString(s) => lit(s.clone()),
         SqlValue::Boolean(b) => lit(*b),
-        // SqlValue::Interval { value, leading_field, leading_precision, last_field, fractional_seconds_precision } => todo!(),
         SqlValue::Null => Expr::Literal(LiteralValue::Null),
-        // SqlValue::Placeholder(_) => todo!(),
         _ => {
             return Err(PolarsError::ComputeError(
                 format!(
@@ -159,12 +132,24 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> Result<Expr> {
     })
 }
 
-// trait FunctionKernel<T> {
-//     fn parse_args(args: &[FunctionArg]) -> T;
-// }
+fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> Result<Expr> {
+    Ok(match &window_spec {
+        Some(window_spec) => {
+            // Process for simple window specification, partitionn by first
+            let partition_by = window_spec
+                .partition_by
+                .iter()
+                .map(parse_sql_expr)
+                .collect::<Result<Vec<_>>>()?;
+            expr.over(partition_by)
+            // Order by and Row range may not be supported at the moment
+        }
+        None => expr,
+    })
+}
 
 fn parse_sql_function(sql_function: &SQLFunction) -> Result<Expr> {
-    use sqlparser::ast::{FunctionArg, FunctionArgExpr, WindowSpec};
+    use sqlparser::ast::{FunctionArg, FunctionArgExpr};
     // Function name mostly do not have name space, so it mostly take the first args
     let function_name = sql_function.name.0[0].value.to_lowercase();
     let args = sql_function
@@ -175,21 +160,6 @@ fn parse_sql_function(sql_function: &SQLFunction) -> Result<Expr> {
             FunctionArg::Unnamed(arg) => arg,
         })
         .collect::<Vec<_>>();
-    fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> Result<Expr> {
-        Ok(match &window_spec {
-            Some(window_spec) => {
-                // Process for simple window specification, partitionn by first
-                let partition_by = window_spec
-                    .partition_by
-                    .iter()
-                    .map(parse_sql_expr)
-                    .collect::<Result<Vec<_>>>()?;
-                expr.over(partition_by)
-                // Order by and Row range may not be supported at the moment
-            }
-            None => expr,
-        })
-    }
     Ok(
         match (
             function_name.as_str(),

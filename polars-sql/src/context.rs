@@ -55,6 +55,14 @@ impl SQLContext {
         let df = &self.table_map[tbl_name];
         let mut raw_projection_before_alias: HashMap<String, usize> = HashMap::new();
         let mut contain_wildcard = false;
+        // Filter Expression
+        let df = match select_stmt.selection.as_ref() {
+            Some(expr) => {
+                let filter_expression = parse_sql_expr(expr)?;
+                df.clone().filter(filter_expression)
+            }
+            None => df.clone(),
+        };
         // Column Projections
         let projection = select_stmt
             .projection
@@ -106,7 +114,7 @@ impl SQLContext {
 
         // println!("before plan: {:?}", df.schema());
         let df = if group_by.is_empty() {
-            df.clone().select(projection)
+            df.select(projection)
         } else {
             // check groupby and projection due to difference between SQL and polars
             // Return error on wild card, shouldn't process this
@@ -134,7 +142,7 @@ impl SQLContext {
                 .map(|(agg_pj, (proj_p, expr))| (expr.clone(), (proj_p, agg_pj + group_by.len())))
                 .unzip();
             // println!("Group By: {:?}, {:?}, {:?}", projection, group_by, agg_projection);
-            let agg_df = df.clone().groupby(group_by).agg(agg_projection);
+            let agg_df = df.groupby(group_by).agg(agg_projection);
             let mut final_proj_pos = groupby_pos.into_iter()
                 .chain(agg_proj_pos.into_iter())
                 .collect::<Vec<_>>()
