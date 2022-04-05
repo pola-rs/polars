@@ -30,16 +30,6 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyInt>().unwrap() {
-        let first_value = out.extract::<i64>().unwrap();
-        applyer
-            .apply_lambda_with_primitive_out_type::<Int64Type>(
-                py,
-                lambda,
-                null_count,
-                Some(first_value),
-            )
-            .map(|ca| ca.into_series().into())
     } else if out.is_instance_of::<PyString>().unwrap() {
         let first_value = out.extract::<&str>().unwrap();
         applyer
@@ -80,6 +70,19 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     } else if out.is_instance_of::<PyTuple>().unwrap() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
+    }
+    // this succeeds for numpy ints as well, where checking if it is pyint fails
+    // we do this later in the chain so that we don't extract integers from string chars.
+    else if out.extract::<i64>().is_ok() {
+        let first_value = out.extract::<i64>().unwrap();
+        applyer
+            .apply_lambda_with_primitive_out_type::<Int64Type>(
+                py,
+                lambda,
+                null_count,
+                Some(first_value),
+            )
+            .map(|ca| ca.into_series().into())
     } else {
         applyer
             .apply_lambda_with_object_out_type(

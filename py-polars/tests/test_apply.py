@@ -127,3 +127,19 @@ def test_apply_numpy_out_3057() -> None:
         )
         .frame_equal(pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]}))
     )
+
+
+def test_apply_numpy_int_out() -> None:
+    df = pl.DataFrame({"col1": [2, 4, 8, 16]})
+    assert df.with_column(
+        pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
+    ).frame_equal(
+        pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
+    )
+    df = pl.DataFrame({"col1": [2, 4, 8, 16], "shift": [1, 1, 2, 2]})
+
+    assert df.select(
+        pl.struct(["col1", "shift"])
+        .apply(lambda cols: np.left_shift(cols["col1"], cols["shift"]))
+        .alias("result")
+    ).frame_equal(pl.DataFrame({"result": [4, 8, 32, 64]}))
