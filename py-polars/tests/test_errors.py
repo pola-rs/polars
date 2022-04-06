@@ -1,3 +1,5 @@
+import io
+
 import numpy as np
 import pytest
 
@@ -35,3 +37,10 @@ def test_error_on_invalid_by_in_asof_join() -> None:
     df2 = df1.with_column(pl.col("a").cast(pl.Categorical))
     with pytest.raises(pl.ComputeError):
         df1.join_asof(df2, on="b", by=["a", "c"])
+
+
+def test_not_found_error() -> None:
+    csv = "a,b,c\n2,1,1"
+    df = pl.read_csv(io.StringIO(csv))
+    with pytest.raises(pl.NotFoundError):
+        df.select("d")
