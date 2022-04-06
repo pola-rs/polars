@@ -735,6 +735,10 @@ impl PySeries {
                 let ca = series.struct_().unwrap();
                 return Wrap(ca).to_object(python);
             }
+            DataType::Duration(_) => {
+                let ca = series.duration().unwrap();
+                return Wrap(ca).to_object(python);
+            }
             dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)

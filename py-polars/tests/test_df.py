@@ -1216,7 +1216,18 @@ def test_hashing_on_python_objects() -> None:
     # this requires that the hashing and aggregations are done on python objects
 
     df = pl.DataFrame({"a": [1, 1, 3, 4], "b": [1, 1, 2, 2]})
-    df = df.with_column(pl.col("a").apply(lambda x: datetime(2021, 1, 1)).alias("foo"))
+
+    class Foo:
+        def __init__(self):  # type: ignore
+            pass
+
+        def __hash__(self):  # type: ignore
+            return 0
+
+        def __eq__(self, other):  # type: ignore
+            return True
+
+    df = df.with_column(pl.col("a").apply(lambda x: Foo()).alias("foo"))
     assert df.groupby(["foo"]).first().shape == (1, 3)
     assert df.distinct().shape == (3, 3)
 

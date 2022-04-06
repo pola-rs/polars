@@ -794,3 +794,14 @@ AAPL""".split(
     assert quotes.join_asof(trades, on="dates", strategy="forward", tolerance="5ms")[
         "bid_right"
     ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
+
+
+def test_lambda_with_python_datetime_return_type() -> None:
+    df = pl.DataFrame({"timestamp": [1284286794, 1234567890]})
+
+    assert df.with_column(
+        pl.col("timestamp").apply(lambda x: datetime(2010, 9, 12)).alias("my_date_time")
+    )["my_date_time"].to_list() == [
+        datetime(2010, 9, 12),
+        datetime(2010, 9, 12),
+    ]
