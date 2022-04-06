@@ -933,6 +933,8 @@ class Series:
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
+
+        This routine will normalize pk if they don’t sum to 1.
         """
         return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
