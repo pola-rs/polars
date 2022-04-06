@@ -33,10 +33,9 @@ impl<'a> UnstableSeries<'a> {
     }
 
     /// Creates a new `[UnsafeSeries]`
-    /// # Panics
-    /// panics if `inner_chunk` is not from `Series`.
-    pub fn new_with_chunk(series: &'a Series, inner_chunk: &ArrayRef) -> Self {
-        assert_eq!(series.chunks()[0].as_ref(), inner_chunk.as_ref());
+    /// # Safety
+    /// Inner chunks must be from `Series` otherwise the dtype may be incorrect and lead to UB.
+    pub(crate) unsafe fn new_with_chunk(series: &'a Series, inner_chunk: &ArrayRef) -> Self {
         UnstableSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),

@@ -106,3 +106,21 @@ def test_arange_no_rows() -> None:
     df = pl.DataFrame(dict(x=[]))
     out = df.with_column(pl.arange(0, pl.count()).over("x"))  # type: ignore
     assert out.frame_equal(pl.DataFrame({"x": [], "literal": []}))
+
+
+def test_no_panic_on_nan_3067() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "total": [1.0, 2, 3, 4, 5, np.NaN],
+        }
+    )
+
+    df.select([pl.col("total").shift().over("group")])["total"].to_list() == [
+        None,
+        1.0,
+        2.0,
+        None,
+        4.0,
+        5.0,
+    ]
