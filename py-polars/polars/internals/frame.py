@@ -1393,6 +1393,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Convert DataFrame to a 2d numpy array.
         This operation clones data.
 
+        Notes
+        -----
+        If you're attempting to convert Utf8 to an array you'll need to install `pyarrow`.
+
         Examples
         --------
 
