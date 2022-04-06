@@ -2141,7 +2141,11 @@ impl Expr {
                 }
             }),
         )
-        .with_fmt("entropy")
+        .with_function_options(|mut options| {
+            options.fmt_str = "entropy";
+            options.auto_explode = true;
+            options
+        })
     }
 
     #[cfg(feature = "strings")]

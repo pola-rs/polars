@@ -165,23 +165,20 @@ def test_unique_counts() -> None:
 
 
 def test_entropy() -> None:
-    df = pl.DataFrame({"id": [1, 1, 2, 2, 3]})
-    assert (
-        df.select(
-            [
-                (
-                    -(
-                        pl.col("id").unique_counts()
-                        / pl.count()
-                        * (pl.col("id").unique_counts() / pl.count()).log()
-                    ).sum()
-                ).alias("e0"),
-                ((pl.col("id").unique_counts() / pl.count()).entropy()).alias("e1"),
-            ]
-        ).rows()
-        == [(1.0549201679861442, 1.0549201679861442)]
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": [1, 2, 1, 4, 5, 4, 6],
+        }
     )
-    assert df["id"].entropy() == -6.068425588244111
+
+    assert (
+        df.groupby("group", maintain_order=True).agg(pl.col("id").entropy())
+    ).frame_equal(
+        pl.DataFrame(
+            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+        )
+    )
 
 
 def test_dot_in_groupby() -> None:
