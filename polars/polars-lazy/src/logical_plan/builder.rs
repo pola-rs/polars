@@ -372,11 +372,19 @@ impl LogicalPlanBuilder {
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
         let columns = rewrite_projections(columns, self.0.schema(), &[]);
+
+        let mut schema = (**self.0.schema()).clone();
+
         // columns to string
         let columns = columns
             .iter()
             .map(|e| {
                 if let Expr::Column(name) = e {
+                    if let Some(DataType::List(inner)) = schema.get(name) {
+                        let inner = *inner.clone();
+                        schema.with_column(name.to_string(), inner)
+                    }
+
                     (**name).to_owned()
                 } else {
                     panic!("expected column expression")
@@ -386,6 +394,7 @@ impl LogicalPlanBuilder {
         LogicalPlan::Explode {
             input: Box::new(self.0),
             columns,
+            schema: Arc::new(schema),
         }
         .into()
     }

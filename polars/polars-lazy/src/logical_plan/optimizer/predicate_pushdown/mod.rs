@@ -289,13 +289,13 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
-            Explode { input, columns } => {
+            Explode { input, columns, schema } => {
                 let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Explode { input, columns };
+                let lp = Explode { input, columns, schema };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             Distinct {

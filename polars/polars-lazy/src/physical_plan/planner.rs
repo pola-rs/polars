@@ -276,7 +276,7 @@ impl DefaultPlanner {
                     args,
                 }))
             }
-            Explode { input, columns } => {
+            Explode { input, columns, .. } => {
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
                 Ok(Box::new(ExplodeExec { input, columns }))
             }

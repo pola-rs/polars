@@ -85,6 +85,7 @@ pub enum ALogicalPlan {
     Explode {
         input: Node,
         columns: Vec<String>,
+        schema: SchemaRef,
     },
     Cache {
         input: Node,
@@ -145,7 +146,7 @@ impl ALogicalPlan {
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
-            Explode { input, .. } => arena.get(*input).schema(arena),
+            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
                 schema,
@@ -258,9 +259,12 @@ impl ALogicalPlan {
                 by_column: by_column.clone(),
                 args: args.clone(),
             },
-            Explode { columns, .. } => Explode {
+            Explode {
+                columns, schema, ..
+            } => Explode {
                 input: inputs[0],
                 columns: columns.clone(),
+                schema: schema.clone(),
             },
             Cache { .. } => Cache { input: inputs[0] },
             Distinct { options, .. } => Distinct {
