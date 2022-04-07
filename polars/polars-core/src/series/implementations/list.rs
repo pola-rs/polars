@@ -9,6 +9,7 @@ use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
+use std::any::Any;
 use std::borrow::Cow;
 
 impl IntoSeries for ListChunked {
@@ -239,5 +240,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
     }
 }

@@ -1,6 +1,7 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::utils::get_supertype;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
@@ -8,12 +9,17 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
-        _ => Err(PolarsError::InvalidOperation("".into())),
+        _ => Err(PolarsError::InvalidOperation(
+            format!("cannot explode dtype: {:?}", series.dtype()).into(),
+        )),
     }
 }
 
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+        if self.height() == 0 {
+            return Ok(self.clone());
+        }
         columns.sort_by(|sa, sb| {
             self.check_name_to_idx(sa.name())
                 .expect("checked above")
@@ -21,8 +27,53 @@ impl DataFrame {
                 .expect("cmp usize -> Ordering")
         });
 
-        // first remove all the exploded columns
         let mut df = self.clone();
+
+        // TODO: optimize this.
+        // This is the slower easier option.
+        // instead of filtering the whole dataframe first
+        // drop empty list rows
+        for col in &mut columns {
+            if let Ok(ca) = col.list() {
+                if !ca.can_fast_explode() {
+                    let (_, offsets) = get_exploded(col)?;
+                    if offsets.is_empty() {
+                        return Ok(self.slice(0, 0));
+                    }
+
+                    let mut mask = MutableBitmap::from_len_set(offsets.len() - 1);
+
+                    let mut latest = offsets[0];
+                    for (i, &o) in (&offsets[1..]).iter().enumerate() {
+                        if o == latest {
+                            unsafe { mask.set_bit_unchecked(i, false) }
+                        }
+                        latest = o;
+                    }
+
+                    let mask = Bitmap::from(mask);
+                    // all lists are empty we return an an empty dataframe with the same schema
+                    if mask.null_count() == mask.len() {
+                        return Ok(self.slice(0, 0));
+                    }
+
+                    let idx = self.check_name_to_idx(col.name())?;
+                    df = df.filter(&BooleanChunked::from_chunks(
+                        "",
+                        vec![Arc::new(BooleanArray::from_data_default(mask, None))],
+                    ))?;
+                    *col = df[idx].clone();
+                    let ca = col
+                        .get_inner_mut()
+                        .as_any_mut()
+                        .downcast_mut::<ListChunked>()
+                        .unwrap();
+                    ca.set_fast_explode();
+                }
+            }
+        }
+
+        // first remove all the exploded columns
         for s in &columns {
             df = df.drop(s.name())?;
         }
@@ -304,6 +355,27 @@ mod test {
             exploded.column("foo").unwrap().utf8().unwrap().get(6),
             Some("g")
         );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_explode_df_empty_list() -> Result<()> {
+        let s0 = Series::new("a", &[1, 2, 3]);
+        let s1 = Series::new("b", &[1, 1, 1]);
+        let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
+        let s0 = Series::new("B", [1, 2, 3]);
+        let s1 = Series::new("C", [1, 1, 1]);
+        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
+
+        let out = df.explode(["foo"])?;
+        let expected = df![
+            "foo" => [1, 2, 3, 1, 1, 1],
+            "B" => [1, 1, 1, 2, 2, 2],
+            "C" => [1, 1, 1, 1, 1, 1],
+        ]?;
+
+        assert!(out.frame_equal(&expected));
+        Ok(())
     }
 
     #[test]

@@ -201,11 +201,14 @@ impl ExplodeByOffsets for Utf8Chunked {
 
 /// Convert Arrow array offsets to indexes of the original list
 pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
+    if offsets.is_empty() {
+        return vec![];
+    }
     let mut idx = Vec::with_capacity(capacity);
 
     let mut count = 0;
     let mut last_idx = 0;
-    for &offset in offsets.iter().skip(1) {
+    for &offset in &offsets[1..] {
         while count < offset {
             count += 1;
             idx.push(last_idx)
