@@ -91,7 +91,7 @@ def test_count_expr() -> None:
 
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
-    out = pl.select(pl.lit(a).sample(0.5, False, 1)).to_series()
+    out = pl.select(pl.lit(a).sample(0.5, False, seed=1)).to_series()
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)

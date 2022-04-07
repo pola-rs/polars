@@ -3017,7 +3017,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -3031,12 +3031,12 @@ class Series:
         with_replacement
             sample with replacement.
         seed
-            Initialization seed
+            Initialization seed. If None is given a random seed is used.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)  # doctest: +IGNORE_RESULT
+        >>> s.sample(2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [

@@ -2634,7 +2634,7 @@ class Expr:
         self,
         fraction: float = 1.0,
         with_replacement: bool = True,
-        seed: Optional[int] = 0,
+        seed: Optional[int] = None,
     ) -> "Expr":
         """
         Sample a fraction of the `Series`.
@@ -2646,10 +2646,8 @@ class Expr:
         with_replacement
             Allow values to be sampled more than once.
         seed
-            Seed initialization. If None given numpy is used.
+            Seed initialization. If None given a random seed is used.
         """
-        if seed is None:
-            seed = int(np.random.randint(0, 10000))
         return wrap_expr(self._pyexpr.sample_frac(fraction, with_replacement, seed))
 
     def ewm_mean(

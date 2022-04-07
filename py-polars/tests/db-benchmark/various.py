@@ -46,7 +46,7 @@ minimum = 130352258
 maximum = 130352833.0
 
 for _ in range(10):
-    permuted = df.sample(frac=1.0)
+    permuted = df.sample(frac=1.0, seed=0)
     computed = permuted.select(
         [pl.col("id").min().alias("min"), pl.col("id").max().alias("max")]
     )

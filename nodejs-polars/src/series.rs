@@ -1192,7 +1192,7 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     series
-        .sample_frac(frac, with_replacement, 0)
+        .sample_frac(frac, with_replacement, Some(0))
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
