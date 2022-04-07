@@ -46,9 +46,6 @@ impl SQLContext {
                     ));
                 }
             }
-            // sqlparser::ast::TableFactor::Derived { lateral, subquery, alias } => todo!(),
-            // sqlparser::ast::TableFactor::TableFunction { expr, alias } => todo!(),
-            // sqlparser::ast::TableFactor::NestedJoin(_) => todo!(),
             // Support bare table, optional with alias for now
             _ => return Err(PolarsError::ComputeError("Not implemented".into())),
         };
@@ -112,7 +109,6 @@ impl SQLContext {
             )
             .collect::<Result<Vec<_>, PolarsError>>()?;
 
-        // println!("before plan: {:?}", df.schema());
         let df = if group_by.is_empty() {
             df.select(projection)
         } else {
@@ -141,23 +137,19 @@ impl SQLContext {
                 .enumerate()
                 .map(|(agg_pj, (proj_p, expr))| (expr.clone(), (proj_p, agg_pj + group_by.len())))
                 .unzip();
-            // println!("Group By: {:?}, {:?}, {:?}", projection, group_by, agg_projection);
             let agg_df = df.groupby(group_by).agg(agg_projection);
-            let mut final_proj_pos = groupby_pos.into_iter()
+            let mut final_proj_pos = groupby_pos
+                .into_iter()
                 .chain(agg_proj_pos.into_iter())
-                .collect::<Vec<_>>()
-                // .map(|(proj_p, schema_p)|)
-            ;
+                .collect::<Vec<_>>();
 
             final_proj_pos.sort_by(|(proj_pa, _), (proj_pb, _)| proj_pa.cmp(proj_pb));
-            // println!("after plan: {:?}", agg_df.schema(), );
             let final_proj = final_proj_pos
                 .into_iter()
                 .map(|(_, shm_p)| col(agg_df.schema().get_index(shm_p).unwrap().0))
                 .collect::<Vec<_>>();
             agg_df.select(final_proj)
         };
-        // println!("after plan: {:?}", df.schema());
         Ok(df)
     }
 
@@ -174,15 +166,6 @@ impl SQLContext {
                 Statement::Query(query) => {
                     let rs = match &query.body {
                         SetExpr::Select(select_stmt) => self.execute_select(&*select_stmt)?,
-                        // SetExpr::Query(_) => todo!(), // Subqueries
-                        // SetExpr::SetOperation {
-                        //     op,
-                        //     all,
-                        //     left,
-                        //     right,
-                        // } => todo!(), // Union, Except, Intersect
-                        // SetExpr::Values(_) => todo!(), // Should not be implemented, return an errors here
-                        // SetExpr::Insert(_) => todo!(),
                         _ => {
                             return Err(PolarsError::ComputeError(
                                 "INSERT, UPDATE is not supported for polars".into(),

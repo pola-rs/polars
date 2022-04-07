@@ -7,19 +7,6 @@ mod sql_expr;
 mod test {
     use super::*;
     use polars::prelude::*;
-    use sqlparser::dialect::GenericDialect;
-    use sqlparser::parser::Parser;
-
-    #[test]
-    fn test_expr() {
-        let dialect = GenericDialect {};
-        let sql =
-            "SELECT a, (b::int + a)/a as c, count(b) + (-1.0) as b1 FROM t WHERE a > 0 and a < 10 group by a limit 100;";
-        let ast = Parser::parse_sql(&dialect, sql).unwrap();
-        if !ast.is_empty() {
-            println!("{:?}", ast);
-        };
-    }
 
     fn create_sample_df() -> Result<DataFrame> {
         let a = Series::new("a", (1..10000i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -48,8 +35,6 @@ mod test {
             .select(&[col("a"), col("b"), (col("a") + col("b")).alias("c")])
             .limit(100)
             .collect()?;
-        println!("{:?}", df_sql);
-        println!("{:?}", df_pl);
         assert_eq!(df_sql, df_pl);
         Ok(())
     }
