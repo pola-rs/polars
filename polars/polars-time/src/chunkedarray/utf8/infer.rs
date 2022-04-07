@@ -2,6 +2,7 @@ use super::patterns;
 #[cfg(feature = "dtype-date")]
 use crate::chunkedarray::date::naive_date_to_date;
 use crate::chunkedarray::utf8::patterns::Pattern;
+use crate::chunkedarray::utf8::strptime;
 use chrono::{NaiveDate, NaiveDateTime};
 use polars_arrow::export::arrow::array::{ArrayRef, PrimitiveArray};
 use polars_core::prelude::*;
@@ -12,6 +13,8 @@ pub struct DatetimeInfer<T> {
     patterns: &'static [&'static str],
     latest: &'static str,
     transform: fn(&str, &str) -> Option<T>,
+    transform_bytes: fn(&[u8], &[u8], u16) -> Option<T>,
+    fmt_len: u16,
     logical_type: DataType,
 }
 
@@ -24,12 +27,16 @@ impl TryFrom<Pattern> for DatetimeInfer<i64> {
                 patterns: patterns::DATETIME_D_M_Y,
                 latest: patterns::DATETIME_D_M_Y[0],
                 transform: transform_datetime_us,
+                transform_bytes: transform_datetime_us_bytes,
+                fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
             Pattern::DatetimeYMD => Ok(DatetimeInfer {
                 patterns: patterns::DATETIME_Y_M_D,
                 latest: patterns::DATETIME_Y_M_D[0],
                 transform: transform_datetime_us,
+                transform_bytes: transform_datetime_us_bytes,
+                fmt_len: 0,
                 logical_type: DataType::Datetime(TimeUnit::Microseconds, None),
             }),
             _ => Err(PolarsError::ComputeError(
@@ -49,12 +56,16 @@ impl TryFrom<Pattern> for DatetimeInfer<i32> {
                 patterns: patterns::DATE_D_M_Y,
                 latest: patterns::DATE_D_M_Y[0],
                 transform: transform_date,
+                transform_bytes: transform_date_bytes,
+                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             Pattern::DateYMD => Ok(DatetimeInfer {
                 patterns: patterns::DATE_Y_M_D,
                 latest: patterns::DATE_Y_M_D[0],
                 transform: transform_date,
+                transform_bytes: transform_date_bytes,
+                fmt_len: 0,
                 logical_type: DataType::Date,
             }),
             _ => Err(PolarsError::ComputeError(
@@ -71,7 +82,31 @@ impl<T: NativeType> DatetimeInfer<T> {
             // try other patterns
             None => {
                 for fmt in self.patterns {
+                    self.fmt_len = 0;
                     if let Some(parsed) = (self.transform)(val, fmt) {
+                        self.latest = fmt;
+                        return Some(parsed);
+                    }
+                }
+                None
+            }
+        }
+    }
+
+    pub fn parse_bytes(&mut self, val: &[u8]) -> Option<T> {
+        if self.fmt_len == 0 {
+            self.fmt_len = strptime::fmt_len(self.latest.as_bytes())?;
+        }
+        match (self.transform_bytes)(val, self.latest.as_bytes(), self.fmt_len) {
+            Some(parsed) => Some(parsed),
+            // try other patterns
+            None => {
+                for fmt in self.patterns {
+                    if self.fmt_len == 0 {
+                        self.fmt_len = strptime::fmt_len(fmt.as_bytes())?;
+                    }
+                    if let Some(parsed) = (self.transform_bytes)(val, fmt.as_bytes(), self.fmt_len)
+                    {
                         self.latest = fmt;
                         return Some(parsed);
                     }
@@ -115,6 +150,11 @@ fn transform_date(val: &str, fmt: &str) -> Option<i32> {
         .map(naive_date_to_date)
 }
 
+#[cfg(feature = "dtype-date")]
+fn transform_date_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i32> {
+    unsafe { strptime::parse(val, fmt, fmt_len).map(|ndt| naive_date_to_date(ndt.date())) }
+}
+
 fn transform_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
     let out = NaiveDateTime::parse_from_str(val, fmt)
         .ok()
@@ -137,6 +177,10 @@ fn transform_datetime_us(val: &str, fmt: &str) -> Option<i64> {
             .ok()
             .map(|nd| datetime_to_timestamp_us(nd.and_hms(0, 0, 0))),
     }
+}
+
+fn transform_datetime_us_bytes(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<i64> {
+    unsafe { strptime::parse(val, fmt, fmt_len).map(datetime_to_timestamp_us) }
 }
 
 fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {

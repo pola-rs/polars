@@ -292,13 +292,23 @@ where
         ignore_errors: bool,
         _needs_escaping: bool,
     ) -> Result<()> {
-        // we only check ascii, as we don't expect non ascii values in dates
-        if bytes.is_ascii() {
-            // Safety:
-            // we just checked it is ascii
-            let val = unsafe { std::str::from_utf8_unchecked(bytes) };
-            match &mut self.compiled {
-                None => match infer_pattern_single(val) {
+        match &mut self.compiled {
+            None => {
+                let val = if bytes.is_ascii() {
+                    // Safety:
+                    // we just checked it is ascii
+                    unsafe { std::str::from_utf8_unchecked(bytes) }
+                } else if ignore_errors {
+                    self.builder.append_null();
+                    return Ok(());
+                } else if !ignore_errors && std::str::from_utf8(bytes).is_err() {
+                    return Err(PolarsError::ComputeError("invalid utf8".into()));
+                } else {
+                    self.builder.append_null();
+                    return Ok(());
+                };
+
+                match infer_pattern_single(val) {
                     None => {
                         self.builder.append_null();
                         Ok(())
@@ -315,24 +325,12 @@ where
                             Ok(())
                         }
                     },
-                },
-                Some(compiled) => {
-                    let parsed = compiled.parse(val);
-                    self.builder.append_option(parsed);
-                    Ok(())
                 }
             }
-        } else if ignore_errors {
-            self.builder.append_null();
-            Ok(())
-        } else {
-            Err(PolarsError::ComputeError(
-                format!(
-                    "could not parse {:?} as date/time",
-                    std::str::from_utf8(bytes)
-                )
-                .into(),
-            ))
+            Some(compiled) => {
+                self.builder.append_option(compiled.parse_bytes(bytes));
+                Ok(())
+            }
         }
     }
 }

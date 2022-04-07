@@ -3,7 +3,6 @@ pub mod contention_pool;
 mod error;
 pub mod mem;
 pub mod sort;
-mod strptime;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxSize = u32;

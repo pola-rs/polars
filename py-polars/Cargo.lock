@@ -1278,6 +1278,7 @@ name = "polars-time"
 version = "0.20.0"
 dependencies = [
  "chrono",
+ "lexical",
  "polars-arrow",
  "polars-core",
 ]

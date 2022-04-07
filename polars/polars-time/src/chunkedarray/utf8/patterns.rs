@@ -18,6 +18,8 @@ pub(super) static DATE_Y_M_D: &[&str] = &[
     "%y_%m_%d",
 ];
 
+/// NOTE: don't use single letter dates like %F
+/// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_D_M_Y: &[&str] = &[
     // 31/12/21 12:54:98
     "%d/%m/%y %H:%M:%S",
@@ -38,6 +40,8 @@ pub(super) static DATETIME_D_M_Y: &[&str] = &[
     "%d-%m-%y",
 ];
 
+/// NOTE: don't use single letter dates like %F
+/// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_Y_M_D: &[&str] = &[
     // 21/12/31 12:54:98
     "%y/%m/%d %H:%M:%S",
@@ -57,14 +61,14 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     // 20210319 23:58:50
     "%Y%m%d %H:%M:%S",
     // 2019-04-18T02:45:55
-    "%FT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
     // 2019-04-18T02:45:55.555000000
     // microseconds
-    "%FT%H:%M:%S.%6f",
+    "%Y-%m-%dT%H:%M:%S.%6f",
     // nanoseconds
-    "%FT%H:%M:%S.%9f",
+    "%Y-%m-%dT%H:%M:%S.%9f",
     // no times
-    "%F",
+    "%Y-%m-%d",
     "%Y/%m/%d",
 ];
 

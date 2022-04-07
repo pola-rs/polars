@@ -1,5 +1,6 @@
 pub mod infer;
 mod patterns;
+mod strptime;
 
 use super::*;
 #[cfg(feature = "dtype-date")]
@@ -47,12 +48,13 @@ where
         // 20210319 23:58:50
         "%Y%m%d %H:%M:%S",
         // 2019-04-18T02:45:55
-        "%FT%H:%M:%S",
+        // %F cannot be parse by polars native parser
+        "%Y-%m-%dT%H:%M:%S",
         // 2019-04-18T02:45:55.555000000
         // microseconds
-        "%FT%H:%M:%S.%6f",
+        "%Y-%m-%dT%H:%M:%S.%6f",
         // nanoseconds
-        "%FT%H:%M:%S.%9f",
+        "%Y-%m-%dT%H:%M:%S.%9f",
     ] {
         if convert(val, fmt).is_ok() {
             return Some(fmt);
