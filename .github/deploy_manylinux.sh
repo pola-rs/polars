@@ -16,7 +16,7 @@ maturin publish \
   --username ritchie46
 
 # now compile polars with bigidx feature
-sed -i 's/name = "polars"/name = "polars-64"/' pyproject.toml
+sed -i 's/name = "polars"/name = "polars-u64-idx"/' pyproject.toml
 # a brittle hack to insert the 'bigidx' feature
 sed '/s/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' Cargo.toml
 
