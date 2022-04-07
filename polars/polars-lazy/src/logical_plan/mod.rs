@@ -137,6 +137,7 @@ pub enum LogicalPlan {
     Explode {
         input: Box<LogicalPlan>,
         columns: Vec<String>,
+        schema: SchemaRef,
     },
     /// Slice the table
     Slice {
@@ -199,7 +200,7 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { input, .. } => input.schema(),
+            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
             #[cfg(feature = "ipc")]

@@ -494,7 +494,11 @@ impl ProjectionPushDown {
                     args,
                 })
             }
-            Explode { input, columns } => {
+            Explode {
+                input,
+                columns,
+                schema,
+            } => {
                 columns.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
@@ -511,7 +515,11 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Explode { input, columns })
+                Ok(Explode {
+                    input,
+                    columns,
+                    schema,
+                })
             }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
