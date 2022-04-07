@@ -825,6 +825,12 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        invalid_operation_panic!(self)
+    }
+
     /// Raise a numeric series to the power of exponent.
     fn pow(&self, _exponent: f64) -> Result<Series> {
         Err(PolarsError::InvalidOperation(
