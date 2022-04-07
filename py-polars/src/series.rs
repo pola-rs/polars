@@ -593,7 +593,12 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<u64>) -> PyResult<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let s = self
             .series
             .sample_frac(frac, with_replacement, seed)

@@ -616,7 +616,12 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<u64>) -> PyResult<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let df = self
             .df
             .sample_frac(frac, with_replacement, seed)

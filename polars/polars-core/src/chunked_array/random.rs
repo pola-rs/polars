@@ -12,7 +12,7 @@ fn get_random_seed() -> u64 {
 }
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(|| { get_random_seed() }));
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(|| get_random_seed()));
     (0..n as IdxSize)
         .map(move |_| Uniform::new(0, len as IdxSize).sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
@@ -20,7 +20,7 @@ fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -
 }
 
 fn create_rand_index_no_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(|| { get_random_seed() }));
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(|| get_random_seed()));
     let mut idx = Vec::from_iter_trusted_length(0..len as IdxSize);
     idx.shuffle(&mut rng);
     idx.truncate(n);
