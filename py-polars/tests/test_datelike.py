@@ -805,3 +805,13 @@ def test_lambda_with_python_datetime_return_type() -> None:
         datetime(2010, 9, 12),
         datetime(2010, 9, 12),
     ]
+
+
+def test_timelike_init() -> None:
+    durations = [timedelta(days=1), timedelta(days=2)]
+    dates = [date(2022, 1, 1), date(2022, 1, 2)]
+    datetimes = [datetime(2022, 1, 1), datetime(2022, 1, 2)]
+
+    for ts in [durations, dates, datetimes]:
+        s = pl.Series(ts)
+        assert s.to_list() == ts
