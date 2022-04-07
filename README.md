@@ -177,7 +177,7 @@ See [this example](./examples/python_rust_compiled_function).
 # Going big...
 Do you expect more than `32^2` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
-Or for python users install `$ pip install -U polars-64`.
+Or for python users install `$ pip install -U polars-u64-idx`.
 
 Don't use this unless you hit the row boundary as the default polars is faster and consumes less memory.
 
