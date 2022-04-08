@@ -19,6 +19,7 @@ description = "Blazingly fast DataFrame library"
 ahash = "0.7"
 bincode = "1.3"
 libc = "0.2"
+libmimalloc-sys = { version = "*", features = ["extended"] }
 mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
 numpy = "0.16"

@@ -3,6 +3,8 @@ import warnings
 
 try:
     from polars.polars import version
+
+    _DOCUMENTING = False
 except ImportError as e:  # pragma: no cover
 
     def version() -> str:
@@ -10,6 +12,7 @@ except ImportError as e:  # pragma: no cover
 
     # this is only useful for documentation
     warnings.warn("polars binary missing!")
+    _DOCUMENTING = True
 
 import polars.testing as testing
 from polars.cfg import (  # flake8: noqa. We do not export in __all__
@@ -230,3 +233,6 @@ __version__ = version()
 import os
 
 os.environ["POLARS_ALLOW_EXTENSION"] = "true"
+
+if not _DOCUMENTING:
+    Config.set_large_os_pages()

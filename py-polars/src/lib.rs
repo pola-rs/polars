@@ -51,6 +51,15 @@ use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 static GLOBAL: MiMalloc = MiMalloc;
 
 #[pyfunction]
+fn enable_large_os_pages(_py: Python, toggle: bool) {
+    // Safety
+    // holding the python gil makes this thread safe
+    unsafe {
+        libmimalloc_sys::mi_option_set_enabled(libmimalloc_sys::mi_option_large_os_pages, toggle)
+    }
+}
+
+#[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
     dsl::col(name)
 }
@@ -468,5 +477,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(enable_large_os_pages))
+        .unwrap();
     Ok(())
 }
