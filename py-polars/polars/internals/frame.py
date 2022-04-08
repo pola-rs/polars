@@ -4766,6 +4766,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
+        if n is not None and frac is not None:
+            raise ValueError("n and frac were both supplied")
+
         if n is None and frac is not None:
             return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
 
