@@ -89,9 +89,9 @@ def _prepare_file_arg(
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
-    A `StringIO`, `BytesIO` file is returned as a `BytesIO`
-    A local path is returned as a string
-    An http url is read into a buffer and returned as a `BytesIO`
+    A `StringIO`, `BytesIO` file is returned as a `BytesIO`.
+    A local path is returned as a string.
+    An http URL is read into a buffer and returned as a `BytesIO`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
@@ -742,6 +742,7 @@ def read_ipc(
     storage_options: Optional[Dict] = None,
     row_count_name: Optional[str] = None,
     row_count_offset: int = 0,
+    rechunk: bool = True,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -768,6 +769,8 @@ def read_ipc(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    rechunk
+        Make sure that all data is contiguous.
 
     Returns
     -------
@@ -797,7 +800,7 @@ def read_ipc(
                 )
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            return DataFrame._from_arrow(tbl)
+            return DataFrame._from_arrow(tbl, rechunk=rechunk)
 
         return DataFrame._read_ipc(
             data,
@@ -805,6 +808,7 @@ def read_ipc(
             n_rows=n_rows,
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
+            rechunk=rechunk,
         )
 
 

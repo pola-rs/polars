@@ -674,6 +674,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n_rows: Optional[int] = None,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        rechunk: bool = True,
     ) -> DF:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
@@ -686,6 +687,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         n_rows
             Stop reading from IPC file after reading ``n_rows``.
+        rechunk
+            Make sure that all data is contiguous.
 
         Returns
         -------
@@ -700,7 +703,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             scan = scan_ipc(
                 file,
                 n_rows=n_rows,
-                rechunk=True,
+                rechunk=rechunk,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
             )
