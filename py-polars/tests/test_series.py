@@ -1082,16 +1082,20 @@ def test_dot() -> None:
 
 def test_sample() -> None:
     s = pl.Series("a", [1, 2, 3, 4, 5])
-    assert len(s.sample(n=2)) == 2
-    assert len(s.sample(frac=0.4)) == 2
 
-    assert len(s.sample(n=2, with_replacement=True)) == 2
+    # by default samples should be random
+    assert s.sample(n=2) != s.sample(n=2)
+
+    assert len(s.sample(n=2, seed=0)) == 2
+    assert len(s.sample(frac=0.4, seed=0)) == 2
+
+    assert len(s.sample(n=2, with_replacement=True, seed=0)) == 2
 
     # on a series of length 5, you cannot sample more than 5 items
     with pytest.raises(Exception):
-        s.sample(n=10, with_replacement=False)
+        s.sample(n=10, with_replacement=False, seed=0)
     # unless you use with_replacement=True
-    assert len(s.sample(n=10, with_replacement=True)) == 10
+    assert len(s.sample(n=10, with_replacement=True, seed=0)) == 10
 
 
 def test_peak_max_peak_min() -> None:

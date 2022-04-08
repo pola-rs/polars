@@ -5,16 +5,22 @@ use rand::distributions::Bernoulli;
 use rand::prelude::*;
 use rand_distr::{Distribution, Normal, Standard, StandardNormal, Uniform};
 
-fn create_rand_index_with_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed);
+fn get_random_seed() -> u64 {
+    let mut rng = SmallRng::from_entropy();
+
+    rng.next_u64()
+}
+
+fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
     (0..n as IdxSize)
         .map(move |_| Uniform::new(0, len as IdxSize).sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
         .into_inner()
 }
 
-fn create_rand_index_no_replacement(n: usize, len: usize, seed: u64) -> IdxCa {
-    let mut rng = SmallRng::seed_from_u64(seed);
+fn create_rand_index_no_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+    let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
     let mut idx = Vec::from_iter_trusted_length(0..len as IdxSize);
     idx.shuffle(&mut rng);
     idx.truncate(n);
@@ -41,7 +47,7 @@ where
 }
 
 impl Series {
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> Result<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
@@ -66,13 +72,18 @@ impl Series {
     }
 
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> Result<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, seed)
     }
 
     pub fn shuffle(&self, seed: u64) -> Self {
-        self.sample_n(self.len(), false, seed).unwrap()
+        self.sample_n(self.len(), false, Some(seed)).unwrap()
     }
 }
 
@@ -81,7 +92,7 @@ where
     ChunkedArray<T>: ChunkTake,
 {
     /// Sample n datapoints from this ChunkedArray.
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> Result<Self> {
         if !with_replacement && n > self.len() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
@@ -106,7 +117,12 @@ where
     }
 
     /// Sample a fraction between 0.0-1.0 of this ChunkedArray.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> Result<Self> {
         let n = (self.len() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, seed)
     }
@@ -114,7 +130,7 @@ where
 
 impl DataFrame {
     /// Sample n datapoints from this DataFrame.
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> Result<Self> {
         if !with_replacement && n > self.height() {
             return Err(PolarsError::ShapeMisMatch(
                 "n is larger than the number of elements in this array".into(),
@@ -131,7 +147,12 @@ impl DataFrame {
     }
 
     /// Sample a fraction between 0.0-1.0 of this DataFrame.
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Result<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> Result<Self> {
         let n = (self.height() as f64 * frac) as usize;
         self.sample_n(n, with_replacement, seed)
     }
@@ -212,13 +233,25 @@ mod test {
         ]
         .unwrap();
 
-        assert!(df.sample_n(3, false, 0).is_ok());
-        assert!(df.sample_frac(0.4, false, 0).is_ok());
+        // default samples are random and don't require seeds
+        assert!(df.sample_n(3, false, None).is_ok());
+        assert!(df.sample_frac(0.4, false, None).is_ok());
+        assert!(!df
+            .sample_n(3, false, None)
+            .unwrap()
+            .frame_equal(&df.sample_n(3, false, None).unwrap()));
+        assert!(!df
+            .sample_frac(0.4, false, None)
+            .unwrap()
+            .frame_equal(&df.sample_frac(0.4, false, None).unwrap()));
+        // with seeding
+        assert!(df.sample_n(3, false, Some(0)).is_ok());
+        assert!(df.sample_frac(0.4, false, Some(0)).is_ok());
         // without replacement can not sample more than 100%
-        assert!(df.sample_frac(2.0, false, 0).is_err());
-        assert!(df.sample_n(3, true, 0).is_ok());
-        assert!(df.sample_frac(0.4, true, 0).is_ok());
+        assert!(df.sample_frac(2.0, false, Some(0)).is_err());
+        assert!(df.sample_n(3, true, Some(0)).is_ok());
+        assert!(df.sample_frac(0.4, true, Some(0)).is_ok());
         // with replacement can sample more than 100%
-        assert!(df.sample_frac(2.0, true, 0).is_ok());
+        assert!(df.sample_frac(2.0, true, Some(0)).is_ok());
     }
 }

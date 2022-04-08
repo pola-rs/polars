@@ -66,7 +66,7 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let n = params.get_as::<usize>("n")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
-    df.sample_n(n, with_replacement, 0)
+    df.sample_n(n, with_replacement, Some(0))
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -77,7 +77,7 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
-    df.sample_frac(frac, with_replacement, 0)
+    df.sample_frac(frac, with_replacement, Some(0))
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }

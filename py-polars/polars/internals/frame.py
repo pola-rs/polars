@@ -4728,7 +4728,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> DF:
         """
         Sample from this DataFrame by setting either `n` or `frac`.
@@ -4742,7 +4742,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         with_replacement
             Sample with replacement.
         seed
-            Initialization seed
+            Initialization seed. If None is given a random seed is used.
 
         Examples
         --------
@@ -4753,7 +4753,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.sample(n=2)  # doctest: +IGNORE_RESULT
+        >>> df.sample(n=2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │

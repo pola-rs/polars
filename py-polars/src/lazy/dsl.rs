@@ -1223,7 +1223,7 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Self {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
             .sample_frac(frac, with_replacement, seed)

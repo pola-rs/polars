@@ -1180,7 +1180,7 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
     let n = params.get_as::<usize>("n")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     series
-        .sample_n(n, with_replacement, 0)
+        .sample_n(n, with_replacement, Some(0))
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -1192,7 +1192,7 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     series
-        .sample_frac(frac, with_replacement, 0)
+        .sample_frac(frac, with_replacement, Some(0))
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
