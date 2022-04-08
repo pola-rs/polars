@@ -16,10 +16,21 @@ unsafe fn update_and_parse<T: lexical::FromLexical>(
         .map(|v| (v, new_offset))
 }
 
+/// Tries to convert a chrono `fmt` to a `fmt` that the polars parser consumes.
+/// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
+/// year, day, month distinctively with %Y, %d, %m.
+pub(super) fn compile_fmt(fmt: &str) -> String {
+    fmt.replace("%D", "%m/%d/%y")
+        .replace("%R", "%H:%M")
+        .replace("%T", "%H:%M:%S")
+        .replace("%X", "%H:%M:%S")
+        .replace("%F", "%Y-%m-%d")
+}
+
 #[inline]
 // # Safety
 // Caller must ensure that fmt adheres to the fmt rules of chrono and `fmt_len` is correct.
-pub unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTime> {
+pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTime> {
     const ESCAPE: u8 = b'%';
     if val.len() < fmt_len as usize {
         return None;
@@ -61,7 +72,12 @@ pub unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTim
                 }
                 b'y' => {
                     let new_offset = offset + 2;
-                    year = 2000 + lexical::parse::<i32, _>(&val[offset..new_offset]).ok()?;
+                    let decade = lexical::parse::<i32, _>(&val[offset..new_offset]).ok()?;
+                    if decade < 50 {
+                        year = 2000 + decade;
+                    } else {
+                        year = 1900 + decade;
+                    }
                     offset = new_offset;
                 }
                 b'9' => {
@@ -92,7 +108,7 @@ pub unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<NaiveDateTim
     Some(NaiveDate::from_ymd(year, month, day).and_hms_nano(hour, min, sec, nano))
 }
 
-pub fn fmt_len(fmt: &[u8]) -> Option<u16> {
+pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
     let mut iter = fmt.iter();
     let mut cnt = 0;
 

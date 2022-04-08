@@ -315,32 +315,40 @@ impl Utf8Methods for Utf8Chunked {
             Some(fmt) => fmt,
             None => return infer::to_date(self),
         };
+        let fmt = self::strptime::compile_fmt(fmt);
 
-        let mut ca: Int32Chunked = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|s| {
-                    NaiveDate::parse_from_str(s, fmt)
-                        .ok()
-                        .map(naive_date_to_date)
-                })
-                .collect_trusted(),
-            _ => self
-                .into_iter()
+        // we can use the fast parser
+        let mut ca: Int32Chunked = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+            let convert = |s: &str| {
+                // Safety:
+                // fmt_len is correct, it was computed with this `fmt` str.
+                match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                    // fallback to chrono
+                    None => NaiveDate::parse_from_str(s, &fmt).ok(),
+                    Some(ndt) => Some(ndt.date()),
+                }
+                .map(naive_date_to_date)
+            };
+
+            if self.null_count() == 0 {
+                self.into_no_null_iter().map(convert).collect_trusted()
+            } else {
+                self.into_iter()
+                    .map(|opt_s| opt_s.and_then(convert))
+                    .collect_trusted()
+            }
+        } else {
+            self.into_iter()
                 .map(|opt_s| {
-                    let opt_nd = opt_s.map(|s| {
-                        NaiveDate::parse_from_str(s, fmt)
+                    opt_s.and_then(|s| {
+                        NaiveDate::parse_from_str(s, &fmt)
                             .ok()
                             .map(naive_date_to_date)
-                    });
-                    match opt_nd {
-                        None => None,
-                        Some(None) => None,
-                        Some(Some(nd)) => Some(nd),
-                    }
+                    })
                 })
-                .collect_trusted(),
+                .collect_trusted()
         };
+
         ca.rename(self.name());
         Ok(ca.into())
     }
@@ -352,6 +360,7 @@ impl Utf8Methods for Utf8Chunked {
             Some(fmt) => fmt,
             None => return infer::to_datetime(self, tu),
         };
+        let fmt = self::strptime::compile_fmt(fmt);
 
         let func = match tu {
             TimeUnit::Nanoseconds => datetime_to_timestamp_ns,
@@ -359,24 +368,33 @@ impl Utf8Methods for Utf8Chunked {
             TimeUnit::Milliseconds => datetime_to_timestamp_ms,
         };
 
-        let mut ca: Int64Chunked = match self.has_validity() {
-            false => self
-                .into_no_null_iter()
-                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func))
-                .collect_trusted(),
-            _ => self
-                .into_iter()
+        // we can use the fast parser
+        let mut ca: Int64Chunked = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+            let convert = |s: &str| {
+                // Safety:
+                // fmt_len is correct, it was computed with this `fmt` str.
+                match unsafe { self::strptime::parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                    // fallback to chrono
+                    None => NaiveDateTime::parse_from_str(s, &fmt).ok(),
+                    Some(v) => Some(v),
+                }
+                .map(func)
+            };
+            if self.null_count() == 0 {
+                self.into_no_null_iter().map(convert).collect_trusted()
+            } else {
+                self.into_iter()
+                    .map(|opt_s| opt_s.and_then(convert))
+                    .collect_trusted()
+            }
+        } else {
+            self.into_iter()
                 .map(|opt_s| {
-                    let opt_nd =
-                        opt_s.map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func));
-                    match opt_nd {
-                        None => None,
-                        Some(None) => None,
-                        Some(Some(nd)) => Some(nd),
-                    }
+                    opt_s.and_then(|s| NaiveDateTime::parse_from_str(s, &fmt).ok().map(func))
                 })
-                .collect_trusted(),
+                .collect_trusted()
         };
+
         ca.rename(self.name());
         Ok(ca.into_datetime(tu, None))
     }
