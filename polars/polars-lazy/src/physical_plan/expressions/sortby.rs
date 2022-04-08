@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::prelude::sort::{map_sorted_indices_to_group_idx, map_sorted_indices_to_group_slice};
 use crate::prelude::*;
 use polars_core::frame::groupby::{GroupsIndicator, GroupsProxy};
 use polars_core::prelude::*;
