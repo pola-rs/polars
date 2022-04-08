@@ -3045,9 +3045,13 @@ class Series:
         ]
 
         """
-        if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement, seed))
-        return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+        if n is None and frac is not None:
+            return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+
+        if n is None:
+            n = 1
+
+        return wrap_s(self._s.sample_n(n, with_replacement, seed))
 
     def peak_max(self) -> "Series":
         """

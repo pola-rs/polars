@@ -4763,9 +4763,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
-        if n is not None:
-            return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
-        return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
+        if n is None and frac is not None:
+            return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
+
+        if n is None:
+            n = 1
+
+        return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
 
     def fold(
         self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]
