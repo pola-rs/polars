@@ -2,6 +2,8 @@ use crate::prelude::*;
 use polars_core::prelude::*;
 use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::RowCount;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 pub struct CsvParserOptions {
@@ -60,6 +62,7 @@ pub struct DistinctOptions {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
@@ -74,6 +77,7 @@ pub enum ApplyOptions {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
@@ -81,6 +85,7 @@ pub struct WindowOptions {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.

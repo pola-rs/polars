@@ -14,6 +14,7 @@ arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branc
 # arrow = { package = "arrow2", version = "0.10", default-features = false, features = ["compute_concatenate"] }
 hashbrown = "0.12"
 num = "^0.4"
+serde = { version = "1", features = ["derive"], optional = true }
 thiserror = "^1.0"
 
 [features]
