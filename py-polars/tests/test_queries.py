@@ -48,3 +48,19 @@ def test_repeat_expansion_in_groupby() -> None:
         .to_dict()
     )
     assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
+
+
+def test_agg_after_head() -> None:
+    a = [1, 1, 1, 2, 2, 3, 3, 3, 3]
+
+    df = pl.DataFrame({"a": a, "b": pl.arange(1, len(a) + 1, eager=True)})
+
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [6, 9, 21]})
+
+    for maintain_order in [True, False]:
+        out = df.groupby("a", maintain_order=True).agg([pl.col("b").head(3).sum()])
+
+        if not maintain_order:
+            out = out.sort("a")
+
+        assert out.frame_equal(expected)
