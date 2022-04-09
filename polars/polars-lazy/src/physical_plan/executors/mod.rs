@@ -1,19 +1,25 @@
-pub(crate) mod cache;
-pub(crate) mod drop_duplicates;
-pub(crate) mod explode;
-pub(crate) mod filter;
-pub(crate) mod groupby;
-pub(crate) mod groupby_dynamic;
-pub(crate) mod groupby_rolling;
-pub(crate) mod join;
-pub(crate) mod melt;
-pub(crate) mod projection;
-pub(crate) mod scan;
-pub(crate) mod slice;
-pub(crate) mod sort;
-pub(crate) mod stack;
-pub(crate) mod udf;
-pub(crate) mod union;
+mod cache;
+mod drop_duplicates;
+mod explode;
+mod filter;
+mod groupby;
+mod groupby_dynamic;
+mod groupby_rolling;
+mod join;
+mod melt;
+mod projection;
+mod scan;
+mod slice;
+mod sort;
+mod stack;
+mod udf;
+mod union;
+
+pub(super) use self::{
+    cache::*, drop_duplicates::*, explode::*, filter::*, groupby::*, groupby_dynamic::*,
+    groupby_rolling::*, join::*, melt::*, projection::*, scan::*, slice::*, sort::*, stack::*,
+    udf::*, union::*,
+};
 
 use super::*;
 use crate::logical_plan::FETCH_ROWS;

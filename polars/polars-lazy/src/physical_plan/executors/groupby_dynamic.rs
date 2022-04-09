@@ -19,8 +19,6 @@ impl Executor for GroupByDynamicExec {
 
     #[cfg(feature = "dynamic_groupby")]
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        use crate::prelude::{utils::as_aggregated, *};
-
         let df = self.input.execute(state)?;
         state.set_schema(self.input_schema.clone());
         let keys = self

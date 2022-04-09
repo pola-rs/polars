@@ -1,24 +1,29 @@
-pub(crate) mod aggregation;
-pub(crate) mod alias;
-pub(crate) mod apply;
-pub(crate) mod binary;
-pub(crate) mod cast;
-pub(crate) mod column;
-pub(crate) mod count;
-pub(crate) mod filter;
-pub(crate) mod is_not_null;
-pub(crate) mod is_null;
-pub(crate) mod literal;
-pub(crate) mod not;
-pub(crate) mod shift;
-pub(crate) mod slice;
-pub(crate) mod sort;
-pub(crate) mod sortby;
-pub(crate) mod take;
-pub(crate) mod ternary;
-pub(crate) mod utils;
-pub(crate) mod window;
-// pub(crate) mod unique;
+mod aggregation;
+mod alias;
+mod apply;
+mod binary;
+mod cast;
+mod column;
+mod count;
+mod filter;
+mod is_not_null;
+mod is_null;
+mod literal;
+mod not;
+mod shift;
+mod slice;
+mod sort;
+mod sortby;
+mod take;
+mod ternary;
+mod utils;
+mod window;
+
+pub(crate) use {
+    aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
+    is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
+    take::*, ternary::*, utils::*, window::*,
+};
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
