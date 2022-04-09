@@ -688,12 +688,14 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
+    // how to deserialize a static?
     Object(&'static str),
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with casts, comparisons, hashing etc.
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
     Categorical(Option<Arc<RevMapping>>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
@@ -828,7 +830,8 @@ impl PartialEq<ArrowDataType> for DataType {
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 // see: https://github.com/serde-rs/serde/issues/1712
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+// we need this because `DataType` has a `&'static`
+#[cfg_attr(feature = "serde-lazy", serde(bound(deserialize = "'de: 'static")))]
 pub struct Field {
     name: String,
     dtype: DataType,
