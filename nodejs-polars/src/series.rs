@@ -24,6 +24,27 @@ impl IntoJs<JsExternal> for Series {
 }
 
 #[js_function(1)]
+pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
+    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
+    let buffer_value = buff.into_value()?;
+    let s: Series = bincode::deserialize(buffer_value.as_ref()).unwrap();
+
+    s.try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+
+    let buf = bincode::serialize(series).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
+}
+
+#[js_function(1)]
 pub fn new_from_typed_array(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let name = params.get_as::<&str>("name")?;

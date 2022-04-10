@@ -83,6 +83,8 @@ impl JsDataFrame {
             napi::Property::new(env, "with_column")?.with_method(df::with_column),
             napi::Property::new(env, "with_row_count")?.with_method(df::with_row_count),
             // IO
+            napi::Property::new(env, "to_bincode")?.with_method(io::to_bincode),
+            napi::Property::new(env, "from_bincode")?.with_method(io::from_bincode),
             napi::Property::new(env, "to_js")?.with_method(io::to_js),
             // row
             napi::Property::new(env, "to_row")?.with_method(io::to_row),

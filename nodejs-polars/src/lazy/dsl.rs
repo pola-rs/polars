@@ -1143,3 +1143,30 @@ pub fn when_then_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
 
     cx.env.create_external(whenthenthen.otherwise(expr), None)
 }
+
+#[js_function(1)]
+pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
+    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
+    
+    let s = buff.into_value()?;
+    let v: &[u8] = &s;
+    
+    // Safety
+    // this is safe because the buf was created from js-land
+    // JS manages the lifecycle & we only are borrowing.
+    let v = unsafe { std::mem::transmute::<&'_  [u8], &'static [u8]>(v) };
+    let expr: Expr = bincode::deserialize(v).unwrap();
+
+    expr.try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let buf = bincode::serialize(&expr).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
+}

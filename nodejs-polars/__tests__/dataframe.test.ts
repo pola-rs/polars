@@ -8,7 +8,11 @@ describe("dataframe", () => {
     pl.Series("foo", [1, 2, 9], pl.Int16),
     pl.Series("bar", [6, 2, 8], pl.Int16),
   ]);
-
+  test("to/fromBinary round trip", () => {
+    const buf = df.toBinary();
+    const actual = pl.DataFrame.fromBinary(buf);
+    expect(df).toStrictEqual(actual);
+  });
   test("dtypes", () => {
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;

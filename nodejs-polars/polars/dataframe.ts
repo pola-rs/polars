@@ -1165,6 +1165,11 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * ```
    */
   tail(length?: number): DataFrame
+  /** serializes the DataFrame to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
+   * @example
+   * pl.DataFrame.fromBinary(df.toBinary())
+   */
+  toBinary(): Buffer
   /** @deprecated *since 0.4.0* use {@link writeCSV} */
   toCSV(destOrOptions?, options?);
   /**
@@ -1800,6 +1805,9 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("sum");
     },
     tail: (length=5) => wrap("tail", {length}),
+    toBinary() {
+      return unwrap("to_bincode");
+    },
     toCSV(...args) {
       return this.writeCSV(...args);
     },
@@ -2031,6 +2039,10 @@ export interface DataFrameConstructor {
     inferSchemaLength?: number,
   }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
+  /**
+  * @param binary used to serialize/deserialize dataframe. This will only work with the output from expr.toBinary().
+  */
+  fromBinary(binary: Buffer): DataFrame
 }
 function DataFrameConstructor(data?, options?): DataFrame {
 
@@ -2058,5 +2070,13 @@ function objToDF(obj: Record<string, Array<any>>): any {
 }
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 
+const fromBinary = (buf: Buffer)  => {
+  return dfWrapper(pli.df.from_bincode(buf));
+};
 
-export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+export const DataFrame: DataFrameConstructor = Object.assign(
+  DataFrameConstructor, {
+    isDataFrame,
+    fromBinary
+  }
+);

@@ -763,6 +763,27 @@ pub(crate) fn read_array_rows(cx: CallContext) -> JsResult<JsExternal> {
     finish_from_rows(rows)?.try_into_js(&cx)
 }
 
+#[js_function(1)]
+pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
+    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
+    let buffer_value = buff.into_value()?;
+    let df: DataFrame = bincode::deserialize(buffer_value.as_ref()).unwrap();
+
+    df.try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+
+    let buf = bincode::serialize(df).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
+}
+
 fn resolve_homedir(path: &Path) -> PathBuf {
     // replace "~" with home directory
     if path.starts_with("~") {

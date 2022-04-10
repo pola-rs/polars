@@ -37,7 +37,7 @@ export interface ExprList {
 export const ExprListFunctions = (_expr: any): ExprList => {
   const wrap = (method, args?): Expr => {
 
-    return Expr(pli.expr.lst[method]({_expr, ...args }));
+    return (Expr as any)(pli.expr.lst[method]({_expr, ...args }));
   };
 
   return {

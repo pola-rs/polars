@@ -97,7 +97,7 @@ export interface ExprDateTime {
 
 export const ExprDateTimeFunctions = (_expr: any): ExprDateTime => {
   const wrap = (method, args?): Expr => {
-    return Expr(pli.expr.date[method]({_expr, ...args }));
+    return (Expr as any)(pli.expr.date[method]({_expr, ...args }));
   };
 
   const wrapNullArgs = (method: string) => () => wrap(method);

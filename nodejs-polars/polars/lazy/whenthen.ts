@@ -27,14 +27,14 @@ function WhenThenThen(_when): WhenThenThen {
   return {
     when: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthenthen.when({_when, _expr})),
     then: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthenthen.then({_when, _expr})),
-    otherwise: ({_expr}: Expr): Expr => Expr(pli._whenthenthen.otherwise({_when, _expr}))
+    otherwise: ({_expr}: Expr): Expr => (Expr as any)(pli._whenthenthen.otherwise({_when, _expr}))
   };
 }
 
 function WhenThen(_when): WhenThen {
   return {
     when: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthen.when({_when, _expr})),
-    otherwise: ({_expr}: Expr): Expr => Expr(pli._whenthen.otherwise({_when, _expr}))
+    otherwise: ({_expr}: Expr): Expr => (Expr as any)(pli._whenthen.otherwise({_when, _expr}))
   };
 }
 

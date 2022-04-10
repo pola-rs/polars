@@ -16,6 +16,7 @@ impl IntoJs<JsExternal> for DataFrame {
     }
 }
 
+
 #[js_function(1)]
 pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

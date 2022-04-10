@@ -352,6 +352,12 @@ describe("series", () => {
 
   const chance = new Chance();
 
+  test("to/fromBinary round trip", () => {
+    const s = pl.Series("serde", [1, 2, 3, 4, 5, 2]);
+    const buf = s.toBinary();
+    const actual = pl.Series.fromBinary(buf);
+    expect(s).toStrictEqual(actual);
+  });
   it.each`
   series        | getter
   ${numSeries()}  | ${"dtype"}

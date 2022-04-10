@@ -178,7 +178,7 @@ export interface ExprString {
 export const ExprStringFunctions = (_expr: any): ExprString => {
   const wrap = (method, args?): Expr => {
 
-    return Expr(pli.expr.str[method]({_expr, ...args }));
+    return (Expr as any)(pli.expr.str[method]({_expr, ...args }));
   };
   const handleDecode = (encoding, strict) => {
     switch (encoding) {

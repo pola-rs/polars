@@ -200,6 +200,8 @@ impl dsl::JsExpr {
             napi::Property::new(env, "upperBound")?.with_method(dsl::upper_bound),
             napi::Property::new(env, "var")?.with_method(dsl::var),
             napi::Property::new(env, "xor")?.with_method(dsl::xor),
+            napi::Property::new(env, "to_bincode")?.with_method(dsl::to_bincode),
+            napi::Property::new(env, "from_bincode")?.with_method(dsl::from_bincode),
         ])?;
 
         Ok(expr)

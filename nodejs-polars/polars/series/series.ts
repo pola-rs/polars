@@ -999,7 +999,11 @@ export interface Series<T> extends
    */
   toObject(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
-
+  /** serializes the Series to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
+   * @example
+   * pl.Series.fromBinary(series.toBincode())
+   */
+  toBinary(): Buffer
   toJSON(): string
   /** Returns an iterator over the values */
   values(): IterableIterator<T>
@@ -1569,6 +1573,9 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     toFrame() {
       return dfWrapper(pli.df.read_columns({columns: [_s]}));
     },
+    toBinary() {
+      return unwrap("to_bincode");
+    },
     toJSON(arg0?) {
       // JSON.stringify passes `""` by default then stringifies the JS output
       if(arg0 === "") {
@@ -1632,7 +1639,10 @@ export interface SeriesConstructor {
    */
   of<T>(...items: T[]): Series<T>
   isSeries(arg: any): arg is Series<any>;
-
+  /**
+   * @param binary used to serialize/deserialize series. This will only work with the output from series.toBinary().
+  */
+  fromBinary(binary: Buffer): Series<unknown>
 }
 
 function SeriesConstructor (arg0: any, arg1?: any, dtype?: any, strict?: any) {
@@ -1655,6 +1665,10 @@ const from = <T>(values: ArrayLike<T>): Series<T> => {
   return SeriesConstructor("", values);
 };
 
+const fromBinary = (buf: Buffer)  => {
+  return seriesWrapper(pli.series.from_bincode(buf));
+};
+
 const of = <T>(...values: T[]): Series<T> => {
   return from(values);
 };
@@ -1662,5 +1676,6 @@ const of = <T>(...values: T[]): Series<T> => {
 export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {
   isSeries,
   from,
+  fromBinary,
   of
 });
