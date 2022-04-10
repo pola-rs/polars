@@ -1565,9 +1565,6 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return wrap("unique", {...defaultOptions, ...opts});
     },
-    dropDuplicates(opts: any=false, subset?) {
-      return this.unique(opts, subset);
-    },
     explode(...columns)  {
       return dfWrapper(_df)
         .lazy()
