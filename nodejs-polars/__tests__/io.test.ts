@@ -127,7 +127,7 @@ describe("scan", () => {
         hasHeader: false,
         startRows: 1,
         endRows: 4
-      }).toParquet(parquetpath);
+      }).writeParquet(parquetpath);
 
     const df = pl.readParquet(parquetpath);
 
@@ -137,7 +137,7 @@ describe("scan", () => {
 
 describe("parquet", () => {
   beforeEach(() => {
-    pl.readCSV(csvpath).toParquet(parquetpath);
+    pl.readCSV(csvpath).writeParquet(parquetpath);
   });
   afterEach(() => {
     fs.rmSync(parquetpath);
@@ -155,7 +155,7 @@ describe("parquet", () => {
 
   test("read:compressed", () => {
     const csvDF = pl.readCSV(csvpath);
-    csvDF.toParquet(parquetpath, {compression: "lz4"});
+    csvDF.writeParquet(parquetpath, {compression: "lz4"});
     const df = pl.readParquet(parquetpath);
     expect(df).toFrameEqual(csvDF);
   });
@@ -177,7 +177,7 @@ describe("parquet", () => {
 });
 describe("ipc", () => {
   beforeEach(() => {
-    pl.readCSV(csvpath).toIPC(ipcpath);
+    pl.readCSV(csvpath).writeIPC(ipcpath);
   });
   afterEach(() => {
     fs.rmSync(ipcpath);
@@ -189,13 +189,13 @@ describe("ipc", () => {
   });
   test("read/write:buffer", () => {
 
-    const buff =  pl.readCSV(csvpath).toIPC();
+    const buff =  pl.readCSV(csvpath).writeIPC();
     const df = pl.readIPC(buff);
     expect(df.shape).toStrictEqual({height: 27, width: 4});
   });
   test("read:compressed", () => {
     const csvDF = pl.readCSV(csvpath);
-    csvDF.toIPC(ipcpath, {compression: "lz4"});
+    csvDF.writeIPC(ipcpath, {compression: "lz4"});
     const ipcDF = pl.readIPC(ipcpath);
     expect(ipcDF).toFrameEqual(csvDF);
   });
@@ -215,9 +215,9 @@ describe("ipc", () => {
     expect(df.shape).toStrictEqual({height: 4, width: 4});
   });
 
-  test("toIPC", () => {
+  test("writeIPC", () => {
     const csvDF = pl.readCSV(csvpath);
-    csvDF.toIPC(ipcpath);
+    csvDF.writeIPC(ipcpath);
     const ipcDF = pl.readIPC(ipcpath);
     expect(ipcDF).toFrameEqual(csvDF);
   });
