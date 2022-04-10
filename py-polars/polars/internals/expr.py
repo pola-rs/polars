@@ -197,6 +197,14 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
+    def __getstate__(self):  # type: ignore
+        return self._pyexpr.__getstate__()
+
+    def __setstate__(self, state):  # type: ignore
+        # init with a dummy
+        self._pyexpr = pli.lit(0)._pyexpr
+        self._pyexpr.__setstate__(state)
+
     def to_physical(self) -> "Expr":
         """
         Cast to physical representation of the logical dtype.

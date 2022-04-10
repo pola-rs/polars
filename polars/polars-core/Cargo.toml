@@ -97,6 +97,8 @@ parquet = ["arrow/io_parquet"]
 # scale to terrabytes?
 bigidx = ["polars-arrow/bigidx"]
 
+serde-lazy = ["serde", "polars-arrow/serde"]
+
 docs-selection = [
   "ndarray",
   "is_in",

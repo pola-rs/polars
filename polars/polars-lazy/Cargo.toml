@@ -96,6 +96,7 @@ glob = "0.3"
 parking_lot = "0.12"
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
 
 polars-arrow = { version = "0.20.0", path = "../polars-arrow" }
 polars-core = { version = "0.20.0", path = "../polars-core", features = ["lazy", "private", "zip_with"], default-features = false }

@@ -92,6 +92,7 @@ features = [
   "series_from_anyvalue",
   "unique_counts",
   "log",
+  "serde-lazy",
 ]
 
 # [patch.crates-io]

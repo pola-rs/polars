@@ -1177,6 +1177,7 @@ dependencies = [
  "arrow2",
  "hashbrown 0.12.0",
  "num",
+ "serde",
  "thiserror",
 ]
 
@@ -1247,6 +1248,7 @@ dependencies = [
  "polars-utils",
  "rayon",
  "regex",
+ "serde",
 ]
 
 [[package]]

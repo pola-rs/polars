@@ -47,6 +47,9 @@ pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
 
+#[cfg(feature = "serde-lazy")]
+use serde::{Deserialize, Serialize};
+
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
     fn to_list(&self) -> Result<ListChunked> {
@@ -503,6 +506,7 @@ pub trait ToDummies<T>: ChunkUnique<T> {
 }
 
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,

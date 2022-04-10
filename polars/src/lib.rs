@@ -171,6 +171,8 @@
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
+//!     - `serde-lazy` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
+//!                 Can be used for JSON and more serde supported serialization formats.
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
@@ -220,7 +222,7 @@
 //!     - `pct_change` - Compute change percentages.
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
-//! * `DataFrame` pretty printing (Choose one or none, but not both):
+//! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
 //! ## Compile times and opt-in data types

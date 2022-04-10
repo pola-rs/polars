@@ -1437,10 +1437,12 @@ impl PySeries {
     }
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
         Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.series = bincode::deserialize(s.as_bytes()).unwrap();

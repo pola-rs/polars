@@ -11,7 +11,7 @@ use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
+use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
 
 #[pyclass]
@@ -87,6 +87,31 @@ impl PyExpr {
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        Ok(PyBytes::new(py, &bincode::serialize(&self.inner).unwrap()).to_object(py))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                // Safety
+                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+                // so we actually don't have a lifetime at all when serializing.
+
+                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
+                // in this scope
+                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
+
+                self.inner = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
