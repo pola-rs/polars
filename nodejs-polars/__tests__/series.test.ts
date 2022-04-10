@@ -492,6 +492,7 @@ describe("series", () => {
   ${numSeries()}  | ${"rollingVar"}   | ${[1, [.11], 1]}
   ${numSeries()}  | ${"rollingVar"}   | ${[1, [.23], 1, true]}
   ${fltSeries()}  | ${"round"}        | ${[1]}
+  ${numSeries()}  | ${"sample"}       | ${[]}
   ${numSeries()}  | ${"sample"}       | ${[1, null, true]}
   ${numSeries()}  | ${"sample"}       | ${[null, 1]}
   ${numSeries()}  | ${"sample"}       | ${[{n: 1}]}

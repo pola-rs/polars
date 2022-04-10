@@ -865,6 +865,14 @@ describe("dataframe", () => {
     }).sample(2);
     expect(actual.height).toStrictEqual(2);
   });
+  test("sample:default", () => {
+    const actual = pl.DataFrame({
+      "foo": [1, 2, 3],
+      "bar": [6, 7, 8],
+      "ham": ["a", "b", "c"]
+    }).sample();
+    expect(actual.height).toStrictEqual(1);
+  });
   test("sample:frac", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3, 1],

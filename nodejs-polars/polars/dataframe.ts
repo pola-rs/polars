@@ -1711,6 +1711,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     },
     rows: noArgUnwrap("to_rows"),
     sample(opts?, frac?, withReplacement = false, seed?) {
+      if(arguments.length === 0) {
+        return wrap("sample_n", {
+          n: 1,
+          withReplacement,
+          seed
+        });
+      }
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
         return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }

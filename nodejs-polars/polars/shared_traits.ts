@@ -310,7 +310,8 @@ export interface Sample<T> {
    * ╰─────┴─────┴─────╯
    * ```
    */
-  sample(opts: {n: number, withReplacement?: boolean, seed?: number | bigint}): T
-  sample(opts: {frac: number, withReplacement?: boolean, seed?: number | bigint}): T
+
+  sample(opts?: {n: number, withReplacement?: boolean, seed?: number | bigint}): T
+  sample(opts?: {frac: number, withReplacement?: boolean, seed?: number | bigint}): T
   sample(n?: number, frac?: number, withReplacement?: boolean, seed?: number | bigint): T
 }
