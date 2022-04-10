@@ -105,7 +105,6 @@ def test_init_ndarray() -> None:
     df = pl.DataFrame(np.array([1, 2, 3]), columns=["a"])
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
-    assert df.dtypes == [pl.Int64]
 
     df = pl.DataFrame(np.array([1, 2, 3]), columns=[("a", pl.Int32)])
     truth = pl.DataFrame({"a": [1, 2, 3]}).with_column(pl.col("a").cast(pl.Int32))
@@ -121,11 +120,6 @@ def test_init_ndarray() -> None:
         {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
     )
     assert df.frame_equal(truth)
-    assert df.schema == {
-        "column_0": pl.Int64,
-        "column_1": pl.Float64,
-        "column_2": pl.Utf8,
-    }
 
     df = pl.DataFrame(
         data=[[1, 2.0, "a"], [None, None, None]],
@@ -211,10 +205,11 @@ def test_init_series() -> None:
     assert df.frame_equal(truth)
 
     df = pl.DataFrame(
-        (pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))), columns=["x", "y"]
+        (pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))),
+        columns=[("x", pl.Float64), ("y", pl.Float64)],
     )
-    assert df.schema == {"x": pl.Int64, "y": pl.Int64}
-    assert df.rows() == [(1, 4), (2, 5), (3, 6)]
+    assert df.schema == {"x": pl.Float64, "y": pl.Float64}
+    assert df.rows() == [(1.0, 4.0), (2.0, 5.0), (3.0, 6.0)]
 
     # List of unnamed Series
     df = pl.DataFrame([pl.Series([1, 2, 3]), pl.Series([4, 5, 6])])
@@ -223,9 +218,9 @@ def test_init_series() -> None:
     )
     assert df.frame_equal(truth)
 
-    df = pl.DataFrame([pl.Series([None]), pl.Series([1.0])])
+    df = pl.DataFrame([pl.Series([0.0]), pl.Series([1.0])])
     assert df.schema == {"column_0": pl.Float64, "column_1": pl.Float64}
-    assert df.rows() == [(None, 1.0)]
+    assert df.rows() == [(0.0, 1.0)]
 
     df = pl.DataFrame(
         [pl.Series([None]), pl.Series([1.0])],
