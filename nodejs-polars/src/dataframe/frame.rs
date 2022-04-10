@@ -594,17 +594,17 @@ pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
 }
 
 #[js_function(1)]
-pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
+pub fn unique(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let maintain_order: bool = params.get_or("maintainOrder", false)?;
-    let keep: DistinctKeepStrategy = params.get_as("keep")?;
+    let keep: UniqueKeepStrategy = params.get_as("keep")?;
 
     let subset: Option<Vec<String>> = params.get_as("subset")?;
     let subset = subset.as_ref().map(|v| v.as_ref());
     let df = match maintain_order {
-        true => df.distinct_stable(subset, keep),
-        false => df.distinct(subset, keep),
+        true => df.unique_stable(subset, keep),
+        false => df.unique(subset, keep),
     }
     .map_err(JsPolarsEr::from)?;
 

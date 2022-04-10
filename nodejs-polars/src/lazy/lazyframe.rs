@@ -423,16 +423,16 @@ pub fn explode(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
-pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
+pub fn unique(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let maintain_order: bool = params.get_or("maintainOrder", false)?;
-    let keep: DistinctKeepStrategy = params.get_as("keep")?;
+    let keep: UniqueKeepStrategy = params.get_as("keep")?;
 
     let subset: Option<Vec<String>> = params.get_as("subset")?;
     match maintain_order {
-        true => ldf.distinct_stable(subset, keep),
-        false => ldf.distinct(subset, keep),
+        true => ldf.unique_stable(subset, keep),
+        false => ldf.unique(subset, keep),
     }
     .try_into_js(&cx)
 }

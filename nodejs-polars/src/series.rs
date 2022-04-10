@@ -440,7 +440,7 @@ pub fn value_counts(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     series
-        .value_counts()
+        .value_counts(true)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }

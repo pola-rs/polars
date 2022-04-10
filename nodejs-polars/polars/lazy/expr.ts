@@ -492,7 +492,7 @@ export interface Expr extends
   /** Take every nth value in the Series and return as a new Series. */
   takeEvery(n: number): Expr
   /**
-   * Get the unique/distinct values in the list
+   * Get the unique values of this expression;
    * @param maintainOrder Maintain order of data. This requires more work.
    */
   unique(maintainOrder?: boolean | {maintainOrder: boolean}): Expr

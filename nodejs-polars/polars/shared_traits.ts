@@ -13,7 +13,6 @@ export interface Arithmetic<T> {
   div(rhs: any): T
   mul(rhs: any): T
   rem(rhs: any): T
-
   plus(rhs: any): T
   minus(rhs: any): T
   divideBy(rhs: any): T

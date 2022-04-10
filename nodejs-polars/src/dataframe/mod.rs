@@ -22,7 +22,7 @@ impl JsDataFrame {
             napi::Property::new(env, "div")?.with_method(df::div),
             napi::Property::new(env, "drop_in_place")?.with_method(df::drop_in_place),
             napi::Property::new(env, "drop_nulls")?.with_method(df::drop_nulls),
-            napi::Property::new(env, "distinct")?.with_method(df::distinct),
+            napi::Property::new(env, "unique")?.with_method(df::unique),
             napi::Property::new(env, "drop")?.with_method(df::drop),
             napi::Property::new(env, "dtypes")?.with_method(df::dtypes),
             napi::Property::new(env, "extend")?.with_method(df::extend),

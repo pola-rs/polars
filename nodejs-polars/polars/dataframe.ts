@@ -172,13 +172,13 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   describe(): DataFrame
-
   /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
    * @param maintainOrder
    * @param subset - subset to drop duplicates for
    * @param keep "first" | "last"
+   * @deprecated *since 0.4.0* use {@link unique}
    */
   distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
   distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
@@ -214,17 +214,6 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   drop(name: string): DataFrame
   drop(names: string[]): DataFrame
   drop(name: string, ...names: string[]): DataFrame
-  /**
-   * __Drop duplicate rows from this DataFrame.__
-   *
-   * Note that this fails if there is a column of type `List` in the DataFrame.
-   * @param maintainOrder
-   * @param subset - subset to drop duplicates for
-   * @deprecated @since 0.2.1 @use {@link distinct}
-   */
-  dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
-  /** @deprecated @since 0.2.1 @use {@link distinct} ==*/
-  dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
   /**
    * __Return a new DataFrame where the null values are dropped.__
    *
@@ -1334,6 +1323,15 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * └─────────────┴─────────────┴─────────────┘
    */
   transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: Iterable<string>})
+  /**
+   * Drop duplicate rows from this DataFrame.
+   * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @param maintainOrder
+   * @param subset - subset to drop duplicates for
+   * @param keep "first" | "last"
+   */
+   unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
+   unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
    /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
@@ -1576,23 +1574,26 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
     },
     distinct(opts: any = false, subset?, keep = "first") {
+      return this.unique(opts, subset);
+    },
+    unique(opts: any = false, subset?, keep = "first") {
       const defaultOptions = {
         maintainOrder: false,
         keep,
       };
 
       if(typeof opts === "boolean") {
-        return wrap("distinct", {...defaultOptions, maintainOrder: opts, subset, keep});
+        return wrap("unique", {...defaultOptions, maintainOrder: opts, subset, keep});
       }
 
       if(opts.subset) {
         opts.subset = [opts.subset].flat(3);
       }
 
-      return wrap("distinct", {...defaultOptions, ...opts});
+      return wrap("unique", {...defaultOptions, ...opts});
     },
     dropDuplicates(opts: any=false, subset?) {
-      return this.distinct(opts, subset);
+      return this.unique(opts, subset);
     },
     explode(...columns)  {
       return dfWrapper(_df)

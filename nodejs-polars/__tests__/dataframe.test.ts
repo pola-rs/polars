@@ -105,12 +105,12 @@ describe("dataframe", () => {
     const actual = df.drop("apple", "ham");
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates", () => {
+  test("unique", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 3],
       "bar": [1, 2, 2, 4],
       "ham": ["a", "d", "d", "c"],
-    }).dropDuplicates();
+    }).unique();
     const expected = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [1, 2, 4],
@@ -118,12 +118,12 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("dropDuplicates:subset", () => {
+  test("unique:subset", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
       "ham": ["a", "b", "c", "c"],
-    }).dropDuplicates({subset: ["foo", "ham"]});
+    }).unique({subset: ["foo", "ham"]});
     const expected = pl.DataFrame({
       "foo": [1, 2, 2],
       "bar": [1, 2, 2],
@@ -132,13 +132,13 @@ describe("dataframe", () => {
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder", () => {
+  test("unique:maintainOrder", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "b", "b"],
-      }).dropDuplicates({maintainOrder: true});
+      }).unique({maintainOrder: true});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2],
@@ -149,13 +149,13 @@ describe("dataframe", () => {
     });
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder:single subset", () => {
+  test("unique:maintainOrder:single subset", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "c", "d"],
-      }).dropDuplicates({maintainOrder: true, subset: "foo"});
+      }).unique({maintainOrder: true, subset: "foo"});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2],
@@ -166,13 +166,13 @@ describe("dataframe", () => {
     });
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder:multi subset", () => {
+  test("unique:maintainOrder:multi subset", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "c", "c"],
-      }).dropDuplicates({maintainOrder: true, subset: ["foo", "ham"]});
+      }).unique({maintainOrder: true, subset: ["foo", "ham"]});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2, 2],

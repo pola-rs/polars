@@ -314,7 +314,7 @@ impl JsSeries {
             napi::Property::new(env, "rem_u8")?.with_method(rem_u8),
             napi::Property::new(env, "rem")?.with_method(rem),
             napi::Property::new(env, "rename")?.with_method(rename),
-            napi::Property::new(env, "repeat")?.with_method(repeat),
+            napi::Property::new(env, "repeat")?.with_method(crate::series::repeat),
             napi::Property::new(env, "rolling_max")?.with_method(rolling_max),
             napi::Property::new(env, "rolling_mean")?.with_method(rolling_mean),
             napi::Property::new(env, "rolling_min")?.with_method(rolling_min),
