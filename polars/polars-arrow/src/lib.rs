@@ -4,6 +4,7 @@ mod bitmap;
 #[cfg(feature = "compute")]
 pub mod compute;
 pub mod conversion;
+pub mod data_types;
 pub mod error;
 pub mod export;
 pub mod index;

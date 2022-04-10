@@ -1,12 +1,13 @@
 use super::*;
+use crate::data_types::IsFloat;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use num::{Float, NumCast, ToPrimitive, Zero};
+use num::{Bounded, Float, NumCast, ToPrimitive, Zero};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use std::any::Any;
+use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
@@ -27,17 +28,18 @@ impl Default for QuantileInterpolOptions {
     }
 }
 
-fn rolling_apply_weights<Fo, Fa>(
-    values: &[f64],
+fn rolling_apply_weights<T, Fo, Fa>(
+    values: &[T],
     window_size: usize,
     min_periods: usize,
     det_offsets_fn: Fo,
     aggregator: Fa,
-    weights: &[f64],
+    weights: &[T],
 ) -> ArrayRef
 where
+    T: NativeType,
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[f64], &[f64]) -> f64,
+    Fa: Fn(&[T], &[T]) -> T,
 {
     assert_eq!(weights.len(), window_size);
     let len = values.len();
@@ -48,11 +50,11 @@ where
 
             aggregator(vals, weights)
         })
-        .collect_trusted::<Vec<f64>>();
+        .collect_trusted::<Vec<T>>();
 
     let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
     Arc::new(PrimitiveArray::from_data(
-        DataType::Float64,
+        DataType::from(T::PRIMITIVE),
         out.into(),
         validity.map(|b| b.into()),
     ))
@@ -212,6 +214,37 @@ where
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum::<T>() / T::from(values.len()).unwrap()
 }
 
+pub fn rolling_median<T>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType
+        + std::iter::Sum<T>
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>
+        + Zero
+        + IsFloat,
+{
+    rolling_quantile(
+        values,
+        0.5,
+        QuantileInterpolOptions::Linear,
+        window_size,
+        min_periods,
+        center,
+        weights,
+    )
+}
+
 pub fn rolling_quantile<T>(
     values: &[T],
     quantile: f64,
@@ -231,7 +264,8 @@ where
         + Sub<Output = T>
         + Div<Output = T>
         + Mul<Output = T>
-        + Zero,
+        + Zero
+        + IsFloat,
 {
     match (center, weights) {
         (true, None) => rolling_apply_quantile(
@@ -303,7 +337,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + Div<Output = T>
-        + Mul<Output = T>,
+        + Mul<Output = T>
+        + IsFloat,
 {
     if !(0.0..=1.0).contains(&quantile) {
         panic!("quantile should be between 0.0 and 1.0");
@@ -314,7 +349,20 @@ where
         .copied()
         .map(|x| NumCast::from(x).unwrap())
         .collect();
-    vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    if T::is_float() {
+        vals.sort_by(|a, b| {
+            match (a.is_nan(), b.is_nan()) {
+                // safety: we checked nans
+                (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+                (true, true) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+            }
+        });
+    } else {
+        vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    }
 
     let length = vals.len();
 
@@ -354,13 +402,19 @@ where
 
 pub(crate) fn compute_min<T>(values: &[T]) -> T
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + IsFloat + Bounded,
 {
-    values
-        .iter()
-        .copied()
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap()
+    let mut min = T::max_value();
+
+    for &v in values {
+        if T::is_float() && v.is_nan() {
+            return v;
+        }
+        if v < min {
+            min = v
+        }
+    }
+    min
 }
 
 pub(crate) fn compute_min_weights<T>(values: &[T], weights: &[T]) -> T
@@ -377,38 +431,45 @@ where
 
 pub(crate) fn compute_max<T>(values: &[T]) -> T
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + IsFloat + Bounded,
 {
-    values
-        .iter()
-        .copied()
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap()
+    let mut max = T::min_value();
+
+    for &v in values {
+        if T::is_float() && v.is_nan() {
+            return v;
+        }
+        if v > max {
+            max = v
+        }
+    }
+    max
 }
 
 pub(crate) fn compute_max_weights<T>(values: &[T], weights: &[T]) -> T
 where
-    T: NativeType + PartialOrd + std::ops::Mul<Output = T>,
+    T: NativeType + PartialOrd + IsFloat + Bounded + Mul<Output = T>,
 {
-    values
-        .iter()
-        .zip(weights)
-        .map(|(v, w)| *v * *w)
-        .max_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap()
+    let mut max = T::min_value();
+    for v in values.iter().zip(weights).map(|(v, w)| *v * *w) {
+        if T::is_float() && v.is_nan() {
+            return v;
+        }
+        if v > max {
+            max = v
+        }
+    }
+
+    max
 }
 
-fn as_floats<T>(values: &[T]) -> &[f64]
+fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
 where
-    T: Any,
 {
-    let values_any = &values[0] as &dyn Any;
-    // couldn't use downcast_ref because the slice is unsized
-    if values_any.is::<f64>() {
-        unsafe { std::mem::transmute::<&[T], &[f64]>(values) }
-    } else {
-        panic!()
-    }
+    weights
+        .iter()
+        .map(|v| NumCast::from(*v).unwrap())
+        .collect::<Vec<_>>()
 }
 
 pub fn rolling_mean<T>(
@@ -431,25 +492,25 @@ where
         ),
         (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_mean),
         (true, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets_center,
                 compute_mean_weights,
-                weights,
+                &weights,
             )
         }
         (false, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets,
                 compute_mean_weights,
-                weights,
+                &weights,
             )
         }
     }
@@ -463,7 +524,7 @@ pub fn rolling_min<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
 {
     match (center, weights) {
         (true, None) => rolling_apply(
@@ -475,25 +536,39 @@ where
         ),
         (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_min),
         (true, Some(weights)) => {
-            let values = as_floats(values);
+            assert!(
+                T::is_float(),
+                "implementation error, should only be reachable by float types"
+            );
+            let weights = weights
+                .iter()
+                .map(|v| NumCast::from(*v).unwrap())
+                .collect::<Vec<_>>();
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets_center,
                 compute_min_weights,
-                weights,
+                &weights,
             )
         }
         (false, Some(weights)) => {
-            let values = as_floats(values);
+            assert!(
+                T::is_float(),
+                "implementation error, should only be reachable by float types"
+            );
+            let weights = weights
+                .iter()
+                .map(|v| NumCast::from(*v).unwrap())
+                .collect::<Vec<_>>();
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets,
                 compute_min_weights,
-                weights,
+                &weights,
             )
         }
     }
@@ -507,7 +582,7 @@ pub fn rolling_max<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply(
@@ -519,25 +594,39 @@ where
         ),
         (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_max),
         (true, Some(weights)) => {
-            let values = as_floats(values);
+            assert!(
+                T::is_float(),
+                "implementation error, should only be reachable by float types"
+            );
+            let weights = weights
+                .iter()
+                .map(|v| NumCast::from(*v).unwrap())
+                .collect::<Vec<_>>();
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets_center,
                 compute_max_weights,
-                weights,
+                &weights,
             )
         }
         (false, Some(weights)) => {
-            let values = as_floats(values);
+            assert!(
+                T::is_float(),
+                "implementation error, should only be reachable by float types"
+            );
+            let weights = weights
+                .iter()
+                .map(|v| NumCast::from(*v).unwrap())
+                .collect::<Vec<_>>();
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets,
                 compute_max_weights,
-                weights,
+                &weights,
             )
         }
     }
@@ -563,25 +652,25 @@ where
         ),
         (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_var),
         (true, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets_center,
                 compute_var_weights,
-                weights,
+                &weights,
             )
         }
         (false, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets,
                 compute_var_weights,
-                weights,
+                &weights,
             )
         }
     }
@@ -595,7 +684,7 @@ pub fn rolling_sum<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + std::iter::Sum + Debug,
+    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T>,
 {
     match (center, weights) {
         (true, None) => rolling_apply(
@@ -607,25 +696,25 @@ where
         ),
         (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_sum),
         (true, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets_center,
                 compute_sum_weights,
-                weights,
+                &weights,
             )
         }
         (false, Some(weights)) => {
-            let values = as_floats(values);
+            let weights = coerce_weights(weights);
             rolling_apply_weights(
                 values,
                 window_size,
                 min_periods,
                 det_offsets,
                 compute_sum_weights,
-                weights,
+                &weights,
             )
         }
     }

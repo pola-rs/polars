@@ -502,6 +502,39 @@ def test_rolling() -> None:
     )
     assert a.rolling_skew(4).null_count() == 3
 
+    # 3099
+    # test if we maintain proper dtype
+    for dt in [pl.Float32, pl.Float64]:
+        assert (
+            pl.Series([1, 2, 3], dtype=dt)
+            .rolling_min(2, weights=[0.1, 0.2])
+            .series_equal(pl.Series([None, 0.1, 0.2], dtype=dt), True)
+        )
+
+    df = pl.DataFrame({"val": [1.0, 2.0, 3.0, np.NaN, 5.0, 6.0, 7.0]})
+
+    for e in [
+        pl.col("val").rolling_min(window_size=3),
+        pl.col("val").rolling_max(window_size=3),
+    ]:
+        out = df.with_column(e).to_series()
+        assert out.null_count() == 2
+        assert np.isnan(out.to_numpy()).sum() == 5
+
+    expected = [None, None, 2.0, 3.0, 5.0, 6.0, 6.0]
+    assert (
+        df.with_column(pl.col("val").rolling_median(window_size=3))
+        .to_series()
+        .to_list()
+        == expected
+    )
+    assert (
+        df.with_column(pl.col("val").rolling_quantile(0.5, window_size=3))
+        .to_series()
+        .to_list()
+        == expected
+    )
+
 
 def test_object() -> None:
     vals = [[12], "foo", 9]

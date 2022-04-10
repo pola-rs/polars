@@ -1,10 +1,11 @@
 use super::*;
+use crate::data_types::IsFloat;
 use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::types::NativeType;
-use num::{Float, NumCast, One, Zero};
+use num::{Bounded, Float, NumCast, One, Zero};
 use std::ops::AddAssign;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
@@ -233,7 +234,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + Div<Output = T>
-        + Mul<Output = T>,
+        + Mul<Output = T>
+        + IsFloat,
 {
     if !(0.0..=1.0).contains(&quantile) {
         panic!("quantile should be between 0.0 and 1.0");
@@ -295,7 +297,7 @@ fn compute_min<T>(
     min_periods: usize,
 ) -> Option<T>
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + Bounded + IsFloat,
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
@@ -331,7 +333,7 @@ fn compute_max<T>(
     min_periods: usize,
 ) -> Option<T>
 where
-    T: NativeType + PartialOrd,
+    T: NativeType + PartialOrd + Bounded + IsFloat,
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
@@ -428,6 +430,40 @@ where
     }
 }
 
+pub fn rolling_median<T>(
+    arr: &PrimitiveArray<T>,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType
+        + std::iter::Sum
+        + Zero
+        + AddAssign
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Default
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>
+        + IsFloat,
+{
+    rolling_quantile(
+        arr,
+        0.5,
+        QuantileInterpolOptions::Linear,
+        window_size,
+        min_periods,
+        center,
+        weights,
+    )
+}
+
 pub fn rolling_quantile<T>(
     arr: &PrimitiveArray<T>,
     quantile: f64,
@@ -450,7 +486,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + Div<Output = T>
-        + Mul<Output = T>,
+        + Mul<Output = T>
+        + IsFloat,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
@@ -522,7 +559,7 @@ pub fn rolling_min<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd,
+    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
@@ -556,7 +593,7 @@ pub fn rolling_max<T>(
     weights: Option<&[f64]>,
 ) -> ArrayRef
 where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd,
+    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
