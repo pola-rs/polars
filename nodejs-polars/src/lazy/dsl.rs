@@ -8,6 +8,7 @@ use polars::lazy::dsl::Operator;
 use crate::error::JsPolarsEr;
 use polars::lazy::dsl;
 use polars::prelude::*;
+use std::borrow::Cow;
 
 pub struct JsExpr {}
 
@@ -355,6 +356,7 @@ pub fn str_replace(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
+
 #[js_function(1)]
 pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -374,6 +376,54 @@ pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
         .map(function, GetOutput::same_type())
         .try_into_js(&cx)
 }
+
+#[js_function(1)]
+pub fn str_strip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.strip")
+        .try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn str_rstrip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+  
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.rstrip")
+        .try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+  
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.lstrip")
+        .try_into_js(&cx)
+}
+
 
 #[js_function(1)]
 pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
@@ -594,7 +644,15 @@ pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
-
+#[js_function(1)]
+pub fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let frac = params.get_as::<f64>("frac")?;
+    let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let seed = params.get_as::<Option<u64>>("seed")?;
+    expr.clone().sample_frac(frac, with_replacement, seed).try_into_js(&cx)
+}
 #[js_function(1)]
 pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;

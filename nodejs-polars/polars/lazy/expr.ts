@@ -12,13 +12,14 @@ import {isExternal} from "util/types";
 import {Series} from "../series/series";
 
 import * as expr from "./expr/";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
 
 export interface Expr extends
   Rolling<Expr>,
   Arithmetic<Expr>,
   Comparison<Expr>,
   Cumulative<Expr>,
+  Sample<Expr>,
   Round<Expr> {
   /** @ignore */
   _expr: any;
@@ -727,6 +728,25 @@ const _Expr = (_expr: any): Expr => {
       return wrap("rollingSkew", {bias:true, ...val});
     },
     round: wrapUnaryNumber("round", "decimals"),
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
+      }
+      if (typeof opts === "number") {
+        throw new Error("sample_n is not yet supported for expr");
+      }
+      if(typeof frac === "number") {
+        return wrap("sampleFrac", {
+          frac,
+          withReplacement,
+          seed
+        });
+      }
+      else {
+        throw new TypeError("must specify either 'frac' or 'n'");
+      }
+    },
     shift: wrapUnary("shift", "periods"),
     shiftAndFill(optOrPeriods, fillValue?) {
       if(typeof optOrPeriods === "number") {

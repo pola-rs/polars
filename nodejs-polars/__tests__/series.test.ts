@@ -498,6 +498,9 @@ describe("series", () => {
   ${numSeries()}  | ${"sample"}       | ${[{frac: 0.5}]}
   ${numSeries()}  | ${"sample"}       | ${[{n: 1, withReplacement: true}]}
   ${numSeries()}  | ${"sample"}       | ${[{frac: 0.1, withReplacement: true}]}
+  ${numSeries()}  | ${"sample"}       | ${[{frac: 0.1, withReplacement: true, seed: 1n}]}
+  ${numSeries()}  | ${"sample"}       | ${[{frac: 0.1, withReplacement: true, seed: 1}]}
+  ${numSeries()}  | ${"sample"}       | ${[{n: 1, withReplacement: true, seed: 1}]}
   ${numSeries()}  | ${"seriesEqual"}  | ${[other()]}
   ${numSeries()}  | ${"seriesEqual"}  | ${[other(), true]}
   ${numSeries()}  | ${"seriesEqual"}  | ${[other(), false]}
@@ -623,7 +626,7 @@ describe("series", () => {
   ${"rollingMean"}   | ${pl.Series([1, 2, 3, 2, 1]).rollingMean(2)}         | ${pl.Series("", [null, 1.5, 2.5, 2.5, 1.5], pl.Float64)}
   ${"rollingVar"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingVar(2)[1]}       | ${0.5}
   ${"sample:n"}      | ${pl.Series([1, 2, 3, 4, 5]).sample(2).len()}        | ${2}
-  ${"sample:frac"}   | ${pl.Series([1, 2, 3, 4, 5]).sample({frac:.4}).len()}| ${2}
+  ${"sample:frac"}   | ${pl.Series([1, 2, 3, 4, 5]).sample({frac:.4, seed:0}).len()}| ${2}
   ${"shift"}         | ${pl.Series([1, 2, 3]).shift(1)}                     | ${pl.Series([null, 1, 2])}
   ${"shift"}         | ${pl.Series([1, 2, 3]).shift(-1)}                    | ${pl.Series([2, 3, null])}
   ${"skew"}          | ${pl.Series([1, 2, 3, 3, 0]).skew()?.toPrecision(6)} | ${"-0.363173"}

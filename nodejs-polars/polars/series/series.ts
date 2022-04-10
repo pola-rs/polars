@@ -9,7 +9,7 @@ import {InvalidOperationError, todo} from "../error";
 import {RankMethod} from "../utils";
 import {col} from "../lazy/functions";
 import {isExternal, isTypedArray} from "util/types";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -27,7 +27,8 @@ export interface Series<T> extends
   Arithmetic<Series<T>>,
   Comparison<Series<boolean>>,
   Cumulative<Series<T>>,
-  Round<Series<T>> {
+  Round<Series<T>>,
+  Sample<Series<T>> {
   /** @ignore */
   _series: JsSeries;
   name: string
@@ -730,10 +731,6 @@ export interface Series<T> extends
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
   rename({name, inPlace}: {name: string, inPlace: true}): void
 
-
-  sample(opts: {n: number, withReplacement?: boolean}): Series<T>
-  sample(opts: {frac: number, withReplacement?: boolean}): Series<T>
-  sample(n?: number, frac?: number, withReplacement?: boolean): Series<T>
   /**
    * __Check if series is equal with another Series.__
    * @param other - Series to compare with.
@@ -1464,20 +1461,22 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         return wrap("clip", arg);
       }
     },
-    sample(opts?, frac?, withReplacement = false) {
-      if (opts?.n !== undefined || opts?.frac !== undefined) {
-        return this.sample(opts.n, opts.frac, opts.withReplacement);
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
         return wrap("sample_n", {
           n: opts,
-          withReplacement
+          withReplacement,
+          seed
         });
       }
-      if (typeof frac === "number") {
+      if(typeof frac === "number") {
         return wrap("sample_frac", {
           frac,
           withReplacement,
+          seed
         });
       }
       else {

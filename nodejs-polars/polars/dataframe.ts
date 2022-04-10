@@ -25,7 +25,7 @@ import {
   ExprOrString
 } from "./utils";
 
-import {Arithmetic} from "./shared_traits";
+import {Arithmetic, Sample} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -125,7 +125,7 @@ type WriteIPCOptions = {
   ╰─────┴─────┴─────╯
   ```
  */
-export interface DataFrame extends Arithmetic<DataFrame> {
+export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame> {
   /** @ignore */
   _df: JsDataFrame
   dtypes: DataType[]
@@ -846,34 +846,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * Convert columnar data to rows as arrays
    */
   rows(): Array<Array<any>>
-  /**
-   * Sample from this DataFrame by setting either `n` or `frac`.
-   * @param n - Number of samples < self.len() .
-   * @param frac - Fraction between 0.0 and 1.0 .
-   * @param withReplacement - Sample with replacement.
-   * @example
-   * ```
-   * >>> df = pl.DataFrame({
-   * >>>   "foo": [1, 2, 3],
-   * >>>   "bar": [6, 7, 8],
-   * >>>   "ham": ['a', 'b', 'c']
-   * >>> })
-   * >>> df.sample({n: 2})
-   * shape: (2, 3)
-   * ╭─────┬─────┬─────╮
-   * │ foo ┆ bar ┆ ham │
-   * │ --- ┆ --- ┆ --- │
-   * │ i64 ┆ i64 ┆ str │
-   * ╞═════╪═════╪═════╡
-   * │ 1   ┆ 6   ┆ "a" │
-   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-   * │ 3   ┆ 8   ┆ "c" │
-   * ╰─────┴─────┴─────╯
-   * ```
-   */
-  sample(opts: {n: number, withReplacement?: boolean}): DataFrame
-  sample(opts: {frac: number, withReplacement?: boolean}): DataFrame
-  sample(n?: number, frac?: number, withReplacement?: boolean): DataFrame
+
   schema(): Record<string, string>
   /**
    * Select columns from this DataFrame.
@@ -1732,20 +1705,22 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return this;
     },
     rows: noArgUnwrap("to_rows"),
-    sample(opts?, frac?, withReplacement = false) {
+    sample(opts?, frac?, withReplacement = false, seed?) {
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
-        return this.sample(opts.n, opts.frac, opts.withReplacement);
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
         return wrap("sample_n", {
           n: opts,
-          withReplacement
+          withReplacement,
+          seed
         });
       }
       if(typeof frac === "number") {
         return wrap("sample_frac", {
           frac,
           withReplacement,
+          seed
         });
       }
       else {
