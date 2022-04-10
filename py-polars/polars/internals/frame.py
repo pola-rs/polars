@@ -44,6 +44,7 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.internals.construction import (
+    ColumnsType,
     arrow_to_pydf,
     dict_to_pydf,
     numpy_to_pydf,
@@ -180,7 +181,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms. dict must contain Sequences.
         Sequence may contain Series or other Sequences.
-    columns : Sequence of str, default None
+    columns : Sequence of str or (str,DataType) pairs, default None
         Column labels to use for resulting DataFrame. If specified, overrides any
         labels already present in the data. Must match data dimensions.
     orient : {'col', 'row'}, default None
@@ -212,7 +213,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
 
     In order to specify dtypes for your columns, initialize the DataFrame with a list
-    of Series instead:
+    of typed Series, or set the columns parameter with a list of (name,dtype) pairs:
 
     >>> data = [
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
@@ -226,17 +227,30 @@ class DataFrame(metaclass=DataFrameMetaClass):
     │ ---  ┆ ---  │
     │ f32  ┆ i64  │
     ╞══════╪══════╡
-    │ 1    ┆ 3    │
+    │ 1.0  ┆ 3    │
     ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 2    ┆ 4    │
+    │ 2.0  ┆ 4    │
+    └──────┴──────┘
+
+    # or, equivalent... (and also compatible with all of the other valid data parameter types):
+    >>> df3 = pl.DataFrame(data, columns=[("col1", pl.Float32), ("col2", pl.Int64)])
+    >>> df3
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1.0  ┆ 3    │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2.0  ┆ 4    │
     └──────┴──────┘
 
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df3
+    >>> df4 = pl.DataFrame(data, columns=["a", "b"], orient="col")
+    >>> df4
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -278,7 +292,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 "pli.Series",
             ]
         ] = None,
-        columns: Optional[Sequence[str]] = None,
+        columns: Optional[ColumnsType] = None,
         orient: Optional[str] = None,
     ):
         if data is None:
@@ -4942,8 +4956,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> "pli.Series":
         """
         Hash and combine the rows in this DataFrame.
-
-        Hash value is UInt64
+        Hash value is UInt64.
 
         Parameters
         ----------
