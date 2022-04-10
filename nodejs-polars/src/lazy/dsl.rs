@@ -356,7 +356,6 @@ pub fn str_replace(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-
 #[js_function(1)]
 pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -399,7 +398,7 @@ pub fn str_rstrip(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let function = |s: Series| {
         let ca = s.utf8()?;
-  
+
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
     };
 
@@ -414,7 +413,7 @@ pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let function = |s: Series| {
         let ca = s.utf8()?;
-  
+
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
     };
 
@@ -423,7 +422,6 @@ pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
         .with_fmt("str.lstrip")
         .try_into_js(&cx)
 }
-
 
 #[js_function(1)]
 pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
@@ -651,7 +649,9 @@ pub fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
     let seed = params.get_as::<Option<u64>>("seed")?;
-    expr.clone().sample_frac(frac, with_replacement, seed).try_into_js(&cx)
+    expr.clone()
+        .sample_frac(frac, with_replacement, seed)
+        .try_into_js(&cx)
 }
 #[js_function(1)]
 pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
@@ -1147,14 +1147,14 @@ pub fn when_then_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
 #[js_function(1)]
 pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
     let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
-    
+
     let s = buff.into_value()?;
     let v: &[u8] = &s;
-    
+
     // Safety
     // this is safe because the buf was created from js-land
     // JS manages the lifecycle & we only are borrowing.
-    let v = unsafe { std::mem::transmute::<&'_  [u8], &'static [u8]>(v) };
+    let v = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(v) };
     let expr: Expr = bincode::deserialize(v).unwrap();
 
     expr.try_into_js(&cx)

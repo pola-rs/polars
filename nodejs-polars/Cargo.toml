@@ -14,8 +14,8 @@ crate-type = ["cdylib"]
 name = "nodejs_polars"
 
 [dependencies]
-bincode = "1.3"
 ahash = "0.7"
+bincode = "1.3"
 dirs = "4.0"
 napi-derive = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
