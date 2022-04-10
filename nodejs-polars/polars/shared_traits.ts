@@ -315,8 +315,3 @@ export interface Sample<T> {
   sample(opts?: {frac: number, withReplacement?: boolean, seed?: number | bigint}): T
   sample(n?: number, frac?: number, withReplacement?: boolean, seed?: number | bigint): T
 }
-
-export interface Bincode<T> {
-  (bincode: Uint8Array): T;
-  getState(T): Uint8Array;
-}
