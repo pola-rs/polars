@@ -356,7 +356,6 @@ pub fn str_replace(cx: CallContext) -> JsResult<JsExternal> {
         .try_into_js(&cx)
 }
 
-
 #[js_function(1)]
 pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
