@@ -354,8 +354,8 @@ def _unpack_columns(
     lookup = {
         col: name for col, name in zip_longest(column_names, lookup_names or []) if name
     }
-    return (  # type: ignore[return-value]
-        column_names or None,
+    return (
+        column_names or None,  # type: ignore[return-value]
         {
             lookup.get(col[0], col[0]): col[1]
             for col in (columns or [])
