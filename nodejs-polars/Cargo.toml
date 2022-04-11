@@ -76,7 +76,7 @@ features = [
   "string_encoding",
   "parquet",
   "ipc",
-  "avro"
+  "avro",
 ]
 path = "../polars"
 
