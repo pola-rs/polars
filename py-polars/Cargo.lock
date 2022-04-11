@@ -807,6 +807,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33a33a362ce288760ec6a508b94caaec573ae7d3bbbd91b87aa0bad4456839db"
 
 [[package]]
+name = "libmimalloc-sys"
+version = "0.1.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7705fc40f6ed493f73584abbb324e74f96b358ff60dfe5659a0f8fc12c590a69"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -889,6 +898,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "mimalloc"
+version = "0.1.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0dfa131390c2f6bdb3242f65ff271fcdaca5ff7b6c08f28398be7f2280e3926"
+dependencies = [
+ "libmimalloc-sys",
 ]
 
 [[package]]
@@ -1294,6 +1312,7 @@ dependencies = [
  "bincode",
  "jemallocator",
  "libc",
+ "mimalloc",
  "ndarray",
  "numpy",
  "polars",
