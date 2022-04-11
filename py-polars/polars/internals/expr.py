@@ -2174,6 +2174,8 @@ class Expr:
         center
             Set the labels at the center of the window
         """
+        if min_periods is None:
+            min_periods = window_size
         return wrap_expr(
             self._pyexpr.rolling_median(window_size, weights, min_periods, center)
         )
@@ -2207,6 +2209,8 @@ class Expr:
         center
             Set the labels at the center of the window
         """
+        if min_periods is None:
+            min_periods = window_size
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile, interpolation, window_size, weights, min_periods, center
