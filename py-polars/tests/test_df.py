@@ -1697,9 +1697,6 @@ def test_is_unique() -> None:
 def test_sample() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
-    # by default samples should be random
-    assert df.sample(n=2) != df.sample(n=2)
-
     assert df.sample(n=2, seed=0).shape == (2, 3)
     assert df.sample(frac=0.4, seed=0).shape == (1, 3)
 
