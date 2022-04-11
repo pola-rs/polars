@@ -5,6 +5,7 @@ use crate::prelude::JsResult;
 use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
 use polars::frame::row::{infer_schema, rows_to_schema, Row};
 use polars::io::RowCount;
+use polars::io::avro::*;
 use polars::prelude::*;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -518,6 +519,96 @@ pub(crate) fn write_json_path(cx: CallContext) -> JsResult<JsUndefined> {
         .with_json_format(json_fmt)
         .finish(df)
         .map_err(|e| JsPolarsEr::Other(format!("{:?}", e)))?;
+    cx.env.get_undefined()
+}
+
+// ------
+// AVRo
+// ------
+#[js_function(1)]
+pub(crate) fn read_avro_path(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let path = params.get_as::<String>("path")?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+
+    let f = File::open(&path)?;
+
+    AvroReader::new(f)
+        .with_projection(projection)
+        .with_columns(columns)
+        .with_n_rows(n_rows)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn read_avro_buffer(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let columns: Option<Vec<String>> = params.get_as("columns")?;
+    let projection: Option<Vec<usize>> = params.get_as("projection")?;
+    let n_rows: Option<usize> = params.get_as("numRows")?;
+
+    let buff = params.get::<napi::JsBuffer>("buff")?;
+    let buffer_value = buff.into_value()?;
+
+    let cursor = Cursor::new(buffer_value.as_ref());
+
+    AvroReader::new(cursor)
+        .with_projection(projection)
+        .with_columns(columns)
+        .with_n_rows(n_rows)
+        .finish()
+        .map_err(JsPolarsEr::from)?
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub(crate) fn write_avro_path(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let compression = params.get_as::<String>("compression")?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
+    let path = params.get_as::<String>("path")?;
+    let compression = match compression.as_str() {
+        "uncompressed" => None,
+        "snappy" => Some(AvroCompression::Snappy),
+        "deflate" => Some(AvroCompression::Deflate),
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+    let f = File::create(&path)?;
+
+    AvroWriter::new(f)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
+    cx.env.get_undefined()
+}
+
+#[js_function(1)]
+pub(crate) fn write_avro_stream(cx: CallContext) -> JsResult<JsUndefined> {
+    let params = get_params(&cx)?;
+    let df = params.get_external_mut::<DataFrame>(&cx, "_df")?;
+    let stream = params.get::<JsObject>("writeStream")?;
+    let writeable = JsWriteStream {
+        inner: stream,
+        env: cx.env,
+    };
+    let compression = params.get_as::<String>("compression")?;
+    let compression = match compression.as_str() {
+        "uncompressed" => None,
+        "snappy" => Some(AvroCompression::Snappy),
+        "deflate" => Some(AvroCompression::Deflate),
+        s => return Err(JsPolarsEr::Other(format!("compression {} not supported", s)).into()),
+    };
+
+    AvroWriter::new(writeable)
+        .with_compression(compression)
+        .finish(df)
+        .map_err(JsPolarsEr::from)?;
+
     cx.env.get_undefined()
 }
 

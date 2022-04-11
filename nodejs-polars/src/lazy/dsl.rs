@@ -398,7 +398,6 @@ pub fn str_rstrip(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let function = |s: Series| {
         let ca = s.utf8()?;
-
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
     };
 
@@ -413,7 +412,6 @@ pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
     let function = |s: Series| {
         let ca = s.utf8()?;
-
         Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
     };
 

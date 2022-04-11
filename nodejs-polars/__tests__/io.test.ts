@@ -7,6 +7,8 @@ const csvpath = path.resolve(__dirname, "../../examples/datasets/foods1.csv");
 // eslint-disable-next-line no-undef
 const parquetpath = path.resolve(__dirname, "./examples/foods.parquet");
 // eslint-disable-next-line no-undef
+const avropath = path.resolve(__dirname, "./examples/foods.avro");
+// eslint-disable-next-line no-undef
 const ipcpath = path.resolve(__dirname, "./examples/foods.ipc");
 // eslint-disable-next-line no-undef
 const jsonpath = path.resolve(__dirname, "./examples/foods.json");
@@ -222,6 +224,47 @@ describe("ipc", () => {
     expect(ipcDF).toFrameEqual(csvDF);
   });
 
+});
+
+
+describe("avro", () => {
+  beforeEach(() => {
+    pl.readCSV(csvpath).writeAvro(avropath);
+  });
+  afterEach(() => {
+    fs.rmSync(avropath);
+  });
+
+  test("round trip", () => {
+    const expected = pl.DataFrame({
+      foo: [1, 2, 3],
+      bar: ["a", "b", "c"]
+    });
+    const buf = expected.writeAvro();
+    const actual = pl.readAvro(buf);
+    expect(actual).toFrameEqual(expected);
+  });
+  test("read", () => {
+    const df = pl.readAvro(avropath);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+  test("read:buffer", () => {
+    const buff = fs.readFileSync(avropath);
+    const df = pl.readAvro(buff);
+    expect(df.shape).toStrictEqual({height: 27, width: 4});
+  });
+
+  test("read:compressed", () => {
+    const csvDF = pl.readCSV(csvpath);
+    csvDF.writeAvro(avropath, {compression: "snappy"});
+    const df = pl.readAvro(avropath);
+    expect(df).toFrameEqual(csvDF);
+  });
+
+  test.skip("read:options", () => {
+    const df = pl.readAvro(avropath, {numRows: 4});
+    expect(df.shape).toStrictEqual({height: 4, width: 4});
+  });
 });
 
 describe("stream", () => {
