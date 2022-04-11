@@ -1,6 +1,18 @@
 import warnings
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Type, Union
+from itertools import zip_longest
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 import numpy as np
 
@@ -41,6 +53,12 @@ else:
         _PYARROW_AVAILABLE = True
     except ImportError:  # pragma: no cover
         _PYARROW_AVAILABLE = False
+
+ColumnsType = Union[
+    Union[List[str], Sequence[str]],  # ['x','y','z']
+    Dict[str, Type[DataType]],  # {'x':date,'y':str,'z':int}
+    Sequence[Tuple[str, Type[DataType]]],  # [('x',date),('y',str),('z',int)]
+]
 
 ################################
 # Series constructor interface #
@@ -282,7 +300,7 @@ def _handle_columns_arg(
     """
     Rename data according to columns argument.
     """
-    if columns is None:
+    if not columns:
         return data
     else:
         if not data:
@@ -295,34 +313,105 @@ def _handle_columns_arg(
             raise ValueError("Dimensions of columns arg must match data dimensions.")
 
 
+def _post_apply_columns(
+    pydf: "PyDataFrame",
+    columns: ColumnsType,
+) -> "PyDataFrame":
+    """
+    Apply 'columns' param _after_ PyDataFrame creation (if no alternative).
+    """
+    pydf_columns, pydf_dtypes = pydf.columns(), pydf.dtypes()
+    columns, dtypes = _unpack_columns(columns or pydf_columns)
+    if columns != pydf_columns:
+        pydf.set_column_names(columns)
+
+    column_casts = [
+        pli.col(col).cast(dtypes[col])._pyexpr
+        for i, col in enumerate(columns)
+        if col in dtypes and dtypes[col] != pydf_dtypes[i]
+    ]
+    if column_casts:
+        pydf = pydf.lazy().with_columns(column_casts).collect()
+    return pydf
+
+
+def _unpack_columns(
+    columns: Optional[ColumnsType],
+    lookup_names: Optional[Iterable[str]] = None,
+    n_expected: Optional[int] = None,
+) -> Tuple[List[str], Dict[str, Type[DataType]]]:
+    """
+    Unpack column names and create dtype lookup for any (name,dtype) pairs or schema dict input.
+    """
+    if isinstance(columns, dict):
+        columns = list(columns.items())
+    column_names = [
+        (col or f"column_{i}") if isinstance(col, str) else col[0]
+        for i, col in enumerate((columns or []))
+    ]
+    if not column_names and n_expected:
+        column_names = [f"column_{i}" for i in range(n_expected)]
+    lookup = {
+        col: name for col, name in zip_longest(column_names, lookup_names or []) if name
+    }
+    return (
+        column_names or None,  # type: ignore[return-value]
+        {
+            lookup.get(col[0], col[0]): col[1]
+            for col in (columns or [])
+            if not isinstance(col, str) and col[1]
+        },
+    )
+
+
 def dict_to_pydf(
     data: Dict[str, Sequence[Any]],
-    columns: Optional[Sequence[str]] = None,
+    columns: Optional[ColumnsType] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
-    data_series = [pli.Series(name, values).inner() for name, values in data.items()]
+    columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
+    if not data and dtypes:
+        data_series = [
+            pli.Series(name, [], dtypes.get(name)).inner() for name in columns
+        ]
+    else:
+        data_series = [
+            pli.Series(name, values, dtypes.get(name)).inner()
+            for name, values in data.items()
+        ]
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
 def numpy_to_pydf(
     data: np.ndarray,
-    columns: Optional[Sequence[str]] = None,
+    columns: Optional[ColumnsType] = None,
     orient: Optional[str] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a numpy ndarray.
     """
     shape = data.shape
+    n_columns = (
+        0
+        if shape == (0,)
+        else (
+            1
+            if len(shape) == 1
+            else (shape[1] if orient in ("row", None) else shape[0])
+        )
+    )
+    columns, dtypes = _unpack_columns(columns, n_expected=n_columns)
+    if columns and len(columns) != n_columns:
+        raise ValueError("Dimensions of columns arg must match data dimensions.")
 
     if shape == (0,):
         data_series = []
 
     elif len(shape) == 1:
-        s = pli.Series("column_0", data).inner()
-        data_series = [s]
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
     elif len(shape) == 2:
         # Infer orientation
@@ -338,46 +427,54 @@ def numpy_to_pydf(
         # Exchange if-block above for block below when removing warning
         # if orientation is None and columns is not None:
         #     orientation = "col" if len(columns) == shape[0] else "row"
-
         if orient == "row":
             data_series = [
-                pli.Series(f"column_{i}", data[:, i]).inner() for i in range(shape[1])
+                pli.Series(columns[i], data[:, i], dtypes.get(columns[i])).inner()
+                for i in range(n_columns)
             ]
         else:
             data_series = [
-                pli.Series(f"column_{i}", data[i]).inner() for i in range(shape[0])
+                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                for i in range(n_columns)
             ]
     else:
         raise ValueError("A numpy array should not have more than two dimensions.")
 
     data_series = _handle_columns_arg(data_series, columns=columns)
-
     return PyDataFrame(data_series)
 
 
 def sequence_to_pydf(
     data: Sequence[Any],
-    columns: Optional[Sequence[str]] = None,
+    columns: Optional[ColumnsType] = None,
     orient: Optional[str] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a sequence.
     """
     data_series: List["PySeries"]
+
     if len(data) == 0:
         data_series = []
 
     elif isinstance(data[0], pli.Series):
+        series_names = [s.name for s in data]
+        columns, dtypes = _unpack_columns(columns or series_names, n_expected=len(data))
         data_series = []
         for i, s in enumerate(data):
             if not s.name:  # TODO: Replace by `if s.name is None` once allowed
-                s.rename(f"column_{i}", in_place=True)
+                s.rename(columns[i], in_place=True)
+
+            new_dtype = dtypes.get(columns[i])
+            if new_dtype and new_dtype != s.dtype:
+                s = s.cast(new_dtype)
+
             data_series.append(s.inner())
 
     elif isinstance(data[0], dict):
         pydf = PyDataFrame.read_dicts(data)
-        if columns is not None:
-            pydf.set_column_names(columns)
+        if columns:
+            pydf = _post_apply_columns(pydf, columns)
         return pydf
 
     elif isinstance(data[0], Sequence) and not isinstance(data[0], str):
@@ -387,24 +484,26 @@ def sequence_to_pydf(
 
         if orient == "row":
             pydf = PyDataFrame.read_rows(data)
-            if columns is not None:
-                pydf.set_column_names(columns)
+            if columns:
+                pydf = _post_apply_columns(pydf, columns)
             return pydf
         else:
+            columns, dtypes = _unpack_columns(columns, n_expected=len(data))
             data_series = [
-                pli.Series(f"column_{i}", data[i]).inner() for i in range(len(data))
+                pli.Series(columns[i], data[i], dtypes.get(columns[i])).inner()
+                for i in range(len(data))
             ]
 
     else:
-        s = pli.Series("column_0", data).inner()
-        data_series = [s]
+        columns, dtypes = _unpack_columns(columns, n_expected=1)
+        data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)
+    data_series = _handle_columns_arg(data_series, columns=columns)  # type: ignore[arg-type]
     return PyDataFrame(data_series)
 
 
 def arrow_to_pydf(
-    data: "pa.Table", columns: Optional[Sequence[str]] = None, rechunk: bool = True
+    data: "pa.Table", columns: Optional[ColumnsType] = None, rechunk: bool = True
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from an Arrow Table.
@@ -413,6 +512,8 @@ def arrow_to_pydf(
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
+    original_columns = columns
+    columns, dtypes = _unpack_columns(columns)
     if columns is not None:
         try:
             data = data.rename_columns(columns)
@@ -460,24 +561,34 @@ def arrow_to_pydf(
             df[s.name] = s
         df = df[names]
         pydf = df._df
+
+    if dtypes and original_columns:
+        pydf = _post_apply_columns(pydf, original_columns)
     return pydf
 
 
 def series_to_pydf(
     data: "pli.Series",
-    columns: Optional[Sequence[str]] = None,
+    columns: Optional[ColumnsType] = None,
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a Polars Series.
     """
     data_series = [data.inner()]
+    series_name = [s.name() for s in data_series]
+    columns, dtypes = _unpack_columns(columns or series_name, n_expected=1)
+    if dtypes:
+        new_dtype = list(dtypes.values())[0]
+        if new_dtype != data.dtype:
+            data_series[0] = data_series[0].cast(new_dtype, True)
+
     data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
 def pandas_to_pydf(
     data: "pd.DataFrame",
-    columns: Optional[Sequence[str]] = None,
+    columns: Optional[ColumnsType] = None,
     rechunk: bool = True,
     nan_to_none: bool = True,
 ) -> "PyDataFrame":
@@ -488,10 +599,10 @@ def pandas_to_pydf(
         raise ImportError(
             "'pyarrow' is required when constructing a PyDataFrame from a pandas DataFrame."
         )
-    len = data.shape[0]
+    length = data.shape[0]
     arrow_dict = {
         str(col): _pandas_series_to_arrow(
-            data[col], nan_to_none=nan_to_none, min_len=len
+            data[col], nan_to_none=nan_to_none, min_len=length
         )
         for col in data.columns
     }

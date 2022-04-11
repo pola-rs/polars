@@ -31,6 +31,21 @@ def test_init_only_columns() -> None:
     truth = pl.DataFrame({"a": [], "b": [], "c": []})
     assert df.shape == (0, 3)
     assert df.frame_equal(truth, null_equal=True)
+    assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
+
+    df = pl.DataFrame(
+        columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)]
+    )
+    truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
+        [
+            pl.col("a").cast(pl.Date),
+            pl.col("b").cast(pl.UInt64),
+            pl.col("c").cast(pl.Int8),
+        ]
+    )
+    assert df.shape == (0, 3)
+    assert df.frame_equal(truth, null_equal=True)
+    assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
 
 
 def test_init_dict() -> None:
@@ -38,18 +53,47 @@ def test_init_dict() -> None:
     df = pl.DataFrame({})
     assert df.shape == (0, 0)
 
+    # Empty dictionary/values
+    df = pl.DataFrame({"a": [], "b": []})
+    assert df.shape == (0, 2)
+    assert df.schema == {"a": pl.Float32, "b": pl.Float32}
+
+    for df in (
+        pl.DataFrame({}, columns={"a": pl.Date, "b": pl.Utf8}),
+        pl.DataFrame({"a": [], "b": []}, columns={"a": pl.Date, "b": pl.Utf8}),
+    ):
+        assert df.shape == (0, 2)
+        assert df.schema == {"a": pl.Date, "b": pl.Utf8}
+
     # Mixed dtypes
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     assert df.shape == (3, 2)
     assert df.columns == ["a", "b"]
+    assert df.dtypes == [pl.Int64, pl.Float64]
+
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
+        columns=[("a", pl.Int8), ("b", pl.Float32)],
+    )
+    assert df.schema == {"a": pl.Int8, "b": pl.Float32}
 
     # Values contained in tuples
     df = pl.DataFrame({"a": (1, 2, 3), "b": [1.0, 2.0, 3.0]})
     assert df.shape == (3, 2)
 
-    # Overriding dict column names
+    # Overriding dict column names/types
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", "d"])
     assert df.columns == ["c", "d"]
+
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", ("d", pl.Int8)]  # type: ignore[arg-type]
+    )  # partial type info (allowed, but mypy doesn't like it ;p)
+    assert df.schema == {"c": pl.Int64, "d": pl.Int8}
+
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [4, 5, 6]}, columns=[("c", pl.Int8), ("d", pl.Int16)]
+    )
+    assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
 
 def test_init_ndarray() -> None:
@@ -62,6 +106,10 @@ def test_init_ndarray() -> None:
     truth = pl.DataFrame({"a": [1, 2, 3]})
     assert df.frame_equal(truth)
 
+    df = pl.DataFrame(np.array([1, 2, 3]), columns=[("a", pl.Int32)])
+    truth = pl.DataFrame({"a": [1, 2, 3]}).with_column(pl.col("a").cast(pl.Int32))
+    assert df.frame_equal(truth)
+
     # 2D array - default to column orientation
     df = pl.DataFrame(np.array([[1, 2], [3, 4]]), orient="column")
     truth = pl.DataFrame({"column_0": [1, 2], "column_1": [3, 4]})
@@ -72,6 +120,14 @@ def test_init_ndarray() -> None:
         {"column_0": [1, None], "column_1": [2.0, None], "column_2": ["a", None]}
     )
     assert df.frame_equal(truth)
+
+    df = pl.DataFrame(
+        data=[[1, 2.0, "a"], [None, None, None]],
+        columns=[("x", pl.Boolean), ("y", pl.Int32), "z"],  # type: ignore[arg-type]
+        orient="row",
+    )
+    assert df.rows() == [(True, 2, "a"), (None, None, None)]
+    assert df.schema == {"x": pl.Boolean, "y": pl.Int32, "z": pl.Utf8}
 
     # TODO: Uncomment tests below when removing deprecation warning
     # # 2D array - default to column orientation
@@ -92,6 +148,12 @@ def test_init_ndarray() -> None:
     # 2D array - orientation conflicts with columns
     with pytest.raises(ValueError):
         pl.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=["a", "b"], orient="row")
+    with pytest.raises(ValueError):
+        pl.DataFrame(
+            np.array([[1, 2, 3], [4, 5, 6]]),
+            columns=[("a", pl.UInt32), ("b", pl.UInt32)],
+            orient="row",
+        )
 
     # 3D array
     with pytest.raises(ValueError):
@@ -118,6 +180,13 @@ def test_init_arrow() -> None:
     truth = pl.DataFrame({"c": [1, 2], "d": [3, 4]})
     assert df.frame_equal(truth)
 
+    df = pl.DataFrame(
+        pa.table({"a": [1, 2], None: [3, 4]}),
+        columns=[("c", pl.Int32), ("d", pl.Float32)],
+    )
+    assert df.schema == {"c": pl.Int32, "d": pl.Float32}
+    assert df.rows() == [(1, 3.0), (2, 4.0)]
+
     # Bad columns argument
     with pytest.raises(ValueError):
         pl.DataFrame(
@@ -135,6 +204,13 @@ def test_init_series() -> None:
     df = pl.DataFrame((pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))))
     assert df.frame_equal(truth)
 
+    df = pl.DataFrame(
+        (pl.Series("a", (1, 2, 3)), pl.Series("b", (4, 5, 6))),
+        columns=[("x", pl.Float64), ("y", pl.Float64)],
+    )
+    assert df.schema == {"x": pl.Float64, "y": pl.Float64}
+    assert df.rows() == [(1.0, 4.0), (2.0, 5.0), (3.0, 6.0)]
+
     # List of unnamed Series
     df = pl.DataFrame([pl.Series([1, 2, 3]), pl.Series([4, 5, 6])])
     truth = pl.DataFrame(
@@ -142,10 +218,26 @@ def test_init_series() -> None:
     )
     assert df.frame_equal(truth)
 
+    df = pl.DataFrame([pl.Series([0.0]), pl.Series([1.0])])
+    assert df.schema == {"column_0": pl.Float64, "column_1": pl.Float64}
+    assert df.rows() == [(0.0, 1.0)]
+
+    df = pl.DataFrame(
+        [pl.Series([None]), pl.Series([1.0])],
+        columns=[("x", pl.Date), ("y", pl.Boolean)],
+    )
+    assert df.schema == {"x": pl.Date, "y": pl.Boolean}
+    assert df.rows() == [(None, True)]
+
     # Single Series
     df = pl.DataFrame(pl.Series("a", [1, 2, 3]))
     truth = pl.DataFrame({"a": [1, 2, 3]})
+    assert df.schema == {"a": pl.Int64}
     assert df.frame_equal(truth)
+
+    df = pl.DataFrame(pl.Series("a", [1, 2, 3]), columns=[("a", pl.UInt32)])
+    assert df.rows() == [(1,), (2,), (3,)]
+    assert df.schema == {"a": pl.UInt32}
 
 
 def test_init_seq_of_seq() -> None:
@@ -153,6 +245,13 @@ def test_init_seq_of_seq() -> None:
     df = pl.DataFrame([[1, 2, 3], [4, 5, 6]], columns=["a", "b", "c"])
     truth = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
     assert df.frame_equal(truth)
+
+    df = pl.DataFrame(
+        [[1, 2, 3], [4, 5, 6]],
+        columns=[("a", pl.Int8), ("b", pl.Int16), ("c", pl.Int32)],
+    )
+    assert df.schema == {"a": pl.Int8, "b": pl.Int16, "c": pl.Int32}
+    assert df.rows() == [(1, 2, 3), (4, 5, 6)]
 
     # Tuple of tuples, default to column orientation
     df = pl.DataFrame(((1, 2, 3), (4, 5, 6)))
@@ -163,6 +262,12 @@ def test_init_seq_of_seq() -> None:
     df = pl.DataFrame(((1, 2), (3, 4)), columns=("a", "b"), orient="row")
     truth = pl.DataFrame({"a": [1, 3], "b": [2, 4]})
     assert df.frame_equal(truth)
+
+    df = pl.DataFrame(
+        ((1, 2), (3, 4)), columns=(("a", pl.Float32), ("b", pl.Float32)), orient="row"
+    )
+    assert df.schema == {"a": pl.Float32, "b": pl.Float32}
+    assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
 
 def test_init_1d_sequence() -> None:
@@ -175,6 +280,10 @@ def test_init_1d_sequence() -> None:
     truth = pl.DataFrame({"hi": ["a", "b", "c"]})
     assert df.frame_equal(truth)
 
+    df = pl.DataFrame([None, True, False], columns=[("xx", pl.Int8)])
+    assert df.schema == {"xx": pl.Int8}
+    assert df.rows() == [(None,), (1,), (0,)]
+
     # String sequence
     with pytest.raises(ValueError):
         pl.DataFrame("abc")
@@ -183,11 +292,18 @@ def test_init_1d_sequence() -> None:
 def test_init_pandas() -> None:
     pandas_df = pd.DataFrame([[1, 2], [3, 4]], columns=[1, 2])
 
-    # pandas is available; integer column names
+    # pandas is available
     with patch("polars.internals.frame._PANDAS_AVAILABLE", True):
+        # integer column names
         df = pl.DataFrame(pandas_df)
         truth = pl.DataFrame({"1": [1, 3], "2": [2, 4]})
         assert df.frame_equal(truth)
+        assert df.schema == {"1": pl.Int64, "2": pl.Int64}
+
+        # override column names, types
+        df = pl.DataFrame(pandas_df, columns=[("x", pl.Float64), ("y", pl.Float64)])
+        assert df.schema == {"x": pl.Float64, "y": pl.Float64}
+        assert df.rows() == [(1.0, 2.0), (3.0, 4.0)]
 
     # pandas is not available
     with patch("polars.internals.frame._PANDAS_AVAILABLE", False):
@@ -223,6 +339,14 @@ def test_init_records() -> None:
     df_cd = pl.DataFrame(dicts, columns=["c", "d"])
     expected = pl.DataFrame({"c": [1, 2, 1], "d": [2, 1, 2]})
     assert df_cd.frame_equal(expected)
+
+    df_xy = pl.DataFrame(dicts, columns=[("x", pl.UInt32), ("y", pl.UInt32)])
+    expected = pl.DataFrame({"x": [1, 2, 1], "y": [2, 1, 2]}).with_columns(
+        [pl.col("x").cast(pl.UInt32), pl.col("y").cast(pl.UInt32)]
+    )
+    assert df_xy.frame_equal(expected)
+    assert df_xy.schema == {"x": pl.UInt32, "y": pl.UInt32}
+    assert df_xy.rows() == [(1, 2), (2, 1), (1, 2)]
 
 
 def test_selection() -> None:
