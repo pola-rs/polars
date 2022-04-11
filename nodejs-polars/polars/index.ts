@@ -55,6 +55,7 @@ namespace pl {
   export import readIPC = io.readIPC;
   export import readJSON = io.readJSON;
   export import readParquet = io.readParquet;
+  export import readAvro = io.readAvro;
 
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;

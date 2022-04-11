@@ -48,6 +48,10 @@ type WriteIPCOptions = {
   compression?: "uncompressed" | "lz4" | "zstd"
 };
 
+type WriteAvroOptions = {
+  compression?: "uncompressed" | "snappy" | "deflate"
+};
+
 interface WriteMethods {
   /**
    * __Write DataFrame to comma-separated values file (csv).__
@@ -147,6 +151,15 @@ interface WriteMethods {
    * */
   writeParquet(options?: WriteParquetOptions): Buffer
   writeParquet(destination: string | Writable, options?: WriteParquetOptions): void
+
+  /**
+   * Write the DataFrame disk in avro format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   *
+   */
+  writeAvro(options?: WriteAvroOptions): Buffer
+  writeAvro(destination: string | Writable, options?: WriteAvroOptions): void
 }
 
 /**
@@ -1448,12 +1461,10 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
     }
   };
 
-  const writeToBufferOrStream = (dest, format: "ipc" | "parquet", options) => {
+  const writeToBufferOrStream = (dest, format: "ipc" | "parquet" | "avro", options) => {
     if(dest instanceof Writable) {
       unwrap(`write_${format}_stream`, {writeStream: dest, ...options});
-
       dest.end("");
-
 
     } else if (typeof dest === "string") {
       return unwrap(`write_${format}_path`, {path: dest, ...options});
@@ -1898,6 +1909,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToBufferOrStream(null, "parquet", dest);
       } else {
         return writeToBufferOrStream(dest, "parquet", options);
+      }
+    },
+    writeAvro(dest?, options = {compression: "uncompressed"}) {
+      if(dest?.compression !== undefined) {
+        return writeToBufferOrStream(null, "avro", dest);
+      } else {
+        return writeToBufferOrStream(dest, "avro", options);
       }
     },
     toIPC(dest?, options?) {

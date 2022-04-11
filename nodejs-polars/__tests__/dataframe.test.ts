@@ -13,6 +13,11 @@ describe("dataframe", () => {
     const actual = pl.DataFrame.fromBinary(buf);
     expect(df).toStrictEqual(actual);
   });
+  test("to/from avro round trip", () => {
+    const buf = df.writeCSV();
+    const actual = pl.readAvro(buf);
+    expect(df).toStrictEqual(actual);
+  });
   test("dtypes", () => {
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;

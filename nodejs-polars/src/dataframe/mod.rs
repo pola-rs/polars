@@ -116,6 +116,12 @@ impl JsDataFrame {
             napi::Property::new(env, "readIPCBuffer")?.with_method(io::read_ipc_buffer),
             napi::Property::new(env, "write_ipc_path")?.with_method(io::write_ipc_path),
             napi::Property::new(env, "write_ipc_stream")?.with_method(io::write_ipc_stream),
+
+            // avro
+            napi::Property::new(env, "readAvroPath")?.with_method(io::read_avro_path),
+            napi::Property::new(env, "readAvroBuffer")?.with_method(io::read_avro_buffer),
+            napi::Property::new(env, "write_avro_path")?.with_method(io::write_avro_path),
+            napi::Property::new(env, "write_avro_stream")?.with_method(io::write_avro_stream),
         ])?;
         Ok(df_obj)
     }

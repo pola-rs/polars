@@ -58,10 +58,16 @@ type ReadParquetOptions = {
   parallel?: boolean;
   rechunk?: boolean;
   rowCount?: RowCount
-
 }
 
 type ReadIPCOptions = {
+  columns?: string[];
+  projection?: number[];
+  numRows?: number;
+  rowCount?: RowCount
+}
+
+type ReadAvroOptions = {
   columns?: string[];
   projection?: number[];
   numRows?: number;
@@ -139,7 +145,6 @@ function readCSVBuffer(buff, options) {
   return dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
 }
 function readCSVPath(path, options) {
-
   return dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
 }
 function readJSONBuffer(buff, options) {
@@ -159,6 +164,12 @@ function readIPCBuffer(buff, options) {
 }
 function readIPCPath(path, options) {
   return dfWrapper(pli.df.readIPCPath({...options, path}));
+}
+function readAvroBuffer(buff, options) {
+  return dfWrapper(pli.df.readAvroBuffer({...readCsvDefaultOptions, ...options, buff}));
+}
+function readAvroPath(path, options) {
+  return dfWrapper(pli.df.readAvroPath({...readCsvDefaultOptions, ...options, path}));
 }
 
 
@@ -325,6 +336,31 @@ export function readParquet(pathOrBody, options?) {
       return readParquetBuffer(Buffer.from(pathOrBody, "utf-8"), options);
     } else {
       return readParquetPath(pathOrBody, options);
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+/**
+   * Read into a DataFrame from a parquet file.
+   * @param pathOrBuffer
+   * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
+   * as partition aware scan.
+   * @param options.columns Columns to select. Accepts a list of column names.
+   * @param options.numRows  Stop reading from parquet file after reading ``n_rows``.
+   */
+export function readAvro(pathOrBody: string | Buffer, options?: ReadAvroOptions): DataFrame
+export function readAvro(pathOrBody, options?) {
+  if (Buffer.isBuffer(pathOrBody)) {
+    return readAvroBuffer(pathOrBody, options);
+  }
+
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".avro"]);
+    if (inline) {
+      return readAvroBuffer(Buffer.from(pathOrBody, "utf-8"), options);
+    } else {
+      return readAvroPath(pathOrBody, options);
     }
   } else {
     throw new Error("must supply either a path or body");
