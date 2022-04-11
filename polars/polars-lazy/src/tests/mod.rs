@@ -116,8 +116,6 @@ pub(crate) fn fruits_cars() -> DataFrame {
     .unwrap()
 }
 
-// physical plan see: datafusion/physical_plan/planner.rs.html#61-63
-
 pub(crate) fn get_df() -> DataFrame {
     let s = r#"
 "sepal.length","sepal.width","petal.length","petal.width","variety"
