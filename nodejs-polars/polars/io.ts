@@ -342,13 +342,13 @@ export function readParquet(pathOrBody, options?) {
   }
 }
 /**
-   * Read into a DataFrame from a parquet file.
-   * @param pathOrBuffer
-   * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
-   * as partition aware scan.
-   * @param options.columns Columns to select. Accepts a list of column names.
-   * @param options.numRows  Stop reading from parquet file after reading ``n_rows``.
-   */
+ * Read into a DataFrame from an avro file.
+ * @param pathOrBuffer
+ * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
+ * as partition aware scan.
+ * @param options.columns Columns to select. Accepts a list of column names.
+ * @param options.numRows  Stop reading from avro file after reading ``n_rows``.
+ */
 export function readAvro(pathOrBody: string | Buffer, options?: ReadAvroOptions): DataFrame
 export function readAvro(pathOrBody, options?) {
   if (Buffer.isBuffer(pathOrBody)) {
