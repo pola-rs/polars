@@ -101,7 +101,6 @@ interface WriteMethods {
    * @param options
    * @param options.orient - col|row|dataframe
    *  - col will write to a column oriented object
-   * @deprecated *since 0.4.0* use {@link writeJSON}
    * @example
    * ```
    * >>> const df = pl.DataFrame({
