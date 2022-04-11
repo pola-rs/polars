@@ -236,14 +236,6 @@ mod test {
         // default samples are random and don't require seeds
         assert!(df.sample_n(3, false, None).is_ok());
         assert!(df.sample_frac(0.4, false, None).is_ok());
-        assert!(!df
-            .sample_n(3, false, None)
-            .unwrap()
-            .frame_equal(&df.sample_n(3, false, None).unwrap()));
-        assert!(!df
-            .sample_frac(0.4, false, None)
-            .unwrap()
-            .frame_equal(&df.sample_frac(0.4, false, None).unwrap()));
         // with seeding
         assert!(df.sample_n(3, false, Some(0)).is_ok());
         assert!(df.sample_frac(0.4, false, Some(0)).is_ok());
