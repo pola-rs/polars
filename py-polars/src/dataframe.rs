@@ -41,10 +41,6 @@ impl PyDataFrame {
         PyDataFrame { df }
     }
 
-    pub fn estimated_size(&self) -> usize {
-        self.df.estimated_size()
-    }
-
     fn finish_from_rows(rows: Vec<Row>) -> PyResult<Self> {
         // replace inferred nulls with boolean
         let schema = rows_to_schema(&rows);
@@ -80,6 +76,10 @@ impl PyDataFrame {
         let columns = to_series_collection(columns);
         let df = DataFrame::new(columns).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
+    }
+
+    pub fn estimated_size(&self) -> usize {
+        self.df.estimated_size()
     }
 
     #[staticmethod]

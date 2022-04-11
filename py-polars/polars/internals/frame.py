@@ -337,7 +337,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         FFI buffers are included in this estimation.
         """
-        return self._s.estimated_size()
+        return self._df.estimated_size()
 
     @classmethod
     def _from_pydf(cls: Type[DF], py_df: "PyDataFrame") -> DF:

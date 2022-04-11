@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta
 
+import polars as pl
 from polars.utils import (
     _date_to_pl_date,
     _datetime_to_pl_timestamp,
@@ -33,3 +34,8 @@ def test_timedelta_to_pl_timedelta() -> None:
     assert out == 86_400_000
     out = _timedelta_to_pl_timedelta(timedelta(days=1), tu=None)
     assert out == 86_400_000_000_000
+
+
+def test_estimated_size() -> None:
+    a = pl.Series([1, 2, 3])
+    assert a.estimated_size() == a.to_frame().estimated_size()
