@@ -145,7 +145,8 @@ export interface StringFunctions {
   toUpperCase(): Series<string>
   /** Remove trailing whitespace. */
   rstrip(): Series<string>
-
+  /** Remove leading and trailing whitespace. */
+  strip(): Series<string>
   /**
    * Create subslices of the string values of a Utf8 Series.
    * @param start - Start of the slice (negative indexing may be used).
@@ -172,6 +173,19 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
   const wrap = (method, args?, _series = _s): any => {
     return seriesWrapper(pli.series.str[method]({_series, ...args }));
   };
+  const callExpr = (method) => (...args) => {
+    const s = seriesWrapper(_s);
+
+    return s
+      .toFrame()
+      .select(
+        col(s.name)
+          .lst[method](...args)
+          .as(s.name)
+      )
+      .getColumn(s.name);
+  };
+
   const handleDecode = (encoding, strict) => {
     switch (encoding) {
     case "hex":
@@ -256,6 +270,35 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
         )
         .getColumn(s.name);
 
+
+    },
+    // splitExact(by: string, options?, inclusive?) {
+    //   const n = typeof options === "boolean" ? options : options?.n;
+    //   inclusive = typeof inclusive === "boolean" ? inclusive : options.inclusive;
+    //   const s = seriesWrapper(_s);
+
+    //   return s
+    //     .toFrame()
+    //     .select(
+    //       col(s.name)
+    //         .str
+    //         .splitExact(by, n, inclusive)
+    //         .as(s.name)
+    //     )
+    //     .getColumn(s.name);
+    // },
+    strip() {
+      const s = seriesWrapper(_s);
+
+      return s
+        .toFrame()
+        .select(
+          col(s.name)
+            .str
+            .strip()
+            .as(s.name)
+        )
+        .getColumn(s.name);
 
     },
     strftime(dtype, fmt?) {

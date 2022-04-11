@@ -12,13 +12,14 @@ import {isExternal} from "util/types";
 import {Series} from "../series/series";
 
 import * as expr from "./expr/";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
 
 export interface Expr extends
   Rolling<Expr>,
   Arithmetic<Expr>,
   Comparison<Expr>,
   Cumulative<Expr>,
+  Sample<Expr>,
   Round<Expr> {
   /** @ignore */
   _expr: any;
@@ -26,6 +27,11 @@ export interface Expr extends
   get str(): expr.String;
   get lst(): expr.List;
   [INSPECT_SYMBOL](): string;
+  /** serializes the Expr to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
+   * @example
+   * pl.Expr.fromBinary(expr.toBinary())
+  */
+  toBinary(): Buffer
   toString(): string;
   /** Take absolute values */
   abs(): Expr
@@ -492,7 +498,7 @@ export interface Expr extends
   /** Take every nth value in the Series and return as a new Series. */
   takeEvery(n: number): Expr
   /**
-   * Get the unique/distinct values in the list
+   * Get the unique values of this expression;
    * @param maintainOrder Maintain order of data. This requires more work.
    */
   unique(maintainOrder?: boolean | {maintainOrder: boolean}): Expr
@@ -508,7 +514,7 @@ export interface Expr extends
 const _Expr = (_expr: any): Expr => {
 
   const wrap = (method, args?): Expr => {
-    return Expr(pli.expr[method]({_expr, ...args }));
+    return _Expr(pli.expr[method]({_expr, ...args }));
   };
 
   const wrapNullArgs = (method: string) => () => wrap(method);
@@ -565,6 +571,9 @@ const _Expr = (_expr: any): Expr => {
     _expr,
     [INSPECT_SYMBOL]() {
       return pli.expr.as_str({_expr});
+    },
+    toBinary() {
+      return pli.expr.to_bincode({_expr});
     },
     toString() {
       return pli.expr.as_str({_expr});
@@ -727,6 +736,25 @@ const _Expr = (_expr: any): Expr => {
       return wrap("rollingSkew", {bias:true, ...val});
     },
     round: wrapUnaryNumber("round", "decimals"),
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
+      }
+      if (typeof opts === "number") {
+        throw new Error("sample_n is not yet supported for expr");
+      }
+      if(typeof frac === "number") {
+        return wrap("sampleFrac", {
+          frac,
+          withReplacement,
+          seed
+        });
+      }
+      else {
+        throw new TypeError("must specify either 'frac' or 'n'");
+      }
+    },
     shift: wrapUnary("shift", "periods"),
     shiftAndFill(optOrPeriods, fillValue?) {
       if(typeof optOrPeriods === "number") {
@@ -807,8 +835,20 @@ const _Expr = (_expr: any): Expr => {
   };
 };
 
+export interface ExprConstructor {
+  isExpr(arg: any): arg is Expr;
+  /**
+   * @param binary used to serialize/deserialize expr. This will only work with the output from expr.toBinary().
+   */
+  fromBinary(binary: Buffer): Expr
+}
 const isExpr = (anyVal: any): anyVal is Expr => isExternal(anyVal?._expr);
-export const Expr = Object.assign(_Expr, {isExpr});
+
+const fromBinary = (buf: Buffer)  => {
+  return _Expr(pli.expr.from_bincode(buf));
+};
+
+export const Expr: ExprConstructor = Object.assign(_Expr, {isExpr, fromBinary});
 
 /** @ignore */
 export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {

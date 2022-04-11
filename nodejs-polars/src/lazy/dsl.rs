@@ -8,6 +8,7 @@ use polars::lazy::dsl::Operator;
 use crate::error::JsPolarsEr;
 use polars::lazy::dsl;
 use polars::prelude::*;
+use std::borrow::Cow;
 
 pub struct JsExpr {}
 
@@ -376,6 +377,53 @@ pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
 }
 
 #[js_function(1)]
+pub fn str_strip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.strip")
+        .try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn str_rstrip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.rstrip")
+        .try_into_js(&cx)
+}
+#[js_function(1)]
+pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let function = |s: Series| {
+        let ca = s.utf8()?;
+
+        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+    };
+
+    expr.clone()
+        .map(function, GetOutput::same_type())
+        .with_fmt("str.lstrip")
+        .try_into_js(&cx)
+}
+
+#[js_function(1)]
 pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let expr = params.get_external::<Expr>(&cx, "_expr")?;
@@ -594,7 +642,17 @@ pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
         })
         .try_into_js(&cx)
 }
-
+#[js_function(1)]
+pub fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let frac = params.get_as::<f64>("frac")?;
+    let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let seed = params.get_as::<Option<u64>>("seed")?;
+    expr.clone()
+        .sample_frac(frac, with_replacement, seed)
+        .try_into_js(&cx)
+}
 #[js_function(1)]
 pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
@@ -1084,4 +1142,31 @@ pub fn when_then_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
     let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
 
     cx.env.create_external(whenthenthen.otherwise(expr), None)
+}
+
+#[js_function(1)]
+pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
+    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
+
+    let s = buff.into_value()?;
+    let v: &[u8] = &s;
+
+    // Safety
+    // this is safe because the buf was created from js-land
+    // JS manages the lifecycle & we only are borrowing.
+    let v = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(v) };
+    let expr: Expr = bincode::deserialize(v).unwrap();
+
+    expr.try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let expr = params.get_external::<Expr>(&cx, "_expr")?;
+    let buf = bincode::serialize(&expr).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
 }

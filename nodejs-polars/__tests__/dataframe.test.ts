@@ -8,7 +8,11 @@ describe("dataframe", () => {
     pl.Series("foo", [1, 2, 9], pl.Int16),
     pl.Series("bar", [6, 2, 8], pl.Int16),
   ]);
-
+  test("to/fromBinary round trip", () => {
+    const buf = df.toBinary();
+    const actual = pl.DataFrame.fromBinary(buf);
+    expect(df).toStrictEqual(actual);
+  });
   test("dtypes", () => {
     const expected = ["Float64", "Utf8"];
     const actual = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", "c"]}).dtypes;
@@ -105,12 +109,12 @@ describe("dataframe", () => {
     const actual = df.drop("apple", "ham");
     expect(actual).toFrameEqual(expected);
   });
-  test("dropDuplicates", () => {
+  test("unique", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 3],
       "bar": [1, 2, 2, 4],
       "ham": ["a", "d", "d", "c"],
-    }).dropDuplicates();
+    }).unique();
     const expected = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [1, 2, 4],
@@ -118,12 +122,12 @@ describe("dataframe", () => {
     });
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
-  test("dropDuplicates:subset", () => {
+  test("unique:subset", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 2, 2],
       "bar": [1, 2, 2, 2],
       "ham": ["a", "b", "c", "c"],
-    }).dropDuplicates({subset: ["foo", "ham"]});
+    }).unique({subset: ["foo", "ham"]});
     const expected = pl.DataFrame({
       "foo": [1, 2, 2],
       "bar": [1, 2, 2],
@@ -132,13 +136,13 @@ describe("dataframe", () => {
     expect(actual).toFrameEqualIgnoringOrder(expected);
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder", () => {
+  test("unique:maintainOrder", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "b", "b"],
-      }).dropDuplicates({maintainOrder: true});
+      }).unique({maintainOrder: true});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2],
@@ -149,13 +153,13 @@ describe("dataframe", () => {
     });
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder:single subset", () => {
+  test("unique:maintainOrder:single subset", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "c", "d"],
-      }).dropDuplicates({maintainOrder: true, subset: "foo"});
+      }).unique({maintainOrder: true, subset: "foo"});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2],
@@ -166,13 +170,13 @@ describe("dataframe", () => {
     });
   });
   // run this test 100 times to make sure it is deterministic.
-  test("dropDuplicates:maintainOrder:multi subset", () => {
+  test("unique:maintainOrder:multi subset", () => {
     Array.from({length:100}).forEach(() => {
       const actual = pl.DataFrame({
         "foo": [0, 1, 2, 2, 2],
         "bar": [0, 1, 2, 2, 2],
         "ham": ["0", "a", "b", "c", "c"],
-      }).dropDuplicates({maintainOrder: true, subset: ["foo", "ham"]});
+      }).unique({maintainOrder: true, subset: ["foo", "ham"]});
 
       const expected = pl.DataFrame({
         "foo": [0, 1, 2, 2],
@@ -865,6 +869,14 @@ describe("dataframe", () => {
     }).sample(2);
     expect(actual.height).toStrictEqual(2);
   });
+  test("sample:default", () => {
+    const actual = pl.DataFrame({
+      "foo": [1, 2, 3],
+      "bar": [6, 7, 8],
+      "ham": ["a", "b", "c"]
+    }).sample();
+    expect(actual.height).toStrictEqual(1);
+  });
   test("sample:frac", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3, 1],
@@ -1267,22 +1279,22 @@ describe("io", () => {
     pl.Series("foo", [1, 2, 9], pl.Int16),
     pl.Series("bar", [6, 2, 8], pl.Int16),
   ]);
-  test("toCSV:string", () => {
-    const actual = df.clone().toCSV();
+  test("writeCSV:string", () => {
+    const actual = df.clone().writeCSV();
     const expected  = "foo,bar\n1,6\n2,2\n9,8\n";
     expect(actual).toEqual(expected);
   });
-  test("toCSV:string:sep", () => {
-    const actual = df.clone().toCSV({sep: "X"});
+  test("writeCSV:string:sep", () => {
+    const actual = df.clone().writeCSV({sep: "X"});
     const expected  = "fooXbar\n1X6\n2X2\n9X8\n";
     expect(actual).toEqual(expected);
   });
-  test("toCSV:string:header", () => {
-    const actual = df.clone().toCSV({sep: "X", hasHeader: false});
+  test("writeCSV:string:header", () => {
+    const actual = df.clone().writeCSV({sep: "X", hasHeader: false});
     const expected  = "1X6\n2X2\n9X8\n";
     expect(actual).toEqual(expected);
   });
-  test("toCSV:stream", (done) => {
+  test("writeCSV:stream", (done) => {
     const df = pl.DataFrame([
       pl.Series("foo", [1, 2, 3], pl.UInt32),
       pl.Series("bar", ["a", "b", "c"])
@@ -1295,17 +1307,17 @@ describe("io", () => {
 
       }
     });
-    df.toCSV(writeStream);
+    df.writeCSV(writeStream);
     const newDF = pl.readCSV(body);
     expect(newDF).toFrameEqual(df);
     done();
   });
-  test("toCSV:path", (done) => {
+  test("writeCSV:path", (done) => {
     const df = pl.DataFrame([
       pl.Series("foo", [1, 2, 3], pl.UInt32),
       pl.Series("bar", ["a", "b", "c"])
     ]);
-    df.toCSV("./test.csv");
+    df.writeCSV("./test.csv");
     const newDF = pl.readCSV("./test.csv");
     expect(newDF).toFrameEqual(df);
     fs.rmSync("./test.csv");
@@ -1366,17 +1378,17 @@ describe("io", () => {
     const actual = df.toObject();
     expect(actual).toEqual(expected);
   });
-  test("toJSON:multiline", () => {
+  test("writeJSON:multiline", () => {
     const rows = [
       {foo: 1.1},
       {foo: 3.1},
       {foo: 3.1}
     ];
-    const actual = pl.DataFrame(rows).toJSON({multiline:true});
+    const actual = pl.DataFrame(rows).writeJSON({multiline:true});
     const expected = rows.map(r => JSON.stringify(r)).join("\n").concat("\n");
     expect(actual).toEqual(expected);
   });
-  test("toJSON:stream", (done) => {
+  test("writeJSON:stream", (done) => {
     const df = pl.DataFrame([
       pl.Series("foo", [1, 2, 3], pl.UInt32),
       pl.Series("bar", ["a", "b", "c"])
@@ -1390,17 +1402,17 @@ describe("io", () => {
 
       }
     });
-    df.toJSON(writeStream, {multiline:true});
+    df.writeJSON(writeStream, {multiline:true});
     const newDF = pl.readJSON(body);
     expect(newDF).toFrameEqual(df);
     done();
   });
-  test("toJSON:path", (done) => {
+  test("writeJSON:path", (done) => {
     const df = pl.DataFrame([
       pl.Series("foo", [1, 2, 3], pl.UInt32),
       pl.Series("bar", ["a", "b", "c"])
     ]);
-    df.toJSON("./test.json", {multiline:true});
+    df.writeJSON("./test.json", {multiline:true});
     const newDF = pl.readJSON("./test.json");
     expect(newDF).toFrameEqual(df);
     fs.rmSync("./test.json");
@@ -1413,27 +1425,27 @@ describe("io", () => {
       {foo: 3.1}
     ];
     const df = pl.DataFrame(rows);
-    const expected = pl.DataFrame(rows).toJSON();
+    const expected = pl.DataFrame(rows).writeJSON();
     const actual = JSON.stringify(df);
     expect(actual).toEqual(expected);
   });
-  test("toJSON:rows", () => {
+  test("writeJSON:rows", () => {
     const rows = [
       {foo: 1.1},
       {foo: 3.1},
       {foo: 3.1}
     ];
     const expected = JSON.stringify(rows);
-    const actual = pl.DataFrame(rows).toJSON({orient:"row"});
+    const actual = pl.DataFrame(rows).writeJSON({orient:"row"});
     expect(actual).toEqual(expected);
   });
-  test("toJSON:col", () => {
+  test("writeJSON:col", () => {
     const cols = {
       foo: [1, 2, 3],
       bar: ["a", "b", "c"]
     };
     const expected = JSON.stringify(cols);
-    const actual = pl.DataFrame(cols).toJSON({orient:"col"});
+    const actual = pl.DataFrame(cols).writeJSON({orient:"col"});
     expect(actual).toEqual(expected);
   });
   test("toSeries", () => {

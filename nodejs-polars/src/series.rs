@@ -24,6 +24,27 @@ impl IntoJs<JsExternal> for Series {
 }
 
 #[js_function(1)]
+pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
+    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
+    let buffer_value = buff.into_value()?;
+    let s: Series = bincode::deserialize(buffer_value.as_ref()).unwrap();
+
+    s.try_into_js(&cx)
+}
+
+#[js_function(1)]
+pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+
+    let buf = bincode::serialize(series).unwrap();
+
+    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
+    let js_buff = bytes.into_raw();
+    Ok(js_buff)
+}
+
+#[js_function(1)]
 pub fn new_from_typed_array(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let name = params.get_as::<&str>("name")?;
@@ -440,7 +461,7 @@ pub fn value_counts(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let series = params.get_external::<Series>(&cx, "_series")?;
     series
-        .value_counts()
+        .value_counts(true)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -1179,8 +1200,9 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let n = params.get_as::<usize>("n")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let seed = params.get_as::<Option<u64>>("seed")?;
     series
-        .sample_n(n, with_replacement, Some(0))
+        .sample_n(n, with_replacement, seed)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -1191,8 +1213,9 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let series = params.get_external::<Series>(&cx, "_series")?;
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
+    let seed = params.get_as::<Option<u64>>("seed")?;
     series
-        .sample_frac(frac, with_replacement, Some(0))
+        .sample_frac(frac, with_replacement, seed)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }

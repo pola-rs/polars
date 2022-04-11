@@ -70,6 +70,9 @@ impl dsl::JsExpr {
             napi::Property::new(env, "decodeHex")?.with_method(dsl::hex_decode),
             napi::Property::new(env, "encodeBase64")?.with_method(dsl::base64_encode),
             napi::Property::new(env, "decodeBase64")?.with_method(dsl::base64_decode),
+            napi::Property::new(env, "strip")?.with_method(dsl::str_strip),
+            napi::Property::new(env, "lstrip")?.with_method(dsl::str_lstrip),
+            napi::Property::new(env, "rstrip")?.with_method(dsl::str_rstrip),
         ])?;
         date_obj.define_properties(&[
             napi::Property::new(env, "day")?.with_method(dsl::day),
@@ -178,6 +181,7 @@ impl dsl::JsExpr {
             napi::Property::new(env, "rollingQuantile")?.with_method(dsl::rolling_quantile),
             napi::Property::new(env, "rollingSkew")?.with_method(dsl::rolling_skew),
             napi::Property::new(env, "round")?.with_method(dsl::round),
+            napi::Property::new(env, "sampleFrac")?.with_method(dsl::sample_frac),
             napi::Property::new(env, "shiftAndFill")?.with_method(dsl::shift_and_fill),
             napi::Property::new(env, "shift")?.with_method(dsl::shift),
             napi::Property::new(env, "skew")?.with_method(dsl::skew),
@@ -196,6 +200,8 @@ impl dsl::JsExpr {
             napi::Property::new(env, "upperBound")?.with_method(dsl::upper_bound),
             napi::Property::new(env, "var")?.with_method(dsl::var),
             napi::Property::new(env, "xor")?.with_method(dsl::xor),
+            napi::Property::new(env, "to_bincode")?.with_method(dsl::to_bincode),
+            napi::Property::new(env, "from_bincode")?.with_method(dsl::from_bincode),
         ])?;
 
         Ok(expr)

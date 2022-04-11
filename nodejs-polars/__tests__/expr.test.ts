@@ -1,7 +1,15 @@
 import {df} from "./setup";
 import pl, {col, lit} from "@polars/index";
 
-describe("expr", () => {
+describe.only("expr", () => {
+  test.only("to/fromBinary round trip", () => {
+    const expr = pl.col("foo").sum();
+    const buf = expr.toBinary();
+
+    const actual = pl.Expr.fromBinary(buf);
+    expect(actual.toString()).toStrictEqual(expr.toString());
+  });
+
   test("abs", () => {
     const expected = pl.Series("abs", [1, 2, 3]);
     const actual = pl.select(pl.lit(pl.Series([1, -2, -3])).abs()

@@ -56,12 +56,12 @@ impl FromJsUnknown for RowCount {
     }
 }
 
-impl FromJsUnknown for DistinctKeepStrategy {
+impl FromJsUnknown for UniqueKeepStrategy {
     fn from_js(val: JsUnknown) -> Result<Self> {
         let s = String::from_js(val)?;
         match s.as_str() {
-            "first" => Ok(DistinctKeepStrategy::First),
-            "last" => Ok(DistinctKeepStrategy::Last),
+            "first" => Ok(UniqueKeepStrategy::First),
+            "last" => Ok(UniqueKeepStrategy::Last),
             s => panic!("keep strategy {} is not supported", s),
         }
     }

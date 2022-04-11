@@ -25,7 +25,7 @@ import {
   ExprOrString
 } from "./utils";
 
-import {Arithmetic} from "./shared_traits";
+import {Arithmetic, Sample} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -48,6 +48,106 @@ type WriteIPCOptions = {
   compression?: "uncompressed" | "lz4" | "zstd"
 };
 
+interface WriteMethods {
+  /**
+   * __Write DataFrame to comma-separated values file (csv).__
+   *
+   * If no options are specified, it will return a new string containing the contents
+   * ___
+   * @param dest file or stream to write to
+   * @param options
+   * @param options.hasHeader - Whether or not to include header in the CSV output.
+   * @param options.sep - Separate CSV fields with this symbol. _defaults to `,`_
+   * @example
+   * ```
+   * >>> df = pl.DataFrame({
+   * >>>   "foo": [1, 2, 3],
+   * >>>   "bar": [6, 7, 8],
+   * >>>   "ham": ['a', 'b', 'c']
+   * >>> })
+   * >>> df.writeCSV()
+   * foo,bar,ham
+   * 1,6,a
+   * 2,7,b
+   * 3,8,c
+   *
+   * // using a file path
+   * >>> df.head(1).writeCSV("./foo.csv")
+   * // foo.csv
+   * foo,bar,ham
+   * 1,6,a
+   *
+   * // using a write stream
+   * >>> const writeStream = new Stream.Writable({
+   * >>>   write(chunk, encoding, callback) {
+   * >>>     console.log("writeStream: %O', chunk.toString());
+   * >>>     callback(null);
+   * >>>   }
+   * >>> });
+   * >>> df.head(1).writeCSV(writeStream, {hasHeader: false})
+   * writeStream: '1,6,a'
+   * ```
+   */
+  writeCSV(): string;
+  writeCSV(options: WriteCsvOptions): string;
+  writeCSV(dest: string | Writable, options?: WriteCsvOptions): void;
+  /**
+   * Write Dataframe to JSON string, file, or write stream
+   * @param destination file or write stream
+   * @param options
+   * @param options.orient - col|row|dataframe
+   *  - col will write to a column oriented object
+   * @deprecated *since 0.4.0* use {@link writeJSON}
+   * @example
+   * ```
+   * >>> const df = pl.DataFrame({
+   * >>>   foo: [1,2,3],
+   * >>>   bar: ['a','b','c']
+   * >>> })
+   *
+   * // defaults to 'dataframe' orientation
+   * >>> df.writeJSON()
+   * `{"columns":[ {"name":"foo","datatype":"Float64","values":[1,2,3]}, {"name":"bar","datatype":"Utf8","values":["a","b","c"]}]}`
+   *
+   * // this will produce the same results as 'df.writeJSON()'
+   * >>> JSON.stringify(df)
+   *
+   * // row oriented
+   * >>> df.writeJSON({orient:"row"})
+   * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
+   *
+   * // column oriented
+   * >>> df.writeJSON({orient: "col"})
+   * `{"foo":[1,2,3],"bar":["a","b","c"]}`
+   *
+   * // multiline (will always be row oriented)
+   * >>> df.writeJSON({multiline: true})
+   * `{"foo":1.0,"bar":"a"}
+   * {"foo":2.0,"bar":"b"}
+   * {"foo":3.0,"bar":"c"}`
+   *
+   * // writing to a file
+   * >>> df.writeJSON("/path/to/file.json", {multiline:true})
+   * ```
+   */
+  writeJSON(options?: WriteJsonOptions): string
+  writeJSON(destination: string | Writable, options?: WriteJsonOptions): void
+  /**
+   * Write to Arrow IPC binary stream, or a feather file.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  writeIPC(options?: WriteIPCOptions): Buffer
+  writeIPC(destination: string | Writable, options?: WriteIPCOptions): void
+
+  /**
+   * Write the DataFrame disk in parquet format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  writeParquet(options?: WriteParquetOptions): Buffer
+  writeParquet(destination: string | Writable, options?: WriteParquetOptions): void
+}
 
 /**
  *
@@ -125,7 +225,7 @@ type WriteIPCOptions = {
   ╰─────┴─────┴─────╯
   ```
  */
-export interface DataFrame extends Arithmetic<DataFrame> {
+export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods {
   /** @ignore */
   _df: JsDataFrame
   dtypes: DataType[]
@@ -172,16 +272,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   describe(): DataFrame
-
-  /**
-   * Drop duplicate rows from this DataFrame.
-   * Note that this fails if there is a column of type `List` in the DataFrame.
-   * @param maintainOrder
-   * @param subset - subset to drop duplicates for
-   * @param keep "first" | "last"
-   */
-  distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
-  distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
+  /** @deprecated *since 0.4.0* use {@link unique} */
+  distinct(maintainOrder?, subset?, keep?): DataFrame
   /**
    * __Remove column from DataFrame and return as new.__
    * ___
@@ -214,17 +306,6 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   drop(name: string): DataFrame
   drop(names: string[]): DataFrame
   drop(name: string, ...names: string[]): DataFrame
-  /**
-   * __Drop duplicate rows from this DataFrame.__
-   *
-   * Note that this fails if there is a column of type `List` in the DataFrame.
-   * @param maintainOrder
-   * @param subset - subset to drop duplicates for
-   * @deprecated @since 0.2.1 @use {@link distinct}
-   */
-  dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
-  /** @deprecated @since 0.2.1 @use {@link distinct} ==*/
-  dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
   /**
    * __Return a new DataFrame where the null values are dropped.__
    *
@@ -857,34 +938,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * Convert columnar data to rows as arrays
    */
   rows(): Array<Array<any>>
-  /**
-   * Sample from this DataFrame by setting either `n` or `frac`.
-   * @param n - Number of samples < self.len() .
-   * @param frac - Fraction between 0.0 and 1.0 .
-   * @param withReplacement - Sample with replacement.
-   * @example
-   * ```
-   * >>> df = pl.DataFrame({
-   * >>>   "foo": [1, 2, 3],
-   * >>>   "bar": [6, 7, 8],
-   * >>>   "ham": ['a', 'b', 'c']
-   * >>> })
-   * >>> df.sample({n: 2})
-   * shape: (2, 3)
-   * ╭─────┬─────┬─────╮
-   * │ foo ┆ bar ┆ ham │
-   * │ --- ┆ --- ┆ --- │
-   * │ i64 ┆ i64 ┆ str │
-   * ╞═════╪═════╪═════╡
-   * │ 1   ┆ 6   ┆ "a" │
-   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-   * │ 3   ┆ 8   ┆ "c" │
-   * ╰─────┴─────┴─────╯
-   * ```
-   */
-  sample(opts: {n: number, withReplacement?: boolean}): DataFrame
-  sample(opts: {frac: number, withReplacement?: boolean}): DataFrame
-  sample(n?: number, frac?: number, withReplacement?: boolean): DataFrame
+
   schema(): Record<string, string>
   /**
    * Select columns from this DataFrame.
@@ -1111,48 +1165,13 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   tail(length?: number): DataFrame
-  /**
-   * __Write DataFrame to comma-separated values file (csv).__
-   *
-   * If no options are specified, it will return a new string containing the contents
-   * ___
-   * @param dest file or stream to write to
-   * @param options
-   * @param options.hasHeader - Whether or not to include header in the CSV output.
-   * @param options.sep - Separate CSV fields with this symbol. _defaults to `,`_
+  /** serializes the DataFrame to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
    * @example
-   * ```
-   * >>> df = pl.DataFrame({
-   * >>>   "foo": [1, 2, 3],
-   * >>>   "bar": [6, 7, 8],
-   * >>>   "ham": ['a', 'b', 'c']
-   * >>> })
-   * >>> df.toCSV()
-   * foo,bar,ham
-   * 1,6,a
-   * 2,7,b
-   * 3,8,c
-   *
-   * // using a file path
-   * >>> df.head(1).toCSV("./foo.csv")
-   * // foo.csv
-   * foo,bar,ham
-   * 1,6,a
-   *
-   * // using a write stream
-   * >>> const writeStream = new Stream.Writable({
-   * >>>   write(chunk, encoding, callback) {
-   * >>>     console.log("writeStream: %O', chunk.toString());
-   * >>>     callback(null);
-   * >>>   }
-   * >>> });
-   * >>> df.head(1).toCSV(writeStream, {hasHeader: false})
-   * writeStream: '1,6,a'
-   * ```
+   * pl.DataFrame.fromBinary(df.toBinary())
    */
-  toCSV(): string;
-  toCSV(options: WriteCsvOptions): string;
-  toCSV(dest: string | Writable, options?: WriteCsvOptions): void;
+  toBinary(): Buffer
+  /** @deprecated *since 0.4.0* use {@link writeCSV} */
+  toCSV(destOrOptions?, options?);
   /**
    * Converts dataframe object into javascript object
    * Same logic applies for `toJSON` except this will use js values instead of a json string
@@ -1203,62 +1222,18 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   toObject(options: {orient: "row" | "col" | "dataframe"}): object
 
   /**
-   * Write Dataframe to JSON string, file, or write stream
-   * @param destination file or write stream
-   * @param options
-   * @param options.orient - col|row|dataframe
-   *  - col will write to a column oriented object
-   *
-   * @example
-   * ```
-   * >>> const df = pl.DataFrame({
-   * >>>   foo: [1,2,3],
-   * >>>   bar: ['a','b','c']
-   * >>> })
-   *
-   * // defaults to 'dataframe' orientation
-   * >>> df.toJSON()
-   * `{"columns":[ {"name":"foo","datatype":"Float64","values":[1,2,3]}, {"name":"bar","datatype":"Utf8","values":["a","b","c"]}]}`
-   *
-   * // this will produce the same results as 'df.toJSON()'
-   * >>> JSON.stringify(df)
-   *
-   * // row oriented
-   * >>> df.toJSON({orient:"row"})
-   * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
-   *
-   * // column oriented
-   * >>> df.toJSON({orient: "col"})
-   * `{"foo":[1,2,3],"bar":["a","b","c"]}`
-   *
-   * // multiline (will always be row oriented)
-   * >>> df.toJSON({multiline: true})
-   * `{"foo":1.0,"bar":"a"}
-   * {"foo":2.0,"bar":"b"}
-   * {"foo":3.0,"bar":"c"}`
-   *
-   * // writing to a file
-   * >>> df.toJSON("/path/to/file.json", {multiline:true})
-   * ```
-   */
+   * @deprecated
+   * @since 0.4.0
+   * @use {@link writeJSON}
+   * this will be removed in a later version to prevent collision with native `toJSON` method
+   * */
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
 
-  /**
-   * Write to Arrow IPC binary stream, or a feather file.
-   * @param file File path to which the file should be written.
-   * @param options.compression Compression method *defaults to "uncompressed"*
-   * */
-   toIPC(options?: WriteIPCOptions): Buffer
-   toIPC(destination: string | Writable, options?: WriteIPCOptions): void
-
-  /**
-   * Write the DataFrame disk in parquet format.
-   * @param file File path to which the file should be written.
-   * @param options.compression Compression method *defaults to "uncompressed"*
-   * */
-  toParquet(options?: WriteParquetOptions): Buffer
-  toParquet(destination: string | Writable, options?: WriteParquetOptions): void
+  /** @deprecated *since 0.4.0* use {@link writeIPC} */
+  toIPC(destination?, options?)
+  /** @deprecated *since 0.4.0* use {@link writeParquet} */
+  toParquet(destination?, options?)
   toSeries(index: number): Series<any>
   toString(): string
   /**
@@ -1334,6 +1309,15 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * └─────────────┴─────────────┴─────────────┘
    */
   transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: Iterable<string>})
+  /**
+   * Drop duplicate rows from this DataFrame.
+   * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @param maintainOrder
+   * @param subset - subset to drop duplicates for
+   * @param keep "first" | "last"
+   */
+  unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
+  unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
    /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
@@ -1576,23 +1560,23 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       }
     },
     distinct(opts: any = false, subset?, keep = "first") {
+      return this.unique(opts, subset);
+    },
+    unique(opts: any = false, subset?, keep = "first") {
       const defaultOptions = {
         maintainOrder: false,
         keep,
       };
 
       if(typeof opts === "boolean") {
-        return wrap("distinct", {...defaultOptions, maintainOrder: opts, subset, keep});
+        return wrap("unique", {...defaultOptions, maintainOrder: opts, subset, keep});
       }
 
       if(opts.subset) {
         opts.subset = [opts.subset].flat(3);
       }
 
-      return wrap("distinct", {...defaultOptions, ...opts});
-    },
-    dropDuplicates(opts: any=false, subset?) {
-      return this.distinct(opts, subset);
+      return wrap("unique", {...defaultOptions, ...opts});
     },
     explode(...columns)  {
       return dfWrapper(_df)
@@ -1731,20 +1715,29 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return this;
     },
     rows: noArgUnwrap("to_rows"),
-    sample(opts?, frac?, withReplacement = false) {
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(arguments.length === 0) {
+        return wrap("sample_n", {
+          n: 1,
+          withReplacement,
+          seed
+        });
+      }
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
-        return this.sample(opts.n, opts.frac, opts.withReplacement);
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
         return wrap("sample_n", {
           n: opts,
-          withReplacement
+          withReplacement,
+          seed
         });
       }
       if(typeof frac === "number") {
         return wrap("sample_frac", {
           frac,
           withReplacement,
+          seed
         });
       }
       else {
@@ -1812,16 +1805,22 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       return wrap("sum");
     },
     tail: (length=5) => wrap("tail", {length}),
-    toCSV(dest?, options?) {
+    toBinary() {
+      return unwrap("to_bincode");
+    },
+    toCSV(...args) {
+      return this.writeCSV(...args);
+    },
+    writeCSV(dest?, options?) {
       options = { hasHeader:true, sep: ",", ...options};
-      // toCSV(options)
+      // writeCSV(options)
       if(dest?.hasHeader !== undefined || dest?.sep !== undefined) {
         return writeToStreamOrString(null, "csv", {...options, ...dest});
 
       } else {
-        // toCSV()
-        // toCSV("path/to/some/file", options)
-        // toCSV(writeStream, options)
+        // writeCSV()
+        // writeCSV("path/to/some/file", options)
+        // writeCSV(writeStream, options)
         return writeToStreamOrString(dest, "csv", options);
       }
     },
@@ -1868,14 +1867,43 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return writeToStreamOrString(arg0, "json", options);
       }
     },
-    toParquet(dest?, options = {compression: "uncompressed"}) {
+    writeJSON(dest?, options?) {
+      // df.writeJSON();
+      // same thing as to_js except skips serializing to JS & returns a json buffer
+      if(dest === undefined) {
+        return unwrap<any>("to_json").toString();
+      }
+
+      // writeJSON(options)
+      if(dest?.orient === "row" || dest?.multiline) {
+        return writeToStreamOrString(null, "json", dest);
+
+      // writeJSON({orient:"col"})
+      } else if(dest?.orient === "col") {
+        // TODO!
+        // do this on the rust side for better performance
+        return JSON.stringify(this.toObject({orient: "col"}));
+      }
+      else {
+        // writeJSON("path/to/some/file", options)
+        // writeJSON(writeStream, options)
+        return writeToStreamOrString(dest, "json", options);
+      }
+    },
+    toParquet(dest?, options?) {
+      return this.writeParquet(dest, options);
+    },
+    writeParquet(dest?, options = {compression: "uncompressed"}) {
       if(dest?.compression !== undefined) {
         return writeToBufferOrStream(null, "parquet", dest);
       } else {
         return writeToBufferOrStream(dest, "parquet", options);
       }
     },
-    toIPC(dest?, options = {compression: "uncompressed"}) {
+    toIPC(dest?, options?) {
+      return this.writeIPC(dest, options);
+    },
+    writeIPC(dest?, options = {compression: "uncompressed"}) {
       if(dest?.compression !== undefined) {
         return writeToBufferOrStream(null, "ipc", dest);
       } else {
@@ -2011,6 +2039,10 @@ export interface DataFrameConstructor {
     inferSchemaLength?: number,
   }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
+  /**
+  * @param binary used to serialize/deserialize dataframe. This will only work with the output from expr.toBinary().
+  */
+  fromBinary(binary: Buffer): DataFrame
 }
 function DataFrameConstructor(data?, options?): DataFrame {
 
@@ -2038,5 +2070,13 @@ function objToDF(obj: Record<string, Array<any>>): any {
 }
 const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
 
+const fromBinary = (buf: Buffer)  => {
+  return dfWrapper(pli.df.from_bincode(buf));
+};
 
-export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+export const DataFrame: DataFrameConstructor = Object.assign(
+  DataFrameConstructor, {
+    isDataFrame,
+    fromBinary
+  }
+);

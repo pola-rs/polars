@@ -66,7 +66,8 @@ pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let n = params.get_as::<usize>("n")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
-    df.sample_n(n, with_replacement, Some(0))
+    let seed = params.get_as::<Option<u64>>("seed")?;
+    df.sample_n(n, with_replacement, seed)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -77,7 +78,8 @@ pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let frac = params.get_as::<f64>("frac")?;
     let with_replacement = params.get_as::<bool>("withReplacement")?;
-    df.sample_frac(frac, with_replacement, Some(0))
+    let seed = params.get_as::<Option<u64>>("seed")?;
+    df.sample_frac(frac, with_replacement, seed)
         .map_err(JsPolarsEr::from)?
         .try_into_js(&cx)
 }
@@ -594,17 +596,17 @@ pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
 }
 
 #[js_function(1)]
-pub fn distinct(cx: CallContext) -> JsResult<JsExternal> {
+pub fn unique(cx: CallContext) -> JsResult<JsExternal> {
     let params = get_params(&cx)?;
     let df = params.get_external::<DataFrame>(&cx, "_df")?;
     let maintain_order: bool = params.get_or("maintainOrder", false)?;
-    let keep: DistinctKeepStrategy = params.get_as("keep")?;
+    let keep: UniqueKeepStrategy = params.get_as("keep")?;
 
     let subset: Option<Vec<String>> = params.get_as("subset")?;
     let subset = subset.as_ref().map(|v| v.as_ref());
     let df = match maintain_order {
-        true => df.distinct_stable(subset, keep),
-        false => df.distinct(subset, keep),
+        true => df.unique_stable(subset, keep),
+        false => df.unique(subset, keep),
     }
     .map_err(JsPolarsEr::from)?;
 
