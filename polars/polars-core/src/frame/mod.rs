@@ -138,6 +138,22 @@ fn duplicate_err(name: &str) -> Result<()> {
 }
 
 impl DataFrame {
+    /// Returns an estimation of the total (heap) allocated size of the `DataFrame` in bytes.
+    ///
+    /// # Implementation
+    /// This estimation is the sum of the size of its buffers, validity, including nested arrays.
+    /// Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+    /// sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+    ///
+    /// When an array is sliced, its allocated size remains constant because the buffer unchanged.
+    /// However, this function will yield a smaller number. This is because this function returns
+    /// the visible size of the buffer, not its total capacity.
+    ///
+    /// FFI buffers are included in this estimation.
+    pub fn estimated_size(&self) -> usize {
+        self.columns.iter().map(|s| s.estimated_size()).sum()
+    }
+
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> Result<usize> {
         self.find_idx_by_name(name)

@@ -62,6 +62,7 @@ Descriptive stats
    :toctree: api/
 
     Series.describe
+    Series.estimated_size
     Series.unique_counts
     Series.value_counts
     Series.chunk_lengths

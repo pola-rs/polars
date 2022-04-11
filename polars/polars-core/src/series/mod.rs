@@ -26,6 +26,7 @@ use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use ahash::RandomState;
+use arrow::compute::aggregate::estimated_bytes_size;
 pub use from::*;
 use num::NumCast;
 use rayon::prelude::*;
@@ -973,6 +974,40 @@ impl Series {
                 format!("Series dtype {:?} != struct", self.dtype()).into(),
             )),
         }
+    }
+
+    /// Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+    ///
+    /// # Implementation
+    /// This estimation is the sum of the size of its buffers, validity, including nested arrays.
+    /// Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+    /// sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+    ///
+    /// When an array is sliced, its allocated size remains constant because the buffer unchanged.
+    /// However, this function will yield a smaller number. This is because this function returns
+    /// the visible size of the buffer, not its total capacity.
+    ///
+    /// FFI buffers are included in this estimation.
+    pub fn estimated_size(&self) -> usize {
+        #[allow(unused_mut)]
+        let mut size = self
+            .chunks()
+            .iter()
+            .map(|arr| estimated_bytes_size(&**arr))
+            .sum();
+        match self.dtype() {
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(Some(rv)) => match &**rv {
+                RevMapping::Local(arr) => size += estimated_bytes_size(arr),
+                RevMapping::Global(map, arr, _) => {
+                    size +=
+                        map.capacity() * std::mem::size_of::<u32>() * 2 + estimated_bytes_size(arr);
+                }
+            },
+            _ => {}
+        }
+
+        size
     }
 }
 
