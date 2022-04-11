@@ -514,6 +514,22 @@ class Series:
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
+    def estimated_size(self) -> int:
+        """
+        Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+
+        This estimation is the sum of the size of its buffers, validity, including nested arrays.
+        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer unchanged.
+        However, this function will yield a smaller number. This is because this function returns
+        the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+        """
+        return self._s.estimated_size()
+
     def sqrt(self) -> "Series":
         """
         Compute the square root of the elements

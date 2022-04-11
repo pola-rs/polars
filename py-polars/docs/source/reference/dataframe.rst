@@ -61,6 +61,7 @@ Descriptive stats
    :toctree: api/
 
     DataFrame.describe
+    DataFrame.estimated_size
     DataFrame.is_duplicated
     DataFrame.is_unique
     DataFrame.n_chunks

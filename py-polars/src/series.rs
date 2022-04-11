@@ -291,6 +291,10 @@ impl PySeries {
         }
     }
 
+    pub fn estimated_size(&self) -> usize {
+        self.series.estimated_size()
+    }
+
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();

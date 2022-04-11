@@ -41,6 +41,10 @@ impl PyDataFrame {
         PyDataFrame { df }
     }
 
+    pub fn estimated_size(&self) -> usize {
+        self.df.estimated_size()
+    }
+
     fn finish_from_rows(rows: Vec<Row>) -> PyResult<Self> {
         // replace inferred nulls with boolean
         let schema = rows_to_schema(&rows);
