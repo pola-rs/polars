@@ -32,9 +32,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
-# uncomment to have datafusion integration
-# when uncommenting we both need to point to the same arrow version
-# ooc = ["datafusion", "tokio"]
+
 true_div = []
 
 # operations
@@ -103,10 +101,6 @@ polars-core = { version = "0.20.0", path = "../polars-core", features = ["lazy",
 polars-io = { version = "0.20.0", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
 polars-time = { version = "0.20.0", path = "../polars-time", optional = true }
 polars-utils = { version = "0.20.0", path = "../polars-utils" }
-# uncomment to have datafusion integration
-# when uncommenting we both need to point to the same arrow version
-# datafusion = {version="4.0.0-SNAPSHOT", git = "https://github.com/apache/arrow-datafusion", rev = "88222b7", default-features=false, optional=true}
-# tokio = { version = "1.0", features = ["macros", "rt", "rt-multi-thread", "sync"] , optional=true}
 
 [package.metadata.docs.rs]
 all-features = true
