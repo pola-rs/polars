@@ -122,3 +122,17 @@ def test_value_counts_expr() -> None:
 
     out = sorted(out)  # type: ignore
     assert out == [("a", 1), ("b", 2), ("c", 3)]
+
+
+def test_nested_struct() -> None:
+    df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
+    # Nest the datafame
+    nest_l1 = df.to_struct("c").to_frame()
+    # Add another column on the same level
+    nest_l1 = nest_l1.with_column(pl.col("c").is_nan().alias("b"))
+    # Nest the dataframe again
+    nest_l2 = nest_l1.to_struct("a").to_frame()
+
+    assert isinstance(nest_l2.dtypes[0], pl.datatypes.Struct)
+    assert nest_l2.dtypes[0].inner_types == nest_l1.dtypes
+    assert isinstance(nest_l1.dtypes[0], pl.datatypes.Struct)
