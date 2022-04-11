@@ -39,6 +39,9 @@ use crate::error::{
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
+#[cfg(not(target_os = "windows"))]
+use jemallocator::Jemalloc;
+#[cfg(target_os = "windows")]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
@@ -48,16 +51,12 @@ use polars_core::prelude::IntoSeries;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+#[cfg(not(target_os = "windows"))]
+static ALLOC: Jemalloc = Jemalloc;
 
-#[pyfunction]
-fn enable_large_os_pages(_py: Python, toggle: bool) {
-    // Safety
-    // holding the python gil makes this thread safe
-    unsafe {
-        libmimalloc_sys::mi_option_set_enabled(libmimalloc_sys::mi_option_large_os_pages, toggle)
-    }
-}
+#[global_allocator]
+#[cfg(target_os = "windows")]
+static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
@@ -477,7 +476,5 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
-    m.add_wrapped(wrap_pyfunction!(enable_large_os_pages))
-        .unwrap();
     Ok(())
 }

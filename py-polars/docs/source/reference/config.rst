@@ -14,7 +14,5 @@ Config
     Config.set_tbl_cols
     Config.set_global_string_cache
     Config.unset_global_string_cache
-    Config.set_large_os_pages
-    Config.unset_large_os_pages
     toggle_string_cache
     StringCache

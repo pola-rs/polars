@@ -3,13 +3,6 @@ from typing import Type
 
 from polars.string_cache import toggle_string_cache
 
-try:
-    from polars.polars import enable_large_os_pages as _enable_large_os_pages
-
-    _DOCUMENTING = False
-except ImportError:  # pragma: no cover
-    _DOCUMENTING = True
-
 
 class Config:
     """
@@ -105,24 +98,4 @@ class Config:
         Turn off the global string cache
         """
         toggle_string_cache(False)
-        return cls
-
-    @classmethod
-    def unset_large_os_pages(cls) -> "Type[Config]":
-        """
-        Turn off large OS pages in `mimalloc` allocator.
-
-        This can be slower depending on your use case. It is on by default in polars.
-        """
-        _enable_large_os_pages(False)
-        return cls
-
-    @classmethod
-    def set_large_os_pages(cls) -> "Type[Config]":
-        """
-        Turn on large OS pages in `mimalloc` allocator.
-
-        It is on by default in polars.
-        """
-        _enable_large_os_pages(True)
         return cls

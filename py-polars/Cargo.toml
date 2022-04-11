@@ -15,12 +15,16 @@ description = "Blazingly fast DataFrame library"
 [workspace]
 # prevents package from thinking it's in the workspace
 
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "*", default-features = false }
+
+[target.'cfg(not(windows))'.dependencies]
+jemallocator = { version = "0.3", features = ["disable_initial_exec_tls"] }
+
 [dependencies]
 ahash = "0.7"
 bincode = "1.3"
 libc = "0.2"
-libmimalloc-sys = { version = "*", features = ["extended"] }
-mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
 numpy = "0.16"
 polars-core = { path = "../polars/polars-core", default-features = false }
