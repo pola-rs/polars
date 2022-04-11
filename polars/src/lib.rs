@@ -261,8 +261,8 @@
 //!
 //! ### Custom allocator
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
-//! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) for instance, shows a significant
-//! performance gain in runtime as well as memory usage. Especially with `MIMALLOC_LARGE_OS_PAGES=1`.
+//! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) and [JeMalloc](https://crates.io/crates/jemallocator) for instance, show a significant
+//! performance gain in runtime as well as memory usage.
 //!
 //! #### Usage
 //! ```ignore
