@@ -11,7 +11,10 @@
 ### Importing
 
 ```js
+// esm
 import pl from 'nodejs-polars';
+
+// require
 const pl = require('nodejs-polars'); 
 ```
 
