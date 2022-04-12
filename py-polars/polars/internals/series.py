@@ -2102,6 +2102,10 @@ class Series:
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
 
+        Notes
+        -----
+        If you are attempting to convert Utf8 to an array you'll need to install `pyarrow`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
