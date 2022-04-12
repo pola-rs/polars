@@ -393,7 +393,10 @@ mod stats {
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
 
-            assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
+            debug_assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
+            if fld_l.data_type() != fld_r.data_type() {
+                return Ok(true);
+            }
 
             let dummy = DataFrame::new_no_checks(vec![]);
             let state = ExecutionState::new();
