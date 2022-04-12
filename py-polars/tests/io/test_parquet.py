@@ -126,7 +126,8 @@ def test_parquet_datetime() -> None:
     df = pl.DataFrame(data)
     df = df.with_column(df["datetime"].cast(pl.Datetime))
 
-    df.write_parquet(f, use_pyarrow=True)
+    # todo! test all compressions here
+    df.write_parquet(f, use_pyarrow=True, compression="snappy")
     f.seek(0)
     read = pl.read_parquet(f)
     assert read.frame_equal(df)
