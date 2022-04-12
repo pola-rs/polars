@@ -39,9 +39,9 @@ use crate::error::{
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 use jemallocator::Jemalloc;
-#[cfg(target_os = "windows")]
+#[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
@@ -51,11 +51,11 @@ use polars_core::prelude::IntoSeries;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 
 #[global_allocator]
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 static ALLOC: Jemalloc = Jemalloc;
 
 #[global_allocator]
-#[cfg(target_os = "windows")]
+#[cfg(not(target_os = "linux"))]
 static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
