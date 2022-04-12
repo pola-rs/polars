@@ -175,7 +175,7 @@ Arrow2 also has a more granular code base, helping to reduce the compiler bloat.
 See [this example](./examples/python_rust_compiled_function).
 
 # Going big...
-Do you expect more than `32^2` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
+Do you expect more than `2^32` ~4,2 billion rows? Compile polars with the `bigidx` feature flag.
 
 Or for python users install `$ pip install -U polars-u64-idx`.
 
