@@ -1335,7 +1335,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 ],
                 str,
             ]
-        ] = "snappy",
+        ] = "lz4",
         statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
