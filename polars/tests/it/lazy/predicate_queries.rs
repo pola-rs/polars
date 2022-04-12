@@ -39,3 +39,25 @@ fn filter_true_lit() -> Result<()> {
     assert!(res.frame_equal_missing(&df));
     Ok(())
 }
+
+#[test]
+fn test_combine_columns_in_filter() -> Result<()> {
+    let df = df![
+        "a" => [1, 2, 3],
+        "b" => [None, Some("a"), Some("b")]
+    ]?;
+
+    let out = df
+        .lazy()
+        .filter(cols(vec!["a".to_string(), "b".to_string()]).gt(lit(2)))
+        .collect()?;
+
+    let expected = df![
+        "a" => [3],
+        "b" => ["b"],
+    ]?;
+
+    // "b" > "2" == true
+    assert!(out.frame_equal(&expected));
+    Ok(())
+}
