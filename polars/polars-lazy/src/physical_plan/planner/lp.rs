@@ -280,6 +280,7 @@ impl DefaultPlanner {
                 let phys_aggs =
                     self.create_physical_expressions(&aggs, Context::Aggregation, expr_arena)?;
 
+                let slice = options.slice;
                 if let Some(options) = options.dynamic {
                     return Ok(Box::new(executors::GroupByDynamicExec {
                         input,
@@ -287,6 +288,7 @@ impl DefaultPlanner {
                         aggs: phys_aggs,
                         options,
                         input_schema,
+                        slice,
                     }));
                 }
 
@@ -297,6 +299,7 @@ impl DefaultPlanner {
                         aggs: phys_aggs,
                         options,
                         input_schema,
+                        slice,
                     }));
                 }
 
@@ -375,6 +378,7 @@ impl DefaultPlanner {
                             .map(|n| node_to_expr(n, expr_arena))
                             .collect(),
                         maintain_order,
+                        options.slice,
                     )))
                 } else {
                     Ok(Box::new(executors::GroupByExec::new(
@@ -384,6 +388,7 @@ impl DefaultPlanner {
                         apply,
                         maintain_order,
                         input_schema,
+                        options.slice,
                     )))
                 }
             }

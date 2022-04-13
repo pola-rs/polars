@@ -7,6 +7,7 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) options: RollingGroupOptions,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) slice: Option<(i64, usize)>,
 }
 
 impl Executor for GroupByRollingExec {
@@ -28,11 +29,21 @@ impl Executor for GroupByRollingExec {
 
         let (time_key, keys, groups) = df.groupby_rolling(keys, &self.options)?;
 
+        let mut groups = &groups;
+        #[allow(unused_assignments)]
+        // it is unused because we only use it to keep the lifetime of sliced_group valid
+        let mut sliced_groups = None;
+
+        if let Some((offset, len)) = self.slice {
+            sliced_groups = Some(groups.slice(offset, len));
+            groups = sliced_groups.as_deref().unwrap();
+        }
+
         let agg_columns = POOL.install(|| {
                     self.aggs
                         .par_iter()
                         .map(|expr| {
-                            let opt_agg = as_aggregated(expr.as_ref(), &df, &groups, state)?;
+                            let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
                             if let Some(agg) = &opt_agg {
                                 if agg.len() != groups.len() {
                                     return Err(PolarsError::ComputeError(

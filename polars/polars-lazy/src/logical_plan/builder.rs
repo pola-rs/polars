@@ -342,6 +342,7 @@ impl LogicalPlanBuilder {
             options: GroupbyOptions {
                 dynamic: dynamic_options,
                 rolling: rolling_options,
+                slice: None,
             },
         }
         .into()
