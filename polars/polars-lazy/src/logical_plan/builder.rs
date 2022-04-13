@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use parking_lot::Mutex;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_io::csv::CsvEncoding;
@@ -402,12 +403,11 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&id_vars, &value_vars, self.0.schema());
+    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
+        let schema = det_melt_schema(&args, self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
-            id_vars,
-            value_vars,
+            args,
             schema,
         }
         .into()
@@ -504,24 +504,31 @@ impl LogicalPlanBuilder {
     }
 }
 
-pub(crate) fn det_melt_schema(
-    id_vars: &[String],
-    value_vars: &[String],
-    input_schema: &Schema,
-) -> SchemaRef {
+pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaRef {
     let mut new_schema = Schema::from(
-        id_vars
+        args.id_vars
             .iter()
             .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
     );
-    new_schema.with_column("variable".to_string(), DataType::Utf8);
+    let variable_name = args
+        .variable_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "variable".to_string());
+    let value_name = args
+        .value_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "value".to_string());
+
+    new_schema.with_column(variable_name, DataType::Utf8);
 
     // We need to determine the supertype of all value columns.
     let mut st = None;
 
     // take all columns that are not in `id_vars` as `value_var`
-    if value_vars.is_empty() {
-        let id_vars = PlHashSet::from_iter(id_vars);
+    if args.value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(&args.id_vars);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
                 match &st {
@@ -531,7 +538,7 @@ pub(crate) fn det_melt_schema(
             }
         }
     } else {
-        for name in value_vars {
+        for name in &args.value_vars {
             let dtype = input_schema.get(name).unwrap();
             match &st {
                 None => st = Some(dtype.clone()),
@@ -539,6 +546,6 @@ pub(crate) fn det_melt_schema(
             }
         }
     }
-    new_schema.with_column("value".to_string(), st.unwrap());
+    new_schema.with_column(value_name, st.unwrap());
     Arc::new(new_schema)
 }

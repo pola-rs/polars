@@ -185,16 +185,18 @@ impl PredicatePushDown {
 
             Melt {
                 input,
-                id_vars,
-                value_vars,
+                args,
                 schema,
             } => {
+                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                let value_name = args.value_name.as_deref().unwrap_or("value_name");
+
                 // predicates that will be done at this level
                 let condition = |name: Arc<str>| {
                     let name = &*name;
-                    name == "variable"
-                        || name == "value"
-                        || value_vars.iter().any(|s| s.as_str() == name)
+                    name == variable_name
+                        || name == value_name
+                        || args.value_vars.iter().any(|s| s.as_str() == name)
                 };
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
@@ -203,8 +205,7 @@ impl PredicatePushDown {
 
                 let lp = ALogicalPlan::Melt {
                     input,
-                    id_vars,
-                    value_vars,
+                    args,
                     schema,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))

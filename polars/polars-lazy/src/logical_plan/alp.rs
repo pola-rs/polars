@@ -5,6 +5,7 @@ use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
+use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
@@ -16,8 +17,7 @@ use std::sync::Arc;
 pub enum ALogicalPlan {
     Melt {
         input: Node,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
+        args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
     Slice {
@@ -193,15 +193,9 @@ impl ALogicalPlan {
                 inputs,
                 options: *options,
             },
-            Melt {
-                id_vars,
-                value_vars,
-                schema,
-                ..
-            } => Melt {
+            Melt { args, schema, .. } => Melt {
                 input: inputs[0],
-                id_vars: id_vars.clone(),
-                value_vars: value_vars.clone(),
+                args: args.clone(),
                 schema: schema.clone(),
             },
             Slice { offset, len, .. } => Slice {
@@ -548,13 +542,12 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&id_vars, &value_vars, self.schema());
+    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
+        let schema = det_melt_schema(&args, self.schema());
 
         let lp = ALogicalPlan::Melt {
             input: self.root,
-            id_vars,
-            value_vars,
+            args,
             schema,
         };
         let node = self.lp_arena.add(lp);

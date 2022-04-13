@@ -4025,6 +4025,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self: DF,
         id_vars: Optional[Union[List[str], str]] = None,
         value_vars: Optional[Union[List[str], str]] = None,
+        variable_name: Optional[str] = None,
+        value_name: Optional[str] = None,
     ) -> DF:
         """
         Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
@@ -4038,10 +4040,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         id_vars
             Columns to use as identifier variables.
-
         value_vars
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `value` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
 
         Examples
         --------
@@ -4082,7 +4087,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
             value_vars = []
         if id_vars is None:
             id_vars = []
-        return self._from_pydf(self._df.melt(id_vars, value_vars))
+        return self._from_pydf(
+            self._df.melt(id_vars, value_vars, value_name, variable_name)
+        )
 
     def shift(self: DF, periods: int) -> DF:
         """

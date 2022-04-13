@@ -1842,6 +1842,8 @@ class LazyFrame(Generic[DF]):
         self: LDF,
         id_vars: Optional[Union[str, List[str]]] = None,
         value_vars: Optional[Union[str, List[str]]] = None,
+        variable_name: Optional[str] = None,
+        value_name: Optional[str] = None,
     ) -> LDF:
         """
         Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
@@ -1857,6 +1859,10 @@ class LazyFrame(Generic[DF]):
         value_vars
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `value` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
 
         Examples
         --------
@@ -1897,7 +1903,9 @@ class LazyFrame(Generic[DF]):
             value_vars = []
         if id_vars is None:
             id_vars = []
-        return self._from_pyldf(self._ldf.melt(id_vars, value_vars))
+        return self._from_pyldf(
+            self._ldf.melt(id_vars, value_vars, value_name, variable_name)
+        )
 
     def map(
         self: LDF,

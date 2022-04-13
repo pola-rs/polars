@@ -1,5 +1,6 @@
 use super::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::series::ops::NullBehavior;
 use polars_time::prelude::DateMethods;
 
@@ -58,12 +59,17 @@ fn test_lazy_alias() {
 #[test]
 fn test_lazy_melt() {
     let df = get_df();
+
+    let args = MeltArgs {
+        id_vars: vec!["petal.width".to_string(), "petal.length".to_string()],
+        value_vars: vec!["sepal.length".to_string(), "sepal.width".to_string()],
+        variable_name: None,
+        value_name: None,
+    };
+
     let out = df
         .lazy()
-        .melt(
-            vec!["petal.width".to_string(), "petal.length".to_string()],
-            vec!["sepal.length".to_string(), "sepal.width".to_string()],
-        )
+        .melt(args)
         .filter(col("variable").eq(lit("sepal.length")))
         .select([col("variable"), col("petal.width"), col("value")])
         .collect()

@@ -24,6 +24,7 @@ mod projection;
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
+use polars_core::frame::explode::MeltArgs;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -148,8 +149,7 @@ pub enum LogicalPlan {
     /// A Melt operation
     Melt {
         input: Box<LogicalPlan>,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
+        args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
     /// A User Defined Function

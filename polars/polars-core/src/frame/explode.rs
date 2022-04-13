@@ -15,6 +15,15 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     }
 }
 
+/// Arguments for `[DataFrame::melt]` function
+#[derive(Clone, Default, Debug)]
+pub struct MeltArgs {
+    pub id_vars: Vec<String>,
+    pub value_vars: Vec<String>,
+    pub variable_name: Option<String>,
+    pub value_name: Option<String>,
+}
+
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
         if self.height() == 0 {
@@ -241,12 +250,22 @@ impl DataFrame {
     {
         let id_vars = id_vars.into_vec();
         let value_vars = value_vars.into_vec();
-        self.melt2(id_vars, value_vars)
+        self.melt2(MeltArgs {
+            id_vars,
+            value_vars,
+            ..Default::default()
+        })
     }
 
     /// Similar to melt, but without generics. This may be easier if you want to pass
     /// an empty `id_vars` or empty `value_vars`.
-    pub fn melt2(&self, id_vars: Vec<String>, mut value_vars: Vec<String>) -> Result<Self> {
+    pub fn melt2(&self, args: MeltArgs) -> Result<Self> {
+        let id_vars = args.id_vars;
+        let mut value_vars = args.value_vars;
+
+        let value_name = args.value_name.as_deref().unwrap_or("value");
+        let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+
         let len = self.height();
 
         // if value vars is empty we take all columns that are not in id_vars.
@@ -306,13 +325,17 @@ impl DataFrame {
         // Safety
         // The give dtype is correct
         let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked("value", vec![values_arr], &st) };
+            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
 
         let variable_col = variable_col.into_arc();
         // Safety
         // The give dtype is correct
         let variables = unsafe {
-            Series::from_chunks_and_dtype_unchecked("variable", vec![variable_col], &DataType::Utf8)
+            Series::from_chunks_and_dtype_unchecked(
+                variable_name,
+                vec![variable_col],
+                &DataType::Utf8,
+            )
         };
 
         ids.hstack_mut(&[variables, values])?;
@@ -323,6 +346,7 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::explode::MeltArgs;
     use crate::prelude::*;
 
     #[test]
@@ -413,7 +437,14 @@ mod test {
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
         );
 
-        let melted = df.melt2(vec![], vec![]).unwrap();
+        let args = MeltArgs {
+            id_vars: vec![],
+            value_vars: vec![],
+            variable_name: None,
+            value_name: None,
+        };
+
+        let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
         // utf8 because of supertype
         let value = value.utf8()?;
@@ -423,7 +454,14 @@ mod test {
             &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
         );
 
-        let melted = df.melt2(vec!["A".into()], vec![]).unwrap();
+        let args = MeltArgs {
+            id_vars: vec!["A".into()],
+            value_vars: vec![],
+            variable_name: None,
+            value_name: None,
+        };
+
+        let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
         let value = value.i32()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();
