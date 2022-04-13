@@ -206,6 +206,24 @@ impl SlicePushDown {
                     right_on,
                     options
                 })
+            }
+            (Aggregate { input, keys, aggs, schema, apply, maintain_order, mut options }, Some(state)) => {
+                // first restart optimization in inputs and get the updated LP
+                let input_lp = lp_arena.take(input);
+                let input_lp = self.pushdown(input_lp, None, lp_arena, expr_arena)?;
+                let input= lp_arena.add(input_lp);
+
+                options.slice = Some((state.offset, state.len as usize));
+
+                Ok(Aggregate {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                    apply,
+                    maintain_order,
+                    options
+                })
 
             }
             (Slice {
@@ -246,8 +264,6 @@ impl SlicePushDown {
             // will lead to incorrect aggregations
             | m @ (LocalProjection {..},_)
             // other blocking nodes
-            | m @ (Join { .. }, _)
-            | m @ (Aggregate {..}, _)
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
             | m @ (Explode {..}, _)

@@ -66,7 +66,7 @@ fn groupby_helper(
     }
 
     let (mut columns, agg_columns) = POOL.install(|| {
-        let get_columns = || gb.keys();
+        let get_columns = || gb.keys_sliced(slice);
 
         let get_agg = || aggs
             .par_iter()
@@ -345,7 +345,7 @@ impl Executor for PartitionGroupByExec {
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;
 
-        let get_columns = || gb.keys();
+        let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
             outer_phys_aggs
                 .par_iter()

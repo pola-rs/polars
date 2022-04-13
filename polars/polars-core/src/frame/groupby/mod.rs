@@ -307,21 +307,36 @@ impl<'df> GroupBy<'df> {
         self.groups
     }
 
-    pub fn keys(&self) -> Vec<Series> {
+    pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Series> {
         POOL.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(|s| {
+                    #[allow(unused_assignments)]
+                    // needed to keep the lifetimes valid for this scope
+                    let mut groups_owned = None;
+
+                    let groups = if let Some((offset, len)) = slice {
+                        groups_owned = Some(self.groups.slice(offset, len));
+                        groups_owned.as_deref().unwrap()
+                    } else {
+                        &self.groups
+                    };
+
                     // Safety
                     // groupby indexes are in bound.
                     unsafe {
                         s.take_iter_unchecked(
-                            &mut self.groups.idx_ref().iter().map(|(idx, _)| idx as usize),
+                            &mut groups.idx_ref().iter().map(|(idx, _)| idx as usize),
                         )
                     }
                 })
                 .collect()
         })
+    }
+
+    pub fn keys(&self) -> Vec<Series> {
+        self.keys_sliced(None)
     }
 
     fn prepare_agg(&self) -> Result<(Vec<Series>, Vec<Series>)> {
