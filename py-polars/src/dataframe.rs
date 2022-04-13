@@ -23,6 +23,7 @@ use crate::{
 use polars::frame::row::{rows_to_schema, Row};
 use polars::io::RowCount;
 use polars_core::export::arrow::datatypes::IntegerType;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::groupby::PivotAgg;
 use polars_core::frame::ArrowChunk;
 use polars_core::prelude::QuantileInterpolOptions;
@@ -1074,11 +1075,21 @@ impl PyDataFrame {
         PyDataFrame::new(self.df.clone())
     }
 
-    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> PyResult<Self> {
-        let df = self
-            .df
-            .melt(id_vars, value_vars)
-            .map_err(PyPolarsErr::from)?;
+    pub fn melt(
+        &self,
+        id_vars: Vec<String>,
+        value_vars: Vec<String>,
+        value_name: Option<String>,
+        variable_name: Option<String>,
+    ) -> PyResult<Self> {
+        let args = MeltArgs {
+            id_vars,
+            value_vars,
+            value_name,
+            variable_name,
+        };
+
+        let df = self.df.melt2(args).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

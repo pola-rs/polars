@@ -564,12 +564,7 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt {
-                input,
-                id_vars,
-                value_vars,
-                ..
-            } => {
+            Melt { input, args, .. } => {
                 let (mut acc_projections, mut local_projections, names) = split_acc_projections(
                     acc_projections,
                     lp_arena.get(input).schema(lp_arena),
@@ -581,7 +576,7 @@ impl ProjectionPushDown {
                 }
 
                 // make sure that the requested columns are projected
-                id_vars.iter().for_each(|name| {
+                args.id_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -589,7 +584,7 @@ impl ProjectionPushDown {
                         expr_arena,
                     )
                 });
-                value_vars.iter().for_each(|name| {
+                args.value_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -607,8 +602,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder =
-                    ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
+                let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
                 Ok(self.finish_node(local_projections, builder))
             }
             Aggregate {

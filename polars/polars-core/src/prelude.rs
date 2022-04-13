@@ -19,6 +19,7 @@ pub use crate::{
     df,
     error::{PolarsError, Result},
     frame::{
+        explode::MeltArgs,
         groupby::{GroupsIdx, GroupsProxy, GroupsSlice},
         hash_join::JoinType,
         *,

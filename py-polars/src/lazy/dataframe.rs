@@ -8,6 +8,7 @@ use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGr
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::{
     AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
@@ -609,9 +610,22 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
-    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
+    pub fn melt(
+        &self,
+        id_vars: Vec<String>,
+        value_vars: Vec<String>,
+        value_name: Option<String>,
+        variable_name: Option<String>,
+    ) -> Self {
+        let args = MeltArgs {
+            id_vars,
+            value_vars,
+            value_name,
+            variable_name,
+        };
+
         let ldf = self.ldf.clone();
-        ldf.melt(id_vars, value_vars).into()
+        ldf.melt(args).into()
     }
 
     pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {

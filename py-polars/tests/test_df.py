@@ -900,6 +900,23 @@ def test_melt() -> None:
             "6",
         ]
 
+    for melted in [
+        df.melt(value_name="foo", variable_name="bar"),
+        df.lazy().melt(value_name="foo", variable_name="bar").collect(),
+    ]:
+        assert melted["bar"].to_list() == ["A"] * n + ["B"] * n + ["C"] * n
+        assert melted["foo"].to_list() == [
+            "a",
+            "b",
+            "c",
+            "1",
+            "3",
+            "5",
+            "2",
+            "4",
+            "6",
+        ]
+
 
 def test_shift() -> None:
     df = pl.DataFrame({"A": ["a", "b", "c"], "B": [1, 3, 5]})

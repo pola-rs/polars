@@ -42,6 +42,7 @@ use crate::prelude::{
 use crate::logical_plan::FETCH_ROWS;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::frame::explode::MeltArgs;
 use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
@@ -1012,12 +1013,9 @@ impl LazyFrame {
     }
 
     /// Melt the DataFrame from wide to long format
-    pub fn melt(self, id_vars: Vec<String>, value_vars: Vec<String>) -> LazyFrame {
+    pub fn melt(self, args: MeltArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self
-            .get_plan_builder()
-            .melt(Arc::new(id_vars), Arc::new(value_vars))
-            .build();
+        let lp = self.get_plan_builder().melt(Arc::new(args)).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
