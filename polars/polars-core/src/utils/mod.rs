@@ -109,6 +109,7 @@ where
 }
 
 // prefer this one over split_ca, as this can push the null_count into the thread pool
+#[doc(hidden)]
 pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
     if n == 1 {
         vec![(0, len)]
@@ -130,11 +131,13 @@ pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
 }
 
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     trait Len {
         fn len(&self) -> usize;
@@ -147,8 +150,14 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     split_array!(df, n, i64)
 }
 
+pub(crate) fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
+    let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
+    &vals[raw_offset..raw_offset + slice_len]
+}
+
 #[inline]
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let abs_offset = offset.abs() as usize;
 

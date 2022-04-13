@@ -2,6 +2,7 @@ mod asof;
 mod groups;
 
 use crate::prelude::*;
+use crate::utils::slice_slice;
 use asof::*;
 use num::Bounded;
 use std::borrow::Cow;
@@ -92,10 +93,9 @@ where
 }
 
 impl DataFrame {
-    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
-    /// The keys must be sorted to perform an asof join
-    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
-    pub fn join_asof(
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn _join_asof(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -103,6 +103,7 @@ impl DataFrame {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         let left_key = self.column(left_on)?;
         let right_key = other.column(right_on)?;
@@ -150,16 +151,39 @@ impl DataFrame {
             Cow::Borrowed(other)
         };
 
+        let mut left = self.clone();
+        let mut take_idx = &*take_idx;
+
+        if let Some((offset, len)) = slice {
+            left = left.slice(offset, len);
+            take_idx = slice_slice(take_idx, offset, len);
+        }
+
         // Safety:
         // join tuples are in bounds
         let right_df = unsafe {
             other.take_opt_iter_unchecked(
                 take_idx
-                    .into_iter()
+                    .iter()
                     .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
             )
         };
 
-        self.finish_join(self.clone(), right_df, suffix)
+        self.finish_join(left, right_df, suffix)
+    }
+
+    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
+    /// The keys must be sorted to perform an asof join
+    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
+    pub fn join_asof(
+        &self,
+        other: &DataFrame,
+        left_on: &str,
+        right_on: &str,
+        strategy: AsofStrategy,
+        tolerance: Option<AnyValue<'static>>,
+        suffix: Option<String>,
+    ) -> Result<DataFrame> {
+        self._join_asof(other, left_on, right_on, strategy, tolerance, suffix, None)
     }
 }

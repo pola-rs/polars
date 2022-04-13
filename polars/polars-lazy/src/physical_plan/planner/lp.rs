@@ -433,6 +433,7 @@ impl DefaultPlanner {
                     right_on,
                     parallel,
                     options.suffix,
+                    None,
                 )))
             }
             HStack { input, exprs, .. } => {
