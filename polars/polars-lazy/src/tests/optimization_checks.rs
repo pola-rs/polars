@@ -63,7 +63,9 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
-fn slice_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
+fn slice_at_scan(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
@@ -143,20 +145,45 @@ fn test_no_left_join_pass() -> Result<()> {
 #[test]
 pub fn test_simple_slice() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
-    let (mut expr_arena, mut lp_arena) = get_arenas();
     let q = scan_foods_parquet(false).limit(3);
 
-    let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
-    assert!(slice_at_scan(&lp_arena, root));
+    assert!(slice_at_scan(q.clone()));
     let out = q.collect()?;
     assert_eq!(out.height(), 3);
 
     let q = scan_foods_parquet(false)
         .select([col("category"), col("calories").alias("bar")])
         .limit(3);
-    assert!(slice_at_scan(&lp_arena, root));
+    assert!(slice_at_scan(q.clone()));
     let out = q.collect()?;
     assert_eq!(out.height(), 3);
+
+    Ok(())
+}
+
+#[test]
+pub fn test_slice_pushdown_join() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    let q1 = scan_foods_parquet(false).limit(3);
+    let q2 = scan_foods_parquet(false);
+
+    let q = q1
+        .join(q2, [col("category")], [col("category")], JoinType::Left)
+        .slice(1, 3);
+    // test if optimization continued beyond the join node
+    assert!(slice_at_scan(q.clone()));
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).any(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            Join { options, .. } => options.slice == Some((1, 3)),
+            _ => false,
+        }
+    }));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 7));
 
     Ok(())
 }

@@ -7,7 +7,7 @@ pub(crate) struct SlicePushDown {}
 #[derive(Copy, Clone)]
 struct State {
     offset: i64,
-    len: u32,
+    len: IdxSize,
 }
 
 impl SlicePushDown {
@@ -177,6 +177,37 @@ impl SlicePushDown {
                 };
                 Ok(Union {inputs, options})
             },
+            (Join {
+                input_left,
+                input_right,
+                schema,
+                left_on,
+                right_on,
+                mut options
+            }, Some(state)) => {
+                // first restart optimization in both inputs and get the updated LP
+                let lp_left = lp_arena.take(input_left);
+                let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;
+                let input_left = lp_arena.add(lp_left);
+
+                let lp_right = lp_arena.take(input_right);
+                let lp_right = self.pushdown(lp_right, None, lp_arena, expr_arena)?;
+                let input_right = lp_arena.add(lp_right);
+
+                // then assign the slice state to the join operation
+
+                options.slice = Some((state.offset, state.len as usize));
+
+                Ok(Join {
+                    input_left,
+                    input_right,
+                    schema,
+                    left_on,
+                    right_on,
+                    options
+                })
+
+            }
             (Slice {
                 input,
                 offset,
@@ -220,6 +251,7 @@ impl SlicePushDown {
             | m @ (DataFrameScan {..}, _)
             | m @ (Sort {..}, _)
             | m @ (Explode {..}, _)
+            | m @ (Melt {..}, _)
             | m @ (Cache {..}, _)
             | m @ (Distinct {..}, _)
             | m @ (Udf {options: LogicalPlanUdfOptions{ predicate_pd: false, ..}, ..}, _)
@@ -230,8 +262,7 @@ impl SlicePushDown {
             }
             // [Pushdown]
             // these nodes will be pushed down.
-            m @ (Melt { .. },_)
-            | m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _)
+             m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _)
 
             => {
                 let (lp, state) = m;

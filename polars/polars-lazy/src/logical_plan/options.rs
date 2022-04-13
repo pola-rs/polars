@@ -45,7 +45,7 @@ pub struct IpcScanOptions {
 pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
-    pub(crate) slice_len: u32,
+    pub(crate) slice_len: IdxSize,
 }
 
 #[derive(Clone, Debug)]

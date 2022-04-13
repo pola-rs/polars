@@ -23,7 +23,7 @@ pub enum ALogicalPlan {
     Slice {
         input: Node,
         offset: i64,
-        len: u32,
+        len: IdxSize,
     },
     Selection {
         input: Node,

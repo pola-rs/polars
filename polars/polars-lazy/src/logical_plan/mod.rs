@@ -143,7 +143,7 @@ pub enum LogicalPlan {
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
-        len: u32,
+        len: IdxSize,
     },
     /// A Melt operation
     Melt {
