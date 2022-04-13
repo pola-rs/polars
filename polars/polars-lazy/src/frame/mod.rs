@@ -51,6 +51,7 @@ pub struct JoinOptions {
     pub force_parallel: bool,
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
+    pub slice: Option<(i64, usize)>,
 }
 
 impl Default for JoinOptions {
@@ -60,6 +61,7 @@ impl Default for JoinOptions {
             force_parallel: false,
             how: JoinType::Left,
             suffix: "_right".into(),
+            slice: None,
         }
     }
 }
@@ -990,7 +992,7 @@ impl LazyFrame {
     }
 
     /// Slice the DataFrame.
-    pub fn slice(self, offset: i64, len: u32) -> LazyFrame {
+    pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1007,7 +1009,7 @@ impl LazyFrame {
     }
 
     /// Get the last `n` rows
-    pub fn tail(self, n: u32) -> LazyFrame {
+    pub fn tail(self, n: IdxSize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
@@ -1021,7 +1023,7 @@ impl LazyFrame {
 
     /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
     /// use [fetch](LazyFrame::fetch).
-    pub fn limit(self, n: u32) -> LazyFrame {
+    pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
 
@@ -1325,6 +1327,7 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     how: self.how,
                     suffix,
+                    slice: None,
                 },
             )
             .build();

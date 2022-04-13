@@ -13,6 +13,7 @@ pub struct JoinExec {
     right_on: Vec<Arc<dyn PhysicalExpr>>,
     parallel: bool,
     suffix: Cow<'static, str>,
+    slice: Option<(i64, usize)>,
 }
 
 impl JoinExec {
@@ -25,6 +26,7 @@ impl JoinExec {
         right_on: Vec<Arc<dyn PhysicalExpr>>,
         parallel: bool,
         suffix: Cow<'static, str>,
+        slice: Option<(i64, usize)>,
     ) -> Self {
         JoinExec {
             input_left: Some(input_left),
@@ -34,6 +36,7 @@ impl JoinExec {
             right_on,
             parallel,
             suffix,
+            slice,
         }
     }
 }
@@ -69,16 +72,16 @@ impl Executor for JoinExec {
         let df_left = df_left?;
         let df_right = df_right?;
 
-        let left_names = self
+        let left_on_series = self
             .left_on
             .iter()
-            .map(|e| e.evaluate(&df_left, state).map(|s| s.name().to_string()))
+            .map(|e| e.evaluate(&df_left, state))
             .collect::<Result<Vec<_>>>()?;
 
-        let right_names = self
+        let right_on_series = self
             .right_on
             .iter()
-            .map(|e| e.evaluate(&df_right, state).map(|s| s.name().to_string()))
+            .map(|e| e.evaluate(&df_right, state))
             .collect::<Result<Vec<_>>>()?;
 
         // prepare the tolerance
@@ -92,7 +95,7 @@ impl Executor for JoinExec {
                     if duration.months() != 0 {
                         return Err(PolarsError::ComputeError("Cannot use month offset in timedelta of an asof join. Consider using 4 weeks".into()));
                     }
-                    let left_asof = df_left.column(&left_names[0])?;
+                    let left_asof = df_left.column(left_on_series[0].name())?;
                     use DataType::*;
                     match left_asof.dtype() {
                         Datetime(tu, _) | Duration(tu) => {
@@ -119,12 +122,13 @@ impl Executor for JoinExec {
             }
         }
 
-        let df = df_left.join(
+        let df = df_left._join_impl(
             &df_right,
-            &left_names,
-            &right_names,
+            left_on_series,
+            right_on_series,
             self.how.clone(),
             Some(self.suffix.clone().into_owned()),
+            self.slice,
         );
 
         if state.verbose {

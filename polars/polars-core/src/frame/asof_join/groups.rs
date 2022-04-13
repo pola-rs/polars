@@ -446,12 +446,10 @@ where
 }
 
 impl DataFrame {
-    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
-    /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
-    /// that searches for the nearest keys within a subgroup set by `by`.
     #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
     #[allow(clippy::too_many_arguments)]
-    pub fn join_asof_by<I, S>(
+    #[doc(hidden)]
+    pub fn _join_asof_by<I, S>(
         &self,
         other: &DataFrame,
         left_on: &str,
@@ -460,6 +458,7 @@ impl DataFrame {
         right_by: I,
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -575,17 +574,49 @@ impl DataFrame {
             .collect();
         let other = DataFrame::new_no_checks(cols);
 
+        let mut left = self.clone();
+        let mut right_join_tuples = &*right_join_tuples;
+
+        if let Some((offset, len)) = slice {
+            left = left.slice(offset, len);
+            right_join_tuples = slice_slice(right_join_tuples, offset, len);
+        }
+
         // Safety:
         // join tuples are in bounds
         let right_df = unsafe {
             other.take_opt_iter_unchecked(
                 right_join_tuples
-                    .into_iter()
+                    .iter()
                     .map(|opt_idx| opt_idx.map(|idx| idx as usize)),
             )
         };
 
-        self.finish_join(self.clone(), right_df, None)
+        self.finish_join(left, right_df, None)
+    }
+
+    /// This is similar to a left-join except that we match on nearest key rather than equal keys.
+    /// The keys must be sorted to perform an asof join. This is a special implementation of an asof join
+    /// that searches for the nearest keys within a subgroup set by `by`.
+    #[cfg_attr(docsrs, doc(cfg(feature = "asof_join")))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_asof_by<I, S>(
+        &self,
+        other: &DataFrame,
+        left_on: &str,
+        right_on: &str,
+        left_by: I,
+        right_by: I,
+        strategy: AsofStrategy,
+        tolerance: Option<AnyValue<'static>>,
+    ) -> Result<DataFrame>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self._join_asof_by(
+            other, left_on, right_on, left_by, right_by, strategy, tolerance, None,
+        )
     }
 }
 
