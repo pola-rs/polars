@@ -150,7 +150,7 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     split_array!(df, n, i64)
 }
 
-pub(crate) fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
+pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
     let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
     &vals[raw_offset..raw_offset + slice_len]
 }

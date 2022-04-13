@@ -52,6 +52,7 @@ pub struct UnionOptions {
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
     pub(crate) rolling: Option<RollingGroupOptions>,
+    pub(crate) slice: Option<(i64, usize)>,
 }
 
 #[derive(Clone, Debug)]
