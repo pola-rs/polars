@@ -35,7 +35,7 @@ fmt = ["comfy-table"]
 sort_multiple = []
 # create from row values
 # and include pivot operation
-rows = []
+rows = ["series_from_anyvalue"]
 # dont use this
 private = []
 

@@ -140,9 +140,8 @@ impl DataFrame {
         let mut results = DataFrame::new_no_checks(vec![]);
 
         let mut keys = self.select_series(index)?;
-        let mut keys_df = DataFrame::new_no_checks(keys.clone());
-        let index_agg_groups = keys_df.groupby_stable(index)?.groups;
 
+        let mut final_cols = vec![];
 
         let mut count = 0;
         for column in columns {
@@ -220,81 +219,19 @@ impl DataFrame {
                     Series::new(name, avs)
                 }).collect::<Vec<_>>();
 
-                let mut final_keys = local_keys_gb.keys();
-                final_keys.extend(cols);
-
-                dbg!(final_keys);
-
-
-                todo!();
-
-                let df_cols = vec![];
-                // let mut df_cols = headers.iter()
-                //     .zip(column_agg_groups.idx_ref().iter())
-                //     .zip(index_agg_groups.idx_ref().iter())
-                //     .map(|args| {
-                //         let head_val = args.0.0;
-                //         let (first_index, group_index) = args.0.1;
-                //
-                //
-                //         dbg!(&head_val);
-                //         let mut cols_group_iter = args.1.1.iter();
-                //
-                //         let name = head_val.to_string();
-                //
-                //         let idx = column_agg.iter().map(|av| {
-                //             if av == head_val {
-                //                 Some(*cols_group_iter.next().unwrap())
-                //             } else {
-                //                 None
-                //             }
-                //         }).collect::<IdxCa>();
-                //
-                //         // let idx = (0..index_agg_groups.len()).map(|idx| {
-                //         //     match cols_group.1.get(offset) {
-                //         //         None => None,
-                //         //         Some(value_idx) => {
-                //         //             if *value_idx - total_offset  == idx as IdxSize {
-                //         //                 offset += 1;
-                //         //                 Some(*value_idx)
-                //         //             } else {
-                //         //                 None
-                //         //             }
-                //         //         }
-                //         //     }
-                //         // }).collect_trusted::<IdxCa>();
-                //         // total_offset += (index_group.1.len() - 1) as IdxSize;
-                //         let mut value_column = unsafe { value_agg.take_unchecked(&idx).unwrap() };
-                //         value_column.rename(&name);
-                //         value_column
-                //     }).collect::<Vec<_>>();
-
-
-                // ensure predictable column order
-                // df_cols.sort_unstable_by(|a, b| {
-                //     a.name().partial_cmp(b.name()).unwrap()
-                // });
-
-                dbg!(&df_cols);
-
 
                 let cols = if count == 0 {
-                    count += 1;
-                    // for k in keys_df.get_columns_mut() {
-                    //     *k = k.agg_first(&index_agg_groups)
-                    // }
-                    // let mut keys = keys_df.columns.clone();
-                    // keys.extend(df_cols);
-                    // keys
-                    todo!()
+                    let mut final_cols = local_keys_gb.keys();
+                    final_cols.extend(cols);
+                    final_cols
                 } else {
-                    count += 1;
-                    df_cols
+                    cols
                 };
-                results.get_columns_mut().extend_from_slice(&cols);
+                count += 1;
+                final_cols.extend_from_slice(&cols);
             }
         }
-        Ok(results)
+        Ok(DataFrame::new_no_checks(final_cols))
 
         // let columns_groups = columns.iter().map(|name| {
         //     Ok(self.column(name)?.group_tuples(true, false))
