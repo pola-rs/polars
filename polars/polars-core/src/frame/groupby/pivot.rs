@@ -26,33 +26,6 @@ pub enum PivotAgg {
     Last,
 }
 
-
-/// Finds the intersection between two sorted groups.
-/// Assumes that lhs in front of rhs
-fn group_intersection( l: &[IdxSize], r: &[IdxSize], values: &mut Vec<IdxSize>) {
-    debug_assert!(l[0] >= r[0]);
-    values.clear();
-    let mut iter_rhs = r.iter();
-    let mut latest_rv = iter_rhs.next().unwrap();
-    for lv in l {
-        while let Some(rv) = iter_rhs.next() {
-            if latest_rv == lv {
-                latest_rv = rv;
-                values.push(*lv);
-                break
-            }
-            latest_rv = rv;
-            if rv > lv {
-                break
-            }
-        }
-        if latest_rv == lv {
-            values.push(*lv);
-            break
-        }
-    }
-}
-
 impl DataFrame {
     /// Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
     ///
@@ -142,99 +115,109 @@ impl DataFrame {
         let mut final_cols = vec![];
 
         let mut count = 0;
-        for column in columns {
-            let mut groupby = index.to_vec();
-            groupby.push(column.clone());
+        let out: Result<()> = POOL.install(|| {
+            for column in columns {
+                let mut groupby = index.to_vec();
+                groupby.push(column.clone());
 
-            let groups = self.groupby_stable(groupby)?.groups;
-            let mut local_keys = keys.clone();
+                let groups = self.groupby_stable(groupby)?.groups;
 
-            for k in &mut local_keys {
-                *k = k.agg_first(&groups);
-            }
+                let local_keys = keys.par_iter().map(|k| k.agg_first(&groups)).collect::<Vec<_>>();
 
-            // this are the row locations
-            let local_keys = DataFrame::new_no_checks(local_keys);
-            let local_keys_gb = if stable {
-                local_keys.groupby_stable(index)?
-            } else {
-                local_keys.groupby(index)?
-            };
-            let local_index_groups = &local_keys_gb.groups;
-
-            let column_s = self.column(column)?;
-            let column_agg = column_s.agg_first(&groups);
-
-            let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
-
-            let mut idx = 0 as IdxSize;
-            let col_locations = column_agg.iter().map(|v| {
-                let idx = *col_to_idx.entry(v).or_insert_with(|| {
-                    let old_idx = idx;
-                    idx += 1;
-                    old_idx
-                });
-                idx
-            }).collect::<Vec<_>>();
-
-            for value_col in values {
-                let value_col = self.column(value_col)?;
-
-                use PivotAgg::*;
-                let value_agg = match agg_fn {
-                    Sum => value_col.agg_sum(&groups).unwrap(),
-                    Min => value_col.agg_min(&groups).unwrap(),
-                    Max => value_col.agg_max(&groups).unwrap(),
-                    Last => value_col.agg_last(&groups),
-                    First => value_col.agg_first(&groups),
-                    Mean => value_col.agg_mean(&groups).unwrap(),
-                    Median => value_col.agg_median(&groups).unwrap(),
-                    Count => groups.group_count().into_series(),
+                // this are the row locations
+                let local_keys = DataFrame::new_no_checks(local_keys);
+                let local_keys_gb = if stable {
+                    local_keys.groupby_stable(index)?
+                } else {
+                    local_keys.groupby(index)?
                 };
+                let local_index_groups = &local_keys_gb.groups;
 
-                let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;;
-                let headers = headers.utf8().unwrap();
-                let n_rows = local_index_groups.len();
-                let n_cols = headers.len();
+                let column_s = self.column(column)?;
+                let column_agg = column_s.agg_first(&groups);
+                let column_agg_physical = column_agg.to_physical_repr();
 
-                let mut buf = vec![AnyValue::Null; n_rows * n_cols];
+                let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
-                let mut col_idx_iter = col_locations.iter();
-                let mut value_iter = value_agg.iter();
-                let mut row_idx = 0;
-                for g in local_index_groups.idx_ref().iter() {
-                    for _ in g.1 {
-                        let val = value_iter.next().unwrap();
-                        let col_idx = col_idx_iter.next().unwrap();
-                        buf[row_idx as usize + *col_idx as usize * n_rows] = val;
-                    }
-                    row_idx += 1;
-                }
-                let mut headers_iter = headers.into_iter();
-
-                let mut cols = (0..n_cols).map(|i| {
-                    let offset = i * n_rows;
-                    let avs = &buf[offset..offset + n_rows];
-                    let name = headers_iter.next().unwrap().unwrap_or("null");
-                    Series::new(name, avs)
+                let mut idx = 0 as IdxSize;
+                let col_locations = column_agg_physical.iter().map(|v| {
+                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
+                        let old_idx = idx;
+                        idx += 1;
+                        old_idx
+                    });
+                    idx
                 }).collect::<Vec<_>>();
 
-                if sort_columns {
-                    cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
+                for value_col in values {
+                    let value_col = self.column(value_col)?;
+
+                    use PivotAgg::*;
+                    let value_agg = match agg_fn {
+                        Sum => value_col.agg_sum(&groups).unwrap(),
+                        Min => value_col.agg_min(&groups).unwrap(),
+                        Max => value_col.agg_max(&groups).unwrap(),
+                        Last => value_col.agg_last(&groups),
+                        First => value_col.agg_first(&groups),
+                        Mean => value_col.agg_mean(&groups).unwrap(),
+                        Median => value_col.agg_median(&groups).unwrap(),
+                        Count => groups.group_count().into_series(),
+                    };
+
+                    let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
+                    ;
+                    let headers = headers.utf8().unwrap();
+                    let n_rows = local_index_groups.len();
+                    let n_cols = headers.len();
+
+                    let mut buf = vec![AnyValue::Null; n_rows * n_cols];
+
+                    let mut col_idx_iter = col_locations.iter();
+                    let mut value_iter = value_agg.iter();
+                    let mut row_idx = 0;
+                    for g in local_index_groups.idx_ref().iter() {
+                        for _ in g.1 {
+                            let val = value_iter.next().unwrap();
+                            let col_idx = col_idx_iter.next().unwrap();
+
+                            // Safety:
+                            // in bounds
+                            unsafe {
+                                let idx = row_idx as usize + *col_idx as usize * n_rows;
+                                debug_assert!(idx < buf.len());
+                                *buf.get_unchecked_mut(idx) = val;
+                            }
+                        }
+                        row_idx += 1;
+                    }
+                    let mut headers_iter = headers.par_iter_indexed();
+
+                    let mut cols = (0..n_cols).into_par_iter().zip(headers_iter).map(|(i, opt_name)| {
+                        let offset = i * n_rows;
+                        let avs = &buf[offset..offset + n_rows];
+                        let name = opt_name.unwrap_or("null");
+                        Series::new(name, avs)
+                    }).collect::<Vec<_>>();
+
+                    if sort_columns {
+                        cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
+                    }
+
+
+                    let cols = if count == 0 {
+                        let mut final_cols = local_keys_gb.keys();
+                        final_cols.extend(cols);
+                        final_cols
+                    } else {
+                        cols
+                    };
+                    count += 1;
+                    final_cols.extend_from_slice(&cols);
                 }
-
-
-                let cols = if count == 0 {
-                    let mut final_cols = local_keys_gb.keys();
-                    final_cols.extend(cols);
-                    final_cols
-                } else {
-                    cols
-                };
-                count += 1;
-                final_cols.extend_from_slice(&cols);
             }
-        }
+            Ok(())
+        });
+        let _ = out?;
         Ok(DataFrame::new_no_checks(final_cols))
     }
 }
@@ -344,55 +327,17 @@ fn sort_cols(cols: &mut [Series], offset: usize) {
 // Takes a `DataFrame` that only consists of the column aggregates that are pivoted by
 // the values in `columns`
 fn finish_logical_types(
-    mut out: DataFrame,
-    columns: &Series,
-    values: &Series,
-) -> Result<DataFrame> {
-    // We cast the column headers to another string repr
-    match columns.dtype() {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
-            let piv = columns.categorical().unwrap();
-            let rev_map = piv.get_rev_map().clone();
-            for s in out.columns.iter_mut() {
-                let category = s.name().parse::<u32>().unwrap();
-                let name = rev_map.get(category);
-                s.rename(name);
-            }
-        }
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, _) => {
-            let fun = match tu {
-                TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-                TimeUnit::Microseconds => timestamp_us_to_datetime,
-                TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-            };
-
-            for s in out.columns.iter_mut() {
-                let ts = s.name().parse::<i64>().unwrap();
-                let nd = fun(ts);
-                s.rename(&format!("{}", nd));
-            }
-        }
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => {
-            for s in out.columns.iter_mut() {
-                let days = s.name().parse::<i32>().unwrap();
-                let nd = date32_to_date(days);
-                s.rename(&format!("{}", nd));
-            }
-        }
-        _ => {}
-    }
-
-    let dtype = values.dtype();
+    out: &mut [Series],
+    column: &Series,
+) -> Result<()> {
+    let dtype = column.dtype();
     match dtype {
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => {
-            let piv = columns.categorical().unwrap();
+            let piv = column.categorical().unwrap();
             let rev_map = piv.get_rev_map().clone();
 
-            for s in out.columns.iter_mut() {
+            for s in out {
                 let mut s_ = s.cast(&DataType::Categorical(None)).unwrap();
                 let ca = s_.get_inner_mut().as_mut_categorical();
                 ca.set_rev_map(rev_map.clone(), false);
@@ -400,14 +345,14 @@ fn finish_logical_types(
             }
         }
         DataType::Datetime(_, _) | DataType::Date | DataType::Time => {
-            for s in out.columns.iter_mut() {
+            for s in out {
                 *s = s.cast(dtype).unwrap();
             }
         }
         _ => {}
     }
 
-    Ok(out)
+    Ok(())
 }
 
 impl<'df> Pivot<'df> {
@@ -580,20 +525,5 @@ mod test {
         assert!(out.frame_equal_missing(&expected));
 
         Ok(())
-    }
-
-    #[test]
-    fn test_intersection() {
-        let idx_row = &[5, 6];
-        let idx_col = &[4, 6, 7];
-
-        let mut buf = vec![];
-        group_intersection( idx_row, idx_col, &mut buf);
-        assert_eq!(buf, &[6]);
-
-        let idx_row = &[7, 8];
-        let idx_col = &[4, 6, 7];
-        group_intersection( idx_row, idx_col, &mut buf);
-        assert_eq!(buf, &[7]);
     }
 }

@@ -15,7 +15,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     macro_rules! downcast_and_pack {
         ($casttype:ident, $variant:ident) => {{
             let arr = &*(arr as *const dyn Array as *const $casttype);
-            let v = arr.value(idx);
+            let v = arr.value_unchecked(idx);
             AnyValue::$variant(v)
         }};
     }
@@ -58,6 +58,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
 
             AnyValue::List(s)
+        }
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(rev_map) => {
+            let arr = &*(arr as *const dyn Array as *const UInt32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref())
         }
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
