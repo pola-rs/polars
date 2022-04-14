@@ -1,18 +1,9 @@
 use super::GroupBy;
 use crate::prelude::*;
 use rayon::prelude::*;
-use std::cmp::Ordering;
-use std::time::Instant;
 
-use crate::frame::groupby::{GroupsIndicator, GroupsProxy};
-use crate::POOL;
-#[cfg(feature = "dtype-date")]
-use arrow::temporal_conversions::date32_to_date;
-use arrow::temporal_conversions::timestamp_us_to_datetime;
-#[cfg(feature = "dtype-datetime")]
-use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_ns_to_datetime};
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::frame::row::Row;
+use crate::POOL;
 
 #[derive(Copy, Clone)]
 pub enum PivotAgg {
@@ -38,7 +29,7 @@ impl DataFrame {
         index: I1,
         columns: I2,
         agg_fn: PivotAgg,
-        sort_columns: bool
+        sort_columns: bool,
     ) -> Result<DataFrame>
     where
         I0: IntoIterator<Item = S0>,
@@ -60,7 +51,7 @@ impl DataFrame {
             .into_iter()
             .map(|s| s.as_ref().to_string())
             .collect::<Vec<_>>();
-        self.pivot_impl(&values, &index, &columns,  agg_fn, sort_columns, false)
+        self.pivot_impl(&values, &index, &columns, agg_fn, sort_columns, false)
     }
 
     pub fn pivot_stable<I0, S0, I1, S1, I2, S2>(
@@ -69,7 +60,7 @@ impl DataFrame {
         index: I1,
         columns: I2,
         agg_fn: PivotAgg,
-        sort_columns: bool
+        sort_columns: bool,
     ) -> Result<DataFrame>
     where
         I0: IntoIterator<Item = S0>,
@@ -107,10 +98,9 @@ impl DataFrame {
         // aggregation function
         agg_fn: PivotAgg,
         sort_columns: bool,
-        stable: bool
+        stable: bool,
     ) -> Result<DataFrame> {
-
-        let mut keys = self.select_series(index)?;
+        let keys = self.select_series(index)?;
 
         let mut final_cols = vec![];
 
@@ -122,7 +112,10 @@ impl DataFrame {
 
                 let groups = self.groupby_stable(groupby)?.groups;
 
-                let local_keys = keys.par_iter().map(|k| k.agg_first(&groups)).collect::<Vec<_>>();
+                let local_keys = keys
+                    .par_iter()
+                    .map(|k| k.agg_first(&groups))
+                    .collect::<Vec<_>>();
 
                 // this are the row locations
                 let local_keys = DataFrame::new_no_checks(local_keys);
@@ -140,14 +133,17 @@ impl DataFrame {
                 let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut idx = 0 as IdxSize;
-                let col_locations = column_agg_physical.iter().map(|v| {
-                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
-                        let old_idx = idx;
-                        idx += 1;
-                        old_idx
-                    });
-                    idx
-                }).collect::<Vec<_>>();
+                let col_locations = column_agg_physical
+                    .iter()
+                    .map(|v| {
+                        let idx = *col_to_idx.entry(v).or_insert_with(|| {
+                            let old_idx = idx;
+                            idx += 1;
+                            old_idx
+                        });
+                        idx
+                    })
+                    .collect::<Vec<_>>();
 
                 for value_col in values {
                     let value_col = self.column(value_col)?;
@@ -165,7 +161,6 @@ impl DataFrame {
                     };
 
                     let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;
-                    ;
                     let headers = headers.utf8().unwrap();
                     let n_rows = local_index_groups.len();
                     let n_cols = headers.len();
@@ -173,9 +168,9 @@ impl DataFrame {
                     let mut buf = vec![AnyValue::Null; n_rows * n_cols];
 
                     let mut col_idx_iter = col_locations.iter();
-                    let mut value_iter = value_agg.iter();
-                    let mut row_idx = 0;
-                    for g in local_index_groups.idx_ref().iter() {
+                    let value_agg_phys = value_agg.to_physical_repr();
+                    let mut value_iter = value_agg_phys.iter();
+                    for (row_idx, g) in local_index_groups.idx_ref().iter().enumerate() {
                         for _ in g.1 {
                             let val = value_iter.next().unwrap();
                             let col_idx = col_idx_iter.next().unwrap();
@@ -188,21 +183,25 @@ impl DataFrame {
                                 *buf.get_unchecked_mut(idx) = val;
                             }
                         }
-                        row_idx += 1;
                     }
-                    let mut headers_iter = headers.par_iter_indexed();
+                    let headers_iter = headers.par_iter_indexed();
 
-                    let mut cols = (0..n_cols).into_par_iter().zip(headers_iter).map(|(i, opt_name)| {
-                        let offset = i * n_rows;
-                        let avs = &buf[offset..offset + n_rows];
-                        let name = opt_name.unwrap_or("null");
-                        Series::new(name, avs)
-                    }).collect::<Vec<_>>();
+                    let mut cols = (0..n_cols)
+                        .into_par_iter()
+                        .zip(headers_iter)
+                        .map(|(i, opt_name)| {
+                            let offset = i * n_rows;
+                            let avs = &buf[offset..offset + n_rows];
+                            let name = opt_name.unwrap_or("null");
+                            let mut out = Series::new(name, avs);
+                            finish_logical_type(&mut out, value_agg.dtype());
+                            out
+                        })
+                        .collect::<Vec<_>>();
 
                     if sort_columns {
                         cols.sort_unstable_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
                     }
-
 
                     let cols = if count == 0 {
                         let mut final_cols = local_keys_gb.keys();
@@ -314,45 +313,10 @@ pub struct Pivot<'df> {
     values: Vec<String>,
 }
 
-fn sort_cols(cols: &mut [Series], offset: usize) {
-    (&mut cols[offset..]).sort_unstable_by(|s1, s2| {
-        if s1.name() > s2.name() {
-            Ordering::Greater
-        } else {
-            Ordering::Less
-        }
-    });
-}
-
 // Takes a `DataFrame` that only consists of the column aggregates that are pivoted by
 // the values in `columns`
-fn finish_logical_types(
-    out: &mut [Series],
-    column: &Series,
-) -> Result<()> {
-    let dtype = column.dtype();
-    match dtype {
-        #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(_) => {
-            let piv = column.categorical().unwrap();
-            let rev_map = piv.get_rev_map().clone();
-
-            for s in out {
-                let mut s_ = s.cast(&DataType::Categorical(None)).unwrap();
-                let ca = s_.get_inner_mut().as_mut_categorical();
-                ca.set_rev_map(rev_map.clone(), false);
-                *s = s_
-            }
-        }
-        DataType::Datetime(_, _) | DataType::Date | DataType::Time => {
-            for s in out {
-                *s = s.cast(dtype).unwrap();
-            }
-        }
-        _ => {}
-    }
-
-    Ok(())
+fn finish_logical_type(column: &mut Series, dtype: &DataType) {
+    *column = column.cast(dtype).unwrap();
 }
 
 impl<'df> Pivot<'df> {
@@ -367,7 +331,7 @@ impl<'df> Pivot<'df> {
             .collect::<Vec<_>>();
         self.gb
             .df
-            .pivot_impl(&self.values, &index, &self.columns,  agg, true, false)
+            .pivot_impl(&self.values, &index, &self.columns, agg, true, false)
     }
 
     /// Aggregate the pivot results by taking the count values.
