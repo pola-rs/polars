@@ -39,8 +39,6 @@ use crate::error::{
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
-#[cfg(target_os = "linux")]
-use jemallocator::Jemalloc;
 #[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
@@ -49,6 +47,8 @@ use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+#[cfg(target_os = "linux")]
+use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
