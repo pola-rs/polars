@@ -110,6 +110,9 @@ def numpy_to_pyseries(
 
     if len(values.shape) == 1:
         dtype = values.dtype.type
+        if dtype == np.float16:
+            values = values.astype(np.float32)
+            dtype = values.dtype.type
         constructor = numpy_type_to_constructor(dtype)
         if dtype == np.float32 or dtype == np.float64:
             return constructor(name, values, nan_to_null)
