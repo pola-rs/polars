@@ -1103,8 +1103,8 @@ impl PyDataFrame {
         sort_columns: bool,
     ) -> PyResult<Self> {
         let fun = match maintain_order {
-            true => DataFrame::pivot,
-            false => DataFrame::pivot_stable,
+            true => DataFrame::pivot_stable,
+            false => DataFrame::pivot,
         };
         let df = fun(
             &self.df,

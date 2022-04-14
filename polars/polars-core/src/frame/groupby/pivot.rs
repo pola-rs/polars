@@ -119,10 +119,9 @@ impl DataFrame {
 
                 // this are the row locations
                 let local_keys = DataFrame::new_no_checks(local_keys);
-                let local_keys_gb = if stable {
-                    local_keys.groupby_stable(index)?
-                } else {
-                    local_keys.groupby(index)?
+                let local_keys_gb = local_keys.groupby_stable(index)?;
+                if !stable {
+                    println!("unstable pivot not yet supported, using stable pivot");
                 };
                 let local_index_groups = &local_keys_gb.groups;
 
@@ -371,123 +370,5 @@ impl<'df> Pivot<'df> {
     /// Aggregate the pivot results by taking the last value of all duplicates.
     pub fn last(&self) -> Result<DataFrame> {
         self.execute(PivotAgg::Last)
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    #[test]
-    fn test_pivot_old() {
-        let s0 = Series::new("foo", ["A", "A", "B", "B", "C"].as_ref());
-        let s1 = Series::new("N", [1, 2, 2, 4, 2].as_ref());
-        let s2 = Series::new("bar", ["k", "l", "m", "m", "l"].as_ref());
-        let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
-
-        let pvt = df
-            .groupby(["foo"])
-            .unwrap()
-            .pivot(["bar"], ["N"])
-            .sum()
-            .unwrap();
-        assert_eq!(pvt.get_column_names(), &["foo", "k", "l", "m"]);
-        assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
-            &[None, None, Some(6)]
-        );
-        let pvt = df
-            .groupby(["foo"])
-            .unwrap()
-            .pivot(["bar"], ["N"])
-            .min()
-            .unwrap();
-        assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
-            &[None, None, Some(2)]
-        );
-        let pvt = df
-            .groupby(["foo"])
-            .unwrap()
-            .pivot(["bar"], ["N"])
-            .max()
-            .unwrap();
-        assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().i32().unwrap().sort(false)),
-            &[None, None, Some(4)]
-        );
-        let pvt = df
-            .groupby(["foo"])
-            .unwrap()
-            .pivot(["bar"], ["N"])
-            .mean()
-            .unwrap();
-        assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().f64().unwrap().sort(false)),
-            &[None, None, Some(3.0)]
-        );
-        let pvt = df
-            .groupby(["foo"])
-            .unwrap()
-            .pivot(["bar"], ["N"])
-            .count()
-            .unwrap();
-        assert_eq!(
-            Vec::from(&pvt.column("m").unwrap().u32().unwrap().sort(false)),
-            &[None, None, Some(2)]
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "dtype-categorical")]
-    fn test_pivot_categorical() -> Result<()> {
-        let mut df = df![
-            "A" => [1, 1, 1, 1, 1, 1, 1, 1],
-            "B" => [8, 2, 3, 6, 3, 6, 2, 2],
-            "C" => ["a", "b", "c", "a", "b", "c", "a", "b"]
-        ]?;
-        df.try_apply("C", |s| s.cast(&DataType::Categorical(None)))?;
-
-        let out = df.groupby(["B"])?.pivot(["C"], ["A"]).count()?;
-        assert_eq!(out.get_column_names(), &["B", "a", "b", "c"]);
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_pivot_new() -> Result<()> {
-        let df = df!["A"=> ["foo", "foo", "foo", "foo", "foo",
-            "bar", "bar", "bar", "bar"],
-            "B"=> ["one", "one", "one", "two", "two",
-            "one", "one", "two", "two"],
-            "C"=> ["small", "large", "large", "small",
-            "small", "large", "small", "small", "large"],
-            "breaky"=> ["jam", "egg", "egg", "egg",
-             "jam", "jam", "potato", "jam", "jam"],
-            "D"=> [1, 2, 2, 3, 3, 4, 5, 6, 7],
-            "E"=> [2, 4, 5, 5, 6, 6, 8, 9, 9]
-        ]?;
-
-        let out = (df.pivot_stable(["D"], ["A", "B"], ["C"], PivotAgg::Sum, true))?;
-        let expected = df![
-            "A" => ["foo", "foo", "bar", "bar"],
-            "B" => ["one", "two", "one", "two"],
-            "large" => [Some(4), None, Some(4), Some(7)],
-            "small" => [1, 6, 5, 6],
-        ]?;
-        assert!(out.frame_equal_missing(&expected));
-
-        let out = df.pivot_stable(["D"], ["A", "B"], ["C", "breaky"], PivotAgg::Sum, true)?;
-        let expected = df![
-            "A" => ["foo", "foo", "bar", "bar"],
-            "B" => ["one", "two", "one", "two"],
-            "large" => [Some(4), None, Some(4), Some(7)],
-            "small" => [1, 6, 5, 6],
-            "egg" => [Some(4), Some(3), None, None],
-            "jam" => [1, 3, 4, 13],
-            "potato" => [None, None, Some(5), None]
-        ]?;
-        assert!(out.frame_equal_missing(&expected));
-
-        Ok(())
     }
 }

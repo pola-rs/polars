@@ -3957,7 +3957,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index: Union[List[str], str],
         columns: Union[List[str], str],
         aggregate_fn: str = "first",
-        maintain_order: bool = False,
+        maintain_order: bool = True,
         sort_columns: bool = False,
     ) -> DF:
         """
