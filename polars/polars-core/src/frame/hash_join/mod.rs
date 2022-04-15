@@ -7,6 +7,10 @@ use polars_arrow::utils::CustomIterTools;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
+
+#[cfg(feature = "semi_anti_join")]
+use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
+
 use crate::prelude::*;
 use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
@@ -73,13 +77,17 @@ pub enum JoinType {
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
 }
 
-pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
+pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<IdxSize>, H>],
+    hash_tables: &[Item],
     len: u64,
-) -> &HashMap<T, Vec<IdxSize>, H> {
+) -> &Item {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -307,6 +315,10 @@ impl DataFrame {
                 JoinType::Outer => {
                     self.outer_join_from_series(other, s_left, s_right, suffix, slice)
                 }
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Anti => self.semi_anti_join_from_series(s_left, s_right, slice, true),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi => self.semi_anti_join_from_series(s_left, s_right, slice, false),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
                     let left_on = selected_left[0].name();
@@ -457,6 +469,20 @@ impl DataFrame {
             JoinType::AsOf(_) => Err(PolarsError::ComputeError(
                 "asof join not supported for join on multiple keys".into(),
             )),
+            #[cfg(feature = "semi_anti_join")]
+            JoinType::Anti | JoinType::Semi => {
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
+
+                let idx = if matches!(how, JoinType::Anti) {
+                    left_anti_multiple_keys(&left, &right)
+                } else {
+                    left_semi_multiple_keys(&left, &right)
+                };
+                // Safety:
+                // indices are in bounds
+                Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
+            }
             JoinType::Cross => {
                 unreachable!()
             }
@@ -636,6 +662,37 @@ impl DataFrame {
             },
         );
         self.finish_join(df_left, df_right, suffix)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    /// # Safety:
+    /// `idx` must be in bounds
+    unsafe fn finish_anti_semi_join(
+        &self,
+        mut idx: &[IdxSize],
+        slice: Option<(i64, usize)>,
+    ) -> DataFrame {
+        if let Some((offset, len)) = slice {
+            idx = slice_slice(idx, offset, len);
+        }
+        self.take_unchecked_slice(idx)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    pub(crate) fn semi_anti_join_from_series(
+        &self,
+        s_left: &Series,
+        s_right: &Series,
+        slice: Option<(i64, usize)>,
+        anti: bool,
+    ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
+
+        let idx = s_left.hash_join_semi_anti(s_right, anti);
+        // Safety:
+        // indices are in bounds
+        Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
     }
 
     /// Perform an outer join on two DataFrames

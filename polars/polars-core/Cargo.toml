@@ -78,6 +78,7 @@ product = []
 unique_counts = []
 log = []
 partition_by = []
+semi_anti_join = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 

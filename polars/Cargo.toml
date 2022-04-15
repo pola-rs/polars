@@ -105,6 +105,7 @@ product = ["polars-core/product"]
 unique_counts = ["polars-core/unique_counts", "polars-lazy/unique_counts"]
 log = ["polars-core/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
+semi_anti_join = ["polars-core/semi_anti_join"]
 
 series_from_anyvalue = ["polars-core/series_from_anyvalue"]
 

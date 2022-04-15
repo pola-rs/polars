@@ -2944,7 +2944,7 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
-    #[cfg(feature = "partition_by")]
+    #[cfg(any(feature = "partition_by", feature = "semi_anti_join"))]
     pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
         self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
     }

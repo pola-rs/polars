@@ -1080,6 +1080,8 @@ class LazyFrame(Generic[DF]):
                 "outer"
                 "asof",
                 "cross"
+                "semi"
+                "anti"
         suffix
             Suffix to append to columns with a duplicate name.
         allow_parallel

@@ -1,7 +1,9 @@
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
+use crate::frame::hash_join::single_keys::on_match_left_join_extend;
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
+use crate::prelude::hash_join::single_keys::LeftJoinTuples;
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
@@ -247,10 +249,7 @@ pub fn private_left_join_multiple_keys(
     left_join_multiple_keys(&a, &b)
 }
 
-pub(crate) fn left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
-) -> Vec<(IdxSize, Option<IdxSize>)> {
+pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJoinTuples> {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));
@@ -271,11 +270,11 @@ pub(crate) fn left_join_multiple_keys(
 
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    POOL.install(|| {
+    POOL.install(move || {
         probe_hashes
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe_hashes, offset)| {
+            .map(move |(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let mut results =
@@ -300,7 +299,7 @@ pub(crate) fn left_join_multiple_keys(
                         match entry {
                             // left and right matches
                             Some((_, indexes_b)) => {
-                                results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+                                on_match_left_join_extend(&mut results, indexes_b, idx_a);
                             }
                             // only left values, right = null
                             None => results.push((idx_a, None)),
@@ -314,6 +313,137 @@ pub(crate) fn left_join_multiple_keys(
             .flatten()
             .collect()
     })
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(crate) fn create_build_table_semi_anti(
+    hashes: &[UInt64Chunked],
+    keys: &DataFrame,
+) -> Vec<HashMap<IdxHash, (), IdBuildHasher>> {
+    let n_partitions = set_partition_size();
+
+    // We will create a hashtable in every thread.
+    // We use the hash to partition the keys to the matching hashtable.
+    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
+    POOL.install(|| {
+        (0..n_partitions).into_par_iter().map(|part_no| {
+            let part_no = part_no as u64;
+            let mut hash_tbl: HashMap<IdxHash, (), IdBuildHasher> =
+                HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
+
+            let n_partitions = n_partitions as u64;
+            let mut offset = 0;
+            for hashes in hashes {
+                for hashes in hashes.data_views() {
+                    let len = hashes.len();
+                    let mut idx = 0;
+                    hashes.iter().for_each(|h| {
+                        // partition hashes by thread no.
+                        // So only a part of the hashes go to this hashmap
+                        if this_partition(*h, part_no, n_partitions) {
+                            let idx = idx + offset;
+                            populate_multiple_key_hashmap(
+                                &mut hash_tbl,
+                                idx,
+                                *h,
+                                keys,
+                                || (),
+                                |_| (),
+                            )
+                        }
+                        idx += 1;
+                    });
+
+                    offset += len as IdxSize;
+                }
+            }
+            hash_tbl
+        })
+    })
+    .collect()
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(crate) fn semi_anti_join_multiple_keys_impl<'a>(
+    a: &'a DataFrame,
+    b: &'a DataFrame,
+) -> impl ParallelIterator<Item = (IdxSize, bool)> + 'a {
+    // we should not join on logical types
+    debug_assert!(!a.iter().any(|s| s.is_logical()));
+    debug_assert!(!b.iter().any(|s| s.is_logical()));
+
+    let n_threads = POOL.current_num_threads();
+    let dfs_a = split_df(a, n_threads).unwrap();
+    let dfs_b = split_df(b, n_threads).unwrap();
+
+    let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
+    let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
+
+    let hash_tbls = create_build_table_semi_anti(&build_hashes, b);
+    // early drop to reduce memory pressure
+    drop(build_hashes);
+
+    let n_tables = hash_tbls.len() as u64;
+    let offsets = get_offsets(&probe_hashes);
+
+    // next we probe the other relation
+    // code duplication is because we want to only do the swap check once
+    POOL.install(move || {
+        probe_hashes
+            .into_par_iter()
+            .zip(offsets)
+            .map(move |(probe_hashes, offset)| {
+                // local reference
+                let hash_tbls = &hash_tbls;
+                let mut results =
+                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+                let local_offset = offset;
+
+                let mut idx_a = local_offset as IdxSize;
+                for probe_hashes in probe_hashes.data_views() {
+                    for &h in probe_hashes {
+                        // probe table that contains the hashed value
+                        let current_probe_table = unsafe {
+                            get_hash_tbl_threaded_join_partitioned(h, hash_tbls, n_tables)
+                        };
+
+                        let entry = current_probe_table.raw_entry().from_hash(h, |idx_hash| {
+                            let idx_b = idx_hash.idx;
+                            // Safety:
+                            // indices in a join operation are always in bounds.
+                            unsafe { compare_df_rows2(a, b, idx_a as usize, idx_b as usize) }
+                        });
+
+                        match entry {
+                            // left and right matches
+                            Some((_, _)) => results.push((idx_a, true)),
+                            // only left values, right = null
+                            None => results.push((idx_a, false)),
+                        }
+                        idx_a += 1;
+                    }
+                }
+
+                results
+            })
+            .flatten()
+    })
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(super) fn left_anti_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+    semi_anti_join_multiple_keys_impl(a, b)
+        .filter(|tpls| !tpls.1)
+        .map(|tpls| tpls.0)
+        .collect()
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(super) fn left_semi_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+    semi_anti_join_multiple_keys_impl(a, b)
+        .filter(|tpls| tpls.1)
+        .map(|tpls| tpls.0)
+        .collect()
 }
 
 /// Probe the build table and add tuples to the results (inner join)
