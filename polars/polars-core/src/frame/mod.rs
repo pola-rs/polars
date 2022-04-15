@@ -2944,6 +2944,48 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
+    #[cfg(feature = "partition_by")]
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
+        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
+    }
+
+    #[cfg(feature = "partition_by")]
+    fn partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
+        let groups = if stable {
+            self.groupby_stable(cols)?.groups
+        } else {
+            self.groupby(cols)?.groups
+        };
+
+        Ok(POOL.install(|| {
+            groups
+                .idx_ref()
+                .into_par_iter()
+                .map(|(_, group)| {
+                    // groups are in bounds
+                    unsafe { self.take_unchecked_slice(group) }
+                })
+                .collect()
+        }))
+    }
+
+    /// Split into multiple DataFrames partitioned by groups
+    #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
+    pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+        let cols = cols.into_vec();
+        self.partition_by_impl(&cols, false)
+    }
+
+    /// Split into multiple DataFrames partitioned by groups
+    /// Order of the groups are maintained.
+    #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
+    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+        let cols = cols.into_vec();
+        self.partition_by_impl(&cols, true)
+    }
+
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
     #[cfg(feature = "dtype-struct")]

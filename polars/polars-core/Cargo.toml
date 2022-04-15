@@ -77,6 +77,7 @@ dataframe_arithmetic = []
 product = []
 unique_counts = []
 log = []
+partition_by = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 

@@ -1118,6 +1118,18 @@ impl PyDataFrame {
         Ok(PyDataFrame::new(df))
     }
 
+    pub fn partition_by(&self, groups: Vec<String>, stable: bool) -> PyResult<Vec<Self>> {
+        let out = if stable {
+            self.df.partition_by_stable(groups)
+        } else {
+            self.df.partition_by(groups)
+        }
+        .map_err(PyPolarsErr::from)?;
+        // Safety:
+        // Repr mem layout
+        Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
+    }
+
     pub fn shift(&self, periods: i64) -> Self {
         self.df.shift(periods).into()
     }

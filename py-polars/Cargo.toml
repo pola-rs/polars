@@ -97,6 +97,7 @@ features = [
   "unique_counts",
   "log",
   "serde-lazy",
+  "partition_by",
 ]
 
 # [patch.crates-io]
