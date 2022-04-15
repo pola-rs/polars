@@ -1,7 +1,5 @@
 use super::*;
-use crate::frame::hash_join::single_keys::{
-    hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_outer,
-};
+use crate::frame::hash_join::single_keys::{hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_left_anti, hash_join_tuples_left_semi, hash_join_tuples_outer};
 
 impl Series {
     #[cfg(feature = "private")]
@@ -110,6 +108,15 @@ impl HashJoin<Float64Type> for Float64Chunked {
     }
 }
 
+fn splitted_to_slice<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
+where T: PolarsNumericType
+{
+    splitted
+    .iter()
+    .map(|ca| ca.cont_slice().unwrap())
+    .collect()
+}
+
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
@@ -130,10 +137,7 @@ where
         right.chunks.len(),
     ) {
         (true, true, 1, 1) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.cont_slice().unwrap())
-                .collect::<Vec<_>>();
+            let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_b
                 .iter()
                 .map(|ca| ca.cont_slice().unwrap())
@@ -184,6 +188,7 @@ where
         }
     }
 }
+
 
 fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
@@ -426,6 +431,113 @@ impl HashJoin<Utf8Type> for Utf8Chunked {
                     .map(|ca| ca.into_iter())
                     .collect::<Vec<_>>();
                 hash_join_tuples_outer(iters_a, iters_b, swap)
+            }
+        }
+    }
+}
+
+fn num_group_join_anti_semi<T>(
+    left: &ChunkedArray<T>,
+    right: &ChunkedArray<T>,
+    anti: bool
+) -> Vec<IdxSize>
+    where
+        T: PolarsIntegerType,
+        T::Native: Hash + Eq + Send + AsU64,
+        Option<T::Native>: AsU64,
+{
+    let n_threads = POOL.current_num_threads();
+    let splitted_a = split_ca(left, n_threads).unwrap();
+    let splitted_b = split_ca(right, n_threads).unwrap();
+    match (
+        left.null_count(),
+        right.null_count(),
+        left.chunks.len(),
+        right.chunks.len(),
+    ) {
+        (0, 0, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.cont_slice().unwrap())
+                .collect::<Vec<_>>();
+            if anti {
+                hash_join_tuples_left_anti(keys_a, keys_b)
+            } else {
+                hash_join_tuples_left_semi(keys_a, keys_b)
+            }
+        }
+        (0, 0, _, _) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
+                .collect::<Vec<_>>();
+            if anti {
+                hash_join_tuples_left_anti(keys_a, keys_b)
+            } else {
+                hash_join_tuples_left_semi(keys_a, keys_b)
+            }
+        }
+        (_, _, 1, 1) => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| {
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| {
+                    // we know that we only iterate over length == self.len()
+                    unsafe {
+                        ca.downcast_iter()
+                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
+                            .trust_my_length(ca.len())
+                            .collect_trusted::<Vec<_>>()
+                    }
+                })
+                .collect::<Vec<_>>();
+            if anti {
+                hash_join_tuples_left_anti(keys_a, keys_b)
+            } else {
+                hash_join_tuples_left_semi(keys_a, keys_b)
+            }
+        }
+        _ => {
+            let keys_a = splitted_a
+                .iter()
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.as_u64())
+                        .collect_trusted::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let keys_b = splitted_b
+                .iter()
+                .map(|ca| {
+                    ca.into_iter()
+                        .map(|v| v.as_u64())
+                        .collect_trusted::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            if anti {
+                hash_join_tuples_left_anti(keys_a, keys_b)
+            } else {
+                hash_join_tuples_left_semi(keys_a, keys_b)
             }
         }
     }

@@ -80,6 +80,23 @@ where
     .collect()
 }
 
+
+// we determine the offset so that we later know which index to store in the join tuples
+fn probe_to_offsets<T, IntoSlice>(probe: &[IntoSlice]) -> Vec<usize>
+    where IntoSlice: AsRef<[T]> + Send + Sync,
+          T: Send + Hash + Eq + Sync + Copy + AsU64,
+{
+    probe
+        .iter()
+        .map(|ph| ph.as_ref().len())
+        .scan(0, |state, val| {
+            let out = *state;
+            *state += val;
+            Some(out)
+        })
+        .collect()
+}
+
 pub(super) fn hash_join_tuples_inner<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
@@ -97,15 +114,7 @@ where
 
     let n_tables = hash_tbls.len() as u64;
     debug_assert!(n_tables.is_power_of_two());
-    let offsets = probe
-        .iter()
-        .map(|ph| ph.as_ref().len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect::<Vec<_>>();
+    let offsets = probe_to_offsets(&probe);
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
     POOL.install(|| {
@@ -147,44 +156,45 @@ where
     })
 }
 
-pub(super) fn hash_join_tuples_left<T, IntoSlice>(
+
+type LeftJoinTuples = (IdxSize, Option<IdxSize>);
+pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
-) -> Vec<(IdxSize, Option<IdxSize>)>
-where
-    IntoSlice: AsRef<[T]> + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    // Function that determines what we insert on a matching key
+    // This differs per join type:
+    // - for left join we extend with all matches
+    // - for semi and anti join we extend only with one match
+    on_match: OnMatchFn
+
+) -> impl ParallelIterator<Item=LeftJoinTuples>
+    where
+        IntoSlice: AsRef<[T]> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64,
+        OnMatchFn: Fn(&mut Vec<LeftJoinTuples>, &[IdxSize], IdxSize) + Sync + Send
 {
     // first we hash one relation
     let hash_tbls = create_probe_table(build);
 
     // we determine the offset so that we later know which index to store in the join tuples
-    let offsets = probe
-        .iter()
-        .map(|ph| ph.as_ref().len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect::<Vec<_>>();
+    let offsets = probe_to_offsets(&probe);
 
     let n_tables = hash_tbls.len() as u64;
     debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
-    POOL.install(|| {
+    POOL.install( move || {
         probe
             .into_par_iter()
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(|(probe, offset)| {
+            .map(move |(probe, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let probe = probe.as_ref();
 
-                // assume the result tuples equal lenght of the no. of hashes processed by this thread.
+                // assume the result tuples equal length of the no. of hashes processed by this thread.
                 let mut results = Vec::with_capacity(probe.len());
 
                 probe.iter().enumerate().for_each(|(idx_a, k)| {
@@ -200,7 +210,7 @@ where
                     match value {
                         // left and right matches
                         Some(indexes_b) => {
-                            results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+                            on_match(&mut results, &indexes_b, idx_a);
                         }
                         // only left values, right = null
                         None => results.push((idx_a, None)),
@@ -209,8 +219,56 @@ where
                 results
             })
             .flatten()
-            .collect()
     })
+}
+
+pub(super) fn hash_join_tuples_left<T, IntoSlice>(
+    probe: Vec<IntoSlice>,
+    build: Vec<IntoSlice>,
+) -> Vec<LeftJoinTuples>
+where
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+{
+    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
+        results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+    }).collect()
+}
+
+pub(super) fn hash_join_tuples_left_anti<T, IntoSlice>(
+    probe: Vec<IntoSlice>,
+    build: Vec<IntoSlice>,
+) -> Vec<IdxSize>
+    where
+        IntoSlice: AsRef<[T]> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64,
+{
+    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
+        // simply add a Some(0) to indicate that the row exists on the right.
+        // next we filter out all rhs Some values
+        results.push((idx_a, Some(0 as IdxSize)));
+    })
+        .filter(|tpls| tpls.1.is_none())
+        .map(|tpls| tpls.0)
+        .collect()
+}
+
+pub(super) fn hash_join_tuples_left_semi<T, IntoSlice>(
+    probe: Vec<IntoSlice>,
+    build: Vec<IntoSlice>,
+) -> Vec<IdxSize>
+    where
+        IntoSlice: AsRef<[T]> + Send + Sync,
+        T: Send + Hash + Eq + Sync + Copy + AsU64,
+{
+    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
+        // simply add a Some(0) to indicate that the row exists on the right.
+        // next we filter out all rhs None values
+        results.push((idx_a, Some(0 as IdxSize)));
+    })
+        .filter(|tpls| tpls.1.is_some())
+        .map(|tpls| tpls.0)
+        .collect()
 }
 
 /// Probe the build table and add tuples to the results (inner join)

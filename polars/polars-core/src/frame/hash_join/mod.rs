@@ -73,6 +73,8 @@ pub enum JoinType {
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
+    Semi,
+    Anti
 }
 
 pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
@@ -307,6 +309,12 @@ impl DataFrame {
                 JoinType::Outer => {
                     self.outer_join_from_series(other, s_left, s_right, suffix, slice)
                 }
+                JoinType::Anti => {
+                    self.anti_join_from_series(other, s_left, s_right, slice)
+                }
+                JoinType::Semi => {
+                    todo!()
+                }
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
                     let left_on = selected_left[0].name();
@@ -457,6 +465,9 @@ impl DataFrame {
             JoinType::AsOf(_) => Err(PolarsError::ComputeError(
                 "asof join not supported for join on multiple keys".into(),
             )),
+            JoinType::Anti | JoinType::Semi => {
+                panic!("not yet supported on multiple keys")
+            }
             JoinType::Cross => {
                 unreachable!()
             }
@@ -636,6 +647,38 @@ impl DataFrame {
             },
         );
         self.finish_join(df_left, df_right, suffix)
+    }
+
+
+    pub(crate) fn anti_join_from_series(
+        &self,
+        other: &DataFrame,
+        s_left: &Series,
+        s_right: &Series,
+        slice: Option<(i64, usize)>,
+    ) -> Result<DataFrame> {
+        todo!()
+        // #[cfg(feature = "dtype-categorical")]
+        // check_categorical_src(s_left.dtype(), s_right.dtype())?;
+        //
+        // let opt_join_tuples = s_left.hash_join_left(s_right);
+        // let mut opt_join_tuples = &*opt_join_tuples;
+        //
+        // if let Some((offset, len)) = slice {
+        //     opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+        // }
+        //
+        // let (df_left, df_right) = POOL.join(
+        //     || self.create_left_df(opt_join_tuples, true),
+        //     || unsafe {
+        //         other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+        //             opt_join_tuples
+        //                 .iter()
+        //                 .map(|(_left, right)| right.map(|i| i as usize)),
+        //         )
+        //     },
+        // );
+        // self.finish_join(df_left, df_right, suffix)
     }
 
     /// Perform an outer join on two DataFrames
