@@ -7,6 +7,10 @@ use polars_arrow::utils::CustomIterTools;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
+
+#[cfg(feature = "semi_anti_join")]
+use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
+
 use crate::prelude::*;
 use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
@@ -467,7 +471,17 @@ impl DataFrame {
             )),
             #[cfg(feature = "semi_anti_join")]
             JoinType::Anti | JoinType::Semi => {
-                panic!("not yet supported on multiple keys")
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
+
+                let idx = if matches!(how, JoinType::Anti) {
+                    left_anti_multiple_keys(&left, &right)
+                } else {
+                    left_semi_multiple_keys(&left, &right)
+                };
+                // Safety:
+                // indices are in bounds
+                Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
             }
             JoinType::Cross => {
                 unreachable!()
@@ -651,6 +665,20 @@ impl DataFrame {
     }
 
     #[cfg(feature = "semi_anti_join")]
+    /// # Safety:
+    /// `idx` must be in bounds
+    unsafe fn finish_anti_semi_join(
+        &self,
+        mut idx: &[IdxSize],
+        slice: Option<(i64, usize)>,
+    ) -> DataFrame {
+        if let Some((offset, len)) = slice {
+            idx = slice_slice(idx, offset, len);
+        }
+        self.take_unchecked_slice(idx)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
     pub(crate) fn semi_anti_join_from_series(
         &self,
         s_left: &Series,
@@ -662,12 +690,9 @@ impl DataFrame {
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let idx = s_left.hash_join_semi_anti(s_right, anti);
-        let mut idx = &*idx;
-
-        if let Some((offset, len)) = slice {
-            idx = slice_slice(idx, offset, len);
-        }
-        Ok(unsafe { self.take_unchecked_slice(idx) })
+        // Safety:
+        // indices are in bounds
+        Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
     }
 
     /// Perform an outer join on two DataFrames

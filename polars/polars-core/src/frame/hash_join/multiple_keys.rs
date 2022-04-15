@@ -1,7 +1,9 @@
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
+use crate::frame::hash_join::single_keys::on_match_left_join_extend;
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
+use crate::prelude::hash_join::single_keys::LeftJoinTuples;
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
@@ -247,10 +249,18 @@ pub fn private_left_join_multiple_keys(
     left_join_multiple_keys(&a, &b)
 }
 
-pub(crate) fn left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
-) -> Vec<(IdxSize, Option<IdxSize>)> {
+pub(crate) fn left_join_multiple_keys_impl<'a, OnMatchFn: 'a>(
+    a: &'a DataFrame,
+    b: &'a DataFrame,
+    // Function that determines what we insert on a matching key
+    // This differs per join type:
+    // - for left join we extend with all matches
+    // - for semi and anti join we extend only with one match
+    on_match: OnMatchFn,
+) -> impl ParallelIterator<Item = LeftJoinTuples> + 'a
+where
+    OnMatchFn: Fn(&mut Vec<LeftJoinTuples>, &[IdxSize], IdxSize) + Sync + Send,
+{
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));
@@ -271,11 +281,11 @@ pub(crate) fn left_join_multiple_keys(
 
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    POOL.install(|| {
+    POOL.install(move || {
         probe_hashes
             .into_par_iter()
             .zip(offsets)
-            .map(|(probe_hashes, offset)| {
+            .map(move |(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let mut results =
@@ -300,7 +310,7 @@ pub(crate) fn left_join_multiple_keys(
                         match entry {
                             // left and right matches
                             Some((_, indexes_b)) => {
-                                results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+                                on_match(&mut results, indexes_b, idx_a);
                             }
                             // only left values, right = null
                             None => results.push((idx_a, None)),
@@ -312,8 +322,38 @@ pub(crate) fn left_join_multiple_keys(
                 results
             })
             .flatten()
-            .collect()
     })
+}
+
+pub(crate) fn left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+) -> Vec<(IdxSize, Option<IdxSize>)> {
+    left_join_multiple_keys_impl(a, b, on_match_left_join_extend).collect()
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(super) fn left_anti_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+    left_join_multiple_keys_impl(a, b, |results, _indexes_b, idx_a| {
+        // simply add a Some(0) to indicate that the row exists on the right.
+        // next we filter out all rhs Some values
+        results.push((idx_a, Some(0 as IdxSize)));
+    })
+    .filter(|tpls| tpls.1.is_none())
+    .map(|tpls| tpls.0)
+    .collect()
+}
+
+#[cfg(feature = "semi_anti_join")]
+pub(super) fn left_semi_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<IdxSize> {
+    left_join_multiple_keys_impl(a, b, |results, _indexes_b, idx_a| {
+        // simply add a Some(0) to indicate that the row exists on the right.
+        // next we filter out all rhs None values
+        results.push((idx_a, Some(0 as IdxSize)));
+    })
+    .filter(|tpls| tpls.1.is_some())
+    .map(|tpls| tpls.0)
+    .collect()
 }
 
 /// Probe the build table and add tuples to the results (inner join)

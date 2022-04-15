@@ -156,7 +156,7 @@ where
     })
 }
 
-type LeftJoinTuples = (IdxSize, Option<IdxSize>);
+pub(super) type LeftJoinTuples = (IdxSize, Option<IdxSize>);
 pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
@@ -220,6 +220,15 @@ where
     })
 }
 
+#[inline]
+pub(super) fn on_match_left_join_extend(
+    results: &mut Vec<LeftJoinTuples>,
+    indexes_b: &[IdxSize],
+    idx_a: IdxSize,
+) {
+    results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
+}
+
 pub(super) fn hash_join_tuples_left<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
@@ -228,10 +237,7 @@ where
     IntoSlice: AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
-    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
-        results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
-    })
-    .collect()
+    hash_join_tuples_left_impl(probe, build, on_match_left_join_extend).collect()
 }
 
 #[cfg(feature = "semi_anti_join")]
