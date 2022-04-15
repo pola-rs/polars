@@ -80,11 +80,11 @@ where
     .collect()
 }
 
-
 // we determine the offset so that we later know which index to store in the join tuples
 fn probe_to_offsets<T, IntoSlice>(probe: &[IntoSlice]) -> Vec<usize>
-    where IntoSlice: AsRef<[T]> + Send + Sync,
-          T: Send + Hash + Eq + Sync + Copy + AsU64,
+where
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     probe
         .iter()
@@ -156,7 +156,6 @@ where
     })
 }
 
-
 type LeftJoinTuples = (IdxSize, Option<IdxSize>);
 pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
     probe: Vec<IntoSlice>,
@@ -165,13 +164,12 @@ pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
     // This differs per join type:
     // - for left join we extend with all matches
     // - for semi and anti join we extend only with one match
-    on_match: OnMatchFn
-
-) -> impl ParallelIterator<Item=LeftJoinTuples>
-    where
-        IntoSlice: AsRef<[T]> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
-        OnMatchFn: Fn(&mut Vec<LeftJoinTuples>, &[IdxSize], IdxSize) + Sync + Send
+    on_match: OnMatchFn,
+) -> impl ParallelIterator<Item = LeftJoinTuples>
+where
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
+    OnMatchFn: Fn(&mut Vec<LeftJoinTuples>, &[IdxSize], IdxSize) + Sync + Send,
 {
     // first we hash one relation
     let hash_tbls = create_probe_table(build);
@@ -183,7 +181,7 @@ pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
     debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
-    POOL.install( move || {
+    POOL.install(move || {
         probe
             .into_par_iter()
             .zip(offsets)
@@ -210,7 +208,7 @@ pub(super) fn hash_join_tuples_left_impl<T, IntoSlice, OnMatchFn>(
                     match value {
                         // left and right matches
                         Some(indexes_b) => {
-                            on_match(&mut results, &indexes_b, idx_a);
+                            on_match(&mut results, indexes_b, idx_a);
                         }
                         // only left values, right = null
                         None => results.push((idx_a, None)),
@@ -232,43 +230,46 @@ where
 {
     hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
         results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
-    }).collect()
+    })
+    .collect()
 }
 
+#[cfg(feature = "semi_anti_join")]
 pub(super) fn hash_join_tuples_left_anti<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
 ) -> Vec<IdxSize>
-    where
-        IntoSlice: AsRef<[T]> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
+where
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
-    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
+    hash_join_tuples_left_impl(probe, build, |results, _indexes_b, idx_a| {
         // simply add a Some(0) to indicate that the row exists on the right.
         // next we filter out all rhs Some values
         results.push((idx_a, Some(0 as IdxSize)));
     })
-        .filter(|tpls| tpls.1.is_none())
-        .map(|tpls| tpls.0)
-        .collect()
+    .filter(|tpls| tpls.1.is_none())
+    .map(|tpls| tpls.0)
+    .collect()
 }
 
+#[cfg(feature = "semi_anti_join")]
 pub(super) fn hash_join_tuples_left_semi<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
 ) -> Vec<IdxSize>
-    where
-        IntoSlice: AsRef<[T]> + Send + Sync,
-        T: Send + Hash + Eq + Sync + Copy + AsU64,
+where
+    IntoSlice: AsRef<[T]> + Send + Sync,
+    T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
-    hash_join_tuples_left_impl(probe, build, |results, indexes_b, idx_a| {
+    hash_join_tuples_left_impl(probe, build, |results, _indexes_b, idx_a| {
         // simply add a Some(0) to indicate that the row exists on the right.
         // next we filter out all rhs None values
         results.push((idx_a, Some(0 as IdxSize)));
     })
-        .filter(|tpls| tpls.1.is_some())
-        .map(|tpls| tpls.0)
-        .collect()
+    .filter(|tpls| tpls.1.is_some())
+    .map(|tpls| tpls.0)
+    .collect()
 }
 
 /// Probe the build table and add tuples to the results (inner join)

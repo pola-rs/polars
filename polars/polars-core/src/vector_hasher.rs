@@ -223,7 +223,6 @@ where
     }
 }
 
-
 // Used to to get a u64 from the hashing keys
 // We need to modify the hashing algorithm to use the hash for this and only compute the hash once.
 pub(crate) trait AsU64 {

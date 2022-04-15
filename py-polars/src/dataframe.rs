@@ -720,6 +720,8 @@ impl PyDataFrame {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
+            "semi" => JoinType::Semi,
+            "anti" => JoinType::Anti,
             "asof" => JoinType::AsOf(AsOfOptions {
                 strategy: AsofStrategy::Backward,
                 left_by: None,

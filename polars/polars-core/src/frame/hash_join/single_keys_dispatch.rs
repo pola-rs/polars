@@ -1,6 +1,11 @@
-use arrow::chunk::Chunk;
 use super::*;
-use crate::frame::hash_join::single_keys::{hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_left_anti, hash_join_tuples_left_semi, hash_join_tuples_outer};
+use crate::frame::hash_join::single_keys::{
+    hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_outer,
+};
+#[cfg(feature = "semi_anti_join")]
+use crate::frame::hash_join::single_keys::{
+    hash_join_tuples_left_anti, hash_join_tuples_left_semi,
+};
 
 impl Series {
     #[cfg(feature = "private")]
@@ -29,6 +34,7 @@ impl Series {
         }
     }
 
+    #[cfg(feature = "semi_anti_join")]
     pub(super) fn hash_join_semi_anti(&self, other: &Series, anti: bool) -> Vec<IdxSize> {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
@@ -45,8 +51,8 @@ impl Series {
                     let rhs = rhs.bit_repr_large();
                     num_group_join_anti_semi(&lhs, &rhs, anti)
                 } else {
-                    let lhs = lhs.bit_repr_large();
-                    let rhs = rhs.bit_repr_large();
+                    let lhs = lhs.bit_repr_small();
+                    let rhs = rhs.bit_repr_small();
                     num_group_join_anti_semi(&lhs, &rhs, anti)
                 }
             }
@@ -106,28 +112,26 @@ impl Series {
 }
 
 fn splitted_to_slice<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
-where T: PolarsNumericType
+where
+    T: PolarsNumericType,
 {
-    splitted
-    .iter()
-    .map(|ca| ca.cont_slice().unwrap())
-    .collect()
+    splitted.iter().map(|ca| ca.cont_slice().unwrap()).collect()
 }
 
 fn splitted_by_chunks<T>(splitted: &[ChunkedArray<T>]) -> Vec<&[T::Native]>
-    where T: PolarsNumericType
+where
+    T: PolarsNumericType,
 {
     splitted
         .iter()
-        .map(|ca| {
-            ca.downcast_iter().map(|arr| arr.values().as_slice())
-        })
-        .flatten()
+        .flat_map(|ca| ca.downcast_iter().map(|arr| arr.values().as_slice()))
         .collect()
 }
 
 fn splitted_to_opt_vec<T>(splitted: &[ChunkedArray<T>]) -> Vec<Vec<Option<T::Native>>>
-    where T: PolarsNumericType {
+where
+    T: PolarsNumericType,
+{
     splitted
         .iter()
         .map(|ca| ca.into_iter().collect_trusted::<Vec<_>>())
@@ -170,7 +174,6 @@ where
         }
     }
 }
-
 
 fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
@@ -247,7 +250,6 @@ where
     }
 }
 
-
 pub(crate) fn prepare_strs<'a>(
     been_split: &'a [Utf8Chunked],
     hb: &RandomState,
@@ -270,12 +272,11 @@ pub(crate) fn prepare_strs<'a>(
 }
 
 impl Utf8Chunked {
-    fn prepare(&self, other: &Utf8Chunked, swapped: bool) -> (
-        Vec<Self>,
-        Vec<Self>,
-         bool,
-        RandomState
-    ) {
+    fn prepare(
+        &self,
+        other: &Utf8Chunked,
+        swapped: bool,
+    ) -> (Vec<Self>, Vec<Self>, bool, RandomState) {
         let n_threads = POOL.current_num_threads();
 
         let (a, b, swap) = if swapped {
@@ -288,26 +289,26 @@ impl Utf8Chunked {
         let splitted_a = split_ca(a, n_threads).unwrap();
         let splitted_b = split_ca(b, n_threads).unwrap();
 
-        (splitted_a, splitted_b,
-         swap, hb)
+        (splitted_a, splitted_b, swap, hb)
     }
 
     fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(IdxSize, IdxSize)> {
-        let (splitted_a, splitted_b,  swap, hb) = self.prepare(other, true);
+        let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
     fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
-        let (splitted_a, splitted_b,  _, hb) = self.prepare(other, false);
+        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
         hash_join_tuples_left(str_hashes_a, str_hashes_b)
     }
 
+    #[cfg(feature = "semi_anti_join")]
     fn hash_join_semi_anti(&self, other: &Utf8Chunked, anti: bool) -> Vec<IdxSize> {
-        let (splitted_a, splitted_b,  _, hb) = self.prepare(other, false);
+        let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
         if anti {
@@ -351,15 +352,16 @@ impl Utf8Chunked {
     }
 }
 
+#[cfg(feature = "semi_anti_join")]
 fn num_group_join_anti_semi<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-    anti: bool
+    anti: bool,
 ) -> Vec<IdxSize>
-    where
-        T: PolarsIntegerType,
-        T::Native: Hash + Eq + Send + AsU64,
-        Option<T::Native>: AsU64,
+where
+    T: PolarsIntegerType,
+    T::Native: Hash + Eq + Send + AsU64,
+    Option<T::Native>: AsU64,
 {
     let n_threads = POOL.current_num_threads();
     let splitted_a = split_ca(left, n_threads).unwrap();

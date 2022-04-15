@@ -98,6 +98,7 @@ features = [
   "log",
   "serde-lazy",
   "partition_by",
+  "semi_anti_join",
 ]
 
 # [patch.crates-io]
