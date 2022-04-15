@@ -3371,6 +3371,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "outer"
                 - "asof"
                 - "cross"
+                - "semi"
+                - "anti"
         suffix
             Suffix to append to columns with a duplicate name.
         asof_by

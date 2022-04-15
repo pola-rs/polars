@@ -83,11 +83,11 @@ pub enum JoinType {
     Anti,
 }
 
-pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
+pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<IdxSize>, H>],
+    hash_tables: &[Item],
     len: u64,
-) -> &HashMap<T, Vec<IdxSize>, H> {
+) -> &Item {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.

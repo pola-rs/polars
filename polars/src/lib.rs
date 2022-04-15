@@ -187,8 +187,9 @@
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!                And activates `pivot` and `transpose` operations
-//!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
+//!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
+//!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
 //!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
