@@ -4096,6 +4096,68 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    def partition_by(
+        self, groups: Union[str, List[str]], maintain_order: bool = True
+    ) -> List[DF]:
+        """
+        Split into multiple DataFrames partitioned by groups.
+
+        Parameters
+        ----------
+        groups
+            Groups to partition by
+        maintain_order
+            Keep predictable output order. This is slower as it requires and extra sort operation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["A", "A", "B", "B", "C"],
+        ...         "N": [1, 2, 2, 4, 2],
+        ...         "bar": ["k", "l", "m", "m", "l"],
+        ...     }
+        ... )
+        >>> df.partition_by(groups="foo", maintain_order=True)
+        [shape: (2, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ A   ┆ 1   ┆ k   │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ A   ┆ 2   ┆ l   │
+         └─────┴─────┴─────┘,
+         shape: (2, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ B   ┆ 2   ┆ m   │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ B   ┆ 4   ┆ m   │
+         └─────┴─────┴─────┘,
+         shape: (1, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ C   ┆ 2   ┆ l   │
+         └─────┴─────┴─────┘]
+
+        """
+        if isinstance(groups, str):
+            groups = [groups]
+
+        return [
+            self._from_pydf(_df)  # type: ignore
+            for _df in self._df.partition_by(groups, maintain_order)
+        ]
+
     def shift(self: DF, periods: int) -> DF:
         """
         Shift the values by a given period and fill the parts that will be empty due to this operation

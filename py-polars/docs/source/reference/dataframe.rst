@@ -130,6 +130,7 @@ Manipulation/ selection
     DataFrame.join_asof
     DataFrame.interpolate
     DataFrame.transpose
+    DataFrame.partition_by
     DataFrame.upsample
     DataFrame.unnest
 
@@ -179,6 +180,8 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
 Pivot
 -----
 This namespace comes available by calling `DataFrame.groupby(..).pivot`
+
+*Note that this API is deprecated in favor of `DataFrame.pivot`*
 
 .. currentmodule:: polars.internals.frame
 

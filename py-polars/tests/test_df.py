@@ -1,6 +1,7 @@
 # flake8: noqa: W191,E101
 import io
 import sys
+import typing
 from builtins import range
 from datetime import datetime
 from io import BytesIO
@@ -2044,3 +2045,29 @@ def test_asof_by_multiple_keys() -> None:
         .select(["a", "by"])
         .frame_equal(pl.DataFrame({"a": [-20, -19, 8, 12, 14], "by": [1, 1, 2, 2, 2]}))
     )
+
+
+@typing.no_type_check
+def test_partition_by() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["A", "A", "B", "B", "C"],
+            "N": [1, 2, 2, 4, 2],
+            "bar": ["k", "l", "m", "m", "l"],
+        }
+    )
+
+    assert [
+        a.to_dict(False) for a in df.partition_by(["foo", "bar"], maintain_order=True)
+    ] == [
+        {"foo": ["A"], "N": [1], "bar": ["k"]},
+        {"foo": ["A"], "N": [2], "bar": ["l"]},
+        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
+        {"foo": ["C"], "N": [2], "bar": ["l"]},
+    ]
+
+    assert [a.to_dict(False) for a in df.partition_by("foo", maintain_order=True)] == [
+        {"foo": ["A", "A"], "N": [1, 2], "bar": ["k", "l"]},
+        {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
+        {"foo": ["C"], "N": [2], "bar": ["l"]},
+    ]
