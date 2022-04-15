@@ -372,7 +372,17 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                self.0.cast(data_type)
+                match (self.dtype(), data_type) {
+                    (DataType::Date, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .date()
+                        .unwrap()
+                        .strftime("%Y-%m-%d")
+                        .into_series()),
+                    _ => self.0.cast(data_type),
+                }
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

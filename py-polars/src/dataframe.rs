@@ -1100,13 +1100,21 @@ impl PyDataFrame {
         columns: Vec<String>,
         aggregate_fn: Wrap<PivotAgg>,
         maintain_order: bool,
+        sort_columns: bool,
     ) -> PyResult<Self> {
         let fun = match maintain_order {
-            true => DataFrame::pivot,
-            false => DataFrame::pivot_stable,
+            true => DataFrame::pivot_stable,
+            false => DataFrame::pivot,
         };
-        let df =
-            fun(&self.df, values, index, columns, aggregate_fn.0).map_err(PyPolarsErr::from)?;
+        let df = fun(
+            &self.df,
+            values,
+            index,
+            columns,
+            aggregate_fn.0,
+            sort_columns,
+        )
+        .map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 

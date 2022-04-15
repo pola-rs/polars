@@ -615,7 +615,9 @@ def test_pivot() -> None:
     assert gb.median().shape == (2, 6)
 
     for agg_fn in ["sum", "min", "max", "mean", "count", "median", "mean"]:
-        out = df.pivot(values="c", index="b", columns="a", aggregate_fn=agg_fn)
+        out = df.pivot(
+            values="c", index="b", columns="a", aggregate_fn=agg_fn, sort_columns=True
+        )
         assert out.shape == (2, 6)
 
     # example in polars-book
@@ -1866,7 +1868,8 @@ def test_pivot_list() -> None:
         }
     )
 
-    out = df.groupby("a").pivot("a", "b").first()["a", "1", "2", "3"].sort("a")
+    out = df.pivot("b", index="a", columns="a", aggregate_fn="first", sort_columns=True)
+
     assert out.frame_equal(expected, null_equal=True)
 
 

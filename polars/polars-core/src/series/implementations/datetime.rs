@@ -378,7 +378,10 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        self.0.cast(data_type)
+        match data_type {
+            DataType::Utf8 => Ok(self.0.strftime("%F %T").into_series()),
+            _ => self.0.cast(data_type),
+        }
     }
 
     fn to_dummies(&self) -> Result<DataFrame> {

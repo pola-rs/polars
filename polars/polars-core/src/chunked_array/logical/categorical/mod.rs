@@ -2,7 +2,6 @@ mod builder;
 mod from;
 mod merge;
 mod ops;
-mod series;
 
 use super::*;
 use crate::prelude::*;

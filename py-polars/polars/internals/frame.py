@@ -3957,7 +3957,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index: Union[List[str], str],
         columns: Union[List[str], str],
         aggregate_fn: str = "first",
-        maintain_order: bool = False,
+        maintain_order: bool = True,
+        sort_columns: bool = False,
     ) -> DF:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -3984,6 +3985,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         maintain_order
             Sort the grouped keys so that the output order is predictable.
+        sort_columns
+            Sort the transposed columns by name. Default is by order of discovery.
 
         Returns
         -------
@@ -4018,7 +4021,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if isinstance(columns, str):
             columns = [columns]
         return self._from_pydf(
-            self._df.pivot2(values, index, columns, aggregate_fn, maintain_order)
+            self._df.pivot2(
+                values, index, columns, aggregate_fn, maintain_order, sort_columns
+            )
         )
 
     def melt(

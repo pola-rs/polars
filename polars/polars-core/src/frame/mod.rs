@@ -1608,11 +1608,6 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    #[cfg(feature = "rows")]
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
-        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
-    }
-
     pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         let cols = POOL.install(|| {
             self.columns
