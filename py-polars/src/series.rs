@@ -1,4 +1,4 @@
-use crate::apply::series::ApplyLambda;
+use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -834,6 +834,25 @@ impl PySeries {
         let series = &self.series;
 
         let output_type = output_type.map(|dt| dt.0);
+
+        if matches!(
+            self.series.dtype(),
+            DataType::Datetime(_, _)
+                | DataType::Date
+                | DataType::Duration(_)
+                | DataType::Categorical(_)
+                | DataType::Time
+        ) {
+            let mut avs = Vec::with_capacity(self.series.len());
+            let iter = self.series.iter().map(|av| {
+                let input = Wrap(av);
+                call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
+                    .unwrap()
+                    .0
+            });
+            avs.extend(iter);
+            return Ok(Series::new(self.name(), &avs).into());
+        }
 
         let out = match output_type {
             Some(DataType::Int8) => {
