@@ -1286,6 +1286,7 @@ def test_join_dates() -> None:
     )
     dts = (
         pl.from_pandas(date_times)
+        .cast(int)
         .apply(lambda x: x + np.random.randint(1_000 * 60, 60_000 * 60))
         .cast(pl.Datetime)
     )

@@ -193,9 +193,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     todo!()
                 }
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert
@@ -214,9 +213,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Duration(v, tu) => {
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_timedelta").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
                     TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
@@ -543,6 +541,30 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
+        } else if ob.get_type().name()?.contains("date") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+            let utils = pypolars.getattr(py, "utils").unwrap();
+            let utils = utils
+                .getattr(py, "_date_to_pl_date")
+                .unwrap()
+                .call1(py, (ob,))
+                .unwrap();
+            let v = utils.extract::<i32>(py).unwrap();
+            Ok(Wrap(AnyValue::Date(v)))
+        } else if ob.get_type().name()?.contains("timedelta") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+            let utils = pypolars.getattr(py, "utils").unwrap();
+            let utils = utils
+                .getattr(py, "_timedelta_to_pl_timedelta")
+                .unwrap()
+                .call1(py, (ob, "us"))
+                .unwrap();
+            let v = utils.extract::<i64>(py).unwrap();
+            Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",

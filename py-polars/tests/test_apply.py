@@ -1,3 +1,4 @@
+from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import List, Optional
 
@@ -143,3 +144,12 @@ def test_apply_numpy_int_out() -> None:
         .apply(lambda cols: np.left_shift(cols["col1"], cols["shift"]))
         .alias("result")
     ).frame_equal(pl.DataFrame({"result": [4, 8, 32, 64]}))
+
+
+def test_datelike_identity() -> None:
+    for s in [
+        pl.Series([datetime(year=2000, month=1, day=1)]),
+        pl.Series([timedelta(hours=2)]),
+        pl.Series([date(year=2000, month=1, day=1)]),
+    ]:
+        assert s.apply(lambda x: x).to_list() == s.to_list()

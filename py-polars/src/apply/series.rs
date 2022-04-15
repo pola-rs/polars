@@ -172,7 +172,7 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<ObjectChunked<ObjectValue>>;
 }
 
-fn call_lambda<'a, T>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<&'a PyAny>
+pub fn call_lambda<'a, T>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<&'a PyAny>
 where
     T: ToPyObject,
 {
@@ -180,7 +180,11 @@ where
     lambda.call1(arg)
 }
 
-fn call_lambda_and_extract<'a, T, S>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<S>
+pub(crate) fn call_lambda_and_extract<'a, T, S>(
+    py: Python,
+    lambda: &'a PyAny,
+    in_val: T,
+) -> PyResult<S>
 where
     T: ToPyObject,
     S: FromPyObject<'a>,
