@@ -27,9 +27,7 @@ def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
-    expected = df.clone()
-    expected["foo"] = expected["a"] * 2
-
+    expected = df.clone().with_column((pl.col("a") * 2).alias("foo"))
     assert new.frame_equal(expected)
 
 
@@ -100,7 +98,7 @@ def test_binary_function() -> None:
         )
         .collect()
     )
-    assert out["binary_function"] == (out.a + out.b)
+    assert out["binary_function"] == (out["a"] + out["b"])
 
     # we can also avoid pl.col and insert column names directly
     out = (
@@ -108,7 +106,7 @@ def test_binary_function() -> None:
         .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
         .collect()
     )
-    assert out["binary_function"] == (out.a + out.b)
+    assert out["binary_function"] == (out["a"] + out["b"])
 
 
 def test_filter_str() -> None:
@@ -162,7 +160,7 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected["cars_count"] = expected["cars_count"].cast(pl.UInt32)
+    expected = expected.with_column(pl.col("cars_count").cast(pl.UInt32))
     assert a.frame_equal(expected)
 
 

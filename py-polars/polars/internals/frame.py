@@ -949,7 +949,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_json`
         """
-        warnings.warn("'to_json' is deprecated. please use 'write_json'")
+        warnings.warn(
+            "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
+        )
         return self.write_json(
             file, pretty, row_oriented, json_lines, to_string=to_string
         )
@@ -1127,7 +1129,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_csv`
         """
-        warnings.warn("'to_csv' is deprecated. please use 'write_csv'")
+        warnings.warn(
+            "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
+        )
         return self.write_csv(file, has_header, sep)
 
     def write_avro(
@@ -1162,7 +1166,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_avro`
         """
-        warnings.warn("'to_avro' is deprecated. please use 'write_avro'")
+        warnings.warn(
+            "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
+        )
         return self.write_avro(file, compression)
 
     def write_ipc(
@@ -1199,7 +1205,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_ipc`
         """
-        warnings.warn("'to_ipc' is deprecated. please use 'write_ipc'")
+        warnings.warn(
+            "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
+        )
         return self.write_ipc(file, compression)
 
     def to_dicts(self) -> List[Dict[str, Any]]:
@@ -1418,7 +1426,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_parquet`
         """
-        warnings.warn("'to_parquet' is deprecated. please use 'write_parquet'")
+        warnings.warn(
+            "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
+        )
         return self.write_parquet(file, compression, statistics, use_pyarrow, **kwargs)
 
     def to_numpy(self) -> np.ndarray:
@@ -1517,7 +1527,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if item.startswith("_"):
             raise AttributeError(item)
         try:
-            warnings.warn("accessing series as Attribute of a DataFrame is deprecated")
+            warnings.warn(
+                "accessing series as Attribute of a DataFrame is deprecated",
+                DeprecationWarning,
+            )
             return pli.wrap_s(self._df.column(item))
         except Exception:
             raise AttributeError(item)
@@ -1734,7 +1747,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
     ) -> None:
         warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column"
+            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column",
+            DeprecationWarning,
         )
         # df["foo"] = series
         if isinstance(key, str):
@@ -2279,13 +2293,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
             )
             if in_place:
                 warnings.warn(
-                    "in-place sorting is deprecated; please use default sorting"
+                    "in-place sorting is deprecated; please use default sorting",
+                    DeprecationWarning,
                 )
                 self._df = df._df
                 return self
             return df
         if in_place:
-            warnings.warn("in-place sorting is deprecated; please use default sorting")
+            warnings.warn(
+                "in-place sorting is deprecated; please use default sorting",
+                DeprecationWarning,
+            )
             self._df.sort_in_place(by, reverse)
             return None
         else:
@@ -3437,7 +3455,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if how == "asof":
             warnings.warn(
-                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof"
+                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof",
+                DeprecationWarning,
             )
         if how == "cross":
             return self._from_pydf(self._df.join(df._df, [], [], how, suffix))
@@ -5385,7 +5404,8 @@ class GroupBy(Generic[DF]):
             One or multiple columns.
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            DeprecationWarning,
         )
         if isinstance(columns, str):
             columns = [columns]
@@ -5472,7 +5492,8 @@ class GroupBy(Generic[DF]):
         * the group indexes aggregated as lists
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            DeprecationWarning,
         )
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, None, "groups")
