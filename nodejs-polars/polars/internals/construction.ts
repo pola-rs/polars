@@ -2,6 +2,7 @@ import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series} from "../series/series";
+import {dfWrapper} from "../dataframe";
 
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
@@ -9,7 +10,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
     return DataType.Float64;
   }
   if (Array.isArray(value)) {
-    return jsTypeToPolarsType(value[0]);
+    return jsTypeToPolarsType(value);
   }
   if(isTypedArray(value)) {
     switch (value.constructor.name) {
@@ -43,7 +44,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
   }
   if(typeof value === "object" && (value as any).constructor === Object) {
 
-    return DataType.Object;
+    return DataType.Struct;
   }
 
   switch (typeof value) {
@@ -107,7 +108,13 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
 
   dtype = dtype ?? jsTypeToPolarsType(firstValue);
   let series;
+  if(dtype === DataType.Struct) {
+    console.log(name, values);
+    const df = arrayToJsDataFrame(values, {inferSchemaLength: 1});
+    console.log(dfWrapper(df));
 
+    return pli.df.to_series_struct({name, _df: df});
+  }
   if(firstValue instanceof Date) {
     series =  pli.series.new_opt_date({name, values, strict});
   } else {

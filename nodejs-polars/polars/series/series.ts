@@ -1562,8 +1562,11 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     multiplyBy: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
     toArray() {
 
-      const arr = unwrap<any>("to_js").values;
       const dtype = this.dtype as any as string;
+      if (DataType[dtype] === DataType.Struct) {
+        return dfWrapper(unwrap("struct_to_frame")).toObject({orient: "row"});
+      }
+      const arr = unwrap<any>("to_js").values;
       if (DataType[dtype] === DataType.List) {
         return arr.map((s: any) => s.values);
       }

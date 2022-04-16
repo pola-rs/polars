@@ -462,8 +462,15 @@ pub fn melt(cx: CallContext) -> JsResult<JsExternal> {
     let ldf = params.get_external::<LazyFrame>(&cx, "_ldf")?.clone();
     let id_vars: Vec<String> = params.get_as("idVars")?;
     let value_vars: Vec<String> = params.get_as("valueVars")?;
-
-    ldf.melt(id_vars, value_vars).try_into_js(&cx)
+    let value_name: Option<String> = params.get_as("valueName")?;
+    let variable_name: Option<String> = params.get_as("variableName")?;
+    let args = MeltArgs {
+        id_vars,
+        value_vars,
+        value_name,
+        variable_name,
+    };
+    ldf.melt(args).try_into_js(&cx)
 }
 #[js_function(1)]
 pub fn tail(cx: CallContext) -> JsResult<JsExternal> {

@@ -51,6 +51,7 @@ export enum DataType {
   Time,
   Object,
   Categorical,
+  Struct
 }
 
 
@@ -89,6 +90,7 @@ export const DTYPE_TO_FFINAME: Record<DataType, string> = {
   [DataType.Time]: "time",
   [DataType.Object]: "object",
   [DataType.Categorical]: "categorical",
+  [DataType.Struct]: "struct",
 };
 
 const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
