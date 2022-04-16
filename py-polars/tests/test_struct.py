@@ -136,3 +136,8 @@ def test_nested_struct() -> None:
     assert isinstance(nest_l2.dtypes[0], pl.datatypes.Struct)
     assert nest_l2.dtypes[0].inner_types == nest_l1.dtypes
     assert isinstance(nest_l1.dtypes[0], pl.datatypes.Struct)
+
+
+def test_eager_struct() -> None:
+    s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
+    assert s.dtype == pl.Struct
