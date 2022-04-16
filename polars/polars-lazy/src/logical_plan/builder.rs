@@ -370,6 +370,7 @@ impl LogicalPlanBuilder {
             args: SortArguments {
                 reverse,
                 nulls_last: null_last,
+                slice: None,
             },
         }
         .into()

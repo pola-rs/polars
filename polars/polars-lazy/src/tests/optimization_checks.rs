@@ -175,11 +175,12 @@ pub fn test_slice_pushdown_join() -> Result<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!((&lp_arena).iter(lp).any(|(_, lp)| {
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
             Join { options, .. } => options.slice == Some((1, 3)),
-            _ => false,
+            Slice { .. } => false,
+            _ => true,
         }
     }));
     let out = q.collect()?;
@@ -203,15 +204,42 @@ pub fn test_slice_pushdown_groupby() -> Result<()> {
 
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
-    assert!((&lp_arena).iter(lp).any(|(_, lp)| {
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
             Aggregate { options, .. } => options.slice == Some((1, 3)),
-            _ => false,
+            Slice { .. } => false,
+            _ => true,
         }
     }));
     let out = q.collect()?;
     assert_eq!(out.shape(), (3, 2));
+
+    Ok(())
+}
+
+#[test]
+pub fn test_slice_pushdown_sort() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    let q = scan_foods_parquet(false).limit(100);
+
+    let q = q.sort("category", SortOptions::default()).slice(1, 3);
+
+    // test if optimization continued beyond the sort node
+    assert!(slice_at_scan(q.clone()));
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            Sort { args, .. } => args.slice == Some((1, 3)),
+            Slice { .. } => false,
+            _ => true,
+        }
+    }));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 4));
 
     Ok(())
 }

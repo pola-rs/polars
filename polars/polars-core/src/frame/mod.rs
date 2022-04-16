@@ -1683,7 +1683,7 @@ impl DataFrame {
         self.rechunk();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
-        self.columns = self.sort_impl(by_column, reverse, false)?.columns;
+        self.columns = self.sort_impl(by_column, reverse, false, None)?.columns;
         Ok(self)
     }
 
@@ -1694,6 +1694,7 @@ impl DataFrame {
         by_column: Vec<Series>,
         reverse: Vec<bool>,
         nulls_last: bool,
+        slice: Option<(i64, usize)>,
     ) -> Result<Self> {
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
@@ -1702,7 +1703,7 @@ impl DataFrame {
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_reverse = reverse[0];
         let first_by_column = by_column[0].name().to_string();
-        let take = match by_column.len() {
+        let mut take = match by_column.len() {
             1 => {
                 let s = &by_column[0];
                 s.argsort(SortOptions {
@@ -1722,6 +1723,11 @@ impl DataFrame {
                 }
             }
         };
+
+        if let Some((offset, len)) = slice {
+            take = take.slice(offset, len);
+        }
+
         // Safety:
         // the created indices are in bounds
         let mut df = if std::env::var("POLARS_VERT_PAR").is_ok() {
@@ -1773,7 +1779,7 @@ impl DataFrame {
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
-            .sort_impl(by_column, reverse, options.nulls_last)?
+            .sort_impl(by_column, reverse, options.nulls_last, None)?
             .columns;
         Ok(df)
     }
