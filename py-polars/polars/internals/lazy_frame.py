@@ -1145,7 +1145,8 @@ class LazyFrame(Generic[DF]):
         """
         if how == "asof":
             warnings.warn(
-                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof"
+                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof",
+                DeprecationWarning,
             )
         if how == "cross":
             return self._from_pyldf(

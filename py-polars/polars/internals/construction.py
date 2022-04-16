@@ -560,8 +560,9 @@ def arrow_to_pydf(
 
     if len(dictionary_cols) > 0:
         df = pli.wrap_df(pydf)
-        for i, s in dictionary_cols.items():
-            df[s.name] = s
+        df = df.with_columns(
+            [pli.lit(s).alias(s.name) for s in dictionary_cols.values()]
+        )
         df = df[names]
         pydf = df._df
 

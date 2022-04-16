@@ -59,7 +59,8 @@ def test_sort_by() -> None:
 
 def test_sort_in_place() -> None:
     df = pl.DataFrame({"a": [1, 3, 2, 4, 5]})
-    ret = df.sort("a", in_place=True)
+    with pytest.deprecated_call():
+        ret = df.sort("a", in_place=True)
     result = df["a"].to_list()
     expected = [1, 2, 3, 4, 5]
     assert result == expected

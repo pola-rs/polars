@@ -398,8 +398,8 @@ def test_selection() -> None:
     assert df[[0, 1], "b"].shape == (2, 1)
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.select_at_idx(0).name == "a"
-    assert (df.a == df["a"]).sum() == 3
-    assert (df.c == df["a"]).sum() == 0
+    assert (df["a"] == df["a"]).sum() == 3
+    assert (df["c"] == df["a"]).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)  # type: ignore
     assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore
     expect = pl.DataFrame({"c": ["b"]})
@@ -436,12 +436,14 @@ def test_from_arrow() -> None:
 
 def test_sort() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    df.sort("a", in_place=True)
+    with pytest.deprecated_call():
+        df.sort("a", in_place=True)
     assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
     # test in-place + passing a list
     df = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3]})
-    df.sort(["a", "b"], in_place=True)
+    with pytest.deprecated_call():
+        df.sort(["a", "b"], in_place=True)
     assert df.frame_equal(pl.DataFrame({"a": [1, 2, 3], "b": [2, 1, 3]}))
 
 
@@ -454,10 +456,12 @@ def test_replace() -> None:
 
 def test_assignment() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [2, 3, 4]})
-    df["foo"] = df["foo"]
+    df = df.with_column(pl.col("foo").alias("foo"))
     # make sure that assignment does not change column order
     assert df.columns == ["foo", "bar"]
-    df[df["foo"] > 1, "foo"] = 9
+    df = df.with_column(
+        pl.when(pl.col("foo") > 1).then(9).otherwise(pl.col("foo")).alias("foo")
+    )
     assert df["foo"].to_list() == [1, 9, 9]
 
 
@@ -550,17 +554,15 @@ def test_groupby() -> None:
     # )
     assert df.groupby("a").apply(lambda df: df[["c"]].sum()).sort("c")["c"][0] == 1
 
-    assert (
-        df.groupby("a")
-        .groups()
-        .sort("a")["a"]
-        .series_equal(pl.Series("a", ["a", "b", "c"]))
-    )
+    df_groups = df.groupby("a").groups().sort("a")
+    assert df_groups["a"].series_equal(pl.Series("a", ["a", "b", "c"]))
 
-    for subdf in df.groupby("a"):  # type: ignore
-        # TODO: add __next__() to GroupBy
-        if subdf["a"][0] == "b":
-            assert subdf.shape == (3, 3)
+    with pytest.deprecated_call():
+        # TODO: find a way to avoid indexing into GroupBy
+        for subdf in df.groupby("a"):  # type: ignore
+            # TODO: add __next__() to GroupBy
+            if subdf["a"][0] == "b":
+                assert subdf.shape == (3, 3)
 
     assert df.groupby("a").get_group("c").shape == (1, 3)
     assert df.groupby("a").get_group("b").shape == (3, 3)
@@ -583,9 +585,9 @@ def test_groupby() -> None:
     df.groupby("b").agg(pl.col("c").forward_fill()).explode("c")
 
     # get a specific column
-    result = df.groupby("b")["a"].count()
+    result = df.groupby("b").agg(pl.count("a"))
     assert result.shape == (2, 2)
-    assert result.columns == ["b", "a_count"]
+    assert result.columns == ["b", "a"]
 
     # make sure all the methods below run
     assert df.groupby("b").first().shape == (2, 3)
@@ -838,47 +840,49 @@ def test_file_buffer() -> None:
 
 
 def test_set() -> None:
-    np.random.seed(1)
-    df = pl.DataFrame(
-        {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
-    )
-    df["new"] = np.random.rand(10)
-    df[df["new"] > 0.5, "new"] = 1
+    """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning"""
+    with pytest.deprecated_call():
+        np.random.seed(1)
+        df = pl.DataFrame(
+            {"foo": np.random.rand(10), "bar": np.arange(10), "ham": ["h"] * 10}
+        )
+        df["new"] = np.random.rand(10)
+        df[df["new"] > 0.5, "new"] = 1
 
-    # set 2D
-    df = pl.DataFrame({"b": [0, 0]})
-    df[["A", "B"]] = [[1, 2], [1, 2]]
-    assert df["A"] == [1, 1]
-    assert df["B"] == [2, 2]
+        # set 2D
+        df = pl.DataFrame({"b": [0, 0]})
+        df[["A", "B"]] = [[1, 2], [1, 2]]
+        assert df["A"] == [1, 1]
+        assert df["B"] == [2, 2]
 
-    with pytest.raises(ValueError):
-        df[["C", "D"]] = 1
-    with pytest.raises(ValueError):
-        df[["C", "D"]] = [1, 1]
-    with pytest.raises(ValueError):
-        df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
+        with pytest.raises(ValueError):
+            df[["C", "D"]] = 1
+        with pytest.raises(ValueError):
+            df[["C", "D"]] = [1, 1]
+        with pytest.raises(ValueError):
+            df[["C", "D"]] = [[1, 2, 3], [1, 2, 3]]
 
-    # set tuple
-    df = pl.DataFrame({"b": [0, 0]})
-    df[0, "b"] = 1
-    assert df[0, "b"] == 1
+        # set tuple
+        df = pl.DataFrame({"b": [0, 0]})
+        df[0, "b"] = 1
+        assert df[0, "b"] == 1
 
-    df[0, 0] = 2
-    assert df[0, "b"] == 2
+        df[0, 0] = 2
+        assert df[0, "b"] == 2
 
-    # row and col selection have to be int or str
-    with pytest.raises(ValueError):
-        df[:, [1]] = 1  # type: ignore
-    with pytest.raises(ValueError):
-        df[True, :] = 1  # type: ignore
+        # row and col selection have to be int or str
+        with pytest.raises(ValueError):
+            df[:, [1]] = 1  # type: ignore
+        with pytest.raises(ValueError):
+            df[True, :] = 1  # type: ignore
 
-    # needs to be a 2 element tuple
-    with pytest.raises(ValueError):
-        df[(1, 2, 3)] = 1  # type: ignore
+        # needs to be a 2 element tuple
+        with pytest.raises(ValueError):
+            df[(1, 2, 3)] = 1  # type: ignore
 
-    # we cannot index with any type, such as bool
-    with pytest.raises(NotImplementedError):
-        df[True] = 1  # type: ignore
+        # we cannot index with any type, such as bool
+        with pytest.raises(NotImplementedError):
+            df[True] = 1  # type: ignore
 
 
 def test_melt() -> None:
@@ -1184,7 +1188,7 @@ def test_assign() -> None:
     # check if can assign in case of a single column
     df = pl.DataFrame({"a": [1, 2, 3]})
     # test if we can assign in case of single column
-    df["a"] = df["a"] * 2
+    df = df.with_column(pl.col("a") * 2)
     assert df["a"] == [2, 4, 6]
 
 
@@ -1234,7 +1238,7 @@ def test_rename(df: pl.DataFrame) -> None:
     _ = out[["foos", "bars"]]
 
 
-def test_to_csv() -> None:
+def test_write_csv() -> None:
     df = pl.DataFrame(
         {
             "foo": [1, 2, 3, 4, 5],
@@ -1244,13 +1248,13 @@ def test_to_csv() -> None:
     )
     expected = "foo,bar,ham\n1,6,a\n2,7,b\n3,8,c\n4,9,d\n5,10,e\n"
 
-    # if no file argument is supplied, to_csv() will return the string
-    s = df.to_csv()
+    # if no file argument is supplied, write_csv() will return the string
+    s = df.write_csv()
     assert s == expected
 
     # otherwise it will write to the file/iobuffer
     file = BytesIO()
-    df.to_csv(file)
+    df.write_csv(file)
     file.seek(0)
     s = file.read().decode("utf8")
     assert s == expected
@@ -1802,11 +1806,12 @@ def test_add_string() -> None:
 
 
 def test_getattr() -> None:
-    df = pl.DataFrame({"a": [1.0, 2.0]})
-    testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
+    with pytest.deprecated_call():
+        df = pl.DataFrame({"a": [1.0, 2.0]})
+        testing.assert_series_equal(df.a, pl.Series("a", [1.0, 2.0]))
 
-    with pytest.raises(AttributeError):
-        _ = df.b
+        with pytest.raises(AttributeError):
+            _ = df.b
 
 
 def test_get_item() -> None:
@@ -1990,7 +1995,7 @@ def test_preservation_of_subclasses() -> None:
 
 
 def test_preservation_of_subclasses_after_groupby_statements() -> None:
-    """Group by operations should preserve inherited datframe classes."""
+    """Group by operations should preserve inherited dataframe classes."""
 
     class SubClassedDataFrame(pl.DataFrame):
         pass
@@ -2001,7 +2006,9 @@ def test_preservation_of_subclasses_after_groupby_statements() -> None:
     assert isinstance(groupby.agg(pl.count()), SubClassedDataFrame)
 
     # Round-trips to GBSelection and back should also preserve subclass
-    assert isinstance(groupby["a"].count(), SubClassedDataFrame)
+    assert isinstance(
+        groupby.agg(pl.col("a").count().alias("count")), SubClassedDataFrame
+    )
 
     # Round-trips to PivotOps and back should also preserve subclass
     assert isinstance(
