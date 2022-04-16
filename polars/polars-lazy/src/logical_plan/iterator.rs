@@ -5,6 +5,7 @@ macro_rules! push_expr {
         use Expr::*;
         match $current_expr {
             Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
+            Unnest(_) => {},
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {

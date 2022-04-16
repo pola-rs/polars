@@ -253,6 +253,8 @@ pub enum Expr {
     Column(Arc<str>),
     Columns(Vec<String>),
     DtypeColumn(Vec<DataType>),
+    #[cfg(feature = "dtype-struct")]
+    Unnest(Arc<str>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Box<Expr>,

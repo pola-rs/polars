@@ -263,6 +263,7 @@ impl fmt::Debug for Expr {
             RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {:?}", expr),
             Columns(names) => write!(f, "COLUMNS({:?})", names),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {:?}", dt),
+            Unnest(path) => write!(f, "unnest(\"{}\")", path),
         }
     }
 }

@@ -595,6 +595,12 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> Expr {
     Expr::DtypeColumn(dtypes)
 }
 
+#[cfg(feature = "dtype-struct")]
+/// Select one or more nested columns within a struct.
+pub fn unnest(path: &str) -> Expr {
+    Expr::Unnest(Arc::from(path))
+}
+
 /// Sum all the values in this Expression.
 pub fn sum(name: &str) -> Expr {
     col(name).sum()
