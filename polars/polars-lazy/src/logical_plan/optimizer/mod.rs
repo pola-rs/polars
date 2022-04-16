@@ -9,9 +9,14 @@ pub(crate) mod fast_projection;
 pub(crate) mod predicate_pushdown;
 pub(crate) mod projection_pushdown;
 pub(crate) mod simplify_expr;
-pub(crate) mod slice_pushdown;
+mod slice_pushdown_expr;
+pub mod slice_pushdown_lp;
 pub(crate) mod stack_opt;
 pub(crate) mod type_coercion;
+
+use crate::prelude::stack_opt::OptimizationRule;
+
+pub(crate) use slice_pushdown_lp::SlicePushDown;
 
 pub trait Optimize {
     fn optimize(&self, logical_plan: LogicalPlan) -> Result<LogicalPlan>;

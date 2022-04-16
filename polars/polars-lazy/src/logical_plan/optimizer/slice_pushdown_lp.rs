@@ -290,21 +290,37 @@ impl SlicePushDown {
             }
             // [Pushdown]
             // these nodes will be pushed down.
-             m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _)
-
+             m @(Udf{options: LogicalPlanUdfOptions{ predicate_pd: true, ..}, .. }, _) |
+             // State is None, we can continue
+             m @(Projection{..}, None)
             => {
                 let (lp, state) = m;
                 self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
             }
-            m @ (Projection {..}, _) => {
-                let (lp, state) = m;
+            // there is state, inspect the projection to determine how to deal with it
+            (Projection {input, mut expr, schema}, Some(State{offset, len})) => {
                 // The slice operation may only pass on simple projections. col("foo").alias("bar")
-                if lp.get_exprs().iter().all(|root|  {
+                if expr.iter().all(|root|  {
                     aexpr_is_simple_projection(*root, expr_arena)
                 }) {
+                    let lp = Projection {input, expr, schema};
                     self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
-                } else {
-                    self.no_pushdown_restart_opt(lp, state, lp_arena, expr_arena)
+                }
+                // we add a slice node to the projections
+                else {
+                    let offset_node = to_aexpr(lit(offset), expr_arena);
+                    let length_node = to_aexpr(lit(len), expr_arena);
+                    expr.iter_mut().for_each(|node| {
+                        let aexpr = AExpr::Slice {
+                            input: *node,
+                            offset: offset_node,
+                            length: length_node
+                        };
+                        *node = expr_arena.add(aexpr)
+                    });
+                    let lp = Projection {input, expr, schema};
+
+                    self.pushdown_and_continue(lp, None, lp_arena, expr_arena)
                 }
             }
             (catch_all, state) => {

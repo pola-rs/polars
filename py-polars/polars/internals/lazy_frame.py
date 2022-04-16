@@ -452,7 +452,7 @@ class LazyFrame(Generic[DF]):
                 If you already have set a global string cache, set this to `False` as this will reset the
                 global cache when the query is finished.
         no_optimization
-            Turn off optimizations.
+            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
 
@@ -463,7 +463,6 @@ class LazyFrame(Generic[DF]):
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
-            slice_pushdown = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,

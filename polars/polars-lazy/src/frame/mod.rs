@@ -36,7 +36,7 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
-    simplify_expr::SimplifyBooleanRule, slice_pushdown::SlicePushDown, *,
+    simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
 };
 
 use crate::logical_plan::FETCH_ROWS;
@@ -529,6 +529,8 @@ impl LazyFrame {
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
+        // make sure its before slice pushdown.
+        rules.push(Box::new(FastProjection {}));
 
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};
@@ -538,6 +540,9 @@ impl LazyFrame {
                 .expect("slice pushdown failed");
 
             lp_arena.replace(lp_top, alp);
+
+            // expressions use the stack optimizer
+            rules.push(Box::new(slice_pushdown_opt));
         }
 
         if type_coercion {
@@ -559,7 +564,6 @@ impl LazyFrame {
             rules.push(Box::new(opt));
         }
 
-        rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(ReplaceDropNulls {}));
 
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
