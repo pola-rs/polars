@@ -23,6 +23,7 @@ pub enum JsDataType {
     Time,
     Object,
     Categorical,
+    Struct
 }
 
 impl JsDataType {
@@ -46,6 +47,7 @@ impl JsDataType {
             "Time" => JsDataType::Time,
             "Object" => JsDataType::Object,
             "Categorical" => JsDataType::Categorical,
+            "Struct" => JsDataType::Struct,
             _ => panic!("not a valid dtype"),
         }
     }
@@ -69,6 +71,7 @@ impl JsDataType {
             JsDataType::Time => "Time",
             JsDataType::Object => "Object",
             JsDataType::Categorical => "Categorical",
+            JsDataType::Struct => "Struct",
         }
         .to_owned()
     }
@@ -92,6 +95,7 @@ impl JsDataType {
             JsDataType::Time => "Time",
             JsDataType::Object => "Object",
             JsDataType::Categorical => "Categorical",
+            JsDataType::Struct => "Struct",
         }
     }
 }
@@ -118,6 +122,7 @@ impl From<&DataType> for JsDataType {
             DataType::Time => Time,
             DataType::Object(_) => Object,
             DataType::Categorical(_) => Categorical,
+            DataType::Struct(_) => Struct,
             _ => panic!("null or unknown not expected here"),
         }
     }
@@ -151,6 +156,7 @@ impl From<napi::ValueType> for Wrap<DataType> {
             Number => Wrap(DataType::Float64),
             String => Wrap(DataType::Utf8),
             Bigint => Wrap(DataType::UInt64),
+            Object => Wrap(DataType::Struct(vec![])),
             _ => panic!("unknown data type"),
         }
     }
@@ -185,6 +191,7 @@ impl Into<DataType> for JsDataType {
             JsDataType::Time => Time,
             JsDataType::Object => Object("object"),
             JsDataType::Categorical => Categorical(None),
+            JsDataType::Struct => Struct(vec![]),
         }
     }
 }
@@ -244,6 +251,7 @@ pub fn num_to_polarstype(n: u32) -> DataType {
         15 => DataType::Time,
         16 => DataType::Object("object"),
         17 => DataType::Categorical(None),
+        18 => DataType::Struct(vec![]),
         tp => panic!("Type {} not implemented in num_to_polarstype", tp),
     }
 }

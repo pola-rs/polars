@@ -149,6 +149,22 @@ impl IntoJsRef<JsObject> for DateChunked {
         Ok(arr)
     }
 }
+impl IntoJsRef<JsObject> for StructChunked {
+    fn try_into_js_ref(&self, cx: &CallContext) -> Result<JsObject> {
+        let mut arr = cx.env.create_array()?;
+        let s = self.clone().into_series();
+
+        for (i, val) in s.iter().enumerate() {
+            if let AnyValue::Struct(vals) = val {
+                let items = vals.into_js(&cx);
+                arr.set_element(i as u32, items);
+            } else {
+                unreachable!()
+            };
+        }
+        Ok(arr)
+    }
+}
 
 into_js_chunked!(Int8Chunked);
 into_js_chunked!(Int16Chunked);
@@ -187,6 +203,7 @@ impl IntoJsRef<JsObject> for Series {
             DataType::Int32 => self.i32().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
             DataType::Int64 => self.i64().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
             DataType::Date => self.date().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
+            DataType::Struct(_) => self.struct_().map_err(JsPolarsEr::from)?.try_into_js_ref(&cx),
             DataType::Datetime(_, _) => self
                 .datetime()
                 .map_err(JsPolarsEr::from)?
@@ -214,7 +231,18 @@ impl IntoJs<JsUnknown> for AnyValue<'_> {
             AnyValue::Date(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
             AnyValue::Datetime(v, _, _) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
             AnyValue::List(v) => v.try_into_js_ref(&cx).map(|v| v.into_unknown()),
+            AnyValue::Struct(v) => v.try_into_js(&cx),
             _ => cx.env.get_null().map(|v| v.into_unknown()),
         }
+    }
+}
+
+impl IntoJs<JsUnknown> for Vec<AnyValue<'_>> {
+    fn try_into_js(self, cx: &CallContext) -> Result<JsUnknown> {
+        let mut arr = cx.env.create_array()?;
+        for (i, val) in self.into_iter().enumerate() {
+            arr.set_element(i as u32, val.into_js(&cx));
+        }
+        Ok(arr.into_unknown())
     }
 }

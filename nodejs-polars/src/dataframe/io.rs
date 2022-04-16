@@ -4,8 +4,8 @@ use crate::file::JsWriteStream;
 use crate::prelude::JsResult;
 use napi::{CallContext, JsExternal, JsObject, JsString, JsUndefined, JsUnknown, ValueType};
 use polars::frame::row::{infer_schema, rows_to_schema, Row};
-use polars::io::RowCount;
 use polars::io::avro::*;
+use polars::io::RowCount;
 use polars::prelude::*;
 use std::borrow::Borrow;
 use std::collections::{HashMap, HashSet};
@@ -885,6 +885,16 @@ fn resolve_homedir(path: &Path) -> PathBuf {
 
     path.into()
 }
+
+#[js_function(1)]
+pub fn to_series_struct(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let df = params.get_external::<DataFrame>(&cx, "_df")?;
+    let name: String = params.get_as("name")?;
+    df.clone().into_struct(&name).into_series().try_into_js(&cx)
+}
+
+
 
 fn finish_from_rows(rows: Vec<Row>) -> JsResult<DataFrame> {
     let schema = rows_to_schema(&rows);

@@ -677,8 +677,18 @@ pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
         DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
         DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
         DataType::Categorical(_) => cx.env.to_js_value(series.categorical().unwrap()),
+        DataType::Struct(_) => series.try_into_js_ref(&cx).map(|v| v.into_unknown()),
         _ => todo!(),
     }
+}
+
+#[js_function(1)]
+pub fn struct_fields(cx: CallContext) -> JsResult<JsUnknown> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let ca = series.struct_().map_err(JsPolarsEr::from)?;
+    let s: Vec<&str> = ca.fields().iter().map(|s| s.name()).collect();
+    cx.env.to_js_value(&s)
 }
 
 #[js_function(1)]
@@ -897,12 +907,20 @@ pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
         Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
     }
 }
+#[js_function(1)]
+pub fn struct_to_frame(cx: CallContext) -> JsResult<JsExternal> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let ca = series.struct_().map_err(JsPolarsEr::from)?;
+    let df: DataFrame = ca.clone().into();
+    df.try_into_js(&cx)
+}
 
 #[js_function(1)]
 pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
     let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let obj: JsUnknown = cx.env.to_js_value(series)?;
+    let series = params.get_external::<Series>(&cx, "_series")?.rechunk();
+    let obj: JsUnknown = cx.env.to_js_value(&series)?;
     Ok(obj)
 }
 
@@ -1564,6 +1582,33 @@ pub fn get_bool(cx: CallContext) -> JsResult<JsUnknown> {
                 Some(v) => cx.env.get_boolean(v).map(|v| v.into_unknown()),
                 None => cx.env.get_null().map(|v| v.into_unknown()),
             }
+        }
+        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
+    }
+}
+
+#[js_function(1)]
+pub fn get_struct(cx: CallContext) -> JsResult<JsUnknown> {
+    let params = get_params(&cx)?;
+    let series = params.get_external::<Series>(&cx, "_series")?;
+    let index = params.get_as::<i64>("index")?;
+    match series.struct_() {
+        Ok(ca) => {
+            let index = if index < 0 {
+                (ca.len() as i64 + index) as usize
+            } else {
+                index as usize
+            };
+            let mut obj = cx.env.create_object()?;
+
+            for col in ca.fields().iter() {
+                let val: AnyValue = col.get(index);
+                let jsv = val.into_js(&cx);
+                let col_name = col.name();
+                let col_name_js = cx.env.create_string(col_name)?;
+                obj.set_property(col_name_js, jsv)?;
+            }
+            Ok(obj.into_unknown())
         }
         Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
     }
