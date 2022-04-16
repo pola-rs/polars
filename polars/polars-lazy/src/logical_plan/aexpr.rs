@@ -117,6 +117,36 @@ impl AExpr {
             .map(|f| f.data_type().clone())
     }
 
+    pub(crate) fn replace_input(self, input: Node) -> Self {
+        use AExpr::*;
+        match self {
+            Alias(_, name) => Alias(input, name),
+            IsNotNull(_) => IsNotNull(input),
+            IsNull(_) => IsNull(input),
+            Cast {
+                expr: _,
+                data_type,
+                strict,
+            } => Cast {
+                expr: input,
+                data_type,
+                strict,
+            },
+            _ => todo!(),
+        }
+    }
+
+    pub(crate) fn get_input(&self) -> Node {
+        use AExpr::*;
+        match self {
+            Alias(input, _) => *input,
+            IsNotNull(input) => *input,
+            IsNull(input) => *input,
+            Cast { expr, .. } => *expr,
+            _ => todo!(),
+        }
+    }
+
     /// Get Field result of the expression. The schema is the input data.
     pub(crate) fn to_field(
         &self,
