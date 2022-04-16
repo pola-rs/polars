@@ -137,4 +137,5 @@ pub struct SortArguments {
     pub(crate) reverse: Vec<bool>,
     // Can only be true in case of a single column.
     pub(crate) nulls_last: bool,
+    pub(crate) slice: Option<(i64, usize)>,
 }

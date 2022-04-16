@@ -684,7 +684,7 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn rechunk(&mut self) -> Self {
+    pub fn rechunk(&self) -> Self {
         self.df.agg_chunks().into()
     }
 
