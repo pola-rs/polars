@@ -1149,6 +1149,7 @@ impl LazyFrame {
 }
 
 /// Utility struct for lazy groupby operation.
+#[derive(Clone)]
 pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
     opt_state: OptState,
