@@ -59,7 +59,7 @@ impl Series {
         }
     }
 
-    pub(super) fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
+    pub(super) fn hash_join_inner(&self, other: &Series) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -141,7 +141,7 @@ where
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> Vec<(IdxSize, IdxSize)>
+) -> (Vec<IdxSize>, Vec<IdxSize>)
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,
@@ -292,7 +292,7 @@ impl Utf8Chunked {
         (splitted_a, splitted_b, swap, hb)
     }
 
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(IdxSize, IdxSize)> {
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
