@@ -254,6 +254,18 @@ impl DataFrame {
         Ok(df_left)
     }
 
+    /// # Safety
+    /// Join tuples must be in bounds
+    fn create_left_df_from_slice(&self, join_tuples: &[IdxSize], left_join: bool) -> DataFrame {
+        if left_join && join_tuples.len() == self.height() {
+            self.clone()
+        } else {
+            unsafe { self.take_unchecked_slice(join_tuples) }
+        }
+    }
+
+    /// # Safety
+    /// Join tuples must be in bounds
     fn create_left_df<B: Sync>(&self, join_tuples: &[(IdxSize, B)], left_join: bool) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
@@ -572,20 +584,22 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let join_tuples = s_left.hash_join_inner(s_right);
-        let mut join_tuples = &*join_tuples;
+        let (join_tuples_left, join_tuples_right) = s_left.hash_join_inner(s_right);
+        let mut join_tuples_left = &*join_tuples_left;
+        let mut join_tuples_right = &*join_tuples_right;
 
         if let Some((offset, len)) = slice {
-            join_tuples = slice_slice(join_tuples, offset, len);
+            join_tuples_left = slice_slice(join_tuples_left, offset, len);
+            join_tuples_right = slice_slice(join_tuples_right, offset, len);
         }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(join_tuples, false),
+            || self.create_left_df_from_slice(join_tuples_left, false),
             || unsafe {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_iter_unchecked(join_tuples.iter().map(|(_left, right)| *right as usize))
+                    .take_unchecked_slice(join_tuples_right)
             },
         );
         self.finish_join(df_left, df_right, suffix)

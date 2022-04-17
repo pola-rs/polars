@@ -2950,9 +2950,26 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
-    #[cfg(any(feature = "partition_by", feature = "semi_anti_join"))]
     pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
-        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
+        let ptr = idx.as_ptr() as *mut IdxSize;
+        let len = idx.len();
+
+        // create a temporary vec. we will not drop it.
+        let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        let out = self.take_unchecked(&ca);
+
+        // ref count of buffers should be one because we dropped all allocations
+        let arr = {
+            let arr_ref = std::mem::take(&mut ca.chunks).pop().unwrap();
+            arr_ref
+                .as_any()
+                .downcast_ref::<PrimitiveArray<IdxSize>>()
+                .unwrap()
+                .clone()
+        };
+        // the only owned heap allocation is the `Vec` we created and must not be dropped
+        let _ = std::mem::ManuallyDrop::new(arr.into_mut().right().unwrap());
+        out
     }
 
     #[cfg(feature = "partition_by")]

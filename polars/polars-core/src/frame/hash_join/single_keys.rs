@@ -135,7 +135,7 @@ pub(super) fn hash_join_tuples_inner<T, IntoSlice>(
     build: Vec<IntoSlice>,
     // Because b should be the shorter relation we could need to swap to keep left left and right right.
     swap: bool,
-) -> Vec<(IdxSize, IdxSize)>
+) -> (Vec<IdxSize>, Vec<IdxSize>)
 where
     IntoSlice: AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
@@ -185,7 +185,7 @@ where
                 results
             })
             .flatten()
-            .collect()
+            .unzip()
     })
 }
 
