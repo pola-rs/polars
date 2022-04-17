@@ -1,9 +1,8 @@
+use super::*;
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
-use crate::frame::hash_join::single_keys::on_match_left_join_extend;
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
-use crate::prelude::hash_join::single_keys::LeftJoinTuples;
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
@@ -249,7 +248,7 @@ pub fn private_left_join_multiple_keys(
     left_join_multiple_keys(&a, &b)
 }
 
-pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJoinTuples> {
+pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJoinIndices> {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));

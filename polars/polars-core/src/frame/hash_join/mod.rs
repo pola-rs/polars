@@ -1,6 +1,18 @@
 pub(crate) mod multiple_keys;
 mod single_keys;
 mod single_keys_dispatch;
+mod single_keys_inner;
+mod single_keys_left;
+mod single_keys_outer;
+#[cfg(feature = "semi_anti_join")]
+mod single_keys_semi_anti;
+
+use single_keys::*;
+use single_keys_inner::*;
+use single_keys_left::*;
+use single_keys_outer::*;
+#[cfg(feature = "semi_anti_join")]
+use single_keys_semi_anti::*;
 
 use polars_arrow::utils::CustomIterTools;
 

@@ -1,11 +1,4 @@
 use super::*;
-use crate::frame::hash_join::single_keys::{
-    hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_outer,
-};
-#[cfg(feature = "semi_anti_join")]
-use crate::frame::hash_join::single_keys::{
-    hash_join_tuples_left_anti, hash_join_tuples_left_semi,
-};
 
 impl Series {
     #[cfg(feature = "private")]
