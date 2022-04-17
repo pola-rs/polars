@@ -15,6 +15,8 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
         Expr::Column(s) => AExpr::Column(s),
+        // TODO: Implement
+        Expr::Unnest(_) => panic!("need to implemented"),
         Expr::BinaryExpr { left, op, right } => {
             let l = to_aexpr(*left, arena);
             let r = to_aexpr(*right, arena);
@@ -138,7 +140,6 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
-        Expr::Unnest(_) => panic!("not implemented?"),
     };
     arena.add(v)
 }
