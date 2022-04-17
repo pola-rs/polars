@@ -162,6 +162,27 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
+def unnest(path: str) -> "pli.Expr":
+    """
+    Unnest a struct column in a DataFrame.
+    Can be used to select:
+
+    - a single column by name
+    - all columns by using a wildcard `"*"`
+
+    Parameters
+    ----------
+    path
+        A string that holds the path to column
+
+    Examples
+    --------
+
+    """
+    # TODO: Add examples
+    return pli.wrap_expr(pyunnest(path))
+
+
 @overload
 def count(column: str) -> "pli.Expr":
     ...

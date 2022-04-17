@@ -66,6 +66,7 @@ from polars.internals.lazy_functions import (
     argsort_by,
     avg,
     col,
+    unnest,
     collect_all,
     concat_list,
     concat_str,
@@ -177,6 +178,7 @@ __all__ = [
     "repeat",
     # polars.internal.lazy_functions
     "col",
+    "unnest",
     "count",
     "std",
     "var",
