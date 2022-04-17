@@ -188,9 +188,26 @@ impl AExpr {
                 .get_field(name)
                 .ok_or_else(|| PolarsError::NotFound(name.to_string())),
             Unnest(path) => {
-                let struct_schema = schema.get_field(path);
-                // TODO: Return Field object for nested column
-                panic!("not implemented")
+                // TODO: Add real operation :)
+                // TODO: Refactor into Schema::get_nested_field
+                let columns: Vec<&str> = path.split('.').collect();
+                let mut field = schema.get_field(columns[0]).unwrap();
+
+                for column in columns[1..].iter() {
+                    if let DataType::Struct(fields) = field.data_type() {
+                        field = fields
+                            .iter()
+                            .find(|fld| fld.name() == column)
+                            .unwrap_or_else(|| panic!("{} not found", column))
+                            // TODO: Replace clone with arena allocation
+                            .clone();
+                    } else {
+                        panic!("expected struct on unnesting, not {}", field.data_type())
+                    }
+                }
+
+                // TODO: Replace clone with arena allocation
+                Ok(Field::new(field.name(), field.data_type().clone()))
             }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {

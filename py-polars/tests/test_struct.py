@@ -141,3 +141,20 @@ def test_nested_struct() -> None:
 def test_eager_struct() -> None:
     s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
     assert s.dtype == pl.Struct
+
+
+def test_unnest_by_path() -> None:
+    df = pl.DataFrame({"b": [1, 2, 3], "c": [0, 0, 0]})
+    nested_df = df.to_struct("a").to_frame()
+
+    selection = nested_df.select(pl.unnest("a.b"))
+    assert selection.columns == ["a.b"]
+
+    assert nested_df.select(pl.unnest("a.b"))["a.b"] == df["b"]
+    assert nested_df.select(pl.unnest("a.c"))["a.c"] == df["c"]
+
+    # Test 2 level nesting
+    nested_l2 = nested_df.to_struct("top").to_frame()
+    selection = nested_l2.select(pl.unnest("top.a.b"))
+    assert selection.columns == ["top.a.b"]
+    assert selection["top.a.b"] == df["b"]
