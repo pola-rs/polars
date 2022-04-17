@@ -37,6 +37,7 @@ pub enum AExpr {
     Explode(Node),
     Alias(Node, Arc<str>),
     Column(Arc<str>),
+    Unnest(Arc<str>),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -186,6 +187,11 @@ impl AExpr {
             Column(name) => schema
                 .get_field(name)
                 .ok_or_else(|| PolarsError::NotFound(name.to_string())),
+            Unnest(path) => {
+                let struct_schema = schema.get_field(path);
+                // TODO: Return Field object for nested column
+                panic!("not implemented")
+            }
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 use DataType::*;

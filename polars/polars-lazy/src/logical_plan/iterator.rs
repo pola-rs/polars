@@ -165,6 +165,7 @@ impl AExpr {
 
         match self {
             Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
+            Unnest(_) => {}
             Alias(e, _) => push(e),
             Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {

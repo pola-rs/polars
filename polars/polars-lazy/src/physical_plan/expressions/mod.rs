@@ -16,13 +16,14 @@ mod sort;
 mod sortby;
 mod take;
 mod ternary;
+mod unnest;
 mod utils;
 mod window;
 
 pub(crate) use {
     aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
     is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
-    take::*, ternary::*, utils::*, window::*,
+    take::*, ternary::*, unnest::*, utils::*, window::*,
 };
 
 use crate::physical_plan::state::ExecutionState;

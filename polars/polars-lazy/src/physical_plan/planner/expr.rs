@@ -82,6 +82,10 @@ impl DefaultPlanner {
                 column,
                 node_to_expr(expression, expr_arena),
             ))),
+            Unnest(path) => Ok(Arc::new(UnnestExpr::new(
+                path,
+                node_to_expr(expression, expr_arena),
+            ))),
             Sort { expr, options } => {
                 let phys_expr = self.create_physical_expr(expr, ctxt, expr_arena)?;
                 Ok(Arc::new(SortExpr::new(

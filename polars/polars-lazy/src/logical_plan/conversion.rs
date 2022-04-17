@@ -15,8 +15,7 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
         Expr::Alias(e, name) => AExpr::Alias(to_aexpr(*e, arena), name),
         Expr::Literal(value) => AExpr::Literal(value),
         Expr::Column(s) => AExpr::Column(s),
-        // TODO: Implement
-        Expr::Unnest(_) => panic!("need to implemented"),
+        Expr::Unnest(s) => AExpr::Unnest(s),
         Expr::BinaryExpr { left, op, right } => {
             let l = to_aexpr(*left, arena);
             let r = to_aexpr(*right, arena);
@@ -414,6 +413,7 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             Expr::Alias(Box::new(exp), name)
         }
         AExpr::Column(a) => Expr::Column(a),
+        AExpr::Unnest(s) => Expr::Unnest(s),
         AExpr::Literal(s) => Expr::Literal(s),
         AExpr::BinaryExpr { left, op, right } => {
             let l = node_to_expr(left, expr_arena);
