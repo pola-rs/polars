@@ -78,3 +78,17 @@ fn test_outer_join_with_column_2988() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_err_no_found() {
+    let df = df![
+        "a" => [1, 2, 3],
+        "b" => [None, Some("a"), Some("b")]
+    ]
+    .unwrap();
+
+    assert!(matches!(
+        df.lazy().filter(col("nope").gt(lit(2))).collect(),
+        Err(PolarsError::NotFound(_))
+    ));
+}
