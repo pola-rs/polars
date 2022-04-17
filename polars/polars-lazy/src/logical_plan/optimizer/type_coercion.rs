@@ -150,10 +150,10 @@ impl OptimizationRule for TypeCoercionRule {
 
                     let type_left = left
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
                     let type_right = right
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
 
                     #[allow(unused_mut, unused_assignments)]
                     let mut compare_cat_to_string = false;
