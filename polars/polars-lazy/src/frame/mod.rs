@@ -1238,6 +1238,11 @@ impl LazyGroupBy {
             .build();
         LazyFrame::from_logical_plan(lp, self.opt_state)
     }
+    
+    /// Describe the logical plan.
+    pub fn describe_plan(&self) -> String {
+        self.logical_plan.describe()
+    }
 }
 
 #[must_use]
