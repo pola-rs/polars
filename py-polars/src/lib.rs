@@ -64,6 +64,11 @@ fn col(name: &str) -> dsl::PyExpr {
 }
 
 #[pyfunction]
+fn unnest(path: &str) -> dsl::PyExpr {
+    dsl::unnest(path)
+}
+
+#[pyfunction]
 fn count() -> dsl::PyExpr {
     dsl::count()
 }
@@ -441,6 +446,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(unnest)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
     m.add_wrapped(wrap_pyfunction!(last)).unwrap();

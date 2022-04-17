@@ -1399,6 +1399,10 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+pub fn unnest(path: &str) -> PyExpr {
+    dsl::unnest(path).into()
+}
+
 pub fn count() -> PyExpr {
     dsl::count().into()
 }
