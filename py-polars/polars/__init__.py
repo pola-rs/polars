@@ -66,7 +66,6 @@ from polars.internals.lazy_functions import (
     argsort_by,
     avg,
     col,
-    unnest,
     collect_all,
     concat_list,
     concat_str,
@@ -99,7 +98,7 @@ from polars.internals.lazy_functions import (
     tail,
 )
 from polars.internals.lazy_functions import to_list as list
-from polars.internals.lazy_functions import var
+from polars.internals.lazy_functions import unnest, var
 from polars.internals.series import (  # flake8: noqa # TODO: remove need for wrap_s
     Series,
     wrap_s,

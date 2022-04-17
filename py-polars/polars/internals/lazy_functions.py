@@ -25,7 +25,6 @@ try:
     from polars.polars import as_struct as _as_struct
     from polars.polars import binary_function as pybinary_function
     from polars.polars import col as pycol
-    from polars.polars import unnest as pyunnest
     from polars.polars import collect_all as _collect_all
     from polars.polars import cols as pycols
     from polars.polars import concat_lst as _concat_lst
@@ -44,6 +43,7 @@ try:
     from polars.polars import py_datetime, py_duration
     from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
+    from polars.polars import unnest as pyunnest
 
     _DOCUMENTING = False
 except ImportError:  # pragma: no cover
