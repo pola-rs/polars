@@ -29,7 +29,7 @@ pub(crate) unsafe fn compare_df_rows2(
     true
 }
 
-pub(crate) fn create_build_table(
+pub(crate) fn create_probe_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>> {
@@ -178,7 +178,7 @@ pub(crate) fn inner_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
     swap: bool,
-) -> Vec<(IdxSize, IdxSize)> {
+) -> (Vec<IdxSize>, Vec<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
@@ -189,7 +189,7 @@ pub(crate) fn inner_join_multiple_keys(
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
 
-    let hash_tbls = create_build_table(&build_hashes, b);
+    let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
     drop(build_hashes);
 
@@ -235,7 +235,7 @@ pub(crate) fn inner_join_multiple_keys(
                 results
             })
             .flatten()
-            .collect()
+            .unzip()
     })
 }
 
@@ -261,7 +261,7 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
 
-    let hash_tbls = create_build_table(&build_hashes, b);
+    let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
     drop(build_hashes);
 

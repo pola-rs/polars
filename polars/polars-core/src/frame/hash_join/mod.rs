@@ -256,23 +256,29 @@ impl DataFrame {
 
     /// # Safety
     /// Join tuples must be in bounds
-    fn create_left_df_from_slice(&self, join_tuples: &[IdxSize], left_join: bool) -> DataFrame {
+    unsafe fn create_left_df_from_slice(
+        &self,
+        join_tuples: &[IdxSize],
+        left_join: bool,
+    ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            unsafe { self.take_unchecked_slice(join_tuples) }
+            self.take_unchecked_slice(join_tuples)
         }
     }
 
     /// # Safety
     /// Join tuples must be in bounds
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(IdxSize, B)], left_join: bool) -> DataFrame {
+    unsafe fn create_left_df<B: Sync>(
+        &self,
+        join_tuples: &[(IdxSize, B)],
+        left_join: bool,
+    ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            unsafe {
-                self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
-            }
+            self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
         }
     }
 
@@ -395,20 +401,21 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let (left, right, swap) = det_hash_prone_order!(left, right);
-                let join_tuples = inner_join_multiple_keys(&left, &right, swap);
-                let mut join_tuples = &*join_tuples;
+                let (join_idx_left, join_idx_right) = inner_join_multiple_keys(&left, &right, swap);
+                let mut join_idx_left = &*join_idx_left;
+                let mut join_idx_right = &*join_idx_right;
 
                 if let Some((offset, len)) = slice {
-                    join_tuples = slice_slice(join_tuples, offset, len);
+                    join_idx_left = slice_slice(join_idx_left, offset, len);
+                    join_idx_right = slice_slice(join_idx_right, offset, len);
                 }
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(join_tuples, false),
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_iter_unchecked(
-                            join_tuples.iter().map(|(_left, right)| *right as usize),
-                        )
+                        remove_selected(other, &selected_right).take_unchecked_slice(join_idx_right)
                     },
                 );
                 self.finish_join(df_left, df_right, suffix)
@@ -424,7 +431,8 @@ impl DataFrame {
                 }
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(join_tuples, true),
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df(join_tuples, true) },
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right).take_opt_iter_unchecked(
@@ -594,7 +602,8 @@ impl DataFrame {
         }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df_from_slice(join_tuples_left, false),
+            // safety: join indices are known to be in bounds
+            || unsafe { self.create_left_df_from_slice(join_tuples_left, false) },
             || unsafe {
                 other
                     .drop(s_right.name())
@@ -666,7 +675,8 @@ impl DataFrame {
         }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(opt_join_tuples, true),
+            // safety: join indices are known to be in bounds
+            || unsafe { self.create_left_df(opt_join_tuples, true) },
             || unsafe {
                 other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples
