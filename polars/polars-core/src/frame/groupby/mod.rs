@@ -3,7 +3,7 @@ use crate::prelude::*;
 #[cfg(feature = "groupby_list")]
 use crate::utils::Wrap;
 use crate::utils::{
-    accumulate_dataframes_vertical, copy_from_slice_unchecked, set_partition_size, split_offsets,
+    accumulate_dataframes_vertical, set_partition_size, split_offsets,
 };
 use crate::vector_hasher::{get_null_hash_value, AsU64, StrHash};
 use crate::POOL;

@@ -1,9 +1,11 @@
+use arrow::Either;
+use crate::utils::create_chunked_index_mapping;
 use super::*;
 
 impl Series {
     #[cfg(feature = "private")]
     #[doc(hidden)]
-    pub fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
+    pub fn hash_join_left(&self, other: &Series) -> LeftJoinResult {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -171,7 +173,7 @@ where
 fn num_group_join_left<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> Vec<(IdxSize, Option<IdxSize>)>
+) ->  LeftJoinResult
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -189,17 +191,19 @@ where
         (0, 0, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+            hash_join_tuples_left(keys_a, keys_b, None)
         }
         (0, 0, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+            let mapping = create_chunked_index_mapping(left.chunks(), left.len());
+            hash_join_tuples_left(keys_a, keys_b, Some(&mapping))
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+            let mapping = create_chunked_index_mapping(left.chunks(), left.len());
+            hash_join_tuples_left(keys_a, keys_b, Some(&mapping))
         }
     }
 }
@@ -292,11 +296,11 @@ impl Utf8Chunked {
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinResult {
         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_left(str_hashes_a, str_hashes_b)
+        hash_join_tuples_left(str_hashes_a, str_hashes_b, None)
     }
 
     #[cfg(feature = "semi_anti_join")]

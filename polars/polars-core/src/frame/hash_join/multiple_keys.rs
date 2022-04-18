@@ -11,6 +11,7 @@ use crate::POOL;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
 use rayon::prelude::*;
+use polars_utils::flatten;
 
 /// Compare the rows of two DataFrames
 pub(crate) unsafe fn compare_df_rows2(
@@ -269,7 +270,7 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
 
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    POOL.install(move || {
+    let results = POOL.install(move || {
         probe_hashes
             .into_par_iter()
             .zip(offsets)
@@ -309,9 +310,9 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
 
                 results
             })
-            .flatten()
-            .collect()
-    })
+            .collect::<Vec<_>>()
+    });
+    flatten(&results, None)
 }
 
 #[cfg(feature = "semi_anti_join")]

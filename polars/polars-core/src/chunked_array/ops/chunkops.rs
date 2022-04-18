@@ -6,14 +6,42 @@ use crate::utils::slice_offsets;
 use arrow::array::Array;
 use arrow::compute::concatenate;
 
-#[inline]
-fn slice(
-    chunks: &[ArrayRef],
+pub(crate) trait SliceAble {
+    fn len(&self) -> usize;
+
+    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self;
+}
+
+impl SliceAble for ArrayRef {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self {
+        self.slice_unchecked(offset, len).into()
+    }
+}
+
+impl<T> SliceAble for &[T] {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self {
+        // actually safe, but this bound check is not expensive
+        &self[offset..offset + len]
+    }
+}
+
+pub(crate) fn slice_chunks<S>(
+    chunks: &[S],
     offset: i64,
     slice_length: usize,
     own_length: usize,
-) -> Vec<ArrayRef> {
-    let mut new_chunks = Vec::with_capacity(1);
+) -> Vec<S>
+where S: SliceAble
+{
+    let mut new_chunks = Vec::with_capacity(chunks.len());
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
     let mut remaining_length = slice_len;
@@ -35,7 +63,7 @@ fn slice(
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len).into());
+            new_chunks.push(chunk._slice_unchecked(remaining_offset, take_len).into());
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -44,10 +72,15 @@ fn slice(
         }
     }
     if new_chunks.is_empty() {
-        new_chunks.push(chunks[0].slice(0, 0).into());
+        // Safety: empty slice
+        unsafe {
+            new_chunks.push(chunks[0]._slice_unchecked(0, 0).into());
+        }
     }
     new_chunks
+
 }
+
 
 impl<T> ChunkOps for ChunkedArray<T>
 where
@@ -71,7 +104,7 @@ where
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -94,7 +127,7 @@ impl ChunkOps for BooleanChunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -117,7 +150,7 @@ impl ChunkOps for Utf8Chunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -144,7 +177,7 @@ impl ChunkOps for ListChunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -187,7 +220,7 @@ where
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
     }
 }
 

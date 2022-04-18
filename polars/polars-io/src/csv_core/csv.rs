@@ -16,6 +16,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
+use polars_utils::flatten;
 
 pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
     use DataType::*;
@@ -549,7 +550,7 @@ impl<'a> CoreReader<'a> {
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            let mut dfs = dfs.into_iter().flatten().collect::<Vec<_>>();
+            let mut dfs = flatten(&dfs, None);
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs)
             }

@@ -24,7 +24,7 @@ use crate::frame::hash_join::multiple_keys::{
 use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
 
 use crate::prelude::*;
-use crate::utils::{set_partition_size, slice_slice, split_ca};
+use crate::utils::{set_partition_size, slice_offsets, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
@@ -65,6 +65,7 @@ macro_rules! det_hash_prone_order {
 }
 
 pub(super) use det_hash_prone_order;
+use crate::prelude::chunkops::slice_chunks;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
@@ -679,25 +680,42 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let opt_join_tuples = s_left.hash_join_left(s_right);
-        let mut opt_join_tuples = &*opt_join_tuples;
+        let join_idx = s_left.hash_join_left(s_right);
 
-        if let Some((offset, len)) = slice {
-            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+        match join_idx {
+            // single chunk
+            LeftJoinResult::Left((left_idx, right_idx)) => {
+                let mut left_idx = &*left_idx;
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx =  slice_slice(&left_idx, offset, len);
+                    right_idx =  slice_slice(&right_idx, offset, len);
+                }
+
+                let (df_left, df_right) = POOL.join(
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df_from_slice(left_idx, true) },
+                    || unsafe {
+                        other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
+                            right_idx
+                                .iter().map(|opt_i| opt_i.map(|i| i as usize) )
+                        )
+                    },
+                );
+                self.finish_join(df_left, df_right, suffix)
+            }
+            // multiple chunks
+            LeftJoinResult::Right((left_idx, right_idx)) => {
+
+                let mut left_idx = &*left_idx;
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx =  slice_slice(&left_idx, offset, len);
+                    right_idx =  slice_slice(&right_idx, offset, len);
+                }
+                todo!()
+            }
         }
-
-        let (df_left, df_right) = POOL.join(
-            // safety: join indices are known to be in bounds
-            || unsafe { self.create_left_df(opt_join_tuples, true) },
-            || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples
-                        .iter()
-                        .map(|(_left, right)| right.map(|i| i as usize)),
-                )
-            },
-        );
-        self.finish_join(df_left, df_right, suffix)
     }
 
     #[cfg(feature = "semi_anti_join")]
