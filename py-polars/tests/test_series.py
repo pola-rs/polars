@@ -174,7 +174,7 @@ def test_arithmetic(s: pl.Series) -> None:
     assert ((1 - a) == [0, -1]).sum() == 2
     assert ((1 * a) == [1, 2]).sum() == 2
     # integer division
-    testing.assert_series_equal(1 / a, pl.Series([1.0, 0.5]))  # type: ignore
+    testing.assert_series_equal(1 / a, pl.Series([1.0, 0.5]))
     if s.dtype == Int64:
         expected = pl.Series([1, 0])
     else:

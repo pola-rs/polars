@@ -197,10 +197,10 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> Any:
         return self._pyexpr.__getstate__()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state: Any) -> None:
         # init with a dummy
         self._pyexpr = pli.lit(0)._pyexpr
         self._pyexpr.__setstate__(state)
@@ -368,19 +368,14 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
-        elif not isinstance(columns, list) and issubclass(columns, DataType):  # type: ignore
-            columns = [columns]  # type: ignore
+        elif not isinstance(columns, Sequence) and issubclass(columns, DataType):
+            columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
-        if not all(
-            [
-                isinstance(a, str) or issubclass(a, DataType)
-                for a in columns  # type: ignore
-            ]
-        ):
+        if not all([isinstance(a, str) or issubclass(a, DataType) for a in columns]):
             raise ValueError("input should be all string or all DataType")
 
-        if isinstance(columns[0], str):  # type: ignore
+        if isinstance(columns[0], str):
             return wrap_expr(self._pyexpr.exclude(columns))
         else:
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
