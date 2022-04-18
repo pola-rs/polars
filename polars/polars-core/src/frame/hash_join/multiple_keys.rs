@@ -10,8 +10,8 @@ use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHa
 use crate::POOL;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use rayon::prelude::*;
 use polars_utils::flatten;
+use rayon::prelude::*;
 
 /// Compare the rows of two DataFrames
 pub(crate) unsafe fn compare_df_rows2(

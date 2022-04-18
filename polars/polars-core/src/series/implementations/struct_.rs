@@ -1,4 +1,5 @@
 use super::*;
+use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 

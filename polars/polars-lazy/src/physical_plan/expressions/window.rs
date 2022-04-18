@@ -414,7 +414,8 @@ impl PhysicalExpr for WindowExpr {
                     if groupby_columns.len() == 1 {
                         // group key from right column
                         let right = &keys[0];
-                        groupby_columns[0].hash_join_left(right)
+                        // groupby_columns[0].hash_join_left(right)
+                        todo!()
                     } else {
                         let df_right = DataFrame::new_no_checks(keys);
                         let df_left = DataFrame::new_no_checks(groupby_columns);

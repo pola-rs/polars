@@ -1,6 +1,6 @@
-use arrow::Either;
-use crate::utils::create_chunked_index_mapping;
 use super::*;
+use crate::utils::create_chunked_index_mapping;
+use arrow::Either;
 
 impl Series {
     #[cfg(feature = "private")]
@@ -170,10 +170,7 @@ where
     }
 }
 
-fn num_group_join_left<T>(
-    left: &ChunkedArray<T>,
-    right: &ChunkedArray<T>,
-) ->  LeftJoinResult
+fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinResult
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,

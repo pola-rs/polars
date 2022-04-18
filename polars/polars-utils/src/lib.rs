@@ -1,9 +1,9 @@
 pub mod arena;
 pub mod contention_pool;
 mod error;
+mod functions;
 pub mod mem;
 pub mod sort;
-mod functions;
 
 pub use functions::*;
 

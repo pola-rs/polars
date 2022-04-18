@@ -304,6 +304,22 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
+    unsafe fn _take_chunked_unchecked(
+        &self,
+        by: &mut dyn TrustedLen<Item = ChunkId>,
+    ) -> Series {
+        let ca = self.0.deref().take_chunked_unchecked(by);
+        ca.into_duration(self.0.time_unit()).into_series()
+    }
+
+    unsafe fn _take_opt_chunked_unchecked(
+        &self,
+        by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+    ) -> Series {
+        let ca = self.0.deref().take_opt_chunked_unchecked(by);
+        ca.into_duration(self.0.time_unit()).into_series()
+    }
+
     fn take(&self, indices: &IdxCa) -> Result<Series> {
         ChunkTake::take(self.0.deref(), indices.into())
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())

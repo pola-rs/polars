@@ -171,6 +171,7 @@ impl FromIterator<Option<Series>> for ListChunked {
             .collect::<Vec<_>>();
 
         match &dtype {
+            // TODO: test if this can be removed
             #[cfg(feature = "object")]
             Some(DataType::Object(_)) => {
                 let s = vals.iter().find_map(|opt_s| opt_s.as_ref()).unwrap();
@@ -192,6 +193,32 @@ impl FromIterator<Option<Series>> for ListChunked {
                 builder.finish()
             }
         }
+    }
+}
+
+impl FromIterator<Option<Box<dyn Array>>> for ListChunked {
+    fn from_iter<I: IntoIterator<Item = Option<Box<dyn Array>>>>(iter: I) -> Self {
+        let mut cap = 0;
+        let mut dtype: Option<DataType> = None;
+        let vals = iter
+            .into_iter()
+            .map(|opt_arr| {
+                opt_arr.map(|arr| {
+                    if dtype.is_none() {
+                        dtype = Some(arr.data_type().into());
+                    }
+                    cap += arr.len();
+                    arr
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let mut builder =
+            AnonymousListBuilder::new("collected", cap, dtype.unwrap_or(DataType::Int32));
+        for val in &vals {
+            builder.append_opt_array(val.as_deref());
+        }
+        builder.finish()
     }
 }
 

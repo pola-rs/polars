@@ -1,13 +1,11 @@
+use super::*;
 use arrow::Either;
 use polars_utils::flatten;
-use super::*;
 
 pub(super) type LeftJoinIndices = (IdxSize, Option<IdxSize>);
 pub(super) type LeftJoinChunkIndices = ([IdxSize; 2], Option<[IdxSize; 2]>);
-pub(super) type LeftJoinResult = Either<(Vec<IdxSize>, Vec<Option<IdxSize>>),
-    (Vec<[IdxSize; 2]>, Vec<Option<[IdxSize; 2]>>)
->;
-
+pub(super) type LeftJoinResult =
+    Either<(Vec<IdxSize>, Vec<Option<IdxSize>>), (Vec<[IdxSize; 2]>, Vec<Option<[IdxSize; 2]>>)>;
 
 #[inline]
 pub(super) fn on_match_left_join_extend(
@@ -23,10 +21,10 @@ pub(super) fn hash_join_tuples_left<'a, T: 'a, IntoSlice>(
     build: Vec<IntoSlice>,
     // map the global indices to [chunk_idx, array_idx]
     // only needed if we have non contiguous memory
-    chunk_mapping: Option<&'a [[IdxSize; 2]]>
+    chunk_mapping: Option<&'a [[IdxSize; 2]]>,
 ) -> LeftJoinResult
 where
-    IntoSlice: 'a +  AsRef<[T]> + Send + Sync,
+    IntoSlice: 'a + AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
@@ -74,37 +72,56 @@ where
                         None => {
                             result_idx_left.push(idx_a);
                             result_idx_right.push(None);
-                        },
+                        }
                     }
                 });
                 match chunk_mapping {
                     None => LeftJoinResult::Left((result_idx_left, result_idx_right)),
                     Some(mapping) => {
                         let left = unsafe {
-                            result_idx_left.iter().map(|idx| *mapping.get_unchecked(*idx as usize)).collect::<Vec<_>>()
+                            result_idx_left
+                                .iter()
+                                .map(|idx| *mapping.get_unchecked(*idx as usize))
+                                .collect::<Vec<_>>()
                         };
                         let right = unsafe {
-                            result_idx_right.iter().map(|opt_idx| opt_idx.map(|idx| *mapping.get_unchecked(idx as usize))).collect::<Vec<_>>()
+                            result_idx_right
+                                .iter()
+                                .map(|opt_idx| {
+                                    opt_idx.map(|idx| *mapping.get_unchecked(idx as usize))
+                                })
+                                .collect::<Vec<_>>()
                         };
 
-                        LeftJoinResult::Right(
-                            (left, right)
-                        )
+                        LeftJoinResult::Right((left, right))
                     }
                 }
-            }).collect()
+            })
+            .collect()
     });
 
     // single chunk
     if result[0].is_left() {
-        let mut join_idx_left = result.iter().map(|join_idx| &join_idx.as_ref().left().unwrap().0).collect::<Vec<_>>();
-        let mut join_idx_right = result.iter().map(|join_idx| &join_idx.as_ref().left().unwrap().1).collect::<Vec<_>>();
+        let mut join_idx_left = result
+            .iter()
+            .map(|join_idx| &join_idx.as_ref().left().unwrap().0)
+            .collect::<Vec<_>>();
+        let mut join_idx_right = result
+            .iter()
+            .map(|join_idx| &join_idx.as_ref().left().unwrap().1)
+            .collect::<Vec<_>>();
         let join_idx_left = flatten(&join_idx_left, None);
         let join_idx_right = flatten(&join_idx_right, None);
         Either::Left((join_idx_left, join_idx_right))
     } else {
-        let mut join_idx_left = result.iter().map(|join_idx| &join_idx.as_ref().right().unwrap().0).collect::<Vec<_>>();
-        let mut join_idx_right = result.iter().map(|join_idx| &join_idx.as_ref().right().unwrap().1).collect::<Vec<_>>();
+        let mut join_idx_left = result
+            .iter()
+            .map(|join_idx| &join_idx.as_ref().right().unwrap().0)
+            .collect::<Vec<_>>();
+        let mut join_idx_right = result
+            .iter()
+            .map(|join_idx| &join_idx.as_ref().right().unwrap().1)
+            .collect::<Vec<_>>();
         let len = join_idx_left.iter().map(|v| v.len()).sum::<usize>();
 
         let join_idx_left = flatten(&join_idx_left, None);

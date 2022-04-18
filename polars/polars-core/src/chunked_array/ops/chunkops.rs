@@ -39,7 +39,8 @@ pub(crate) fn slice_chunks<S>(
     slice_length: usize,
     own_length: usize,
 ) -> Vec<S>
-where S: SliceAble
+where
+    S: SliceAble,
 {
     let mut new_chunks = Vec::with_capacity(chunks.len());
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
@@ -78,9 +79,7 @@ where S: SliceAble
         }
     }
     new_chunks
-
 }
-
 
 impl<T> ChunkOps for ChunkedArray<T>
 where

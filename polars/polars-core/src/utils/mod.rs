@@ -903,8 +903,7 @@ pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
     std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
 }
 
-pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<[IdxSize; 2]>{
-
+pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<[IdxSize; 2]> {
     let mut vals = Vec::with_capacity(len);
 
     for (chunk_i, chunk) in chunks.iter().enumerate() {
@@ -913,7 +912,6 @@ pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> V
 
     vals
 }
-
 
 #[cfg(test)]
 mod test {
@@ -944,5 +942,4 @@ mod test {
             b.chunk_id().collect::<Vec<_>>()
         );
     }
-
 }

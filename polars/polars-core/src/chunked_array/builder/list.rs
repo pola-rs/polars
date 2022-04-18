@@ -391,6 +391,19 @@ impl<'a> AnonymousListBuilder<'a> {
         }
     }
 
+    pub fn append_opt_array(&mut self, opt_s: Option<&'a dyn Array>) {
+        match opt_s {
+            Some(s) => self.append_array(s),
+            None => {
+                self.append_null();
+            }
+        }
+    }
+
+    pub fn append_array(&mut self, arr: &'a dyn Array) {
+        self.builder.push(arr)
+    }
+
     pub fn append_null(&mut self) {
         self.builder.push_null();
     }

@@ -64,8 +64,8 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-pub(super) use det_hash_prone_order;
 use crate::prelude::chunkops::slice_chunks;
+pub(super) use det_hash_prone_order;
 
 /// If Categorical types are created without a global string cache or under
 /// a different global string cache the mapping will be incorrect.
@@ -688,8 +688,8 @@ impl DataFrame {
                 let mut left_idx = &*left_idx;
                 let mut right_idx = &*right_idx;
                 if let Some((offset, len)) = slice {
-                    left_idx =  slice_slice(&left_idx, offset, len);
-                    right_idx =  slice_slice(&right_idx, offset, len);
+                    left_idx = slice_slice(&left_idx, offset, len);
+                    right_idx = slice_slice(&right_idx, offset, len);
                 }
 
                 let (df_left, df_right) = POOL.join(
@@ -697,8 +697,7 @@ impl DataFrame {
                     || unsafe { self.create_left_df_from_slice(left_idx, true) },
                     || unsafe {
                         other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                            right_idx
-                                .iter().map(|opt_i| opt_i.map(|i| i as usize) )
+                            right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
                         )
                     },
                 );
@@ -706,12 +705,11 @@ impl DataFrame {
             }
             // multiple chunks
             LeftJoinResult::Right((left_idx, right_idx)) => {
-
                 let mut left_idx = &*left_idx;
                 let mut right_idx = &*right_idx;
                 if let Some((offset, len)) = slice {
-                    left_idx =  slice_slice(&left_idx, offset, len);
-                    right_idx =  slice_slice(&right_idx, offset, len);
+                    left_idx = slice_slice(&left_idx, offset, len);
+                    right_idx = slice_slice(&right_idx, offset, len);
                 }
                 todo!()
             }

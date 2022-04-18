@@ -184,6 +184,20 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
+    unsafe fn _take_chunked_unchecked(
+        &self,
+        by: &mut dyn TrustedLen<Item = ChunkId>,
+    ) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    unsafe fn _take_opt_chunked_unchecked(
+        &self,
+        by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+    ) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
     fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())

@@ -18,10 +18,12 @@ use std::borrow::Cow;
 pub use take_random::*;
 pub use traits::*;
 
+mod take_chunked;
 mod take_every;
 pub(crate) mod take_random;
 pub(crate) mod take_single;
 mod traits;
+pub(crate) use take_chunked::*;
 
 macro_rules! take_iter_n_chunks {
     ($ca:expr, $indices:expr) => {{

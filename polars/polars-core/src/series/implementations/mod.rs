@@ -510,6 +510,20 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
+            unsafe fn _take_chunked_unchecked(
+                &self,
+                by: &mut dyn TrustedLen<Item = ChunkId>,
+            ) -> Series {
+                self.0.take_chunked_unchecked(by).into_series()
+            }
+
+            unsafe fn _take_opt_chunked_unchecked(
+                &self,
+                by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+            ) -> Series {
+                self.0.take_opt_chunked_unchecked(by).into_series()
+            }
+
             fn take(&self, indices: &IdxCa) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
