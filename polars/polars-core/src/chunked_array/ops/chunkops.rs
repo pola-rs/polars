@@ -6,43 +6,14 @@ use crate::utils::slice_offsets;
 use arrow::array::Array;
 use arrow::compute::concatenate;
 
-pub(crate) trait SliceAble {
-    fn len(&self) -> usize;
-
-    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self;
-}
-
-impl SliceAble for ArrayRef {
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self {
-        self.slice_unchecked(offset, len).into()
-    }
-}
-
-impl<T> SliceAble for &[T] {
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn _slice_unchecked(&self, offset: usize, len: usize) -> Self {
-        // actually safe, but this bound check is not expensive
-        &self[offset..offset + len]
-    }
-}
-
-pub(crate) fn slice_chunks<S>(
-    chunks: &[S],
+#[inline]
+fn slice(
+    chunks: &[ArrayRef],
     offset: i64,
     slice_length: usize,
     own_length: usize,
-) -> Vec<S>
-where
-    S: SliceAble,
-{
-    let mut new_chunks = Vec::with_capacity(chunks.len());
+) -> Vec<ArrayRef> {
+    let mut new_chunks = Vec::with_capacity(1);
     let (raw_offset, slice_len) = slice_offsets(offset, slice_length, own_length);
 
     let mut remaining_length = slice_len;
@@ -64,7 +35,7 @@ where
         unsafe {
             // Safety:
             // this function ensures the slices are in bounds
-            new_chunks.push(chunk._slice_unchecked(remaining_offset, take_len).into());
+            new_chunks.push(chunk.slice_unchecked(remaining_offset, take_len).into());
         }
         remaining_length -= take_len;
         remaining_offset = 0;
@@ -73,17 +44,14 @@ where
         }
     }
     if new_chunks.is_empty() {
-        // Safety: empty slice
-        unsafe {
-            new_chunks.push(chunks[0]._slice_unchecked(0, 0).into());
-        }
+        new_chunks.push(chunks[0].slice(0, 0).into());
     }
     new_chunks
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
-where
-    T: PolarsNumericType,
+    where
+        T: PolarsNumericType,
 {
     fn rechunk(&self) -> Self {
         if self.chunks().len() == 1 {
@@ -96,14 +64,14 @@ where
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+                .unwrap()
+                .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -119,14 +87,14 @@ impl ChunkOps for BooleanChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+                .unwrap()
+                .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -142,14 +110,14 @@ impl ChunkOps for Utf8Chunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+                .unwrap()
+                .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
@@ -165,8 +133,8 @@ impl ChunkOps for ListChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-            .unwrap()
-            .into()];
+                .unwrap()
+                .into()];
             let mut ca = ListChunked::from_chunks(self.name(), chunks);
             if self.can_fast_explode() {
                 ca.set_fast_explode()
@@ -176,18 +144,18 @@ impl ChunkOps for ListChunked {
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 
 #[cfg(feature = "object")]
 impl<T> ChunkOps for ObjectChunked<T>
-where
-    T: PolarsObject,
+    where
+        T: PolarsObject,
 {
     fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized,
+        where
+            Self: std::marker::Sized,
     {
         if self.chunks.len() == 1 {
             self.clone()
@@ -219,7 +187,7 @@ where
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
-        self.copy_with_chunks(slice_chunks(&self.chunks, offset, length, self.len()))
+        self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
     }
 }
 

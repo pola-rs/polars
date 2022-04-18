@@ -64,7 +64,6 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-use crate::prelude::chunkops::slice_chunks;
 pub(super) use det_hash_prone_order;
 
 /// If Categorical types are created without a global string cache or under
@@ -265,6 +264,20 @@ impl DataFrame {
         drop(left_names);
         df_left.hstack_mut(&df_right.columns)?;
         Ok(df_left)
+    }
+
+    /// # Safety
+    /// Join tuples must be in bounds
+    unsafe fn create_left_df_chunked(
+        &self,
+        chunk_ids: &[ChunkId],
+        left_join: bool,
+    ) -> DataFrame {
+        if left_join && chunk_ids.len() == self.height() {
+            self.clone()
+        } else {
+            self.take_chunked_unchecked(chunk_ids)
+        }
     }
 
     /// # Safety

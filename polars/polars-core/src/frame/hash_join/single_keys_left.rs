@@ -1,3 +1,4 @@
+use std::io::Write;
 use super::*;
 use arrow::Either;
 use polars_utils::flatten;
@@ -110,8 +111,10 @@ where
             .iter()
             .map(|join_idx| &join_idx.as_ref().left().unwrap().1)
             .collect::<Vec<_>>();
-        let join_idx_left = flatten(&join_idx_left, None);
-        let join_idx_right = flatten(&join_idx_right, None);
+        let (join_idx_left, join_idx_right) = rayon::join(
+            || flatten(&join_idx_left, None),
+            || flatten(&join_idx_right, None)
+        );
         Either::Left((join_idx_left, join_idx_right))
     } else {
         let mut join_idx_left = result
@@ -122,10 +125,11 @@ where
             .iter()
             .map(|join_idx| &join_idx.as_ref().right().unwrap().1)
             .collect::<Vec<_>>();
-        let len = join_idx_left.iter().map(|v| v.len()).sum::<usize>();
 
-        let join_idx_left = flatten(&join_idx_left, None);
-        let join_idx_right = flatten(&join_idx_right, None);
+        let (join_idx_left, join_idx_right) = rayon::join(
+            || flatten(&join_idx_left, None),
+            || flatten(&join_idx_right, None)
+        );
         Either::Right((join_idx_left, join_idx_right))
     }
 }

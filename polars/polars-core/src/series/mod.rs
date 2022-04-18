@@ -21,7 +21,7 @@ pub mod unstable;
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
-use crate::utils::Wrap;
+use crate::utils::{split_offsets, Wrap};
 use crate::utils::{split_ca, split_series};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use ahash::RandomState;
@@ -378,6 +378,36 @@ impl Series {
             POOL.install(|| idx.par_iter().map(|idx| self.take_unchecked(idx)).collect());
 
         let s = series?
+            .into_iter()
+            .reduce(|mut s, s1| {
+                s.append(&s1).unwrap();
+                s
+            })
+            .unwrap();
+        if rechunk {
+            Ok(s.rechunk())
+        } else {
+            Ok(s)
+        }
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub(crate) unsafe fn take_chunked_unchecked_threaded(&self, chunk_ids: &[ChunkId], rechunk: bool) -> Result<Series> {
+        let n_threads = POOL.current_num_threads();
+        let offsets = split_offsets(self.len(), n_threads);
+
+        let series: Vec<_> =
+            POOL.install(|| {
+                offsets.into_par_iter().map(|(offset, len)| {
+                    let chunk_ids = &chunk_ids[offset..offset + len];
+                    self._take_chunked_unchecked(&chunk_ids)
+                }).collect()
+            });
+
+        let s = series
             .into_iter()
             .reduce(|mut s, s1| {
                 s.append(&s1).unwrap();

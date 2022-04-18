@@ -2949,6 +2949,19 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
+    pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId]) -> Self {
+        let cols = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| match s.dtype() {
+                    DataType::Utf8 => s.take_chunked_unchecked_threaded(idx, true).unwrap(),
+                    _ => s._take_chunked_unchecked(idx),
+                })
+                .collect()
+        });
+        DataFrame::new_no_checks(cols)
+    }
+
     pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();

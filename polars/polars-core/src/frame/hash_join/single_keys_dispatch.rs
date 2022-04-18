@@ -13,7 +13,8 @@ impl Series {
             Utf8 => {
                 let lhs = lhs.utf8().unwrap();
                 let rhs = rhs.utf8().unwrap();
-                lhs.hash_join_left(rhs)
+                lhs.hash_join_left(rhs);
+                panic!();
             }
             _ => {
                 if self.bit_repr_is_large() {

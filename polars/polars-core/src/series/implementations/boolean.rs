@@ -3,13 +3,10 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{
-    ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
-        explode::ExplodeByOffsets,
-    },
-    AsSinglePtr, ChunkIdIter,
-};
+use crate::chunked_array::{ops::{
+    compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
+    explode::ExplodeByOffsets,
+}, AsSinglePtr, ChunkIdIter};
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::frame::hash_join::ZipOuterJoinColumn;
@@ -192,14 +189,14 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     unsafe fn _take_chunked_unchecked(
         &self,
-        by: &mut dyn TrustedLen<Item = ChunkId>,
+        by: &[ChunkId],
     ) -> Series {
         self.0.take_chunked_unchecked(by).into_series()
     }
 
     unsafe fn _take_opt_chunked_unchecked(
         &self,
-        by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+        by: &[Option<ChunkId>],
     ) -> Series {
         self.0.take_opt_chunked_unchecked(by).into_series()
     }

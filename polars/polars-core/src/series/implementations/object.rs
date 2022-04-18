@@ -1,6 +1,5 @@
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
@@ -119,14 +118,14 @@ where
 
     unsafe fn _take_chunked_unchecked(
         &self,
-        by: &mut dyn TrustedLen<Item = ChunkId>,
+        by: &[ChunkId],
     ) -> Series {
         self.0.take_chunked_unchecked(by).into_series()
     }
 
     unsafe fn _take_opt_chunked_unchecked(
         &self,
-        by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+        by: &[Option<ChunkId>],
     ) -> Series {
         self.0.take_opt_chunked_unchecked(by).into_series()
     }

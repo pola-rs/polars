@@ -1,6 +1,5 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
@@ -486,14 +485,14 @@ pub trait SeriesTrait:
     }
 
     #[doc(hidden)]
-    unsafe fn _take_chunked_unchecked(&self, by: &mut dyn TrustedLen<Item = ChunkId>) -> Series {
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
         todo!()
     }
 
     #[doc(hidden)]
     unsafe fn _take_opt_chunked_unchecked(
         &self,
-        by: &mut dyn TrustedLen<Item = Option<ChunkId>>,
+        by: &[Option<ChunkId>],
     ) -> Series {
         todo!()
     }
@@ -528,7 +527,7 @@ pub trait SeriesTrait:
     #[cfg(feature = "take_opt_iter")]
     #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
-        invalid_operation_panic!()
+        invalid_operation_panic!(self)
     }
 
     /// Take by index. This operation is clone.
