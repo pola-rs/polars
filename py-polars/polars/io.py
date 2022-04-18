@@ -5,7 +5,6 @@ from typing import (
     Any,
     BinaryIO,
     Callable,
-    cast,
     ContextManager,
     Dict,
     Iterator,
@@ -16,6 +15,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    cast,
     overload,
 )
 from urllib.request import urlopen
