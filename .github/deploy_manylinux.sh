@@ -23,3 +23,6 @@ sed '/s/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' Cargo.toml
 maturin publish \
   --skip-existing \
   --username ritchie46
+
+# Clean up after bigidx changes
+git checkout .
