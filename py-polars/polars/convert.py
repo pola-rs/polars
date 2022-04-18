@@ -1,4 +1,13 @@
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+    overload,
+)
 
 import numpy as np
 
@@ -19,7 +28,7 @@ else:
 
 
 def from_dict(
-    data: Dict[str, Sequence[Any]],
+    data: Mapping[str, Union[Sequence, Mapping]],
     columns: Optional[Sequence[str]] = None,
 ) -> DataFrame:
     """
@@ -64,7 +73,7 @@ def from_dict(
         if isinstance(value, dict):
             data_struct[col_name] = from_dict(value).to_struct(col_name)
 
-    return DataFrame._from_dict(data=dict(data, **data_struct), columns=columns)
+    return DataFrame._from_dict(data=dict(data, **data_struct), columns=columns)  # type: ignore
 
 
 def from_records(

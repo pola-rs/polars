@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Dict, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -173,12 +174,15 @@ def test_from_pandas_categorical_none() -> None:
 
 def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
-    df = pl.from_dict(data)  # type: ignore
+    df = pl.from_dict(data)
     assert df.shape == (2, 2)
 
 
 def test_from_dict_struct() -> None:
-    data = {"a": {"b": [1, 3], "c": [2, 4]}, "d": [5, 6]}
+    data: Dict[str, Union[Dict, Sequence]] = {
+        "a": {"b": [1, 3], "c": [2, 4]},
+        "d": [5, 6],
+    }
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
     assert df["a"][0] == (1, 2)
