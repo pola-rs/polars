@@ -1,3 +1,5 @@
+import pandas as pd
+
 import polars as pl
 
 
@@ -141,3 +143,12 @@ def test_nested_struct() -> None:
 def test_eager_struct() -> None:
     s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
     assert s.dtype == pl.Struct
+
+
+def test_struct_to_pandas() -> None:
+    df = pd.DataFrame([{"a": {"b": {"c": 2}}}])
+    pl_df = pl.from_pandas(df)
+
+    assert isinstance(pl_df.dtypes[0], pl.datatypes.Struct)
+
+    assert pl_df.to_pandas().equals(df)

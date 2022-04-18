@@ -556,8 +556,7 @@ impl DataFrame {
             .ok_or_else(|| {
                 PolarsError::NoData("Can not determine number of chunks if there is no data".into())
             })?
-            .chunks()
-            .len())
+            .n_chunks())
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.
