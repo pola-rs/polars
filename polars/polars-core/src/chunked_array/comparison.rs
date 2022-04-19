@@ -891,6 +891,7 @@ impl ChunkEqualElement for Utf8Chunked {
 
 impl ChunkEqualElement for ListChunked {}
 
+#[cfg(feature = "dtype-struct")]
 impl ChunkCompare<&StructChunked> for StructChunked {
     fn eq_missing(&self, rhs: &StructChunked) -> BooleanChunked {
         self.equal(rhs)
