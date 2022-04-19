@@ -1,5 +1,5 @@
-import pytest
 import pandas as pd
+import pytest
 
 import polars as pl
 
