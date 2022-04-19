@@ -695,7 +695,7 @@ impl DataFrame {
 
         let join_idx = s_left.hash_join_left(s_right);
 
-        match join_idx {
+        let (df_left, df_right) = match join_idx {
             // single chunk
             LeftJoinResult::Left((left_idx, right_idx)) => {
                 let mut left_idx = &*left_idx;
@@ -705,7 +705,7 @@ impl DataFrame {
                     right_idx = slice_slice(&right_idx, offset, len);
                 }
 
-                let (df_left, df_right) = POOL.join(
+                POOL.join(
                     // safety: join indices are known to be in bounds
                     || unsafe { self.create_left_df_from_slice(left_idx, true) },
                     || unsafe {
@@ -713,8 +713,7 @@ impl DataFrame {
                             right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
                         )
                     },
-                );
-                self.finish_join(df_left, df_right, suffix)
+                )
             }
             // multiple chunks
             LeftJoinResult::Right((left_idx, right_idx)) => {
@@ -724,9 +723,17 @@ impl DataFrame {
                     left_idx = slice_slice(&left_idx, offset, len);
                     right_idx = slice_slice(&right_idx, offset, len);
                 }
-                todo!()
+                POOL.join(
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df_chunked(left_idx, true) },
+                    || unsafe {
+                        other.drop(s_right.name()).unwrap().take_opt_chunked_unchecked(right_idx)
+                    },
+                )
             }
-        }
+        };
+
+        self.finish_join(df_left, df_right, suffix)
     }
 
     #[cfg(feature = "semi_anti_join")]

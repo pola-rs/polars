@@ -2954,8 +2954,21 @@ impl DataFrame {
             self.columns
                 .par_iter()
                 .map(|s| match s.dtype() {
-                    DataType::Utf8 => s.take_chunked_unchecked_threaded(idx, true).unwrap(),
+                    DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, true),
                     _ => s._take_chunked_unchecked(idx),
+                })
+                .collect()
+        });
+        DataFrame::new_no_checks(cols)
+    }
+
+    pub(crate) unsafe fn take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
+        let cols = POOL.install(|| {
+            self.columns
+                .par_iter()
+                .map(|s| match s.dtype() {
+                    DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+                    _ => s._take_opt_chunked_unchecked(idx),
                 })
                 .collect()
         });
