@@ -345,7 +345,8 @@ pub(crate) fn coerce_lhs_rhs<'a>(
     Ok((left, right))
 }
 
-// Handle (Date | Datetime) +/- (Duration) | (Duration) +/- (Date | Datetime)
+// Handle (Date | Datetime) +/- (Duration) | (Duration) +/- (Date | Datetime) | (Duration) +-
+// (Duration)
 // Time arithmetic is only implemented on the date / datetime so ensure that's on left
 
 fn coerce_time_units<'a>(
@@ -358,6 +359,19 @@ fn coerce_time_units<'a>(
             Cow::Borrowed(lhs)
         } else {
             Cow::Owned(lhs.cast(&DataType::Datetime(units, t.clone()))?)
+        };
+        let right = if *ru == units {
+            Cow::Borrowed(rhs)
+        } else {
+            Cow::Owned(rhs.cast(&DataType::Duration(units))?)
+        };
+        Ok((left, right))
+    } else if let (DataType::Duration(lu), DataType::Duration(ru)) = (lhs.dtype(), rhs.dtype()) {
+        let units = get_time_units(lu, ru);
+        let left = if *lu == units {
+            Cow::Borrowed(lhs)
+        } else {
+            Cow::Owned(lhs.cast(&DataType::Duration(units))?)
         };
         let right = if *ru == units {
             Cow::Borrowed(rhs)

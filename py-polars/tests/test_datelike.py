@@ -815,3 +815,15 @@ def test_timelike_init() -> None:
     for ts in [durations, dates, datetimes]:
         s = pl.Series(ts)
         assert s.to_list() == ts
+
+
+def test_duration_filter() -> None:
+    date_df = pl.DataFrame(
+        {
+            "start_date": [date(2022, 1, 1), date(2022, 1, 1), date(2022, 1, 1)],
+            "end_date": [date(2022, 1, 7), date(2022, 2, 20), date(2023, 1, 1)],
+        }
+    ).with_column((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
+
+    assert date_df.filter(pl.col("time_passed") < timedelta(days=30)).shape[0] == 1
+    assert date_df.filter(pl.col("time_passed") >= timedelta(days=30)).shape[0] == 2
