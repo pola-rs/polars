@@ -111,8 +111,12 @@ where
                 .zip(parquet_schema.columns().par_iter())
                 .zip(encodings.par_iter())
                 .map(|((array, descriptor), encoding)| {
-                    let encoded_pages =
-                        array_to_pages(array.as_ref(), descriptor.clone(), options, *encoding)?;
+                    let encoded_pages = array_to_pages(
+                        array.as_ref(),
+                        descriptor.descriptor.clone(),
+                        options,
+                        *encoding,
+                    )?;
                     encoded_pages
                         .map(|page| {
                             compress(page?, vec![], options.compression).map_err(|x| x.into())
@@ -133,8 +137,8 @@ where
         // write the headers
         writer.start()?;
         for group in row_group_iter {
-            let (group, len) = group?;
-            writer.write(group, len)?;
+            let (group, _len) = group?;
+            writer.write(group)?;
         }
         let _ = writer.end(None)?;
 

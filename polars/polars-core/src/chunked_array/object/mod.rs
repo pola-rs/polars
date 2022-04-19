@@ -143,6 +143,9 @@ where
         arr.null_bitmap = validity;
         Box::new(arr)
     }
+    fn to_boxed(&self) -> Box<dyn Array> {
+        Box::new(self.clone())
+    }
 }
 
 impl<T> ObjectChunked<T>
