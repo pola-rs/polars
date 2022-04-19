@@ -529,7 +529,7 @@ impl PyDataFrame {
             "gzip" => ParquetCompression::Gzip,
             "lzo" => ParquetCompression::Lzo,
             "brotli" => ParquetCompression::Brotli,
-            "lz4" => ParquetCompression::Lz4,
+            "lz4" => ParquetCompression::Lz4Raw,
             "zstd" => ParquetCompression::Zstd,
             s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
         };
