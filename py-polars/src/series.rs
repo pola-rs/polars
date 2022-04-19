@@ -396,34 +396,16 @@ impl PySeries {
         }
     }
 
-    pub fn max(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.max::<f64>().to_object(py),
-            DataType::Boolean => self.series.max::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.max::<i64>().to_object(py),
-        }
+    pub fn max(&self, py: Python) -> PyObject {
+        Wrap(self.series.max_as_series().get(0)).into_py(py)
     }
 
-    pub fn min(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.min::<f64>().to_object(py),
-            DataType::Boolean => self.series.min::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.min::<i64>().to_object(py),
-        }
+    pub fn min(&self, py: Python) -> PyObject {
+        Wrap(self.series.min_as_series().get(0)).into_py(py)
     }
 
-    pub fn sum(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.sum::<f64>().to_object(py),
-            DataType::Boolean => self.series.sum::<u64>().to_object(py),
-            _ => self.series.sum::<i64>().to_object(py),
-        }
+    pub fn sum(&self, py: Python) -> PyObject {
+        Wrap(self.series.sum_as_series().get(0)).into_py(py)
     }
 
     pub fn n_chunks(&self) -> usize {

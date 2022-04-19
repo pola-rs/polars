@@ -45,6 +45,11 @@ macro_rules! impl_compare {
                 .unwrap()
                 .logical()
                 .$method(rhs.categorical().unwrap().logical()),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => lhs
+                .struct_()
+                .unwrap()
+                .$method(rhs.struct_().unwrap().deref()),
 
             _ => unimplemented!(),
         }

@@ -547,7 +547,7 @@ class Series:
         """
         return self ** 0.5
 
-    def any(self) -> "Series":
+    def any(self) -> bool:
         """
         Check if any boolean value in the column is `True`
 
@@ -555,9 +555,9 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()
+        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
-    def all(self) -> "Series":
+    def all(self) -> bool:
         """
         Check if all boolean values in the column are `True`
 
@@ -565,7 +565,7 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()
+        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
     def log(self, base: float = math.e) -> "Series":
         """
@@ -4672,28 +4672,29 @@ class DateTimeNameSpace:
     def to_python_datetime(self) -> Series:
         """
         Go from Date/Datetime to python DateTime objects
+
+        .. deprecated:: 0.13.23
+            Use :func:`Series.to_list`.
+
         """
         return (self.timestamp("ms") / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> Union[date, datetime]:
+    def min(self) -> Union[date, datetime, timedelta]:
         """
         Return minimum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.min()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        # we can ignore types because we are certain we get a logical type
+        return wrap_s(self._s).min()  # type: ignore
 
-    def max(self) -> Union[date, datetime]:
+    def max(self) -> Union[date, datetime, timedelta]:
         """
         Return maximum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.max()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return wrap_s(self._s).max()  # type: ignore
 
-    def median(self) -> Union[date, datetime]:
+    def median(self) -> Union[date, datetime, timedelta]:
         """
         Return median as python DateTime
         """

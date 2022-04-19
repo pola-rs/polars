@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 import polars as pl
 
@@ -124,6 +125,25 @@ def test_value_counts_expr() -> None:
 
     out = sorted(out)  # type: ignore
     assert out == [("a", 1), ("b", 2), ("c", 3)]
+
+
+def test_struct_comparison() -> None:
+    s1 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
+    s2 = pl.DataFrame({"b": [0, 0, 0]}).to_struct("a")
+    s3 = pl.DataFrame({"c": [1, 2, 3]}).to_struct("a")
+    s4 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
+
+    pl.testing.assert_series_equal(s1, s1)
+    pl.testing.assert_series_equal(s1, s4)
+
+    with pytest.raises(AssertionError):
+        pl.testing.assert_series_equal(s1, s2)
+
+    with pytest.raises(AssertionError):
+        pl.testing.assert_series_equal(s1, s3)
+
+    assert (s1 != s2).all() is True
+    assert (s1 == s4).all() is True
 
 
 def test_nested_struct() -> None:

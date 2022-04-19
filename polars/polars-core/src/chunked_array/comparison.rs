@@ -891,6 +891,52 @@ impl ChunkEqualElement for Utf8Chunked {
 
 impl ChunkEqualElement for ListChunked {}
 
+#[cfg(feature = "dtype-struct")]
+impl ChunkCompare<&StructChunked> for StructChunked {
+    fn eq_missing(&self, rhs: &StructChunked) -> BooleanChunked {
+        self.equal(rhs)
+    }
+
+    fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
+        if self.len() != rhs.len() {
+            BooleanChunked::full("", false, self.len())
+        } else {
+            let equal_count: usize = self
+                .fields()
+                .iter()
+                .zip(rhs.fields().iter())
+                .map(|(l, r)| l.series_equal(r) as usize)
+                .sum();
+            if equal_count == self.fields().len() {
+                BooleanChunked::full("", true, self.len())
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+    }
+
+    fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
+        self.equal(rhs).not()
+    }
+
+    // following are not implemented because gt, lt comparison of series don't make sense
+    fn gt(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn gt_eq(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt_eq(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::super::{arithmetic::test::create_two_chunked, test::get_chunked_array};
