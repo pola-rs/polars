@@ -6,7 +6,6 @@ use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(any(feature = "dtype-struct", feature = "object"))]
 use std::any::Any;
 
-#[cfg(feature = "series_from_anyvalue")]
 mod any_value;
 pub(crate) mod arithmetic;
 mod comparison;

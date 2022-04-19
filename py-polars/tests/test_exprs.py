@@ -195,3 +195,22 @@ def test_dot_in_groupby() -> None:
         .agg(pl.col("x").dot("y").alias("dot"))
         .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
     )
+
+
+def test_list_eval_expression() -> None:
+    df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+
+    for parallel in [True, False]:
+        assert df.with_column(
+            pl.concat_list(["a", "b"])
+            .arr.eval(pl.first().rank(), parallel=parallel)
+            .alias("rank")
+        ).to_dict(False) == {
+            "a": [1, 8, 3],
+            "b": [4, 5, 2],
+            "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
+        }
+
+        assert df["a"].reshape((1, -1)).arr.eval(
+            pl.first(), parallel=parallel
+        ).to_list() == [[1, 8, 3]]

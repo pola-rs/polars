@@ -93,12 +93,12 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
-  "series_from_anyvalue",
   "unique_counts",
   "log",
   "serde-lazy",
   "partition_by",
   "semi_anti_join",
+  "list_eval",
 ]
 
 # [patch.crates-io]

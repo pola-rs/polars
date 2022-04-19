@@ -300,6 +300,7 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.slice
     ListNameSpace.head
     ListNameSpace.tail
+    ListNameSpace.eval
 
 Categories
 ----------

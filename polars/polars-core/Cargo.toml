@@ -17,7 +17,6 @@ temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
-series_from_anyvalue = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []
@@ -35,7 +34,7 @@ fmt = ["comfy-table"]
 sort_multiple = []
 # create from row values
 # and include pivot operation
-rows = ["series_from_anyvalue"]
+rows = []
 # dont use this
 private = []
 

@@ -1166,6 +1166,10 @@ impl PyExpr {
         self.inner.clone().arr().slice(offset, length).into()
     }
 
+    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, parallel).into()
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {
