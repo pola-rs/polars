@@ -3395,9 +3395,19 @@ class ExprListNameSpace:
         """
         return self.slice(-n, n)
 
-    def eval(self, expr: "Expr") -> "Expr":
+    def eval(self, expr: "Expr", parallel: bool = False) -> "Expr":
         """
         Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
 
         Examples
         --------
@@ -3420,7 +3430,7 @@ class ExprListNameSpace:
         └─────┴─────┴────────────┘
 
         """
-        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr))
+        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
 
 
 class ExprStringNameSpace:

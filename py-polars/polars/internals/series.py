@@ -4350,9 +4350,19 @@ class ListNameSpace:
         """
         return self.slice(-n, n)
 
-    def eval(self, expr: "pli.Expr") -> "Series":
+    def eval(self, expr: "pli.Expr", parallel: bool = False) -> "Series":
         """
         Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
 
         Examples
         --------
@@ -4375,7 +4385,7 @@ class ListNameSpace:
         └─────┴─────┴────────────┘
 
         """
-        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr)).to_series()
+        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr, parallel)).to_series()
 
 
 class DateTimeNameSpace:
