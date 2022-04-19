@@ -128,10 +128,6 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.agg_mean(groups)
-            }
-
             fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0.agg_min(groups)
             }

@@ -64,3 +64,23 @@ def test_agg_after_head() -> None:
             out = out.sort("a")
 
         assert out.frame_equal(expected)
+
+
+def test_overflow_uint16_agg_mean() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "col1": ["A" for _ in range(1025)],
+                "col3": [64 for i in range(1025)],
+            }
+        )
+        .with_columns(
+            [
+                pl.col("col3").cast(pl.UInt16),
+            ]
+        )
+        .groupby(["col1"])
+        .agg(pl.col("col3").mean())
+        .to_dict(False)
+        == {"col1": ["A"], "col3": [64.0]}
+    )
