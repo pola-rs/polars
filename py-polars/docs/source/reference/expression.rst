@@ -341,6 +341,7 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.slice
     ExprListNameSpace.head
     ExprListNameSpace.tail
+    ExprListNameSpace.eval
 
 Categories
 ----------

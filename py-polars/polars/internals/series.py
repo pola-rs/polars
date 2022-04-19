@@ -4350,6 +4350,33 @@ class ListNameSpace:
         """
         return self.slice(-n, n)
 
+    def eval(self, expr: "pli.Expr") -> "Series":
+        """
+        Run any polars expression against the lists' elements
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr)).to_series()
+
 
 class DateTimeNameSpace:
     """
