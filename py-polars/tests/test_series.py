@@ -1443,22 +1443,16 @@ def test_extend_constant() -> None:
 
 def test_any_all() -> None:
     a = pl.Series("a", [True, False, True])
-    expected = pl.Series("a", [True])
-    verify_series_and_expr_api(a, expected, "any")
-    expected = pl.Series("a", [False])
-    verify_series_and_expr_api(a, expected, "all")
+    assert a.any() is True
+    assert a.all() is False
 
     a = pl.Series("a", [True, True, True])
-    expected = pl.Series("a", [True])
-    verify_series_and_expr_api(a, expected, "any")
-    expected = pl.Series("a", [True])
-    verify_series_and_expr_api(a, expected, "all")
+    assert a.any() is True
+    assert a.all() is True
 
     a = pl.Series("a", [False, False, False])
-    expected = pl.Series("a", [False])
-    verify_series_and_expr_api(a, expected, "any")
-    expected = pl.Series("a", [False])
-    verify_series_and_expr_api(a, expected, "all")
+    assert a.any() is False
+    assert a.all() is False
 
 
 def test_product() -> None:
