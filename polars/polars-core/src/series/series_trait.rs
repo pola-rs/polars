@@ -169,9 +169,6 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
-        }
         fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }

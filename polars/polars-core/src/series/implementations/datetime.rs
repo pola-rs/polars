@@ -78,11 +78,6 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-        // does not make sense on logical
-        None
-    }
-
     fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
         self.0.agg_min(groups).map(|ca| {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
