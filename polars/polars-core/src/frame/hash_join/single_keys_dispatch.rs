@@ -5,7 +5,7 @@ use arrow::Either;
 impl Series {
     #[cfg(feature = "private")]
     #[doc(hidden)]
-    pub fn hash_join_left(&self, other: &Series) -> LeftJoinResult {
+    pub fn hash_join_left(&self, other: &Series) -> LeftJoinResult2 {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -13,8 +13,7 @@ impl Series {
             Utf8 => {
                 let lhs = lhs.utf8().unwrap();
                 let rhs = rhs.utf8().unwrap();
-                lhs.hash_join_left(rhs);
-                panic!();
+                lhs.hash_join_left(rhs)
             }
             _ => {
                 if self.bit_repr_is_large() {
@@ -171,7 +170,28 @@ where
     }
 }
 
-fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinResult
+fn create_mappings(chunks_left: &[ArrayRef], chunks_right: &[ArrayRef], left_len: usize, right_len: usize) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
+    let mapping_left = || {
+        if chunks_left.len() > 1 {
+            Some(create_chunked_index_mapping(chunks_left, left_len))
+        } else {
+            None
+        }
+    };
+
+    let mapping_right = || {
+        if chunks_right.len() > 1 {
+            Some(create_chunked_index_mapping(chunks_right, right_len))
+        } else {
+            None
+        }
+    };
+
+    POOL.join(mapping_left, mapping_right)
+
+}
+
+fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinResult2
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -189,19 +209,20 @@ where
         (0, 0, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b, None)
+            hash_join_tuples_left(keys_a, keys_b, None, None)
         }
         (0, 0, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
-            let mapping = create_chunked_index_mapping(left.chunks(), left.len());
-            hash_join_tuples_left(keys_a, keys_b, Some(&mapping))
+
+            let (mapping_left, mapping_right) = create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(keys_a, keys_b, mapping_left.as_deref(), mapping_right.as_deref())
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            let mapping = create_chunked_index_mapping(left.chunks(), left.len());
-            hash_join_tuples_left(keys_a, keys_b, Some(&mapping))
+            let (mapping_left, mapping_right) = create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(keys_a, keys_b, mapping_left.as_deref(), mapping_right.as_deref())
         }
     }
 }
@@ -294,11 +315,13 @@ impl Utf8Chunked {
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinResult {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinResult2 {
         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_left(str_hashes_a, str_hashes_b, None)
+
+        let (mapping_left, mapping_right) = create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
+        hash_join_tuples_left(str_hashes_a, str_hashes_b, mapping_left.as_deref(), mapping_right.as_deref())
     }
 
     #[cfg(feature = "semi_anti_join")]

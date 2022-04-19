@@ -383,11 +383,12 @@ impl Series {
 
     // take a function pointer to reduce bloat
     fn threaded_op(&self, rechunk: bool,
+                   len: usize,
                    func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
     ) -> Result<Series>
     {
         let n_threads = POOL.current_num_threads();
-        let offsets = split_offsets(self.len(), n_threads);
+        let offsets = split_offsets(len, n_threads);
 
 
         let series: Result<Vec<_>> = POOL.install(|| {
@@ -405,7 +406,7 @@ impl Series {
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
     pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
-        self.threaded_op(rechunk, &|offset, len| {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
             self.take_unchecked(&idx)
         })
@@ -414,7 +415,7 @@ impl Series {
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
     pub(crate) unsafe fn _take_chunked_unchecked_threaded(&self, chunk_ids: &[ChunkId], rechunk: bool) -> Series {
-        self.threaded_op(rechunk, &|offset, len| {
+        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
             let chunk_ids = &chunk_ids[offset..offset + len];
             Ok(self._take_chunked_unchecked(&chunk_ids))
         }).unwrap()
@@ -423,7 +424,7 @@ impl Series {
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
     pub(crate) unsafe fn _take_opt_chunked_unchecked_threaded(&self, chunk_ids: &[Option<ChunkId>], rechunk: bool) -> Series {
-        self.threaded_op(rechunk, &|offset, len| {
+        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
             let chunk_ids = &chunk_ids[offset..offset + len];
             Ok(self._take_opt_chunked_unchecked(&chunk_ids))
         }).unwrap()
@@ -436,7 +437,7 @@ impl Series {
     ///
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
-        self.threaded_op(rechunk, &|offset, len| {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
             let idx = idx.slice(offset as i64, len);
             self.take(&idx)
         })

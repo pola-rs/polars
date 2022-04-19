@@ -5,8 +5,27 @@ use polars_utils::flatten;
 
 pub(super) type LeftJoinIndices = (IdxSize, Option<IdxSize>);
 pub(super) type LeftJoinChunkIndices = ([IdxSize; 2], Option<[IdxSize; 2]>);
-pub(super) type LeftJoinResult =
-    Either<(Vec<IdxSize>, Vec<Option<IdxSize>>), (Vec<[IdxSize; 2]>, Vec<Option<[IdxSize; 2]>>)>;
+
+pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
+pub(super) type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
+
+pub(super) type LeftJoinResult2 = (JoinIds, JoinOptIds);
+
+unsafe fn apply_mapping(idx: Vec<IdxSize>, chunk_mapping: &[ChunkId]) -> Vec<ChunkId> {
+    idx
+        .iter()
+        .map(|idx| *chunk_mapping.get_unchecked(*idx as usize))
+        .collect()
+}
+
+unsafe fn apply_opt_mapping(idx: Vec<Option<IdxSize>>, chunk_mapping: &[ChunkId]) -> Vec<Option<ChunkId>> {
+    idx
+        .iter()
+        .map(|opt_idx| {
+            opt_idx.map(|idx| *chunk_mapping.get_unchecked(idx as usize))
+        })
+        .collect()
+}
 
 #[inline]
 pub(super) fn on_match_left_join_extend(
@@ -17,15 +36,16 @@ pub(super) fn on_match_left_join_extend(
     results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
 }
 
-pub(super) fn hash_join_tuples_left<'a, T: 'a, IntoSlice>(
+pub(super) fn hash_join_tuples_left<T, IntoSlice>(
     probe: Vec<IntoSlice>,
     build: Vec<IntoSlice>,
     // map the global indices to [chunk_idx, array_idx]
     // only needed if we have non contiguous memory
-    chunk_mapping: Option<&'a [[IdxSize; 2]]>,
-) -> LeftJoinResult
+    chunk_mapping_left: Option<(&[ChunkId])>,
+    chunk_mapping_right: Option<(&[ChunkId])>,
+) -> LeftJoinResult2
 where
-    IntoSlice: 'a + AsRef<[T]> + Send + Sync,
+    IntoSlice:  AsRef<[T]> + Send + Sync,
     T: Send + Hash + Eq + Sync + Copy + AsU64,
 {
     // first we hash one relation
@@ -38,13 +58,13 @@ where
     debug_assert!(n_tables.is_power_of_two());
 
     // next we probe the other relation
-    let result: Vec<LeftJoinResult> = POOL.install(move || {
+    let result: Vec<LeftJoinResult2> = POOL.install(move || {
         probe
             .into_par_iter()
             .zip(offsets)
             // probes_hashes: Vec<u64> processed by this thread
             // offset: offset index
-            .map(move |(probe, offset)| {
+            .map(move |(probe, offset)| unsafe {
                 // local reference
                 let hash_tbls = &hash_tbls;
                 let probe = probe.as_ref();
@@ -76,60 +96,45 @@ where
                         }
                     }
                 });
-                match chunk_mapping {
-                    None => LeftJoinResult::Left((result_idx_left, result_idx_right)),
-                    Some(mapping) => {
-                        let left = unsafe {
-                            result_idx_left
-                                .iter()
-                                .map(|idx| *mapping.get_unchecked(*idx as usize))
-                                .collect::<Vec<_>>()
-                        };
-                        let right = unsafe {
-                            result_idx_right
-                                .iter()
-                                .map(|opt_idx| {
-                                    opt_idx.map(|idx| *mapping.get_unchecked(idx as usize))
-                                })
-                                .collect::<Vec<_>>()
-                        };
+                let left = match chunk_mapping_left {
+                    None => JoinIds::Left(result_idx_left),
+                    Some(mapping) => JoinIds::Right(
+                        unsafe { apply_mapping(result_idx_left, mapping) }
+                    )
+                };
 
-                        LeftJoinResult::Right((left, right))
-                    }
-                }
+                let right = match chunk_mapping_right {
+                    None => JoinOptIds::Left(result_idx_right),
+                    Some(mapping) => JoinOptIds::Right(apply_opt_mapping(result_idx_right, mapping)),
+                };
+                (left, right)
             })
             .collect()
     });
 
-    // single chunk
-    if result[0].is_left() {
-        let mut join_idx_left = result
-            .iter()
-            .map(|join_idx| &join_idx.as_ref().left().unwrap().0)
-            .collect::<Vec<_>>();
-        let mut join_idx_right = result
-            .iter()
-            .map(|join_idx| &join_idx.as_ref().left().unwrap().1)
-            .collect::<Vec<_>>();
-        let (join_idx_left, join_idx_right) = rayon::join(
-            || flatten(&join_idx_left, None),
-            || flatten(&join_idx_right, None)
-        );
-        Either::Left((join_idx_left, join_idx_right))
-    } else {
-        let mut join_idx_left = result
-            .iter()
-            .map(|join_idx| &join_idx.as_ref().right().unwrap().0)
-            .collect::<Vec<_>>();
-        let mut join_idx_right = result
-            .iter()
-            .map(|join_idx| &join_idx.as_ref().right().unwrap().1)
-            .collect::<Vec<_>>();
 
-        let (join_idx_left, join_idx_right) = rayon::join(
-            || flatten(&join_idx_left, None),
-            || flatten(&join_idx_right, None)
-        );
-        Either::Right((join_idx_left, join_idx_right))
-    }
+
+
+
+    let left = if result[0].0.is_left() {
+        let lefts = result.iter().map(|join_id| join_id.0.as_ref().left().unwrap()).collect::<Vec<_>>();
+        let lefts = flatten(&lefts, None);
+        JoinIds::Left(lefts)
+    } else {
+        let lefts = result.iter().map(|join_id| join_id.0.as_ref().right().unwrap()).collect::<Vec<_>>();
+        let lefts = flatten(&lefts, None);
+        JoinIds::Right(lefts)
+    };
+
+    let right = if result[0].1.is_left() {
+        let rights = result.iter().map(|join_id| join_id.1.as_ref().left().unwrap()).collect::<Vec<_>>();
+        let rights = flatten(&rights, None);
+        JoinOptIds::Left(rights)
+    } else {
+        let rights = result.iter().map(|join_id| join_id.1.as_ref().right().unwrap()).collect::<Vec<_>>();
+        let rights = flatten(&rights, None);
+        JoinOptIds::Right(rights)
+    };
+
+    (left, right)
 }

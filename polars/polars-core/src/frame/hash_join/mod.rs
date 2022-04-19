@@ -693,45 +693,52 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let join_idx = s_left.hash_join_left(s_right);
+        let (left_idx, right_idx) = s_left.hash_join_left(s_right);
 
-        let (df_left, df_right) = match join_idx {
-            // single chunk
-            LeftJoinResult::Left((left_idx, right_idx)) => {
-                let mut left_idx = &*left_idx;
-                let mut right_idx = &*right_idx;
-                if let Some((offset, len)) = slice {
-                    left_idx = slice_slice(&left_idx, offset, len);
-                    right_idx = slice_slice(&right_idx, offset, len);
+        let materialize_left = || {
+            match left_idx {
+                JoinIds::Left(left_idx) => {
+                    let mut left_idx = &*left_idx;
+                    if let Some((offset, len)) = slice {
+                        left_idx = slice_slice(&left_idx, offset, len);
+                    }
+                    unsafe { self.create_left_df_from_slice(left_idx, true) }
+                },
+                JoinIds::Right(left_idx) => {
+                    let mut left_idx = &*left_idx;
+                    if let Some((offset, len)) = slice {
+                        left_idx = slice_slice(&left_idx, offset, len);
+                    }
+                    unsafe { self.create_left_df_chunked(left_idx, true) }
                 }
+            }
+        };
 
-                POOL.join(
-                    // safety: join indices are known to be in bounds
-                    || unsafe { self.create_left_df_from_slice(left_idx, true) },
-                    || unsafe {
+        let materialize_right = || {
+            match right_idx {
+                JoinOptIds::Left(right_idx) => {
+                    let mut right_idx = &*right_idx;
+                    if let Some((offset, len)) = slice {
+                        right_idx = slice_slice(&right_idx, offset, len);
+                    }
+                    unsafe {
                         other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                             right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
                         )
-                    },
-                )
-            }
-            // multiple chunks
-            LeftJoinResult::Right((left_idx, right_idx)) => {
-                let mut left_idx = &*left_idx;
-                let mut right_idx = &*right_idx;
-                if let Some((offset, len)) = slice {
-                    left_idx = slice_slice(&left_idx, offset, len);
-                    right_idx = slice_slice(&right_idx, offset, len);
-                }
-                POOL.join(
-                    // safety: join indices are known to be in bounds
-                    || unsafe { self.create_left_df_chunked(left_idx, true) },
-                    || unsafe {
+                    }
+                },
+                JoinOptIds::Right(right_idx) => {
+                    let mut right_idx = &*right_idx;
+                    if let Some((offset, len)) = slice {
+                        right_idx = slice_slice(&right_idx, offset, len);
+                    }
+                    unsafe {
                         other.drop(s_right.name()).unwrap().take_opt_chunked_unchecked(right_idx)
-                    },
-                )
+                    }
+                }
             }
         };
+        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
 
         self.finish_join(df_left, df_right, suffix)
     }
