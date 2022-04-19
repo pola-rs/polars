@@ -547,7 +547,7 @@ class Series:
         """
         return self ** 0.5
 
-    def any(self) -> "Series":
+    def any(self) -> bool:
         """
         Check if any boolean value in the column is `True`
 
@@ -555,9 +555,9 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()
+        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
-    def all(self) -> "Series":
+    def all(self) -> bool:
         """
         Check if all boolean values in the column are `True`
 
@@ -565,7 +565,7 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()
+        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
     def log(self, base: float = math.e) -> "Series":
         """
