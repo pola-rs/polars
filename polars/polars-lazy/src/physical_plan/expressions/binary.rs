@@ -32,12 +32,14 @@ impl BinaryExpr {
 
 pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
     match op {
-        Operator::Gt => Ok(ChunkCompare::<&Series>::gt(left, right).into_series()),
-        Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
-        Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
-        Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
-        Operator::Eq => Ok(ChunkCompare::<&Series>::equal(left, right).into_series()),
-        Operator::NotEq => Ok(ChunkCompare::<&Series>::not_equal(left, right).into_series()),
+        Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
+        Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Lt => ChunkCompare::<&Series>::lt(left, right).map(|ca| ca.into_series()),
+        Operator::LtEq => ChunkCompare::<&Series>::lt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Eq => ChunkCompare::<&Series>::equal(left, right).map(|ca| ca.into_series()),
+        Operator::NotEq => {
+            ChunkCompare::<&Series>::not_equal(left, right).map(|ca| ca.into_series())
+        }
         Operator::Plus => Ok(left + right),
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
@@ -335,25 +337,37 @@ mod stats {
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt(min_max, literal).any()
+                ChunkCompare::<&Series>::gt(min_max, literal)
+                    .ok()
+                    .map(|s| s.any())
+                    == Some(true)
             }
             // col >= lit
             Operator::GtEq => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt_eq(min_max, literal).any()
+                ChunkCompare::<&Series>::gt_eq(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // col < lit
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt(min_max, literal).any()
+                ChunkCompare::<&Series>::lt(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // col <= lit
             Operator::LtEq => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt_eq(min_max, literal).any()
+                ChunkCompare::<&Series>::lt_eq(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // default: read the file
             _ => true,
@@ -365,22 +379,34 @@ mod stats {
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt(literal, min_max).any()
+                ChunkCompare::<&Series>::gt(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::GtEq => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt_eq(literal, min_max).any()
+                ChunkCompare::<&Series>::gt_eq(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt(literal, min_max).any()
+                ChunkCompare::<&Series>::lt(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::LtEq => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt_eq(literal, min_max).any()
+                ChunkCompare::<&Series>::lt_eq(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // default: read the file
             _ => true,

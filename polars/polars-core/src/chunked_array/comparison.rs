@@ -56,6 +56,8 @@ impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -226,6 +228,8 @@ fn compare_bools(
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -494,6 +498,8 @@ impl Utf8Chunked {
 }
 
 impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -652,6 +658,7 @@ where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
 {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.equal(rhs)
     }
@@ -693,6 +700,7 @@ impl Utf8Chunked {
 }
 
 impl ChunkCompare<&str> for Utf8Chunked {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: &str) -> BooleanChunked {
         self.equal(rhs)
     }
@@ -754,6 +762,7 @@ macro_rules! impl_cmp_list {
 }
 
 impl ChunkCompare<&ListChunked> for ListChunked {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
         match (self.has_validity(), rhs.has_validity()) {
             (false, false) => self
@@ -893,6 +902,7 @@ impl ChunkEqualElement for ListChunked {}
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkCompare<&StructChunked> for StructChunked {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: &StructChunked) -> BooleanChunked {
         self.equal(rhs)
     }
