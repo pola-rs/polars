@@ -92,15 +92,6 @@ where
     }
 
     #[inline]
-    pub(crate) fn get(&self, item: usize) -> Option<&T> {
-        if item >= self.len() {
-            None
-        } else {
-            unsafe { self.get_unchecked(item) }
-        }
-    }
-
-    #[inline]
     pub(crate) unsafe fn get_unchecked(&self, item: usize) -> Option<&T> {
         if self.is_null_unchecked(item) {
             None

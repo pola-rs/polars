@@ -1,13 +1,9 @@
 use super::*;
-pub type ChunkId = [IdxSize; 2];
 
 pub trait TakeChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self;
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self;
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self;
 }
 
 impl<T> TakeChunked for ChunkedArray<T>
@@ -21,7 +17,8 @@ where
                 .map(|arr| arr.values().as_slice())
                 .collect::<Vec<_>>();
 
-            let ca: NoNull<Self> = by.iter()
+            let ca: NoNull<Self> = by
+                .iter()
                 .map(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(*chunk_idx as usize);
                     *arr.get_unchecked(*array_idx as usize)
@@ -30,23 +27,22 @@ where
 
             ca.into_inner()
         } else {
-            let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-            by.iter().map(|[chunk_idx, array_idx]| {
-                let arr = arrs.get_unchecked(*chunk_idx as usize);
-                arr.get_unchecked(*array_idx as usize)
-            })
-            .collect_trusted()
+            let arrs = self.downcast_iter().collect::<Vec<_>>();
+            by.iter()
+                .map(|[chunk_idx, array_idx]| {
+                    let arr = arrs.get_unchecked(*chunk_idx as usize);
+                    arr.get_unchecked(*array_idx as usize)
+                })
+                .collect_trusted()
         };
         ca.rename(self.name());
         ca
     }
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(chunk_idx as usize);
@@ -62,8 +58,9 @@ where
 
 impl TakeChunked for Utf8Chunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|[chunk_idx, array_idx]| {
                 let arr = arrs.get_unchecked(*chunk_idx as usize);
                 arr.get_unchecked(*array_idx as usize)
@@ -73,12 +70,10 @@ impl TakeChunked for Utf8Chunked {
         ca
     }
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(chunk_idx as usize);
@@ -94,8 +89,9 @@ impl TakeChunked for Utf8Chunked {
 
 impl TakeChunked for BooleanChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|[chunk_idx, array_idx]| {
                 let arr = arrs.get_unchecked(*chunk_idx as usize);
                 arr.get_unchecked(*array_idx as usize)
@@ -105,12 +101,10 @@ impl TakeChunked for BooleanChunked {
         ca
     }
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(chunk_idx as usize);
@@ -126,8 +120,9 @@ impl TakeChunked for BooleanChunked {
 
 impl TakeChunked for ListChunked {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|[chunk_idx, array_idx]| {
                 let arr = arrs.get_unchecked(*chunk_idx as usize);
                 arr.get_unchecked(*array_idx as usize)
@@ -137,12 +132,10 @@ impl TakeChunked for ListChunked {
         ca
     }
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(chunk_idx as usize);
@@ -158,9 +151,10 @@ impl TakeChunked for ListChunked {
 #[cfg(feature = "object")]
 impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
     unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
 
-        let mut ca: Self = by.iter()
+        let mut ca: Self = by
+            .iter()
             .map(|[chunk_idx, array_idx]| {
                 let arr = arrs.get_unchecked(*chunk_idx as usize);
                 arr.get_unchecked(*array_idx as usize).cloned()
@@ -171,12 +165,10 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
         ca
     }
 
-    unsafe fn take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Self {
-        let arrs = self.downcast_iter().map(|arr| arr).collect::<Vec<_>>();
-        let mut ca: Self = by.iter()
+    unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self {
+        let arrs = self.downcast_iter().collect::<Vec<_>>();
+        let mut ca: Self = by
+            .iter()
             .map(|opt_idx| {
                 opt_idx.and_then(|[chunk_idx, array_idx]| {
                     let arr = arrs.get_unchecked(chunk_idx as usize);

@@ -18,7 +18,7 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "polars-utils", "memmap"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
@@ -48,7 +48,7 @@ num = "^0.4"
 polars-arrow = { version = "0.20.0", path = "../polars-arrow" }
 polars-core = { version = "0.20.0", path = "../polars-core", features = ["private"], default-features = false }
 polars-time = { version = "0.20.0", path = "../polars-time", default-features = false }
-polars-utils = { version = "0.20.0", path = "../polars-utils", optional = true }
+polars-utils = { version = "0.20.0", path = "../polars-utils" }
 rayon = "1.5"
 regex = "1.5"
 serde_json = { version = "1", optional = true }

@@ -5,7 +5,6 @@ use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
-use crate::series::IsSorted;
 use ahash::RandomState;
 use arrow::array::ArrayRef;
 use std::any::Any;
@@ -116,17 +115,13 @@ where
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    unsafe fn _take_chunked_unchecked(
-        &self,
-        by: &[ChunkId],
-    ) -> Series {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
         self.0.take_chunked_unchecked(by).into_series()
     }
 
-    unsafe fn _take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Series {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
         self.0.take_opt_chunked_unchecked(by).into_series()
     }
 

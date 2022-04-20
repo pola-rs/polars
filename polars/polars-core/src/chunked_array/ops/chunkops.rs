@@ -50,8 +50,8 @@ fn slice(
 }
 
 impl<T> ChunkOps for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     fn rechunk(&self) -> Self {
         if self.chunks().len() == 1 {
@@ -64,8 +64,8 @@ impl<T> ChunkOps for ChunkedArray<T>
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-                .unwrap()
-                .into()];
+            .unwrap()
+            .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
@@ -87,8 +87,8 @@ impl ChunkOps for BooleanChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-                .unwrap()
-                .into()];
+            .unwrap()
+            .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
@@ -110,8 +110,8 @@ impl ChunkOps for Utf8Chunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-                .unwrap()
-                .into()];
+            .unwrap()
+            .into()];
             ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
@@ -133,8 +133,8 @@ impl ChunkOps for ListChunked {
                     .collect::<Vec<_>>()
                     .as_slice(),
             )
-                .unwrap()
-                .into()];
+            .unwrap()
+            .into()];
             let mut ca = ListChunked::from_chunks(self.name(), chunks);
             if self.can_fast_explode() {
                 ca.set_fast_explode()
@@ -150,12 +150,12 @@ impl ChunkOps for ListChunked {
 
 #[cfg(feature = "object")]
 impl<T> ChunkOps for ObjectChunked<T>
-    where
-        T: PolarsObject,
+where
+    T: PolarsObject,
 {
     fn rechunk(&self) -> Self
-        where
-            Self: std::marker::Sized,
+    where
+        Self: std::marker::Sized,
     {
         if self.chunks.len() == 1 {
             self.clone()

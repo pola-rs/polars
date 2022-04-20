@@ -6,6 +6,8 @@ mod single_keys_left;
 mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
+#[cfg(feature = "chunked_ids")]
+use arrow::Either;
 
 use single_keys::*;
 use single_keys_inner::*;
@@ -24,7 +26,7 @@ use crate::frame::hash_join::multiple_keys::{
 use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
 
 use crate::prelude::*;
-use crate::utils::{set_partition_size, slice_offsets, slice_slice, split_ca};
+use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
@@ -45,6 +47,32 @@ use crate::utils::series::to_physical_and_bit_repr;
 pub(crate) use single_keys::create_probe_table;
 #[cfg(feature = "asof_join")]
 pub(crate) use single_keys_dispatch::prepare_strs;
+
+pub type LeftJoinIds = (JoinIds, JoinOptIds);
+
+#[cfg(feature = "chunked_ids")]
+pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
+#[cfg(feature = "chunked_ids")]
+pub type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
+
+#[cfg(not(feature = "chunked_ids"))]
+pub(super) type JoinOptIds = Vec<Option<IdxSize>>;
+
+#[cfg(not(feature = "chunked_ids"))]
+pub(super) type JoinIds = Vec<IdxSize>;
+
+pub type ChunkId = [IdxSize; 2];
+
+pub fn default_join_ids() -> JoinOptIds {
+    #[cfg(feature = "chunked_ids")]
+    {
+        Either::Left(vec![])
+    }
+    #[cfg(not(feature = "chunked_ids"))]
+    {
+        vec![]
+    }
+}
 
 macro_rules! det_hash_prone_order {
     ($self:expr, $other:expr) => {{
@@ -268,11 +296,8 @@ impl DataFrame {
 
     /// # Safety
     /// Join tuples must be in bounds
-    unsafe fn create_left_df_chunked(
-        &self,
-        chunk_ids: &[ChunkId],
-        left_join: bool,
-    ) -> DataFrame {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn create_left_df_chunked(&self, chunk_ids: &[ChunkId], left_join: bool) -> DataFrame {
         if left_join && chunk_ids.len() == self.height() {
             self.clone()
         } else {
@@ -291,20 +316,6 @@ impl DataFrame {
             self.clone()
         } else {
             self.take_unchecked_slice(join_tuples)
-        }
-    }
-
-    /// # Safety
-    /// Join tuples must be in bounds
-    unsafe fn create_left_df<B: Sync>(
-        &self,
-        join_tuples: &[(IdxSize, B)],
-        left_join: bool,
-    ) -> DataFrame {
-        if left_join && join_tuples.len() == self.height() {
-            self.clone()
-        } else {
-            self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
         }
     }
 
@@ -449,26 +460,9 @@ impl DataFrame {
             JoinType::Left => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
-                let join_tuples = left_join_multiple_keys(&left, &right);
-                let mut join_tuples = &*join_tuples;
+                let ids = left_join_multiple_keys(&left, &right, None, None);
 
-                if let Some((offset, len)) = slice {
-                    join_tuples = slice_slice(join_tuples, offset, len);
-                }
-
-                let (df_left, df_right) = POOL.join(
-                    // safety: join indices are known to be in bounds
-                    || unsafe { self.create_left_df(join_tuples, true) },
-                    || unsafe {
-                        // remove join columns
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
-                            join_tuples
-                                .iter()
-                                .map(|(_left, right)| right.map(|i| i as usize)),
-                        )
-                    },
-                );
-                self.finish_join(df_left, df_right, suffix)
+                self.finish_left_join(ids, &remove_selected(other, &selected_right), suffix, slice)
             }
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -682,6 +676,90 @@ impl DataFrame {
         self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
+    #[cfg(not(feature = "chunked_ids"))]
+    fn finish_left_join(
+        &self,
+        ids: LeftJoinIds,
+        other: &DataFrame,
+        suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+    ) -> Result<DataFrame> {
+        let (left_idx, right_idx) = ids;
+        let materialize_left = || {
+            let mut left_idx = &*left_idx;
+            if let Some((offset, len)) = slice {
+                left_idx = slice_slice(left_idx, offset, len);
+            }
+            unsafe { self.create_left_df_from_slice(left_idx, true) }
+        };
+
+        let materialize_right = || {
+            let mut right_idx = &*right_idx;
+            if let Some((offset, len)) = slice {
+                right_idx = slice_slice(right_idx, offset, len);
+            }
+            unsafe {
+                other.take_opt_iter_unchecked(
+                    right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
+                )
+            }
+        };
+        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
+
+        self.finish_join(df_left, df_right, suffix)
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    fn finish_left_join(
+        &self,
+        ids: LeftJoinIds,
+        other: &DataFrame,
+        suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+    ) -> Result<DataFrame> {
+        let (left_idx, right_idx) = ids;
+        let materialize_left = || match left_idx {
+            JoinIds::Left(left_idx) => {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
+                unsafe { self.create_left_df_from_slice(left_idx, true) }
+            }
+            JoinIds::Right(left_idx) => {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
+                unsafe { self.create_left_df_chunked(left_idx, true) }
+            }
+        };
+
+        let materialize_right = || match right_idx {
+            JoinOptIds::Left(right_idx) => {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
+                unsafe {
+                    other.take_opt_iter_unchecked(
+                        right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
+                    )
+                }
+            }
+            JoinOptIds::Right(right_idx) => {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
+                unsafe { other.take_opt_chunked_unchecked(right_idx) }
+            }
+        };
+        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
+
+        self.finish_join(df_left, df_right, suffix)
+    }
+
     pub(crate) fn left_join_from_series(
         &self,
         other: &DataFrame,
@@ -693,54 +771,8 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let (left_idx, right_idx) = s_left.hash_join_left(s_right);
-
-        let materialize_left = || {
-            match left_idx {
-                JoinIds::Left(left_idx) => {
-                    let mut left_idx = &*left_idx;
-                    if let Some((offset, len)) = slice {
-                        left_idx = slice_slice(&left_idx, offset, len);
-                    }
-                    unsafe { self.create_left_df_from_slice(left_idx, true) }
-                },
-                JoinIds::Right(left_idx) => {
-                    let mut left_idx = &*left_idx;
-                    if let Some((offset, len)) = slice {
-                        left_idx = slice_slice(&left_idx, offset, len);
-                    }
-                    unsafe { self.create_left_df_chunked(left_idx, true) }
-                }
-            }
-        };
-
-        let materialize_right = || {
-            match right_idx {
-                JoinOptIds::Left(right_idx) => {
-                    let mut right_idx = &*right_idx;
-                    if let Some((offset, len)) = slice {
-                        right_idx = slice_slice(&right_idx, offset, len);
-                    }
-                    unsafe {
-                        other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                            right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
-                        )
-                    }
-                },
-                JoinOptIds::Right(right_idx) => {
-                    let mut right_idx = &*right_idx;
-                    if let Some((offset, len)) = slice {
-                        right_idx = slice_slice(&right_idx, offset, len);
-                    }
-                    unsafe {
-                        other.drop(s_right.name()).unwrap().take_opt_chunked_unchecked(right_idx)
-                    }
-                }
-            }
-        };
-        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
-
-        self.finish_join(df_left, df_right, suffix)
+        let ids = s_left.hash_join_left(s_right);
+        self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
     }
 
     #[cfg(feature = "semi_anti_join")]

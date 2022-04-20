@@ -23,6 +23,7 @@ mod take_every;
 pub(crate) mod take_random;
 pub(crate) mod take_single;
 mod traits;
+#[cfg(feature = "chunked_ids")]
 pub(crate) use take_chunked::*;
 
 macro_rules! take_iter_n_chunks {

@@ -1,11 +1,11 @@
 use super::*;
+#[cfg(feature = "chunked_ids")]
 use crate::utils::create_chunked_index_mapping;
-use arrow::Either;
 
 impl Series {
     #[cfg(feature = "private")]
     #[doc(hidden)]
-    pub fn hash_join_left(&self, other: &Series) -> LeftJoinResult2 {
+    pub fn hash_join_left(&self, other: &Series) -> LeftJoinIds {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -170,7 +170,13 @@ where
     }
 }
 
-fn create_mappings(chunks_left: &[ArrayRef], chunks_right: &[ArrayRef], left_len: usize, right_len: usize) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
+#[cfg(feature = "chunked_ids")]
+fn create_mappings(
+    chunks_left: &[ArrayRef],
+    chunks_right: &[ArrayRef],
+    left_len: usize,
+    right_len: usize,
+) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
     let mapping_left = || {
         if chunks_left.len() > 1 {
             Some(create_chunked_index_mapping(chunks_left, left_len))
@@ -188,10 +194,19 @@ fn create_mappings(chunks_left: &[ArrayRef], chunks_right: &[ArrayRef], left_len
     };
 
     POOL.join(mapping_left, mapping_right)
-
 }
 
-fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinResult2
+#[cfg(not(feature = "chunked_ids"))]
+fn create_mappings(
+    _chunks_left: &[ArrayRef],
+    _chunks_right: &[ArrayRef],
+    _left_len: usize,
+    _right_len: usize,
+) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
+    (None, None)
+}
+
+fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinIds
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -215,14 +230,26 @@ where
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
 
-            let (mapping_left, mapping_right) = create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
-            hash_join_tuples_left(keys_a, keys_b, mapping_left.as_deref(), mapping_right.as_deref())
+            let (mapping_left, mapping_right) =
+                create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(
+                keys_a,
+                keys_b,
+                mapping_left.as_deref(),
+                mapping_right.as_deref(),
+            )
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            let (mapping_left, mapping_right) = create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
-            hash_join_tuples_left(keys_a, keys_b, mapping_left.as_deref(), mapping_right.as_deref())
+            let (mapping_left, mapping_right) =
+                create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(
+                keys_a,
+                keys_b,
+                mapping_left.as_deref(),
+                mapping_right.as_deref(),
+            )
         }
     }
 }
@@ -315,13 +342,19 @@ impl Utf8Chunked {
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinResult2 {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinIds {
         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
 
-        let (mapping_left, mapping_right) = create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
-        hash_join_tuples_left(str_hashes_a, str_hashes_b, mapping_left.as_deref(), mapping_right.as_deref())
+        let (mapping_left, mapping_right) =
+            create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
+        hash_join_tuples_left(
+            str_hashes_a,
+            str_hashes_b,
+            mapping_left.as_deref(),
+            mapping_right.as_deref(),
+        )
     }
 
     #[cfg(feature = "semi_anti_join")]

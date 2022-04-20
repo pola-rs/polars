@@ -313,18 +313,14 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            unsafe fn _take_chunked_unchecked(
-                &self,
-                by: &[ChunkId],
-            ) -> Series {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
                 let ca = self.0.deref().take_chunked_unchecked(by);
                 ca.$into_logical().into_series()
             }
 
-            unsafe fn _take_opt_chunked_unchecked(
-                &self,
-        by: &[Option<ChunkId>],
-            ) -> Series {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
                 let ca = self.0.deref().take_opt_chunked_unchecked(by);
                 ca.$into_logical().into_series()
             }

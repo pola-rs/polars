@@ -2949,6 +2949,7 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
+    #[cfg(feature = "chunked_ids")]
     pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId]) -> Self {
         let cols = POOL.install(|| {
             self.columns
@@ -2962,6 +2963,7 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
+    #[cfg(feature = "chunked_ids")]
     pub(crate) unsafe fn take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
         let cols = POOL.install(|| {
             self.columns

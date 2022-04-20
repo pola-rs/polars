@@ -510,17 +510,13 @@ macro_rules! impl_dyn_series {
                 self.0.median()
             }
 
-            unsafe fn _take_chunked_unchecked(
-                &self,
-                by: &[ChunkId],
-            ) -> Series {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
                 self.0.take_chunked_unchecked(by).into_series()
             }
 
-            unsafe fn _take_opt_chunked_unchecked(
-                &self,
-        by: &[Option<ChunkId>],
-            ) -> Series {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
                 self.0.take_opt_chunked_unchecked(by).into_series()
             }
 

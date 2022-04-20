@@ -10,7 +10,6 @@ use crate::vector_hasher::{df_rows_to_hashes_threaded, this_partition, IdBuildHa
 use crate::POOL;
 use hashbrown::hash_map::RawEntryMut;
 use hashbrown::HashMap;
-use polars_utils::flatten;
 use rayon::prelude::*;
 
 /// Compare the rows of two DataFrames
@@ -243,13 +242,24 @@ pub(crate) fn inner_join_multiple_keys(
 pub fn private_left_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
-) -> Vec<(IdxSize, Option<IdxSize>)> {
+    // map the global indices to [chunk_idx, array_idx]
+    // only needed if we have non contiguous memory
+    chunk_mapping_left: Option<&[ChunkId]>,
+    chunk_mapping_right: Option<&[ChunkId]>,
+) -> LeftJoinIds {
     let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
     let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
-    left_join_multiple_keys(&a, &b)
+    left_join_multiple_keys(&a, &b, chunk_mapping_left, chunk_mapping_right)
 }
 
-pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJoinIndices> {
+pub(crate) fn left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+    // map the global indices to [chunk_idx, array_idx]
+    // only needed if we have non contiguous memory
+    chunk_mapping_left: Option<&[ChunkId]>,
+    chunk_mapping_right: Option<&[ChunkId]>,
+) -> LeftJoinIds {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));
@@ -277,8 +287,10 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
             .map(move |(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results =
-                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+
+                let len = probe_hashes.len() / POOL.current_num_threads();
+                let mut result_idx_left = Vec::with_capacity(len);
+                let mut result_idx_right = Vec::with_capacity(len);
                 let local_offset = offset;
 
                 let mut idx_a = local_offset as IdxSize;
@@ -299,20 +311,30 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
                         match entry {
                             // left and right matches
                             Some((_, indexes_b)) => {
-                                on_match_left_join_extend(&mut results, indexes_b, idx_a);
+                                result_idx_left
+                                    .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
+                                result_idx_right.extend(indexes_b.iter().copied().map(Some))
                             }
                             // only left values, right = null
-                            None => results.push((idx_a, None)),
+                            None => {
+                                result_idx_left.push(idx_a);
+                                result_idx_right.push(None);
+                            }
                         }
                         idx_a += 1;
                     }
                 }
 
-                results
+                finish_left_join_mappings(
+                    result_idx_left,
+                    result_idx_right,
+                    chunk_mapping_left,
+                    chunk_mapping_right,
+                )
             })
             .collect::<Vec<_>>()
     });
-    flatten(&results, None)
+    flatten_left_join_ids(results)
 }
 
 #[cfg(feature = "semi_anti_join")]

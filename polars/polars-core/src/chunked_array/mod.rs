@@ -33,9 +33,9 @@ mod random;
 #[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
 #[cfg(any(
-feature = "temporal",
-feature = "dtype-datetime",
-feature = "dtype-date"
+    feature = "temporal",
+    feature = "dtype-datetime",
+    feature = "dtype-date"
 ))]
 #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
 pub mod temporal;
@@ -213,8 +213,8 @@ impl<T> ChunkedArray<T> {
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
-            .unwrap()
-            .into()];
+        .unwrap()
+        .into()];
     }
 
     /// Unpack a Series to the same physical type.
@@ -258,7 +258,7 @@ impl<T> ChunkedArray<T> {
                     series,
                     self.dtype()
                 )
-                    .into(),
+                .into(),
             ))
         }
     }
@@ -305,7 +305,7 @@ impl<T> ChunkedArray<T> {
                     other.data_type(),
                     self.dtype()
                 )
-                    .into(),
+                .into(),
             ))
         }
     }
@@ -381,16 +381,16 @@ impl<T> ChunkedArray<T> {
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsDataType,
-        ChunkedArray<T>: ChunkOps,
+where
+    T: PolarsDataType,
+    ChunkedArray<T>: ChunkOps,
 {
     /// Should be used to match the chunk_id of another ChunkedArray.
     /// # Panics
     /// It is the callers responsibility to ensure that this ChunkedArray has a single chunk.
     pub(crate) fn match_chunks<I>(&self, chunk_id: I) -> Self
-        where
-            I: Iterator<Item = usize>,
+    where
+        I: Iterator<Item = usize>,
     {
         debug_assert!(self.chunks.len() == 1);
         // Takes a ChunkedArray containing a single chunk
@@ -419,8 +419,8 @@ impl<T> ChunkedArray<T>
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsDataType,
+where
+    T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
     pub fn from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
@@ -446,8 +446,8 @@ impl<T> ChunkedArray<T>
 }
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
     pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
@@ -482,8 +482,8 @@ pub(crate) trait AsSinglePtr {
 }
 
 impl<T> AsSinglePtr for ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> Result<usize> {
         let mut ca = self.rechunk();
@@ -501,8 +501,8 @@ impl AsSinglePtr for Utf8Chunked {}
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
 impl<T> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
+where
+    T: PolarsNumericType,
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
@@ -524,12 +524,12 @@ impl<T> ChunkedArray<T>
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = T::Native>
-    + '_
-    + Send
-    + Sync
-    + ExactSizeIterator
-    + DoubleEndedIterator
-    + TrustedLen {
+           + '_
+           + Send
+           + Sync
+           + ExactSizeIterator
+           + DoubleEndedIterator
+           + TrustedLen {
         // .copied was significantly slower in benchmark, next call did not inline?
         #[allow(clippy::map_clone)]
         // we know the iterators len
@@ -703,9 +703,9 @@ pub(crate) mod test {
     }
 
     fn assert_slice_equal<T>(ca: &ChunkedArray<T>, eq: &[T::Native])
-        where
-            ChunkedArray<T>: ChunkOps,
-            T: PolarsNumericType,
+    where
+        ChunkedArray<T>: ChunkOps,
+        T: PolarsNumericType,
     {
         assert_eq!(
             ca.into_iter().map(|opt| opt.unwrap()).collect::<Vec<_>>(),

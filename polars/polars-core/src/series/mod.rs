@@ -21,8 +21,8 @@ pub mod unstable;
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
-use crate::utils::{split_offsets, Wrap};
 use crate::utils::{split_ca, split_series};
+use crate::utils::{split_offsets, Wrap};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
@@ -382,23 +382,23 @@ impl Series {
     }
 
     // take a function pointer to reduce bloat
-    fn threaded_op(&self, rechunk: bool,
-                   len: usize,
-                   func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
-    ) -> Result<Series>
-    {
+    fn threaded_op(
+        &self,
+        rechunk: bool,
+        len: usize,
+        func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
+    ) -> Result<Series> {
         let n_threads = POOL.current_num_threads();
         let offsets = split_offsets(len, n_threads);
 
-
         let series: Result<Vec<_>> = POOL.install(|| {
-            offsets.into_par_iter().map(|(offset, len)| {
-                func(offset, len)
-            }).collect()
+            offsets
+                .into_par_iter()
+                .map(|(offset, len)| func(offset, len))
+                .collect()
         });
 
         Ok(self.finish_take_threaded(series?, rechunk))
-
     }
 
     /// Take by index if ChunkedArray contains a single chunk.
@@ -414,22 +414,33 @@ impl Series {
 
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub(crate) unsafe fn _take_chunked_unchecked_threaded(&self, chunk_ids: &[ChunkId], rechunk: bool) -> Series {
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn _take_chunked_unchecked_threaded(
+        &self,
+        chunk_ids: &[ChunkId],
+        rechunk: bool,
+    ) -> Series {
         self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
             let chunk_ids = &chunk_ids[offset..offset + len];
-            Ok(self._take_chunked_unchecked(&chunk_ids))
-        }).unwrap()
+            Ok(self._take_chunked_unchecked(chunk_ids))
+        })
+        .unwrap()
     }
 
     /// # Safety
     /// This doesn't check any bounds. Null validity is checked.
-    pub(crate) unsafe fn _take_opt_chunked_unchecked_threaded(&self, chunk_ids: &[Option<ChunkId>], rechunk: bool) -> Series {
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn _take_opt_chunked_unchecked_threaded(
+        &self,
+        chunk_ids: &[Option<ChunkId>],
+        rechunk: bool,
+    ) -> Series {
         self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
             let chunk_ids = &chunk_ids[offset..offset + len];
-            Ok(self._take_opt_chunked_unchecked(&chunk_ids))
-        }).unwrap()
+            Ok(self._take_opt_chunked_unchecked(chunk_ids))
+        })
+        .unwrap()
     }
-
 
     /// Take by index. This operation is clone.
     ///

@@ -485,17 +485,12 @@ pub trait SeriesTrait:
     }
 
     #[doc(hidden)]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
-        todo!()
-    }
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series;
 
     #[doc(hidden)]
-    unsafe fn _take_opt_chunked_unchecked(
-        &self,
-        by: &[Option<ChunkId>],
-    ) -> Series {
-        todo!()
-    }
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
 
     /// Take by index from an iterator. This operation clones the data.
     fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series>;

@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -144,6 +143,20 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 s.take_iter(&mut *iter)
             })
             .map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_chunked_unchecked(by))
+            .into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_opt_chunked_unchecked(by))
+            .into_series()
     }
 
     /// Take by index from an iterator. This operation clones the data.
