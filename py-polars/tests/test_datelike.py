@@ -827,3 +827,10 @@ def test_duration_filter() -> None:
 
     assert date_df.filter(pl.col("time_passed") < timedelta(days=30)).shape[0] == 1
     assert date_df.filter(pl.col("time_passed") >= timedelta(days=30)).shape[0] == 2
+
+
+def test_agg_logical() -> None:
+    dates = [date(2001, 1, 1), date(2002, 1, 1)]
+    s = pl.Series(dates)
+    assert s.max() == dates[1]
+    assert s.min() == dates[0]
