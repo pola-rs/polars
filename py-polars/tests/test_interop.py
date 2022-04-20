@@ -185,8 +185,8 @@ def test_from_dict_struct() -> None:
     }
     df = pl.from_dict(data)
     assert df.shape == (2, 2)
-    assert df["a"][0] == (1, 2)
-    assert df["a"][1] == (3, 4)
+    assert df["a"][0] == {"b": 1, "c": 2}
+    assert df["a"][1] == {"b": 3, "c": 4}
 
 
 def test_from_dicts() -> None:

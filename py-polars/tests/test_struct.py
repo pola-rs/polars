@@ -13,8 +13,8 @@ def test_struct_various() -> None:
     s = df.to_struct("my_struct")
 
     assert s.struct.fields == ["int", "str", "bool", "list"]
-    assert s[0] == (1, "a", True, pl.Series([1, 2]))
-    assert s[1] == (2, "b", None, pl.Series([3]))
+    assert s[0] == {"int": 1, "str": "a", "bool": True, "list": [1, 2]}
+    assert s[1] == {"int": 2, "str": "b", "bool": None, "list": [3]}
     assert s.struct.field("list").to_list() == [[1, 2], [3]]
     assert s.struct.field("int").to_list() == [1, 2]
 
@@ -25,25 +25,25 @@ def test_struct_to_list() -> None:
     assert pl.DataFrame(
         {"int": [1, 2], "str": ["a", "b"], "bool": [True, None], "list": [[1, 2], [3]]}
     ).select([pl.struct(pl.all()).alias("my_struct")]).to_series().to_list() == [
-        (1, "a", True, pl.Series([1, 2])),
-        (2, "b", None, pl.Series([3])),
+        {"int": 1, "str": "a", "bool": True, "list": [1, 2]},
+        {"int": 2, "str": "b", "bool": None, "list": [3]},
     ]
 
 
 def test_apply_to_struct() -> None:
     df = (
         pl.Series([None, 2, 3, 4])
-        .apply(lambda x: (x, x * 2, True, [1, 2], "foo"))
+        .apply(lambda x: {"a": x, "b": x * 2, "c": True, "d": [1, 2], "e": "foo"})
         .struct.to_frame()
     )
 
     expected = pl.DataFrame(
         {
-            "field_0": [None, 2, 3, 4],
-            "field_1": [None, 4, 6, 8],
-            "field_2": [None, True, True, True],
-            "field_3": [None, [1, 2], [1, 2], [1, 2]],
-            "field_4": [None, "foo", "foo", "foo"],
+            "a": [None, 2, 3, 4],
+            "b": [None, 4, 6, 8],
+            "c": [None, True, True, True],
+            "d": [None, [1, 2], [1, 2], [1, 2]],
+            "e": [None, "foo", "foo", "foo"],
         }
     )
 
@@ -124,9 +124,11 @@ def test_value_counts_expr() -> None:
         .to_series()
         .to_list()
     )
-
-    out = sorted(out)  # type: ignore
-    assert out == [("a", 1), ("b", 2), ("c", 3)]
+    assert out == [
+        {"id": "c", "counts": 3},
+        {"id": "b", "counts": 2},
+        {"id": "a", "counts": 1},
+    ]
 
 
 def test_struct_comparison() -> None:

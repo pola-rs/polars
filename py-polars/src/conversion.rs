@@ -14,7 +14,7 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -159,6 +159,14 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
+fn struct_dict(py: Python, vals: Vec<AnyValue>, flds: &[Field]) -> PyObject {
+    let dict = PyDict::new(py);
+    for (fld, val) in flds.iter().zip(vals) {
+        dict.set_item(fld.name(), Wrap(val)).unwrap()
+    }
+    dict.into_py(py)
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
         match self.0 {
@@ -222,22 +230,9 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 }
             }
             AnyValue::Time(v) => v.into_py(py),
-            AnyValue::List(v) => {
-                let pypolars = PyModule::import(py, "polars").unwrap();
-                let pyseries = PySeries::new(v);
-                let python_series_wrapper = pypolars
-                    .getattr("wrap_s")
-                    .unwrap()
-                    .call1((pyseries,))
-                    .unwrap();
-                python_series_wrapper.into()
-            }
-            AnyValue::Struct(vals) => {
-                // Safety:
-                // Wrap<T> is transparent
-                let vals = unsafe { std::mem::transmute::<_, Vec<Wrap<AnyValue>>>(vals) };
-                PyTuple::new(py, vals).into_py(py)
-            }
+            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
+            AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -412,8 +407,8 @@ impl ToPyObject for Wrap<&StructChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let s = self.0.clone().into_series();
         let iter = s.iter().map(|av| {
-            if let AnyValue::Struct(vals) = av {
-                PyTuple::new(py, vals.into_iter().map(Wrap))
+            if let AnyValue::Struct(vals, flds) = av {
+                struct_dict(py, vals, flds)
             } else {
                 unreachable!()
             }
@@ -519,16 +514,19 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
-        } else if ob.is_instance_of::<PyTuple>()? {
-            let tuple = ob.downcast::<PyTuple>().unwrap();
-            let items = tuple
-                .iter()
-                .map(|ob| {
-                    let av = ob.extract::<Wrap<AnyValue>>()?;
-                    Ok(av.0)
-                })
-                .collect::<PyResult<Vec<_>>>()?;
-            Ok(Wrap(AnyValue::Struct(items)))
+        } else if ob.is_instance_of::<PyDict>()? {
+            let dict = ob.downcast::<PyDict>().unwrap();
+            let len = dict.len();
+            let mut keys = Vec::with_capacity(len);
+            let mut vals = Vec::with_capacity(len);
+            for (k, v) in dict.into_iter() {
+                let key = k.extract::<&str>()?;
+                let val = v.extract::<Wrap<AnyValue>>()?.0;
+                let dtype = DataType::from(&val);
+                keys.push(Field::new(key, dtype));
+                vals.push(val)
+            }
+            Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
             Python::with_gil(|py| {
                 let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
