@@ -399,7 +399,7 @@ def test_selection() -> None:
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.select_at_idx(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
-    assert (df["c"] == df["a"]).sum() == 0
+    assert (df["c"] == df["a"].cast(str)).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)  # type: ignore
     assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore
     expect = pl.DataFrame({"c": ["b"]})

@@ -382,3 +382,12 @@ pub enum Operator {
     Or,
     Xor,
 }
+
+impl Operator {
+    pub(crate) fn is_comparison(&self) -> bool {
+        matches!(
+            self,
+            Self::Eq | Self::NotEq | Self::Lt | Self::LtEq | Self::Gt | Self::GtEq
+        )
+    }
+}

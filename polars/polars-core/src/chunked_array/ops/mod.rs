@@ -430,32 +430,34 @@ pub trait ChunkVar<T> {
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
-///     .equal(1);
+///     .equal(1)?;
 ///
 ///     df.filter(&mask)
 /// }
 /// ```
 pub trait ChunkCompare<Rhs> {
+    type Item;
+
     /// Check for equality and regard missing values as equal.
-    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
+    fn eq_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Check for equality.
-    fn equal(&self, rhs: Rhs) -> BooleanChunked;
+    fn equal(&self, rhs: Rhs) -> Self::Item;
 
     /// Check for inequality.
-    fn not_equal(&self, rhs: Rhs) -> BooleanChunked;
+    fn not_equal(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
-    fn gt(&self, rhs: Rhs) -> BooleanChunked;
+    fn gt(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than or equal comparison.
-    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than comparison.
-    fn lt(&self, rhs: Rhs) -> BooleanChunked;
+    fn lt(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than or equal comparison
-    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
 }
 
 /// Get unique values in a `ChunkedArray`

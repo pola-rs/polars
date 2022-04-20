@@ -63,14 +63,14 @@ fn compare_cat_to_str_value<Compare>(
     name: &str,
     compare: Compare,
     fill_value: bool,
-) -> BooleanChunked
+) -> Result<BooleanChunked>
 where
-    Compare: Fn(&Series, u32) -> BooleanChunked,
+    Compare: Fn(&Series, u32) -> Result<BooleanChunked>,
 {
     let cat = cat.categorical().expect("should be categorical");
     let cat_map = cat.get_rev_map();
     match cat_map.find(value) {
-        None => BooleanChunked::full(name, fill_value, cat.len()),
+        None => Ok(BooleanChunked::full(name, fill_value, cat.len())),
         Some(cat_idx) => {
             let cat = cat.cast(&DataType::UInt32).unwrap();
             compare(&cat, cat_idx)
@@ -85,21 +85,51 @@ fn compare_cat_to_str_series<Compare>(
     name: &str,
     compare: Compare,
     fill_value: bool,
-) -> BooleanChunked
+) -> Result<BooleanChunked>
 where
-    Compare: Fn(&Series, u32) -> BooleanChunked,
+    Compare: Fn(&Series, u32) -> Result<BooleanChunked>,
 {
-    match string.utf8().expect("should be utf8 column").get(0) {
-        None => cat.is_null(),
+    match string.utf8()?.get(0) {
+        None => Ok(cat.is_null()),
         Some(value) => compare_cat_to_str_value(cat, value, name, compare, fill_value),
     }
 }
 
+fn validate_types(left: &DataType, right: &DataType) -> Result<()> {
+    use DataType::*;
+    #[cfg(feature = "dtype-categorical")]
+    {
+        if matches!(left, Utf8 | Categorical(_)) && right.is_numeric()
+            || left.is_numeric() && matches!(right, Utf8 | Categorical(_))
+        {
+            Err(PolarsError::ComputeError(
+                "cannot compare Utf8 with numeric data".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+    #[cfg(not(feature = "dtype-categorical"))]
+    {
+        if matches!(left, Utf8) && right.is_numeric() || left.is_numeric() && matches!(right, Utf8)
+        {
+            Err(PolarsError::ComputeError(
+                "cannot compare Utf8 with numeric data".into(),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
 impl ChunkCompare<&Series> for Series {
-    fn eq_missing(&self, rhs: &Series) -> BooleanChunked {
+    type Item = Result<BooleanChunked>;
+
+    fn eq_missing(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
-        match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
+        let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
             #[cfg(feature = "dtype-categorical")]
             (Categorical(_), Utf8, _, 1) => {
                 return compare_cat_to_str_series(
@@ -123,11 +153,14 @@ impl ChunkCompare<&Series> for Series {
             _ => {
                 impl_compare!(self, rhs, eq_missing)
             }
-        }
+        };
+        out.rename(self.name());
+        Ok(out)
     }
 
     /// Create a boolean mask by checking for equality.
-    fn equal(&self, rhs: &Series) -> BooleanChunked {
+    fn equal(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
@@ -156,11 +189,12 @@ impl ChunkCompare<&Series> for Series {
             }
         };
         out.rename(self.name());
-        out
+        Ok(out)
     }
 
     /// Create a boolean mask by checking for inequality.
-    fn not_equal(&self, rhs: &Series) -> BooleanChunked {
+    fn not_equal(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         #[cfg(feature = "dtype-categorical")]
         use DataType::*;
         let mut out = match (self.dtype(), rhs.dtype(), self.len(), rhs.len()) {
@@ -189,35 +223,39 @@ impl ChunkCompare<&Series> for Series {
             }
         };
         out.rename(self.name());
-        out
+        Ok(out)
     }
 
     /// Create a boolean mask by checking if self > rhs.
-    fn gt(&self, rhs: &Series) -> BooleanChunked {
+    fn gt(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, gt);
         out.rename(self.name());
-        out
+        Ok(out)
     }
 
     /// Create a boolean mask by checking if self >= rhs.
-    fn gt_eq(&self, rhs: &Series) -> BooleanChunked {
+    fn gt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, gt_eq);
         out.rename(self.name());
-        out
+        Ok(out)
     }
 
     /// Create a boolean mask by checking if self < rhs.
-    fn lt(&self, rhs: &Series) -> BooleanChunked {
+    fn lt(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, lt);
         out.rename(self.name());
-        out
+        Ok(out)
     }
 
     /// Create a boolean mask by checking if self <= rhs.
-    fn lt_eq(&self, rhs: &Series) -> BooleanChunked {
+    fn lt_eq(&self, rhs: &Series) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), rhs.dtype())?;
         let mut out = impl_compare!(self, rhs, lt_eq);
         out.rename(self.name());
-        out
+        Ok(out)
     }
 }
 
@@ -225,56 +263,70 @@ impl<Rhs> ChunkCompare<Rhs> for Series
 where
     Rhs: NumericNative,
 {
-    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
+    type Item = Result<BooleanChunked>;
+
+    fn eq_missing(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        // just take any numeric dtype for rhs
+        validate_types(self.dtype(), &DataType::Int8)?;
         self.equal(rhs)
     }
 
-    fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, equal, rhs)
+    fn equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, equal, rhs))
     }
 
-    fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, not_equal, rhs)
+    fn not_equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, not_equal, rhs))
     }
 
-    fn gt(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, gt, rhs)
+    fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, gt, rhs))
     }
 
-    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, gt_eq, rhs)
+    fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, gt_eq, rhs))
     }
 
-    fn lt(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, lt, rhs)
+    fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, lt, rhs))
     }
 
-    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked {
-        apply_method_numeric_series!(self, lt_eq, rhs)
+    fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Int8)?;
+        Ok(apply_method_numeric_series!(self, lt_eq, rhs))
     }
 }
 
 impl ChunkCompare<&str> for Series {
-    fn eq_missing(&self, rhs: &str) -> BooleanChunked {
+    type Item = Result<BooleanChunked>;
+    fn eq_missing(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         self.equal(rhs)
     }
 
-    fn equal(&self, rhs: &str) -> BooleanChunked {
+    fn equal(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
         match self.dtype() {
-            Utf8 => self.utf8().unwrap().equal(rhs),
+            Utf8 => Ok(self.utf8().unwrap().equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => {
                 compare_cat_to_str_value(self, rhs, self.name(), |lhs, idx| lhs.equal(idx), false)
             }
-            _ => BooleanChunked::full(self.name(), false, self.len()),
+            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
         }
     }
 
-    fn not_equal(&self, rhs: &str) -> BooleanChunked {
+    fn not_equal(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         use DataType::*;
         match self.dtype() {
-            Utf8 => self.utf8().unwrap().not_equal(rhs),
+            Utf8 => Ok(self.utf8().unwrap().not_equal(rhs)),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_) => compare_cat_to_str_value(
                 self,
@@ -283,39 +335,67 @@ impl ChunkCompare<&str> for Series {
                 |lhs, idx| lhs.not_equal(idx),
                 true,
             ),
-            _ => BooleanChunked::full(self.name(), false, self.len()),
+            _ => Ok(BooleanChunked::full(self.name(), false, self.len())),
         }
     }
 
-    fn gt(&self, rhs: &str) -> BooleanChunked {
+    fn gt(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
-            a.gt(rhs)
+            Ok(a.gt(rhs))
         } else {
-            BooleanChunked::full(self.name(), false, self.len())
+            Err(PolarsError::ComputeError(
+                format!(
+                    "cannot compare str value to series of type: {:?}",
+                    self.dtype()
+                )
+                .into(),
+            ))
         }
     }
 
-    fn gt_eq(&self, rhs: &str) -> BooleanChunked {
+    fn gt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
-            a.gt_eq(rhs)
+            Ok(a.gt_eq(rhs))
         } else {
-            BooleanChunked::full(self.name(), false, self.len())
+            Err(PolarsError::ComputeError(
+                format!(
+                    "cannot compare str value to series of type: {:?}",
+                    self.dtype()
+                )
+                .into(),
+            ))
         }
     }
 
-    fn lt(&self, rhs: &str) -> BooleanChunked {
+    fn lt(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
-            a.lt(rhs)
+            Ok(a.lt(rhs))
         } else {
-            BooleanChunked::full(self.name(), false, self.len())
+            Err(PolarsError::ComputeError(
+                format!(
+                    "cannot compare str value to series of type: {:?}",
+                    self.dtype()
+                )
+                .into(),
+            ))
         }
     }
 
-    fn lt_eq(&self, rhs: &str) -> BooleanChunked {
+    fn lt_eq(&self, rhs: &str) -> Result<BooleanChunked> {
+        validate_types(self.dtype(), &DataType::Utf8)?;
         if let Ok(a) = self.utf8() {
-            a.lt_eq(rhs)
+            Ok(a.lt_eq(rhs))
         } else {
-            BooleanChunked::full(self.name(), false, self.len())
+            Err(PolarsError::ComputeError(
+                format!(
+                    "cannot compare str value to series of type: {:?}",
+                    self.dtype()
+                )
+                .into(),
+            ))
         }
     }
 }

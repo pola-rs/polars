@@ -86,7 +86,7 @@ pub use series_trait::IsSorted;
 /// ```
 /// # use polars_core::prelude::*;
 /// let s = Series::new("dollars", &[1, 2, 3]);
-/// let mask = s.equal(1);
+/// let mask = s.equal(1).unwrap();
 /// let valid = [true, false, false].iter();
 /// assert!(mask
 ///     .into_iter()

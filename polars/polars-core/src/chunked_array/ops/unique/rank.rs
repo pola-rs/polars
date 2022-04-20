@@ -118,6 +118,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
             let not_consecutive_same = (&arr.slice(1, len - 1))
                 .not_equal(&arr.slice(0, len - 1))
+                .unwrap()
                 .rechunk();
             let obs = not_consecutive_same.downcast_iter().next().unwrap();
 
@@ -171,6 +172,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let validity = arr.chunks()[0].validity().cloned();
             let not_consecutive_same = (&arr.slice(1, len - 1))
                 .not_equal(&arr.slice(0, len - 1))
+                .unwrap()
                 .rechunk();
             // this obs is shorter than that of scipy stats, because we can just start the cumsum by 1
             // instead of 0

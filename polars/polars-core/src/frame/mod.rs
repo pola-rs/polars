@@ -2054,7 +2054,7 @@ impl DataFrame {
     ///
     /// // create a mask
     /// let values = df.column("values")?;
-    /// let mask = values.lt_eq(1) | values.gt_eq(5_i32);
+    /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
     ///     s.utf8()?
@@ -2529,7 +2529,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> Result<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
-            let mask = acc.lt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -2559,7 +2559,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> Result<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
-            let mask = acc.gt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -3133,16 +3133,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.column("days").unwrap().equal(1).sum(), Some(1));
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_filter() {
-        let df = create_frame();
-        println!("{}", df.column("days").unwrap());
-        println!("{:?}", df);
-        println!("{:?}", df.filter(&df.column("days").unwrap().equal(0)))
+        assert_eq!(df.column("days").unwrap().equal(1).unwrap().sum(), Some(1));
     }
 
     #[test]
@@ -3152,12 +3143,11 @@ mod test {
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);
         let mut df = DataFrame::new(vec![s0]).unwrap();
-        println!("{}", df.column(col_name).unwrap());
-        println!("{:?}", df);
 
-        df = df.filter(&df.column(col_name).unwrap().equal("")).unwrap();
+        df = df
+            .filter(&df.column(col_name).unwrap().equal("").unwrap())
+            .unwrap();
         assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
-        println!("{:?}", df);
     }
 
     #[test]
@@ -3174,19 +3164,10 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_sort() {
-        let mut df = create_frame();
-        df.sort_in_place(["temp"], false).unwrap();
-        println!("{:?}", df);
-    }
-
-    #[test]
     fn slice() {
         let df = create_frame();
         let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
-        println!("{:?}", df)
     }
 
     #[test]
@@ -3200,7 +3181,6 @@ mod test {
         }
         .unwrap();
         let dummies = df.to_dummies().unwrap();
-        dbg!(&dummies);
         assert_eq!(
             Vec::from(dummies.column("id_1").unwrap().u8().unwrap()),
             &[
@@ -3214,7 +3194,6 @@ mod test {
                 Some(1)
             ]
         );
-        dbg!(dummies);
     }
 
     #[test]
@@ -3238,7 +3217,6 @@ mod test {
             "str" => ["a", "a", "b", "b", "c", "c"]
         }
         .unwrap();
-        dbg!(&df);
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First)
             .unwrap()
@@ -3250,7 +3228,6 @@ mod test {
             "str" => ["a", "b", "c"]
         }
         .unwrap();
-        dbg!(&df);
         assert!(df.frame_equal(&valid));
     }
 

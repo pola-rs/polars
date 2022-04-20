@@ -49,7 +49,11 @@ fn test_combine_columns_in_filter() -> Result<()> {
 
     let out = df
         .lazy()
-        .filter(cols(vec!["a".to_string(), "b".to_string()]).gt(lit(2)))
+        .filter(
+            cols(vec!["a".to_string(), "b".to_string()])
+                .cast(DataType::Utf8)
+                .gt(lit("2")),
+        )
         .collect()?;
 
     let expected = df![

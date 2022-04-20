@@ -132,7 +132,7 @@ def test_split_exact() -> None:
         {
             "field_0": ["a", None, "b", "c"],
             "field_1": ["a", None, None, "c"],
-            "field_2": [None, None, None, None],
+            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
         }
     )
 

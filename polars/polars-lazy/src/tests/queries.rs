@@ -635,16 +635,6 @@ fn test_lazy_reverse() {
 }
 
 #[test]
-fn test_lazy_predicate_pushdown_binary_expr() {
-    let df = load_df();
-    df.lazy()
-        .filter(col("a").eq(col("b")))
-        .select([col("c")])
-        .collect()
-        .unwrap();
-}
-
-#[test]
 fn test_lazy_update_column() {
     let df = load_df();
     df.lazy().with_column(col("a") / lit(10)).collect().unwrap();
