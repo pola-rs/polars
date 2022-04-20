@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import pandas as pd
 import pytest
 
@@ -172,3 +174,9 @@ def test_struct_to_pandas() -> None:
     assert isinstance(pl_df.dtypes[0], pl.datatypes.Struct)
 
     assert pl_df.to_pandas().equals(df)
+
+
+def test_struct_logical_types_to_pandas() -> None:
+    timestamp = datetime(2022, 1, 1)
+    df = pd.DataFrame([{"struct": {"timestamp": timestamp}}])
+    assert pl.from_pandas(df).dtypes == [pl.Struct]

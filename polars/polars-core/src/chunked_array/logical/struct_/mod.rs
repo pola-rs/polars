@@ -19,14 +19,14 @@ pub struct StructChunked {
 }
 
 /// Returns an ['ArrayRef'](arrow::array::ArrayRef) for a given
-/// [`Series`], handling nested Struct-type series seperately.
+/// [`Series`], handling nested Struct-type series separately.
 fn array_ref_for_series(series: &Series) -> ArrayRef {
     match series.dtype() {
         DataType::Struct(_) => {
             let s = series.struct_().unwrap();
             s.arrow_array.clone()
         }
-        _ => series.chunks()[0].clone() as ArrayRef,
+        _ => series.to_arrow(0),
     }
 }
 
