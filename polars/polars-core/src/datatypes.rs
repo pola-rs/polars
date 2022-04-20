@@ -250,7 +250,9 @@ pub enum AnyValue<'a> {
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
-    Struct(Vec<AnyValue<'a>>),
+    Struct(Vec<AnyValue<'a>>, &'a [Field]),
+    #[cfg(feature = "dtype-struct")]
+    StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),
 }

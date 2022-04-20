@@ -133,7 +133,11 @@ impl LogicalType for StructChunked {
 
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
-        AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect())
+        if let DataType::Struct(flds) = self.dtype() {
+            AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect(), flds)
+        } else {
+            unreachable!()
+        }
     }
 
     // in case of a struct, a cast will coerce the inner types
