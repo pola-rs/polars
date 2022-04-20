@@ -182,3 +182,12 @@ def test_struct_logical_types_to_pandas() -> None:
     timestamp = datetime(2022, 1, 1)
     df = pd.DataFrame([{"struct": {"timestamp": timestamp}}])
     assert pl.from_pandas(df).dtypes == [pl.Struct]
+
+
+def test_recursive_arrow_conversion() -> None:
+    data = [{"list_of_struct": [{"a": "1"}, {"a": "2"}]}]
+    dfpd = pd.DataFrame(data)
+    df = pl.DataFrame(dfpd)
+    assert df.to_struct("struct").to_list() == [
+        {"list_of_struct": [{"a": "1"}, {"a": "2"}]}
+    ]
