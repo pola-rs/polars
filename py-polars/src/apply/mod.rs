@@ -7,7 +7,7 @@ use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::{export::rayon::prelude::*, POOL};
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::PyDict;
 use pyo3::{PyAny, PyResult};
 
 pub trait PyArrowPrimitiveType: PolarsNumericType {}
