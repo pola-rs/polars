@@ -220,7 +220,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
     Expr::Function {
         input: s,
         function,
-        output_type: GetOutput::from_type(DataType::Utf8),
+        output_type: GetOutput::map_dtype(|dt| DataType::List(Box::new(dt.clone()))),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,

@@ -184,3 +184,33 @@ def test_cast_inner() -> None:
     # this creates an inner null type
     df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
     assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore
+
+
+def test_list_eval_dtype_inference() -> None:
+    grades = pl.DataFrame(
+        {
+            "student": ["bas", "laura", "tim", "jenny"],
+            "arithmetic": [10, 5, 6, 8],
+            "biology": [4, 6, 2, 7],
+            "geography": [8, 4, 9, 7],
+        }
+    )
+
+    rank_pct = pl.col("").rank(reverse=True) / pl.col("").count()
+
+    # the .arr.first() would fail if .arr.eval did not correctly infer the output type
+    assert grades.with_column(
+        pl.concat_list(pl.all().exclude("student")).alias("all_grades")
+    ).select(
+        [
+            pl.col("all_grades")
+            .arr.eval(rank_pct, parallel=True)
+            .alias("grades_rank")
+            .arr.first()
+        ]
+    ).to_series().to_list() == [
+        0.3333333432674408,
+        0.6666666865348816,
+        0.6666666865348816,
+        0.3333333432674408,
+    ]

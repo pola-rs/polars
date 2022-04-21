@@ -118,7 +118,7 @@ impl ListNameSpace {
             move |s| s.list()?.lst_get(index),
             GetOutput::map_field(|field| match field.data_type() {
                 DataType::List(inner) => Field::new(field.name(), *inner.clone()),
-                _ => panic!("should be a list type"),
+                dt => panic!("should be a list type, got {:?}", dt),
             }),
         )
     }
@@ -295,11 +295,11 @@ impl ListNameSpace {
                         .cloned()
                         .unwrap_or_else(|| f.data_type().clone());
 
-                    let df = Series::new_empty(f.name(), &dtype).into_frame();
+                    let df = Series::new_empty("", &dtype).into_frame();
                     match df.lazy().select([expr2.clone()]).collect() {
                         Ok(out) => {
                             let dtype = out.get_columns()[0].dtype();
-                            Field::new(f.name(), dtype.clone())
+                            Field::new(f.name(), DataType::List(Box::new(dtype.clone())))
                         }
                         Err(_) => Field::new(f.name(), DataType::Null),
                     }
