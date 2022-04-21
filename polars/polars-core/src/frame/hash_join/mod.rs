@@ -6,8 +6,11 @@ mod single_keys_left;
 mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
+
 #[cfg(feature = "chunked_ids")]
 use arrow::Either;
+#[cfg(feature = "chunked_ids")]
+use std::borrow::Cow;
 
 use single_keys::*;
 use single_keys_inner::*;
@@ -56,10 +59,10 @@ pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
 pub type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
 
 #[cfg(not(feature = "chunked_ids"))]
-pub(super) type JoinOptIds = Vec<Option<IdxSize>>;
+pub type JoinOptIds = Vec<Option<IdxSize>>;
 
 #[cfg(not(feature = "chunked_ids"))]
-pub(super) type JoinIds = Vec<IdxSize>;
+pub type JoinIds = Vec<IdxSize>;
 
 pub type ChunkId = [IdxSize; 2];
 
@@ -320,6 +323,7 @@ impl DataFrame {
     }
 
     #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
     pub fn _join_impl(
         &self,
         other: &DataFrame,
@@ -328,6 +332,8 @@ impl DataFrame {
         how: JoinType,
         suffix: Option<String>,
         slice: Option<(i64, usize)>,
+        _check_rechunk: bool,
+        _verbose: bool,
     ) -> Result<DataFrame> {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
@@ -338,6 +344,41 @@ impl DataFrame {
             } else {
                 out
             });
+        }
+
+        #[cfg(feature = "chunked_ids")]
+        {
+            if _check_rechunk {
+                let mut left = Cow::Borrowed(self);
+                let mut right = Cow::Borrowed(other);
+                if self.should_rechunk() {
+                    if _verbose {
+                        eprintln!("join triggered a rechunk of the left dataframe: {} columns are affected", self.width());
+                    }
+
+                    let mut tmp_left = self.clone();
+                    tmp_left.as_single_chunk_par();
+                    left = Cow::Owned(tmp_left);
+                }
+                if other.should_rechunk() {
+                    if _verbose {
+                        eprintln!("join triggered a rechunk of the right dataframe: {} columns are affected", other.width());
+                    }
+                    let mut tmp_right = other.clone();
+                    tmp_right.as_single_chunk_par();
+                    right = Cow::Owned(tmp_right);
+                }
+                return left._join_impl(
+                    &right,
+                    selected_left,
+                    selected_right,
+                    how,
+                    suffix,
+                    slice,
+                    false,
+                    false,
+                );
+            }
         }
 
         if selected_right.len() != selected_left.len() {
@@ -580,7 +621,16 @@ impl DataFrame {
         }
         let selected_left = self.select_series(left_on)?;
         let selected_right = other.select_series(right_on)?;
-        self._join_impl(other, selected_left, selected_right, how, suffix, None)
+        self._join_impl(
+            other,
+            selected_left,
+            selected_right,
+            how,
+            suffix,
+            None,
+            true,
+            false,
+        )
     }
 
     /// Perform an inner join on two DataFrames.

@@ -391,7 +391,8 @@ impl DataFrame {
     pub fn should_rechunk(&self) -> bool {
         let hb = RandomState::default();
         let hb2 = RandomState::with_seeds(392498, 98132457, 0, 412059);
-        self.columns
+        !self
+            .columns
             .iter()
             // The idea is that we creat a hash of the chunk lengths.
             // Consisting of the combined hash + the sum (assuming collision probability is nihil)
@@ -421,9 +422,10 @@ impl DataFrame {
     /// Ensure all the chunks in the DataFrame are aligned.
     pub fn rechunk(&mut self) -> &mut Self {
         if self.should_rechunk() {
-            self
-        } else {
+            debug_assert!(!self.columns.iter().map(|s| s.n_chunks()).all_equal());
             self.as_single_chunk_par()
+        } else {
+            self
         }
     }
 
