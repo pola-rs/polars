@@ -3752,6 +3752,21 @@ class StringNameSpace:
         Returns
         -------
         Series[u32]
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["foo", "bar", "hello", "world"])
+        >>> s.str.lengths()
+        shape: (4,)
+        Series: '' [u32]
+        [
+                3
+                3
+                5
+                5
+        ]
+
         """
         return wrap_s(self._s.str_lengths())
 
@@ -4076,7 +4091,7 @@ class StringNameSpace:
 
 class ListNameSpace:
     """
-    Series.dt namespace.
+    Series.arr namespace.
     """
 
     def __init__(self, series: Series):
@@ -4085,6 +4100,19 @@ class ListNameSpace:
     def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([[1, 2, 3], [5]])
+        >>> s.arr.lengths()
+        shape: (2,)
+        Series: '' [u32]
+        [
+                3
+                1
+        ]
+
         """
         return wrap_s(self._s.arr_lengths())
 
@@ -4169,6 +4197,19 @@ class ListNameSpace:
         Returns
         -------
         Series of dtype Utf8
+
+        Examples
+        --------
+
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
+        >>> s.arr.join(separator="-")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "foo-bar"
+                "hello-world"
+        ]
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
 

@@ -3041,6 +3041,23 @@ class ExprListNameSpace:
     def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
+        >>> df.select(pl.col("bar").arr.lengths())
+        shape: (2, 1)
+        ┌─────┐
+        │ bar │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.arr_lengths())
 
@@ -3186,18 +3203,75 @@ class ExprListNameSpace:
         ----------
         index
             Index to return per sublist
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.get(0))
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 3    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        └──────┘
+
         """
         return wrap_expr(self._pyexpr.lst_get(index))
 
     def first(self) -> "Expr":
         """
         Get the first value of the sublists.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.first())
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 3    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        └──────┘
+
         """
         return self.get(0)
 
     def last(self) -> "Expr":
         """
         Get the last value of the sublists.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.last())
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        └──────┘
+
         """
         return self.get(-1)
 
@@ -3213,6 +3287,25 @@ class ExprListNameSpace:
         Returns
         -------
         Boolean mask
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.contains(1))
+        shape: (3, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        └───────┘
+
         """
         return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
 
