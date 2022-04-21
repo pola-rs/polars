@@ -36,6 +36,7 @@ def assert_frame_equal(
     right: DataFrame,
     check_dtype: bool = True,
     check_exact: bool = False,
+    check_column_order: bool = True,
     rtol: float = 1.0e-5,
     atol: float = 1.0e-8,
 ) -> None:
@@ -53,6 +54,8 @@ def assert_frame_equal(
         if True, data types need to match exactly
     check_exact
         if False, test if values are within tolerance of each other (see `rtol` & `atol`)
+    check_column_order
+        if False, ignore the order of columns
     rtol
         relative tolerance for inexact checking. Fraction of values in `right`
     atol
@@ -70,7 +73,6 @@ def assert_frame_equal(
     """
 
     obj = "DataFrame"
-    check_column_order = True
 
     if not (isinstance(left, DataFrame) and isinstance(right, DataFrame)):
         raise_assert_detail(obj, "Type mismatch", type(left), type(right))
