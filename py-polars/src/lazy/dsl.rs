@@ -9,9 +9,9 @@ use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
+use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
-use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
+use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
 
 #[pyclass]
@@ -34,31 +34,9 @@ impl ToExprs for Vec<PyExpr> {
     }
 }
 
-#[pyproto]
-impl PyNumberProtocol for PyExpr {
-    fn __add__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Plus, rhs.inner).into())
-    }
-    fn __sub__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Minus, rhs.inner).into())
-    }
-    fn __mul__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Multiply, rhs.inner).into())
-    }
-    fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::TrueDivide, rhs.inner).into())
-    }
-    fn __mod__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Modulus, rhs.inner).into())
-    }
-    fn __floordiv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
-    }
-}
-
-#[pyproto]
-impl<'p> PyObjectProtocol<'p> for PyExpr {
-    fn __richcmp__(&'p self, other: PyExpr, op: CompareOp) -> PyExpr {
+#[pymethods]
+impl PyExpr {
+    fn __richcmp__(&self, other: Self, op: CompareOp) -> PyExpr {
         match op {
             CompareOp::Eq => self.eq(other),
             CompareOp::Ne => self.neq(other),
@@ -68,10 +46,26 @@ impl<'p> PyObjectProtocol<'p> for PyExpr {
             CompareOp::Le => self.lt_eq(other),
         }
     }
-}
 
-#[pymethods]
-impl PyExpr {
+    fn __add__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner).into())
+    }
+    fn __sub__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner).into())
+    }
+    fn __mul__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner).into())
+    }
+    fn __truediv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner).into())
+    }
+    fn __mod__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
+    }
+    fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+    }
+
     pub fn to_str(&self) -> String {
         format!("{:?}", self.inner)
     }
@@ -93,6 +87,31 @@ impl PyExpr {
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        Ok(PyBytes::new(py, &bincode::serialize(&self.inner).unwrap()).to_object(py))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                // Safety
+                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+                // so we actually don't have a lifetime at all when serializing.
+
+                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
+                // in this scope
+                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
+
+                self.inner = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
@@ -174,6 +193,12 @@ impl PyExpr {
     }
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
+    }
+    pub fn value_counts(&self, multithreaded: bool) -> PyExpr {
+        self.inner.clone().value_counts(multithreaded).into()
+    }
+    pub fn unique_counts(&self) -> PyExpr {
+        self.inner.clone().unique_counts().into()
     }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;
@@ -740,7 +765,7 @@ impl PyExpr {
                 }
                 Err(_) => {
                     let obj = out;
-                    let is_float = obj.as_ref(py).is_instance::<PyFloat>().unwrap();
+                    let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
 
                     let dtype = s.dtype();
 
@@ -1141,6 +1166,10 @@ impl PyExpr {
         self.inner.clone().arr().slice(offset, length).into()
     }
 
+    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, parallel).into()
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {
@@ -1223,7 +1252,7 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> Self {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<u64>) -> Self {
         self.inner
             .clone()
             .sample_frac(frac, with_replacement, seed)
@@ -1284,6 +1313,14 @@ impl PyExpr {
 
     pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
         self.inner.clone().struct_().rename_fields(names).into()
+    }
+
+    pub fn log(&self, base: f64) -> Self {
+        self.inner.clone().log(base).into()
+    }
+
+    pub fn entropy(&self, base: f64) -> Self {
+        self.inner.clone().entropy(base).into()
     }
 }
 
@@ -1418,7 +1455,7 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
-    if let Ok(true) = value.is_instance::<PyBool>() {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {

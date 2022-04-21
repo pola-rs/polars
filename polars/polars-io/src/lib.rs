@@ -38,19 +38,9 @@ pub(crate) mod utils;
 
 pub use options::*;
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "json",
-    feature = "avro"
-))]
+#[cfg(any(feature = "ipc", feature = "json", feature = "avro"))]
 use crate::aggregations::{apply_aggregations, ScanAggregation};
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "json",
-    feature = "avro"
-))]
+#[cfg(any(feature = "ipc", feature = "json", feature = "avro"))]
 use crate::predicates::PhysicalIoExpr;
 #[allow(unused)] // remove when updating to rust nightly >= 1.61
 use arrow::array::new_empty_array;
@@ -90,12 +80,7 @@ pub trait ArrowReader {
     fn next_record_batch(&mut self) -> ArrowResult<Option<ArrowChunk>>;
 }
 
-#[cfg(any(
-    feature = "ipc",
-    feature = "parquet",
-    feature = "json",
-    feature = "avro"
-))]
+#[cfg(any(feature = "ipc", feature = "json", feature = "avro"))]
 pub(crate) fn finish_reader<R: ArrowReader>(
     mut reader: R,
     rechunk: bool,

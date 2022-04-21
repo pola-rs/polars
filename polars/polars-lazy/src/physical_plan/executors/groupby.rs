@@ -1,6 +1,5 @@
 use super::*;
 use crate::logical_plan::Context;
-use crate::prelude::utils::as_aggregated;
 use crate::utils::rename_aexpr_root_names;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
@@ -14,6 +13,7 @@ pub struct GroupByExec {
     apply: Option<Arc<dyn DataFrameUdf>>,
     maintain_order: bool,
     input_schema: SchemaRef,
+    slice: Option<(i64, usize)>,
 }
 
 impl GroupByExec {
@@ -24,6 +24,7 @@ impl GroupByExec {
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         input_schema: SchemaRef,
+        slice: Option<(i64, usize)>,
     ) -> Self {
         Self {
             input,
@@ -32,6 +33,7 @@ impl GroupByExec {
             apply,
             maintain_order,
             input_schema,
+            slice,
         }
     }
 }
@@ -43,6 +45,7 @@ fn groupby_helper(
     apply: Option<&Arc<dyn DataFrameUdf>>,
     state: &ExecutionState,
     maintain_order: bool,
+    slice: Option<(i64, usize)>,
 ) -> Result<DataFrame> {
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
@@ -51,10 +54,19 @@ fn groupby_helper(
         return gb.apply(|df| f.call_udf(df));
     }
 
-    let groups = gb.get_groups();
+    let mut groups = gb.get_groups();
+
+    #[allow(unused_assignments)]
+    // it is unused because we only use it to keep the lifetime of sliced_group valid
+    let mut sliced_groups = None;
+
+    if let Some((offset, len)) = slice {
+        sliced_groups = Some(groups.slice(offset, len));
+        groups = sliced_groups.as_deref().unwrap();
+    }
 
     let (mut columns, agg_columns) = POOL.install(|| {
-        let get_columns = || gb.keys();
+        let get_columns = || gb.keys_sliced(slice);
 
         let get_agg = || aggs
             .par_iter()
@@ -101,6 +113,7 @@ impl Executor for GroupByExec {
             self.apply.as_ref(),
             state,
             self.maintain_order,
+            self.slice,
         )
     }
 }
@@ -112,6 +125,7 @@ pub struct PartitionGroupByExec {
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
     aggs: Vec<Expr>,
     maintain_order: bool,
+    slice: Option<(i64, usize)>,
 }
 
 impl PartitionGroupByExec {
@@ -121,6 +135,7 @@ impl PartitionGroupByExec {
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
         aggs: Vec<Expr>,
         maintain_order: bool,
+        slice: Option<(i64, usize)>,
     ) -> Self {
         Self {
             input,
@@ -128,6 +143,7 @@ impl PartitionGroupByExec {
             phys_aggs,
             aggs,
             maintain_order,
+            slice,
         }
     }
 }
@@ -232,7 +248,15 @@ impl Executor for PartitionGroupByExec {
             if state.verbose {
                 eprintln!("POLARS_NO_PARTITION set: running default HASH AGGREGATION")
             }
-            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state, false);
+            return groupby_helper(
+                original_df,
+                vec![key],
+                &self.phys_aggs,
+                None,
+                state,
+                false,
+                None,
+            );
         }
 
         // 0.5% is approximately the tipping point
@@ -282,7 +306,15 @@ impl Executor for PartitionGroupByExec {
                     (cardinality_frac * 100.0) as u32
                 );
             }
-            return groupby_helper(original_df, vec![key], &self.phys_aggs, None, state, false);
+            return groupby_helper(
+                original_df,
+                vec![key],
+                &self.phys_aggs,
+                None,
+                state,
+                false,
+                None,
+            );
         }
         if state.verbose {
             eprintln!("run PARTITIONED HASH AGGREGATION")
@@ -300,11 +332,20 @@ impl Executor for PartitionGroupByExec {
 
         // first get mutable access and optionally sort
         let gb = df.groupby_with_series(vec![key], true, self.maintain_order)?;
-        let groups = gb.get_groups();
+        let mut groups = gb.get_groups();
+
+        #[allow(unused_assignments)]
+        // it is unused because we only use it to keep the lifetime of sliced_group valid
+        let mut sliced_groups = None;
+
+        if let Some((offset, len)) = self.slice {
+            sliced_groups = Some(groups.slice(offset, len));
+            groups = sliced_groups.as_deref().unwrap();
+        }
 
         let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;
 
-        let get_columns = || gb.keys();
+        let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
             outer_phys_aggs
                 .par_iter()
@@ -330,7 +371,6 @@ impl Executor for PartitionGroupByExec {
         columns.extend(agg_columns);
         state.clear_schema_cache();
 
-        let df = DataFrame::new_no_checks(columns);
-        Ok(df)
+        Ok(DataFrame::new_no_checks(columns))
     }
 }

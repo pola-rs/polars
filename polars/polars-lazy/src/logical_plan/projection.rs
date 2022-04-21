@@ -145,7 +145,12 @@ fn expand_columns(expr: &Expr, result: &mut Vec<Expr>, names: &[String]) {
 /// replace `DtypeColumn` with `col("foo")..col("bar")`
 fn expand_dtypes(expr: &Expr, result: &mut Vec<Expr>, schema: &Schema, dtypes: &[DataType]) {
     for dtype in dtypes {
-        for field in schema.iter_fields().filter(|f| f.data_type() == dtype) {
+        // we compare by variant not by exact datatype as units/ refmaps etc may differ.
+        let variant = std::mem::discriminant(dtype);
+        for field in schema
+            .iter_fields()
+            .filter(|f| std::mem::discriminant(f.data_type()) == variant)
+        {
             let name = field.name();
 
             let mut new_expr = expr.clone();
@@ -240,7 +245,7 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
 fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
     expr.mutate().apply(|e| {
         match e {
-            Expr::Function { input, .. } => {
+            Expr::Function { input, options, .. } if options.input_wildcard_expansion => {
                 if input
                     .iter()
                     .any(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))

@@ -46,7 +46,7 @@ pub enum NullStrategy {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum DistinctKeepStrategy {
+pub enum UniqueKeepStrategy {
     First,
     Last,
 }
@@ -138,6 +138,22 @@ fn duplicate_err(name: &str) -> Result<()> {
 }
 
 impl DataFrame {
+    /// Returns an estimation of the total (heap) allocated size of the `DataFrame` in bytes.
+    ///
+    /// # Implementation
+    /// This estimation is the sum of the size of its buffers, validity, including nested arrays.
+    /// Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+    /// sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+    ///
+    /// When an array is sliced, its allocated size remains constant because the buffer unchanged.
+    /// However, this function will yield a smaller number. This is because this function returns
+    /// the visible size of the buffer, not its total capacity.
+    ///
+    /// FFI buffers are included in this estimation.
+    pub fn estimated_size(&self) -> usize {
+        self.columns.iter().map(|s| s.estimated_size()).sum()
+    }
+
     /// Get the index of the column.
     fn check_name_to_idx(&self, name: &str) -> Result<usize> {
         self.find_idx_by_name(name)
@@ -540,8 +556,7 @@ impl DataFrame {
             .ok_or_else(|| {
                 PolarsError::NoData("Can not determine number of chunks if there is no data".into())
             })?
-            .chunks()
-            .len())
+            .n_chunks())
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.
@@ -1006,6 +1021,15 @@ impl DataFrame {
         self.insert_at_idx_no_name_check(index, series)
     }
 
+    fn add_column_by_search(&mut self, series: Series) -> Result<()> {
+        if let Some(idx) = self.find_idx_by_name(series.name()) {
+            self.replace_at_idx(idx, series)?;
+        } else {
+            self.columns.push(series);
+        }
+        Ok(())
+    }
+
     /// Add a new column to this `DataFrame` or replace an existing one.
     pub fn with_column<S: IntoSeries>(&mut self, column: S) -> Result<&mut Self> {
         let mut series = column.into_series();
@@ -1016,17 +1040,13 @@ impl DataFrame {
         }
 
         if series.len() == height || self.is_empty() {
-            if let Some(idx) = self.find_idx_by_name(series.name()) {
-                self.replace_at_idx(idx, series)?;
-            } else {
-                self.columns.push(series);
-            }
+            self.add_column_by_search(series)?;
             Ok(self)
         }
         // special case for literals
         else if height == 0 && series.len() == 1 {
             let s = series.slice(0, 0);
-            self.columns.push(s);
+            self.add_column_by_search(s)?;
             Ok(self)
         } else {
             Err(PolarsError::ShapeMisMatch(
@@ -1036,6 +1056,57 @@ impl DataFrame {
                     self.height()
                 )
                 .into(),
+            ))
+        }
+    }
+
+    fn add_column_by_schema(&mut self, s: Series, schema: &Schema) -> Result<()> {
+        let name = s.name();
+        if let Some((idx, _, _)) = schema.get_full(name) {
+            // schema is incorrect fallback to search
+            if self.columns.get(idx).map(|s| s.name()) != Some(name) {
+                self.add_column_by_search(s)?;
+            } else {
+                self.replace_at_idx(idx, s)?;
+            }
+        } else {
+            self.columns.push(s);
+        }
+        Ok(())
+    }
+
+    /// Add a new column to this `DataFrame` or replace an existing one.
+    /// Uses an existing schema to amortize lookups.
+    /// If the schema is incorrect, we will fallback to linear search.
+    pub fn with_column_and_schema<S: IntoSeries>(
+        &mut self,
+        column: S,
+        schema: &Schema,
+    ) -> Result<&mut Self> {
+        let mut series = column.into_series();
+
+        let height = self.height();
+        if series.len() == 1 && height > 1 {
+            series = series.expand_at_index(0, height);
+        }
+
+        if series.len() == height || self.is_empty() {
+            self.add_column_by_schema(series, schema)?;
+            Ok(self)
+        }
+        // special case for literals
+        else if height == 0 && series.len() == 1 {
+            let s = series.slice(0, 0);
+            self.add_column_by_schema(s, schema)?;
+            Ok(self)
+        } else {
+            Err(PolarsError::ShapeMisMatch(
+                format!(
+                    "Could not add column. The Series length {} differs from the DataFrame height: {}",
+                    series.len(),
+                    self.height()
+                )
+                    .into(),
             ))
         }
     }
@@ -1536,11 +1607,6 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(new_col))
     }
 
-    #[cfg(feature = "rows")]
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
-        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
-    }
-
     pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         let cols = POOL.install(|| {
             self.columns
@@ -1616,7 +1682,7 @@ impl DataFrame {
         self.rechunk();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
-        self.columns = self.sort_impl(by_column, reverse, false)?.columns;
+        self.columns = self.sort_impl(by_column, reverse, false, None)?.columns;
         Ok(self)
     }
 
@@ -1627,6 +1693,7 @@ impl DataFrame {
         by_column: Vec<Series>,
         reverse: Vec<bool>,
         nulls_last: bool,
+        slice: Option<(i64, usize)>,
     ) -> Result<Self> {
         // note that the by_column argument also contains evaluated expression from polars-lazy
         // that may not even be present in this dataframe.
@@ -1635,7 +1702,7 @@ impl DataFrame {
         // as expressions are not present (they are renamed to _POLARS_SORT_COLUMN_i.
         let first_reverse = reverse[0];
         let first_by_column = by_column[0].name().to_string();
-        let take = match by_column.len() {
+        let mut take = match by_column.len() {
             1 => {
                 let s = &by_column[0];
                 s.argsort(SortOptions {
@@ -1655,6 +1722,11 @@ impl DataFrame {
                 }
             }
         };
+
+        if let Some((offset, len)) = slice {
+            take = take.slice(offset, len);
+        }
+
         // Safety:
         // the created indices are in bounds
         let mut df = if std::env::var("POLARS_VERT_PAR").is_ok() {
@@ -1706,7 +1778,7 @@ impl DataFrame {
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
-            .sort_impl(by_column, reverse, options.nulls_last)?
+            .sort_impl(by_column, reverse, options.nulls_last, None)?
             .columns;
         Ok(df)
     }
@@ -1982,7 +2054,7 @@ impl DataFrame {
     ///
     /// // create a mask
     /// let values = df.column("values")?;
-    /// let mask = values.lt_eq(1) | values.gt_eq(5_i32);
+    /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
     ///     s.utf8()?
@@ -2457,7 +2529,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> Result<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
-            let mask = acc.lt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -2487,7 +2559,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> Result<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
-            let mask = acc.gt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -2701,8 +2773,8 @@ impl DataFrame {
     #[deprecated(note = "use distinct")]
     pub fn drop_duplicates(&self, maintain_order: bool, subset: Option<&[String]>) -> Result<Self> {
         match maintain_order {
-            true => self.distinct_stable(subset, DistinctKeepStrategy::First),
-            false => self.distinct(subset, DistinctKeepStrategy::First),
+            true => self.unique_stable(subset, UniqueKeepStrategy::First),
+            false => self.unique(subset, UniqueKeepStrategy::First),
         }
     }
 
@@ -2721,7 +2793,7 @@ impl DataFrame {
     ///               "str" => ["a", "a", "b", "b", "c", "c"]
     ///           }?;
     ///
-    /// println!("{}", df.distinct_stable(None, DistinctKeepStrategy::First)?);
+    /// println!("{}", df.unique_stable(None, UniqueKeepStrategy::First)?);
     /// # Ok::<(), PolarsError>(())
     /// ```
     /// Returns
@@ -2739,20 +2811,16 @@ impl DataFrame {
     /// | 3   | 3   | "c" |
     /// +-----+-----+-----+
     /// ```
-    pub fn distinct_stable(
+    pub fn unique_stable(
         &self,
         subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
+        keep: UniqueKeepStrategy,
     ) -> Result<DataFrame> {
         self.distinct_impl(true, subset, keep)
     }
 
     /// Unstable distinct. See [`DataFrame::distinct_stable`].
-    pub fn distinct(
-        &self,
-        subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
-    ) -> Result<DataFrame> {
+    pub fn unique(&self, subset: Option<&[String]>, keep: UniqueKeepStrategy) -> Result<DataFrame> {
         self.distinct_impl(false, subset, keep)
     }
 
@@ -2760,9 +2828,9 @@ impl DataFrame {
         &self,
         maintain_order: bool,
         subset: Option<&[String]>,
-        keep: DistinctKeepStrategy,
+        keep: UniqueKeepStrategy,
     ) -> Result<Self> {
-        use DistinctKeepStrategy::*;
+        use UniqueKeepStrategy::*;
         let names = match &subset {
             Some(s) => s.iter().map(|s| &**s).collect(),
             None => self.get_column_names(),
@@ -2879,6 +2947,65 @@ impl DataFrame {
             .iter()
             .map(|s| Ok(s.dtype().clone()))
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
+    }
+
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
+        let ptr = idx.as_ptr() as *mut IdxSize;
+        let len = idx.len();
+
+        // create a temporary vec. we will not drop it.
+        let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        let out = self.take_unchecked(&ca);
+
+        // ref count of buffers should be one because we dropped all allocations
+        let arr = {
+            let arr_ref = std::mem::take(&mut ca.chunks).pop().unwrap();
+            arr_ref
+                .as_any()
+                .downcast_ref::<PrimitiveArray<IdxSize>>()
+                .unwrap()
+                .clone()
+        };
+        // the only owned heap allocation is the `Vec` we created and must not be dropped
+        let _ = std::mem::ManuallyDrop::new(arr.into_mut().right().unwrap());
+        out
+    }
+
+    #[cfg(feature = "partition_by")]
+    fn partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
+        let groups = if stable {
+            self.groupby_stable(cols)?.groups
+        } else {
+            self.groupby(cols)?.groups
+        };
+
+        Ok(POOL.install(|| {
+            groups
+                .idx_ref()
+                .into_par_iter()
+                .map(|(_, group)| {
+                    // groups are in bounds
+                    unsafe { self.take_unchecked_slice(group) }
+                })
+                .collect()
+        }))
+    }
+
+    /// Split into multiple DataFrames partitioned by groups
+    #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
+    pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+        let cols = cols.into_vec();
+        self.partition_by_impl(&cols, false)
+    }
+
+    /// Split into multiple DataFrames partitioned by groups
+    /// Order of the groups are maintained.
+    #[cfg(feature = "partition_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
+    pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
+        let cols = cols.into_vec();
+        self.partition_by_impl(&cols, true)
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
@@ -3006,16 +3133,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.column("days").unwrap().equal(1).sum(), Some(1));
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_filter() {
-        let df = create_frame();
-        println!("{}", df.column("days").unwrap());
-        println!("{:?}", df);
-        println!("{:?}", df.filter(&df.column("days").unwrap().equal(0)))
+        assert_eq!(df.column("days").unwrap().equal(1).unwrap().sum(), Some(1));
     }
 
     #[test]
@@ -3025,12 +3143,11 @@ mod test {
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);
         let mut df = DataFrame::new(vec![s0]).unwrap();
-        println!("{}", df.column(col_name).unwrap());
-        println!("{:?}", df);
 
-        df = df.filter(&df.column(col_name).unwrap().equal("")).unwrap();
+        df = df
+            .filter(&df.column(col_name).unwrap().equal("").unwrap())
+            .unwrap();
         assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
-        println!("{:?}", df);
     }
 
     #[test]
@@ -3047,19 +3164,10 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_sort() {
-        let mut df = create_frame();
-        df.sort_in_place(["temp"], false).unwrap();
-        println!("{:?}", df);
-    }
-
-    #[test]
     fn slice() {
         let df = create_frame();
         let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
-        println!("{:?}", df)
     }
 
     #[test]
@@ -3073,7 +3181,6 @@ mod test {
         }
         .unwrap();
         let dummies = df.to_dummies().unwrap();
-        dbg!(&dummies);
         assert_eq!(
             Vec::from(dummies.column("id_1").unwrap().u8().unwrap()),
             &[
@@ -3087,7 +3194,6 @@ mod test {
                 Some(1)
             ]
         );
-        dbg!(dummies);
     }
 
     #[test]
@@ -3111,9 +3217,8 @@ mod test {
             "str" => ["a", "a", "b", "b", "c", "c"]
         }
         .unwrap();
-        dbg!(&df);
         let df = df
-            .distinct_stable(None, DistinctKeepStrategy::First)
+            .unique_stable(None, UniqueKeepStrategy::First)
             .unwrap()
             .sort(["flt"], false)
             .unwrap();
@@ -3123,7 +3228,6 @@ mod test {
             "str" => ["a", "b", "c"]
         }
         .unwrap();
-        dbg!(&df);
         assert!(df.frame_equal(&valid));
     }
 

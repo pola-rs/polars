@@ -1,6 +1,7 @@
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
 use crate::utils::get_supertype;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 
@@ -8,12 +9,26 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
         DataType::List(_) => series.list().unwrap().explode_and_offsets(),
         DataType::Utf8 => series.utf8().unwrap().explode_and_offsets(),
-        _ => Err(PolarsError::InvalidOperation("".into())),
+        _ => Err(PolarsError::InvalidOperation(
+            format!("cannot explode dtype: {:?}", series.dtype()).into(),
+        )),
     }
+}
+
+/// Arguments for `[DataFrame::melt]` function
+#[derive(Clone, Default, Debug)]
+pub struct MeltArgs {
+    pub id_vars: Vec<String>,
+    pub value_vars: Vec<String>,
+    pub variable_name: Option<String>,
+    pub value_name: Option<String>,
 }
 
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+        if self.height() == 0 {
+            return Ok(self.clone());
+        }
         columns.sort_by(|sa, sb| {
             self.check_name_to_idx(sa.name())
                 .expect("checked above")
@@ -21,8 +36,53 @@ impl DataFrame {
                 .expect("cmp usize -> Ordering")
         });
 
-        // first remove all the exploded columns
         let mut df = self.clone();
+
+        // TODO: optimize this.
+        // This is the slower easier option.
+        // instead of filtering the whole dataframe first
+        // drop empty list rows
+        for col in &mut columns {
+            if let Ok(ca) = col.list() {
+                if !ca.can_fast_explode() {
+                    let (_, offsets) = get_exploded(col)?;
+                    if offsets.is_empty() {
+                        return Ok(self.slice(0, 0));
+                    }
+
+                    let mut mask = MutableBitmap::from_len_set(offsets.len() - 1);
+
+                    let mut latest = offsets[0];
+                    for (i, &o) in (&offsets[1..]).iter().enumerate() {
+                        if o == latest {
+                            unsafe { mask.set_bit_unchecked(i, false) }
+                        }
+                        latest = o;
+                    }
+
+                    let mask = Bitmap::from(mask);
+                    // all lists are empty we return an an empty dataframe with the same schema
+                    if mask.null_count() == mask.len() {
+                        return Ok(self.slice(0, 0));
+                    }
+
+                    let idx = self.check_name_to_idx(col.name())?;
+                    df = df.filter(&BooleanChunked::from_chunks(
+                        "",
+                        vec![Arc::new(BooleanArray::from_data_default(mask, None))],
+                    ))?;
+                    *col = df[idx].clone();
+                    let ca = col
+                        .get_inner_mut()
+                        .as_any_mut()
+                        .downcast_mut::<ListChunked>()
+                        .unwrap();
+                    ca.set_fast_explode();
+                }
+            }
+        }
+
+        // first remove all the exploded columns
         for s in &columns {
             df = df.drop(s.name())?;
         }
@@ -190,12 +250,22 @@ impl DataFrame {
     {
         let id_vars = id_vars.into_vec();
         let value_vars = value_vars.into_vec();
-        self.melt2(id_vars, value_vars)
+        self.melt2(MeltArgs {
+            id_vars,
+            value_vars,
+            ..Default::default()
+        })
     }
 
     /// Similar to melt, but without generics. This may be easier if you want to pass
     /// an empty `id_vars` or empty `value_vars`.
-    pub fn melt2(&self, id_vars: Vec<String>, mut value_vars: Vec<String>) -> Result<Self> {
+    pub fn melt2(&self, args: MeltArgs) -> Result<Self> {
+        let id_vars = args.id_vars;
+        let mut value_vars = args.value_vars;
+
+        let value_name = args.value_name.as_deref().unwrap_or("value");
+        let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+
         let len = self.height();
 
         // if value vars is empty we take all columns that are not in id_vars.
@@ -255,13 +325,17 @@ impl DataFrame {
         // Safety
         // The give dtype is correct
         let values =
-            unsafe { Series::from_chunks_and_dtype_unchecked("value", vec![values_arr], &st) };
+            unsafe { Series::from_chunks_and_dtype_unchecked(value_name, vec![values_arr], &st) };
 
         let variable_col = variable_col.into_arc();
         // Safety
         // The give dtype is correct
         let variables = unsafe {
-            Series::from_chunks_and_dtype_unchecked("variable", vec![variable_col], &DataType::Utf8)
+            Series::from_chunks_and_dtype_unchecked(
+                variable_name,
+                vec![variable_col],
+                &DataType::Utf8,
+            )
         };
 
         ids.hstack_mut(&[variables, values])?;
@@ -272,6 +346,7 @@ impl DataFrame {
 
 #[cfg(test)]
 mod test {
+    use crate::frame::explode::MeltArgs;
     use crate::prelude::*;
 
     #[test]
@@ -304,6 +379,27 @@ mod test {
             exploded.column("foo").unwrap().utf8().unwrap().get(6),
             Some("g")
         );
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_explode_df_empty_list() -> Result<()> {
+        let s0 = Series::new("a", &[1, 2, 3]);
+        let s1 = Series::new("b", &[1, 1, 1]);
+        let list = Series::new("foo", &[s0, s1.clone(), s1.slice(0, 0)]);
+        let s0 = Series::new("B", [1, 2, 3]);
+        let s1 = Series::new("C", [1, 1, 1]);
+        let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
+
+        let out = df.explode(["foo"])?;
+        let expected = df![
+            "foo" => [1, 2, 3, 1, 1, 1],
+            "B" => [1, 1, 1, 2, 2, 2],
+            "C" => [1, 1, 1, 1, 1, 1],
+        ]?;
+
+        assert!(out.frame_equal(&expected));
+        Ok(())
     }
 
     #[test]
@@ -341,7 +437,14 @@ mod test {
             &[Some(10), Some(11), Some(12), Some(2), Some(4), Some(6)]
         );
 
-        let melted = df.melt2(vec![], vec![]).unwrap();
+        let args = MeltArgs {
+            id_vars: vec![],
+            value_vars: vec![],
+            variable_name: None,
+            value_name: None,
+        };
+
+        let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
         // utf8 because of supertype
         let value = value.utf8()?;
@@ -351,7 +454,14 @@ mod test {
             &["a", "b", "a", "1", "3", "5", "10", "11", "12", "2", "4", "6"]
         );
 
-        let melted = df.melt2(vec!["A".into()], vec![]).unwrap();
+        let args = MeltArgs {
+            id_vars: vec!["A".into()],
+            value_vars: vec![],
+            variable_name: None,
+            value_name: None,
+        };
+
+        let melted = df.melt2(args).unwrap();
         let value = melted.column("value")?;
         let value = value.i32()?;
         let value = value.into_no_null_iter().collect::<Vec<_>>();

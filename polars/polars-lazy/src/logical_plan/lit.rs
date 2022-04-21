@@ -3,7 +3,12 @@ use crate::prelude::*;
 use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
 pub enum LiteralValue {
     Null,
     /// A binary true or false.
@@ -40,9 +45,12 @@ pub enum LiteralValue {
         data_type: DataType,
     },
     #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
+    #[cfg_attr(feature = "serde", serde(skip))]
     DateTime(NaiveDateTime, TimeUnit),
     #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Duration(ChronoDuration, TimeUnit),
+    #[cfg_attr(feature = "serde", serde(skip))]
     Series(NoEq<Series>),
 }
 

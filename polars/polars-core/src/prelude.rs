@@ -19,6 +19,7 @@ pub use crate::{
     df,
     error::{PolarsError, Result},
     frame::{
+        explode::MeltArgs,
         groupby::{GroupsIdx, GroupsProxy, GroupsSlice},
         hash_join::JoinType,
         *,
@@ -35,7 +36,6 @@ pub use crate::{
 };
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
-pub use polars_arrow::prelude::{LargeListArray, LargeStringArray, QuantileInterpolOptions};
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use std::sync::Arc;
 
@@ -56,6 +56,7 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptions;
 pub use polars_arrow::kernels::ewm::EWMOptions;
 
 pub(crate) use polars_arrow::export::*;
+pub use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;

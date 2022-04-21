@@ -1,4 +1,5 @@
-import datetime
+from datetime import datetime
+from typing import Dict, Sequence, Union
 
 import numpy as np
 import pandas as pd
@@ -6,6 +7,44 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
+
+
+def test_from_numpy() -> None:
+    df = pl.DataFrame(
+        {
+            "int8": np.array([1, 3, 2], dtype=np.int8),
+            "int16": np.array([1, 3, 2], dtype=np.int16),
+            "int32": np.array([1, 3, 2], dtype=np.int32),
+            "int64": np.array([1, 3, 2], dtype=np.int64),
+            "uint8": np.array([1, 3, 2], dtype=np.uint8),
+            "uint16": np.array([1, 3, 2], dtype=np.uint16),
+            "uint32": np.array([1, 3, 2], dtype=np.uint32),
+            "uint64": np.array([1, 3, 2], dtype=np.uint64),
+            "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
+            "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
+            "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
+            "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
+            "bytes": np.array(
+                ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
+            ),
+        }
+    )
+    out = [
+        pl.datatypes.Int8,
+        pl.datatypes.Int16,
+        pl.datatypes.Int32,
+        pl.datatypes.Int64,
+        pl.datatypes.UInt8,
+        pl.datatypes.UInt16,
+        pl.datatypes.UInt32,
+        pl.datatypes.UInt64,
+        pl.datatypes.Float32,  # np.float16 gets converted to float32 as Rust does not support float16.
+        pl.datatypes.Float32,
+        pl.datatypes.Float64,
+        pl.datatypes.Utf8,
+        pl.datatypes.Object,
+    ]
+    assert out == df.dtypes
 
 
 def test_from_pandas() -> None:
@@ -59,7 +98,7 @@ def test_from_pandas_nan_to_none() -> None:
 
 
 def test_from_pandas_datetime() -> None:
-    ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
+    ts = datetime(2021, 1, 1, 20, 20, 20, 20)
     pl_s = pd.Series([ts, ts])
     tmp = pl.from_pandas(pl_s.to_frame("a"))
     s = tmp["a"]
@@ -71,8 +110,8 @@ def test_from_pandas_datetime() -> None:
         "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
-    assert s[0] == datetime.datetime(2021, 6, 24, 0, 0)
-    assert s[-1] == datetime.datetime(2021, 6, 24, 9, 0)
+    assert s[0] == datetime(2021, 6, 24, 0, 0)
+    assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -135,14 +174,34 @@ def test_from_pandas_categorical_none() -> None:
 
 def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
-    df = pl.from_dict(data)  # type: ignore
+    df = pl.from_dict(data)
     assert df.shape == (2, 2)
+
+
+def test_from_dict_struct() -> None:
+    data: Dict[str, Union[Dict, Sequence]] = {
+        "a": {"b": [1, 3], "c": [2, 4]},
+        "d": [5, 6],
+    }
+    df = pl.from_dict(data)
+    assert df.shape == (2, 2)
+    assert df["a"][0] == {"b": 1, "c": 2}
+    assert df["a"][1] == {"b": 3, "c": 4}
 
 
 def test_from_dicts() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
     df = pl.from_dicts(data)
     assert df.shape == (3, 2)
+
+
+@pytest.mark.skip("not implemented yet")
+def test_from_dicts_struct() -> None:
+    data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
+    df = pl.from_dicts(data)
+    assert df.shape == (2, 2)
+    assert df["a"][0] == (1, 2)
+    assert df["a"][1] == (3, 4)
 
 
 def test_from_records() -> None:
@@ -266,3 +325,11 @@ def test_to_pandas_series() -> None:
 
 def test_respect_dtype_with_series_from_numpy() -> None:
     assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32
+
+
+def test_from_pandas_ns_resolution() -> None:
+    df = pd.DataFrame(
+        [pd.Timestamp(year=2021, month=1, day=1, hour=1, second=1, nanosecond=1)],
+        columns=["date"],
+    )
+    assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)

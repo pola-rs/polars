@@ -15,12 +15,20 @@ impl ToSeries for PyObject {
             Ok(s) => s,
             // the lambda did not return a series, we try to create a new python Series
             _ => {
-                let python_s = py_polars_module
+                let res = py_polars_module
                     .getattr(py, "Series")
                     .unwrap()
-                    .call1(py, (name, PyList::new(py, [self])))
-                    .unwrap();
-                python_s.getattr(py, "_s").unwrap()
+                    .call1(py, (name, PyList::new(py, [self])));
+
+                match res {
+                    Ok(python_s) => python_s.getattr(py, "_s").unwrap(),
+                    Err(_) => {
+                        panic!(
+                            "expected a something that could convert to a `Series` but got: {}",
+                            self.as_ref(py).get_type()
+                        )
+                    }
+                }
             }
         };
         let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
@@ -55,7 +63,7 @@ pub(crate) fn call_lambda_with_series(
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (python_series_wrapper,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.pvalue(py)),
+        Err(e) => panic!("python apply failed: {}", e.value(py)),
     }
 }
 
@@ -85,7 +93,7 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
     let result_series_wrapper =
         match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
             Ok(pyobj) => pyobj,
-            Err(e) => panic!("custom python function failed: {}", e.pvalue(py)),
+            Err(e) => panic!("custom python function failed: {}", e.value(py)),
         };
     let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
         let pyexpr = expr.extract::<PyExpr>(py).unwrap();
@@ -189,7 +197,7 @@ pub(crate) fn call_lambda_with_series_slice(
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (wrapped_s,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.pvalue(py)),
+        Err(e) => panic!("python apply failed: {}", e.value(py)),
     }
 }
 

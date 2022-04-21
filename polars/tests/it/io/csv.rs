@@ -569,7 +569,7 @@ fn test_automatic_datetime_parsing() -> Result<()> {
     let ts = df.column("timestamp")?;
     assert_eq!(
         ts.dtype(),
-        &DataType::Datetime(TimeUnit::Milliseconds, None)
+        &DataType::Datetime(TimeUnit::Microseconds, None)
     );
     assert_eq!(ts.null_count(), 0);
 
@@ -964,4 +964,37 @@ fn test_empty_csv() {
             Err(PolarsError::NoData(_))
         ))
     }
+}
+
+#[test]
+fn test_parse_dates() -> Result<()> {
+    let csv = "date
+1745-04-02
+1742-03-21
+1743-06-16
+1730-07-22
+''
+1739-03-16
+";
+    let file = Cursor::new(csv);
+
+    let out = CsvReader::new(file).with_parse_dates(true).finish()?;
+    assert_eq!(out.dtypes(), &[DataType::Date]);
+    assert_eq!(out.column("date")?.null_count(), 1);
+    Ok(())
+}
+
+#[test]
+fn test_whitespace_skipping() -> Result<()> {
+    let csv = "a,b
+  12,   1435";
+    let file = Cursor::new(csv);
+    let out = CsvReader::new(file).finish()?;
+    let expected = df![
+        "a" => [12i64],
+        "b" => [1435i64],
+    ]?;
+    assert!(out.frame_equal(&expected));
+
+    Ok(())
 }

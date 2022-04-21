@@ -1,10 +1,11 @@
 use super::*;
+use crate::conversion::to_wrapped;
 use crate::series::PySeries;
 use crate::Wrap;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyCFunction, PyFloat, PyInt, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyCFunction, PyDict, PyFloat, PyList, PyString, PyTuple};
 
 /// Find the output type and dispatch to that implementation.
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
@@ -14,17 +15,12 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     out: &'a PyAny,
     null_count: usize,
 ) -> PyResult<PySeries> {
-    if out.is_instance::<PyInt>().unwrap() {
-        let first_value = out.extract::<i64>().unwrap();
+    if out.is_instance_of::<PyBool>().unwrap() {
+        let first_value = out.extract::<bool>().unwrap();
         applyer
-            .apply_lambda_with_primitive_out_type::<Int64Type>(
-                py,
-                lambda,
-                null_count,
-                Some(first_value),
-            )
+            .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyFloat>().unwrap() {
+    } else if out.is_instance_of::<PyFloat>().unwrap() {
         let first_value = out.extract::<f64>().unwrap();
         applyer
             .apply_lambda_with_primitive_out_type::<Float64Type>(
@@ -34,12 +30,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
                 Some(first_value),
             )
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyBool>().unwrap() {
-        let first_value = out.extract::<bool>().unwrap();
-        applyer
-            .apply_lambda_with_bool_out_type(py, lambda, null_count, Some(first_value))
-            .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyString>().unwrap() {
+    } else if out.is_instance_of::<PyString>().unwrap() {
         let first_value = out.extract::<&str>().unwrap();
         applyer
             .apply_lambda_with_utf8_out_type(py, lambda, null_count, Some(first_value))
@@ -51,7 +42,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyList>().unwrap() {
+    } else if out.is_instance_of::<PyList>().unwrap() {
         let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
         let series = pypolars.getattr(py, "Series").unwrap().call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
@@ -76,9 +67,26 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, new_lambda, null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance::<PyTuple>().unwrap() {
+    } else if out.is_instance_of::<PyDict>().unwrap() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
+    }
+    // this succeeds for numpy ints as well, where checking if it is pyint fails
+    // we do this later in the chain so that we don't extract integers from string chars.
+    else if out.extract::<i64>().is_ok() {
+        let first_value = out.extract::<i64>().unwrap();
+        applyer
+            .apply_lambda_with_primitive_out_type::<Int64Type>(
+                py,
+                lambda,
+                null_count,
+                Some(first_value),
+            )
+            .map(|ca| ca.into_series().into())
+    } else if let Ok(av) = out.extract::<Wrap<AnyValue>>() {
+        applyer
+            .apply_extract_any_values(py, lambda, null_count, av.0)
+            .map(|s| s.into())
     } else {
         applyer
             .apply_lambda_with_object_out_type(
@@ -146,6 +154,14 @@ pub trait ApplyLambda<'a> {
         dt: &DataType,
     ) -> PyResult<ListChunked>;
 
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series>;
+
     /// Apply a lambda with list output type
     fn apply_lambda_with_object_out_type(
         &'a self,
@@ -156,7 +172,7 @@ pub trait ApplyLambda<'a> {
     ) -> PyResult<ObjectChunked<ObjectValue>>;
 }
 
-fn call_lambda<'a, T>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<&'a PyAny>
+pub fn call_lambda<'a, T>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<&'a PyAny>
 where
     T: ToPyObject,
 {
@@ -164,7 +180,11 @@ where
     lambda.call1(arg)
 }
 
-fn call_lambda_and_extract<'a, T, S>(py: Python, lambda: &'a PyAny, in_val: T) -> PyResult<S>
+pub(crate) fn call_lambda_and_extract<'a, T, S>(
+    py: Python,
+    lambda: &'a PyAny,
+    in_val: T,
+) -> PyResult<S>
 where
     T: ToPyObject,
     S: FromPyObject<'a>,
@@ -398,6 +418,40 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 self.len(),
             ))
         }
+    }
+
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        if self.null_count() > 0 {
+            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
+                let out_wrapped = match opt_val {
+                    None => Wrap(AnyValue::Null),
+                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
+                };
+                out_wrapped.0
+            });
+            avs.extend(iter);
+        } else {
+            let iter = self
+                .into_no_null_iter()
+                .skip(init_null_count + 1)
+                .map(|val| {
+                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
+                        .unwrap()
+                        .0
+                });
+            avs.extend(iter);
+        }
+        Ok(Series::new(self.name(), &avs))
     }
 
     fn apply_lambda_with_object_out_type(
@@ -661,6 +715,40 @@ where
         }
     }
 
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        if self.null_count() > 0 {
+            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
+                let out_wrapped = match opt_val {
+                    None => Wrap(AnyValue::Null),
+                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
+                };
+                out_wrapped.0
+            });
+            avs.extend(iter);
+        } else {
+            let iter = self
+                .into_no_null_iter()
+                .skip(init_null_count + 1)
+                .map(|val| {
+                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
+                        .unwrap()
+                        .0
+                });
+            avs.extend(iter);
+        }
+        Ok(Series::new(self.name(), &avs))
+    }
+
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -914,6 +1002,40 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 self.len(),
             ))
         }
+    }
+
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        if self.null_count() > 0 {
+            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
+                let out_wrapped = match opt_val {
+                    None => Wrap(AnyValue::Null),
+                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
+                };
+                out_wrapped.0
+            });
+            avs.extend(iter);
+        } else {
+            let iter = self
+                .into_no_null_iter()
+                .skip(init_null_count + 1)
+                .map(|val| {
+                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
+                        .unwrap()
+                        .0
+                });
+            avs.extend(iter);
+        }
+        Ok(Series::new(self.name(), &avs))
     }
 
     fn apply_lambda_with_object_out_type(
@@ -1379,6 +1501,52 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             ))
         }
     }
+
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let pypolars = PyModule::import(py, "polars")?;
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        let call_with_value = |val: Series| {
+            // create a PySeries struct/object for Python
+            let pyseries = PySeries::new(val);
+            // Wrap this PySeries object in the python side Series wrapper
+            let python_series_wrapper = pypolars
+                .getattr("wrap_s")
+                .unwrap()
+                .call1((pyseries,))
+                .unwrap();
+            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, python_series_wrapper)
+                .unwrap()
+                .0
+        };
+
+        if self.null_count() > 0 {
+            let iter = self
+                .into_iter()
+                .skip(init_null_count + 1)
+                .map(|opt_val| match opt_val {
+                    None => AnyValue::Null,
+                    Some(val) => call_with_value(val),
+                });
+            avs.extend(iter);
+        } else {
+            let iter = self
+                .into_no_null_iter()
+                .skip(init_null_count + 1)
+                .map(|val| call_with_value(val));
+            avs.extend(iter);
+        }
+        Ok(Series::new(self.name(), &avs))
+    }
+
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -1643,6 +1811,40 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         }
     }
 
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        if self.null_count() > 0 {
+            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
+                let out_wrapped = match opt_val {
+                    None => Wrap(AnyValue::Null),
+                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
+                };
+                out_wrapped.0
+            });
+            avs.extend(iter);
+        } else {
+            let iter = self
+                .into_no_null_iter()
+                .skip(init_null_count + 1)
+                .map(|val| {
+                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
+                        .unwrap()
+                        .0
+                });
+            avs.extend(iter);
+        }
+        Ok(Series::new(self.name(), &avs))
+    }
+
     fn apply_lambda_with_object_out_type(
         &'a self,
         py: Python,
@@ -1681,5 +1883,203 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 self.len(),
             ))
         }
+    }
+}
+
+fn make_dict_arg(py: Python, names: &[&str], vals: &[AnyValue]) -> Py<PyDict> {
+    let dict = PyDict::new(py);
+    for (name, val) in names.iter().zip(to_wrapped(vals)) {
+        dict.set_item(name, val).unwrap()
+    }
+    dict.into_py(py)
+}
+
+impl<'a> ApplyLambda<'a> for StructChunked {
+    fn apply_lambda_unknown(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let mut null_count = 0;
+        for val in self.into_iter() {
+            let arg = make_dict_arg(py, &names, val);
+            let out = lambda.call1((arg,))?;
+            if out.is_none() {
+                null_count += 1;
+                continue;
+            }
+            return infer_and_finish(self, py, lambda, out, null_count);
+        }
+
+        // todo! full null
+        Ok(self.clone().into_series().into())
+    }
+
+    fn apply_lambda(&'a self, py: Python, lambda: &'a PyAny) -> PyResult<PySeries> {
+        self.apply_lambda_unknown(py, lambda)
+    }
+
+    fn apply_to_struct(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<PySeries> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let skip = 1;
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            let out = lambda.call1((arg,)).unwrap();
+            Some(out)
+        });
+        iterator_to_struct(it, init_null_count, first_value, self.name(), self.len())
+    }
+
+    fn apply_lambda_with_primitive_out_type<D>(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<D::Native>,
+    ) -> PyResult<ChunkedArray<D>>
+    where
+        D: PyArrowPrimitiveType,
+        D::Native: ToPyObject + FromPyObject<'a>,
+    {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_primitive(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+
+    fn apply_lambda_with_bool_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<bool>,
+    ) -> PyResult<BooleanChunked> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_bool(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+
+    fn apply_lambda_with_utf8_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<&str>,
+    ) -> PyResult<Utf8Chunked> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_utf8(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
+    }
+    fn apply_lambda_with_list_out_type(
+        &'a self,
+        py: Python,
+        lambda: PyObject,
+        init_null_count: usize,
+        first_value: &Series,
+        dt: &DataType,
+    ) -> PyResult<ListChunked> {
+        let skip = 1;
+
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let lambda = lambda.as_ref(py);
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_series_out(py, lambda, arg).ok()
+        });
+        Ok(iterator_to_list(
+            dt,
+            it,
+            init_null_count,
+            Some(first_value),
+            self.name(),
+            self.len(),
+        ))
+    }
+
+    fn apply_extract_any_values(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: AnyValue<'a>,
+    ) -> PyResult<Series> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+        let mut avs = Vec::with_capacity(self.len());
+        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.push(first_value);
+
+        let iter = self.into_iter().skip(init_null_count + 1).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, arg)
+                .unwrap()
+                .0
+        });
+        avs.extend(iter);
+
+        Ok(Series::new(self.name(), &avs))
+    }
+
+    fn apply_lambda_with_object_out_type(
+        &'a self,
+        py: Python,
+        lambda: &'a PyAny,
+        init_null_count: usize,
+        first_value: Option<ObjectValue>,
+    ) -> PyResult<ObjectChunked<ObjectValue>> {
+        let names = self.fields().iter().map(|s| s.name()).collect::<Vec<_>>();
+
+        let skip = if first_value.is_some() { 1 } else { 0 };
+        let it = self.into_iter().skip(init_null_count + skip).map(|val| {
+            let arg = make_dict_arg(py, &names, val);
+            call_lambda_and_extract(py, lambda, arg).ok()
+        });
+
+        Ok(iterator_to_object(
+            it,
+            init_null_count,
+            first_value,
+            self.name(),
+            self.len(),
+        ))
     }
 }

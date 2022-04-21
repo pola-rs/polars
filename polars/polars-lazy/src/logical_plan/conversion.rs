@@ -169,15 +169,13 @@ pub(crate) fn to_alp(
         }
         LogicalPlan::Melt {
             input,
-            id_vars,
-            value_vars,
+            args,
             schema,
         } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Melt {
                 input,
-                id_vars,
-                value_vars,
+                args,
                 schema,
             }
         }
@@ -289,9 +287,17 @@ pub(crate) fn to_alp(
                 args,
             }
         }
-        LogicalPlan::Explode { input, columns } => {
+        LogicalPlan::Explode {
+            input,
+            columns,
+            schema,
+        } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
-            ALogicalPlan::Explode { input, columns }
+            ALogicalPlan::Explode {
+                input,
+                columns,
+                schema,
+            }
         }
         LogicalPlan::Cache { input } => {
             let input = to_alp(*input, expr_arena, lp_arena)?;
@@ -739,9 +745,17 @@ pub(crate) fn node_to_lp(
                 args,
             }
         }
-        ALogicalPlan::Explode { input, columns } => {
+        ALogicalPlan::Explode {
+            input,
+            columns,
+            schema,
+        } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Explode { input, columns }
+            LogicalPlan::Explode {
+                input,
+                columns,
+                schema,
+            }
         }
         ALogicalPlan::Cache { input } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
@@ -810,15 +824,13 @@ pub(crate) fn node_to_lp(
         }
         ALogicalPlan::Melt {
             input,
-            id_vars,
-            value_vars,
+            args,
             schema,
         } => {
             let input = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Melt {
                 input: Box::new(input),
-                id_vars,
-                value_vars,
+                args,
                 schema,
             }
         }

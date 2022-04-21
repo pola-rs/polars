@@ -370,13 +370,15 @@ pub fn get_list_builder(
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
+    pub dtype: DataType,
 }
 
 impl<'a> AnonymousListBuilder<'a> {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: &str, capacity: usize, dtype: DataType) -> Self {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
+            dtype,
         }
     }
 
@@ -394,12 +396,20 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn append_series(&mut self, s: &'a Series) {
-        assert_eq!(s.chunks().len(), 1);
-        self.builder.push(s.chunks()[0].as_ref())
+        self.builder.push_multiple(s.chunks());
     }
 
     pub fn finish(self) -> ListChunked {
-        let arr = self.builder.finish().unwrap();
-        ListChunked::from_chunks(&self.name, vec![Arc::new(arr)])
+        if self.builder.is_empty() {
+            ListChunked::full_null_with_dtype(&self.name, 0, &self.dtype)
+        } else {
+            let arr = self
+                .builder
+                .finish(Some(&self.dtype.to_physical().to_arrow()))
+                .unwrap();
+            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+            ca.field = Arc::new(Field::new(&self.name, DataType::List(Box::new(self.dtype))));
+            ca
+        }
     }
 }

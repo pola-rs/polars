@@ -37,6 +37,7 @@ Conversion
     DataFrame.to_parquet
     DataFrame.to_numpy
     DataFrame.to_dict
+    DataFrame.to_dicts
     DataFrame.to_struct
 
 Aggregation
@@ -60,6 +61,7 @@ Descriptive stats
    :toctree: api/
 
     DataFrame.describe
+    DataFrame.estimated_size
     DataFrame.is_duplicated
     DataFrame.is_unique
     DataFrame.n_chunks
@@ -120,6 +122,7 @@ Manipulation/ selection
     DataFrame.rows
     DataFrame.to_dummies
     DataFrame.distinct
+    DataFrame.unique
     DataFrame.shrink_to_fit
     DataFrame.rechunk
     DataFrame.pipe
@@ -127,6 +130,7 @@ Manipulation/ selection
     DataFrame.join_asof
     DataFrame.interpolate
     DataFrame.transpose
+    DataFrame.partition_by
     DataFrame.upsample
     DataFrame.unnest
 
@@ -176,6 +180,8 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
 Pivot
 -----
 This namespace comes available by calling `DataFrame.groupby(..).pivot`
+
+*Note that this API is deprecated in favor of `DataFrame.pivot`*
 
 .. currentmodule:: polars.internals.frame
 

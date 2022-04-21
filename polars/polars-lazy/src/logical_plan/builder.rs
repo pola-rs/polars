@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::utils;
 use crate::utils::{combine_predicates_expr, has_expr};
 use parking_lot::Mutex;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 use polars_io::csv::CsvEncoding;
@@ -122,11 +123,14 @@ impl LogicalPlanBuilder {
         skip_rows_after_header: usize,
         encoding: CsvEncoding,
         row_count: Option<RowCount>,
+        parse_dates: bool,
     ) -> Result<Self> {
         let path = path.into();
         let mut file = std::fs::File::open(&path)?;
         let mut magic_nr = [0u8; 2];
-        file.read_exact(&mut magic_nr)?;
+        file.read_exact(&mut magic_nr)
+            .map_err(|_| PolarsError::NoData("empty csv".into()))?;
+
         if is_compressed(&magic_nr) {
             return Err(PolarsError::ComputeError(
                 "cannot scan compressed csv; use read_csv for compressed data".into(),
@@ -146,6 +150,7 @@ impl LogicalPlanBuilder {
                 comment_char,
                 quote_char,
                 null_values.as_ref(),
+                parse_dates,
             )
             .expect("could not read schema");
             Arc::new(schema)
@@ -169,6 +174,7 @@ impl LogicalPlanBuilder {
                 rechunk,
                 encoding,
                 row_count,
+                parse_dates,
             },
             predicate: None,
             aggregate: vec![],
@@ -207,16 +213,12 @@ impl LogicalPlanBuilder {
     pub fn project_local(self, exprs: Vec<Expr>) -> Self {
         let (exprs, schema) =
             try_delayed!(prepare_projection(exprs, self.0.schema()), &self.0, into);
-        if !exprs.is_empty() {
-            LogicalPlan::LocalProjection {
-                expr: exprs,
-                input: Box::new(self.0),
-                schema: Arc::new(schema),
-            }
-            .into()
-        } else {
-            self
+        LogicalPlan::LocalProjection {
+            expr: exprs,
+            input: Box::new(self.0),
+            schema: Arc::new(schema),
         }
+        .into()
     }
 
     pub fn fill_null(self, fill_value: Expr) -> Self {
@@ -235,16 +237,17 @@ impl LogicalPlanBuilder {
 
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         let schema = self.0.schema();
+
         let exprs = schema
-            .iter_names()
-            .map(|name| {
-                when(col(name).is_nan())
-                    .then(fill_value.clone())
-                    .otherwise(col(name))
-                    .alias(name)
+            .iter()
+            .filter_map(|(name, dtype)| match dtype {
+                DataType::Float32 | DataType::Float64 => {
+                    Some(col(name).fill_nan(fill_value.clone()).alias(name))
+                }
+                _ => None,
             })
             .collect();
-        self.project_local(exprs)
+        self.with_columns(exprs)
     }
 
     pub fn with_columns(self, exprs: Vec<Expr>) -> Self {
@@ -268,7 +271,12 @@ impl LogicalPlanBuilder {
 
     /// Apply a filter
     pub fn filter(self, predicate: Expr) -> Self {
-        let predicate = if has_expr(&predicate, |e| matches!(e, Expr::Wildcard)) {
+        let predicate = if has_expr(&predicate, |e| {
+            matches!(
+                e,
+                Expr::Wildcard | Expr::RenameAlias { .. } | Expr::Columns(_)
+            )
+        }) {
             let rewritten = rewrite_projections(vec![predicate], self.0.schema(), &[]);
             combine_predicates_expr(rewritten.into_iter())
         } else {
@@ -305,6 +313,25 @@ impl LogicalPlanBuilder {
         );
         schema.merge(other);
 
+        let index_columns = &[
+            rolling_options
+                .as_ref()
+                .map(|options| &options.index_column),
+            dynamic_options
+                .as_ref()
+                .map(|options| &options.index_column),
+        ];
+        for &name in index_columns.iter().flatten() {
+            let dtype = try_delayed!(
+                current_schema
+                    .get(name)
+                    .ok_or_else(|| PolarsError::NotFound(name.clone())),
+                self.0,
+                into
+            );
+            schema.with_column(name.clone(), dtype.clone());
+        }
+
         LogicalPlan::Aggregate {
             input: Box::new(self.0),
             keys,
@@ -315,6 +342,7 @@ impl LogicalPlanBuilder {
             options: GroupbyOptions {
                 dynamic: dynamic_options,
                 rolling: rolling_options,
+                slice: None,
             },
         }
         .into()
@@ -342,6 +370,7 @@ impl LogicalPlanBuilder {
             args: SortArguments {
                 reverse,
                 nulls_last: null_last,
+                slice: None,
             },
         }
         .into()
@@ -349,11 +378,19 @@ impl LogicalPlanBuilder {
 
     pub fn explode(self, columns: Vec<Expr>) -> Self {
         let columns = rewrite_projections(columns, self.0.schema(), &[]);
+
+        let mut schema = (**self.0.schema()).clone();
+
         // columns to string
         let columns = columns
             .iter()
             .map(|e| {
                 if let Expr::Column(name) = e {
+                    if let Some(DataType::List(inner)) = schema.get(name) {
+                        let inner = *inner.clone();
+                        schema.with_column(name.to_string(), inner)
+                    }
+
                     (**name).to_owned()
                 } else {
                     panic!("expected column expression")
@@ -363,16 +400,16 @@ impl LogicalPlanBuilder {
         LogicalPlan::Explode {
             input: Box::new(self.0),
             columns,
+            schema: Arc::new(schema),
         }
         .into()
     }
 
-    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&id_vars, &value_vars, self.0.schema());
+    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
+        let schema = det_melt_schema(&args, self.0.schema());
         LogicalPlan::Melt {
             input: Box::new(self.0),
-            id_vars,
-            value_vars,
+            args,
             schema,
         }
         .into()
@@ -386,7 +423,7 @@ impl LogicalPlanBuilder {
         .into()
     }
 
-    pub fn slice(self, offset: i64, len: u32) -> Self {
+    pub fn slice(self, offset: i64, len: IdxSize) -> Self {
         LogicalPlan::Slice {
             input: Box::new(self.0),
             offset,
@@ -469,24 +506,31 @@ impl LogicalPlanBuilder {
     }
 }
 
-pub(crate) fn det_melt_schema(
-    id_vars: &[String],
-    value_vars: &[String],
-    input_schema: &Schema,
-) -> SchemaRef {
+pub(crate) fn det_melt_schema(args: &MeltArgs, input_schema: &Schema) -> SchemaRef {
     let mut new_schema = Schema::from(
-        id_vars
+        args.id_vars
             .iter()
             .map(|id| Field::new(id, input_schema.get(id).unwrap().clone())),
     );
-    new_schema.with_column("variable".to_string(), DataType::Utf8);
+    let variable_name = args
+        .variable_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "variable".to_string());
+    let value_name = args
+        .value_name
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| "value".to_string());
+
+    new_schema.with_column(variable_name, DataType::Utf8);
 
     // We need to determine the supertype of all value columns.
     let mut st = None;
 
     // take all columns that are not in `id_vars` as `value_var`
-    if value_vars.is_empty() {
-        let id_vars = PlHashSet::from_iter(id_vars);
+    if args.value_vars.is_empty() {
+        let id_vars = PlHashSet::from_iter(&args.id_vars);
         for (name, dtype) in input_schema.iter() {
             if !id_vars.contains(name) {
                 match &st {
@@ -496,7 +540,7 @@ pub(crate) fn det_melt_schema(
             }
         }
     } else {
-        for name in value_vars {
+        for name in &args.value_vars {
             let dtype = input_schema.get(name).unwrap();
             match &st {
                 None => st = Some(dtype.clone()),
@@ -504,6 +548,6 @@ pub(crate) fn det_melt_schema(
             }
         }
     }
-    new_schema.with_column("value".to_string(), st.unwrap());
+    new_schema.with_column(value_name, st.unwrap());
     Arc::new(new_schema)
 }

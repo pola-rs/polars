@@ -51,6 +51,60 @@ macro_rules! apply_enumerate {
     }};
 }
 
+fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
+where
+    F: Fn(S::Native) -> S::Native + Copy,
+    S: PolarsNumericType,
+{
+    use arrow::Either::*;
+    let chunks = chunks
+        .into_iter()
+        .map(|arr| {
+            let owned_arr = arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<S::Native>>()
+                .unwrap()
+                .clone();
+            // make sure we have a single ref count coming in.
+            drop(arr);
+
+            match owned_arr.into_mut() {
+                Left(immutable) => Arc::new(arrow::compute::arity::unary(
+                    &immutable,
+                    f,
+                    S::get_dtype().to_arrow(),
+                )),
+                Right(mut mutable) => {
+                    let vals = mutable.values_mut_slice();
+                    vals.iter_mut().for_each(|v| *v = f(*v));
+                    mutable.into_arc()
+                }
+            }
+        })
+        .collect();
+    ChunkedArray::<S>::from_chunks(name, chunks)
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// Cast a numeric array to another numeric data type and apply a function in place.
+    /// This saves an allocation.
+    pub fn cast_and_apply_in_place<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(S::Native) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        // if we cast, we create a new arrow buffer
+        // then we clone the arrays and drop the casted arrays
+        // this will ensure we have a single ref count
+        // and we can mutate in place
+        let chunks = {
+            let s = self.cast(&S::get_dtype()).unwrap();
+            s.chunks().clone()
+        };
+        apply_in_place_impl(self.name(), chunks, f)
+    }
+}
+
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,

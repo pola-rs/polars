@@ -24,6 +24,7 @@ mod projection;
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
+use polars_core::frame::explode::MeltArgs;
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -137,18 +138,18 @@ pub enum LogicalPlan {
     Explode {
         input: Box<LogicalPlan>,
         columns: Vec<String>,
+        schema: SchemaRef,
     },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
-        len: u32,
+        len: IdxSize,
     },
     /// A Melt operation
     Melt {
         input: Box<LogicalPlan>,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
+        args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
     /// A User Defined Function
@@ -199,7 +200,7 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { input, .. } => input.schema(),
+            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
             #[cfg(feature = "ipc")]

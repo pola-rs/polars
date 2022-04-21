@@ -150,10 +150,28 @@ impl OptimizationRule for TypeCoercionRule {
 
                     let type_left = left
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
                     let type_right = right
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
+
+                    // don't coerce string with number comparisons. They must error
+                    match (&type_left, &type_right, op) {
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
+                            if op.is_comparison() && dt.is_numeric() =>
+                        {
+                            return None
+                        }
+                        #[cfg(feature = "dtype-categorical")]
+                        (DataType::Utf8 | DataType::Categorical(_), dt, op)
+                        | (dt, DataType::Utf8 | DataType::Categorical(_), op)
+                            if op.is_comparison() && dt.is_numeric() =>
+                        {
+                            return None
+                        }
+                        _ => {}
+                    }
 
                     #[allow(unused_mut, unused_assignments)]
                     let mut compare_cat_to_string = false;

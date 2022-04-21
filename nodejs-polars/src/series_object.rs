@@ -42,7 +42,8 @@ impl JsSeries {
         ])?;
 
         series.define_properties(&[
-            napi::Property::new(env, "_not")?.with_method(crate::series::not),
+            napi::Property::new(env, "to_bincode")?.with_method(crate::series::to_bincode),
+            napi::Property::new(env, "from_bincode")?.with_method(crate::series::from_bincode),
             napi::Property::new(env, "abs")?.with_method(abs),
             napi::Property::new(env, "add_f32_rhs")?.with_method(add_f32_rhs),
             napi::Property::new(env, "add_f32")?.with_method(add_f32),
@@ -314,7 +315,7 @@ impl JsSeries {
             napi::Property::new(env, "rem_u8")?.with_method(rem_u8),
             napi::Property::new(env, "rem")?.with_method(rem),
             napi::Property::new(env, "rename")?.with_method(rename),
-            napi::Property::new(env, "repeat")?.with_method(repeat),
+            napi::Property::new(env, "repeat")?.with_method(crate::series::repeat),
             napi::Property::new(env, "rolling_max")?.with_method(rolling_max),
             napi::Property::new(env, "rolling_mean")?.with_method(rolling_mean),
             napi::Property::new(env, "rolling_min")?.with_method(rolling_min),

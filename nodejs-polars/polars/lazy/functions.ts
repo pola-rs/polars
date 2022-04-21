@@ -102,9 +102,9 @@ export function col(col: string | string[] | Series<string>): Expr {
     col = col.toArray();
   }
   if(Array.isArray(col)) {
-    return Expr(pli.cols({name: col}));
+    return (Expr as any)(pli.cols({name: col}));
   } else {
-    return Expr(pli.col({name: col}));
+    return (Expr as any)(pli.col({name: col}));
   }
 }
 
@@ -121,10 +121,10 @@ export function lit(value: any): Expr {
   }
   if(Series.isSeries(value)){
 
-    return Expr(pli.lit({value: value._series}));
+    return (Expr as any)(pli.lit({value: value._series}));
   }
 
-  return Expr(pli.lit({value}));
+  return (Expr as any)(pli.lit({value}));
 }
 
 // ----------
@@ -163,7 +163,7 @@ export function arange<T>(opts: any, high?, step?, eager?): Series<T> | Expr {
       return df.select(arange(low, high, step).alias("arange") as any).getColumn("arange") as any;
     }
 
-    return Expr(pli.arange({low: low._expr, high: high._expr, step}));
+    return (Expr as any)(pli.arange({low: low._expr, high: high._expr, step}));
   }
 }
 /**
@@ -180,7 +180,7 @@ export function argSortBy(exprs: Expr[] | string[], reverse: boolean | boolean[]
   }
   const by = selectionToExprList(exprs);
 
-  return Expr(pli.argSortBy({by, reverse}));
+  return (Expr as any)(pli.argSortBy({by, reverse}));
 }
 /** Alias for mean. @see {@link mean} */
 export function avg(column: string): Expr;
@@ -199,7 +199,7 @@ export function concatList(expr: ExprOrString, expr2: ExprOrString,  ...exprs: E
 export function concatList(...exprs): Expr {
   const items = selectionToExprList(exprs as any, false);
 
-  return Expr(pli.concatList({items}));
+  return (Expr as any)(pli.concatList({items}));
 }
 
 /** Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8. */
@@ -211,7 +211,7 @@ export function concatString(opts, sep=",") {
   }
   const items = selectionToExprList(opts as any, false);
 
-  return Expr(pli.concatString({items, sep}));
+  return (Expr as any)(pli.concatString({items, sep}));
 
 }
 
@@ -231,7 +231,7 @@ export function cov(a: ExprOrString, b: ExprOrString): Expr {
   a = exprToLitOrExpr(a, false)._expr;
   b = exprToLitOrExpr(b, false)._expr;
 
-  return Expr(pli.cov({a, b}));
+  return (Expr as any)(pli.cov({a, b}));
 }
 /**
  * Exclude certain columns from a wildcard expression.
@@ -382,7 +382,7 @@ export function pearsonCorr(a: ExprOrString, b: ExprOrString): Expr {
   a = exprToLitOrExpr(a, false)._expr;
   b = exprToLitOrExpr(b, false)._expr;
 
-  return Expr(pli.pearsonCorr({a, b}));
+  return (Expr as any)(pli.pearsonCorr({a, b}));
 }
 
 /** Get the quantile */
@@ -409,7 +409,7 @@ export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
   a = exprToLitOrExpr(a, false)._expr;
   b = exprToLitOrExpr(b, false)._expr;
 
-  return Expr(pli.spearmanRankCorr({a, b}));
+  return (Expr as any)(pli.spearmanRankCorr({a, b}));
 }
 
 

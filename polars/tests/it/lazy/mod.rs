@@ -1,8 +1,10 @@
 mod explodes;
 mod expressions;
+mod groupby;
 mod groupby_dynamic;
 mod predicate_queries;
 mod projection_queries;
+mod queries;
 
 use polars::prelude::*;
 

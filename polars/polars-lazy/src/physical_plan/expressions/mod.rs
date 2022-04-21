@@ -1,24 +1,29 @@
-pub(crate) mod aggregation;
-pub(crate) mod alias;
-pub(crate) mod apply;
-pub(crate) mod binary;
-pub(crate) mod cast;
-pub(crate) mod column;
-pub(crate) mod count;
-pub(crate) mod filter;
-pub(crate) mod is_not_null;
-pub(crate) mod is_null;
-pub(crate) mod literal;
-pub(crate) mod not;
-pub(crate) mod shift;
-pub(crate) mod slice;
-pub(crate) mod sort;
-pub(crate) mod sortby;
-pub(crate) mod take;
-pub(crate) mod ternary;
-pub(crate) mod utils;
-pub(crate) mod window;
-// pub(crate) mod unique;
+mod aggregation;
+mod alias;
+mod apply;
+mod binary;
+mod cast;
+mod column;
+mod count;
+mod filter;
+mod is_not_null;
+mod is_null;
+mod literal;
+mod not;
+mod shift;
+mod slice;
+mod sort;
+mod sortby;
+mod take;
+mod ternary;
+mod utils;
+mod window;
+
+pub(crate) use {
+    aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
+    is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
+    take::*, ternary::*, utils::*, window::*,
+};
 
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
@@ -60,15 +65,19 @@ impl AggState {
 
 // lazy update strategy
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(PartialEq)]
 pub(crate) enum UpdateGroups {
     /// don't update groups
     No,
     /// use the length of the current groups to determine new sorted indexes, preferred
+    /// for performance
     WithGroupsLen,
     /// use the series list offsets to determine the new group lengths
     /// this one should be used when the length has changed. Note that
     /// the series should be aggregated state or else it will panic.
     WithSeriesLen,
+    // Same as WithSeriesLen, but now take a series given by the caller
+    WithSeriesLenOwned(Series),
 }
 
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -90,14 +99,9 @@ pub struct AggregationContext<'a> {
     /// This is true when the Series and GroupsProxy still have all
     /// their original values. Not the case when filtered
     original_len: bool,
-    all_unit_len: bool,
 }
 
 impl<'a> AggregationContext<'a> {
-    pub(crate) fn with_all_unit_len(&mut self, toggle: bool) {
-        self.all_unit_len = toggle
-    }
-
     pub(crate) fn groups(&mut self) -> &Cow<'a, GroupsProxy> {
         match self.update_groups {
             UpdateGroups::No => {}
@@ -128,53 +132,12 @@ impl<'a> AggregationContext<'a> {
                 self.update_groups = UpdateGroups::No;
             }
             UpdateGroups::WithSeriesLen => {
-                let mut offset = 0 as IdxSize;
-                let list = self
-                    .series()
-                    .list()
-                    .expect("impl error, should be a list at this point");
-
-                match list.chunks().len() {
-                    1 => {
-                        let arr = list.downcast_iter().next().unwrap();
-                        let offsets = arr.offsets().as_slice();
-
-                        let mut previous = 0i64;
-                        let groups = offsets[1..]
-                            .iter()
-                            .map(|&o| {
-                                let len = (o - previous) as IdxSize;
-                                let new_offset = offset + len;
-                                previous = o;
-                                let out = [offset, len];
-                                offset = new_offset;
-                                out
-                            })
-                            .collect_trusted();
-                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
-                    }
-                    _ => {
-                        let groups = self
-                            .series()
-                            .list()
-                            .expect("impl error, should be a list at this point")
-                            .amortized_iter()
-                            .map(|s| {
-                                if let Some(s) = s {
-                                    let len = s.as_ref().len() as IdxSize;
-                                    let new_offset = offset + len;
-                                    let out = [offset, len];
-                                    offset = new_offset;
-                                    out
-                                } else {
-                                    [offset, 0]
-                                }
-                            })
-                            .collect_trusted();
-                        self.groups = Cow::Owned(GroupsProxy::Slice(groups));
-                    }
-                }
-                self.update_groups = UpdateGroups::No;
+                let s = self.series().clone();
+                self.det_groups_from_list(&s);
+            }
+            UpdateGroups::WithSeriesLenOwned(ref s) => {
+                let s = s.clone();
+                self.det_groups_from_list(&s);
             }
         }
         &self.groups
@@ -263,7 +226,6 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            all_unit_len: false,
         }
     }
 
@@ -274,7 +236,6 @@ impl<'a> AggregationContext<'a> {
             sorted: false,
             update_groups: UpdateGroups::No,
             original_len: true,
-            all_unit_len: false,
         }
     }
 
@@ -290,6 +251,58 @@ impl<'a> AggregationContext<'a> {
     pub(crate) fn with_update_groups(&mut self, update: UpdateGroups) -> &mut Self {
         self.update_groups = update;
         self
+    }
+
+    pub(crate) fn det_groups_from_list(&mut self, s: &Series) {
+        let mut offset = 0 as IdxSize;
+        let list = s
+            .list()
+            .expect("impl error, should be a list at this point");
+
+        match list.chunks().len() {
+            1 => {
+                let arr = list.downcast_iter().next().unwrap();
+                let offsets = arr.offsets().as_slice();
+
+                let mut previous = 0i64;
+                let groups = offsets[1..]
+                    .iter()
+                    .map(|&o| {
+                        let len = (o - previous) as IdxSize;
+                        // explode will fill empty rows with null, so we must increment the group
+                        // offset accordingly
+                        let new_offset = offset + len + (len == 0) as IdxSize;
+
+                        previous = o;
+                        let out = [offset, len];
+                        offset = new_offset;
+                        out
+                    })
+                    .collect_trusted();
+                self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+            }
+            _ => {
+                let groups = self
+                    .series()
+                    .list()
+                    .expect("impl error, should be a list at this point")
+                    .amortized_iter()
+                    .map(|s| {
+                        if let Some(s) = s {
+                            let len = s.as_ref().len() as IdxSize;
+                            let new_offset = offset + len;
+                            let out = [offset, len];
+                            offset = new_offset;
+                            out
+                        } else {
+                            [offset, 0]
+                        }
+                    })
+                    .collect_trusted();
+                self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+            }
+        }
+        self.update_groups = UpdateGroups::No;
     }
 
     /// In a binary expression one state can be aggregated and the other not.
@@ -381,10 +394,31 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(s) | AggState::AggregatedFlat(s) => s,
             AggState::Literal(s) => {
                 self.groups();
-                // todo! optimize this, we don't have to call agg_list, create the list directly.
-                let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
-                s.agg_list(&self.groups).unwrap()
+                let rows = self.groups.len();
+                let s = s.expand_at_index(0, rows);
+                s.reshape(&[rows as i64, -1]).unwrap()
             }
+        }
+    }
+
+    /// Different from aggregated, in arity operations we expect literals to expand to the size of the
+    /// group
+    /// eg:
+    ///
+    /// lit(9) in groups [[1, 1], [2, 2, 2]]
+    /// becomes: [[9, 9], [9, 9, 9]]
+    ///
+    /// where in [`Self::aggregated`] this becomes [9, 9]
+    ///
+    /// this is because comparisons need to create mask that have a correct length.
+    fn aggregated_arity_operation(&mut self) -> Series {
+        if let AggState::Literal(s) = self.agg_state() {
+            let s = s.clone();
+            // // todo! optimize this, we don't have to call agg_list, create the list directly.
+            let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
+            s.agg_list(&self.groups).unwrap()
+        } else {
+            self.aggregated()
         }
     }
 

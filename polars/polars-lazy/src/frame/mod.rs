@@ -36,12 +36,13 @@ use crate::physical_plan::state::ExecutionState;
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
-    simplify_expr::SimplifyBooleanRule, slice_pushdown::SlicePushDown, *,
+    simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
 };
 
 use crate::logical_plan::FETCH_ROWS;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_core::frame::explode::MeltArgs;
 use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
@@ -50,6 +51,7 @@ pub struct JoinOptions {
     pub force_parallel: bool,
     pub how: JoinType,
     pub suffix: Cow<'static, str>,
+    pub slice: Option<(i64, usize)>,
 }
 
 impl Default for JoinOptions {
@@ -59,6 +61,7 @@ impl Default for JoinOptions {
             force_parallel: false,
             how: JoinType::Left,
             suffix: "_right".into(),
+            slice: None,
         }
     }
 }
@@ -526,6 +529,8 @@ impl LazyFrame {
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
+        // make sure its before slice pushdown.
+        rules.push(Box::new(FastProjection {}));
 
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};
@@ -535,6 +540,9 @@ impl LazyFrame {
                 .expect("slice pushdown failed");
 
             lp_arena.replace(lp_top, alp);
+
+            // expressions use the stack optimizer
+            rules.push(Box::new(slice_pushdown_opt));
         }
 
         if type_coercion {
@@ -556,7 +564,6 @@ impl LazyFrame {
             rules.push(Box::new(opt));
         }
 
-        rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(ReplaceDropNulls {}));
 
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);
@@ -716,12 +723,16 @@ impl LazyFrame {
         }
     }
 
-    pub fn groupby_rolling(self, options: RollingGroupOptions) -> LazyGroupBy {
+    pub fn groupby_rolling<E: AsRef<[Expr]>>(
+        self,
+        by: E,
+        options: RollingGroupOptions,
+    ) -> LazyGroupBy {
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: vec![],
+            keys: by.as_ref().to_vec(),
             maintain_order: true,
             dynamic_options: None,
             rolling_options: Some(options),
@@ -939,10 +950,10 @@ impl LazyFrame {
     }
 
     /// Keep unique rows and maintain order
-    pub fn distinct_stable(
+    pub fn unique_stable(
         self,
         subset: Option<Vec<String>>,
-        keep_strategy: DistinctKeepStrategy,
+        keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptions {
@@ -955,10 +966,10 @@ impl LazyFrame {
     }
 
     /// Keep unique rows, do not maintain order
-    pub fn distinct(
+    pub fn unique(
         self,
         subset: Option<Vec<String>>,
-        keep_strategy: DistinctKeepStrategy,
+        keep_strategy: UniqueKeepStrategy,
     ) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let options = DistinctOptions {
@@ -985,7 +996,7 @@ impl LazyFrame {
     }
 
     /// Slice the DataFrame.
-    pub fn slice(self, offset: i64, len: u32) -> LazyFrame {
+    pub fn slice(self, offset: i64, len: IdxSize) -> LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().slice(offset, len).build();
         Self::from_logical_plan(lp, opt_state)
@@ -1002,24 +1013,21 @@ impl LazyFrame {
     }
 
     /// Get the last `n` rows
-    pub fn tail(self, n: u32) -> LazyFrame {
+    pub fn tail(self, n: IdxSize) -> LazyFrame {
         let neg_tail = -(n as i64);
         self.slice(neg_tail, n)
     }
 
     /// Melt the DataFrame from wide to long format
-    pub fn melt(self, id_vars: Vec<String>, value_vars: Vec<String>) -> LazyFrame {
+    pub fn melt(self, args: MeltArgs) -> LazyFrame {
         let opt_state = self.get_opt_state();
-        let lp = self
-            .get_plan_builder()
-            .melt(Arc::new(id_vars), Arc::new(value_vars))
-            .build();
+        let lp = self.get_plan_builder().melt(Arc::new(args)).build();
         Self::from_logical_plan(lp, opt_state)
     }
 
     /// Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
     /// use [fetch](LazyFrame::fetch).
-    pub fn limit(self, n: u32) -> LazyFrame {
+    pub fn limit(self, n: IdxSize) -> LazyFrame {
         self.slice(0, n)
     }
 
@@ -1145,6 +1153,7 @@ impl LazyFrame {
 }
 
 /// Utility struct for lazy groupby operation.
+#[derive(Clone)]
 pub struct LazyGroupBy {
     pub(crate) logical_plan: LogicalPlan,
     opt_state: OptState,
@@ -1323,6 +1332,7 @@ impl JoinBuilder {
                     force_parallel: self.force_parallel,
                     how: self.how,
                     suffix,
+                    slice: None,
                 },
             )
             .build();

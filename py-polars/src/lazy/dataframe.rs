@@ -8,7 +8,8 @@ use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGr
 use polars::lazy::prelude::col;
 use polars::prelude::{ClosedWindow, CsvEncoding, DataFrame, Field, JoinType, Schema};
 use polars::time::*;
-use polars_core::frame::DistinctKeepStrategy;
+use polars_core::frame::explode::MeltArgs;
+use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::{
     AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
 };
@@ -58,7 +59,7 @@ impl PyLazyGroupBy {
             // call the lambda and get a python side DataFrame wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
+                Err(e) => panic!("UDF failed: {}", e.value(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(
@@ -111,6 +112,7 @@ impl PyLazyFrame {
         skip_rows_after_header: usize,
         encoding: &str,
         row_count: Option<(String, u32)>,
+        parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -151,6 +153,7 @@ impl PyLazyFrame {
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_encoding(encoding)
             .with_row_count(row_count)
+            .with_parse_dates(parse_dates)
             .with_null_values(null_values);
 
         if let Some(lambda) = with_schema_modify {
@@ -325,15 +328,23 @@ impl PyLazyFrame {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
+        by: Vec<PyExpr>,
     ) -> PyLazyGroupBy {
         let closed_window = closed.0;
         let ldf = self.ldf.clone();
-        let lazy_gb = ldf.groupby_rolling(RollingGroupOptions {
-            index_column,
-            period: Duration::parse(period),
-            offset: Duration::parse(offset),
-            closed_window,
-        });
+        let by = by
+            .into_iter()
+            .map(|pyexpr| pyexpr.inner)
+            .collect::<Vec<_>>();
+        let lazy_gb = ldf.groupby_rolling(
+            by,
+            RollingGroupOptions {
+                index_column,
+                period: Duration::parse(period),
+                offset: Duration::parse(offset),
+                closed_window,
+            },
+        );
 
         PyLazyGroupBy { lgb: Some(lazy_gb) }
     }
@@ -432,6 +443,8 @@ impl PyLazyFrame {
             "left" => JoinType::Left,
             "inner" => JoinType::Inner,
             "outer" => JoinType::Outer,
+            "semi" => JoinType::Semi,
+            "anti" => JoinType::Anti,
             "asof" => JoinType::AsOf(AsOfOptions {
                 strategy: AsofStrategy::Backward,
                 left_by: if asof_by_left.is_empty() {
@@ -569,16 +582,16 @@ impl PyLazyFrame {
         ldf.explode(column).into()
     }
 
-    pub fn distinct(
+    pub fn unique(
         &self,
         maintain_order: bool,
         subset: Option<Vec<String>>,
-        keep: Wrap<DistinctKeepStrategy>,
+        keep: Wrap<UniqueKeepStrategy>,
     ) -> Self {
         let ldf = self.ldf.clone();
         match maintain_order {
-            true => ldf.distinct_stable(subset, keep.0),
-            false => ldf.distinct(subset, keep.0),
+            true => ldf.unique_stable(subset, keep.0),
+            false => ldf.unique(subset, keep.0),
         }
         .into()
     }
@@ -599,9 +612,22 @@ impl PyLazyFrame {
         ldf.tail(n).into()
     }
 
-    pub fn melt(&self, id_vars: Vec<String>, value_vars: Vec<String>) -> Self {
+    pub fn melt(
+        &self,
+        id_vars: Vec<String>,
+        value_vars: Vec<String>,
+        value_name: Option<String>,
+        variable_name: Option<String>,
+    ) -> Self {
+        let args = MeltArgs {
+            id_vars,
+            value_vars,
+            value_name,
+            variable_name,
+        };
+
         let ldf = self.ldf.clone();
-        ldf.melt(id_vars, value_vars).into()
+        ldf.melt(args).into()
     }
 
     pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
@@ -628,7 +654,7 @@ impl PyLazyFrame {
             // call the lambda and get a python side Series wrapper
             let result_df_wrapper = match lambda.call1(py, (python_df_wrapper,)) {
                 Ok(pyobj) => pyobj,
-                Err(e) => panic!("UDF failed: {}", e.pvalue(py)),
+                Err(e) => panic!("UDF failed: {}", e.value(py)),
             };
             // unpack the wrapper in a PyDataFrame
             let py_pydf = result_df_wrapper.getattr(py, "_df").expect(

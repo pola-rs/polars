@@ -54,7 +54,7 @@ impl LazyFrame {
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|mut lf| {
                     if let Some(n_rows) = args.n_rows {
-                        lf = lf.slice(0, n_rows as u32);
+                        lf = lf.slice(0, n_rows as IdxSize);
                     };
 
                     if let Some(rc) = args.row_count {

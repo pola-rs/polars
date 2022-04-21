@@ -44,6 +44,7 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.internals.construction import (
+    ColumnsType,
     arrow_to_pydf,
     dict_to_pydf,
     numpy_to_pydf,
@@ -66,6 +67,7 @@ from polars.datatypes import Boolean, DataType, UInt32, Utf8, py_type_to_dtype
 from polars.utils import (
     _prepare_row_count_args,
     _process_null_values,
+    format_path,
     handle_projection_columns,
     is_int_sequence,
     is_str_sequence,
@@ -179,7 +181,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     data : dict, Sequence, ndarray, Series, or pandas.DataFrame
         Two-dimensional data in various forms. dict must contain Sequences.
         Sequence may contain Series or other Sequences.
-    columns : Sequence of str, default None
+    columns : Sequence of str or (str,DataType) pairs, default None
         Column labels to use for resulting DataFrame. If specified, overrides any
         labels already present in the data. Must match data dimensions.
     orient : {'col', 'row'}, default None
@@ -211,7 +213,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     [<class 'polars.datatypes.Int64'>, <class 'polars.datatypes.Int64'>]
 
     In order to specify dtypes for your columns, initialize the DataFrame with a list
-    of Series instead:
+    of typed Series, or set the columns parameter with a list of (name,dtype) pairs:
 
     >>> data = [
     ...     pl.Series("col1", [1, 2], dtype=pl.Float32),
@@ -225,17 +227,30 @@ class DataFrame(metaclass=DataFrameMetaClass):
     │ ---  ┆ ---  │
     │ f32  ┆ i64  │
     ╞══════╪══════╡
-    │ 1    ┆ 3    │
+    │ 1.0  ┆ 3    │
     ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
-    │ 2    ┆ 4    │
+    │ 2.0  ┆ 4    │
+    └──────┴──────┘
+
+    # or, equivalent... (and also compatible with all of the other valid data parameter types):
+    >>> df3 = pl.DataFrame(data, columns=[("col1", pl.Float32), ("col2", pl.Int64)])
+    >>> df3
+    ┌──────┬──────┐
+    │ col1 ┆ col2 │
+    │ ---  ┆ ---  │
+    │ f32  ┆ i64  │
+    ╞══════╪══════╡
+    │ 1.0  ┆ 3    │
+    ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+    │ 2.0  ┆ 4    │
     └──────┴──────┘
 
     Constructing a DataFrame from a numpy ndarray, specifying column names:
 
     >>> import numpy as np
     >>> data = np.array([(1, 2), (3, 4)], dtype=np.int64)
-    >>> df3 = pl.DataFrame(data, columns=["a", "b"], orient="col")
-    >>> df3
+    >>> df4 = pl.DataFrame(data, columns=["a", "b"], orient="col")
+    >>> df4
     shape: (2, 2)
     ┌─────┬─────┐
     │ a   ┆ b   │
@@ -277,7 +292,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 "pli.Series",
             ]
         ] = None,
-        columns: Optional[Sequence[str]] = None,
+        columns: Optional[ColumnsType] = None,
         orient: Optional[str] = None,
     ):
         if data is None:
@@ -307,6 +322,22 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         else:
             raise ValueError("DataFrame constructor not called properly.")
+
+    def estimated_size(self) -> int:
+        """
+        Returns an estimation of the total (heap) allocated size of the `DataFrame` in bytes.
+
+        This estimation is the sum of the size of its buffers, validity, including nested arrays.
+        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer unchanged.
+        However, this function will yield a smaller number. This is because this function returns
+        the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+        """
+        return self._df.estimated_size()
 
     @classmethod
     def _from_pydf(cls: Type[DF], py_df: "PyDataFrame") -> DF:
@@ -459,7 +490,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_csv(
         cls: Type[DF],
-        file: Union[str, BinaryIO, bytes],
+        file: Union[str, Path, BinaryIO, bytes],
         has_header: bool = True,
         columns: Optional[Union[List[int], List[str]]] = None,
         sep: str = ",",
@@ -489,8 +520,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self = cls.__new__(cls)
 
         path: Optional[str]
-        if isinstance(file, str):
-            path = file
+        if isinstance(file, (str, Path)):
+            path = format_path(file)
         else:
             path = None
             if isinstance(file, BytesIO):
@@ -581,7 +612,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_parquet(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         parallel: bool = True,
@@ -602,6 +633,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         parallel
             Read the parquet file in parallel. The single threaded reader consumes less memory.
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         if isinstance(file, str) and "*" in file:
             from polars import scan_parquet
 
@@ -638,7 +671,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_avro(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
     ) -> DF:
@@ -656,6 +689,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         -------
         DataFrame
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         projection, columns = handle_projection_columns(columns)
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_avro(file, columns, projection, n_rows)
@@ -664,11 +699,12 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_ipc(
         cls: Type[DF],
-        file: Union[str, BinaryIO],
+        file: Union[str, Path, BinaryIO],
         columns: Optional[Union[List[int], List[str]]] = None,
         n_rows: Optional[int] = None,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        rechunk: bool = True,
     ) -> DF:
         """
         Read into a DataFrame from Arrow IPC stream format. This is also called the Feather (v2) format.
@@ -681,19 +717,23 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Columns to select. Accepts a list of column indices (starting at zero) or a list of column names.
         n_rows
             Stop reading from IPC file after reading ``n_rows``.
+        rechunk
+            Make sure that all data is contiguous.
 
         Returns
         -------
         DataFrame
         """
 
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         if isinstance(file, str) and "*" in file:
             from polars import scan_ipc
 
             scan = scan_ipc(
                 file,
                 n_rows=n_rows,
-                rechunk=True,
+                rechunk=rechunk,
                 row_count_name=row_count_name,
                 row_count_offset=row_count_offset,
             )
@@ -720,7 +760,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     @classmethod
     def _read_json(
         cls: Type[DF],
-        file: Union[str, IOBase],
+        file: Union[str, Path, IOBase],
         json_lines: bool = False,
     ) -> DF:
         """
@@ -728,6 +768,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if isinstance(file, StringIO):
             file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self = cls.__new__(cls)
         self._df = PyDataFrame.read_json(file, json_lines)
@@ -907,7 +949,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_json`
         """
-        warnings.warn("'to_json' is deprecated. please use 'write_json'")
+        warnings.warn(
+            "'to_json' is deprecated. please use 'write_json'", DeprecationWarning
+        )
         return self.write_json(
             file, pretty, row_oriented, json_lines, to_string=to_string
         )
@@ -973,6 +1017,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         to_string
             Ignore file argument and return a string.
         """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
         to_string_io = (file is not None) and isinstance(file, StringIO)
         if to_string or file is None or to_string_io:
             with BytesIO() as buf:
@@ -1029,6 +1075,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
         has_header: bool = True,
         sep: str = ",",
+        quote: str = '"',
     ) -> Optional[str]:
         """
         Write Dataframe to comma-separated values file (csv).
@@ -1041,6 +1088,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Whether to include header in the CSV output.
         sep
             Separate CSV fields with this symbol.
+        quote
+            byte to use as quoting character
 
         Examples
         --------
@@ -1055,15 +1104,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
         >>> df.write_csv("new_file.csv", sep=",")
 
         """
+        if len(sep) > 1:
+            raise ValueError("only single byte separator is allowed")
+        if len(quote) > 1:
+            raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_header, ord(sep))
+            self._df.to_csv(buffer, has_header, ord(sep), ord(quote))
             return str(buffer.getvalue(), encoding="utf-8")
 
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
-        self._df.to_csv(file, has_header, ord(sep))
+        self._df.to_csv(file, has_header, ord(sep), ord(quote))
         return None
 
     def to_csv(
@@ -1076,7 +1129,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_csv`
         """
-        warnings.warn("'to_csv' is deprecated. please use 'write_csv'")
+        warnings.warn(
+            "'to_csv' is deprecated. please use 'write_csv'", DeprecationWarning
+        )
         return self.write_csv(file, has_header, sep)
 
     def write_avro(
@@ -1097,8 +1152,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "snappy"
                 - "deflate"
         """
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self._df.to_avro(file, compression)
 
@@ -1111,7 +1166,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_avro`
         """
-        warnings.warn("'to_avro' is deprecated. please use 'write_avro'")
+        warnings.warn(
+            "'to_avro' is deprecated. please use 'write_avro'", DeprecationWarning
+        )
         return self.write_avro(file, compression)
 
     def write_ipc(
@@ -1134,8 +1191,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         self._df.to_ipc(file, compression)
 
@@ -1148,10 +1205,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_ipc`
         """
-        warnings.warn("'to_ipc' is deprecated. please use 'write_ipc'")
+        warnings.warn(
+            "'to_ipc' is deprecated. please use 'write_ipc'", DeprecationWarning
+        )
         return self.write_ipc(file, compression)
 
     def to_dicts(self) -> List[Dict[str, Any]]:
+        """
+        Convert every row to a dictionary.
+
+        Note that this is slow.
+        """
+
         pydf = self._df
         names = self.columns
 
@@ -1278,7 +1343,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 ],
                 str,
             ]
-        ] = "snappy",
+        ] = "lz4",
         statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
@@ -1309,8 +1374,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if compression is None:
             compression = "uncompressed"
-        if isinstance(file, Path):
-            file = str(file)
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
 
         if use_pyarrow:
             if not _PYARROW_AVAILABLE:
@@ -1361,13 +1426,19 @@ class DataFrame(metaclass=DataFrameMetaClass):
         .. deprecated:: 0.13.12
             Please use `write_parquet`
         """
-        warnings.warn("'to_parquet' is deprecated. please use 'write_parquet'")
+        warnings.warn(
+            "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
+        )
         return self.write_parquet(file, compression, statistics, use_pyarrow, **kwargs)
 
     def to_numpy(self) -> np.ndarray:
         """
         Convert DataFrame to a 2d numpy array.
         This operation clones data.
+
+        Notes
+        -----
+        If you're attempting to convert Utf8 to an array you'll need to install `pyarrow`.
 
         Examples
         --------
@@ -1456,7 +1527,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if item.startswith("_"):
             raise AttributeError(item)
         try:
-            warnings.warn("accessing series as Attribute of a DataFrame is deprecated")
+            warnings.warn(
+                "accessing series as Attribute of a DataFrame is deprecated",
+                DeprecationWarning,
+            )
             return pli.wrap_s(self._df.column(item))
         except Exception:
             raise AttributeError(item)
@@ -1673,7 +1747,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
     ) -> None:
         warnings.warn(
-            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column"
+            "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column",
+            DeprecationWarning,
         )
         # df["foo"] = series
         if isinstance(key, str):
@@ -2218,13 +2293,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
             )
             if in_place:
                 warnings.warn(
-                    "in-place sorting is deprecated; please use default sorting"
+                    "in-place sorting is deprecated; please use default sorting",
+                    DeprecationWarning,
                 )
                 self._df = df._df
                 return self
             return df
         if in_place:
-            warnings.warn("in-place sorting is deprecated; please use default sorting")
+            warnings.warn(
+                "in-place sorting is deprecated; please use default sorting",
+                DeprecationWarning,
+            )
             self._df.sort_in_place(by, reverse)
             return None
         else:
@@ -2678,6 +2757,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "RollingGroupBy[DF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
@@ -2729,6 +2809,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
+        by
+            Also group by this column/these columns
 
         Examples
         --------
@@ -2776,13 +2858,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         """
 
-        return RollingGroupBy(
-            self,
-            index_column,
-            period,
-            offset,
-            closed,
-        )
+        return RollingGroupBy(self, index_column, period, offset, closed, by)
 
     def groupby_dynamic(
         self,
@@ -3205,7 +3281,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Perform an asof join. This is similar to a left-join except that we
         match on nearest key rather than equal keys.
 
-        Both DataFrames must be sorted by the key.
+        Both DataFrames must be sorted by the asof_join key.
 
         For each row in the left DataFrame:
 
@@ -3313,6 +3389,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "outer"
                 - "asof"
                 - "cross"
+                - "semi"
+                - "anti"
         suffix
             Suffix to append to columns with a duplicate name.
         asof_by
@@ -3377,7 +3455,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if how == "asof":
             warnings.warn(
-                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof"
+                "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof",
+                DeprecationWarning,
             )
         if how == "cross":
             return self._from_pydf(self._df.join(df._df, [], [], how, suffix))
@@ -3899,7 +3978,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         index: Union[List[str], str],
         columns: Union[List[str], str],
         aggregate_fn: str = "first",
-        maintain_order: bool = False,
+        maintain_order: bool = True,
+        sort_columns: bool = False,
     ) -> DF:
         """
         Create a spreadsheet-style pivot table as a DataFrame.
@@ -3926,6 +4006,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         maintain_order
             Sort the grouped keys so that the output order is predictable.
+        sort_columns
+            Sort the transposed columns by name. Default is by order of discovery.
 
         Returns
         -------
@@ -3960,13 +4042,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if isinstance(columns, str):
             columns = [columns]
         return self._from_pydf(
-            self._df.pivot2(values, index, columns, aggregate_fn, maintain_order)
+            self._df.pivot2(
+                values, index, columns, aggregate_fn, maintain_order, sort_columns
+            )
         )
 
     def melt(
         self: DF,
         id_vars: Optional[Union[List[str], str]] = None,
         value_vars: Optional[Union[List[str], str]] = None,
+        variable_name: Optional[str] = None,
+        value_name: Optional[str] = None,
     ) -> DF:
         """
         Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
@@ -3980,10 +4066,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         id_vars
             Columns to use as identifier variables.
-
         value_vars
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `value` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
 
         Examples
         --------
@@ -4024,7 +4113,71 @@ class DataFrame(metaclass=DataFrameMetaClass):
             value_vars = []
         if id_vars is None:
             id_vars = []
-        return self._from_pydf(self._df.melt(id_vars, value_vars))
+        return self._from_pydf(
+            self._df.melt(id_vars, value_vars, value_name, variable_name)
+        )
+
+    def partition_by(
+        self, groups: Union[str, List[str]], maintain_order: bool = True
+    ) -> List[DF]:
+        """
+        Split into multiple DataFrames partitioned by groups.
+
+        Parameters
+        ----------
+        groups
+            Groups to partition by
+        maintain_order
+            Keep predictable output order. This is slower as it requires and extra sort operation.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": ["A", "A", "B", "B", "C"],
+        ...         "N": [1, 2, 2, 4, 2],
+        ...         "bar": ["k", "l", "m", "m", "l"],
+        ...     }
+        ... )
+        >>> df.partition_by(groups="foo", maintain_order=True)
+        [shape: (2, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ A   ┆ 1   ┆ k   │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ A   ┆ 2   ┆ l   │
+         └─────┴─────┴─────┘,
+         shape: (2, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ B   ┆ 2   ┆ m   │
+         ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+         │ B   ┆ 4   ┆ m   │
+         └─────┴─────┴─────┘,
+         shape: (1, 3)
+         ┌─────┬─────┬─────┐
+         │ foo ┆ N   ┆ bar │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ str │
+         ╞═════╪═════╪═════╡
+         │ C   ┆ 2   ┆ l   │
+         └─────┴─────┴─────┘]
+
+        """
+        if isinstance(groups, str):
+            groups = [groups]
+
+        return [
+            self._from_pydf(_df)  # type: ignore
+            for _df in self._df.partition_by(groups, maintain_order)
+        ]
 
     def shift(self: DF, periods: int) -> DF:
         """
@@ -4633,6 +4786,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         keep: str = "first",
     ) -> DF:
         """
+        .. deprecated:: 0.13.13
+            Please use `unique`
+        """
+        return self.unique(maintain_order, subset, keep)
+
+    def unique(
+        self: DF,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
+        keep: str = "first",
+    ) -> DF:
+        """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame or subset.
 
@@ -4651,7 +4816,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return self._from_pydf(self._df.distinct(maintain_order, subset, keep))
+        return self._from_pydf(self._df.unique(maintain_order, subset, keep))
 
     def rechunk(self: DF) -> DF:
         """
@@ -4692,7 +4857,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> DF:
         """
         Sample from this DataFrame by setting either `n` or `frac`.
@@ -4706,7 +4871,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         with_replacement
             Sample with replacement.
         seed
-            Initialization seed
+            Initialization seed. If None is given a random seed is used.
 
         Examples
         --------
@@ -4717,7 +4882,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ...         "ham": ["a", "b", "c"],
         ...     }
         ... )
-        >>> df.sample(n=2)  # doctest: +IGNORE_RESULT
+        >>> df.sample(n=2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4730,9 +4895,16 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┴─────┴─────┘
 
         """
-        if n is not None:
-            return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
-        return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
+        if n is not None and frac is not None:
+            raise ValueError("n and frac were both supplied")
+
+        if n is None and frac is not None:
+            return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
+
+        if n is None:
+            n = 1
+
+        return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
 
     def fold(
         self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]
@@ -4899,8 +5071,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> "pli.Series":
         """
         Hash and combine the rows in this DataFrame.
-
-        Hash value is UInt64
+        Hash value is UInt64.
 
         Parameters
         ----------
@@ -5071,12 +5242,14 @@ class RollingGroupBy(Generic[DF]):
         period: str,
         offset: Optional[str],
         closed: str = "none",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ):
         self.df = df
         self.time_column = index_column
         self.period = period
         self.offset = offset
         self.closed = closed
+        self.by = by
 
     def agg(
         self,
@@ -5090,10 +5263,7 @@ class RollingGroupBy(Generic[DF]):
         return (
             self.df.lazy()
             .groupby_rolling(
-                self.time_column,
-                self.period,
-                self.offset,
-                self.closed,
+                self.time_column, self.period, self.offset, self.closed, self.by
             )
             .agg(column_to_agg)  # type: ignore[arg-type]
             .collect(no_optimization=True, string_cache=False)
@@ -5234,7 +5404,8 @@ class GroupBy(Generic[DF]):
             One or multiple columns.
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            DeprecationWarning,
         )
         if isinstance(columns, str):
             columns = [columns]
@@ -5321,7 +5492,8 @@ class GroupBy(Generic[DF]):
         * the group indexes aggregated as lists
         """
         warnings.warn(
-            "accessing GroupBy by index is deprecated, consider using the `.agg` method"
+            "accessing GroupBy by index is deprecated, consider using the `.agg` method",
+            DeprecationWarning,
         )
         return self._dataframe_class._from_pydf(
             self._df.groupby(self.by, None, "groups")
@@ -5565,6 +5737,10 @@ class GroupBy(Generic[DF]):
     ) -> "PivotOps[DF]":
         """
         Do a pivot operation based on the group key, a pivot column and an aggregation function on the values column.
+
+        .. note::
+            Polars'/arrow memory is not ideal for transposing operations like pivots. If you have a relatively large
+            table, consider using a groupby over a pivot.
 
         Parameters
         ----------

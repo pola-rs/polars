@@ -7,6 +7,8 @@ use crate::prelude::NullValues;
 use lazy_static::lazy_static;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
+use polars_time::chunkedarray::utf8::infer as date_infer;
+use polars_time::prelude::utf8::Pattern;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
 use std::io::Read;
@@ -83,19 +85,37 @@ lazy_static! {
 }
 
 /// Infer the data type of a record
-fn infer_field_schema(string: &str) -> DataType {
+fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
     // when quoting is enabled in the reader, these quotes aren't escaped, we default to
     // Utf8 for them
     if string.starts_with('"') {
-        return DataType::Utf8;
+        if parse_dates {
+            match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
+                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
+                    DataType::Datetime(TimeUnit::Microseconds, None)
+                }
+                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                None => DataType::Utf8,
+            }
+        } else {
+            DataType::Utf8
+        }
     }
     // match regex in a particular order
-    if BOOLEAN_RE.is_match(string) {
+    else if BOOLEAN_RE.is_match(string) {
         DataType::Boolean
     } else if FLOAT_RE.is_match(string) {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
+    } else if parse_dates {
+        match date_infer::infer_pattern_single(string) {
+            Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
+                DataType::Datetime(TimeUnit::Microseconds, None)
+            }
+            Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+            None => DataType::Utf8,
+        }
     } else {
         DataType::Utf8
     }
@@ -131,6 +151,7 @@ pub fn infer_file_schema(
     comment_char: Option<u8>,
     quote_char: Option<u8>,
     null_values: Option<&NullValues>,
+    parse_dates: bool,
 ) -> Result<(Schema, usize)> {
     // We use lossy utf8 here because we don't want the schema inference to fail on utf8.
     // It may later.
@@ -257,16 +278,16 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     match &null_values {
                         None => {
-                            column_types[i].insert(infer_field_schema(&s));
+                            column_types[i].insert(infer_field_schema(&s, parse_dates));
                         }
                         Some(NullValues::Columns(names)) => {
                             if !names.iter().any(|name| name == s.as_ref()) {
-                                column_types[i].insert(infer_field_schema(&s));
+                                column_types[i].insert(infer_field_schema(&s, parse_dates));
                             }
                         }
                         Some(NullValues::AllColumns(name)) => {
                             if s.as_ref() != name {
-                                column_types[i].insert(infer_field_schema(&s));
+                                column_types[i].insert(infer_field_schema(&s, parse_dates));
                             }
                         }
                         Some(NullValues::Named(names)) => {
@@ -275,10 +296,10 @@ pub fn infer_file_schema(
 
                             if let Some(null_name) = null_name {
                                 if null_name.1 != s.as_ref() {
-                                    column_types[i].insert(infer_field_schema(&s));
+                                    column_types[i].insert(infer_field_schema(&s, parse_dates));
                                 }
                             } else {
-                                column_types[i].insert(infer_field_schema(&s));
+                                column_types[i].insert(infer_field_schema(&s, parse_dates));
                             }
                         }
                     }
@@ -313,6 +334,21 @@ pub fn infer_file_schema(
                 {
                     // we have an integer and double, fall down to double
                     fields.push(Field::new(field_name, DataType::Float64));
+                }
+                // prefer a datelike parse above a no parse so choose the date type
+                else if possibilities.contains(&DataType::Utf8)
+                    && possibilities.contains(&DataType::Date)
+                {
+                    fields.push(Field::new(field_name, DataType::Date));
+                }
+                // prefer a datelike parse above a no parse so choose the date type
+                else if possibilities.contains(&DataType::Utf8)
+                    && possibilities.contains(&DataType::Datetime(TimeUnit::Microseconds, None))
+                {
+                    fields.push(Field::new(
+                        field_name,
+                        DataType::Datetime(TimeUnit::Microseconds, None),
+                    ));
                 } else {
                     // default to Utf8 for conflicting datatypes (e.g bool and int)
                     fields.push(Field::new(field_name, DataType::Utf8));
@@ -338,6 +374,7 @@ pub fn infer_file_schema(
             comment_char,
             quote_char,
             null_values,
+            parse_dates,
         );
     }
 

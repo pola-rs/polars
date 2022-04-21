@@ -9,7 +9,7 @@ import {InvalidOperationError, todo} from "../error";
 import {RankMethod} from "../utils";
 import {col} from "../lazy/functions";
 import {isExternal, isTypedArray} from "util/types";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 
@@ -27,7 +27,8 @@ export interface Series<T> extends
   Arithmetic<Series<T>>,
   Comparison<Series<boolean>>,
   Cumulative<Series<T>>,
-  Round<Series<T>> {
+  Round<Series<T>>,
+  Sample<Series<T>> {
   /** @ignore */
   _series: JsSeries;
   name: string
@@ -730,10 +731,6 @@ export interface Series<T> extends
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
   rename({name, inPlace}: {name: string, inPlace: true}): void
 
-
-  sample(opts: {n: number, withReplacement?: boolean}): Series<T>
-  sample(opts: {frac: number, withReplacement?: boolean}): Series<T>
-  sample(n?: number, frac?: number, withReplacement?: boolean): Series<T>
   /**
    * __Check if series is equal with another Series.__
    * @param other - Series to compare with.
@@ -1002,7 +999,11 @@ export interface Series<T> extends
    */
   toObject(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
-
+  /** serializes the Series to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
+   * @example
+   * pl.Series.fromBinary(series.toBincode())
+   */
+  toBinary(): Buffer
   toJSON(): string
   /** Returns an iterator over the values */
   values(): IterableIterator<T>
@@ -1464,20 +1465,29 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         return wrap("clip", arg);
       }
     },
-    sample(opts?, frac?, withReplacement = false) {
-      if (opts?.n !== undefined || opts?.frac !== undefined) {
-        return this.sample(opts.n, opts.frac, opts.withReplacement);
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(arguments.length === 0) {
+        return wrap("sample_n", {
+          n: 1,
+          withReplacement,
+          seed
+        });
+      }
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
         return wrap("sample_n", {
           n: opts,
-          withReplacement
+          withReplacement,
+          seed
         });
       }
-      if (typeof frac === "number") {
+      if(typeof frac === "number") {
         return wrap("sample_frac", {
           frac,
           withReplacement,
+          seed
         });
       }
       else {
@@ -1563,6 +1573,9 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
     toFrame() {
       return dfWrapper(pli.df.read_columns({columns: [_s]}));
     },
+    toBinary() {
+      return unwrap("to_bincode");
+    },
     toJSON(arg0?) {
       // JSON.stringify passes `""` by default then stringifies the JS output
       if(arg0 === "") {
@@ -1626,7 +1639,10 @@ export interface SeriesConstructor {
    */
   of<T>(...items: T[]): Series<T>
   isSeries(arg: any): arg is Series<any>;
-
+  /**
+   * @param binary used to serialize/deserialize series. This will only work with the output from series.toBinary().
+  */
+  fromBinary(binary: Buffer): Series<unknown>
 }
 
 function SeriesConstructor (arg0: any, arg1?: any, dtype?: any, strict?: any) {
@@ -1649,6 +1665,10 @@ const from = <T>(values: ArrayLike<T>): Series<T> => {
   return SeriesConstructor("", values);
 };
 
+const fromBinary = (buf: Buffer)  => {
+  return seriesWrapper(pli.series.from_bincode(buf));
+};
+
 const of = <T>(...values: T[]): Series<T> => {
   return from(values);
 };
@@ -1656,5 +1676,6 @@ const of = <T>(...values: T[]): Series<T> => {
 export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {
   isSeries,
   from,
+  fromBinary,
   of
 });

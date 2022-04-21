@@ -36,6 +36,12 @@ impl DataFrame {
         multithreaded: bool,
         sorted: bool,
     ) -> Result<GroupBy> {
+        if by.is_empty() {
+            return Err(PolarsError::ComputeError(
+                "expected keys in groupby operation, got nothing".into(),
+            ));
+        }
+
         macro_rules! finish_packed_bit_path {
             ($ca0:expr, $ca1:expr, $pack_fn:expr) => {{
                 let n_partitions = set_partition_size();
@@ -144,7 +150,7 @@ impl DataFrame {
 
                     // arbitrarily chosen bound, if avg no of bytes to encode is larger than this
                     // value we fall back to default groupby
-                    if (lhs.get_values_size() + rhs.get_values_size()) / lhs.len() < 128 {
+                    if (lhs.get_values_size() + rhs.get_values_size()) / (lhs.len() + 1) < 128 {
                         pack_utf8_columns(lhs, rhs, n_partitions, sorted)
                     } else {
                         groupby_threaded_multiple_keys_flat(keys_df, n_partitions, sorted)
@@ -301,21 +307,36 @@ impl<'df> GroupBy<'df> {
         self.groups
     }
 
-    pub fn keys(&self) -> Vec<Series> {
+    pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Series> {
         POOL.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(|s| {
+                    #[allow(unused_assignments)]
+                    // needed to keep the lifetimes valid for this scope
+                    let mut groups_owned = None;
+
+                    let groups = if let Some((offset, len)) = slice {
+                        groups_owned = Some(self.groups.slice(offset, len));
+                        groups_owned.as_deref().unwrap()
+                    } else {
+                        &self.groups
+                    };
+
                     // Safety
                     // groupby indexes are in bound.
                     unsafe {
                         s.take_iter_unchecked(
-                            &mut self.groups.idx_ref().iter().map(|(idx, _)| idx as usize),
+                            &mut groups.idx_ref().iter().map(|(idx, _)| idx as usize),
                         )
                     }
                 })
                 .collect()
         })
+    }
+
+    pub fn keys(&self) -> Vec<Series> {
+        self.keys_sliced(None)
     }
 
     fn prepare_agg(&self) -> Result<(Vec<Series>, Vec<Series>)> {
@@ -951,7 +972,7 @@ impl<'df> GroupBy<'df> {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum GroupByMethod {
     Min,
     Max,

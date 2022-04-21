@@ -23,6 +23,8 @@ try:
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
+import math
+
 from polars import internals as pli
 from polars.internals.construction import (
     arrow_to_pyseries,
@@ -344,10 +346,19 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-        other = maybe_cast(other, self.dtype, self.time_unit)
-        f = get_ffi_func(op_ffi, self.dtype, self._s)
+        if isinstance(other, float) and not self.is_float():
+            _s = sequence_to_pyseries("", [other])
+            if "rhs" in op_ffi:
+                return wrap_s(getattr(_s, op_s)(self._s))
+            else:
+                return wrap_s(getattr(self._s, op_s)(_s))
+        else:
+            other = maybe_cast(other, self.dtype, self.time_unit)
+            f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            raise ValueError(
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument of type: {type(other)}"
+            )
         return wrap_s(f(other))
 
     def __add__(self, other: Any) -> "Series":
@@ -372,7 +383,8 @@ class Series:
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         result = self._arithmetic(other, "div", "div_<>")
-        if self.is_float():
+        # todo! in place, saves allocation
+        if self.is_float() or isinstance(other, float):
             result = result.floor()
         return result
 
@@ -502,6 +514,22 @@ class Series:
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
+    def estimated_size(self) -> int:
+        """
+        Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+
+        This estimation is the sum of the size of its buffers, validity, including nested arrays.
+        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer unchanged.
+        However, this function will yield a smaller number. This is because this function returns
+        the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+        """
+        return self._s.estimated_size()
+
     def sqrt(self) -> "Series":
         """
         Compute the square root of the elements
@@ -519,7 +547,7 @@ class Series:
         """
         return self ** 0.5
 
-    def any(self) -> "Series":
+    def any(self) -> bool:
         """
         Check if any boolean value in the column is `True`
 
@@ -527,9 +555,9 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()
+        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
-    def all(self) -> "Series":
+    def all(self) -> bool:
         """
         Check if all boolean values in the column are `True`
 
@@ -537,16 +565,13 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()
+        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
-    def log(self) -> "Series":
+    def log(self, base: float = math.e) -> "Series":
         """
-        Natural logarithm, element-wise.
-
-        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
-        The natural logarithm is logarithm in base e.
+        Compute the logarithm to a given base
         """
-        return np.log(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> "Series":
         """
@@ -900,6 +925,34 @@ class Series:
 
         """
         return pli.wrap_df(self._s.value_counts())
+
+    def unique_counts(self) -> "Series":
+        """
+        Returns a count of the unique values in the order of appearance.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
+        >>> s.unique_counts()
+        shape: (3,)
+        Series: 'id' [u32]
+        [
+            1
+            2
+            3
+        ]
+        """
+        return pli.select(pli.lit(self).unique_counts()).to_series()
+
+    def entropy(self, base: float = math.e) -> Optional[float]:
+        """
+        Compute the entropy as `-sum(pk * log(pk)`.
+        where `pk` are discrete probabilities.
+
+        This routine will normalize pk if they don’t sum to 1.
+        """
+        return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
     @property
     def name(self) -> str:
@@ -2049,6 +2102,10 @@ class Series:
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
 
+        Notes
+        -----
+        If you are attempting to convert Utf8 to an array you'll need to install `pyarrow`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
@@ -2329,6 +2386,12 @@ class Series:
 
         """
         return wrap_s(self._s.mode())
+
+    def sign(self) -> "Series":
+        """
+        Returns an element-wise indication of the sign of a number.
+        """
+        return np.sign(self)  # type: ignore
 
     def sin(self) -> "Series":
         """
@@ -2974,7 +3037,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        seed: Optional[int] = None,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -2988,12 +3051,12 @@ class Series:
         with_replacement
             sample with replacement.
         seed
-            Initialization seed
+            Initialization seed. If None is given a random seed is used.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)  # doctest: +IGNORE_RESULT
+        >>> s.sample(2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -3002,9 +3065,16 @@ class Series:
         ]
 
         """
-        if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement, seed))
-        return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+        if n is not None and frac is not None:
+            raise ValueError("n and frac were both supplied")
+
+        if n is None and frac is not None:
+            return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+
+        if n is None:
+            n = 1
+
+        return wrap_s(self._s.sample_n(n, with_replacement, seed))
 
     def peak_max(self) -> "Series":
         """
@@ -4280,6 +4350,43 @@ class ListNameSpace:
         """
         return self.slice(-n, n)
 
+    def eval(self, expr: "pli.Expr", parallel: bool = False) -> "Series":
+        """
+        Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr, parallel)).to_series()
+
 
 class DateTimeNameSpace:
     """
@@ -4565,28 +4672,29 @@ class DateTimeNameSpace:
     def to_python_datetime(self) -> Series:
         """
         Go from Date/Datetime to python DateTime objects
+
+        .. deprecated:: 0.13.23
+            Use :func:`Series.to_list`.
+
         """
         return (self.timestamp("ms") / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> Union[date, datetime]:
+    def min(self) -> Union[date, datetime, timedelta]:
         """
         Return minimum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.min()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        # we can ignore types because we are certain we get a logical type
+        return wrap_s(self._s).min()  # type: ignore
 
-    def max(self) -> Union[date, datetime]:
+    def max(self) -> Union[date, datetime, timedelta]:
         """
         Return maximum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.max()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return wrap_s(self._s).max()  # type: ignore
 
-    def median(self) -> Union[date, datetime]:
+    def median(self) -> Union[date, datetime, timedelta]:
         """
         Return median as python DateTime
         """

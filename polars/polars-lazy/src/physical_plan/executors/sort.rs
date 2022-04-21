@@ -32,6 +32,7 @@ impl Executor for SortExec {
             by_columns,
             std::mem::take(&mut self.args.reverse),
             self.args.nulls_last,
+            self.args.slice,
         )
     }
 }

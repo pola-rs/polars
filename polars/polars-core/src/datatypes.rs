@@ -250,7 +250,9 @@ pub enum AnyValue<'a> {
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
-    Struct(Vec<AnyValue<'a>>),
+    Struct(Vec<AnyValue<'a>>, &'a [Field]),
+    #[cfg(feature = "dtype-struct")]
+    StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),
 }
@@ -611,6 +613,7 @@ impl PartialOrd for AnyValue<'_> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
@@ -658,6 +661,7 @@ impl TimeUnit {
 pub type TimeZone = String;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -686,11 +690,14 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
+    // how to deserialize a static?
     Object(&'static str),
     Null,
     #[cfg(feature = "dtype-categorical")]
     // The RevMapping has the internal state.
     // This is ignored with casts, comparisons, hashing etc.
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
     Categorical(Option<Arc<RevMapping>>),
     #[cfg(feature = "dtype-struct")]
     Struct(Vec<Field>),
@@ -823,6 +830,10 @@ impl PartialEq<ArrowDataType> for DataType {
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+// see: https://github.com/serde-rs/serde/issues/1712
+// we need this because `DataType` has a `&'static`
+#[cfg_attr(feature = "serde-lazy", serde(bound(deserialize = "'de: 'static")))]
 pub struct Field {
     name: String,
     dtype: DataType,
@@ -953,6 +964,11 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
             ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
+            #[cfg(feature = "dtype-struct")]
+            ArrowDataType::Struct(fields) => {
+                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
+                DataType::Struct(fields)
+            }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {

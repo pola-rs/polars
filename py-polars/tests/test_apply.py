@@ -1,5 +1,8 @@
+from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import List, Optional
+
+import numpy as np
 
 import polars as pl
 
@@ -76,3 +79,77 @@ def test_apply_infer_list() -> None:
         }
     )
     assert df.select([pl.all().apply(lambda x: [x])]).dtypes == [pl.List] * 3
+
+
+def test_apply_arithmetic_consistency() -> None:
+    df = pl.DataFrame({"A": ["a", "a"], "B": [2, 3]})
+    assert df.groupby("A").agg(pl.col("B").apply(lambda x: x + 1.0))["B"].to_list() == [
+        [3.0, 4.0]
+    ]
+
+
+def test_apply_struct() -> None:
+    df = pl.DataFrame(
+        {"A": ["a", "a"], "B": [2, 3], "C": [True, False], "D": [12.0, None]}
+    )
+    out = df.with_column(pl.struct(df.columns).alias("struct")).select(
+        [
+            pl.col("struct").apply(lambda x: x["A"]).alias("A_field"),
+            pl.col("struct").apply(lambda x: x["B"]).alias("B_field"),
+            pl.col("struct").apply(lambda x: x["C"]).alias("C_field"),
+            pl.col("struct").apply(lambda x: x["D"]).alias("D_field"),
+        ]
+    )
+    expected = pl.DataFrame(
+        {
+            "A_field": ["a", "a"],
+            "B_field": [2, 3],
+            "C_field": [True, False],
+            "D_field": [12.0, None],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+
+def test_apply_numpy_out_3057() -> None:
+    df = pl.DataFrame(
+        dict(
+            id=[0, 0, 0, 1, 1, 1], t=[2.0, 4.3, 5, 10, 11, 14], y=[0.0, 1, 1.3, 2, 3, 4]
+        )
+    )
+
+    assert (
+        df.groupby("id", maintain_order=True)
+        .agg(
+            pl.apply(["y", "t"], lambda lst: np.trapz(y=lst[0], x=lst[1])).alias(
+                "result"
+            )
+        )
+        .frame_equal(pl.DataFrame({"id": [0, 1], "result": [1.955, 13.0]}))
+    )
+
+
+def test_apply_numpy_int_out() -> None:
+    df = pl.DataFrame({"col1": [2, 4, 8, 16]})
+    assert df.with_column(
+        pl.col("col1").apply(lambda x: np.left_shift(x, 8)).alias("result")
+    ).frame_equal(
+        pl.DataFrame({"col1": [2, 4, 8, 16], "result": [512, 1024, 2048, 4096]})
+    )
+    df = pl.DataFrame({"col1": [2, 4, 8, 16], "shift": [1, 1, 2, 2]})
+
+    assert df.select(
+        pl.struct(["col1", "shift"])
+        .apply(lambda cols: np.left_shift(cols["col1"], cols["shift"]))
+        .alias("result")
+    ).frame_equal(pl.DataFrame({"result": [4, 8, 32, 64]}))
+
+
+def test_datelike_identity() -> None:
+    for s in [
+        pl.Series([datetime(year=2000, month=1, day=1)]),
+        pl.Series([timedelta(hours=2)]),
+        pl.Series([date(year=2000, month=1, day=1)]),
+    ]:
+        assert s.apply(lambda x: x).to_list() == s.to_list()

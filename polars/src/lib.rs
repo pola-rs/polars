@@ -171,6 +171,8 @@
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
+//!     - `serde-lazy` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
+//!                 Can be used for JSON and more serde supported serialization formats.
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
 //!     - `ipc` - Arrow's IPC format serialization
@@ -185,13 +187,15 @@
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!                And activates `pivot` and `transpose` operations
-//!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
+//!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
+//!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
 //!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
 //!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
+//!     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
@@ -218,7 +222,9 @@
 //!     - `product` - Compute the product of a Series.
 //!     - `diff` - `diff` operation.
 //!     - `pct_change` - Compute change percentages.
-//! * `DataFrame` pretty printing (Choose one or none, but not both):
+//!     - `unique_counts` - Count unique values in expressions.
+//!     - `log` - Logarithms for `Series`.
+//! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
 //! ## Compile times and opt-in data types
@@ -257,7 +263,9 @@
 //!
 //! ### Custom allocator
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
-//! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) for instance, shows a significant
+//! allocator.
+//! [Mimalloc](https://crates.io/crates/mimalloc) and
+//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Usage

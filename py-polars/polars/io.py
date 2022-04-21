@@ -19,7 +19,7 @@ from typing import (
 )
 from urllib.request import urlopen
 
-from polars.utils import handle_projection_columns
+from polars.utils import format_path, handle_projection_columns
 
 try:
     import pyarrow as pa
@@ -89,9 +89,9 @@ def _prepare_file_arg(
     Utility for read_[csv, parquet]. (not to be used by scan_[csv, parquet]).
     Returned value is always usable as a context.
 
-    A `StringIO`, `BytesIO` file is returned as a `BytesIO`
-    A local path is returned as a string
-    An http url is read into a buffer and returned as a `BytesIO`
+    A `StringIO`, `BytesIO` file is returned as a `BytesIO`.
+    A local path is returned as a string.
+    An http URL is read into a buffer and returned as a `BytesIO`.
 
     When fsspec is installed, remote file(s) is (are) opened with
     `fsspec.open(file, **kwargs)` or `fsspec.open_files(file, **kwargs)`.
@@ -110,19 +110,21 @@ def _prepare_file_arg(
     if isinstance(file, BytesIO):
         return managed_file(file)
     if isinstance(file, Path):
-        return managed_file(str(file))
+        return managed_file(format_path(file))
     if isinstance(file, str):
         if _WITH_FSSPEC:
             if infer_storage_options(file)["protocol"] == "file":
-                return managed_file(file)
+                return managed_file(format_path(file))
             return fsspec.open(file, **kwargs)
         if file.startswith("http"):
             return _process_http_file(file)
     if isinstance(file, list) and bool(file) and all(isinstance(f, str) for f in file):
         if _WITH_FSSPEC:
             if all(infer_storage_options(f)["protocol"] == "file" for f in file):
-                return managed_file(file)
+                return managed_file([format_path(f) for f in file])
             return fsspec.open_files(file, **kwargs)
+    if isinstance(file, str):
+        file = format_path(file)
     return managed_file(file)
 
 
@@ -268,7 +270,7 @@ def read_csv(
     projection, columns = handle_projection_columns(columns)
 
     if isinstance(file, bytes) and len(file) == 0:
-        raise ValueError("no date in bytes")
+        raise ValueError("Empty bytes data provided")
 
     storage_options = storage_options or {}
 
@@ -442,6 +444,7 @@ def scan_csv(
     skip_rows_after_header: int = 0,
     row_count_name: Optional[str] = None,
     row_count_offset: int = 0,
+    parse_dates: bool = False,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -508,6 +511,9 @@ def scan_csv(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    parse_dates
+        Try to automatically parse dates. If this does not succeed,
+        the column remains of data type ``pl.Utf8``.
 
     Examples
     --------
@@ -554,8 +560,8 @@ def scan_csv(
     dtypes = kwargs.pop("dtype", dtypes)
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_csv(
         file=file,
@@ -577,6 +583,7 @@ def scan_csv(
         encoding=encoding,
         row_count_name=row_count_name,
         row_count_offset=row_count_offset,
+        parse_dates=parse_dates,
     )
 
 
@@ -614,8 +621,8 @@ def scan_ipc(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_ipc(
         file=file,
@@ -664,8 +671,8 @@ def scan_parquet(
     # Map legacy arguments to current ones and remove them from kwargs.
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
 
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
 
     return LazyFrame.scan_parquet(
         file=file,
@@ -718,8 +725,8 @@ def read_avro(
     -------
     DataFrame
     """
-    if isinstance(file, Path):
-        file = str(file)
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
     if columns is None:
         columns = kwargs.pop("projection", None)
 
@@ -735,6 +742,7 @@ def read_ipc(
     storage_options: Optional[Dict] = None,
     row_count_name: Optional[str] = None,
     row_count_offset: int = 0,
+    rechunk: bool = True,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -761,6 +769,8 @@ def read_ipc(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    rechunk
+        Make sure that all data is contiguous.
 
     Returns
     -------
@@ -790,7 +800,7 @@ def read_ipc(
                 )
 
             tbl = pa.feather.read_table(data, memory_map=memory_map, columns=columns)
-            return DataFrame._from_arrow(tbl)
+            return DataFrame._from_arrow(tbl, rechunk=rechunk)
 
         return DataFrame._read_ipc(
             data,
@@ -798,6 +808,7 @@ def read_ipc(
             n_rows=n_rows,
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
+            rechunk=rechunk,
         )
 
 

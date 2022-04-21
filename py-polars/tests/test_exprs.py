@@ -91,7 +91,7 @@ def test_count_expr() -> None:
 
 def test_sample() -> None:
     a = pl.Series("a", range(0, 20))
-    out = pl.select(pl.lit(a).sample(0.5, False, 1)).to_series()
+    out = pl.select(pl.lit(a).sample(0.5, False, seed=1)).to_series()
     assert out.shape == (10,)
     assert out.to_list() != out.sort().to_list()
     assert out.unique().shape == (10,)
@@ -132,7 +132,7 @@ def test_split_exact() -> None:
         {
             "field_0": ["a", None, "b", "c"],
             "field_1": ["a", None, None, "c"],
-            "field_2": [None, None, None, None],
+            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
         }
     )
 
@@ -156,3 +156,61 @@ def test_unique_and_drop_stability() -> None:
     # meaning that the a.unique was executed twice, which is an unstable algorithm
     df = pl.DataFrame({"a": [1, None, 1, None]})
     assert df.select(pl.col("a").unique().drop_nulls()).to_series()[0] == 1
+
+
+def test_unique_counts() -> None:
+    s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
+    expected = pl.Series("id", [1, 2, 3], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "unique_counts")
+
+
+def test_entropy() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": [1, 2, 1, 4, 5, 4, 6],
+        }
+    )
+
+    assert (
+        df.groupby("group", maintain_order=True).agg(pl.col("id").entropy())
+    ).frame_equal(
+        pl.DataFrame(
+            {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}
+        )
+    )
+
+
+def test_dot_in_groupby() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "a", "b", "b", "b"],
+            "x": [1, 1, 1, 1, 1, 1],
+            "y": [1, 2, 3, 4, 5, 6],
+        }
+    )
+
+    assert (
+        df.groupby("group", maintain_order=True)
+        .agg(pl.col("x").dot("y").alias("dot"))
+        .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
+    )
+
+
+def test_list_eval_expression() -> None:
+    df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+
+    for parallel in [True, False]:
+        assert df.with_column(
+            pl.concat_list(["a", "b"])
+            .arr.eval(pl.first().rank(), parallel=parallel)
+            .alias("rank")
+        ).to_dict(False) == {
+            "a": [1, 8, 3],
+            "b": [4, 5, 2],
+            "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
+        }
+
+        assert df["a"].reshape((1, -1)).arr.eval(
+            pl.first(), parallel=parallel
+        ).to_list() == [[1, 8, 3]]

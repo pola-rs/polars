@@ -1,9 +1,11 @@
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{slice_slice, NoNull};
 use crate::POOL;
 use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
+use std::mem::ManuallyDrop;
+use std::ops::Deref;
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
@@ -43,6 +45,10 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
+    pub fn new(first: Vec<IdxSize>, all: Vec<Vec<IdxSize>>, sorted: bool) -> Self {
+        Self { sorted, first, all }
+    }
+
     pub fn sort(&mut self) {
         let mut idx = 0;
         let first = std::mem::take(&mut self.first);
@@ -318,6 +324,48 @@ impl GroupsProxy {
                 .collect_trusted(),
         }
     }
+
+    pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
+        // Safety:
+        // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
+        // so that we never call drop on them.
+        // These groups lifetimes are bounded to the `self`. This must remain valid
+        // for the scope of the aggregation.
+        let sliced = match self {
+            GroupsProxy::Idx(groups) => {
+                let first = unsafe {
+                    let first = slice_slice(groups.first(), offset, len);
+                    let ptr = first.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, first.len(), first.len())
+                };
+
+                let all = unsafe {
+                    let all = slice_slice(groups.all(), offset, len);
+                    let ptr = all.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, all.len(), all.len())
+                };
+                ManuallyDrop::new(GroupsProxy::Idx(GroupsIdx::new(
+                    first,
+                    all,
+                    groups.is_sorted(),
+                )))
+            }
+            GroupsProxy::Slice(groups) => {
+                let groups = unsafe {
+                    let groups = slice_slice(groups, offset, len);
+                    let ptr = groups.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, groups.len(), groups.len())
+                };
+
+                ManuallyDrop::new(GroupsProxy::Slice(groups))
+            }
+        };
+
+        SlicedGroups {
+            sliced,
+            borrowed: self,
+        }
+    }
 }
 
 impl From<GroupsIdx> for GroupsProxy {
@@ -409,5 +457,20 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
                 }
             })
             .drive_unindexed(consumer)
+    }
+}
+
+pub struct SlicedGroups<'a> {
+    sliced: ManuallyDrop<GroupsProxy>,
+    #[allow(dead_code)]
+    // we need the lifetime to ensure the slice remains valid
+    borrowed: &'a GroupsProxy,
+}
+
+impl Deref for SlicedGroups<'_> {
+    type Target = GroupsProxy;
+
+    fn deref(&self) -> &Self::Target {
+        self.sliced.deref()
     }
 }

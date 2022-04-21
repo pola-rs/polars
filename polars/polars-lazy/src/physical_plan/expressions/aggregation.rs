@@ -3,7 +3,9 @@ use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
+use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::{GroupByMethod, GroupsProxy};
+use polars_core::utils::NoNull;
 use polars_core::{prelude::*, POOL};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -89,9 +91,62 @@ impl PhysicalAggregation for AggregationExpr {
                 Ok(rename_option_series(agg_s, &keep_name))
             }
             GroupByMethod::Count => {
-                let mut ca = ac.groups.group_count();
-                ca.rename(&keep_name);
-                Ok(Some(ca.into_series()))
+                // a few fast paths that prevent materializing new groups
+                match ac.update_groups {
+                    UpdateGroups::WithSeriesLen => {
+                        let list = ac
+                            .series()
+                            .list()
+                            .expect("impl error, should be a list at this point");
+
+                        let mut s = match list.chunks().len() {
+                            1 => {
+                                let arr = list.downcast_iter().next().unwrap();
+                                let offsets = arr.offsets().as_slice();
+
+                                let mut previous = 0i64;
+                                let counts: NoNull<IdxCa> = offsets[1..]
+                                    .iter()
+                                    .map(|&o| {
+                                        let len = (o - previous) as IdxSize;
+                                        previous = o;
+                                        len
+                                    })
+                                    .collect_trusted();
+                                counts.into_inner()
+                            }
+                            _ => {
+                                let counts: NoNull<IdxCa> = list
+                                    .amortized_iter()
+                                    .map(|s| {
+                                        if let Some(s) = s {
+                                            s.as_ref().len() as IdxSize
+                                        } else {
+                                            1
+                                        }
+                                    })
+                                    .collect_trusted();
+                                counts.into_inner()
+                            }
+                        };
+                        s.rename(&keep_name);
+                        Ok(Some(s.into_series()))
+                    }
+                    UpdateGroups::WithGroupsLen => {
+                        // no need to update the groups
+                        // we can just get the attribute, because we only need the length,
+                        // not the correct order
+                        let mut ca = ac.groups.group_count();
+                        ca.rename(&keep_name);
+                        Ok(Some(ca.into_series()))
+                    }
+                    // materialize groups
+                    _ => {
+                        let mut ca = ac.groups().group_count();
+                        ca.rename(&keep_name);
+                        Ok(Some(ca.into_series()))
+                    }
+                }
             }
             GroupByMethod::First => {
                 let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());

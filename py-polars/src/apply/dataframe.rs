@@ -27,7 +27,7 @@ pub fn apply_lambda_unknown<'a>(
         if out.is_none() {
             null_count += 1;
             continue;
-        } else if out.is_instance::<PyBool>().unwrap() {
+        } else if out.is_instance_of::<PyBool>().unwrap() {
             let first_value = out.extract::<bool>().ok();
             return Ok((
                 PySeries::new(
@@ -37,7 +37,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance::<PyFloat>().unwrap() {
+        } else if out.is_instance_of::<PyFloat>().unwrap() {
             let first_value = out.extract::<f64>().ok();
 
             return Ok((
@@ -54,7 +54,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance::<PyInt>().unwrap() {
+        } else if out.is_instance_of::<PyInt>().unwrap() {
             let first_value = out.extract::<i64>().ok();
             return Ok((
                 PySeries::new(
@@ -70,7 +70,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 false,
             ));
-        } else if out.is_instance::<PyString>().unwrap() {
+        } else if out.is_instance_of::<PyString>().unwrap() {
             let first_value = out.extract::<&str>().ok();
             return Ok((
                 PySeries::new(
@@ -109,7 +109,7 @@ pub fn apply_lambda_unknown<'a>(
                 .into_py(py),
                 true,
             ));
-        } else if out.is_instance::<PyList>().unwrap() {
+        } else if out.is_instance_of::<PyList>().unwrap() {
             return Err(PyPolarsErr::Other(
                 "A list output type is invalid. Do you mean to create polars List Series?\
 Then return a Series object."

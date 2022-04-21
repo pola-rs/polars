@@ -13,6 +13,8 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+import math
+
 from polars import internals as pli
 from polars.datatypes import (
     DataType,
@@ -195,6 +197,14 @@ class Expr:
 
         return self.map(function, return_dtype=dtype)
 
+    def __getstate__(self):  # type: ignore
+        return self._pyexpr.__getstate__()
+
+    def __setstate__(self, state):  # type: ignore
+        # init with a dummy
+        self._pyexpr = pli.lit(0)._pyexpr
+        self._pyexpr.__setstate__(state)
+
     def to_physical(self) -> "Expr":
         """
         Cast to physical representation of the logical dtype.
@@ -232,20 +242,11 @@ class Expr:
         """
         return self ** 0.5
 
-    def log(self) -> "Expr":
-        """
-        Natural logarithm, element-wise.
-
-        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
-        The natural logarithm is logarithm in base e.
-        """
-        return np.log(self)  # type: ignore
-
     def log10(self) -> "Expr":
         """
         Return the base 10 logarithm of the input array, element-wise.
         """
-        return np.log10(self)  # type: ignore
+        return self.log(10.0)
 
     def exp(self) -> "Expr":
         """
@@ -970,6 +971,28 @@ class Expr:
         -------
         out
             Series of type UInt32
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [20, 10, 30],
+        ...     }
+        ... )
+        >>> df.select(pl.col("a").arg_sort())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
         """
         return wrap_expr(self._pyexpr.arg_sort(reverse))
 
@@ -2151,6 +2174,8 @@ class Expr:
         center
             Set the labels at the center of the window
         """
+        if min_periods is None:
+            min_periods = window_size
         return wrap_expr(
             self._pyexpr.rolling_median(window_size, weights, min_periods, center)
         )
@@ -2184,6 +2209,8 @@ class Expr:
         center
             Set the labels at the center of the window
         """
+        if min_periods is None:
+            min_periods = window_size
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile, interpolation, window_size, weights, min_periods, center
@@ -2211,37 +2238,9 @@ class Expr:
 
     def argsort(self, reverse: bool = False) -> "Expr":
         """
-        Index location of the sorted variant of this Series.
-
-        Parameters
-        ----------
-        reverse
-            Reverse the ordering. Default is from low to high.
-
-        Examples
-        --------
-
-        >>> df = pl.DataFrame(
-        ...     {
-        ...         "a": [20, 10, 30],
-        ...     }
-        ... )
-        >>> df.select(pl.col("a").arg_sort())
-        shape: (3, 1)
-        ┌─────┐
-        │ a   │
-        │ --- │
-        │ u32 │
-        ╞═════╡
-        │ 1   │
-        ├╌╌╌╌╌┤
-        │ 0   │
-        ├╌╌╌╌╌┤
-        │ 2   │
-        └─────┘
-
+        alias for `arg_sort`
         """
-        return pli.argsort_by([self], [reverse])
+        return self.arg_sort(reverse)
 
     def rank(self, method: str = "average", reverse: bool = False) -> "Expr":
         """
@@ -2459,6 +2458,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.upper_bound())
 
+    def sign(self) -> "Expr":
+        """
+        Returns an element-wise indication of the sign of a number.
+        """
+        return np.sign(self)  # type: ignore
+
     def sin(self) -> "Expr":
         """
         Compute the element-wise value for Trigonometric sine on an array
@@ -2641,7 +2646,7 @@ class Expr:
         self,
         fraction: float = 1.0,
         with_replacement: bool = True,
-        seed: Optional[int] = 0,
+        seed: Optional[int] = None,
     ) -> "Expr":
         """
         Sample a fraction of the `Series`.
@@ -2653,10 +2658,8 @@ class Expr:
         with_replacement
             Allow values to be sampled more than once.
         seed
-            Seed initialization. If None given numpy is used.
+            Seed initialization. If None given a random seed is used.
         """
-        if seed is None:
-            seed = int(np.random.randint(0, 10000))
         return wrap_expr(self._pyexpr.sample_frac(fraction, with_replacement, seed))
 
     def ewm_mean(
@@ -2791,6 +2794,109 @@ class Expr:
 
         """
         return wrap_expr(self._pyexpr.extend_constant(value, n))
+
+    def value_counts(self, multithreaded: bool = False) -> "Expr":
+        """
+        Count all unique values and create a struct mapping value to count
+
+        Parameters
+        ----------
+        multithreaded:
+            Better to turn this off in the aggregation context, as it can lead to contention.
+
+        Returns
+        -------
+        Dtype Struct
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["a", "b", "b", "c", "c", "c"],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("id").value_counts(),
+        ...     ]
+        ... )
+        shape: (3, 1)
+        ┌─────────────────────────────────────┐
+        │ id                                  │
+        │ ---                                 │
+        │ struct[2]{'id': str, 'counts': u32} │
+        ╞═════════════════════════════════════╡
+        │ {"c",3}                             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"b",2}                             │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"a",1}                             │
+        └─────────────────────────────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.value_counts(multithreaded))
+
+    def unique_counts(self) -> "Expr":
+        """
+        Returns a count of the unique values in the order of appearance.
+
+        This method differs from `value_counts` in that it does not return the
+        values, only the counts and might be faster
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "id": ["a", "b", "b", "c", "c", "c"],
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("id").unique_counts(),
+        ...     ]
+        ... )
+        shape: (3, 1)
+        ┌─────┐
+        │ id  │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 3   │
+        └─────┘
+
+        """
+        return wrap_expr(self._pyexpr.unique_counts())
+
+    def log(self, base: float = math.e) -> "Expr":
+        """
+        Compute the logarithm to a given base
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        """
+        return wrap_expr(self._pyexpr.log(base))
+
+    def entropy(self, base: float = math.e) -> "Expr":
+        """
+        Compute the entropy as `-sum(pk * log(pk)`.
+        where `pk` are discrete probabilities.
+
+        This routine will normalize pk if they don’t sum to 1.
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        """
+        return wrap_expr(self._pyexpr.entropy(base))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
@@ -3288,6 +3394,43 @@ class ExprListNameSpace:
 
         """
         return self.slice(-n, n)
+
+    def eval(self, expr: "Expr", parallel: bool = False) -> "Expr":
+        """
+        Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
 
 
 class ExprStringNameSpace:

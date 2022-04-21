@@ -37,17 +37,26 @@ use crate::error::{
     ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
 };
 use crate::file::get_either_file;
-use crate::prelude::{ClosedWindow, DataType, Duration, PyDataType};
+use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
+#[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
+use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
+#[cfg(target_os = "linux")]
+use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+#[cfg(target_os = "linux")]
+static ALLOC: Jemalloc = Jemalloc;
+
+#[global_allocator]
+#[cfg(not(target_os = "linux"))]
+static ALLOC: MiMalloc = MiMalloc;
 
 #[pyfunction]
 fn col(name: &str) -> dsl::PyExpr {
@@ -106,8 +115,36 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 #[pyfunction]
-pub fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
+fn arange(low: PyExpr, high: PyExpr, step: usize) -> PyExpr {
     polars::lazy::dsl::arange(low.inner, high.inner, step).into()
+}
+
+#[pyfunction]
+fn repeat(value: &PyAny, n_times: PyExpr) -> PyExpr {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
+        let val = value.extract::<bool>().unwrap();
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if let Ok(int) = value.downcast::<PyInt>() {
+        let val = int.extract::<i64>().unwrap();
+
+        if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
+            polars::lazy::dsl::repeat(val as i32, n_times.inner).into()
+        } else {
+            polars::lazy::dsl::repeat(val, n_times.inner).into()
+        }
+    } else if let Ok(float) = value.downcast::<PyFloat>() {
+        let val = float.extract::<f64>().unwrap();
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if let Ok(pystr) = value.downcast::<PyString>() {
+        let val = pystr
+            .to_str()
+            .expect("could not transform Python string to Rust Unicode");
+        polars::lazy::dsl::repeat(val, n_times.inner).into()
+    } else if value.is_none() {
+        polars::lazy::dsl::repeat(Null {}, n_times.inner).into()
+    } else {
+        panic!("could not convert value {:?} as a Literal", value)
+    }
 }
 
 #[pyfunction]
@@ -186,16 +223,41 @@ fn py_datetime(
     let minute = minute.map(|e| e.inner);
     let second = second.map(|e| e.inner);
     let millisecond = millisecond.map(|e| e.inner);
-    polars::lazy::dsl::datetime(
-        year.inner,
-        month.inner,
-        day.inner,
+
+    let args = DatetimeArgs {
+        year: year.inner,
+        month: month.inner,
+        day: day.inner,
         hour,
         minute,
         second,
         millisecond,
-    )
-    .into()
+    };
+
+    polars::lazy::dsl::datetime(args).into()
+}
+
+#[pyfunction]
+fn py_duration(
+    days: Option<PyExpr>,
+    seconds: Option<PyExpr>,
+    nanoseconds: Option<PyExpr>,
+    milliseconds: Option<PyExpr>,
+    minutes: Option<PyExpr>,
+    hours: Option<PyExpr>,
+    weeks: Option<PyExpr>,
+) -> dsl::PyExpr {
+    let args = DurationArgs {
+        days: days.map(|e| e.inner),
+        seconds: seconds.map(|e| e.inner),
+        nanoseconds: nanoseconds.map(|e| e.inner),
+        milliseconds: milliseconds.map(|e| e.inner),
+        minutes: minutes.map(|e| e.inner),
+        hours: hours.map(|e| e.inner),
+        weeks: weeks.map(|e| e.inner),
+    };
+
+    polars::lazy::dsl::duration(args).into()
 }
 
 #[pyfunction]
@@ -408,9 +470,11 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(py_diag_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_hor_concat_df)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_datetime)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(py_duration)).unwrap();
     m.add_wrapped(wrap_pyfunction!(py_date_range)).unwrap();
     m.add_wrapped(wrap_pyfunction!(min_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
     Ok(())
 }

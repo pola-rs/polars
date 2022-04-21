@@ -117,6 +117,7 @@ class LazyFrame(Generic[DF]):
         skip_rows_after_header: int = 0,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        parse_dates: bool = False,
     ) -> LDF:
         """
         See Also: `pl.scan_csv`
@@ -148,6 +149,7 @@ class LazyFrame(Generic[DF]):
             skip_rows_after_header,
             encoding,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            parse_dates,
         )
         return self
 
@@ -450,7 +452,7 @@ class LazyFrame(Generic[DF]):
                 If you already have set a global string cache, set this to `False` as this will reset the
                 global cache when the query is finished.
         no_optimization
-            Turn off optimizations.
+            Turn off (certain) optimizations.
         slice_pushdown
             Slice pushdown optimization.
 
@@ -461,7 +463,6 @@ class LazyFrame(Generic[DF]):
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
-            slice_pushdown = False
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
@@ -712,6 +713,7 @@ class LazyFrame(Generic[DF]):
         period: str,
         offset: Optional[str] = None,
         closed: str = "right",
+        by: Optional[Union[str, List[str], "pli.Expr", List["pli.Expr"]]] = None,
     ) -> "LazyGroupBy[LDF]":
         """
         Create rolling groups based on a time column (or index value of type Int32, Int64).
@@ -763,6 +765,8 @@ class LazyFrame(Generic[DF]):
         closed
             Defines if the window interval is closed or not.
             Any of {"left", "right", "both" "none"}
+        by
+            Also group by this column/these columns
 
         Examples
         --------
@@ -813,13 +817,9 @@ class LazyFrame(Generic[DF]):
 
         if offset is None:
             offset = f"-{period}"
+        by = _prepare_groupby_inputs(by)
 
-        lgb = self._ldf.groupby_rolling(
-            index_column,
-            period,
-            offset,
-            closed,
-        )
+        lgb = self._ldf.groupby_rolling(index_column, period, offset, closed, by)
         return LazyGroupBy(lgb, lazyframe_class=self.__class__)
 
     def groupby_dynamic(
@@ -938,7 +938,7 @@ class LazyFrame(Generic[DF]):
         Perform an asof join. This is similar to a left-join except that we
         match on nearest key rather than equal keys.
 
-        Both DataFrames must be sorted by the key.
+        Both DataFrames must be sorted by the join_asof key.
 
         For each row in the left DataFrame:
 
@@ -1079,6 +1079,8 @@ class LazyFrame(Generic[DF]):
                 "outer"
                 "asof",
                 "cross"
+                "semi"
+                "anti"
         suffix
             Suffix to append to columns with a duplicate name.
         allow_parallel
@@ -1142,7 +1144,8 @@ class LazyFrame(Generic[DF]):
         """
         if how == "asof":
             warnings.warn(
-                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof"
+                "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof",
+                DeprecationWarning,
             )
         if how == "cross":
             return self._from_pyldf(
@@ -1251,6 +1254,8 @@ class LazyFrame(Generic[DF]):
                 pyexprs.append(e._pyexpr)
             elif isinstance(e, pli.Series):
                 pyexprs.append(pli.lit(e)._pyexpr)
+            else:
+                raise ValueError(f"expected and expression, got {e}")
 
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
@@ -1723,6 +1728,18 @@ class LazyFrame(Generic[DF]):
         keep: str = "first",
     ) -> LDF:
         """
+        .. deprecated:: 0.13.13
+            Please use `unique`
+        """
+        return self.unique(maintain_order, subset, keep)
+
+    def unique(
+        self: LDF,
+        maintain_order: bool = True,
+        subset: Optional[Union[str, List[str]]] = None,
+        keep: str = "first",
+    ) -> LDF:
+        """
         Drop duplicate rows from this DataFrame.
         Note that this fails if there is a column of type `List` in the DataFrame or subset.
 
@@ -1741,7 +1758,7 @@ class LazyFrame(Generic[DF]):
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
-        return self._from_pyldf(self._ldf.distinct(maintain_order, subset, keep))
+        return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
     def drop_nulls(self: LDF, subset: Optional[Union[List[str], str]] = None) -> LDF:
         """
@@ -1827,6 +1844,8 @@ class LazyFrame(Generic[DF]):
         self: LDF,
         id_vars: Optional[Union[str, List[str]]] = None,
         value_vars: Optional[Union[str, List[str]]] = None,
+        variable_name: Optional[str] = None,
+        value_name: Optional[str] = None,
     ) -> LDF:
         """
         Unpivot a DataFrame from wide to long format, optionally leaving identifiers set.
@@ -1842,6 +1861,10 @@ class LazyFrame(Generic[DF]):
         value_vars
             Values to use as identifier variables.
             If `value_vars` is empty all columns that are not in `id_vars` will be used.
+        variable_name
+            Name to give to the `value` column. Defaults to "variable"
+        value_name
+            Name to give to the `value` column. Defaults to "value"
 
         Examples
         --------
@@ -1882,7 +1905,9 @@ class LazyFrame(Generic[DF]):
             value_vars = []
         if id_vars is None:
             id_vars = []
-        return self._from_pyldf(self._ldf.melt(id_vars, value_vars))
+        return self._from_pyldf(
+            self._ldf.melt(id_vars, value_vars, value_name, variable_name)
+        )
 
     def map(
         self: LDF,

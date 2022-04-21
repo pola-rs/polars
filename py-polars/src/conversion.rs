@@ -14,10 +14,16 @@ use pyo3::basic::CompareOp;
 use pyo3::conversion::{FromPyObject, IntoPy};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PySequence, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+
+pub(crate) fn to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
+    // Safety:
+    // Wrap is transparent.
+    unsafe { std::mem::transmute(slice) }
+}
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -74,11 +80,11 @@ impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<DistinctKeepStrategy> {
+impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         match ob.extract::<&str>()? {
-            "first" => Ok(Wrap(DistinctKeepStrategy::First)),
-            "last" => Ok(Wrap(DistinctKeepStrategy::Last)),
+            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
+            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
             s => panic!("keep strategy {} is not supported", s),
         }
     }
@@ -153,6 +159,14 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
+fn struct_dict(py: Python, vals: Vec<AnyValue>, flds: &[Field]) -> PyObject {
+    let dict = PyDict::new(py);
+    for (fld, val) in flds.iter().zip(vals) {
+        dict.set_item(fld.name(), Wrap(val)).unwrap()
+    }
+    dict.into_py(py)
+}
+
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
     fn into_py(self, py: Python) -> PyObject {
         match self.0 {
@@ -187,9 +201,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     todo!()
                 }
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert
@@ -208,9 +221,8 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Duration(v, tu) => {
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_timedelta").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
                     TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
@@ -218,22 +230,9 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 }
             }
             AnyValue::Time(v) => v.into_py(py),
-            AnyValue::List(v) => {
-                let pypolars = PyModule::import(py, "polars").unwrap();
-                let pyseries = PySeries::new(v);
-                let python_series_wrapper = pypolars
-                    .getattr("wrap_s")
-                    .unwrap()
-                    .call1((pyseries,))
-                    .unwrap();
-                python_series_wrapper.into()
-            }
-            AnyValue::Struct(vals) => {
-                // Safety:
-                // Wrap<T> is transparent
-                let vals = unsafe { std::mem::transmute::<_, Vec<Wrap<AnyValue>>>(vals) };
-                PyTuple::new(py, vals).into_py(py)
-            }
+            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
+            AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -408,13 +407,29 @@ impl ToPyObject for Wrap<&StructChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let s = self.0.clone().into_series();
         let iter = s.iter().map(|av| {
-            if let AnyValue::Struct(vals) = av {
-                PyTuple::new(py, vals.into_iter().map(Wrap))
+            if let AnyValue::Struct(vals, flds) = av {
+                struct_dict(py, vals, flds)
             } else {
                 unreachable!()
             }
         });
 
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&DurationChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pl_utils = pl.getattr("utils").unwrap();
+        let convert = pl_utils.getattr("_to_python_timedelta").unwrap();
+
+        let tu = Wrap(self.0.time_unit()).to_object(py);
+
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, &tu)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -455,7 +470,7 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance::<PyBool>().unwrap() {
+        if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
@@ -499,17 +514,20 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
-        } else if ob.is_instance::<PyTuple>()? {
-            let tuple = ob.downcast::<PyTuple>().unwrap();
-            let items = tuple
-                .iter()
-                .map(|ob| {
-                    let av = ob.extract::<Wrap<AnyValue>>()?;
-                    Ok(av.0)
-                })
-                .collect::<PyResult<Vec<_>>>()?;
-            Ok(Wrap(AnyValue::Struct(items)))
-        } else if ob.is_instance::<PyList>()? {
+        } else if ob.is_instance_of::<PyDict>()? {
+            let dict = ob.downcast::<PyDict>().unwrap();
+            let len = dict.len();
+            let mut keys = Vec::with_capacity(len);
+            let mut vals = Vec::with_capacity(len);
+            for (k, v) in dict.into_iter() {
+                let key = k.extract::<&str>()?;
+                let val = v.extract::<Wrap<AnyValue>>()?.0;
+                let dtype = DataType::from(&val);
+                keys.push(Field::new(key, dtype));
+                vals.push(val)
+            }
+            Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
+        } else if ob.is_instance_of::<PyList>()? {
             Python::with_gil(|py| {
                 let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
                 let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;
@@ -521,6 +539,30 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
             Ok(Wrap(AnyValue::List(series)))
+        } else if ob.get_type().name()?.contains("date") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+            let utils = pypolars.getattr(py, "utils").unwrap();
+            let utils = utils
+                .getattr(py, "_date_to_pl_date")
+                .unwrap()
+                .call1(py, (ob,))
+                .unwrap();
+            let v = utils.extract::<i32>(py).unwrap();
+            Ok(Wrap(AnyValue::Date(v)))
+        } else if ob.get_type().name()?.contains("timedelta") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
+            let utils = pypolars.getattr(py, "utils").unwrap();
+            let utils = utils
+                .getattr(py, "_timedelta_to_pl_timedelta")
+                .unwrap()
+                .call1(py, (ob, "us"))
+                .unwrap();
+            let v = utils.extract::<i64>(py).unwrap();
+            Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",

@@ -17,7 +17,6 @@ temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
 default = ["docs", "temporal", "performant", "private"]
 lazy = ["sort_multiple"]
-series_from_anyvalue = []
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
 performant = []
@@ -75,6 +74,10 @@ abs = []
 ewma = ["polars-utils"]
 dataframe_arithmetic = []
 product = []
+unique_counts = []
+log = []
+partition_by = []
+semi_anti_join = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -94,6 +97,8 @@ parquet = ["arrow/io_parquet"]
 
 # scale to terrabytes?
 bigidx = ["polars-arrow/bigidx"]
+
+serde-lazy = ["serde", "polars-arrow/serde"]
 
 docs-selection = [
   "ndarray",
@@ -133,6 +138,8 @@ docs-selection = [
   "dataframe_arithmetic",
   "string_encoding",
   "product",
+  "unique_counts",
+  "log",
 ]
 
 [dependencies]
@@ -161,10 +168,10 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
-# git = "https://github.com/ritchie46/arrow2"
-rev = "5658512460d64f8eca0d0ce0ae53aea41c35ab9d"
-# branch = "cherry_pick"
+# git = "https://github.com/jorgecarleitao/arrow2"
+git = "https://github.com/ritchie46/arrow2"
+# rev = "36b08249dd03c8b8f88f454158fcf3401c647a49"
+branch = "polars"
 version = "0.10"
 default-features = false
 features = [

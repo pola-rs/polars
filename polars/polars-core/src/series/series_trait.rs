@@ -169,9 +169,6 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
-        }
         fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
             None
         }
@@ -822,6 +819,12 @@ pub trait SeriesTrait:
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
     fn as_any(&self) -> &dyn Any {
+        invalid_operation_panic!(self)
+    }
+
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         invalid_operation_panic!(self)
     }
 

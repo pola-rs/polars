@@ -29,97 +29,121 @@ mod inner_mod {
     use arrow::bitmap::MutableBitmap;
     use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
+    use polars_arrow::data_types::IsFloat;
     use polars_arrow::prelude::QuantileInterpolOptions;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
 
-    impl<T> ChunkedArray<T>
+    fn rolling_agg<T, F1, F2>(
+        ca: &ChunkedArray<T>,
+        options: RollingOptions,
+        rolling_agg_fn: F1,
+        rolling_agg_fn_nulls: F2,
+    ) -> Result<Series>
     where
         T: PolarsNumericType,
-        T::Native: Float,
-        ChunkedArray<T>: IntoSeries,
+        F1: FnOnce(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
+        F2: FnOnce(&PrimitiveArray<T::Native>, usize, usize, bool, Option<&[f64]>) -> ArrayRef,
     {
-        /// Apply a rolling mean (moving mean) over the values in this array.
-        /// A window of length `window_size` will traverse the array. The values that fill this window
-        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
-        /// values will be aggregated to their mean.
-        pub fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-            match self.dtype() {
-                DataType::Float32 | DataType::Float64 => {
-                    check_input(options.window_size, options.min_periods)?;
-                    let ca = self.rechunk();
-                    let arr = ca.downcast_iter().next().unwrap();
-                    let arr = match self.has_validity() {
-                        false => rolling::no_nulls::rolling_mean(
-                            arr.values(),
-                            options.window_size,
-                            options.min_periods,
-                            options.center,
-                            options.weights.as_deref(),
-                        ),
-                        _ => rolling::nulls::rolling_mean(
-                            arr,
-                            options.window_size,
-                            options.min_periods,
-                            options.center,
-                            options.weights.as_deref(),
-                        ),
-                    };
-                    Series::try_from((self.name(), arr))
-                }
-                _ => {
-                    let s = self.cast(&DataType::Float64)?;
-                    s.rolling_mean(options)
-                }
-            }
-        }
+        check_input(options.window_size, options.min_periods)?;
+        let ca = ca.rechunk();
+
+        let arr = ca.downcast_iter().next().unwrap();
+        let arr = match ca.has_validity() {
+            false => rolling_agg_fn(
+                arr.values().as_slice(),
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+            _ => rolling_agg_fn_nulls(
+                arr,
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+        };
+        Series::try_from((ca.name(), arr))
     }
 
-    impl<T> ChunkedArray<T>
-    where
-        T: PolarsNumericType,
-    {
-        /// Apply a rolling sum (moving sum) over the values in this array.
-        /// A window of length `window_size` will traverse the array. The values that fill this window
-        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
-        /// values will be aggregated to their sum.
-        pub fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
-            check_input(options.window_size, options.min_periods)?;
-            let ca = self.rechunk();
+    macro_rules! rolling_impl {
+        ($ca:ty) => {
+            impl $ca {
+                /// Apply a rolling mean (moving mean) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+                /// values will be aggregated to their mean.
+                pub fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
+                    rolling_agg(
+                        self,
+                        options,
+                        rolling::no_nulls::rolling_mean,
+                        rolling::nulls::rolling_mean,
+                    )
+                }
 
-            if options.weights.is_some()
-                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
-            {
-                let s = ca.cast(&DataType::Float64).unwrap();
-                return s.rolling_sum(options);
-            }
+                /// Apply a rolling sum (moving sum) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+                /// values will be aggregated to their sum.
+                pub fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
+                    rolling_agg(
+                        self,
+                        options,
+                        rolling::no_nulls::rolling_sum,
+                        rolling::nulls::rolling_sum,
+                    )
+                }
 
-            let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.has_validity() {
-                false => rolling::no_nulls::rolling_sum(
-                    arr.values(),
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-                _ => rolling::nulls::rolling_sum(
-                    arr,
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-            };
-            Series::try_from((self.name(), arr))
-        }
+                /// Apply a rolling min (moving min) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+                /// values will be aggregated to their min.
+                pub fn rolling_min(&self, options: RollingOptions) -> Result<Series> {
+                    rolling_agg(
+                        self,
+                        options,
+                        rolling::no_nulls::rolling_min,
+                        rolling::nulls::rolling_min,
+                    )
+                }
 
-        /// Apply a rolling median (moving median) over the values in this array.
-        /// A window of length `window_size` will traverse the array. The values that fill this window
-        /// will (optionally) be weighted according to the `weights` vector.
-        pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
-            match self.dtype() {
-                DataType::Float32 | DataType::Float64 => {
+                /// Apply a rolling max (moving max) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+                /// values will be aggregated to their max.
+                pub fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
+                    rolling_agg(
+                        self,
+                        options,
+                        rolling::no_nulls::rolling_max,
+                        rolling::nulls::rolling_max,
+                    )
+                }
+
+                /// Apply a rolling median (moving median) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be weighted according to the `weights` vector.
+                pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+                    rolling_agg(
+                        self,
+                        options,
+                        rolling::no_nulls::rolling_median,
+                        rolling::nulls::rolling_median,
+                    )
+                }
+
+                /// Apply a rolling quantile (moving quantile) over the values in this array.
+                /// A window of length `window_size` will traverse the array. The values that fill this window
+                /// will (optionally) be weighted according to the `weights` vector.
+                pub fn rolling_quantile(
+                    &self,
+                    quantile: f64,
+                    interpolation: QuantileInterpolOptions,
+                    options: RollingOptions,
+                ) -> Result<Series> {
                     check_input(options.window_size, options.min_periods)?;
                     let ca = self.rechunk();
 
@@ -127,8 +151,8 @@ mod inner_mod {
                     let arr = match self.has_validity() {
                         false => rolling::no_nulls::rolling_quantile(
                             arr.values(),
-                            0.5,
-                            QuantileInterpolOptions::Linear,
+                            quantile,
+                            interpolation,
                             options.window_size,
                             options.min_periods,
                             options.center,
@@ -136,8 +160,8 @@ mod inner_mod {
                         ),
                         _ => rolling::nulls::rolling_quantile(
                             arr,
-                            0.5,
-                            QuantileInterpolOptions::Linear,
+                            quantile,
+                            interpolation,
                             options.window_size,
                             options.min_periods,
                             options.center,
@@ -146,11 +170,39 @@ mod inner_mod {
                     };
                     Series::try_from((self.name(), arr))
                 }
-                _ => {
-                    let s = self.cast(&DataType::Float64)?;
-                    s.rolling_median(options)
-                }
             }
+        };
+    }
+
+    rolling_impl!(Float32Chunked);
+    rolling_impl!(Float64Chunked);
+
+    impl<T> ChunkedArray<T>
+    where
+        T: PolarsIntegerType,
+        T::Native: IsFloat,
+    {
+        /// Apply a rolling sum (moving sum) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+        /// values will be aggregated to their sum.
+        pub fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
+            if options.weights.is_some() {
+                return self.cast(&DataType::Float64)?.rolling_sum(options);
+            }
+            rolling_agg(
+                self,
+                options,
+                rolling::no_nulls::rolling_sum,
+                rolling::nulls::rolling_sum,
+            )
+        }
+
+        /// Apply a rolling median (moving median) over the values in this array.
+        /// A window of length `window_size` will traverse the array. The values that fill this window
+        /// will (optionally) be weighted according to the `weights` vector.
+        pub fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+            self.cast(&DataType::Float64)?.rolling_median(options)
         }
 
         /// Apply a rolling quantile (moving quantile) over the values in this array.
@@ -162,39 +214,8 @@ mod inner_mod {
             interpolation: QuantileInterpolOptions,
             options: RollingOptions,
         ) -> Result<Series> {
-            match self.dtype() {
-                DataType::Float32 | DataType::Float64 => {
-                    check_input(options.window_size, options.min_periods)?;
-                    let ca = self.rechunk();
-
-                    let arr = ca.downcast_iter().next().unwrap();
-                    let arr = match self.has_validity() {
-                        false => rolling::no_nulls::rolling_quantile(
-                            arr.values(),
-                            quantile,
-                            interpolation,
-                            options.window_size,
-                            options.min_periods,
-                            options.center,
-                            options.weights.as_deref(),
-                        ),
-                        _ => rolling::nulls::rolling_quantile(
-                            arr,
-                            quantile,
-                            interpolation,
-                            options.window_size,
-                            options.min_periods,
-                            options.center,
-                            options.weights.as_deref(),
-                        ),
-                    };
-                    Series::try_from((self.name(), arr))
-                }
-                _ => {
-                    let s = self.cast(&DataType::Float64)?;
-                    s.rolling_quantile(quantile, interpolation, options)
-                }
-            }
+            self.cast(&DataType::Float64)?
+                .rolling_quantile(quantile, interpolation, options)
         }
 
         /// Apply a rolling min (moving min) over the values in this array.
@@ -202,33 +223,15 @@ mod inner_mod {
         /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
         /// values will be aggregated to their min.
         pub fn rolling_min(&self, options: RollingOptions) -> Result<Series> {
-            check_input(options.window_size, options.min_periods)?;
-            let ca = self.rechunk();
-            if options.weights.is_some()
-                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
-            {
-                let s = ca.cast(&DataType::Float64).unwrap();
-                return s.rolling_min(options);
+            if options.weights.is_some() {
+                return self.cast(&DataType::Float64)?.rolling_min(options);
             }
-
-            let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.has_validity() {
-                false => rolling::no_nulls::rolling_min(
-                    arr.values(),
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-                _ => rolling::nulls::rolling_min(
-                    arr,
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-            };
-            Series::try_from((self.name(), arr))
+            rolling_agg(
+                self,
+                options,
+                rolling::no_nulls::rolling_min,
+                rolling::nulls::rolling_min,
+            )
         }
 
         /// Apply a rolling max (moving max) over the values in this array.
@@ -236,33 +239,15 @@ mod inner_mod {
         /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
         /// values will be aggregated to their max.
         pub fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
-            check_input(options.window_size, options.min_periods)?;
-            let ca = self.rechunk();
-            if options.weights.is_some()
-                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
-            {
-                let s = ca.cast(&DataType::Float64).unwrap();
-                return s.rolling_max(options);
+            if options.weights.is_some() {
+                return self.cast(&DataType::Float64)?.rolling_max(options);
             }
-
-            let arr = ca.downcast_iter().next().unwrap();
-            let arr = match self.has_validity() {
-                false => rolling::no_nulls::rolling_max(
-                    arr.values(),
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-                _ => rolling::nulls::rolling_max(
-                    arr,
-                    options.window_size,
-                    options.min_periods,
-                    options.center,
-                    options.weights.as_deref(),
-                ),
-            };
-            Series::try_from((self.name(), arr))
+            rolling_agg(
+                self,
+                options,
+                rolling::no_nulls::rolling_max,
+                rolling::nulls::rolling_max,
+            )
         }
     }
 
@@ -404,7 +389,7 @@ mod inner_mod {
     where
         ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
-        T::Native: Float,
+        T::Native: Float + IsFloat,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>

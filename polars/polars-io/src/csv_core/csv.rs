@@ -168,6 +168,7 @@ impl<'a> CoreReader<'a> {
         to_cast: &'a [Field],
         skip_rows_after_header: usize,
         row_count: Option<RowCount>,
+        parse_dates: bool,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -202,6 +203,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        parse_dates,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -217,6 +219,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        parse_dates,
                     )?;
                     Cow::Owned(inferred_schema)
                 }

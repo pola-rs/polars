@@ -164,6 +164,8 @@ export interface ExprString {
    * @param inclusive Include the split character/string in the results
    */
   split(by: string, options?: {inclusive?: boolean} | boolean): Expr
+  /** Remove leading and trailing whitespace. */
+  strip(): Expr
   /**
    * Parse a Series of dtype Utf8 to a Date/Datetime Series.
    * @param datatype Date or Datetime.
@@ -176,7 +178,7 @@ export interface ExprString {
 export const ExprStringFunctions = (_expr: any): ExprString => {
   const wrap = (method, args?): Expr => {
 
-    return Expr(pli.expr.str[method]({_expr, ...args }));
+    return (Expr as any)(pli.expr.str[method]({_expr, ...args }));
   };
   const handleDecode = (encoding, strict) => {
     switch (encoding) {
@@ -223,7 +225,7 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
       return wrap("lengths");
     },
     lstrip() {
-      return wrap("replace", {pat: /^\s*/.source, val: ""});
+      return wrap("lstrip");
     },
     replace(pat: RegExp, val: string) {
       return wrap("replace", {pat: regexToString(pat), val});
@@ -232,7 +234,7 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
       return wrap("replaceAll", {pat: regexToString(pat), val});
     },
     rstrip() {
-      return wrap("replace", {pat: /[ \t]+$/.source, val: ""});
+      return wrap("rstrip");
     },
     slice(start: number, length?: number) {
       return wrap("slice", {start, length});
@@ -241,6 +243,9 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
       const inclusive = typeof options === "boolean" ? options : options?.inclusive;
 
       return wrap("split", {by, inclusive});
+    },
+    strip() {
+      return wrap("strip");
     },
     strftime(dtype, fmt?) {
       if (dtype === DataType.Date) {

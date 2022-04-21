@@ -77,11 +77,6 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
             fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
                 self.0
                     .agg_min(groups)
@@ -372,7 +367,17 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                self.0.cast(data_type)
+                match (self.dtype(), data_type) {
+                    (DataType::Date, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .date()
+                        .unwrap()
+                        .strftime("%Y-%m-%d")
+                        .into_series()),
+                    _ => self.0.cast(data_type),
+                }
             }
 
             fn to_dummies(&self) -> Result<DataFrame> {

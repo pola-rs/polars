@@ -7,8 +7,12 @@ use polars_arrow::utils::CustomIterTools;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
+
+#[cfg(feature = "semi_anti_join")]
+use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
+
 use crate::prelude::*;
-use crate::utils::{set_partition_size, split_ca};
+use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
@@ -73,13 +77,17 @@ pub enum JoinType {
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
     Cross,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
 }
 
-pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
+pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<IdxSize>, H>],
+    hash_tables: &[Item],
     len: u64,
-) -> &HashMap<T, Vec<IdxSize>, H> {
+) -> &Item {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -246,24 +254,55 @@ impl DataFrame {
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(IdxSize, B)], left_join: bool) -> DataFrame {
+    /// # Safety
+    /// Join tuples must be in bounds
+    unsafe fn create_left_df_from_slice(
+        &self,
+        join_tuples: &[IdxSize],
+        left_join: bool,
+    ) -> DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            unsafe {
-                self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
-            }
+            self.take_unchecked_slice(join_tuples)
         }
     }
 
-    fn join_impl(
+    /// # Safety
+    /// Join tuples must be in bounds
+    unsafe fn create_left_df<B: Sync>(
+        &self,
+        join_tuples: &[(IdxSize, B)],
+        left_join: bool,
+    ) -> DataFrame {
+        if left_join && join_tuples.len() == self.height() {
+            self.clone()
+        } else {
+            self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn _join_impl(
         &self,
         other: &DataFrame,
         selected_left: Vec<Series>,
         selected_right: Vec<Series>,
         how: JoinType,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "cross_join")]
+        if let JoinType::Cross = how {
+            let out = self.cross_join(other, suffix)?;
+            return Ok(if let Some((offset, len)) = slice {
+                // todo! don't materialize whole frame before slicing.
+                out.slice(offset, len)
+            } else {
+                out
+            });
+        }
+
         if selected_right.len() != selected_left.len() {
             return Err(PolarsError::ComputeError(
                 "the number of columns given as join key should be equal".into(),
@@ -287,30 +326,41 @@ impl DataFrame {
             let s_left = self.column(selected_left[0].name())?;
             let s_right = other.column(selected_right[0].name())?;
             return match how {
-                JoinType::Inner => self.inner_join_from_series(other, s_left, s_right, suffix),
-                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
-                JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
+                JoinType::Inner => {
+                    self.inner_join_from_series(other, s_left, s_right, suffix, slice)
+                }
+                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix, slice),
+                JoinType::Outer => {
+                    self.outer_join_from_series(other, s_left, s_right, suffix, slice)
+                }
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Anti => self.semi_anti_join_from_series(s_left, s_right, slice, true),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi => self.semi_anti_join_from_series(s_left, s_right, slice, false),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => {
                     let left_on = selected_left[0].name();
                     let right_on = selected_right[0].name();
 
                     match (options.left_by, options.right_by) {
-                        (Some(left_by), Some(right_by)) => self.join_asof_by(
+                        (Some(left_by), Some(right_by)) => self._join_asof_by(
                             other,
                             left_on,
                             right_on,
                             left_by,
                             right_by,
                             options.strategy,
+                            options.tolerance,
+                            slice,
                         ),
-                        (None, None) => self.join_asof(
+                        (None, None) => self._join_asof(
                             other,
                             left_on,
                             right_on,
                             options.strategy,
                             options.tolerance,
                             suffix,
+                            slice,
                         ),
                         _ => {
                             panic!("expected by arguments on both sides")
@@ -351,15 +401,21 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let (left, right, swap) = det_hash_prone_order!(left, right);
-                let join_tuples = inner_join_multiple_keys(&left, &right, swap);
+                let (join_idx_left, join_idx_right) = inner_join_multiple_keys(&left, &right, swap);
+                let mut join_idx_left = &*join_idx_left;
+                let mut join_idx_right = &*join_idx_right;
+
+                if let Some((offset, len)) = slice {
+                    join_idx_left = slice_slice(join_idx_left, offset, len);
+                    join_idx_right = slice_slice(join_idx_right, offset, len);
+                }
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples, false),
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_iter_unchecked(
-                            join_tuples.iter().map(|(_left, right)| *right as usize),
-                        )
+                        remove_selected(other, &selected_right).take_unchecked_slice(join_idx_right)
                     },
                 );
                 self.finish_join(df_left, df_right, suffix)
@@ -368,9 +424,15 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let join_tuples = left_join_multiple_keys(&left, &right);
+                let mut join_tuples = &*join_tuples;
+
+                if let Some((offset, len)) = slice {
+                    join_tuples = slice_slice(join_tuples, offset, len);
+                }
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples, true),
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df(join_tuples, true) },
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right).take_opt_iter_unchecked(
@@ -389,8 +451,14 @@ impl DataFrame {
                 let (left, right, swap) = det_hash_prone_order!(left, right);
                 let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
 
+                let mut opt_join_tuples = &*opt_join_tuples;
+
+                if let Some((offset, len)) = slice {
+                    opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+                }
+
                 // Take the left and right dataframes by join tuples
-                let (mut df_left, df_right) = POOL.join(
+                let (df_left, df_right) = POOL.join(
                     || unsafe {
                         remove_selected(self, &selected_left).take_opt_iter_unchecked(
                             opt_join_tuples
@@ -406,17 +474,35 @@ impl DataFrame {
                         )
                     },
                 );
+                // Allocate a new vec for df_left so that the keys are left and then other values.
+                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+                    let mut s = s_left.zip_outer_join_column(s_right, opt_join_tuples);
                     s.rename(s_left.name());
-                    df_left.with_column(s)?;
+                    keys.push(s)
                 }
+                keys.extend_from_slice(df_left.get_columns());
+                let df_left = DataFrame::new_no_checks(keys);
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(_) => Err(PolarsError::ComputeError(
                 "asof join not supported for join on multiple keys".into(),
             )),
+            #[cfg(feature = "semi_anti_join")]
+            JoinType::Anti | JoinType::Semi => {
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
+
+                let idx = if matches!(how, JoinType::Anti) {
+                    left_anti_multiple_keys(&left, &right)
+                } else {
+                    left_semi_multiple_keys(&left, &right)
+                };
+                // Safety:
+                // indices are in bounds
+                Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
+            }
             JoinType::Cross => {
                 unreachable!()
             }
@@ -472,12 +558,9 @@ impl DataFrame {
         if let JoinType::Cross = how {
             return self.cross_join(other, suffix);
         }
-
-        #[allow(unused_mut)]
-        let mut selected_left = self.select_series(left_on)?;
-        #[allow(unused_mut)]
-        let mut selected_right = other.select_series(right_on)?;
-        self.join_impl(other, selected_left, selected_right, how, suffix)
+        let selected_left = self.select_series(left_on)?;
+        let selected_right = other.select_series(right_on)?;
+        self._join_impl(other, selected_left, selected_right, how, suffix, None)
     }
 
     /// Perform an inner join on two DataFrames.
@@ -504,19 +587,28 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let join_tuples = s_left.hash_join_inner(s_right);
+        let (join_tuples_left, join_tuples_right) = s_left.hash_join_inner(s_right);
+        let mut join_tuples_left = &*join_tuples_left;
+        let mut join_tuples_right = &*join_tuples_right;
+
+        if let Some((offset, len)) = slice {
+            join_tuples_left = slice_slice(join_tuples_left, offset, len);
+            join_tuples_right = slice_slice(join_tuples_right, offset, len);
+        }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&join_tuples, false),
+            // safety: join indices are known to be in bounds
+            || unsafe { self.create_left_df_from_slice(join_tuples_left, false) },
             || unsafe {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_iter_unchecked(join_tuples.iter().map(|(_left, right)| *right as usize))
+                    .take_unchecked_slice(join_tuples_right)
             },
         );
         self.finish_join(df_left, df_right, suffix)
@@ -570,14 +662,21 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
         let opt_join_tuples = s_left.hash_join_left(s_right);
+        let mut opt_join_tuples = &*opt_join_tuples;
+
+        if let Some((offset, len)) = slice {
+            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+        }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&opt_join_tuples, true),
+            // safety: join indices are known to be in bounds
+            || unsafe { self.create_left_df(opt_join_tuples, true) },
             || unsafe {
                 other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
                     opt_join_tuples
@@ -587,6 +686,37 @@ impl DataFrame {
             },
         );
         self.finish_join(df_left, df_right, suffix)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    /// # Safety:
+    /// `idx` must be in bounds
+    unsafe fn finish_anti_semi_join(
+        &self,
+        mut idx: &[IdxSize],
+        slice: Option<(i64, usize)>,
+    ) -> DataFrame {
+        if let Some((offset, len)) = slice {
+            idx = slice_slice(idx, offset, len);
+        }
+        self.take_unchecked_slice(idx)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    pub(crate) fn semi_anti_join_from_series(
+        &self,
+        s_left: &Series,
+        s_right: &Series,
+        slice: Option<(i64, usize)>,
+        anti: bool,
+    ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
+
+        let idx = s_left.hash_join_semi_anti(s_right, anti);
+        // Safety:
+        // indices are in bounds
+        Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
     }
 
     /// Perform an outer join on two DataFrames
@@ -611,6 +741,7 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
@@ -620,6 +751,11 @@ impl DataFrame {
 
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
+        let mut opt_join_tuples = &*opt_join_tuples;
+
+        if let Some((offset, len)) = slice {
+            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+        }
 
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
@@ -641,7 +777,7 @@ impl DataFrame {
 
         let mut s = s_left
             .to_physical_repr()
-            .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
+            .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples);
         s.rename(s_left.name());
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
@@ -1197,9 +1333,9 @@ mod test {
         assert_eq!(
             out.dtypes(),
             &[
+                DataType::Float64,
+                DataType::Float64,
                 DataType::Utf8,
-                DataType::Float64,
-                DataType::Float64,
                 DataType::Utf8
             ]
         );

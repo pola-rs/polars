@@ -18,12 +18,13 @@ impl Series {
         self.len() == other.len()
             && self.name() == other.name()
             && self.null_count() == other.null_count()
-            && self
-                .eq_missing(other)
-                .sum()
-                .map(|s| s as usize)
-                .unwrap_or(0)
-                == self.len()
+            && {
+                let eq = self.eq_missing(other);
+                match eq {
+                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
+                    Err(_) => false,
+                }
+            }
     }
 
     /// Get a pointer to the underlying data of this Series.
@@ -49,6 +50,7 @@ impl PartialEq for Series {
             && self.null_count() == other.null_count()
             && self
                 .eq_missing(other)
+                .unwrap()
                 .sum()
                 .map(|s| s as usize)
                 .unwrap_or(0)

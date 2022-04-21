@@ -1,4 +1,5 @@
 use crate::logical_plan::Context;
+use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
 use crate::utils::{
     aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
@@ -255,14 +256,16 @@ impl ProjectionPushDown {
                     //
                     // In this query, bar cannot pass this projection, as it would not exist in DF.
                     if !acc_projections.is_empty() {
-                        if let AExpr::Alias(_, name) = expr_arena.get(*e) {
-                            if projected_names.remove(name) {
-                                acc_projections = acc_projections
-                                    .into_iter()
-                                    .filter(|expr| {
-                                        !aexpr_to_root_names(*expr, expr_arena).contains(name)
-                                    })
-                                    .collect();
+                        for (_, ae) in (&*expr_arena).iter(*e) {
+                            if let AExpr::Alias(_, name) = ae {
+                                if projected_names.remove(name) {
+                                    acc_projections = acc_projections
+                                        .into_iter()
+                                        .filter(|expr| {
+                                            !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                                        })
+                                        .collect();
+                                }
                             }
                         }
                     }
@@ -491,7 +494,11 @@ impl ProjectionPushDown {
                     args,
                 })
             }
-            Explode { input, columns } => {
+            Explode {
+                input,
+                columns,
+                schema,
+            } => {
                 columns.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
@@ -508,7 +515,11 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Explode { input, columns })
+                Ok(Explode {
+                    input,
+                    columns,
+                    schema,
+                })
             }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
@@ -553,12 +564,7 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt {
-                input,
-                id_vars,
-                value_vars,
-                ..
-            } => {
+            Melt { input, args, .. } => {
                 let (mut acc_projections, mut local_projections, names) = split_acc_projections(
                     acc_projections,
                     lp_arena.get(input).schema(lp_arena),
@@ -570,7 +576,7 @@ impl ProjectionPushDown {
                 }
 
                 // make sure that the requested columns are projected
-                id_vars.iter().for_each(|name| {
+                args.id_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -578,7 +584,7 @@ impl ProjectionPushDown {
                         expr_arena,
                     )
                 });
-                value_vars.iter().for_each(|name| {
+                args.value_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -596,8 +602,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder =
-                    ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
+                let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
                 Ok(self.finish_node(local_projections, builder))
             }
             Aggregate {

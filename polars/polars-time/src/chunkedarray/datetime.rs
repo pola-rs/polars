@@ -1,9 +1,4 @@
 use super::*;
-use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array, Utf8Array};
-use polars_arrow::export::arrow::temporal_conversions::{
-    timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
-};
-use std::fmt::Write;
 
 pub trait DatetimeMethods {
     /// Extract month from underlying NaiveDateTime representation.
@@ -51,9 +46,6 @@ pub trait DatetimeMethods {
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> UInt32Chunked;
-
-    /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> Utf8Chunked;
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked;
 }
@@ -173,41 +165,6 @@ impl DatetimeMethods for DatetimeChunked {
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
         };
         self.apply_kernel_cast::<UInt32Type>(&f)
-    }
-
-    /// Format Datetime with a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> Utf8Chunked {
-        let conversion_f = match self.time_unit() {
-            TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
-            TimeUnit::Microseconds => timestamp_us_to_datetime,
-            TimeUnit::Milliseconds => timestamp_ms_to_datetime,
-        };
-
-        let dt = NaiveDate::from_ymd(2001, 1, 1).and_hms(0, 0, 0);
-        let fmted = format!("{}", dt.format(fmt));
-
-        let mut ca: Utf8Chunked = self.apply_kernel_cast(&|arr| {
-            let mut buf = String::new();
-            let mut mutarr =
-                MutableUtf8Array::with_capacities(arr.len(), arr.len() * fmted.len() + 1);
-
-            for opt in arr.into_iter() {
-                match opt {
-                    None => mutarr.push_null(),
-                    Some(v) => {
-                        buf.clear();
-                        let datefmt = conversion_f(*v).format(fmt);
-                        write!(buf, "{}", datefmt).unwrap();
-                        mutarr.push(Some(&buf))
-                    }
-                }
-            }
-
-            let arr: Utf8Array<i64> = mutarr.into();
-            Arc::new(arr)
-        });
-        ca.rename(self.name());
-        ca
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {

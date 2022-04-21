@@ -1,4 +1,4 @@
-use crate::apply::series::ApplyLambda;
+use crate::apply::series::{call_lambda_and_extract, ApplyLambda};
 use crate::arrow_interop::to_rust::array_to_rust;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -291,6 +291,10 @@ impl PySeries {
         }
     }
 
+    pub fn estimated_size(&self) -> usize {
+        self.series.estimated_size()
+    }
+
     pub fn get_object(&self, index: usize) -> PyObject {
         let gil = Python::acquire_gil();
         let python = gil.python();
@@ -392,34 +396,16 @@ impl PySeries {
         }
     }
 
-    pub fn max(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.max::<f64>().to_object(py),
-            DataType::Boolean => self.series.max::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.max::<i64>().to_object(py),
-        }
+    pub fn max(&self, py: Python) -> PyObject {
+        Wrap(self.series.max_as_series().get(0)).into_py(py)
     }
 
-    pub fn min(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.min::<f64>().to_object(py),
-            DataType::Boolean => self.series.min::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.min::<i64>().to_object(py),
-        }
+    pub fn min(&self, py: Python) -> PyObject {
+        Wrap(self.series.min_as_series().get(0)).into_py(py)
     }
 
-    pub fn sum(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.sum::<f64>().to_object(py),
-            DataType::Boolean => self.series.sum::<u64>().to_object(py),
-            _ => self.series.sum::<i64>().to_object(py),
-        }
+    pub fn sum(&self, py: Python) -> PyObject {
+        Wrap(self.series.sum_as_series().get(0)).into_py(py)
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -508,7 +494,7 @@ impl PySeries {
     }
 
     pub fn value_counts(&self) -> PyResult<PyDataFrame> {
-        let df = self.series.value_counts().map_err(PyPolarsErr::from)?;
+        let df = self.series.value_counts(true).map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
 
@@ -585,7 +571,7 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: u64) -> PyResult<Self> {
+    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> PyResult<Self> {
         let s = self
             .series
             .sample_n(n, with_replacement, seed)
@@ -593,7 +579,12 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: u64) -> PyResult<Self> {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let s = self
             .series
             .sample_frac(frac, with_replacement, seed)
@@ -626,27 +617,36 @@ impl PySeries {
         }
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.equal(&rhs.series).into_series()))
+        let s = self.series.equal(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.not_equal(&rhs.series).into_series()))
+        let s = self
+            .series
+            .not_equal(&rhs.series)
+            .map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.gt(&rhs.series).into_series()))
+        let s = self.series.gt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.gt_eq(&rhs.series).into_series()))
+        let s = self.series.gt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.lt(&rhs.series).into_series()))
+        let s = self.series.lt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.lt_eq(&rhs.series).into_series()))
+        let s = self.series.lt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn _not(&self) -> PyResult<Self> {
@@ -735,6 +735,10 @@ impl PySeries {
                 let ca = series.struct_().unwrap();
                 return Wrap(ca).to_object(python);
             }
+            DataType::Duration(_) => {
+                let ca = series.duration().unwrap();
+                return Wrap(ca).to_object(python);
+            }
             dt => primitive_to_list(dt, series),
         };
         pylist.to_object(python)
@@ -821,6 +825,25 @@ impl PySeries {
         let series = &self.series;
 
         let output_type = output_type.map(|dt| dt.0);
+
+        if matches!(
+            self.series.dtype(),
+            DataType::Datetime(_, _)
+                | DataType::Date
+                | DataType::Duration(_)
+                | DataType::Categorical(_)
+                | DataType::Time
+        ) {
+            let mut avs = Vec::with_capacity(self.series.len());
+            let iter = self.series.iter().map(|av| {
+                let input = Wrap(av);
+                call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, input)
+                    .unwrap()
+                    .0
+            });
+            avs.extend(iter);
+            return Ok(Series::new(self.name(), &avs).into());
+        }
 
         let out = match output_type {
             Some(DataType::Int8) => {
@@ -1428,10 +1451,12 @@ impl PySeries {
     }
 
     pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
         Ok(PyBytes::new(py, &bincode::serialize(&self.series).unwrap()).to_object(py))
     }
 
     pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
         match state.extract::<&PyBytes>(py) {
             Ok(s) => {
                 self.series = bincode::deserialize(s.as_bytes()).unwrap();
@@ -1808,7 +1833,8 @@ macro_rules! impl_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.equal(rhs).into_series()))
+                let s = self.series.equal(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1832,7 +1858,8 @@ macro_rules! impl_neq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.not_equal(rhs).into_series()))
+                let s = self.series.not_equal(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1855,7 +1882,8 @@ macro_rules! impl_gt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.gt(rhs).into_series()))
+                let s = self.series.gt(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1878,7 +1906,8 @@ macro_rules! impl_gt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.gt_eq(rhs).into_series()))
+                let s = self.series.gt_eq(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1902,7 +1931,8 @@ macro_rules! impl_lt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.lt(rhs).into_series()))
+                let s = self.series.lt(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1925,7 +1955,8 @@ macro_rules! impl_lt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.lt_eq(rhs).into_series()))
+                let s = self.series.lt_eq(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };

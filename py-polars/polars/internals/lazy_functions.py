@@ -1,11 +1,17 @@
+import sys
 from datetime import date, datetime, timedelta
 from inspect import isclass
 from typing import Any, Callable, List, Optional, Sequence, Type, Union, cast, overload
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
+
 import numpy as np
 
 from polars import internals as pli
-from polars.datatypes import DataType, Date, Datetime, Duration
+from polars.datatypes import DataType, Date, Datetime, Duration, py_type_to_dtype
 from polars.utils import (
     _datetime_to_pl_timestamp,
     _timedelta_to_pl_timedelta,
@@ -34,7 +40,8 @@ try:
     from polars.polars import max_exprs as _max_exprs
     from polars.polars import min_exprs as _min_exprs
     from polars.polars import pearson_corr as pypearson_corr
-    from polars.polars import py_datetime
+    from polars.polars import py_datetime, py_duration
+    from polars.polars import repeat as _repeat
     from polars.polars import spearman_rank_corr as pyspearman_rank_corr
 
     _DOCUMENTING = False
@@ -930,10 +937,44 @@ def quantile(
     return col(column).quantile(quantile, interpolation)
 
 
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: Literal[False],
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: Literal[True],
+) -> "pli.Series":
+    ...
+
+
+@overload
+def arange(
+    low: Union[int, "pli.Expr", "pli.Series"],
+    high: Union[int, "pli.Expr", "pli.Series"],
+    step: int = ...,
+    *,
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
 def arange(
     low: Union[int, "pli.Expr", "pli.Series"],
     high: Union[int, "pli.Expr", "pli.Series"],
     step: int = 1,
+    *,
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     """
@@ -966,7 +1007,8 @@ def arange(
 
 
 def argsort_by(
-    exprs: List[Union["pli.Expr", str]], reverse: Union[List[bool], bool] = False
+    exprs: Union[Union["pli.Expr", str], Sequence[Union["pli.Expr", str]]],
+    reverse: Union[List[bool], bool] = False,
 ) -> "pli.Expr":
     """
     Find the indexes that would sort the columns.
@@ -982,10 +1024,82 @@ def argsort_by(
     reverse
         Default is ascending.
     """
+    if not isinstance(exprs, list):
+        exprs = [exprs]  # type: ignore
     if not isinstance(reverse, list):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
+
+
+def duration(
+    days: Optional[Union["pli.Expr", str]] = None,
+    seconds: Optional[Union["pli.Expr", str]] = None,
+    nanoseconds: Optional[Union["pli.Expr", str]] = None,
+    milliseconds: Optional[Union["pli.Expr", str]] = None,
+    minutes: Optional[Union["pli.Expr", str]] = None,
+    hours: Optional[Union["pli.Expr", str]] = None,
+    weeks: Optional[Union["pli.Expr", str]] = None,
+) -> "pli.Expr":
+    """
+    Create polars `Duration` from distinct time components.
+
+    Returns
+    -------
+    Expr of type `pl.Duration`
+
+    Examples
+    --------
+    >>> from datetime import datetime
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+    ...         "add": [1, 2],
+    ...     }
+    ... )
+    >>> df.select(
+    ...     [
+    ...         (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
+    ...         (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
+    ...         (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
+    ...         (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
+    ...             "add_milliseconds"
+    ...         ),
+    ...         (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
+    ...     ]
+    ... )
+    shape: (2, 5)
+    ┌────────────┬────────────┬─────────────────────┬──────────────┬─────────────────────┐
+    │ add_weeks  ┆ add_days   ┆ add_seconds         ┆ add_millisec ┆ add_hours           │
+    │ ---        ┆ ---        ┆ ---                 ┆ onds         ┆ ---                 │
+    │ datetime[m ┆ datetime[m ┆ datetime[ms]        ┆ ---          ┆ datetime[ms]        │
+    │ s]         ┆ s]         ┆                     ┆ datetime[ms] ┆                     │
+    ╞════════════╪════════════╪═════════════════════╪══════════════╪═════════════════════╡
+    │ 2022-01-08 ┆ 2022-01-02 ┆ 2022-01-01 00:00:01 ┆ 2022-01-01   ┆ 2022-01-01 01:00:00 │
+    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.001 ┆                     │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2022-01-16 ┆ 2022-01-04 ┆ 2022-01-02 00:00:02 ┆ 2022-01-02   ┆ 2022-01-02 02:00:00 │
+    │ 00:00:00   ┆ 00:00:00   ┆                     ┆ 00:00:00.002 ┆                     │
+    └────────────┴────────────┴─────────────────────┴──────────────┴─────────────────────┘
+
+    """
+    if hours is not None:
+        hours = pli.expr_to_lit_or_expr(hours, str_to_lit=False)._pyexpr
+    if minutes is not None:
+        minutes = pli.expr_to_lit_or_expr(minutes, str_to_lit=False)._pyexpr
+    if seconds is not None:
+        seconds = pli.expr_to_lit_or_expr(seconds, str_to_lit=False)._pyexpr
+    if milliseconds is not None:
+        milliseconds = pli.expr_to_lit_or_expr(milliseconds, str_to_lit=False)._pyexpr
+    if nanoseconds is not None:
+        nanoseconds = pli.expr_to_lit_or_expr(nanoseconds, str_to_lit=False)._pyexpr
+    if days is not None:
+        days = pli.expr_to_lit_or_expr(days, str_to_lit=False)._pyexpr
+    if weeks is not None:
+        weeks = pli.expr_to_lit_or_expr(weeks, str_to_lit=False)._pyexpr
+    return pli.wrap_expr(
+        py_duration(days, seconds, nanoseconds, milliseconds, minutes, hours, weeks)
+    )
 
 
 def _datetime(
@@ -998,7 +1112,7 @@ def _datetime(
     millisecond: Optional[Union["pli.Expr", str]] = None,
 ) -> "pli.Expr":
     """
-    Create polars Datetime from distinct time components.
+    Create polars `Datetime` from distinct time components.
 
     Parameters
     ----------
@@ -1019,7 +1133,7 @@ def _datetime(
 
     Returns
     -------
-    Expr of type pl.Datetime
+    Expr of type `pl.Datetime`
     """
 
     year_expr = pli.expr_to_lit_or_expr(year, str_to_lit=False)
@@ -1145,7 +1259,9 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: Sequence[Union[str, "pli.Expr", "pli.Series"]]) -> "pli.Expr":
+def concat_list(
+    exprs: Union[Sequence[Union[str, "pli.Expr", "pli.Series"]], "pli.Expr"]
+) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1306,7 +1422,34 @@ def select(
     return pli.DataFrame([]).select(exprs)
 
 
-def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: Literal[True],
+) -> "pli.Series":
+    ...
+
+
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: Literal[False],
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
     """
     Collect several columns into a Series of dtype Struct
 
@@ -1314,6 +1457,8 @@ def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
     ----------
     exprs
         Columns/Expressions to collect into a Struct
+    eager
+        Evaluate immediately
 
     Examples
     --------
@@ -1337,6 +1482,96 @@ def struct(exprs: Union[Sequence["pli.Expr"], "pli.Expr"]) -> "pli.Expr":
     │ {2,"b",null,[3]}      │
     └───────────────────────┘
 
+    Only collect specific columns as a struct:
+
+    >>> df = pl.DataFrame(
+    ...     {"a": [1, 2, 3, 4], "b": ["one", "two", "three", "four"], "c": [9, 8, 7, 6]}
+    ... )
+    >>> df.with_column(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
+    shape: (4, 4)
+    ┌─────┬───────┬─────┬───────────────────────────────┐
+    │ a   ┆ b     ┆ c   ┆ a_and_b                       │
+    │ --- ┆ ---   ┆ --- ┆ ---                           │
+    │ i64 ┆ str   ┆ i64 ┆ struct[2]{'a': i64, 'b': str} │
+    ╞═════╪═══════╪═════╪═══════════════════════════════╡
+    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ three ┆ 7   ┆ {3,"three"}                   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}                    │
+    └─────┴───────┴─────┴───────────────────────────────┘
+
     """
+
+    if eager:
+        return pli.select(struct(exprs, eager=False)).to_series()
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_as_struct(exprs))
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: Literal[False] = ...,
+    name: Optional[str] = ...,
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: Literal[True],
+    name: Optional[str] = ...,
+) -> "pli.Series":
+    ...
+
+
+@overload
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: bool,
+    name: Optional[str],
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
+def repeat(
+    value: Optional[Union[float, int, str, bool]],
+    n: Union["pli.Expr", int],
+    *,
+    eager: bool = False,
+    name: Optional[str] = None,
+) -> Union["pli.Expr", "pli.Series"]:
+    """
+    Repeat a single value n times.
+
+    Parameters
+    ----------
+    value
+        Value to repeat.
+    n
+        repeat `n` times
+    eager
+        Run eagerly and collect into a `Series`
+    name
+        Only used in `eager` mode. As expression, us `alias`
+    """
+    if eager:
+        if name is None:
+            name = ""
+        dtype = py_type_to_dtype(type(value))
+        s = pli.Series._repeat(name, value, n, dtype)  # type: ignore
+        return s
+    else:
+        if isinstance(n, int):
+            n = lit(n)
+        return pli.wrap_expr(_repeat(value, n._pyexpr))

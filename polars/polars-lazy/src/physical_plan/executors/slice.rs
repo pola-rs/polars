@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 pub struct SliceExec {
     pub input: Box<dyn Executor>,
     pub offset: i64,
-    pub len: u32,
+    pub len: IdxSize,
 }
 
 impl Executor for SliceExec {

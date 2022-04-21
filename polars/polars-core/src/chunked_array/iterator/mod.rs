@@ -1,14 +1,12 @@
 use crate::prelude::*;
+#[cfg(feature = "dtype-struct")]
+use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 use arrow::array::*;
 use std::convert::TryFrom;
 
 type LargeStringArray = Utf8Array<i64>;
 type LargeListArray = ListArray<i64>;
-
-// If parallel feature is enable, then, activate the parallel module.
-#[cfg(feature = "parallel")]
-#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 pub mod par;
 
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
@@ -345,6 +343,48 @@ impl<T: PolarsObject> ObjectChunked<T> {
             self.downcast_iter()
                 .flat_map(|arr| arr.values().iter())
                 .trust_my_length(self.len())
+        }
+    }
+}
+
+// Make sure to call `rechunk` first!
+#[cfg(feature = "dtype-struct")]
+impl<'a> IntoIterator for &'a StructChunked {
+    type Item = &'a [AnyValue<'a>];
+    type IntoIter = StructIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let field_iter = self.fields().iter().map(|s| s.iter()).collect();
+
+        StructIter {
+            field_iter,
+            buf: vec![],
+        }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+pub struct StructIter<'a> {
+    field_iter: Vec<SeriesIter<'a>>,
+    buf: Vec<AnyValue<'a>>,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> Iterator for StructIter<'a> {
+    type Item = &'a [AnyValue<'a>];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buf.clear();
+
+        for it in &mut self.field_iter {
+            self.buf.push(it.next()?);
+        }
+        // Safety:
+        // Lifetime is bound to struct, we just cannot set the lifetime for the iterator trait
+        unsafe {
+            Some(std::mem::transmute::<&'_ [AnyValue], &'a [AnyValue]>(
+                &self.buf,
+            ))
         }
     }
 }

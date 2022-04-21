@@ -2,6 +2,11 @@ use crate::prelude::*;
 
 impl Series {
     pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
+        if let DataType::List(dtype) = dtype {
+            let val = Series::full_null("", 0, dtype);
+            let avs = [AnyValue::List(val)];
+            return Series::new(name, avs.as_ref());
+        }
         if dtype == &dtype.to_physical() {
             macro_rules! primitive {
                 ($type:ty) => {{

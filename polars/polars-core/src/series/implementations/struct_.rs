@@ -87,6 +87,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.name()
     }
 
+    fn chunk_lengths(&self) -> ChunkIdIter {
+        let s = self.0.fields().first().unwrap();
+        s.chunk_lengths()
+    }
+
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
         let s = self.0.fields().first().unwrap();

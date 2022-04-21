@@ -28,6 +28,7 @@ default = [
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
 serde = ["polars-core/serde"]
+serde-lazy = ["polars-core/serde-lazy", "polars-lazy/serde"]
 parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/parquet"]
 lazy = ["polars-core/lazy", "polars-lazy", "polars-lazy/compile"]
 # commented out until UB is fixed
@@ -101,8 +102,11 @@ ewma = ["polars-core/ewma", "polars-lazy/ewma"]
 dot_diagram = ["polars-lazy/dot_diagram"]
 dataframe_arithmetic = ["polars-core/dataframe_arithmetic"]
 product = ["polars-core/product"]
-
-series_from_anyvalue = ["polars-core/series_from_anyvalue"]
+unique_counts = ["polars-core/unique_counts", "polars-lazy/unique_counts"]
+log = ["polars-core/log", "polars-lazy/log"]
+partition_by = ["polars-core/partition_by"]
+semi_anti_join = ["polars-core/semi_anti_join"]
+list_eval = ["polars-lazy/list_eval"]
 
 test = [
   "lazy",

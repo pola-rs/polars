@@ -8,7 +8,7 @@ mod duration;
 mod kernels;
 #[cfg(feature = "dtype-time")]
 mod time;
-mod utf8;
+pub mod utf8;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "dtype-date")]

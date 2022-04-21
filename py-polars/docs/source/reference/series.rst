@@ -62,6 +62,8 @@ Descriptive stats
    :toctree: api/
 
     Series.describe
+    Series.estimated_size
+    Series.unique_counts
     Series.value_counts
     Series.chunk_lengths
     Series.n_chunks
@@ -128,6 +130,7 @@ Computations
     Series.pct_change
     Series.skew
     Series.kurtosis
+    Series.entropy
     Series.sqrt
     Series.sin
     Series.cos
@@ -138,6 +141,7 @@ Computations
     Series.log
     Series.log10
     Series.exp
+    Series.sign
 
 Manipulation/ selection
 -----------------------
@@ -296,6 +300,7 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.slice
     ListNameSpace.head
     ListNameSpace.tail
+    ListNameSpace.eval
 
 Categories
 ----------

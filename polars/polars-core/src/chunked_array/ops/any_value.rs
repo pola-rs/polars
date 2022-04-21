@@ -15,7 +15,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     macro_rules! downcast_and_pack {
         ($casttype:ident, $variant:ident) => {{
             let arr = &*(arr as *const dyn Array as *const $casttype);
-            let v = arr.value(idx);
+            let v = arr.value_unchecked(idx);
             AnyValue::$variant(v)
         }};
     }
@@ -59,6 +59,12 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
 
             AnyValue::List(s)
         }
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(rev_map) => {
+            let arr = &*(arr as *const dyn Array as *const UInt32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref())
+        }
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(flds) => {
             let arr = &*(arr as *const dyn Array as *const StructArray);
@@ -68,11 +74,35 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                 .zip(flds)
                 .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
                 .collect();
-            AnyValue::Struct(vals)
+            AnyValue::Struct(vals, flds)
+        }
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Datetime(v, *tu, tz)
+        }
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            let arr = &*(arr as *const dyn Array as *const Int32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Date(v)
+        }
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Duration(v, *tu)
+        }
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Time(v)
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
-        _ => unimplemented!(),
+        dt => panic!("not implemented for {:?}", dt),
     }
 }
 
