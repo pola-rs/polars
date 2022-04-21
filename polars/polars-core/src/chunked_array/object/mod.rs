@@ -90,6 +90,15 @@ where
     pub unsafe fn is_null_unchecked(&self, i: usize) -> bool {
         !self.is_valid_unchecked(i)
     }
+
+    #[inline]
+    pub(crate) unsafe fn get_unchecked(&self, item: usize) -> Option<&T> {
+        if self.is_null_unchecked(item) {
+            None
+        } else {
+            Some(self.value_unchecked(item))
+        }
+    }
 }
 
 impl<T> Array for ObjectArray<T>

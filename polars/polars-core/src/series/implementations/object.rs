@@ -1,6 +1,5 @@
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
@@ -114,6 +113,20 @@ where
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
+        Ok(ChunkTake::take(&self.0, indices.into())?.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {

@@ -62,6 +62,7 @@ dot_diagram = []
 unique_counts = ["polars-core/unique_counts"]
 log = ["polars-core/log"]
 list_eval = []
+chunked_ids = []
 
 # no guarantees whatsoever
 private = ["polars-time/private"]

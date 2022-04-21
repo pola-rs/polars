@@ -2,7 +2,7 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr};
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
@@ -110,6 +110,16 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> Result<Series> {

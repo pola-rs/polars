@@ -1,8 +1,11 @@
 use crate::logical_plan::Context;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
+use polars_arrow::export::arrow::Either;
 use polars_core::frame::groupby::{GroupBy, GroupsProxy};
-use polars_core::frame::hash_join::private_left_join_multiple_keys;
+use polars_core::frame::hash_join::{
+    default_join_ids, private_left_join_multiple_keys, JoinOptIds,
+};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
@@ -414,22 +417,22 @@ impl PhysicalExpr for WindowExpr {
                     if groupby_columns.len() == 1 {
                         // group key from right column
                         let right = &keys[0];
-                        groupby_columns[0].hash_join_left(right)
+                        groupby_columns[0].hash_join_left(right).1
                     } else {
                         let df_right = DataFrame::new_no_checks(keys);
                         let df_left = DataFrame::new_no_checks(groupby_columns);
-                        private_left_join_multiple_keys(&df_left, &df_right)
+                        private_left_join_multiple_keys(&df_left, &df_right, None, None).1
                     }
                 };
 
                 // try to get cached join_tuples
-                let opt_join_tuples = if state.cache_window {
+                let join_opt_ids = if state.cache_window {
                     let mut jt_map = state.join_tuples.lock();
                     // we run sequential and partitioned
                     // and every partition run the cache should be empty so we expect a max of 1.
                     debug_assert!(jt_map.len() <= 1);
                     if let Some(opt_join_tuples) = jt_map.get_mut(&cache_key) {
-                        std::mem::take(opt_join_tuples)
+                        std::mem::replace(opt_join_tuples, default_join_ids())
                     } else {
                         get_join_tuples()
                     }
@@ -437,18 +440,15 @@ impl PhysicalExpr for WindowExpr {
                     get_join_tuples()
                 };
 
-                let mut iter = opt_join_tuples
-                    .iter()
-                    .map(|(_left, right)| right.map(|i| i as usize));
+                let mut out = materialize_column(&join_opt_ids, &out_column);
 
-                let mut out = unsafe { out_column.take_opt_iter_unchecked(&mut iter) };
                 if let Some(name) = &self.out_name {
                     out.rename(name.as_ref());
                 }
 
                 if state.cache_window {
                     let mut jt_map = state.join_tuples.lock();
-                    jt_map.insert(cache_key, opt_join_tuples);
+                    jt_map.insert(cache_key, join_opt_ids);
                 }
 
                 Ok(out)
@@ -474,5 +474,26 @@ impl PhysicalExpr for WindowExpr {
 
     fn as_expression(&self) -> &Expr {
         &self.expr
+    }
+}
+
+fn materialize_column(join_opt_ids: &JoinOptIds, out_column: &Series) -> Series {
+    #[cfg(feature = "chunked_ids")]
+    {
+        match join_opt_ids {
+            Either::Left(ids) => unsafe {
+                out_column.take_opt_iter_unchecked(
+                    &mut ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
+                )
+            },
+            Either::Right(ids) => unsafe { out_column._take_opt_chunked_unchecked(ids) },
+        }
+    }
+
+    #[cfg(not(feature = "chunked_ids"))]
+    unsafe {
+        out_column.take_opt_iter_unchecked(
+            &mut join_opt_ids.iter().map(|&opt_i| opt_i.map(|i| i as usize)),
+        )
     }
 }

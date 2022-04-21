@@ -18,6 +18,8 @@ use std::slice::Iter;
 /// length of the iterator must be correct
 pub unsafe trait TrustedLen: Iterator {}
 
+unsafe impl<T> TrustedLen for &mut dyn TrustedLen<Item = T> {}
+
 unsafe impl<T> TrustedLen for Iter<'_, T> {}
 
 unsafe impl<B, I: TrustedLen, T: FnMut(I::Item) -> B> TrustedLen for std::iter::Map<I, T> {}

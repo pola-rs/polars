@@ -145,6 +145,20 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_chunked_unchecked(by))
+            .into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_opt_chunked_unchecked(by))
+            .into_series()
+    }
+
     /// Take by index from an iterator. This operation clones the data.
     ///
     /// # Safety

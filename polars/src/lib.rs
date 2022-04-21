@@ -153,6 +153,7 @@
 //! ## Compile times and opt-in features
 //! The opt-in features are (not including dtype features):
 //!
+//! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
 //!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.

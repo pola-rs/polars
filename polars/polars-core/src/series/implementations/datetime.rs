@@ -3,7 +3,7 @@ use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
-use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr};
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
@@ -305,6 +305,20 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        let ca = self.0.deref().take_chunked_unchecked(by);
+        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        let ca = self.0.deref().take_opt_chunked_unchecked(by);
+        ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> Result<Series> {

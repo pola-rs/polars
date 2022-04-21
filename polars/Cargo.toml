@@ -21,7 +21,6 @@ default = [
   "zip_with",
   "csv-file",
   "temporal",
-  "performant",
   "fmt",
   "dtype-slim",
 ]
@@ -52,9 +51,8 @@ avro = ["polars-io", "polars-io/avro"]
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
-# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
-# that fits a TrustedLen iterator.
-performant = ["polars-core/performant"]
+# slower builds
+performant = ["polars-core/performant", "chunked_ids"]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
@@ -107,6 +105,7 @@ log = ["polars-core/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
 semi_anti_join = ["polars-core/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
+chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 
 test = [
   "lazy",

@@ -1,6 +1,6 @@
 //! Everything you need to get started with Polars.
-pub(crate) use crate::chunked_array::to_array;
-pub(crate) use crate::frame::groupby::aggregations::*;
+pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
+pub(crate) use crate::frame::{groupby::aggregations::*, hash_join::*};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::{
     chunked_array::{

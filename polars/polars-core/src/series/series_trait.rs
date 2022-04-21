@@ -1,6 +1,5 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
@@ -485,10 +484,16 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
+    #[doc(hidden)]
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series;
+
+    #[doc(hidden)]
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
+
     /// Take by index from an iterator. This operation clones the data.
-    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series>;
 
     /// Take by index from an iterator. This operation clones the data.
     ///
@@ -496,17 +501,13 @@ pub trait SeriesTrait:
     ///
     /// - This doesn't check any bounds.
     /// - Iterator must be TrustedLen
-    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series;
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Result<Series>;
 
     /// Take by index from an iterator. This operation clones the data.
     ///
@@ -514,11 +515,10 @@ pub trait SeriesTrait:
     ///
     /// - This doesn't check any bounds.
     /// - Iterator must be TrustedLen
-    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series;
 
     /// Take by index from an iterator. This operation clones the data.
+    /// todo! remove?
     #[cfg(feature = "take_opt_iter")]
     #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
@@ -526,14 +526,10 @@ pub trait SeriesTrait:
     }
 
     /// Take by index. This operation is clone.
-    fn take(&self, _indices: &IdxCa) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn take(&self, _indices: &IdxCa) -> Result<Series>;
 
     /// Get length of series.
-    fn len(&self) -> usize {
-        invalid_operation_panic!(self)
-    }
+    fn len(&self) -> usize;
 
     /// Check if Series is empty.
     fn is_empty(&self) -> bool {

@@ -903,6 +903,17 @@ pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
     std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
 }
 
+#[cfg(feature = "chunked_ids")]
+pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
+    let mut vals = Vec::with_capacity(len);
+
+    for (chunk_i, chunk) in chunks.iter().enumerate() {
+        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+    }
+
+    vals
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -931,23 +942,5 @@ mod test {
             a.chunk_id().collect::<Vec<_>>(),
             b.chunk_id().collect::<Vec<_>>()
         );
-    }
-
-    #[test]
-    fn test_df_macro_trailing_commas() -> Result<()> {
-        let a = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2]
-        }?;
-
-        let b = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2],
-        }?;
-
-        assert!(a.frame_equal(&b));
-        Ok(())
     }
 }
