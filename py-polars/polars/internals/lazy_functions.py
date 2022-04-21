@@ -1259,7 +1259,9 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: Sequence[Union[str, "pli.Expr", "pli.Series"]]) -> "pli.Expr":
+def concat_list(
+    exprs: Union[Sequence[Union[str, "pli.Expr", "pli.Series"]], "pli.Expr"]
+) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
