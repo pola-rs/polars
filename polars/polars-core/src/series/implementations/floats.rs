@@ -12,7 +12,7 @@ use crate::chunked_array::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
@@ -339,6 +339,16 @@ macro_rules! impl_dyn_series {
 
             fn median(&self) -> Option<f64> {
                 self.0.median().map(|v| v as f64)
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                self.0.take_chunked_unchecked(by).into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                self.0.take_opt_chunked_unchecked(by).into_series()
             }
 
             fn take(&self, indices: &IdxCa) -> Result<Series> {

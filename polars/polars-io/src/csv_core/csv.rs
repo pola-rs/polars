@@ -10,6 +10,7 @@ use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use polars_time::prelude::*;
+use polars_utils::flatten;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::borrow::Cow;
@@ -549,7 +550,7 @@ impl<'a> CoreReader<'a> {
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            let mut dfs = dfs.into_iter().flatten().collect::<Vec<_>>();
+            let mut dfs = flatten(&dfs, None);
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs)
             }

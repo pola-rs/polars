@@ -14,7 +14,7 @@ use super::SeriesWrap;
 use super::*;
 use crate::chunked_array::{
     ops::{explode::ExplodeByOffsets, ToBitRepr},
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
@@ -311,6 +311,18 @@ macro_rules! impl_dyn_series {
                 self.0
                     .filter(filter)
                     .map(|ca| ca.$into_logical().into_series())
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                let ca = self.0.deref().take_chunked_unchecked(by);
+                ca.$into_logical().into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                let ca = self.0.deref().take_opt_chunked_unchecked(by);
+                ca.$into_logical().into_series()
             }
 
             fn take(&self, indices: &IdxCa) -> Result<Series> {

@@ -15,7 +15,7 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "performant", "private"]
+default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -71,13 +71,14 @@ moment = []
 diagonal_concat = []
 horizontal_concat = []
 abs = []
-ewma = ["polars-utils"]
+ewma = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
 log = []
 partition_by = []
 semi_anti_join = []
+chunked_ids = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -156,7 +157,7 @@ lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
 polars-arrow = { version = "0.20.0", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.20.0", path = "../polars-utils", optional = true }
+polars-utils = { version = "0.20.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon = "1.5"

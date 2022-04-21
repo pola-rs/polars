@@ -21,8 +21,8 @@ pub mod unstable;
 use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
-use crate::utils::Wrap;
 use crate::utils::{split_ca, split_series};
+use crate::utils::{split_offsets, Wrap};
 use crate::{series::arithmetic::coerce_lhs_rhs, POOL};
 use ahash::RandomState;
 use arrow::compute::aggregate::estimated_bytes_size;
@@ -366,18 +366,8 @@ impl Series {
         }
     }
 
-    /// Take by index if ChunkedArray contains a single chunk.
-    ///
-    /// # Safety
-    /// This doesn't check any bounds. Null validity is checked.
-    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
-        let n_threads = POOL.current_num_threads();
-        let idx = split_ca(idx, n_threads)?;
-
-        let series: Result<Vec<_>> =
-            POOL.install(|| idx.par_iter().map(|idx| self.take_unchecked(idx)).collect());
-
-        let s = series?
+    fn finish_take_threaded(&self, s: Vec<Series>, rechunk: bool) -> Series {
+        let s = s
             .into_iter()
             .reduce(|mut s, s1| {
                 s.append(&s1).unwrap();
@@ -385,10 +375,71 @@ impl Series {
             })
             .unwrap();
         if rechunk {
-            Ok(s.rechunk())
+            s.rechunk()
         } else {
-            Ok(s)
+            s
         }
+    }
+
+    // take a function pointer to reduce bloat
+    fn threaded_op(
+        &self,
+        rechunk: bool,
+        len: usize,
+        func: &(dyn Fn(usize, usize) -> Result<Series> + Send + Sync),
+    ) -> Result<Series> {
+        let n_threads = POOL.current_num_threads();
+        let offsets = split_offsets(len, n_threads);
+
+        let series: Result<Vec<_>> = POOL.install(|| {
+            offsets
+                .into_par_iter()
+                .map(|(offset, len)| func(offset, len))
+                .collect()
+        });
+
+        Ok(self.finish_take_threaded(series?, rechunk))
+    }
+
+    /// Take by index if ChunkedArray contains a single chunk.
+    ///
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    pub unsafe fn take_unchecked_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            let idx = idx.slice(offset as i64, len);
+            self.take_unchecked(&idx)
+        })
+    }
+
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn _take_chunked_unchecked_threaded(
+        &self,
+        chunk_ids: &[ChunkId],
+        rechunk: bool,
+    ) -> Series {
+        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
+            let chunk_ids = &chunk_ids[offset..offset + len];
+            Ok(self._take_chunked_unchecked(chunk_ids))
+        })
+        .unwrap()
+    }
+
+    /// # Safety
+    /// This doesn't check any bounds. Null validity is checked.
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn _take_opt_chunked_unchecked_threaded(
+        &self,
+        chunk_ids: &[Option<ChunkId>],
+        rechunk: bool,
+    ) -> Series {
+        self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
+            let chunk_ids = &chunk_ids[offset..offset + len];
+            Ok(self._take_opt_chunked_unchecked(chunk_ids))
+        })
+        .unwrap()
     }
 
     /// Take by index. This operation is clone.
@@ -397,27 +448,10 @@ impl Series {
     ///
     /// Out of bounds access doesn't Error but will return a Null value
     pub fn take_threaded(&self, idx: &IdxCa, rechunk: bool) -> Result<Series> {
-        let n_threads = POOL.current_num_threads();
-        let idx = split_ca(idx, n_threads).unwrap();
-
-        let series = POOL.install(|| {
-            idx.par_iter()
-                .map(|idx| self.take(idx))
-                .collect::<Result<Vec<_>>>()
-        })?;
-
-        let s = series
-            .into_iter()
-            .reduce(|mut s, s1| {
-                s.append(&s1).unwrap();
-                s
-            })
-            .unwrap();
-        if rechunk {
-            Ok(s.rechunk())
-        } else {
-            Ok(s)
-        }
+        self.threaded_op(rechunk, idx.len(), &|offset, len| {
+            let idx = idx.slice(offset as i64, len);
+            self.take(&idx)
+        })
     }
 
     /// Filter by boolean mask. This operation clones data.
@@ -440,18 +474,7 @@ impl Series {
                 .collect()
         });
 
-        let s = series?
-            .into_iter()
-            .reduce(|mut s, s1| {
-                s.append(&s1).unwrap();
-                s
-            })
-            .unwrap();
-        if rechunk {
-            Ok(s.rechunk())
-        } else {
-            Ok(s)
-        }
+        Ok(self.finish_take_threaded(series?, rechunk))
     }
 
     #[cfg(feature = "dot_product")]

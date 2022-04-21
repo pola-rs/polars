@@ -10,6 +10,7 @@ use crate::{datatypes::PlHashMap, utils::split_df};
 use ahash::CallHasher;
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
+use polars_utils::flatten;
 use rayon::prelude::*;
 use std::hash::{BuildHasher, Hash};
 
@@ -19,8 +20,7 @@ fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
         let mut out = if out.len() == 1 {
             out.pop().unwrap()
         } else {
-            // flattens
-            out.into_iter().flatten().collect::<Vec<_>>()
+            flatten(&out, None)
         };
         out.sort_unstable_by_key(|g| g.0);
         let mut idx = GroupsIdx::from_iter(out.into_iter());

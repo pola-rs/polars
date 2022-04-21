@@ -1,5 +1,5 @@
 use super::*;
-use crate::utils::split_offsets;
+use crate::utils::{copy_from_slice_unchecked, split_offsets};
 use polars_arrow::prelude::*;
 
 /// Used to create the tuples for a groupby operation.
