@@ -190,9 +190,6 @@ impl AExpr {
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
-                let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
-                let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
-
                 let expr_type = match op {
                     Operator::Lt
                     | Operator::Gt
@@ -202,15 +199,24 @@ impl AExpr {
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
-                    Operator::Minus => match (left_type, right_type) {
-                        // T - T != T if T is a datetime / date
-                        (Datetime(tul, _), Datetime(tur, _)) => {
-                            Duration(get_time_units(&tul, &tur))
+                    _ => {
+                        // don't traverse tree until strictly needed. Can have terrible performance.
+                        // # 3210
+                        let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
+                        let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
+
+                        match op {
+                            Operator::Minus => match (left_type, right_type) {
+                                // T - T != T if T is a datetime / date
+                                (Datetime(tul, _), Datetime(tur, _)) => {
+                                    Duration(get_time_units(&tul, &tur))
+                                }
+                                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                                (left, right) => get_supertype(&left, &right)?,
+                            },
+                            _ => get_supertype(&left_type, &right_type)?,
                         }
-                        (Date, Date) => Duration(TimeUnit::Milliseconds),
-                        (left, right) => get_supertype(&left, &right)?,
-                    },
-                    _ => get_supertype(&left_type, &right_type)?,
+                    }
                 };
 
                 let out_field;
