@@ -99,6 +99,7 @@ features = [
   "partition_by",
   "semi_anti_join",
   "list_eval",
+  "to_dummies",
 ]
 
 # [patch.crates-io]

@@ -583,11 +583,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
-    fn to_dummies(&self) -> Result<DataFrame> {
-        invalid_operation_panic!(self)
-    }
-
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     fn get(&self, _index: usize) -> AnyValue {

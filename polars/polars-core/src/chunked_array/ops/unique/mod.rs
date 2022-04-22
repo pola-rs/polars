@@ -4,9 +4,10 @@ pub(crate) mod rank;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::ObjectType;
 use crate::datatypes::PlHashSet;
-use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
+use crate::frame::groupby::GroupsProxy;
+#[cfg(feature = "mode")]
+use crate::frame::groupby::IntoGroupsProxy;
 use crate::prelude::*;
-use rayon::prelude::*;
 use std::hash::Hash;
 
 fn finish_is_unique_helper(
@@ -236,92 +237,6 @@ impl ChunkUnique<Utf8Type> for Utf8Chunked {
         Ok(mode(self))
     }
 }
-
-#[cfg(feature = "dtype-u8")]
-fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> UInt8Chunked {
-    groups.sort_unstable();
-
-    let mut av: Vec<_> = (0..len).map(|_| 0u8).collect();
-
-    for idx in groups {
-        let elem = unsafe { av.get_unchecked_mut(idx as usize) };
-        *elem = 1;
-    }
-
-    ChunkedArray::from_vec(name, av)
-}
-
-#[cfg(not(feature = "dtype-u8"))]
-fn dummies_helper(mut groups: Vec<IdxSize>, len: usize, name: &str) -> Int32Chunked {
-    groups.sort_unstable();
-
-    // let mut group_member_iter = groups.into_iter();
-    let mut av: Vec<_> = (0..len).map(|_| 0i32).collect();
-
-    for idx in groups {
-        let elem = unsafe { av.get_unchecked_mut(idx as usize) };
-        *elem = 1;
-    }
-
-    ChunkedArray::from_vec(name, av)
-}
-
-fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
-    columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
-    columns
-}
-
-impl ToDummies<Utf8Type> for Utf8Chunked {
-    fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true, false).into_idx();
-        let col_name = self.name();
-        let taker = self.take_rand();
-
-        let columns = groups
-            .into_par_iter()
-            .map(|(first, groups)| {
-                let name = match unsafe { taker.get_unchecked(first as usize) } {
-                    Some(val) => format!("{}_{}", col_name, val),
-                    None => format!("{}_null", col_name),
-                };
-                let ca = dummies_helper(groups, self.len(), &name);
-                ca.into_series()
-            })
-            .collect();
-
-        Ok(DataFrame::new_no_checks(sort_columns(columns)))
-    }
-}
-impl<T> ToDummies<T> for ChunkedArray<T>
-where
-    T: PolarsIntegerType + Sync,
-    T::Native: Hash + Eq,
-    ChunkedArray<T>: ChunkOps + ChunkCompare<T::Native> + ChunkUnique<T>,
-{
-    fn to_dummies(&self) -> Result<DataFrame> {
-        let groups = self.group_tuples(true, false).into_idx();
-        let col_name = self.name();
-        let taker = self.take_rand();
-
-        let columns = groups
-            .into_par_iter()
-            .map(|(first, groups)| {
-                let name = match unsafe { taker.get_unchecked(first as usize) } {
-                    Some(val) => format!("{}_{}", col_name, val),
-                    None => format!("{}_null", col_name),
-                };
-
-                let ca = dummies_helper(groups, self.len(), &name);
-                ca.into_series()
-            })
-            .collect();
-
-        Ok(DataFrame::new_no_checks(sort_columns(columns)))
-    }
-}
-
-impl ToDummies<Float32Type> for Float32Chunked {}
-impl ToDummies<Float64Type> for Float64Chunked {}
 
 impl ChunkUnique<BooleanType> for BooleanChunked {
     fn unique(&self) -> Result<Self> {
