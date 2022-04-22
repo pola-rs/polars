@@ -774,7 +774,7 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> Union[int, float]:
+    def min(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the minimal value in this Series.
 
@@ -787,7 +787,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> Union[int, float]:
+    def max(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the maximum value in this Series.
 
