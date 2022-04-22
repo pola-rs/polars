@@ -105,3 +105,17 @@ def test_categorical_lexical_ordering_after_concat() -> None:
         )
 
         df.sort(["key1", "key2"])
+
+
+def test_cat_to_dummies() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3, 4], "bar": ["a", "b", "a", "c"]})
+    df = df.with_column(pl.col("bar").cast(pl.Categorical))
+    assert pl.get_dummies(df).to_dict(False) == {
+        "foo_1": [1, 0, 0, 0],
+        "foo_2": [0, 1, 0, 0],
+        "foo_3": [0, 0, 1, 0],
+        "foo_4": [0, 0, 0, 1],
+        "bar_a": [1, 0, 1, 0],
+        "bar_b": [0, 1, 0, 0],
+        "bar_c": [0, 0, 0, 1],
+    }

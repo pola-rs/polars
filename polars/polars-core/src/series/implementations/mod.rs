@@ -575,10 +575,6 @@ macro_rules! impl_dyn_series {
                 self.0.cast(data_type)
             }
 
-            fn to_dummies(&self) -> Result<DataFrame> {
-                ToDummies::to_dummies(&self.0)
-            }
-
             fn get(&self, index: usize) -> AnyValue {
                 self.0.get_any_value(index)
             }

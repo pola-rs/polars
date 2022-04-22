@@ -31,12 +31,12 @@ impl CategoricalChunked {
         self.logical.len()
     }
 
-    pub(crate) fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         self.logical.name()
     }
 
     /// Get a reference to the logical array (the categories).
-    pub(crate) fn logical(&self) -> &UInt32Chunked {
+    pub fn logical(&self) -> &UInt32Chunked {
         &self.logical
     }
 

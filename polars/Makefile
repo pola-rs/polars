@@ -12,7 +12,8 @@ check:
 	    -p polars-io \
 	    -p polars-lazy \
 	    -p polars-arrow \
-	    -p polars-time
+	    -p polars-time \
+	    -p polars-ops
 
 clippy:
 	cargo clippy --all-features \
@@ -21,6 +22,7 @@ clippy:
 	    -p polars-lazy \
 	    -p polars-arrow \
 	    -p polars-utils \
+	    -p polars-ops \
 	    -p polars-time
 
 clippy-default:

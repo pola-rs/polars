@@ -377,10 +377,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.cast(data_type)
     }
 
-    fn to_dummies(&self) -> Result<DataFrame> {
-        self.0.to_dummies()
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         self.0.get_any_value(index)
     }
