@@ -1166,6 +1166,7 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-lazy",
+ "polars-ops",
  "polars-time",
 ]
 
@@ -1248,6 +1249,13 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+]
+
+[[package]]
+name = "polars-ops"
+version = "0.20.0"
+dependencies = [
+ "polars-core",
 ]
 
 [[package]]

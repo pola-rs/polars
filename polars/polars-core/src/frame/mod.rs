@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_horizontal, get_supertype, split_ca, split_df, NoNull};
+use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2659,62 +2659,6 @@ impl DataFrame {
         f(self, args)
     }
 
-    /// Create dummy variables.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    ///
-    /// # #[macro_use] extern crate polars_core;
-    /// # fn main() {
-    ///
-    ///  use polars_core::prelude::*;
-    ///
-    ///  let df = df! {
-    ///       "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
-    ///       "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
-    ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
-    ///   }.unwrap();
-    ///
-    ///   let dummies = df.to_dummies().unwrap();
-    ///   dbg!(dummies);
-    /// # }
-    /// ```
-    /// Outputs:
-    /// ```text
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | id_1 | id_3 | id_2 | type_A | type_B | type_C | code_X1 | code_X2 | code_X3 |
-    ///  | ---  | ---  | ---  | ---    | ---    | ---    | ---     | ---     | ---     |
-    ///  | u8   | u8   | u8   | u8     | u8     | u8     | u8      | u8      | u8      |
-    ///  +======+======+======+========+========+========+=========+=========+=========+
-    ///  | 1    | 0    | 0    | 1      | 0      | 0      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 0    | 1    | 0      | 1      | 0      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 1    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 0    | 1    | 0      | 0      | 1      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 1    | 0    | 0      | 0      | 1      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 0      | 1      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    /// ```
-    pub fn to_dummies(&self) -> Result<Self> {
-        let cols = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.to_dummies())
-                .collect::<Result<Vec<_>>>()
-        })?;
-
-        accumulate_dataframes_horizontal(cols)
-    }
-
     /// Drop duplicate rows from a `DataFrame`.
     /// *This fails when there is a column of type List in DataFrame*
     ///
@@ -3164,32 +3108,6 @@ mod test {
         let df = create_frame();
         let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
-    }
-
-    #[test]
-    #[cfg(feature = "dtype-u8")]
-    #[cfg_attr(miri, ignore)]
-    fn get_dummies() {
-        let df = df! {
-            "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
-            "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
-            "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
-        }
-        .unwrap();
-        let dummies = df.to_dummies().unwrap();
-        assert_eq!(
-            Vec::from(dummies.column("id_1").unwrap().u8().unwrap()),
-            &[
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(1)
-            ]
-        );
     }
 
     #[test]

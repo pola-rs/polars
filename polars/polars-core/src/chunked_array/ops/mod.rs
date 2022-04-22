@@ -499,14 +499,6 @@ pub trait ChunkUnique<T> {
     }
 }
 
-pub trait ToDummies<T>: ChunkUnique<T> {
-    fn to_dummies(&self) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-}
-
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
 #[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
