@@ -695,7 +695,7 @@ class Series:
         └────────────┴───────┘
 
         """
-        stats: Dict[str, Union[Optional[float], int, str]]
+        stats: Dict[str, Union[Optional[float], int, str, date, datetime, timedelta]]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
