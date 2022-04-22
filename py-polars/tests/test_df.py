@@ -2089,13 +2089,20 @@ def test_struct_cols() -> None:
         arrow_df = pa.Table.from_pylist(data)
         return pl.from_arrow(arrow_df)
 
+    # struct column
     df = build_struct_df([{"outer": {"inner": 1}}])
     assert df.columns == ["outer"]
     assert list(df["outer"].struct.field("inner")) == [1]
 
+    # struct in struct
     df = build_struct_df([{"outer": {"middle": {"inner": 1}}}])
     assert df.columns == ["outer"]
     assert list(df["outer"].struct.field("middle").struct.field("inner")) == [1]
 
+    # struct in list
     df = build_struct_df([{"outer": [{"inner": 1}]}])
     assert list(df["outer"][0].struct.field("inner")) == [1]
+
+    # struct in list in struct
+    df = build_struct_df([{"outer": {"middle": [{"inner": 1}]}}])
+    assert list(df["outer"].struct.field("middle")[0].struct.field("inner")) == [1]
