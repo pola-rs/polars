@@ -350,6 +350,33 @@ def test_init_records() -> None:
     assert df_xy.rows() == [(1, 2), (2, 1), (1, 2)]
 
 
+def test_struct_cols() -> None:
+    """Test that struct columns can be imported and work as expected."""
+
+    def build_struct_df(data):
+        """Build Polars df from list of dicts. Can't import directly because of issue #3145."""
+        arrow_df = pa.Table.from_pylist(data)
+        return pl.from_arrow(arrow_df)
+
+    # struct column
+    df = build_struct_df([{"outer": {"inner": 1}}])
+    assert df.columns == ["outer"]
+    assert df.schema == {"outer": pl.Struct}
+    assert df["outer"].struct.field("inner").to_list() == [1]
+
+    # struct in struct
+    df = build_struct_df([{"outer": {"middle": {"inner": 1}}}])
+    assert df["outer"].struct.field("middle").struct.field("inner").to_list() == [1]
+
+    # struct in list
+    df = build_struct_df([{"outer": [{"inner": 1}]}])
+    assert df["outer"][0].struct.field("inner").to_list() == [1]
+
+    # struct in list in struct
+    df = build_struct_df([{"outer": {"middle": [{"inner": 1}]}}])
+    assert df["outer"].struct.field("middle")[0].struct.field("inner").to_list() == [1]
+
+
 def test_selection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
@@ -2079,30 +2106,3 @@ def test_partition_by() -> None:
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
-
-
-def test_struct_cols() -> None:
-    """Test that struct columns can be imported and work as expected."""
-
-    def build_struct_df(data):
-        """Build Polars df from list of dicts. Can't import directly because of issue #3145."""
-        arrow_df = pa.Table.from_pylist(data)
-        return pl.from_arrow(arrow_df)
-
-    # struct column
-    df = build_struct_df([{"outer": {"inner": 1}}])
-    assert df.columns == ["outer"]
-    assert list(df["outer"].struct.field("inner")) == [1]
-
-    # struct in struct
-    df = build_struct_df([{"outer": {"middle": {"inner": 1}}}])
-    assert df.columns == ["outer"]
-    assert list(df["outer"].struct.field("middle").struct.field("inner")) == [1]
-
-    # struct in list
-    df = build_struct_df([{"outer": [{"inner": 1}]}])
-    assert list(df["outer"][0].struct.field("inner")) == [1]
-
-    # struct in list in struct
-    df = build_struct_df([{"outer": {"middle": [{"inner": 1}]}}])
-    assert list(df["outer"].struct.field("middle")[0].struct.field("inner")) == [1]
