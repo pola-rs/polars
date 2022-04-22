@@ -15,6 +15,8 @@ import pytest
 
 import polars as pl
 from polars import testing
+from polars.datatypes import List
+from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -348,33 +350,6 @@ def test_init_records() -> None:
     assert df_xy.frame_equal(expected)
     assert df_xy.schema == {"x": pl.UInt32, "y": pl.UInt32}
     assert df_xy.rows() == [(1, 2), (2, 1), (1, 2)]
-
-
-def test_struct_cols() -> None:
-    """Test that struct columns can be imported and work as expected."""
-
-    def build_struct_df(data):
-        """Build Polars df from list of dicts. Can't import directly because of issue #3145."""
-        arrow_df = pa.Table.from_pylist(data)
-        return pl.from_arrow(arrow_df)
-
-    # struct column
-    df = build_struct_df([{"outer": {"inner": 1}}])
-    assert df.columns == ["outer"]
-    assert df.schema == {"outer": pl.Struct}
-    assert df["outer"].struct.field("inner").to_list() == [1]
-
-    # struct in struct
-    df = build_struct_df([{"outer": {"middle": {"inner": 1}}}])
-    assert df["outer"].struct.field("middle").struct.field("inner").to_list() == [1]
-
-    # struct in list
-    df = build_struct_df([{"outer": [{"inner": 1}]}])
-    assert df["outer"][0].struct.field("inner").to_list() == [1]
-
-    # struct in list in struct
-    df = build_struct_df([{"outer": {"middle": [{"inner": 1}]}}])
-    assert df["outer"].struct.field("middle")[0].struct.field("inner").to_list() == [1]
 
 
 def test_selection() -> None:
