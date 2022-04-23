@@ -14,6 +14,13 @@ Replace this text with the **Rust**, **Python**, or **Node.js**.
 
 This can be ignored by Python & JS users.
 
+#### Have you tried latest version of polars?
+
+- [yes]
+- [no]
+
+If the problem was resolved, please update polars. :)
+
 #### What version of polars are you using?
 
 Replace this text with the version.
