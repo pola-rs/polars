@@ -318,51 +318,48 @@ impl DefaultPlanner {
                         partitionable = false;
                     }
 
-                    for agg in &aggs {
-                        // make sure that we don't have a binary expr in the expr tree
-                        let matches = |e: &AExpr| {
-                            matches!(
-                                e,
-                                AExpr::SortBy { .. }
-                                    | AExpr::Filter { .. }
-                                    | AExpr::BinaryExpr { .. }
-                                    | AExpr::Function { .. }
-                            )
-                        };
-                        if aexpr_to_root_nodes(*agg, expr_arena).len() != 1
-                            || has_aexpr(*agg, expr_arena, matches)
-                        {
-                            partitionable = false;
-                            break;
-                        }
-
-                        let agg = node_to_expr(*agg, expr_arena);
-
-                        #[cfg(feature = "object")]
-                        {
-                            let name = expr_to_root_column_name(&agg).unwrap();
-                            let dtype = input_schema.get(&name).unwrap();
-
-                            if let DataType::Object(_) = dtype {
+                    if partitionable {
+                        for agg in &aggs {
+                            // check if the aggregation type is partitionable
+                            // only simple aggregation like col().sum
+                            // that can be divided in to the aggregation of their partitions are allowed
+                            if !(&*expr_arena).iter(*agg).all(|(_, ae)| {
+                                use AExpr::*;
+                                match ae {
+                                    // only allowed expressions
+                                    Agg(agg_e) => {
+                                        matches!(
+                                            agg_e,
+                                            AAggExpr::Min(_)
+                                                | AAggExpr::Max(_)
+                                                | AAggExpr::Sum(_)
+                                                | AAggExpr::Mean(_)
+                                                | AAggExpr::Last(_)
+                                                | AAggExpr::List(_)
+                                                | AAggExpr::First(_)
+                                        )
+                                    }
+                                    Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Alias(_, _) => {
+                                        true
+                                    }
+                                    _ => false,
+                                }
+                            }) {
                                 partitionable = false;
                                 break;
                             }
-                        }
 
-                        // check if the aggregation type is partitionable
-                        match agg {
-                            Expr::Agg(AggExpr::Min(_))
-                            | Expr::Agg(AggExpr::Max(_))
-                            | Expr::Agg(AggExpr::Sum(_))
-                            | Expr::Agg(AggExpr::Mean(_))
-                            // first need to implement this correctly
-                            // | Expr::Agg(AggExpr::Count(_))
-                            | Expr::Agg(AggExpr::Last(_))
-                            | Expr::Agg(AggExpr::List(_))
-                            | Expr::Agg(AggExpr::First(_)) => {}
-                            _ => {
-                                partitionable = false;
-                                break
+                            let agg = node_to_expr(*agg, expr_arena);
+
+                            #[cfg(feature = "object")]
+                            {
+                                let name = expr_to_root_column_name(&agg).unwrap();
+                                let dtype = input_schema.get(&name).unwrap();
+
+                                if let DataType::Object(_) = dtype {
+                                    partitionable = false;
+                                    break;
+                                }
                             }
                         }
                     }
