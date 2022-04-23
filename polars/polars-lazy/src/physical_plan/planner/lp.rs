@@ -320,6 +320,28 @@ impl DefaultPlanner {
 
                     if partitionable {
                         for agg in &aggs {
+                            let aexpr = expr_arena.get(*agg);
+                            let depth = (&*expr_arena).iter(*agg).count();
+
+                            // has_aexpr(*agg)
+
+                            // col()
+                            // lit() etc.
+                            if depth == 1 {
+                                partitionable = false;
+                                break;
+                            }
+
+                            // it should end with an aggregation
+                            if matches!(aexpr, AExpr::Alias(_, _)) {
+                                // col().agg().alias() is allowed: count of 3
+                                // col().alias() is not allowed: count of 4
+                                if depth <= 2 {
+                                    partitionable = false;
+                                    break;
+                                }
+                            }
+
                             // check if the aggregation type is partitionable
                             // only simple aggregation like col().sum
                             // that can be divided in to the aggregation of their partitions are allowed
@@ -335,7 +357,6 @@ impl DefaultPlanner {
                                                 | AAggExpr::Sum(_)
                                                 | AAggExpr::Mean(_)
                                                 | AAggExpr::Last(_)
-                                                | AAggExpr::List(_)
                                                 | AAggExpr::First(_)
                                         )
                                     }
@@ -349,15 +370,17 @@ impl DefaultPlanner {
                                 break;
                             }
 
-                            let agg = node_to_expr(*agg, expr_arena);
-
                             #[cfg(feature = "object")]
                             {
-                                let name = expr_to_root_column_name(&agg).unwrap();
-                                let dtype = input_schema.get(&name).unwrap();
+                                for name in aexpr_to_root_names(*agg, expr_arena) {
+                                    let dtype = input_schema.get(&name).unwrap();
 
-                                if let DataType::Object(_) = dtype {
-                                    partitionable = false;
+                                    if let DataType::Object(_) = dtype {
+                                        partitionable = false;
+                                        break;
+                                    }
+                                }
+                                if !partitionable {
                                     break;
                                 }
                             }
