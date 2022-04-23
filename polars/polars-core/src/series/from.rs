@@ -379,11 +379,29 @@ impl Series {
                     chunks[0].clone()
                 };
                 let arr = convert_inner_types(&arr);
-                let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                assert!(
-                    struct_arr.validity().is_none(),
-                    "polars struct does not support validity"
-                );
+                let mut struct_arr =
+                    std::borrow::Cow::Borrowed(arr.as_any().downcast_ref::<StructArray>().unwrap());
+
+                if let Some(validity) = struct_arr.validity() {
+                    let new_values = struct_arr
+                        .values()
+                        .iter()
+                        .map(|arr| {
+                            Arc::from(match arr.validity() {
+                                None => arr.with_validity(Some(validity.clone())),
+                                Some(arr_validity) => {
+                                    arr.with_validity(Some(arr_validity & validity))
+                                }
+                            })
+                        })
+                        .collect();
+
+                    struct_arr = std::borrow::Cow::Owned(StructArray::new(
+                        struct_arr.data_type().clone(),
+                        new_values,
+                        None,
+                    ));
+                }
                 let fields = struct_arr
                     .values()
                     .iter()
