@@ -4415,6 +4415,16 @@ class ExprDateTimeNameSpace:
         """
         return wrap_expr(self._pyexpr.duration_hours())
 
+    def minutes(self) -> Expr:
+        """
+        Extract the minutes from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_minutes())
+
     def seconds(self) -> Expr:
         """
         Extract the seconds from a Duration type.
