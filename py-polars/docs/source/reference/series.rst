@@ -235,6 +235,7 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.days
     DateTimeNameSpace.hours
+    DateTimeNameSpace.minutes
     DateTimeNameSpace.seconds
     DateTimeNameSpace.milliseconds
     DateTimeNameSpace.nanoseconds

@@ -683,6 +683,17 @@ impl PyExpr {
             )
             .into()
     }
+
+    pub fn duration_minutes(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.minutes().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+
     pub fn duration_seconds(&self) -> PyExpr {
         self.inner
             .clone()
