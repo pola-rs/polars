@@ -15,6 +15,8 @@ import pytest
 
 import polars as pl
 from polars import testing
+from polars.datatypes import List
+from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
