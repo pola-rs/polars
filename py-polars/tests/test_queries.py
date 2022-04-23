@@ -58,7 +58,9 @@ def test_agg_after_head() -> None:
     expected = pl.DataFrame({"a": [1, 2, 3], "b": [6, 9, 21]})
 
     for maintain_order in [True, False]:
-        out = df.groupby("a", maintain_order=True).agg([pl.col("b").head(3).sum()])
+        out = df.groupby("a", maintain_order=maintain_order).agg(
+            [pl.col("b").head(3).sum()]
+        )
 
         if not maintain_order:
             out = out.sort("a")
