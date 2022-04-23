@@ -219,3 +219,11 @@ def test_struct_cols() -> None:
     assert df["struct_list_struct_col"].struct.field("list_struct_col")[0].struct.field(
         "inner"
     ).to_list() == [1]
+
+
+def test_struct_with_validity() -> None:
+    data = [{"a": {"b": 1}}, {"a": None}]
+    tbl = pa.Table.from_pylist(data)
+    df = pl.from_arrow(tbl)
+    assert isinstance(df, pl.DataFrame)
+    assert df["a"].to_list() == [{"b": 1}, {"b": None}]
