@@ -4896,6 +4896,16 @@ class DateTimeNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.hours()).to_series()
 
+    def minutes(self) -> Series:
+        """
+        Extract the minutes from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.minutes()).to_series()
+
     def seconds(self) -> Series:
         """
         Extract the seconds from a Duration type.

@@ -278,6 +278,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.hours
+    ExprDateTimeNameSpace.minutes
     ExprDateTimeNameSpace.seconds
     ExprDateTimeNameSpace.milliseconds
     ExprDateTimeNameSpace.nanoseconds
