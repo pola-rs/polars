@@ -1,9 +1,11 @@
 from datetime import datetime
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 import polars as pl
+from polars.internals.frame import DataFrame
 
 
 def test_struct_various() -> None:
@@ -184,10 +186,36 @@ def test_struct_logical_types_to_pandas() -> None:
     assert pl.from_pandas(df).dtypes == [pl.Struct]
 
 
-def test_recursive_arrow_conversion() -> None:
-    data = [{"list_of_struct": [{"a": "1"}, {"a": "2"}]}]
-    dfpd = pd.DataFrame(data)
-    df = pl.DataFrame(dfpd)
-    assert df.to_struct("struct").to_list() == [
-        {"list_of_struct": [{"a": "1"}, {"a": "2"}]}
-    ]
+def test_struct_cols() -> None:
+    """Test that struct columns can be imported and work as expected."""
+
+    def build_struct_df(data: list) -> DataFrame:
+        """Build Polars df from list of dicts. Can't import directly because of issue #3145."""
+        arrow_df = pa.Table.from_pylist(data)
+        polars_df = pl.from_arrow(arrow_df)
+        assert isinstance(polars_df, DataFrame)
+        return polars_df
+
+    # struct column
+    df = build_struct_df([{"struct_col": {"inner": 1}}])
+    assert df.columns == ["struct_col"]
+    assert df.schema == {"struct_col": pl.Struct}
+    assert df["struct_col"].struct.field("inner").to_list() == [1]
+
+    # struct in struct
+    df = build_struct_df([{"nested_struct_col": {"struct_col": {"inner": 1}}}])
+    assert df["nested_struct_col"].struct.field("struct_col").struct.field(
+        "inner"
+    ).to_list() == [1]
+
+    # struct in list
+    df = build_struct_df([{"list_of_struct_col": [{"inner": 1}]}])
+    assert df["list_of_struct_col"][0].struct.field("inner").to_list() == [1]
+
+    # struct in list in struct
+    df = build_struct_df(
+        [{"struct_list_struct_col": {"list_struct_col": [{"inner": 1}]}}]
+    )
+    assert df["struct_list_struct_col"].struct.field("list_struct_col")[0].struct.field(
+        "inner"
+    ).to_list() == [1]
