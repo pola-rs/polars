@@ -345,7 +345,7 @@ impl DefaultPlanner {
                             // check if the aggregation type is partitionable
                             // only simple aggregation like col().sum
                             // that can be divided in to the aggregation of their partitions are allowed
-                            if !(&*expr_arena).iter(*agg).all(|(_, ae)| {
+                            if !((&*expr_arena).iter(*agg).all(|(_, ae)| {
                                 use AExpr::*;
                                 match ae {
                                     // only allowed expressions
@@ -365,7 +365,10 @@ impl DefaultPlanner {
                                     }
                                     _ => false,
                                 }
-                            }) {
+                            }) &&
+                                // we only allow expressions that end with an aggregation
+                                matches!(aexpr, AExpr::Alias(_, _) | AExpr::Agg(_)))
+                            {
                                 partitionable = false;
                                 break;
                             }
