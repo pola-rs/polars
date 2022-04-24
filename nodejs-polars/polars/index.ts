@@ -6,7 +6,7 @@ import * as io from "./io";
 import * as cfg from "./cfg";
 import {version as _version} from "../package.json";
 
-import type { FillNullStrategy as _FillNullStrategy } from "./utils";
+// import type { FillNullStrategy as _FillNullStrategy } from "./utils";
 import  {
   funcs as lazy,
   Expr as lazyExpr,
@@ -23,8 +23,8 @@ namespace pl {
   export type When = _when.When;
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
-  export type FillNullStrategy = _FillNullStrategy;
-  export import Config = cfg.Config;
+  // export type FillNullStrategy = _FillNullStrategy;
+  // export import Config = cfg.Config;
   export import Int8 = DataType.Int8
   export import Int16 = DataType.Int16
   export import Int32 =  DataType.Int32;
@@ -46,7 +46,8 @@ namespace pl {
   export import repeat =  func.repeat;
   export import concat =  func.concat;
 
-  // IO
+  // // IO
+  export import fromRecords = io.fromRecords;
   export import scanCSV = io.scanCSV;
   export import scanIPC = io.scanIPC;
   export import scanParquet = io.scanParquet;
@@ -60,7 +61,7 @@ namespace pl {
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;
 
-  // lazy
+  // // lazy
   export import col = lazy.col
   export import cols = lazy.cols
   export import lit = lazy.lit

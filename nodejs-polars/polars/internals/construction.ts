@@ -2,7 +2,7 @@ import pli from "./polars_internal";
 import { DataType, polarsTypeToConstructor } from "../datatypes";
 import { isTypedArray } from "util/types";
 import {Series} from "../series/series";
-import {dfWrapper} from "../dataframe";
+import {_DataFrame} from "../dataframe";
 
 
 export const jsTypeToPolarsType = (value: unknown): DataType => {
@@ -10,7 +10,7 @@ export const jsTypeToPolarsType = (value: unknown): DataType => {
     return DataType.Float64;
   }
   if (Array.isArray(value)) {
-    return jsTypeToPolarsType(value);
+    return jsTypeToPolarsType(firstNonNull(value));
   }
   if(isTypedArray(value)) {
     switch (value.constructor.name) {
@@ -86,16 +86,45 @@ const firstNonNull = (arr: any[]): any => {
   return first;
 };
 
+const fromTypedArray = (name, value) => {
+  switch (value.constructor.name) {
+  case Int8Array.name:
+    return pli.JsSeries.newInt8Array(name, value);
+  case Int16Array.name:
+    return pli.JsSeries.newInt16Array(name, value);
+  case Int32Array.name:
+    return pli.JsSeries.newInt32Array(name, value);
+  case BigInt64Array.name:
+    return pli.JsSeries.newBigint64Array(name, value);
+  case Uint8Array.name:
+    return pli.JsSeries.newUint8Array(name, value);
+  case Uint8ClampedArray.name:
+    return pli.JsSeries.newUint8ClampedArray(name, value);
+  case Uint16Array.name:
+    return pli.JsSeries.newUint16Array(name, value);
+  case Uint32Array.name:
+    return pli.JsSeries.newUint32Array(name, value);
+  case BigUint64Array.name:
+    return pli.JsSeries.newBiguint64Array(name, value);
+  case Float32Array.name:
+    return pli.JsSeries.newFloat32Array(name, value);
+  case Float64Array.name:
+    return pli.JsSeries.newFloat64Array(name, value);
+  default:
+    throw new Error(`unknown  typed array type: ${value.constructor.name}`);
+  }
+};
+
 /**
  * Construct an internal `JsSeries` from an array
  */
 export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = false): any {
   if (isTypedArray(values)) {
-    return pli.series.new_from_typed_array({ name, values, strict });
+    return fromTypedArray(name, values);
   }
 
   //Empty sequence defaults to Float64 type
-  if (!values.length && !dtype) {
+  if (!values?.length && !dtype) {
     dtype = DataType.Float64;
   }
   const firstValue = firstNonNull(values);
@@ -103,29 +132,33 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
     const listDtype = jsTypeToPolarsType(firstValue);
     const constructor = polarsTypeToConstructor(DataType.List);
 
-    return constructor({ name, values, strict, dtype: listDtype});
+    return constructor(name, values, strict, listDtype);
   }
 
   dtype = dtype ?? jsTypeToPolarsType(firstValue);
-  let series;
+  let series: pli.JsSeries;
   if(dtype === DataType.Struct) {
-    console.log(name, values);
-    const df = arrayToJsDataFrame(values, {inferSchemaLength: 1});
-    console.log(dfWrapper(df));
+    const df = pli.fromRows(values, null, 1);
 
-    return pli.df.to_series_struct({name, _df: df});
+    return df.toStruct(name);
   }
   if(firstValue instanceof Date) {
-    series =  pli.series.new_opt_date({name, values, strict});
+    series = pli.JsSeries.newOptDate(name, values, strict);
   } else {
     const constructor = polarsTypeToConstructor(dtype);
-    series = constructor({ name, values, strict });
+    series = constructor(name, values, strict);
   }
-  if ([DataType.Datetime, DataType.Date].includes(dtype)) {
-    series = pli.series.cast({ _series: series, dtype, strict: false });
-  }
-  if(dtype === DataType.Categorical) {
-    series = pli.series.cast({ _series: series, dtype, strict: false });
+  if ([
+    DataType.Datetime,
+    DataType.Date,
+    DataType.Categorical,
+    DataType.Int8,
+    DataType.Int16,
+    DataType.UInt8,
+    DataType.UInt16,
+    DataType.Float32,
+  ].includes(dtype)) {
+    series = series.cast(dtype, strict);
   }
 
   return series;
@@ -136,26 +169,27 @@ export function arrayToJsDataFrame(data: any[], options?): any {
   let orient = options?.orient;
 
 
-  let dataSeries;
+  let dataSeries: pli.JsSeries[];
 
   if(!data.length) {
     dataSeries = [];
   }
-  else if (data[0]?._series) {
+  else if (data[0]?._s) {
     dataSeries = [];
 
-    data.forEach((series: Series<any>, idx) => {
+    data.forEach((series: any, idx) => {
       if(!series.name) {
         series.rename(`column_${idx}`, true);
       }
-      dataSeries.push(series.inner());
+      dataSeries.push(series._s);
     });
   }
   else if(data[0].constructor.name === "Object") {
-    const df = pli.df.read_rows({rows: data, ...options});
+
+    const df = pli.fromRows( data, options);
 
     if(columns) {
-      pli.df.set_column_names({_df: df, names: columns});
+      df.columns = columns;
     }
 
     return df;
@@ -166,34 +200,34 @@ export function arrayToJsDataFrame(data: any[], options?): any {
     }
 
     if(orient === "row") {
-      const df = pli.df.read_array_rows({data});
-      columns && pli.df.set_column_names({_df: df, names: columns});
+      const df = pli.fromRows(data);
+      columns && (df.columns = columns);
 
       return df;
     } else {
 
-      dataSeries = data.map((s, idx) => Series(`column_${idx}`, s).inner());
+      dataSeries = data.map((s, idx) => (Series(`column_${idx}`, s) as any)._s);
 
     }
 
   }
   else {
-    dataSeries = [Series("column_0", data).inner()];
+    dataSeries = [(Series("column_0", data) as any)._s];
   }
   dataSeries = handleColumnsArg(dataSeries, columns);
 
-  return pli.df.read_columns({columns: dataSeries});
+  return new pli.JsDataFrame(dataSeries);
 }
 
-function handleColumnsArg(data: Series<any>[], columns?: string[]) {
+function handleColumnsArg(data: pli.JsSeries[], columns?: string[]) {
   if(!columns) {
     return data;
   } else {
     if(!data) {
-      return columns.map(c => Series(c, []).inner());
+      return columns.map(c => (Series.from(c, []) as any)._s);
     } else if(data.length === columns.length) {
       columns.forEach((name, i) => {
-        pli.series.rename({_series: data[i], name});
+        data[i].rename(name);
       });
 
       return data;

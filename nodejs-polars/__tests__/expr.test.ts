@@ -1,14 +1,30 @@
-import {df} from "./setup";
 import pl, {col, lit} from "@polars/index";
+const df = () => {
+  const df = pl.DataFrame(
+    {
+      "bools": [false, true, false],
+      "bools_nulls": [null, true, false],
+      "int": [1, 2, 3],
+      "int_nulls": [1, null, 3],
+      "bigint": [1n, 2n, 3n],
+      "bigint_nulls": [1n, null, 3n],
+      "floats": [1.0, 2.0, 3.0],
+      "floats_nulls": [1.0, null, 3.0],
+      "strings": ["foo", "bar", "ham"],
+      "strings_nulls": ["foo", null, "ham"],
+      "date": [new Date(), new Date(), new Date()],
+      "datetime": [13241324, 12341256, 12341234],
+    });
 
-describe.only("expr", () => {
-  test.only("to/fromBinary round trip", () => {
-    const expr = pl.col("foo").sum();
-    const buf = expr.toBinary();
+  return df.withColumns(
 
-    const actual = pl.Expr.fromBinary(buf);
-    expect(actual.toString()).toStrictEqual(expr.toString());
-  });
+    pl.col("date").cast(pl.Date),
+    pl.col("datetime").cast(pl.Datetime),
+    pl.col("strings").cast(pl.Categorical)
+      .alias("cat")
+  );
+};
+describe("expr", () => {
 
   test("abs", () => {
     const expected = pl.Series("abs", [1, 2, 3]);
@@ -1258,7 +1274,7 @@ describe("expr.str", () => {
     expect(actual).toFrameEqual(expected);
     expect(seriesActual).toFrameEqual(expected);
   });
-  test("strftime", () => {
+  test("strptime", () => {
     const df = pl.DataFrame({
       "timestamp": [
         "2020-01-01T01:22:00.002+00:00",
@@ -1281,11 +1297,11 @@ describe("expr.str", () => {
 
     const datetimeSeries = df.getColumn("timestamp")
       .str
-      .strftime(pl.Datetime, "%FT%T%.3f%:z")
+      .strptime(pl.Datetime, "%FT%T%.3f%:z")
       .rename("datetime");
     const dateSeries = df.getColumn("timestamp")
       .str
-      .strftime(pl.Date, "%FT%T%.3f%:z")
+      .strptime(pl.Date, "%FT%T%.3f%:z")
       .rename("date");
 
     const actualFromSeries = pl.DataFrame([datetimeSeries, dateSeries]);
@@ -1293,11 +1309,11 @@ describe("expr.str", () => {
     const actual = df.select(
       col("timestamp")
         .str
-        .strftime(pl.Datetime, "%FT%T%.3f%:z")
+        .strptime(pl.Datetime, "%FT%T%.3f%:z")
         .as("datetime"),
       col("timestamp")
         .str
-        .strftime(pl.Date, "%FT%T%.3f%:z")
+        .strptime(pl.Date, "%FT%T%.3f%:z")
         .as("date")
     );
 
@@ -2066,8 +2082,7 @@ describe("arithmetic", () => {
 describe("Round<T>", () => {
 
   test("ceil", () => {
-    const df = pl.Series
-      .from([1.1, 2.2])
+    const df = pl.Series("foo", [1.1, 2.2])
       .as("ceil")
       .toFrame();
 
@@ -2106,8 +2121,7 @@ describe("Round<T>", () => {
     expect(seriesActual).toEqual(expected);
   });
   test("floor", () => {
-    const df = pl.Series
-      .from([1.1, 2.2])
+    const df = pl.Series("foo", [1.1, 2.2])
       .as("floor")
       .toFrame();
 
