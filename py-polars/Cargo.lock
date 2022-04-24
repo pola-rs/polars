@@ -1166,6 +1166,7 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-lazy",
+ "polars-ops",
  "polars-time",
 ]
 
@@ -1251,6 +1252,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-ops"
+version = "0.20.0"
+dependencies = [
+ "polars-core",
+]
+
+[[package]]
 name = "polars-time"
 version = "0.20.0"
 dependencies = [
@@ -1285,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.13.24"
+version = "0.13.25"
 dependencies = [
  "ahash",
  "bincode",

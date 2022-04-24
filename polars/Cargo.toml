@@ -21,7 +21,6 @@ default = [
   "zip_with",
   "csv-file",
   "temporal",
-  "performant",
   "fmt",
   "dtype-slim",
 ]
@@ -52,9 +51,8 @@ avro = ["polars-io", "polars-io/avro"]
 # support for arrows csv file parsing
 csv-file = ["polars-io", "polars-io/csv-file", "polars-lazy/csv-file"]
 
-# ~40% faster chunkedarray creation, but may lead to unexpected panic if iterator incorrectly sets a size_hint
-# that fits a TrustedLen iterator.
-performant = ["polars-core/performant"]
+# slower builds
+performant = ["polars-core/performant", "chunked_ids"]
 
 # Dataframe formatting.
 fmt = ["polars-core/fmt"]
@@ -107,6 +105,8 @@ log = ["polars-core/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
 semi_anti_join = ["polars-core/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
+chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
+to_dummies = ["polars-ops/to_dummies"]
 
 test = [
   "lazy",
@@ -150,21 +150,38 @@ dtype-slim = [
 ]
 
 # opt-in datatypes for Series
-dtype-date = ["polars-core/dtype-date", "polars-lazy/dtype-date", "polars-io/dtype-date", "polars-time/dtype-date"]
+dtype-date = [
+  "polars-core/dtype-date",
+  "polars-lazy/dtype-date",
+  "polars-io/dtype-date",
+  "polars-time/dtype-date",
+  "polars-core/dtype-date",
+]
 dtype-datetime = [
   "polars-core/dtype-datetime",
   "polars-lazy/dtype-datetime",
   "polars-io/dtype-datetime",
   "polars-time/dtype-datetime",
+  "polars-ops/dtype-datetime",
 ]
-dtype-duration = ["polars-core/dtype-duration", "polars-lazy/dtype-duration", "polars-time/dtype-duration"]
-dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time"]
+dtype-duration = [
+  "polars-core/dtype-duration",
+  "polars-lazy/dtype-duration",
+  "polars-time/dtype-duration",
+  "polars-core/dtype-duration",
+]
+dtype-time = ["polars-core/dtype-time", "polars-io/dtype-time", "polars-time/dtype-time", "polars-ops/dtype-time"]
 dtype-i8 = ["polars-core/dtype-i8", "polars-lazy/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16", "polars-lazy/dtype-i16"]
-dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8"]
+dtype-u8 = ["polars-core/dtype-u8", "polars-lazy/dtype-u8", "polars-ops/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16", "polars-lazy/dtype-u16"]
-dtype-categorical = ["polars-core/dtype-categorical", "polars-io/dtype-categorical", "polars-lazy/dtype-categorical"]
-dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct"]
+dtype-categorical = [
+  "polars-core/dtype-categorical",
+  "polars-io/dtype-categorical",
+  "polars-lazy/dtype-categorical",
+  "polars-ops/dtype-categorical",
+]
+dtype-struct = ["polars-core/dtype-struct", "polars-lazy/dtype-struct", "polars-ops/dtype-struct"]
 
 docs-selection = [
   "csv-file",
@@ -208,6 +225,7 @@ docs-selection = [
   "dot_diagram",
   "string_encoding",
   "product",
+  "to_dummies",
 ]
 
 bench = [
@@ -218,6 +236,7 @@ bench = [
 polars-core = { version = "0.20.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
 polars-io = { version = "0.20.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }
 polars-lazy = { version = "0.20.0", path = "./polars-lazy", features = ["private"], default-features = false, optional = true }
+polars-ops = { version = "0.20.0", path = "./polars-ops" }
 polars-time = { version = "0.20.0", path = "./polars-time", default-features = false, optional = true }
 
 [dev-dependencies]

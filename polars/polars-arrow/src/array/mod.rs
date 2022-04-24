@@ -7,7 +7,10 @@ use std::sync::Arc;
 use crate::utils::CustomIterTools;
 
 pub mod default_arrays;
+mod get;
 pub mod list;
+
+pub use get::ArrowGetItem;
 
 pub trait ValueSize {
     /// Useful for a Utf8 or a List to get underlying value size.

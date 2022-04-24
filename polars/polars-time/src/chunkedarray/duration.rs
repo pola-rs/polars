@@ -13,14 +13,17 @@ pub trait DurationMethods {
     /// Extract the days from a `Duration`
     fn days(&self) -> Int64Chunked;
 
+    /// Extract the minutes from a `Duration`
+    fn minutes(&self) -> Int64Chunked;
+
+    /// Extract the seconds from a `Duration`
+    fn seconds(&self) -> Int64Chunked;
+
     /// Extract the milliseconds from a `Duration`
     fn milliseconds(&self) -> Int64Chunked;
 
     /// Extract the nanoseconds from a `Duration`
     fn nanoseconds(&self) -> Int64Chunked;
-
-    /// Extract the seconds from a `Duration`
-    fn seconds(&self) -> Int64Chunked;
 }
 
 impl DurationMethods for DurationChunked {
@@ -42,6 +45,24 @@ impl DurationMethods for DurationChunked {
         }
     }
 
+    /// Extract the seconds from a `Duration`
+    fn minutes(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 / (MILLISECONDS * 60),
+            TimeUnit::Microseconds => &self.0 / (MICROSECONDS * 60),
+            TimeUnit::Nanoseconds => &self.0 / (NANOSECONDS * 60),
+        }
+    }
+
+    /// Extract the seconds from a `Duration`
+    fn seconds(&self) -> Int64Chunked {
+        match self.time_unit() {
+            TimeUnit::Milliseconds => &self.0 / MILLISECONDS,
+            TimeUnit::Microseconds => &self.0 / MICROSECONDS,
+            TimeUnit::Nanoseconds => &self.0 / NANOSECONDS,
+        }
+    }
+
     /// Extract the milliseconds from a `Duration`
     fn milliseconds(&self) -> Int64Chunked {
         match self.time_unit() {
@@ -57,15 +78,6 @@ impl DurationMethods for DurationChunked {
             TimeUnit::Milliseconds => &self.0 * NANOSECONDS_IN_MILLISECOND,
             TimeUnit::Microseconds => &self.0 * 1000,
             TimeUnit::Nanoseconds => self.0.clone(),
-        }
-    }
-
-    /// Extract the seconds from a `Duration`
-    fn seconds(&self) -> Int64Chunked {
-        match self.time_unit() {
-            TimeUnit::Milliseconds => &self.0 / MILLISECONDS,
-            TimeUnit::Microseconds => &self.0 / MICROSECONDS,
-            TimeUnit::Nanoseconds => &self.0 / NANOSECONDS,
         }
     }
 }
