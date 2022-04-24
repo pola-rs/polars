@@ -1,4 +1,4 @@
-import {DataType, NullValues} from "./datatypes";
+import {DataType} from "./datatypes";
 import pli from "./internals/polars_internal";
 import {DataFrame, _DataFrame} from "./dataframe";
 import {isPath} from "./utils";
@@ -79,15 +79,15 @@ function readCSVBuffer(buff, options) {
   return _DataFrame(pli.readCsv(buff, {...readCsvDefaultOptions, ...options}));
 }
 
-export function fromRecords(records: Record<string, any>, options?: {schema: Record<string, DataType>});
-export function fromRecords(records: Record<string, any>, options?: {inferSchemaLength?: number});
-export function fromRecords(records: Record<string, any>, options) {
-  const threadsafeLookup = (idx) => {
+export function readRecords(records: Record<string, any>[], options?: {schema: Record<string, DataType>}): DataFrame;
+export function readRecords(records: Record<string, any>[], options?: {inferSchemaLength?: number}): DataFrame;
+export function readRecords(records: Record<string, any>[], options): DataFrame {
 
-    return records[idx];
-  };
-
-  // return pli.df.read_rows_par(threadsafeLookup, records.length);
+  if(options?.schema) {
+    return _DataFrame(pli.fromRows(records, options.schema)).select(options.schema);
+  } else {
+    return _DataFrame(pli.fromRows(records, undefined, options.inferSchemaLength));
+  }
 }
 
 /**

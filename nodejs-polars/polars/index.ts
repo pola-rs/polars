@@ -4,9 +4,8 @@ import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
 import * as cfg from "./cfg";
-import {version as _version} from "../package.json";
+import pli from "./internals/polars_internal";
 
-// import type { FillNullStrategy as _FillNullStrategy } from "./utils";
 import  {
   funcs as lazy,
   Expr as lazyExpr,
@@ -23,8 +22,7 @@ namespace pl {
   export type When = _when.When;
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
-  // export type FillNullStrategy = _FillNullStrategy;
-  // export import Config = cfg.Config;
+  export import Config = cfg.Config;
   export import Int8 = DataType.Int8
   export import Int16 = DataType.Int16
   export import Int32 =  DataType.Int32;
@@ -47,11 +45,11 @@ namespace pl {
   export import concat =  func.concat;
 
   // // IO
-  export import fromRecords = io.fromRecords;
   export import scanCSV = io.scanCSV;
   export import scanIPC = io.scanIPC;
   export import scanParquet = io.scanParquet;
 
+  export import readRecords = io.readRecords;
   export import readCSV = io.readCSV;
   export import readIPC = io.readIPC;
   export import readJSON = io.readJSON;
@@ -88,7 +86,7 @@ namespace pl {
   export import tail = lazy.tail
   export import list = lazy.list
   export import when = _when.when;
-  export const version = _version;
+  export const version = pli.version();
 }
 
 export = pl;

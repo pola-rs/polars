@@ -1781,9 +1781,9 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
     toCSV(...args) {
       return this.writeCSV(...args);
     },
-    writeCSV(dest?, options?) {
+    writeCSV(dest?, options={}) {
       options = { hasHeader:true, sep: ",", ...options};
-      if(typeof dest === "function" || typeof dest === "string") {
+      if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeCsv(dest, options) as any;
       }
       let buffers: Buffer[] = [];
@@ -1806,7 +1806,7 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
       return _df.toJson();
     },
     writeJSON(dest?, options={format:"lines"}) {
-      if(typeof dest === "function" || typeof dest === "string") {
+      if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeJson(dest, options) as any;
       }
       let buffers: Buffer[] = [];
@@ -1827,7 +1827,7 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
       return this.writeParquet(dest, options);
     },
     writeParquet(dest?, options = {compression: "uncompressed"}) {
-      if(typeof dest === "function" || typeof dest === "string") {
+      if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeParquet(dest, options.compression) as any;
       }
       let buffers: Buffer[] = [];
@@ -1845,7 +1845,7 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
 
     },
     writeAvro(dest?, options = {compression: "uncompressed"}) {
-      if(typeof dest === "function" || typeof dest === "string") {
+      if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeAvro(dest, options.compression) as any;
       }
       let buffers: Buffer[] = [];
@@ -1866,7 +1866,7 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
       return this.writeIPC(dest, options);
     },
     writeIPC(dest?, options = {compression: "uncompressed"}) {
-      if(typeof dest === "function" || typeof dest === "string") {
+      if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeIpc(dest, options.compression) as any;
       }
       let buffers: Buffer[] = [];
