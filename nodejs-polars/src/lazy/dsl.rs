@@ -1111,7 +1111,12 @@ impl JsExpr {
   }
   #[napi]
   pub fn lst_eval(&self, expr: &JsExpr, parallel: bool) -> JsExpr {
-    self.inner.clone().arr().eval(expr.inner.clone(), parallel).into()
+    self
+      .inner
+      .clone()
+      .arr()
+      .eval(expr.inner.clone(), parallel)
+      .into()
   }
 
   #[napi]

@@ -15,17 +15,15 @@ crate-type = ["cdylib"]
 [dependencies]
 ahash = "0.7"
 bincode = "1.3"
-
 napi = { version = "2.2.0", default-features = false, features = ["napi8", "serde-json", "experimental"] }
 napi-derive = "2.2.0"
 polars-core = { path = "../polars/polars-core", default-features = false }
 thiserror = "1.0.20"
 serde_json = { version = "1" }
 
-
 [dependencies.polars]
 features = [
-  "json", 
+  "json",
   "dynamic_groupby",
   "zip_with",
   "simd",
