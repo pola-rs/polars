@@ -70,15 +70,16 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
-  "series_from_anyvalue",
   "unique_counts",
   "log",
   "serde-lazy",
   "partition_by",
   "semi_anti_join",
   "parquet",
+  "to_dummies",
   "ipc",
-  "avro"
+  "avro",
+  "list_eval",
 ]
 path = "../polars"
 

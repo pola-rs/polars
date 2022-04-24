@@ -27,6 +27,9 @@ export const SeriesListFunctions = (_s): ListFunctions<Series> => {
     get(index: number) {
       return wrap("get", index);
     },
+    eval(expr, parallel) {
+      return wrap("eval", expr, parallel);
+    },
     first() {
       return wrap("get", 0);
     },

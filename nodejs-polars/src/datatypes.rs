@@ -276,9 +276,16 @@ impl<'a> ToNapiValue for Wrap<AnyValue<'a>> {
       AnyValue::Duration(v, _) => i64::to_napi_value(env, v),
       AnyValue::Time(v) => i64::to_napi_value(env, v),
       AnyValue::List(ser) => Wrap::<&Series>::to_napi_value(env, Wrap(&ser)),
-      AnyValue::Struct(vals) => {
-        let vals = std::mem::transmute::<_, Vec<Wrap<AnyValue>>>(vals);
-        Vec::<Wrap<AnyValue>>::to_napi_value(env, vals)
+      AnyValue::Struct(vals, flds) => {
+        let env_obj = Env::from_raw(env);
+        let mut obj = env_obj.create_object()?;
+
+        for (val, fld) in vals.iter().zip(flds) {
+          let key = fld.name();
+
+          obj.set(key, Wrap(val.clone()))?;
+        }
+        Object::to_napi_value(env, obj)
       }
       _ => todo!(), // Value::Object(obj) => unsafe { Map::to_napi_value(env, obj) },
     }

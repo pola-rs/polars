@@ -19,6 +19,9 @@ export const ExprListFunctions = (_expr: any): ExprList => {
     get(index: number) {
       return wrap("lstGet", index);
     },
+    eval(expr, parallel) {
+      return wrap("lstEval", expr, parallel);
+    },
     first() {
       return wrap("lstGet", 0);
     },

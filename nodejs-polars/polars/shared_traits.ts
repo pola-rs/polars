@@ -1,3 +1,5 @@
+import {Expr} from "./lazy/expr";
+
 export type RollingOptions = {
   windowSize: number,
   weights?: Array<number>,
@@ -332,6 +334,36 @@ export interface ListFunctions<T> {
    * if an index is out of bounds, it will return a `null`.
    */
   get(index: number): T
+  /**
+      Run any polars expression against the lists' elements
+      Parameters
+      ----------
+      @param expr
+          Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+      @param parallel
+          Run all expression parallel. Don't activate this blindly.
+          Parallelism is worth it if there is enough work to do per thread.
+          This likely should not be use in the groupby context, because we already parallel execution per group
+      @example
+      --------
+      >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+      >>> df.withColumn(
+      ...   pl.concatList(["a", "b"]).lst.eval(pl.first().rank()).alias("rank")
+      ... )
+      shape: (3, 3)
+      ┌─────┬─────┬────────────┐
+      │ a   ┆ b   ┆ rank       │
+      │ --- ┆ --- ┆ ---        │
+      │ i64 ┆ i64 ┆ list [f32] │
+      ╞═════╪═════╪════════════╡
+      │ 1   ┆ 4   ┆ [1.0, 2.0] │
+      ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+      │ 8   ┆ 5   ┆ [2.0, 1.0] │
+      ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+      │ 3   ┆ 2   ┆ [2.0, 1.0] │
+      └─────┴─────┴────────────┘
+   */
+  eval(expr: Expr, parallel: boolean): T
   /** Get the first value of the sublists. */
   first(): T
   /**

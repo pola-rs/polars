@@ -575,32 +575,32 @@ impl JsSeries {
   }
   #[napi]
   pub fn eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.equal(&rhs.series).into_series()))
+    Ok(Self::new(self.series.equal(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
   pub fn neq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.not_equal(&rhs.series).into_series()))
+    Ok(Self::new(self.series.not_equal(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
   pub fn gt(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.gt(&rhs.series).into_series()))
+    Ok(Self::new(self.series.gt(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
   pub fn gt_eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.gt_eq(&rhs.series).into_series()))
+    Ok(Self::new(self.series.gt_eq(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
   pub fn lt(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.lt(&rhs.series).into_series()))
+    Ok(Self::new(self.series.lt(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
   pub fn lt_eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
-    Ok(Self::new(self.series.lt_eq(&rhs.series).into_series()))
+    Ok(Self::new(self.series.lt_eq(&rhs.series).map_err(JsPolarsErr::from)?.into_series()))
   }
 
   #[napi]
@@ -1445,7 +1445,7 @@ macro_rules! impl_eq_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.equal(rhs).into_series()))
+      Ok(JsSeries::new(s.series.equal(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }
@@ -1467,7 +1467,7 @@ macro_rules! impl_neq_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.not_equal(rhs).into_series()))
+      Ok(JsSeries::new(s.series.not_equal(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }
@@ -1488,7 +1488,7 @@ macro_rules! impl_gt_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.gt(rhs).into_series()))
+      Ok(JsSeries::new(s.series.gt(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }
@@ -1509,7 +1509,7 @@ macro_rules! impl_gt_eq_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.gt_eq(rhs).into_series()))
+      Ok(JsSeries::new(s.series.gt_eq(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }
@@ -1530,7 +1530,7 @@ macro_rules! impl_lt_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.lt(rhs).into_series()))
+      Ok(JsSeries::new(s.series.lt(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }
@@ -1551,7 +1551,7 @@ macro_rules! impl_lt_eq_num {
     #[napi]
     pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
       let rhs: $type = rhs.try_into()?;
-      Ok(JsSeries::new(s.series.lt_eq(rhs).into_series()))
+      Ok(JsSeries::new(s.series.lt_eq(rhs).map_err(JsPolarsErr::from)?.into_series()))
     }
   };
 }

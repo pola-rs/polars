@@ -1545,7 +1545,7 @@ export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
 
     },
     frameEqual(other, nullEqual=true) {
-      return unwrap("frameEqual", other.inner(), nullEqual);
+      return unwrap("frameEqual", other._df, nullEqual);
     },
     getColumn(name) {
       return _Series(_df.column(name)) as any;

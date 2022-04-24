@@ -1109,6 +1109,10 @@ impl JsExpr {
       .slice(offset, length as usize)
       .into()
   }
+  #[napi]
+  pub fn lst_eval(&self, expr: &JsExpr, parallel: bool) -> JsExpr {
+    self.inner.clone().arr().eval(expr.inner.clone(), parallel).into()
+  }
 
   #[napi]
   pub fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> JsExpr {

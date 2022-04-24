@@ -502,7 +502,6 @@ export function readJSONStream(stream, options=readJsonDefaultOptions) {
       .pipe(new LineBatcher({batchSize: options.batchSize}))
       .on("data", (chunk) => {
         try {
-          console.log(chunk, options);
           const df = _DataFrame(pli.readJson(chunk, options));
           chunks.push(df);
         } catch (err) {
