@@ -951,6 +951,17 @@ class Series:
         where `pk` are discrete probabilities.
 
         This routine will normalize pk if they don’t sum to 1.
+
+        Examples
+        --------
+
+        >>> a = pl.Series([0.99, 0.005, 0.005])
+        >>> a.entropy()
+        0.06293300616044681
+        >>> b = pl.Series([0.65, 0.10, 0.25])
+        >>> b.entropy()
+        0.8568409950394724
+
         """
         return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
@@ -4022,6 +4033,19 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "123ABC"
+                "abc456"
+        ]
+
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
