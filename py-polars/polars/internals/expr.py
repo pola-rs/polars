@@ -3944,6 +3944,23 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
+        >>> df.with_column(pl.col("text").str.replace(r"abc\b", "ABC"))
+        shape: (2, 2)
+        ┌─────┬────────┐
+        │ id  ┆ text   │
+        │ --- ┆ ---    │
+        │ i64 ┆ str    │
+        ╞═════╪════════╡
+        │ 1   ┆ 123ABC │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ abc456 │
+        └─────┴────────┘
+
         """
         return wrap_expr(self._pyexpr.str_replace(pattern, value))
 
