@@ -91,10 +91,7 @@ jobs:
               rustup target add aarch64-unknown-linux-musl &&
               yarn build --target aarch64-unknown-linux-musl &&
               /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node
-          - host: windows-latest
-            architecture: x64
-            target: aarch64-pc-windows-msvc
-            build: yarn build --target aarch64-pc-windows-msvc
+
     name: stable - ${{ matrix.settings.target }} - node@16
     runs-on: ${{ matrix.settings.host }}
     steps:
@@ -104,17 +101,17 @@ jobs:
         if: ${{ !matrix.settings.docker }}
         with:
           node-version: 16
-          check-latest: true
           cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
           architecture: ${{ matrix.settings.architecture }}
       - name: Install
         uses: actions-rs/toolchain@v1
         if: ${{ !matrix.settings.docker }}
         with:
-          profile: minimal
           override: true
-          toolchain: stable
           target: ${{ matrix.settings.target }}
+      - name: Copy rust-toolchain to root
+        run: cp rust-toolchain ..
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
         if: ${{ !matrix.settings.docker }}
@@ -130,11 +127,7 @@ jobs:
         with:
           path: ~/.cargo/git
           key: ${{ matrix.settings.target }}-cargo-index
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: node_modules
-          key: npm-cache-build-${{ matrix.settings.target }}-node@16
+
       - name: Setup toolchain
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
@@ -156,7 +149,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: bindings-${{ matrix.settings.target }}
-          path: ${{ env.APP_NAME }}.*.node
+          path: nodejs-polars/polars/*.node
           if-no-files-found: error
   test-macOS-windows-binding:
     defaults:
@@ -181,12 +174,13 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
+
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -220,12 +214,13 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
+
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -259,12 +254,13 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.node }}
-          check-latest: true
           cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
+
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-x86_64-unknown-linux-musl-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -306,7 +302,7 @@ jobs:
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-linux-aarch64-gnu-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --ignore-platform --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -341,7 +337,7 @@ jobs:
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-linux-aarch64-musl-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --ignore-platform --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -382,7 +378,7 @@ jobs:
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-test-linux-arm-gnueabihf-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
         run: yarn install --ignore-scripts --ignore-platform --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
@@ -414,12 +410,12 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 16
-          check-latest: true
           cache: yarn
+          cache-dependency-path: nodejs-polars/yarn.lock
       - name: Cache NPM dependencies
         uses: actions/cache@v2
         with:
-          path: node_modules
+          path: nodejs-polars/node_modules
           key: npm-cache-ubuntu-latest-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             npm-cache-
