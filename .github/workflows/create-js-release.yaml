@@ -89,7 +89,7 @@ jobs:
           - host: ubuntu-latest
             architecture: x64
             target: aarch64-unknown-linux-musl
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust@834111059c6b4fbb74c16a1256b59090fd90d3de7ca6b2134cffe3929d904ed6
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust@sha256:834111059c6b4fbb74c16a1256b59090fd90d3de7ca6b2134cffe3929d904ed6
             build: |-
               rustup toolchain install $(cat ./rust-toolchain)
               rustup target add aarch64-unknown-linux-musl
