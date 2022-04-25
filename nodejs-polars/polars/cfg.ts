@@ -1,4 +1,4 @@
-import pli from "../index";
+import pli from "./native-polars";
 export interface Config {
   /** Use utf8 characters to print tables */
   setUtf8Tables(): Config

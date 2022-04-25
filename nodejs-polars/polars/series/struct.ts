@@ -11,7 +11,7 @@ export interface SeriesStructFunctions {
 }
 
 
-export const SeriesStructFunctions = (_s: pli.JsSeries): SeriesStructFunctions => {
+export const SeriesStructFunctions = (_s: any): SeriesStructFunctions => {
   return {
     get fields() {
       return _s.structFields();

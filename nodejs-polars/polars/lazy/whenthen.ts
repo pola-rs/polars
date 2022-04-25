@@ -23,7 +23,7 @@ export interface WhenThenThen {
   otherwise(expr: Expr): Expr
 }
 
-function WhenThenThen(_whenthenthen: pli.WhenThenThen): WhenThenThen {
+function WhenThenThen(_whenthenthen: any): WhenThenThen {
   return {
     when: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthenthen.when(_expr)),
     then: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthenthen.then(_expr)),
@@ -31,7 +31,7 @@ function WhenThenThen(_whenthenthen: pli.WhenThenThen): WhenThenThen {
   };
 }
 
-function WhenThen(_whenthen: pli.WhenThen): WhenThen {
+function WhenThen(_whenthen: any): WhenThen {
   return {
     when: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthen.when(_expr)),
     otherwise: ({_expr}: Expr): Expr => (Expr as any)(_whenthen.otherwise(_expr))
@@ -43,7 +43,7 @@ function WhenThen(_whenthen: pli.WhenThen): WhenThen {
  * Utility function.
  * @see {@link when}
  */
-function When(_when: pli.When): When {
+function When(_when: any): When {
   return {
     then: ({_expr}: Expr): WhenThen => WhenThen(_when.then(_expr))
   };

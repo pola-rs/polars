@@ -237,7 +237,7 @@ interface WriteMethods {
  */
 export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods {
   /** @ignore */
-  _df: pli.JsDataFrame
+  _df: any
   dtypes: DataType[]
   height: number
   shape: {height: number, width: number}
@@ -1387,8 +1387,8 @@ function map(df: DataFrame, fn: (...args: any[]) => any[]) {
 /**
  * @ignore
  */
-export const _DataFrame = (_df: pli.JsDataFrame): DataFrame => {
-  const unwrap = (method: keyof pli.JsDataFrame, ...args: any[]) => {
+export const _DataFrame = (_df: any): DataFrame => {
+  const unwrap = (method: string, ...args: any[]) => {
     return _df[method as any](...args);
   };
   const wrap = (method, ...args): DataFrame => {

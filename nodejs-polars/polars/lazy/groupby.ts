@@ -1,6 +1,5 @@
 import {Expr} from "./expr";
 import {selectionToExprList} from "../utils";
-import pli from "../internals/polars_internal";
 import {_LazyDataFrame, LazyDataFrame} from "./dataframe";
 
 export interface LazyGroupBy {
@@ -10,7 +9,7 @@ export interface LazyGroupBy {
 }
 
 
-export const LazyGroupBy = (_lgb: pli.JsLazyGroupBy): LazyGroupBy => {
+export const LazyGroupBy = (_lgb: any): LazyGroupBy => {
   return {
     agg(...aggs: Expr[])  {
       const agg  = selectionToExprList(aggs.flat(), false);

@@ -7,7 +7,7 @@ import {Readable, Stream} from "stream";
 import {concat} from "./functions";
 
 
-const readCsvDefaultOptions: pli.ReadCsvOptions = {
+const readCsvDefaultOptions = {
   inferSchemaLength: 100,
   hasHeader: true,
   ignoreErrors: true,
@@ -21,7 +21,7 @@ const readCsvDefaultOptions: pli.ReadCsvOptions = {
   skipRowsAfterHeader: 0
 };
 
-const readJsonDefaultOptions: pli.ReadJsonOptions = {
+const readJsonDefaultOptions = {
   batchSize: 10000,
   inferSchemaLength: 50,
   format: "lines"
@@ -124,7 +124,7 @@ export function readRecords(records: Record<string, any>[], options): DataFrame 
    * @param options.parseDates -Whether to attempt to parse dates or not
    * @returns DataFrame
    */
-export function readCSV(pathOrBody: string | Buffer, options?: Partial<pli.ReadCsvOptions>): DataFrame;
+export function readCSV(pathOrBody: string | Buffer, options?: any): DataFrame;
 export function readCSV(pathOrBody, options?) {
   const extensions = [".tsv", ".csv"];
 
@@ -190,7 +190,7 @@ const scanCsvDefaultOptions = {
    * ___
    *
    */
-export function scanCSV(path: string, options?: Partial<pli.ScanCsvOptions>): LazyDataFrame
+export function scanCSV(path: string, options?: any): LazyDataFrame
 export function scanCSV(path, options?) {
   options = {...scanCsvDefaultOptions, ...options};
 
@@ -229,7 +229,7 @@ export function scanCSV(path, options?) {
    * ╰─────┴─────┴─────╯
    * ```
    */
-export function readJSON(pathOrBody: string | Buffer, options?: pli.ReadJsonOptions): DataFrame
+export function readJSON(pathOrBody: string | Buffer, options?: any): DataFrame
 export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
   options = {...readJsonDefaultOptions, ...options};
   const extensions = [".ndjson", ".json", ".jsonl"];
@@ -260,7 +260,7 @@ export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
    * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
    * @param options.rowCount Add row count as column
    */
-export function readParquet(pathOrBody: string | Buffer, options?: pli.ReadParquetOptions): DataFrame
+export function readParquet(pathOrBody: string | Buffer, options?: any): DataFrame
 export function readParquet(pathOrBody, options = {}) {
   if (Buffer.isBuffer(pathOrBody)) {
     return _DataFrame(pli.readParquet(pathOrBody, options));
@@ -287,7 +287,7 @@ export function readParquet(pathOrBody, options = {}) {
  * @param options.projection -Indices of columns to select. Note that column indices start at zero.
  * @param options.nRows  Stop reading from avro file after reading ``n_rows``.
  */
-export function readAvro(pathOrBody: string | Buffer, options?: pli.ReadAvroOptions): DataFrame
+export function readAvro(pathOrBody: string | Buffer, options?: any): DataFrame
 export function readAvro(pathOrBody, options = {}) {
   if (Buffer.isBuffer(pathOrBody)) {
     return _DataFrame(pli.readAvro(pathOrBody, options));
@@ -316,7 +316,7 @@ export function readAvro(pathOrBody, options = {}) {
    * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
    * @param options.rechunk In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
    */
-export function scanParquet(path: string, options?: pli.ScanParquetOptions): LazyDataFrame
+export function scanParquet(path: string, options?: any): LazyDataFrame
 export function scanParquet(path, options = {}) {
   return _LazyDataFrame(pli.scanParquet(path, options));
 }
@@ -330,7 +330,7 @@ export function scanParquet(path, options = {}) {
    * @param options.columns Columns to select. Accepts a list of column names.
    * @param options.numRows Stop reading from parquet file after reading ``n_rows``.
    */
-export function readIPC(pathOrBody: string | Buffer, options?: pli.ReadIpcOptions): DataFrame
+export function readIPC(pathOrBody: string | Buffer, options?: any): DataFrame
 export function readIPC(pathOrBody, options = {}) {
   if (Buffer.isBuffer(pathOrBody)) {
     return _DataFrame(pli.readIpc(pathOrBody, options));
@@ -356,7 +356,7 @@ export function readIPC(pathOrBody, options = {}) {
    * @param options.cache Cache the result after reading.
    * @param options.rechunk Reallocate to contiguous memory when all chunks/ files are parsed.
    */
-export function scanIPC(path: string, options?: pli.ScanIpcOptions): LazyDataFrame
+export function scanIPC(path: string, options?: any): LazyDataFrame
 export function scanIPC(path, options = {}) {
 
   return _LazyDataFrame(pli.scanIpc(path, options));
@@ -427,7 +427,7 @@ export function scanIPC(path, options = {}) {
    * └─────┴─────┘
    * ```
    */
-export function readCSVStream(stream: Readable, options?: Partial<pli.ReadCsvOptions>): Promise<DataFrame>
+export function readCSVStream(stream: Readable, options?: any): Promise<DataFrame>
 export function readCSVStream(stream, options?) {
   let batchSize = options?.batchSize ?? 10000;
   let count = 0;
@@ -491,7 +491,7 @@ export function readCSVStream(stream, options?) {
    * └─────┴─────┘
    * ```
    */
-export function readJSONStream(stream: Readable, options?: pli.ReadJsonOptions): Promise<DataFrame>
+export function readJSONStream(stream: Readable, options?: any): Promise<DataFrame>
 export function readJSONStream(stream, options=readJsonDefaultOptions) {
   options = {...readJsonDefaultOptions, ...options};
 

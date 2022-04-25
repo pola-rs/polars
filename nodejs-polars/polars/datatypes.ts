@@ -138,7 +138,6 @@ const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, any> = {
   Categorical(name, values, strict?) {
     return (pli.JsSeries.newOptStr as any)(name, values, strict);
   },
-  // Object: pli.JsSeries.new_object,
   List(name, values, _strict, dtype) {
     return pli.JsSeries.newList(name, values, dtype);
   },

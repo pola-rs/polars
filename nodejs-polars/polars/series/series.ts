@@ -20,7 +20,7 @@ export interface Series extends
   Cumulative<Series>,
   Round<Series>,
   Sample<Series> {
-  inner(): pli.JsSeries
+  inner(): any
   name: string
   dtype: DataType
   str: StringFunctions
@@ -1004,8 +1004,8 @@ export interface RollingOptions {
   minPeriods: number
   center: boolean
 }
-export function _Series(_s: pli.JsSeries): Series {
-  const unwrap = (method: keyof pli.JsSeries, ...args: any[]) => {
+export function _Series(_s: any): Series {
+  const unwrap = (method: keyof any, ...args: any[]) => {
     return _s[method as any](...args);
   };
   const wrap = (method, ...args): Series => {

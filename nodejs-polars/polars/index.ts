@@ -5,7 +5,6 @@ import * as func from "./functions";
 import * as io from "./io";
 import * as cfg from "./cfg";
 import pli from "./internals/polars_internal";
-
 import  {
   funcs as lazy,
   Expr as lazyExpr,

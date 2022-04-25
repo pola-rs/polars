@@ -170,7 +170,7 @@ export type PivotOps = Pick<GroupBy,
 > & {[inspect](): string}
 
 export function GroupBy(
-  df: pli.JsDataFrame,
+  df: any,
   by: string[],
   maintainOrder = false
 ) {
@@ -239,7 +239,7 @@ export function GroupBy(
 }
 
 function PivotOps(
-  df: pli.JsDataFrame,
+  df: any,
   by: string | string[],
   pivotCol: string,
   valueCol: string

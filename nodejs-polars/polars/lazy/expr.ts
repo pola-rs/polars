@@ -20,7 +20,7 @@ export interface Expr extends
   Sample<Expr>,
   Round<Expr> {
   /** @ignore */
-  _expr: pli.JsExpr;
+  _expr: any;
   get date(): expr.Datetime;
   get str(): expr.String;
   get lst(): expr.List;
@@ -204,7 +204,7 @@ export interface Expr extends
   /** Take the first n values.  */
   head(length?: number): Expr
   head({length}: {length: number}): Expr
-  inner(): pli.JsExpr
+  inner(): any
   /** Interpolate intermediate values. The interpolation method is linear. */
   interpolate(): Expr
   /** Get mask of duplicated values. */
@@ -512,9 +512,9 @@ export interface Expr extends
 }
 
 
-export const _Expr = (_expr: pli.JsExpr): Expr => {
+export const _Expr = (_expr: any): Expr => {
 
-  const unwrap = (method: keyof pli.JsExpr, ...args: any[]) => {
+  const unwrap = (method: string, ...args: any[]) => {
     return _expr[method as any](...args);
   };
   const wrap = (method, ...args): Expr => {

@@ -283,8 +283,8 @@ export interface LazyDataFrame {
 }
 
 
-export const _LazyDataFrame = (_ldf: pli.JsLazyFrame): LazyDataFrame => {
-  const unwrap = (method: keyof pli.JsLazyFrame, ...args: any[]) => {
+export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
+  const unwrap = (method: string, ...args: any[]) => {
     return _ldf[method as any](...args);
   };
   const wrap = (method, ...args): LazyDataFrame => {

@@ -7,7 +7,7 @@ export interface ExprStruct {
 }
 
 
-export const ExprStructFunctions = (_expr: pli.JsExpr): ExprStruct => {
+export const ExprStructFunctions = (_expr: any): ExprStruct => {
   return {
     field(name) {
       return _Expr(_expr.structFieldByName(name));

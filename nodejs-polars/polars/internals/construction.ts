@@ -136,7 +136,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   }
 
   dtype = dtype ?? jsTypeToPolarsType(firstValue);
-  let series: pli.JsSeries;
+  let series: any;
   if(dtype === DataType.Struct) {
     const df = pli.fromRows(values, null, 1);
 
@@ -169,7 +169,7 @@ export function arrayToJsDataFrame(data: any[], options?): any {
   let orient = options?.orient;
 
 
-  let dataSeries: pli.JsSeries[];
+  let dataSeries: any[];
 
   if(!data.length) {
     dataSeries = [];
@@ -219,7 +219,7 @@ export function arrayToJsDataFrame(data: any[], options?): any {
   return new pli.JsDataFrame(dataSeries);
 }
 
-function handleColumnsArg(data: pli.JsSeries[], columns?: string[]) {
+function handleColumnsArg(data: any[], columns?: string[]) {
   if(!columns) {
     return data;
   } else {

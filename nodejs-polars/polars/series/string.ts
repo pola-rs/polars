@@ -171,7 +171,7 @@ export interface StringFunctions {
   strptime(datatype: DataType.Datetime, fmt?: string): Series
 }
 
-export const StringFunctions = (_s: pli.JsSeries): StringFunctions => {
+export const StringFunctions = (_s: any): StringFunctions => {
   const wrap = (method, ...args): any => {
     const ret = _s[method](...args);
 
