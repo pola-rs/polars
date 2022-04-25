@@ -673,6 +673,7 @@ export class JsExpr {
   lstDiff(n: number, nullBehavior: Wrap): JsExpr
   lstShift(periods: number): JsExpr
   lstSlice(offset: number, length: number): JsExpr
+  lstEval(expr: JsExpr, parallel: boolean): JsExpr
   rank(method: Wrap, reverse: boolean): JsExpr
   diff(n: number, nullBehavior: Wrap): JsExpr
   pctChange(n: number): JsExpr
