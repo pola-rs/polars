@@ -104,14 +104,14 @@ jobs:
           cache: yarn
           cache-dependency-path: nodejs-polars/yarn.lock
           architecture: ${{ matrix.settings.architecture }}
+      - name: Copy rust-toolchain to root
+        run: cp rust-toolchain ..
       - name: Install
         uses: actions-rs/toolchain@v1
         if: ${{ !matrix.settings.docker }}
         with:
           override: true
           target: ${{ matrix.settings.target }}
-      - name: Copy rust-toolchain to root
-        run: cp rust-toolchain ..
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
         if: ${{ !matrix.settings.docker }}
