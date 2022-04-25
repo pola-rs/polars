@@ -55,14 +55,92 @@ jobs:
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
               yarn build --target aarch64-apple-darwin
               strip -x *.node
+
+name: nodejs-polars
+
+on:
+  push:
+     # Sequence of patterns matched against refs/tags
+    tags:
+      - 'nodejs-polars-v*' # Push events to matching nodejs-polars-v*, i.e. nodejs-polars-v1.0, nodejs-polars-v20.15.10
+jobs:
+  build-js:
+    defaults:
+      run:
+        working-directory: nodejs-polars
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          # MAC
+          ######
+
+          - host: macos-latest
+            target: 'x86_64-apple-darwin'
+            architecture: x64
+            build: |
+              yarn build
+              strip -x polars/*.node
+          - host: macos-latest
+            target: "aarch64-apple-darwin"
+            architecture: x64
+            build: |
+              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
+              export CC=$(xcrun -f clang);
+              export CXX=$(xcrun -f clang++);
+              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
+              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
+              yarn build --target aarch64-apple-darwin
+              strip -x polars/*.node
+            # Windows
+            ##########
+
+          - host: windows-latest
+            architecture: x64
+            target: "x86_64-pc-windows-msvc"
+            build: yarn build
+
+          - host: windows-latest
+            target: "i686-pc-windows-msvc"
+            architecture: x86
+            build: |
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
+              export CARGO_PROFILE_RELEASE_LTO=false
+              npm run build -- --target i686-pc-windows-msvc
+          # py & rust versions dont support this, so dropping it 
+          # - host: windows-latest
+          #   architecture: x64
+          #   target: "aarch64-pc-windows-msvc"
+          #   build: yarn build --target aarch64-pc-windows-msvc
+
+            # Linux
+            ########
+
           - host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            architecture: x64
+            docker: |
+              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust@sha256:e510d7fdb259bd9b7ce05aa961223dd6379c1a944f85c271b76561b7ab7565b2
+              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust@sha256:e510d7fdb259bd9b7ce05aa961223dd6379c1a944f85c271b76561b7ab7565b2 builder
+            build: |
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
+          - host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            architecture: x64
+            docker: |
+              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine builder
+            build: |
+              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
+          - host: ubuntu-latest
+            architecture: x64
             target: aarch64-unknown-linux-gnu
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine-zig
-            build: |-
-              set -e &&
-              rustup target add aarch64-unknown-linux-gnu &&
-              yarn build --target aarch64-unknown-linux-gnu --zig --zig-abi-suffix 2.17 &&
-              llvm-strip -x *.node
+            setup: |
+              sudo apt-get update
+              sudo apt-get install g++-aarch64-linux-gnu gcc-aarch64-linux-gnu -y
+            build: |
+              yarn build --target=aarch64-unknown-linux-gnu
+              aarch64-linux-gnu-strip polars/*.node
           - host: ubuntu-latest
             architecture: x64
             target: armv7-unknown-linux-gnueabihf
@@ -139,7 +217,7 @@ jobs:
         if: ${{ matrix.settings.docker }}
         with:
           image: ${{ matrix.settings.docker }}
-          options: '-v ${{ env.HOME }}/.cargo/git:/root/.cargo/git -v ${{ env.HOME }}/.cargo/registry:/root/.cargo/registry -v ${{ github.workspace }}/nodejs-polars:/build -w /build'
+          options: '-v ${{ env.HOME }}/.cargo/git:/root/.cargo/git -v ${{ env.HOME }}/.cargo/registry:/root/.cargo/registry -v ${{ github.workspace }}:/build -w /build/nodejs-polars'
           run: ${{ matrix.settings.build }}
       - name: Build
         run: ${{ matrix.settings.build }}
