@@ -1,0 +1,2 @@
+(()=>{var e={m:{},u:e=>e+".polars.js",o:(e,o)=>Object.prototype.hasOwnProperty.call(e,o),p:"/dist/"};e.b=document.baseURI||self.location.href,new Worker(new URL(e.p+e.u(318),e.b),{type:void 0}).postMessage("hello")})();
+//# sourceMappingURL=polars.js.map

@@ -1,33 +1,94 @@
 [package]
 name = "polars"
 version = "0.0.1"
-authors = ["Ritchie Vink"]
+authors = ["Cory Grinstead"]
 documentation = "https://pola-rs.github.io/polars-book/"
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/pola-rs/polars"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
-
+wasm-opt = false
 [lib]
 crate-type = ["cdylib"]
+
+[profile.release]
+lto = true
 
 [features]
 
 [dependencies]
-wasm-bindgen = "0.2.34"
-wee_alloc = { version = "0.4.5" }
+ahash = "0.7"
+console_error_panic_hook = "0.1.7"
+wasm-bindgen = { version = "0.2.79"}
+js-sys = "0.3.56"
+thiserror = "1.0.20"
+paste = "1.0.6"
+futures-channel = "0.3.21"
+wasm-bindgen-futures = "0.4.29"
+wasm-bindgen-rayon = { version = "1.0" }
+rayon = "1.5"
+spmc = "0.3.0"
 
-[dependencies.polars-core]
-path = "../polars/polars-core"
-default-features = false
+[dependencies.polars]
 features = [
-  "strings",
-  "temporal",
+  "abs",
+  "arange",
+  "cum_agg",
+  # "diagonal_concat",
+  "dataframe_arithmetic",
+  "diff",
+  "dot_diagram",
+  "dot_product",
+  "dtype-categorical",
+  "dtype-full",
+  # "extract_jsonpath",
+  # "horizontal_concat",
+  "interpolate",
+  "is_first",
+  "list",
+  "log",
+  "mode",
+  "moment",
+  "object",
+  "pct_change",
   "performant",
+  # "private",
+  # "fmt",
+  "product",
+  "rank",
+  "reinterpret",
+  # "rolling_window",
+  "round_series",
+  "row_hash",
+  # "rows",
+  # "temporal",
+  "string_encoding",
+  "strings",
+  "true_div",
+  "unique_counts",
+  "wasm"
+]
+default-features = false
+path =  "../polars"
+
+[dependencies.web-sys]
+version = "0.3.56"
+features = [
+  'console',
+  'CanvasRenderingContext2d',
+  'ErrorEvent',
+  'Event',
+  'ImageData',
+  'Navigator',
+  'Window',
+  'Worker',
+  'WorkerOptions',
+  'WorkerType',
+  'DedicatedWorkerGlobalScope',
+  'MessageEvent',
 ]
 
-[profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
+
+
 
 [workspace]

@@ -5,3 +5,12 @@ bin/
 pkg/
 node_modules/
 wasm-pack.log
+
+.yarn
+.pnp.*
+
+coverage/
+bin/
+.vscode
+*.node
+docs/
