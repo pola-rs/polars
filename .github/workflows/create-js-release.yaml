@@ -31,7 +31,7 @@ jobs:
             build: |
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
-              npm run build -- --target i686-pc-windows-msvc
+              yarn build --target i686-pc-windows-msvc
             target: i686-pc-windows-msvc
             architecture: x86
           - host: ubuntu-latest
@@ -43,6 +43,11 @@ jobs:
               rustup target add x86_64-unknown-linux-gnu &&
               yarn build --target x86_64-unknown-linux-gnu --zig --zig-abi-suffix 2.12 &&
               llvm-strip -x polars/*.node
+          # - host: ubuntu-latest
+          #   architecture: x64
+          #   target: x86_64-unknown-linux-musl
+          #   docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          #   build: set -e && yarn build && strip polars/*.node
           - host: macos-latest
             target: aarch64-apple-darwin
             build: |
@@ -81,7 +86,15 @@ jobs:
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
               yarn build --target aarch64-linux-android
               ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip polars/*.node
-
+          # - host: ubuntu-latest
+          #   architecture: x64
+          #   target: aarch64-unknown-linux-musl
+          #   docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          #   build: |-
+          #     rustup toolchain install $(cat ./rust-toolchain)
+          #     rustup target add aarch64-unknown-linux-musl
+          #     yarn build --target=aarch64-unknown-linux-musl
+          #     /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node
 
     name: ${{ matrix.settings.target }} - node@16
     runs-on: ${{ matrix.settings.host }}
@@ -123,8 +136,13 @@ jobs:
         run: ${{ matrix.settings.setup }}
         if: ${{ matrix.settings.setup }}
         shell: bash
-      - name: Install dependencies
-        run: yarn install 
+      - name: "Install dependencies"
+        run: yarn install
+        if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
+
+      - name: "Install dependencies"
+        run: npm install
+        if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
       - name: Build in docker
         uses: addnab/docker-run-action@v3
         if: ${{ matrix.settings.docker }}
@@ -173,13 +191,8 @@ jobs:
         with:
           path: nodejs-polars/node_modules
           key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
-      - name: "Install dependencies"
-        run: yarn install
-        if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
-
-      - name: "Install dependencies"
-        run: npm install
-        if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
+      - name: Install dependencies
+        run: yarn install 
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
@@ -230,46 +243,6 @@ jobs:
         shell: bash
       - name: Test bindings
         run: docker run --rm -v $(pwd):/build -w /build node:${{ matrix.node }}-slim yarn test
-  test-linux-x64-musl-binding:
-    defaults:
-      run:
-        working-directory: nodejs-polars
-    name: Test bindings on x86_64-unknown-linux-musl - node@${{ matrix.node }}
-    needs:
-      - build
-    strategy:
-      fail-fast: false
-      matrix:
-        node:
-          - '16'
-          - '17'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Setup node
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node }}
-          cache: yarn
-          cache-dependency-path: nodejs-polars/yarn.lock
-
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: nodejs-polars/node_modules
-          key: npm-cache-test-x86_64-unknown-linux-musl-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
-      - name: Install dependencies
-        run: yarn install 
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bindings-x86_64-unknown-linux-musl
-          path: nodejs-polars
-      - name: List packages
-        run: ls -R .
-        shell: bash
-      - name: Test bindings
-        run: docker run --rm -v $(pwd):/build -w /build node:${{ matrix.node }}-alpine yarn test
   test-linux-aarch64-gnu-binding:
     defaults:
       run:
@@ -311,41 +284,6 @@ jobs:
             set -e
             yarn test
             ls -la
-  test-linux-aarch64-musl-binding:
-    defaults:
-      run:
-        working-directory: nodejs-polars
-    name: Test bindings on aarch64-unknown-linux-musl - node@${{ matrix.node }}
-    needs:
-      - build
-    runs-on: ubuntu-latest
-    steps:
-      - run: docker run --rm --privileged multiarch/qemu-user-static:register --reset
-      - uses: actions/checkout@v3
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: bindings-aarch64-unknown-linux-musl
-          path: nodejs-polars
-      - name: List packages
-        run: ls -R .
-        shell: bash
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: nodejs-polars/node_modules
-          key: npm-cache-test-linux-aarch64-musl-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
-      - name: Install dependencies
-        run: yarn install --ignore-scripts --ignore-platform --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
-      - name: Setup and run tests
-        uses: addnab/docker-run-action@v3
-        with:
-          image: multiarch/alpine:aarch64-latest-stable
-          options: '-v ${{ github.workspace }}:/build -w /build'
-          run: |
-            set -e
-            apk add nodejs npm yarn
-            yarn test
   test-linux-arm-gnueabihf-binding:
     defaults:
       run:
@@ -396,9 +334,9 @@ jobs:
     needs:
       - test-macOS-windows-binding
       - test-linux-x64-gnu-binding
-      - test-linux-x64-musl-binding
+      # - test-linux-x64-musl-binding
       - test-linux-aarch64-gnu-binding
-      - test-linux-aarch64-musl-binding
+      # - test-linux-aarch64-musl-binding
       - test-linux-arm-gnueabihf-binding
     steps:
       - uses: actions/checkout@v3
