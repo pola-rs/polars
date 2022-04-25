@@ -133,7 +133,7 @@ jobs:
         if: ${{ matrix.settings.setup }}
         shell: bash
       - name: Install dependencies
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install 
       - name: Build in docker
         uses: addnab/docker-run-action@v3
         if: ${{ matrix.settings.docker }}
@@ -183,7 +183,7 @@ jobs:
           path: nodejs-polars/node_modules
           key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install 
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
@@ -223,7 +223,7 @@ jobs:
           path: nodejs-polars/node_modules
           key: npm-cache-test-linux-x64-gnu-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install 
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
@@ -263,7 +263,7 @@ jobs:
           path: nodejs-polars/node_modules
           key: npm-cache-test-x86_64-unknown-linux-musl-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
       - name: Install dependencies
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install 
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
@@ -420,7 +420,7 @@ jobs:
           restore-keys: |
             npm-cache-
       - name: Install dependencies
-        run: yarn install --ignore-scripts --frozen-lockfile --registry https://registry.npmjs.org --network-timeout 300000
+        run: yarn install 
       - name: Download all artifacts
         uses: actions/download-artifact@v3
         with:
