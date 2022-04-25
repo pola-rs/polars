@@ -31,7 +31,7 @@ jobs:
             build: |
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
-              yarn build --target i686-pc-windows-msvc
+              npm run build -- --target i686-pc-windows-msvc
             target: i686-pc-windows-msvc
             architecture: x86
           - host: ubuntu-latest
@@ -43,11 +43,6 @@ jobs:
               rustup target add x86_64-unknown-linux-gnu &&
               yarn build --target x86_64-unknown-linux-gnu --zig --zig-abi-suffix 2.12 &&
               llvm-strip -x polars/*.node
-          - host: ubuntu-latest
-            architecture: x64
-            target: x86_64-unknown-linux-musl
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-            build: set -e && yarn build && strip polars/*.node
           - host: macos-latest
             target: aarch64-apple-darwin
             build: |
@@ -86,15 +81,7 @@ jobs:
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
               yarn build --target aarch64-linux-android
               ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip polars/*.node
-          - host: ubuntu-latest
-            architecture: x64
-            target: aarch64-unknown-linux-musl
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-            build: |-
-              rustup toolchain install $(cat ./rust-toolchain)
-              rustup target add aarch64-unknown-linux-musl
-              yarn build --target=aarch64-unknown-linux-musl
-              /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node
+
 
     name: ${{ matrix.settings.target }} - node@16
     runs-on: ${{ matrix.settings.host }}
@@ -186,8 +173,13 @@ jobs:
         with:
           path: nodejs-polars/node_modules
           key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
-      - name: Install dependencies
-        run: yarn install 
+      - name: "Install dependencies"
+        run: yarn install
+        if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
+
+      - name: "Install dependencies"
+        run: npm install
+        if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
