@@ -11,8 +11,8 @@ env:
 jobs:
   build:
     defaults:
-    run:
-      working-directory: nodejs-polars
+      run:
+        working-directory: nodejs-polars
     strategy:
       fail-fast: false
       matrix:
