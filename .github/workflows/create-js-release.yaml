@@ -32,7 +32,6 @@ jobs:
               export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
               export CARGO_PROFILE_RELEASE_LTO=false
               yarn build --target i686-pc-windows-msvc
-              yarn test
             target: i686-pc-windows-msvc
             architecture: x86
           - host: ubuntu-latest
@@ -60,8 +59,8 @@ jobs:
               yarn build --target aarch64-apple-darwin
               strip -x polars/*.node
           - host: ubuntu-latest
+            architecture: x64
             target: aarch64-unknown-linux-gnu
-            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
             setup: |
               sudo apt-get update
               sudo apt-get install g++-aarch64-linux-gnu gcc-aarch64-linux-gnu -y
