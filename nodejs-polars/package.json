@@ -34,7 +34,7 @@
     }
   },
   "engines": {
-    "node": ">= 10.20"
+    "node": ">= 16"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
