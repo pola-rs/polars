@@ -362,11 +362,14 @@ impl PhysicalExpr for AggQuantileExpr {
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
-        _df: &DataFrame,
-        _groups: &'a GroupsProxy,
-        _state: &ExecutionState,
+        df: &DataFrame,
+        groups: &'a GroupsProxy,
+        state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        unimplemented!()
+        let out = self.aggregate(df, groups, state)?.ok_or_else(|| {
+            PolarsError::ComputeError("Aggregation did not return a Series".into())
+        })?;
+        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
