@@ -951,6 +951,56 @@ describe("expr", () => {
     );
     expect(actual).toFrameEqual(expected);
   });
+
+  test("sortBy", () => {
+    const df = pl.DataFrame({
+      label: ["a", "a", "b", "b"],
+      name: ["foo", "bar", "baz", "boo"],
+      value: [1, 2, 1.5, -1]
+    });
+
+    const expected = pl.DataFrame({
+      label: [ "a", "a", "b", "b" ],
+      name: [ "foo", "bar", "baz", "boo" ],
+      value: [ 1, 2, 1.5, -1 ],
+      name_max: [ "bar", "bar", "baz", "baz" ],
+      value_max: [ 2, 2, 1.5, 1.5 ]
+    });
+
+    const actual = df
+      .withColumns(
+        pl.col(["name", "value"]).sortBy("value")
+          .last()
+          .over("label")
+          .suffix("_max")
+      );
+    expect(actual).toFrameEqual(expected);
+  });
+  test("sortBy:named", () => {
+    const df = pl.DataFrame({
+      label: ["a", "a", "b", "b"],
+      name: ["foo", "bar", "baz", "boo"],
+      value: [1, 2, 1.5, -1]
+    });
+
+    const expected = pl.DataFrame({
+      label: [ "a", "a", "b", "b" ],
+      name: [ "foo", "bar", "baz", "boo" ],
+      value: [ 1, 2, 1.5, -1 ],
+      name_min: [ "foo", "foo", "boo", "boo" ],
+      value_min: [ 1, 1, -1, -1 ]
+    });
+
+    const actual = df
+      .withColumns(
+        pl.col(["name", "value"]).sortBy({by: [pl.col("value")], reverse: [true]})
+          .last()
+          .over("label")
+          .suffix("_min")
+      );
+    expect(actual).toFrameEqual(expected);
+  });
+
   test("std", () => {
     const df = pl.DataFrame({"a": [1, 2, 3, 10, 200]});
     const expected = pl.DataFrame({"std": ["87.73"]});

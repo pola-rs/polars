@@ -477,6 +477,21 @@ export interface Expr extends
    */
   sort(reverse?: boolean, nullsLast?: boolean): Expr
   sort({reverse, nullsLast}: {reverse?: boolean, nullsLast?: boolean}): Expr
+  /**
+   * Sort this column by the ordering of another column, or multiple other columns.
+      In projection/ selection context the whole column is sorted.
+      If used in a groupby context, the groups are sorted.
+
+      Parameters
+      ----------
+      @param by
+          The column(s) used for sorting.
+      @param reverse
+          false -> order from small to large.
+          true -> order from large to small.
+   */
+  sortBy(by: ExprOrString[] | ExprOrString, reverse?: boolean | boolean[]): Expr
+  sortBy(options: {by: ExprOrString[] | ExprOrString, reverse?: boolean | boolean[]}): Expr
   /** Get standard deviation. */
   std(): Expr
   /** Add a suffix the to root column name of the expression. */
@@ -952,6 +967,16 @@ export const _Expr = (_expr: any): Expr => {
       }
 
       return wrap("sortWith", reverse?.reverse ?? false, reverse?.nullsLast ?? nullsLast);
+    },
+    sortBy(arg, reverse=false) {
+      if(arg?.by !== undefined) {
+        return this.sortBy(arg.by, arg.reverse);
+      }
+
+      reverse = Array.isArray(reverse) ? reverse.flat() : [reverse] as any;
+      const by = selectionToExprList(arg, false);
+
+      return wrap("sortBy", by, reverse);
     },
     std() {
       return _Expr(_expr.std());
