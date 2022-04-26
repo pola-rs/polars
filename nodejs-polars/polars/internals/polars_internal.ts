@@ -1,3 +1,3 @@
-import pl from "../native-polars";
+import pl from "../native-polars.js";
 
 export default pl;

@@ -40,9 +40,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "build": "napi build --platform --release polars",
-    "build:debug": "napi build --platform",
-    "build:ts": " rm -rf bin;  rm -f index.d.ts;  tsc -p tsconfig.build.json",
+    "build": "napi build --platform --release --pipe echo polars",
+    "build:debug": "napi build --platform --pipe echo polars",
+    "build:ts": " rm -rf bin; tsc -p tsconfig.build.json",
+    "cp:bin": "cp ./polars/*.node bin/",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
     "format:yaml": "prettier --parser yaml --write './**/*.{yml,yaml}'",
