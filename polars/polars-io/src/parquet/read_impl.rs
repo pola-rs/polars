@@ -62,7 +62,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         let current_row_count = md.num_rows() as u32;
         if let Some(pred) = &predicate {
             if let Some(pred) = pred.as_stats_evaluator() {
-                if let Some(stats) = collect_statistics(md.columns(), schema)? {
+                if let Some(stats) = collect_statistics(&file_metadata.row_groups, schema)? {
                     let should_read = pred.should_read(&stats);
                     // a parquet file may not have statistics of all columns
                     if matches!(should_read, Ok(false)) {

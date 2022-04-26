@@ -44,11 +44,11 @@ impl FallibleStreamingIterator for Bla {
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
-    compression: write::Compression,
+    compression: write::CompressionOptions,
     statistics: bool,
 }
 
-pub use write::Compression as ParquetCompression;
+pub use write::CompressionOptions as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
@@ -61,13 +61,13 @@ where
     {
         ParquetWriter {
             writer,
-            compression: write::Compression::Snappy,
+            compression: write::CompressionOptions::Lz4Raw,
             statistics: false,
         }
     }
 
-    /// Set the compression used. Defaults to `Snappy`.
-    pub fn with_compression(mut self, compression: write::Compression) -> Self {
+    /// Set the compression used. Defaults to `Lz4Raw`.
+    pub fn with_compression(mut self, compression: write::CompressionOptions) -> Self {
         self.compression = compression;
         self
     }

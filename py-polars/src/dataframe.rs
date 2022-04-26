@@ -530,7 +530,7 @@ impl PyDataFrame {
             "lzo" => ParquetCompression::Lzo,
             "brotli" => ParquetCompression::Brotli,
             "lz4" => ParquetCompression::Lz4Raw,
-            "zstd" => ParquetCompression::Zstd,
+            "zstd" => ParquetCompression::Zstd(None),
             s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
         };
 
