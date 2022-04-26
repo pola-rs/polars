@@ -77,7 +77,14 @@ impl ListChunked {
             ))
         };
 
-        let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
+        let ptr = match &series_container.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = &series_container.struct_().unwrap();
+                ca.arrow_array() as *const ArrayRef as *mut ArrayRef
+            }
+            _ => &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef,
+        };
 
         AmortizedListIter {
             len: self.len(),
