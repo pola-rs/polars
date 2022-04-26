@@ -204,37 +204,41 @@ jobs:
       - name: Test bindings
         run: yarn test
   publish:
+    name: Publish
+    needs:
+      - test-macOS-windows-binding
     defaults:
       run:
         working-directory: nodejs-polars
-    name: Publish
     runs-on: ubuntu-latest
-    needs:
-      - test-macOS-windows-binding
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup node
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
         with:
-          node-version: 16
-          cache: yarn
+          node-version: "16"
           registry-url: "https://registry.npmjs.org"
+          cache: yarn
           cache-dependency-path: nodejs-polars/yarn.lock
-      - name: Install dependencies
-        run: yarn install 
+
+      - name: "Install dependencies"
+        run: yarn install
+
       - name: Download all artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v2
         with:
           path: nodejs-polars/artifacts
+
       - name: Move artifacts
         run: yarn artifacts
+
       - name: Build TypeScript
         run: yarn build:ts
-      - name: List packages
-        run: ls -R ./npm
+
+      - name: List artifacts
+        run: ls -R npm
         shell: bash
-      - name: Publish
+
+      - name: Publish to npm
         run: npm publish
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
