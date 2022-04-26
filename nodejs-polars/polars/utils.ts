@@ -27,7 +27,6 @@ export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string
   return columns.flat(3) as any;
 }
 export function selectionToExprList(columns: any[], stringToLit?) {
-  // return null as any;
   return [columns].flat(3).map(expr => exprToLitOrExpr(expr, stringToLit)._expr);
 }
 

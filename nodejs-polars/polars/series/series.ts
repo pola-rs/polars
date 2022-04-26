@@ -1052,9 +1052,9 @@ export function _Series(_s: any): Series {
       let start = 0;
       let len = _s.len();
       while (start < len) {
-      // const v = _s.get(start);
+        const v = _s.getIdx(start);
         start++;
-        yield null as any;
+        yield v as any;
       }
     },
     toString() {

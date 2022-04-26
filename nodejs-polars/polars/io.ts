@@ -86,7 +86,7 @@ export function readRecords(records: Record<string, any>[], options): DataFrame 
   if(options?.schema) {
     return _DataFrame(pli.fromRows(records, options.schema)).select(options.schema);
   } else {
-    return _DataFrame(pli.fromRows(records, undefined, options.inferSchemaLength));
+    return _DataFrame(pli.fromRows(records, undefined, options?.inferSchemaLength));
   }
 }
 

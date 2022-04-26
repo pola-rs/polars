@@ -1682,36 +1682,33 @@ export const _DataFrame = (_df: any): DataFrame => {
       return _df.toRows();
     },
     sample(opts?, frac?, withReplacement = false, seed?) {
-      return null as any;
-      // if(arguments.length === 0) {
-
-      //   return wrap("sampleN", {
-
-      //     n: 1,
-      //     withReplacement,
-      //     seed
-      //   });
-      // }
-      // if(opts?.n  !== undefined || opts?.frac  !== undefined) {
-      //   return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
-      // }
-      // if (typeof opts === "number") {
-      //   return wrap("sample_n", {
-      //     n: opts,
-      //     withReplacement,
-      //     seed
-      //   });
-      // }
-      // if(typeof frac === "number") {
-      //   return wrap("sample_frac", {
-      //     frac,
-      //     withReplacement,
-      //     seed
-      //   });
-      // }
-      // else {
-      //   throw new TypeError("must specify either 'frac' or 'n'");
-      // }
+      if(arguments.length === 0) {
+        return wrap("sampleN",
+          1,
+          withReplacement,
+          seed
+        );
+      }
+      if(opts?.n  !== undefined || opts?.frac  !== undefined) {
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
+      }
+      if (typeof opts === "number") {
+        return wrap("sampleN",
+          opts,
+          withReplacement,
+          seed
+        );
+      }
+      if(typeof frac === "number") {
+        return wrap("sampleFrac",
+          frac,
+          withReplacement,
+          seed
+        );
+      }
+      else {
+        throw new TypeError("must specify either 'frac' or 'n'");
+      }
     },
 
     select(...selection) {

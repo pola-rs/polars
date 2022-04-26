@@ -632,7 +632,7 @@ describe("dataframe", () => {
       [3, 8, "c"]
     ]);
   });
-  test.skip("sample:n", () => {
+  test("sample:n", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -640,7 +640,7 @@ describe("dataframe", () => {
     }).sample(2);
     expect(actual.height).toStrictEqual(2);
   });
-  test.skip("sample:default", () => {
+  test("sample:default", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3],
       "bar": [6, 7, 8],
@@ -648,7 +648,7 @@ describe("dataframe", () => {
     }).sample();
     expect(actual.height).toStrictEqual(1);
   });
-  test.skip("sample:frac", () => {
+  test("sample:frac", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3, 1],
       "bar": [6, 7, 8, 1],
@@ -656,7 +656,7 @@ describe("dataframe", () => {
     }).sample({frac: 0.5});
     expect(actual.height).toStrictEqual(2);
   });
-  test.skip("sample:frac", () => {
+  test("sample:frac", () => {
     const actual = pl.DataFrame({
       "foo": [1, 2, 3, 1],
       "bar": [6, 7, 8, 1],
@@ -664,7 +664,7 @@ describe("dataframe", () => {
     }).sample({frac: 0.75});
     expect(actual.height).toStrictEqual(3);
   });
-  test.skip("sample:invalid", () => {
+  test("sample:invalid", () => {
     const fn = () => pl.DataFrame({
       "foo": [1, 2, 3, 1],
       "bar": [6, 7, 8, 1],

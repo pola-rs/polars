@@ -11,12 +11,12 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[napi]
 fn version() -> &'static str {
-  VERSION
+    VERSION
 }
 
 #[napi]
 fn toggle_string_cache(toggle: bool) {
-  polars::toggle_string_cache(toggle)
+    polars::toggle_string_cache(toggle)
 }
 
 pub mod conversion;
