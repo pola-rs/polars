@@ -12,6 +12,8 @@ use arrow::Either;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use single_keys::*;
 use single_keys_inner::*;
 use single_keys_left::*;
@@ -113,11 +115,13 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     AsOf(AsOfOptions),
     Cross,
     #[cfg(feature = "semi_anti_join")]
