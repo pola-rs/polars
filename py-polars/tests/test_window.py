@@ -124,3 +124,17 @@ def test_no_panic_on_nan_3067() -> None:
         4.0,
         5.0,
     ]
+
+
+def test_quantile_as_window() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "group": [0, 0, 1, 1],
+                "value": [0, 1, 0, 2],
+            }
+        )
+        .select(pl.quantile("value", 0.9).over("group"))
+        .to_series()
+        .series_equal(pl.Series("value", [1.0, 1.0, 2.0, 2.0]))
+    )
