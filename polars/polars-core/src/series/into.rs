@@ -16,7 +16,7 @@ impl Series {
                 let ca = self.struct_().unwrap();
                 ca.arrow_array()
             }
-            _ => &self.chunks()[chunk_idx] as &ArrayRef
+            _ => &self.chunks()[chunk_idx] as &ArrayRef,
         }
     }
 

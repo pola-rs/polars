@@ -2083,9 +2083,10 @@ def test_partition_by() -> None:
     ]
 
 
+@typing.no_type_check
 def test_list_of_list_of_struct() -> None:
     expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
     pa_df = pa.Table.from_pylist(expected)
     df = pl.from_arrow(pa_df)
-    assert df.rows() == [([[{'a': 1}, {'a': 2}]],)]
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
