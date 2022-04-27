@@ -740,8 +740,7 @@ impl PySeries {
             pylist.to_object(python)
         }
 
-        let pylist = to_list_recursive(python, series);
-        pylist.to_object(python)
+        to_list_recursive(python, series)
     }
 
     pub fn median(&self) -> Option<f64> {
