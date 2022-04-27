@@ -247,7 +247,10 @@ impl AsRef<Expr> for AggExpr {
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub enum Expr {
     Alias(Box<Expr>, Arc<str>),
     Column(Arc<str>),

@@ -43,7 +43,10 @@ pub enum Context {
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub enum LogicalPlan {
     /// Filter on a boolean mask
     Selection {
