@@ -285,12 +285,11 @@ impl FromNapiValue for Wrap<ParquetCompression> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let compression = String::from_napi_value(env, napi_val)?;
         let compression = match compression.as_ref() {
-            "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
             "gzip" => ParquetCompression::Gzip,
             "lzo" => ParquetCompression::Lzo,
             "brotli" => ParquetCompression::Brotli,
-            "lz4" => ParquetCompression::Lz4,
+            "lz4" => ParquetCompression::Lz4Raw,
             "zstd" => ParquetCompression::Zstd(None),
             _ => ParquetCompression::Uncompressed,
         };
