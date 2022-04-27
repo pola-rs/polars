@@ -154,6 +154,10 @@ impl Series {
             }
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+                let mut chunks = chunks;
+                if matches!(dtype, ArrowDataType::Time32(_)) {
+                    chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
+                }
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()

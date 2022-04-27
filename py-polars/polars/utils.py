@@ -1,7 +1,7 @@
 import ctypes
 import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
@@ -140,6 +140,18 @@ def handle_projection_columns(
                 "columns arg should contain a list of all integers or all strings values."
             )
     return projection, columns  # type: ignore
+
+
+def _to_python_time(value: int) -> time:
+    value = value // 1_000
+    microsecond = value
+    seconds = (microsecond // 1000_000) % 60
+    minutes = (microsecond // (1000_000 * 60)) % 60
+    hours = (microsecond // (1000_000 * 60 * 60)) % 24
+
+    microsecond = microsecond % seconds * 1000_000
+
+    return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
 
 
 def _to_python_timedelta(
