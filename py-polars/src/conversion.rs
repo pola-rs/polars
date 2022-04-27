@@ -452,6 +452,19 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
     }
 }
 
+impl ToPyObject for Wrap<&TimeChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pl_utils = pl.getattr("utils").unwrap();
+        let convert = pl_utils.getattr("_to_python_time").unwrap();
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
