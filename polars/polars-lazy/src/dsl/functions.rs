@@ -166,7 +166,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: by.as_ref().to_vec(),
         function,
         output_type: GetOutput::from_type(IDX_DTYPE),
@@ -187,7 +187,7 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: s,
         function,
         output_type: GetOutput::from_type(DataType::Utf8),
@@ -217,7 +217,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
         };
         first_ca.lst_concat(other).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: s,
         function,
         output_type: GetOutput::map_dtype(|dt| DataType::List(Box::new(dt.clone()))),
@@ -395,7 +395,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 
         Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: vec![
             year,
             month,
@@ -472,7 +472,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
     }) as Arc<dyn SeriesUdf>);
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: vec![
             args.days.unwrap_or_else(|| lit(0i64)),
             args.seconds.unwrap_or_else(|| lit(0i64)),
@@ -678,7 +678,7 @@ where
         }) as Arc<dyn SeriesUdf>);
 
         // Todo! make sure that output type is correct
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: exprs,
             function,
             output_type: GetOutput::same_type(),

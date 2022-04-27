@@ -487,7 +487,7 @@ impl DefaultPlanner {
                     node_to_expr(expression, expr_arena),
                 )))
             }
-            Function {
+            AnonymousFunction {
                 input,
                 function,
                 output_type: _,
@@ -498,6 +498,22 @@ impl DefaultPlanner {
                 Ok(Arc::new(ApplyExpr {
                     inputs: input,
                     function,
+                    expr: node_to_expr(expression, expr_arena),
+                    collect_groups: options.collect_groups,
+                    auto_explode: options.auto_explode,
+                }))
+            }
+            Function {
+                input,
+                function,
+                options,
+                ..
+            } => {
+                let input = self.create_physical_expressions(&input, ctxt, expr_arena)?;
+
+                Ok(Arc::new(ApplyExpr {
+                    inputs: input,
+                    function: function.into(),
                     expr: node_to_expr(expression, expr_arena),
                     collect_groups: options.collect_groups,
                     auto_explode: options.auto_explode,

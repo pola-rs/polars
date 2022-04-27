@@ -214,3 +214,9 @@ def test_list_eval_expression() -> None:
         assert df["a"].reshape((1, -1)).arr.eval(
             pl.first(), parallel=parallel
         ).to_list() == [[1, 8, 3]]
+
+
+def test_null_count_expr() -> None:
+    df = pl.DataFrame({"key": ["a", "b", "b", "a"], "val": [1, 2, None, 1]})
+
+    assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}
