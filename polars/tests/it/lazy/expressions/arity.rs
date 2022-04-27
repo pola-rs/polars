@@ -112,3 +112,39 @@ fn includes_null_predicate_3038() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_when_then_otherwise_cats() -> Result<()> {
+    let lf = df!["book" => [Some("bookA"),
+        None,
+        Some("bookB"),
+        None,
+        Some("bookA"),
+        Some("bookC"),
+        Some("bookC"),
+        Some("bookC")],
+        "user" => [Some("bob"), Some("bob"), Some("bob"), Some("tim"), Some("lucy"), Some("lucy"), None, None]
+    ]?.lazy();
+
+    let out = lf
+        .with_column(col("book").cast(DataType::Categorical(None)))
+        .with_column(col("user").cast(DataType::Categorical(None)))
+        .with_column(
+            when(col("book").eq(Null {}.lit()))
+                .then(col("user"))
+                .otherwise(col("book"))
+                .alias("a"),
+        )
+        .collect()?;
+
+    assert_eq!(
+        out.column("a")?
+            .categorical()?
+            .iter_str()
+            .flatten()
+            .collect::<Vec<_>>(),
+        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+    );
+
+    Ok(())
+}
