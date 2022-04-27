@@ -97,8 +97,7 @@ interface WriteMethods {
    * Write Dataframe to JSON string, file, or write stream
    * @param destination file or write stream
    * @param options
-   * @param options.orient - col|row|dataframe
-   *  - col will write to a column oriented object
+   * @param options.format - json | lines
    * @example
    * ```
    * >>> const df = pl.DataFrame({
@@ -106,29 +105,17 @@ interface WriteMethods {
    * >>>   bar: ['a','b','c']
    * >>> })
    *
-   * // defaults to 'dataframe' orientation
-   * >>> df.writeJSON()
-   * `{"columns":[ {"name":"foo","datatype":"Float64","values":[1,2,3]}, {"name":"bar","datatype":"Utf8","values":["a","b","c"]}]}`
    *
-   * // this will produce the same results as 'df.writeJSON()'
-   * >>> JSON.stringify(df)
-   *
-   * // row oriented
-   * >>> df.writeJSON({orient:"row"})
+   * >>> df.writeJSON({format:"json"})
    * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
    *
-   * // column oriented
-   * >>> df.writeJSON({orient: "col"})
-   * `{"foo":[1,2,3],"bar":["a","b","c"]}`
-   *
-   * // multiline (will always be row oriented)
-   * >>> df.writeJSON({multiline: true})
+   * >>> df.writeJSON({format:"lines"})
    * `{"foo":1.0,"bar":"a"}
    * {"foo":2.0,"bar":"b"}
    * {"foo":3.0,"bar":"c"}`
    *
    * // writing to a file
-   * >>> df.writeJSON("/path/to/file.json", {multiline:true})
+   * >>> df.writeJSON("/path/to/file.json", {format:'lines'})
    * ```
    */
   writeJSON(options?: {format: "lines" | "json"}): Buffer
@@ -841,6 +828,8 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * ```
    */
   nullCount(): DataFrame
+  partitionBy(cols: string | string[], stable?: boolean): DataFrame[]
+  partitionBy<T>(cols: string | string[], stable: boolean, mapFn: (df: DataFrame) => T): T[]
   // TODO!
   // /**
   //  * Apply a function on Self.
@@ -948,7 +937,7 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * Convert columnar data to rows as arrays
    */
   rows(): Array<Array<any>>
-  get schema(): Record<string, string>
+  get schema(): Record<string, DataType>
   /**
    * Select columns from this DataFrame.
    * ___
@@ -1203,6 +1192,18 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * */
   toJSON(options?: WriteJsonOptions): string
   toJSON(destination: string | Writable, options?: WriteJsonOptions): void
+  /**
+   * Converts dataframe object into column oriented javascript objects
+   * @example
+   * ```
+   * >>> df.toObject()
+   * {
+   *  "foo": [1,2,3],
+   *  "bar": ["a", "b", "c"]
+   * }
+   * ```
+   */
+  toObject(): Record<string, any[]>
 
   /** @deprecated *since 0.4.0* use {@link writeIPC} */
   toIPC(destination?, options?)
@@ -1435,10 +1436,11 @@ export const _DataFrame = (_df: any): DataFrame => {
       _df.columns = names;
     },
     get schema() {
-      // _df.sch
-      return null as any;
-      // return _df.schema;
+      return this.getColumns().reduce((acc, curr) => {
+        acc[curr.name] = curr.dtype;
 
+        return acc;
+      }, {});
     },
     clone() {
       return wrap("clone");
@@ -1653,6 +1655,12 @@ export const _DataFrame = (_df: any): DataFrame => {
     nullCount() {
       return wrap("nullCount");
     },
+    partitionBy(by, strict = false, mapFn = df => df) {
+
+      by = Array.isArray(by) ? by : [by];
+
+      return  _df.partitionBy(by, strict).map(d => mapFn(_DataFrame(d)));
+    },
     quantile(quantile, interpolation = "nearest") {
       return wrap("quantile", quantile, interpolation);
     },
@@ -1778,7 +1786,6 @@ export const _DataFrame = (_df: any): DataFrame => {
       return this.writeCSV(...args);
     },
     writeCSV(dest?, options={}) {
-      options = { hasHeader:true, sep: ",", ...options};
       if(dest instanceof Writable || typeof dest === "string") {
         return _df.writeCsv(dest, options) as any;
       }
@@ -1789,7 +1796,6 @@ export const _DataFrame = (_df: any): DataFrame => {
           callback(null);
         }
       });
-
       _df.writeCsv((writeStream as any), dest ?? options);
       writeStream.end("");
 
@@ -1799,7 +1805,14 @@ export const _DataFrame = (_df: any): DataFrame => {
       return _df.toObjects();
     },
     toJSON(arg0?, options?): any {
-      return _df.toJson();
+      return _df.toJs();
+    },
+    toObject() {
+      return this.getColumns().reduce((acc, curr) => {
+        acc[curr.name] = curr.toArray();
+
+        return acc;
+      }, {});
     },
     writeJSON(dest?, options={format:"lines"}) {
       if(dest instanceof Writable || typeof dest === "string") {

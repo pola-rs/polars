@@ -511,6 +511,7 @@ impl JsDataFrame {
             .map_err(JsPolarsErr::from)?;
         Ok(JsDataFrame::new(df))
     }
+
     #[napi]
     pub fn get_columns(&self) -> Vec<JsSeries> {
         let cols = self.df.get_columns().clone();
@@ -1059,6 +1060,10 @@ impl JsDataFrame {
         }
     }
     #[napi]
+    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+        env.to_js_value(&self.df)
+    }
+    #[napi]
     pub fn to_row(&self, idx: f64, env: Env) -> napi::Result<Array> {
         let idx = idx as i64;
 
@@ -1221,7 +1226,7 @@ impl JsDataFrame {
         options: WriteCsvOptions,
         env: Env,
     ) -> napi::Result<()> {
-        let has_header = options.has_header.unwrap_or(false);
+        let has_header = options.has_header.unwrap_or(true);
         let sep = options.sep.unwrap_or(",".to_owned());
         let sep = sep.as_bytes()[0];
         let quote = options.quote.unwrap_or(",".to_owned());

@@ -620,13 +620,10 @@ impl FromNapiValue for Wrap<Schema> {
                 let fields: Vec<Field> = keys
                     .iter()
                     .map(|key| {
-                        let value = obj
-                            .get::<_, Either<String, JsDataType>>(&key)
-                            .unwrap()
-                            .unwrap();
+                        let value = obj.get::<_, Either<String, u32>>(&key).unwrap().unwrap();
                         let dtype = match value {
-                            Either::A(v) => JsDataType::from_str(&v),
-                            Either::B(v) => v,
+                            Either::A(v) => str_to_polarstype(&v),
+                            Either::B(v) => num_to_polarstype(v),
                         };
                         let fld = Field::new(key, dtype.into());
                         fld

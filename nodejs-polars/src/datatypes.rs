@@ -69,9 +69,9 @@ impl From<&DataType> for JsDataType {
             DataType::Date => Date,
             DataType::Datetime(_, _) => Datetime,
             DataType::Time => Time,
-            // DataType::Object(_) => Object,
-            // DataType::Categorical(_) => Categorical,
-            // DataType::Struct(_) => Struct,
+            DataType::Object(_) => Object,
+            DataType::Categorical(_) => Categorical,
+            DataType::Struct(_) => Struct,
             _ => panic!("null or unknown not expected here"),
         }
     }
