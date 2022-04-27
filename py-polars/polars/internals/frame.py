@@ -1007,7 +1007,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Parameters
         ----------
         file
-            Write to this file instead of returning an string.
+            Write to this file instead of returning a string.
         pretty
             Pretty serialize json.
         row_oriented

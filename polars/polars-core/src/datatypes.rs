@@ -202,6 +202,7 @@ impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AnyValue<'a> {
     Null,
     /// A binary true or false.
@@ -235,6 +236,7 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
     // A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
@@ -243,15 +245,19 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     #[cfg(feature = "dtype-categorical")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    #[cfg_attr(feature = "serde", serde(skip))]
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Struct(Vec<AnyValue<'a>>, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),

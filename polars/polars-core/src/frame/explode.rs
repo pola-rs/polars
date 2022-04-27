@@ -4,6 +4,8 @@ use crate::utils::get_supertype;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
@@ -17,6 +19,7 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
 
 /// Arguments for `[DataFrame::melt]` function
 #[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
     pub id_vars: Vec<String>,
     pub value_vars: Vec<String>,

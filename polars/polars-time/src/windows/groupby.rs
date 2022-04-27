@@ -1,8 +1,11 @@
 use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ClosedWindow {
     Left,
     Right,
