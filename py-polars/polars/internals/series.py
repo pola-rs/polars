@@ -4026,17 +4026,21 @@ class StringNameSpace:
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
-
+        
         Parameters
         ----------
         pattern
             A valid regex pattern.
         value
             Substring to replace.
-
+        
+        See Also
+        --------
+        replace_all : Replace all regex matches with a string value.
+        
         Examples
         --------
-
+        
         >>> s = pl.Series(["123abc", "abc456"])
         >>> s.str.replace(r"abc\b", "ABC")
         shape: (2,)
@@ -4045,20 +4049,35 @@ class StringNameSpace:
                 "123ABC"
                 "abc456"
         ]
-
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
     def replace_all(self, pattern: str, value: str) -> Series:
         """
         Replace all regex matches with a string value.
-
+        
         Parameters
         ----------
         pattern
             A valid regex pattern.
         value
             Substring to replace.
+            
+        See Also
+        --------
+        replace : Replace first regex match with a string value.
+        
+        Examples
+        --------
+        
+        >>> df = pl.Series(["abcabc", "123a123"])
+        >>> df.str.replace_all("a", "-")
+        shape: (2,)
+        Series: '' [str]
+        [
+            "-bc-bc"
+            "123-123"
+        ]        
         """
         return wrap_s(self._s.str_replace_all(pattern, value))
 
