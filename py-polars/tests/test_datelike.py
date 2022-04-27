@@ -1,5 +1,6 @@
 import io
-from datetime import date, datetime, timedelta
+import typing
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
@@ -834,3 +835,15 @@ def test_agg_logical() -> None:
     s = pl.Series(dates)
     assert s.max() == dates[1]
     assert s.min() == dates[0]
+
+
+@typing.no_type_check
+def test_from_time_arrow() -> None:
+    times = pa.array([10, 20, 30], type=pa.time32("s"))
+    times_table = pa.table([times], names=["times"])
+
+    assert pl.from_arrow(times_table).to_series().to_list() == [
+        time(0, 0, 10),
+        time(0, 0, 20),
+        time(0, 0, 30),
+    ]

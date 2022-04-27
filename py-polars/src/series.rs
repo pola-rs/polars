@@ -719,6 +719,10 @@ impl PySeries {
                     let ca = series.date().unwrap();
                     return Wrap(ca).to_object(python);
                 }
+                DataType::Time => {
+                    let ca = series.time().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
                 DataType::Datetime(_, _) => {
                     let ca = series.datetime().unwrap();
                     return Wrap(ca).to_object(python);
