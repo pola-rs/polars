@@ -8,6 +8,18 @@ use crate::prelude::*;
 use polars_arrow::compute::cast::cast;
 
 impl Series {
+    /// Returns a reference to the Arrow ArrayRef
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.arrow_array()
+            }
+            _ => &self.chunks()[chunk_idx] as &ArrayRef,
+        }
+    }
+
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
@@ -45,11 +57,8 @@ impl Series {
                 Arc::from(arr)
             }
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => {
-                let ca = self.struct_().unwrap();
-                ca.arrow_array().clone()
-            }
-            _ => self.chunks()[chunk_idx].clone(),
+            DataType::Struct(_) => self.array_ref(chunk_idx).clone(),
+            _ => self.array_ref(chunk_idx).clone(),
         }
     }
 }

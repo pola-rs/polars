@@ -673,74 +673,74 @@ impl PySeries {
 
         let series = &self.series;
 
-        let primitive_to_list = |dt: &DataType, series: &Series| match dt {
-            DataType::Boolean => PyList::new(python, series.bool().unwrap()),
-            DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
-            DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
-            DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
-            DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
-            DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
-            DataType::Int8 => PyList::new(python, series.i8().unwrap()),
-            DataType::Int16 => PyList::new(python, series.i16().unwrap()),
-            DataType::Int32 => PyList::new(python, series.i32().unwrap()),
-            DataType::Int64 => PyList::new(python, series.i64().unwrap()),
-            DataType::Float32 => PyList::new(python, series.f32().unwrap()),
-            DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            dt => panic!("to_list() not implemented for {:?}", dt),
-        };
-
-        let pylist = match series.dtype() {
-            DataType::Categorical(_) => {
-                PyList::new(python, series.categorical().unwrap().iter_str())
-            }
-            DataType::Object(_) => {
-                let v = PyList::empty(python);
-                for i in 0..series.len() {
-                    let obj: Option<&ObjectValue> = self.series.get_object(i).map(|any| any.into());
-                    let val = obj.to_object(python);
-
-                    v.append(val).unwrap();
+        fn to_list_recursive(python: Python, series: &Series) -> PyObject {
+            let pylist = match series.dtype() {
+                DataType::Boolean => PyList::new(python, series.bool().unwrap()),
+                DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+                DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+                DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+                DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+                DataType::Int8 => PyList::new(python, series.i8().unwrap()),
+                DataType::Int16 => PyList::new(python, series.i16().unwrap()),
+                DataType::Int32 => PyList::new(python, series.i32().unwrap()),
+                DataType::Int64 => PyList::new(python, series.i64().unwrap()),
+                DataType::Float32 => PyList::new(python, series.f32().unwrap()),
+                DataType::Float64 => PyList::new(python, series.f64().unwrap()),
+                DataType::Categorical(_) => {
+                    PyList::new(python, series.categorical().unwrap().iter_str())
                 }
-                v
-            }
-            DataType::List(inner_dtype) => {
-                let v = PyList::empty(python);
-                let ca = series.list().unwrap();
-                for opt_s in ca.amortized_iter() {
-                    match opt_s {
-                        None => {
-                            v.append(python.None()).unwrap();
-                        }
-                        Some(s) => {
-                            let pylst = primitive_to_list(inner_dtype, s.as_ref());
-                            v.append(pylst).unwrap();
+                DataType::Object(_) => {
+                    let v = PyList::empty(python);
+                    for i in 0..series.len() {
+                        let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
+                        let val = obj.to_object(python);
+
+                        v.append(val).unwrap();
+                    }
+                    v
+                }
+                DataType::List(_) => {
+                    let v = PyList::empty(python);
+                    let ca = series.list().unwrap();
+                    for opt_s in ca.amortized_iter() {
+                        match opt_s {
+                            None => {
+                                v.append(python.None()).unwrap();
+                            }
+                            Some(s) => {
+                                let pylst = to_list_recursive(python, s.as_ref());
+                                v.append(pylst).unwrap();
+                            }
                         }
                     }
+                    v
                 }
-                v
-            }
-            DataType::Date => {
-                let ca = series.date().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Datetime(_, _) => {
-                let ca = series.datetime().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Utf8 => {
-                let ca = series.utf8().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Struct(_) => {
-                let ca = series.struct_().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Duration(_) => {
-                let ca = series.duration().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            dt => primitive_to_list(dt, series),
-        };
+                DataType::Date => {
+                    let ca = series.date().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Datetime(_, _) => {
+                    let ca = series.datetime().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Utf8 => {
+                    let ca = series.utf8().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Struct(_) => {
+                    let ca = series.struct_().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Duration(_) => {
+                    let ca = series.duration().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                dt => panic!("to_list() not implemented for {:?}", dt),
+            };
+            pylist.to_object(python)
+        }
+
+        let pylist = to_list_recursive(python, series);
         pylist.to_object(python)
     }
 
