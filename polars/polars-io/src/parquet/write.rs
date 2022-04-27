@@ -44,11 +44,11 @@ impl FallibleStreamingIterator for Bla {
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
-    compression: write::Compression,
+    compression: write::CompressionOptions,
     statistics: bool,
 }
 
-pub use write::Compression as ParquetCompression;
+pub use write::CompressionOptions as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
@@ -61,13 +61,13 @@ where
     {
         ParquetWriter {
             writer,
-            compression: write::Compression::Snappy,
+            compression: write::CompressionOptions::Lz4Raw,
             statistics: false,
         }
     }
 
-    /// Set the compression used. Defaults to `Snappy`.
-    pub fn with_compression(mut self, compression: write::Compression) -> Self {
+    /// Set the compression used. Defaults to `Lz4Raw`.
+    pub fn with_compression(mut self, compression: write::CompressionOptions) -> Self {
         self.compression = compression;
         self
     }
@@ -111,8 +111,12 @@ where
                 .zip(parquet_schema.columns().par_iter())
                 .zip(encodings.par_iter())
                 .map(|((array, descriptor), encoding)| {
-                    let encoded_pages =
-                        array_to_pages(array.as_ref(), descriptor.clone(), options, *encoding)?;
+                    let encoded_pages = array_to_pages(
+                        array.as_ref(),
+                        descriptor.descriptor.clone(),
+                        options,
+                        *encoding,
+                    )?;
                     encoded_pages
                         .map(|page| {
                             compress(page?, vec![], options.compression).map_err(|x| x.into())
@@ -133,8 +137,8 @@ where
         // write the headers
         writer.start()?;
         for group in row_group_iter {
-            let (group, len) = group?;
-            writer.write(group, len)?;
+            let (group, _len) = group?;
+            writer.write(group)?;
         }
         let _ = writer.end(None)?;
 

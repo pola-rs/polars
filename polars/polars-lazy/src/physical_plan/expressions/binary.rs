@@ -419,9 +419,16 @@ mod stats {
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
 
-            debug_assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
-            if fld_l.data_type() != fld_r.data_type() {
-                return Ok(true);
+            #[cfg(debug_assertions)]
+            {
+                match (fld_l.data_type(), fld_r.data_type()) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Utf8, DataType::Categorical(_)) => {}
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Categorical(_), DataType::Utf8) => {}
+                    (l, r) if l != r => panic!("implementation error: {:?}, {:?}", l, r),
+                    _ => {}
+                }
             }
 
             let dummy = DataFrame::new_no_checks(vec![]);
