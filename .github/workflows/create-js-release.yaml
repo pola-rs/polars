@@ -181,7 +181,7 @@ jobs:
   publish:
     name: Publish
     needs:
-      - test-macOS-windows-binding
+      - test-macos
     defaults:
       run:
         working-directory: nodejs-polars

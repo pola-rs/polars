@@ -291,7 +291,7 @@ impl FromNapiValue for Wrap<ParquetCompression> {
             "lzo" => ParquetCompression::Lzo,
             "brotli" => ParquetCompression::Brotli,
             "lz4" => ParquetCompression::Lz4,
-            "zstd" => ParquetCompression::Zstd,
+            "zstd" => ParquetCompression::Zstd(None),
             _ => ParquetCompression::Uncompressed,
         };
         Ok(Wrap(compression))

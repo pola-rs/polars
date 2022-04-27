@@ -1183,10 +1183,9 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
   toCSV(destOrOptions?, options?);
   /**
    * Converts dataframe object into row oriented javascript objects
-
    * @example
    * ```
-   * >>> df.toObject()
+   * >>> df.toRecords()
    * [
    *   {"foo":1.0,"bar":"a"},
    *   {"foo":2.0,"bar":"b"},
@@ -1194,7 +1193,7 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * ]
    * ```
    */
-  toObjects(): Record<string, any>[]
+  toRecords(): Record<string, any>[]
 
   /**
    * @deprecated
@@ -1796,7 +1795,7 @@ export const _DataFrame = (_df: any): DataFrame => {
 
       return Buffer.concat(buffers);
     },
-    toObjects() {
+    toRecords() {
       return _df.toObjects();
     },
     toJSON(arg0?, options?): any {
@@ -1881,7 +1880,9 @@ export const _DataFrame = (_df: any): DataFrame => {
 
     },
     toSeries: (index = 0) => _Series(_df.selectAtIdx(index) as any) as any,
-    toString: _df.toString,
+    toString() {
+      return _df.toString();
+    },
     transpose(options?) {
 
       let df = wrap("transpose", options?.includeHeader ?? false, options?.headerName);
