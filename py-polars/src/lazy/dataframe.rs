@@ -15,6 +15,7 @@ use polars_core::prelude::{
 };
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use crate::PyLogicalPlan;
 
 #[pyclass]
 #[repr(transparent)]
@@ -180,6 +181,10 @@ impl PyLazyFrame {
         }
 
         Ok(r.finish().map_err(PyPolarsErr::from)?.into())
+    }
+
+    pub fn to_logical_plan(&self) -> PyLogicalPlan {
+        self.ldf.logical_plan.clone().into()
     }
 
     #[staticmethod]

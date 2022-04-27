@@ -203,6 +203,10 @@ class LazyFrame(Generic[DF]):
         )
         return self
 
+    @property
+    def logical_plan(self) -> "pli.LogicalPlan":
+        return pli.wrap_lp(self._ldf.to_logical_plan())
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.

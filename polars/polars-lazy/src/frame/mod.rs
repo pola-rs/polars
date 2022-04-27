@@ -86,7 +86,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone, Default)]
 #[must_use]
 pub struct LazyFrame {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
 }
 

@@ -12,6 +12,7 @@ use crate::{
     dataframe::PyDataFrame,
     file::EitherRustPythonFile,
     lazy::{
+        logical_plan::PyLogicalPlan,
         dataframe::{PyLazyFrame, PyLazyGroupBy},
         dsl,
     },
@@ -440,6 +441,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyLazyFrame>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<dsl::PyExpr>().unwrap();
+    m.add_class::<PyLogicalPlan>().unwrap();
     m.add_wrapped(wrap_pyfunction!(col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(count)).unwrap();
     m.add_wrapped(wrap_pyfunction!(first)).unwrap();
