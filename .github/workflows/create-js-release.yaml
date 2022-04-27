@@ -160,48 +160,23 @@ jobs:
           name: bindings-${{ matrix.settings.target }}
           path: nodejs-polars/polars/*.node
           if-no-files-found: error
-  test-macOS-windows-binding:
+  test-macos:
     defaults:
       run:
         working-directory: nodejs-polars
-    name: Test bindings on ${{ matrix.settings.target }} - node@${{ matrix.node }}
     needs:
       - build
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - host: windows-latest
-            target: x86_64-pc-windows-msvc
-        node:
-          - '16'
-          - '17'
-    runs-on: ${{ matrix.settings.host }}
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup node
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node }}
-          cache: yarn
-          cache-dependency-path: nodejs-polars/yarn.lock
-
-      - name: Cache NPM dependencies
-        uses: actions/cache@v2
-        with:
-          path: nodejs-polars/node_modules
-          key: npm-cache-test-${{ matrix.settings.target }}-${{ matrix.node }}-${{ hashFiles('yarn.lock') }}
+      - uses: actions/checkout@v2
       - name: Install dependencies
-        run: yarn install 
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+        run: yarn install
+      - name: Download all artifacts
+        uses: actions/download-artifact@v2
         with:
-          name: bindings-${{ matrix.settings.target }}
+          name: bindings-x86_64-apple-darwin
           path: nodejs-polars
-      - name: List packages
-        run: ls -R .
-        shell: bash
-      - name: Test bindings
+      - name: Run test
         run: yarn test
   publish:
     name: Publish

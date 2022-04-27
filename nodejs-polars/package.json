@@ -41,7 +41,7 @@
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
     "build": "napi build --platform --release --pipe echo polars",
-    "build:debug": "napi build --platform --pipe echo polars",
+    "build:debug": "napi build --platform polars; rm -f polars/index.js rm -f polars/index.d.ts",
     "build:ts": " rm -rf bin; tsc -p tsconfig.build.json",
     "cp:bin": "cp ./polars/*.node bin/",
     "format:rs": "cargo fmt",
