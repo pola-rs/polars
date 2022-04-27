@@ -77,7 +77,7 @@ impl ListChunked {
             ))
         };
 
-        let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
+        let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
 
         AmortizedListIter {
             len: self.len(),
