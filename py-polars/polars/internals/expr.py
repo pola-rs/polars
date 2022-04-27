@@ -3944,7 +3944,11 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
-
+        
+        See Also
+        --------
+        replace_all : Replace substring on all regex pattern matches.
+        
         Examples
         --------
 
@@ -3974,6 +3978,25 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+            
+        See Also
+        --------
+        replace : Replace first regex match with a string value.
+        
+        Examples
+        --------
+        >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
+        >>> df.with_column(pl.col("text").str.replace_all("a", "-"))
+        shape: (2, 2)
+        ┌─────┬─────────┐
+        │ id  ┆ text    │
+        │ --- ┆ ---     │
+        │ i64 ┆ str     │
+        ╞═════╪═════════╡
+        │ 1   ┆ -bc-bc  │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ 123-123 │
+        └─────┴─────────┘
         """
         return wrap_expr(self._pyexpr.str_replace_all(pattern, value))
 
