@@ -4,8 +4,11 @@ This module contains all expressions and classes needed for lazy computation/ qu
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import warnings
+from io import BytesIO, IOBase, StringIO
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -18,7 +21,13 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    overload,
 )
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
@@ -29,7 +38,12 @@ except ImportError:  # pragma: no cover
 
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
-from polars.utils import _in_notebook, _prepare_row_count_args, _process_null_values
+from polars.utils import (
+    _in_notebook,
+    _prepare_row_count_args,
+    _process_null_values,
+    format_path,
+)
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
@@ -202,6 +216,89 @@ class LazyFrame(Generic[DF]):
             _prepare_row_count_args(row_count_name, row_count_offset),
         )
         return self
+
+    @classmethod
+    def from_json(cls, json: str) -> "LazyFrame":
+        """
+        See Also pl.read_json
+        """
+        f = StringIO(json)
+        return cls.read_json(f)
+
+    @classmethod
+    def read_json(
+        cls,
+        file: Union[str, Path, IOBase],
+    ) -> "LazyFrame":
+        """
+        See Also pl.read_json
+        """
+        if isinstance(file, StringIO):
+            file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        return wrap_ldf(PyLazyFrame.read_json(file))
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: Literal[True],
+    ) -> str:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: Literal[False] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: bool = ...,
+    ) -> Optional[str]:
+        ...
+
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = None,
+        *,
+        to_string: bool = False,
+    ) -> Optional[str]:
+        """
+        Serialize LogicalPlan to JSON representation.
+
+        Parameters
+        ----------
+        file
+            Write to this file instead of returning a string.
+        to_string
+            Ignore file argument and return a string.
+        """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._ldf.to_json(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._ldf.to_json(file)
+        return None
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """

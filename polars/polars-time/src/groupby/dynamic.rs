@@ -5,10 +5,14 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[repr(transparent)]
 struct Wrap<T>(pub T);
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column
     pub index_column: String,
@@ -26,6 +30,7 @@ pub struct DynamicGroupOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column
     pub index_column: String,

@@ -6,6 +6,7 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
     pub(crate) comment_char: Option<u8>,
@@ -25,6 +26,7 @@ pub struct CsvParserOptions {
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Vec<String>>,
@@ -34,6 +36,7 @@ pub struct ParquetOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
@@ -42,6 +45,7 @@ pub struct IpcScanOptions {
 }
 
 #[derive(Clone, Debug, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
@@ -49,6 +53,7 @@ pub struct UnionOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
     pub(crate) rolling: Option<RollingGroupOptions>,
@@ -56,6 +61,7 @@ pub struct GroupbyOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,
     pub(crate) maintain_order: bool,
@@ -133,6 +139,7 @@ pub struct LogicalPlanUdfOptions {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
     pub(crate) reverse: Vec<bool>,
     // Can only be true in case of a single column.

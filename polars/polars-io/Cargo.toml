@@ -51,6 +51,7 @@ polars-time = { version = "0.20.0", path = "../polars-time", default-features = 
 polars-utils = { version = "0.20.0", path = "../polars-utils" }
 rayon = "1.5"
 regex = "1.5"
+serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 simdutf8 = "0.1"
 

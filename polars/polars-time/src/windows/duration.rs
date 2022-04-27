@@ -13,7 +13,11 @@ use polars_core::prelude::{
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 use std::ops::Mul;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Duration {
     // the number of months for the duration
     months: i64,

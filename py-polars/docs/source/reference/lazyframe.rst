@@ -64,6 +64,15 @@ Manipulation/ selection
     LazyFrame.interpolate
     LazyFrame.unnest
 
+Conversion
+----------
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.write_json
+    LazyFrame.read_json
+    LazyFrame.from_json
+
 Apply
 -----
 .. autosummary::

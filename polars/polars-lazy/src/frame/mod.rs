@@ -31,6 +31,8 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::physical_plan::state::ExecutionState;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
@@ -46,6 +48,7 @@ use polars_core::frame::explode::MeltArgs;
 use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
@@ -83,7 +86,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone, Default)]
 #[must_use]
 pub struct LazyFrame {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
 }
 
