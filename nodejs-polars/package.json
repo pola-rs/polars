@@ -40,9 +40,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node -r @swc-node/register benchmark/bench.ts",
-    "build": "napi build --platform  --release polars; rm -f polars/index.js; rm -f polars/index.d.ts; rm -f index.js; rm -f index.d.ts;",
-    "build:debug": "napi build --platform polars; rm -f polars/index.js; rm -f polars/index.d.ts; rm -f index.js; rm -f index.d.ts;",
+    "build": "napi build --platform  --release polars",
+    "build:debug": "napi build --platform polars",
     "build:ts": " rm -rf bin; tsc -p tsconfig.build.json",
+    "clean:files": "rm -f polars/index.js; rm -f polars/index.d.ts; rm -f index.js; rm -f index.d.ts",
     "cp:bin": "cp ./polars/*.node bin/",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",
