@@ -43,7 +43,6 @@
     "build": "napi build --platform  --release polars",
     "build:debug": "napi build --platform polars",
     "build:ts": " rm -rf bin; tsc -p tsconfig.build.json",
-    "clean:files": "rm -f polars/index.js; rm -f polars/index.d.ts; rm -f index.js; rm -f index.d.ts",
     "cp:bin": "cp ./polars/*.node bin/",
     "format:rs": "cargo fmt",
     "format:source": "prettier --config ./package.json --write './**/*.{js,ts}'",

@@ -85,7 +85,7 @@ export const DTYPE_TO_FFINAME: Record<DataType, string> = {
   [DataType.Utf8]: "Str",
   [DataType.List]: "List",
   [DataType.Date]: "Date",
-  [DataType.Datetime]: "odatetime",
+  [DataType.Datetime]: "Datetime",
   [DataType.Time]: "Time",
   [DataType.Object]: "Object",
   [DataType.Categorical]: "Categorical",

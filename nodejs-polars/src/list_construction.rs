@@ -28,7 +28,7 @@ macro_rules! typed_option_or_null {
                 let v = buff.into_value()?;
                 let ca = typed_to_chunked!(v, $type, $pl_type);
                 builder.append_iter(ca.into_iter())
-            } else  {
+            } else {
                 let values: Either<Array, Null> = $arr.get(idx)?.unwrap();
                 match values {
                     Either::A(inner_arr) => {
@@ -68,7 +68,7 @@ macro_rules! build_list_with_downcast {
                 let v = buff.into_value()?;
                 let ca = typed_to_chunked!(v, $type, $pl_type);
                 builder.append_iter(ca.into_iter())
-            } else  {
+            } else {
                 let values: Either<Array, Null> = $arr.get(idx)?.unwrap();
                 match values {
                     Either::A(inner_arr) => {
@@ -93,7 +93,6 @@ macro_rules! build_list_with_downcast {
     }};
 }
 
-
 pub fn js_arr_to_list(name: &str, arr: &Array, dtype: &DataType) -> napi::Result<Series> {
     let len = arr.len();
 
@@ -104,7 +103,9 @@ pub fn js_arr_to_list(name: &str, arr: &Array, dtype: &DataType) -> napi::Result
         DataType::UInt16 => build_list_with_downcast!(name, arr, u16, DataType::UInt16, UInt16Type),
         DataType::Int32 => typed_option_or_null!(name, arr, i32, DataType::Int32, Int32Type),
         DataType::UInt32 => typed_option_or_null!(name, arr, u32, DataType::UInt32, UInt32Type),
-        DataType::Float32 => build_list_with_downcast!(name, arr, f32, DataType::Float32, Float32Type),
+        DataType::Float32 => {
+            build_list_with_downcast!(name, arr, f32, DataType::Float32, Float32Type)
+        }
         DataType::Int64 => typed_option_or_null!(name, arr, i64, DataType::Int64, Int64Type),
         DataType::Float64 => typed_option_or_null!(name, arr, f64, DataType::Float64, Float64Type),
         DataType::UInt64 => build_list_with_downcast!(name, arr, u64, DataType::UInt64, UInt64Type),

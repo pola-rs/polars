@@ -70,7 +70,96 @@ impl ToSeries for JsUnknown {
         Series::new("", v)
     }
 }
+impl ToNapiValue for Wrap<&Series> {
+    unsafe fn to_napi_value(napi_env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
+        let s = val.0;
+        let len = s.len();
+        let dtype = s.dtype();
+        let env = Env::from_raw(napi_env);
 
+        match dtype {
+            DataType::Struct(_) => {
+                let ca = s.struct_().map_err(JsPolarsErr::from)?;
+                let df: DataFrame = ca.clone().into();
+                let (height, _) = df.shape();
+                let mut rows = env.create_array(height as u32)?;
+                for idx in 0..height {
+                    let mut row = env.create_object()?;
+                    for col in df.get_columns() {
+                        let key = col.name();
+                        let val = col.get(idx);
+                        row.set(key, Wrap(val))?;
+                    }
+                    rows.set(idx as u32, row)?;
+                }
+                Array::to_napi_value(napi_env, rows)
+            }
+            _ => {
+                let mut arr = env.create_array(len as u32)?;
+                for (idx, val) in s.iter().enumerate() {
+                    arr.set(idx as u32, Wrap(val))?;
+                }
+                Array::to_napi_value(napi_env, arr)
+            }
+        }
+    }
+}
+impl<'a> ToNapiValue for Wrap<AnyValue<'a>> {
+    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
+        match val.0 {
+            AnyValue::Null => {
+                napi::bindgen_prelude::Null::to_napi_value(env, napi::bindgen_prelude::Null)
+            }
+            AnyValue::Boolean(b) => bool::to_napi_value(env, b),
+            AnyValue::Int8(n) => i32::to_napi_value(env, n as i32),
+            AnyValue::Int16(n) => i32::to_napi_value(env, n as i32),
+            AnyValue::Int32(n) => i32::to_napi_value(env, n),
+            AnyValue::Int64(n) => i64::to_napi_value(env, n),
+            AnyValue::UInt8(n) => u32::to_napi_value(env, n as u32),
+            AnyValue::UInt16(n) => u32::to_napi_value(env, n as u32),
+            AnyValue::UInt32(n) => u32::to_napi_value(env, n),
+            AnyValue::UInt64(n) => u64::to_napi_value(env, n),
+            AnyValue::Float32(n) => f64::to_napi_value(env, n as f64),
+            AnyValue::Float64(n) => f64::to_napi_value(env, n),
+            AnyValue::Utf8(s) => String::to_napi_value(env, s.to_owned()),
+            AnyValue::Date(v) => {
+                let mut ptr = std::ptr::null_mut();
+
+                check_status!(
+                    napi::sys::napi_create_date(env, v as f64, &mut ptr),
+                    "Failed to convert rust type `AnyValue::Date` into napi value",
+                )?;
+
+                Ok(ptr)
+            }
+            AnyValue::Datetime(v, _, _) => {
+                let mut ptr = std::ptr::null_mut();
+
+                check_status!(
+                    napi::sys::napi_create_date(env, v as f64, &mut ptr),
+                    "Failed to convert rust type `AnyValue::Date` into napi value",
+                )?;
+
+                Ok(ptr)
+            }
+            AnyValue::Duration(v, _) => i64::to_napi_value(env, v),
+            AnyValue::Time(v) => i64::to_napi_value(env, v),
+            AnyValue::List(ser) => Wrap::<&Series>::to_napi_value(env, Wrap(&ser)),
+            AnyValue::Struct(vals, flds) => {
+                let env_obj = Env::from_raw(env);
+                let mut obj = env_obj.create_object()?;
+
+                for (val, fld) in vals.iter().zip(flds) {
+                    let key = fld.name();
+
+                    obj.set(key, Wrap(val.clone()))?;
+                }
+                Object::to_napi_value(env, obj)
+            }
+            _ => todo!(), // Value::Object(obj) => unsafe { Map::to_napi_value(env, obj) },
+        }
+    }
+}
 impl FromNapiValue for Wrap<Utf8Chunked> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let arr = Array::from_napi_value(env, napi_val)?;
@@ -184,41 +273,6 @@ impl FromNapiValue for Wrap<Expr> {
     }
 }
 
-impl ToNapiValue for Wrap<&Series> {
-    unsafe fn to_napi_value(napi_env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
-        let s = val.0;
-        let len = s.len();
-        let dtype = s.dtype();
-        let env = Env::from_raw(napi_env);
-
-        match dtype {
-            DataType::Struct(_) => {
-                let ca = s.struct_().map_err(JsPolarsErr::from)?;
-                let df: DataFrame = ca.clone().into();
-                let (height, _) = df.shape();
-                let mut rows = env.create_array(height as u32)?;
-                for idx in 0..height {
-                    let mut row = env.create_object()?;
-                    for col in df.get_columns() {
-                        let key = col.name();
-                        let val = col.get(idx);
-                        row.set(key, Wrap(val))?;
-                    }
-                    rows.set(idx as u32, row)?;
-                }
-                Array::to_napi_value(napi_env, rows)
-            }
-            _ => {
-                let mut arr = env.create_array(len as u32)?;
-                for (idx, val) in s.iter().enumerate() {
-                    arr.set(idx as u32, Wrap(val))?;
-                }
-                Array::to_napi_value(napi_env, arr)
-            }
-        }
-    }
-}
-
 impl TypeName for Wrap<QuantileInterpolOptions> {
     fn type_name() -> &'static str {
         "QuantileInterpolOptions"
@@ -296,6 +350,7 @@ impl FromNapiValue for Wrap<ParquetCompression> {
         Ok(Wrap(compression))
     }
 }
+
 impl FromNapiValue for Wrap<Option<IpcCompression>> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let compression = String::from_napi_value(env, napi_val)?;
@@ -355,6 +410,7 @@ impl FromNapiValue for Wrap<NullBehavior> {
         Ok(Wrap(method))
     }
 }
+
 impl FromNapiValue for Wrap<FillNullStrategy> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let method = String::from_napi_value(env, napi_val)?;
@@ -375,6 +431,7 @@ impl FromNapiValue for Wrap<FillNullStrategy> {
         Ok(Wrap(method))
     }
 }
+
 impl FromNapiValue for Wrap<u8> {
     unsafe fn from_napi_value(env: sys::napi_env, napi_val: sys::napi_value) -> JsResult<Self> {
         let n = u32::from_napi_value(env, napi_val)?;
@@ -673,6 +730,7 @@ impl FromNapiValue for Wrap<NullValues> {
         }
     }
 }
+
 impl ToNapiValue for Wrap<NullValues> {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> napi::Result<sys::napi_value> {
         match val.0 {

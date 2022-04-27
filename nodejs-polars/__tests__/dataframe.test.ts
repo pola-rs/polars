@@ -1,8 +1,5 @@
 /* eslint-disable newline-per-chained-call */
 import pl from "@polars";
-import {Stream} from "stream";
-import fs from "fs";
-
 describe("dataframe", () => {
   const df = pl.DataFrame([
     pl.Series("foo", [1, 2, 9], pl.Int16),

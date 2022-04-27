@@ -16,7 +16,7 @@ crate-type = ["cdylib"]
 ahash = "0.7"
 bincode = "1.3"
 napi = { version = "2.2.0", default-features = false, features = ["napi8", "serde-json", "experimental"] }
-napi-derive = "2.2.0"
+napi-derive = { version = "2.2.0", default-features = false }
 polars-core = { path = "../polars/polars-core", default-features = false }
 thiserror = "1.0.20"
 

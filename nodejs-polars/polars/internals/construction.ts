@@ -118,7 +118,7 @@ const fromTypedArray = (name, value) => {
 /**
  * Construct an internal `JsSeries` from an array
  */
-export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict = false): any {
+export function arrayToJsSeries(name: string = "", values: any[] = [], dtype?: any, strict = false): any {
   if (isTypedArray(values)) {
     return fromTypedArray(name, values);
   }
@@ -130,6 +130,7 @@ export function arrayToJsSeries(name: string, values: any[], dtype?: any, strict
   const firstValue = firstNonNull(values);
   if(Array.isArray(firstValue) || isTypedArray(firstValue)) {
     const listDtype = jsTypeToPolarsType(firstValue);
+
     const constructor = polarsTypeToConstructor(DataType.List);
 
     return constructor(name, values, strict, listDtype);

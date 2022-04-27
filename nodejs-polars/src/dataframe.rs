@@ -342,6 +342,7 @@ pub fn from_rows(
     rows: Array,
     schema: Option<Wrap<Schema>>,
     infer_schema_length: Option<u32>,
+    env: Env,
 ) -> napi::Result<JsDataFrame> {
     let schema = match schema {
         Some(s) => s.0,
@@ -355,20 +356,26 @@ pub fn from_rows(
     let it: Vec<Row> = (0..len)
         .into_iter()
         .map(|idx| {
-            let obj = rows.get::<Object>(idx as u32).unwrap().unwrap();
+            let obj = rows
+                .get::<Object>(idx as u32)
+                .unwrap_or(None)
+                .unwrap_or(env.create_object().unwrap());
             Row(schema
                 .iter_fields()
                 .map(|fld| {
                     let dtype = fld.data_type().clone();
                     let key = fld.name();
-                    let unknown: Option<napi::JsUnknown> = obj.get(key).unwrap();
-                    let av = match unknown {
-                        Some(unknown) => unsafe {
-                            coerce_js_anyvalue(unknown, dtype).unwrap_or(AnyValue::Null)
-                        },
-                        None => AnyValue::Null,
-                    };
-                    av
+                    if let Ok(unknown) = obj.get(key) {
+                        let av = match unknown {
+                            Some(unknown) => unsafe {
+                                coerce_js_anyvalue(unknown, dtype).unwrap_or(AnyValue::Null)
+                            },
+                            None => AnyValue::Null,
+                        };
+                        av
+                    } else {
+                        AnyValue::Null
+                    }
                 })
                 .collect())
         })

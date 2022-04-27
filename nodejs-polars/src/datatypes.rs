@@ -209,61 +209,6 @@ impl From<napi::ValueType> for Wrap<DataType> {
     }
 }
 
-impl<'a> ToNapiValue for Wrap<AnyValue<'a>> {
-    unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
-        match val.0 {
-            AnyValue::Null => Null::to_napi_value(env, Null),
-            AnyValue::Boolean(b) => bool::to_napi_value(env, b),
-            AnyValue::Int8(n) => i32::to_napi_value(env, n as i32),
-            AnyValue::Int16(n) => i32::to_napi_value(env, n as i32),
-            AnyValue::Int32(n) => i32::to_napi_value(env, n),
-            AnyValue::Int64(n) => i64::to_napi_value(env, n),
-            AnyValue::UInt8(n) => u32::to_napi_value(env, n as u32),
-            AnyValue::UInt16(n) => u32::to_napi_value(env, n as u32),
-            AnyValue::UInt32(n) => u32::to_napi_value(env, n),
-            AnyValue::UInt64(n) => u64::to_napi_value(env, n),
-            AnyValue::Float32(n) => f64::to_napi_value(env, n as f64),
-            AnyValue::Float64(n) => f64::to_napi_value(env, n),
-            AnyValue::Utf8(s) => String::to_napi_value(env, s.to_owned()),
-            AnyValue::Date(v) => {
-                let mut ptr = std::ptr::null_mut();
-
-                check_status!(
-                    napi::sys::napi_create_date(env, v as f64, &mut ptr),
-                    "Failed to convert rust type `AnyValue::Date` into napi value",
-                )?;
-
-                Ok(ptr)
-            }
-            AnyValue::Datetime(v, _, _) => {
-                let mut ptr = std::ptr::null_mut();
-
-                check_status!(
-                    napi::sys::napi_create_date(env, v as f64, &mut ptr),
-                    "Failed to convert rust type `AnyValue::Date` into napi value",
-                )?;
-
-                Ok(ptr)
-            }
-            AnyValue::Duration(v, _) => i64::to_napi_value(env, v),
-            AnyValue::Time(v) => i64::to_napi_value(env, v),
-            AnyValue::List(ser) => Wrap::<&Series>::to_napi_value(env, Wrap(&ser)),
-            AnyValue::Struct(vals, flds) => {
-                let env_obj = Env::from_raw(env);
-                let mut obj = env_obj.create_object()?;
-
-                for (val, fld) in vals.iter().zip(flds) {
-                    let key = fld.name();
-
-                    obj.set(key, Wrap(val.clone()))?;
-                }
-                Object::to_napi_value(env, obj)
-            }
-            _ => todo!(), // Value::Object(obj) => unsafe { Map::to_napi_value(env, obj) },
-        }
-    }
-}
-
 impl ToNapiValue for JsAnyValue {
     unsafe fn to_napi_value(env: sys::napi_env, val: Self) -> Result<sys::napi_value> {
         match val {
