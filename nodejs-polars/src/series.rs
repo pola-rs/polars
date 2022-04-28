@@ -23,6 +23,42 @@ impl From<Series> for JsSeries {
 
 #[napi]
 impl JsSeries {
+    #[napi]
+    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+        env.to_js_value(&self.series)
+    }
+
+    #[napi]
+    pub fn serialize(&self, format: String) -> napi::Result<Buffer> {
+        let buf = match format.as_ref() {
+            "bincode" => bincode::serialize(&self.series)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::to_vec(&self.series)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supported options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(Buffer::from(buf))
+    }
+
+    #[napi(factory)]
+    pub fn deserialize(buf: Buffer, format: String) -> napi::Result<JsSeries> {
+        let series: Series = match format.as_ref() {
+            "bincode" => bincode::deserialize(&buf)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::from_slice(&buf)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supported options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(series.into())
+    }
     //
     // FACTORIES
     //
@@ -1174,16 +1210,6 @@ impl JsSeries {
         } else {
             None
         }
-    }
-    #[napi]
-    pub fn to_json(&self) -> napi::Result<Buffer> {
-        let buf = serde_json::to_vec(&self.series).unwrap();
-        Ok(Buffer::from(buf))
-    }
-    #[napi]
-    pub fn to_binary(&self) -> napi::Result<Buffer> {
-        let buf = bincode::serialize(&self.series).unwrap();
-        Ok(Buffer::from(buf))
     }
 }
 

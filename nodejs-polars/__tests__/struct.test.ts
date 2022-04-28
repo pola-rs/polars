@@ -1,6 +1,5 @@
 
 import pl from "@polars";
-import {DataType} from "@polars/datatypes";
 
 describe("struct", () => {
   test("series <--> array round trip", () => {

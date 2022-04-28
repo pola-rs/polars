@@ -386,6 +386,42 @@ pub fn from_rows(
 
 #[napi]
 impl JsDataFrame {
+    #[napi]
+    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+        env.to_js_value(&self.df)
+    }
+
+    #[napi]
+    pub fn serialize(&self, format: String) -> napi::Result<Buffer> {
+        let buf = match format.as_ref() {
+            "bincode" => bincode::serialize(&self.df)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::to_vec(&self.df)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(Buffer::from(buf))
+    }
+
+    #[napi(factory)]
+    pub fn deserialize(buf: Buffer, format: String) -> napi::Result<JsDataFrame> {
+        let df: DataFrame = match format.as_ref() {
+            "bincode" => bincode::deserialize(&buf)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::from_slice(&buf)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(df.into())
+    }
     #[napi(constructor)]
     pub fn from_columns(columns: Array) -> napi::Result<JsDataFrame> {
         let len = columns.len();
@@ -1036,32 +1072,6 @@ impl JsDataFrame {
     pub fn unnest(&self, names: Vec<String>) -> napi::Result<JsDataFrame> {
         let df = self.df.unnest(names).map_err(JsPolarsErr::from)?;
         Ok(df.into())
-    }
-    #[napi(factory)]
-    pub fn from_bincode(buf: Buffer) -> napi::Result<JsDataFrame> {
-        let df: DataFrame = bincode::deserialize(&buf).unwrap();
-
-        Ok(df.into())
-    }
-    #[napi]
-    pub fn to_bincode(&self) -> napi::Result<Buffer> {
-        let buf = bincode::serialize(&self.df).unwrap();
-        Ok(Buffer::from(buf))
-    }
-    #[napi]
-    pub fn to_json(&self, pretty: Option<bool>) -> napi::Result<Buffer> {
-        let pretty = pretty.unwrap_or(false);
-        if pretty {
-            let bytes = serde_json::to_vec_pretty(&self.df)?;
-            Ok(bytes.into())
-        } else {
-            let bytes = serde_json::to_vec(&self.df)?;
-            Ok(bytes.into())
-        }
-    }
-    #[napi]
-    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
-        env.to_js_value(&self.df)
     }
     #[napi]
     pub fn to_row(&self, idx: f64, env: Env) -> napi::Result<Array> {
