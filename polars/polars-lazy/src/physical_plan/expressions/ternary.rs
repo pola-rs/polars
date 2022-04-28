@@ -89,14 +89,6 @@ impl PhysicalExpr for TernaryExpr {
         let mask_s = ac_mask.flat_naive();
 
         assert!(
-            (mask_s.len() == required_height),
-            "The predicate is of a different length than the groups.\
-The predicate produced {} values. Where the original DataFrame has {} values",
-            mask_s.len(),
-            required_height
-        );
-
-        assert!(
             ac_truthy.can_combine(&ac_falsy),
             "cannot combine this ternary expression, the groups do not match"
         );
@@ -161,6 +153,24 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 ac_truthy.with_series(ca.into_series(), true);
                 Ok(ac_truthy)
             }
+            // all aggregated or literal
+            // simply align lengths and zip
+            (
+                AggState::Literal(truthy) | AggState::AggregatedFlat(truthy),
+                AggState::AggregatedFlat(falsy) | AggState::Literal(falsy),
+            )
+            | (AggState::AggregatedList(truthy), AggState::AggregatedList(falsy))
+                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+            {
+                let mut truthy = truthy.clone();
+                let mut falsy = falsy.clone();
+                let mut mask = ac_mask.series().bool()?.clone();
+                expand_lengths(&mut truthy, &mut falsy, &mut mask);
+                let mut out = truthy.zip_with(&mask, &falsy).unwrap();
+                out.rename(truthy.name());
+                ac_truthy.with_series(out, true);
+                Ok(ac_truthy)
+            }
             // if the groups_len == df.len we can just apply all flat.
             (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
                 if s.len() != df.height() =>
@@ -220,7 +230,8 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 ac_truthy.with_series(ca.into_series(), true);
                 Ok(ac_truthy)
             }
-            // Both are or a flat series or aggreagated into a list
+
+            // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
                 let mask = mask_s.bool()?;
