@@ -1256,6 +1256,10 @@ class Expr:
         """Count unique values."""
         return wrap_expr(self._pyexpr.n_unique())
 
+    def null_count(self) -> "Expr":
+        """Count unique values."""
+        return wrap_expr(self._pyexpr.null_count())
+
     def arg_unique(self) -> "Expr":
         """Get index of first unique value."""
         return wrap_expr(self._pyexpr.arg_unique())

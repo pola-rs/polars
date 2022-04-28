@@ -6,6 +6,7 @@ pub use cat::*;
 #[cfg(feature = "temporal")]
 mod dt;
 mod expr;
+pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
 mod functions;
 #[cfg(feature = "list")]
@@ -38,6 +39,7 @@ pub use expr::*;
 pub use functions::*;
 pub use options::*;
 
+use crate::dsl::function_expr::FunctionExpr;
 use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
@@ -186,22 +188,36 @@ impl Expr {
     where
         F: Fn(FunctionOptions) -> FunctionOptions,
     {
-        if let Self::Function {
-            input,
-            function,
-            output_type,
-            mut options,
-        } = self
-        {
-            options = func(options);
-            Self::Function {
+        match self {
+            Self::AnonymousFunction {
                 input,
                 function,
                 output_type,
-                options,
+                mut options,
+            } => {
+                options = func(options);
+                Self::AnonymousFunction {
+                    input,
+                    function,
+                    output_type,
+                    options,
+                }
             }
-        } else {
-            panic!("implementation error")
+            Self::Function {
+                input,
+                function,
+                mut options,
+            } => {
+                options = func(options);
+                Self::Function {
+                    input,
+                    function,
+                    options,
+                }
+            }
+            _ => {
+                panic!("implementation error")
+            }
         }
     }
 
@@ -558,7 +574,7 @@ impl Expr {
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
@@ -581,7 +597,7 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input,
             function: NoEq::new(Arc::new(function)),
             output_type,
@@ -607,7 +623,7 @@ impl Expr {
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
@@ -632,7 +648,7 @@ impl Expr {
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
@@ -655,7 +671,7 @@ impl Expr {
     {
         let f = move |s: &mut [Series]| function(std::mem::take(&mut s[0]));
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: vec![self],
             function: NoEq::new(Arc::new(f)),
             output_type,
@@ -664,6 +680,19 @@ impl Expr {
                 input_wildcard_expansion: false,
                 auto_explode: false,
                 fmt_str: "",
+            },
+        }
+    }
+
+    fn apply_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: function_expr,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str,
             },
         }
     }
@@ -678,7 +707,7 @@ impl Expr {
         let mut input = vec![self];
         input.extend_from_slice(arguments);
 
-        Expr::Function {
+        Expr::AnonymousFunction {
             input,
             function: NoEq::new(Arc::new(function)),
             output_type,
@@ -1779,6 +1808,14 @@ impl Expr {
             options
         })
     }
+    /// Get the null count of the column/group
+    pub fn null_count(self) -> Expr {
+        self.apply_private(FunctionExpr::NullCount, "null_count")
+            .with_function_options(|mut options| {
+                options.auto_explode = true;
+                options
+            })
+    }
 
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
@@ -1860,7 +1897,7 @@ where
 {
     let input = expr.as_ref().to_vec();
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input,
         function: NoEq::new(Arc::new(function)),
         output_type,
@@ -1887,7 +1924,7 @@ where
 {
     let input = expr.as_ref().to_vec();
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input,
         function: NoEq::new(Arc::new(function)),
         output_type,
@@ -1916,7 +1953,7 @@ where
 {
     let input = expr.as_ref().to_vec();
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input,
         function: NoEq::new(Arc::new(function)),
         output_type,

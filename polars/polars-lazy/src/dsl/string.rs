@@ -73,7 +73,7 @@ impl StringNameSpace {
         let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
             Ok(s[0].str_concat(&delimiter).into_series())
         }) as Arc<dyn SeriesUdf>);
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: vec![self.0],
             function,
             output_type: GetOutput::from_type(DataType::Utf8),

@@ -166,6 +166,7 @@ Computations
     Expr.sign
     Expr.unique_counts
     Expr.value_counts
+    Expr.null_count
 
 Manipulation/ selection
 -----------------------
