@@ -10,7 +10,7 @@ import {
 import {Series} from "../series/series";
 
 import * as expr from "./expr/";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Deserialize, Rolling, Round, Sample, Serialize} from "../shared_traits";
 
 export interface Expr extends
   Rolling<Expr>,
@@ -18,7 +18,8 @@ export interface Expr extends
   Comparison<Expr>,
   Cumulative<Expr>,
   Sample<Expr>,
-  Round<Expr> {
+  Round<Expr>,
+  Serialize {
   /** @ignore */
   _expr: any;
   get date(): expr.Datetime;
@@ -27,12 +28,9 @@ export interface Expr extends
   get struct(): expr.Struct;
   [Symbol.toStringTag](): string;
   [INSPECT_SYMBOL](): string;
-  /** serializes the Expr to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
-   * @example
-   * pl.Expr.fromBinary(expr.toBinary())
-  */
-  toBinary(): Buffer
   toString(): string;
+  /** compat with `JSON.stringify` */
+  toJSON(): string;
   /** Take absolute values */
   abs(): Expr
   aggGroups(): Expr
@@ -536,15 +534,12 @@ export const _Expr = (_expr: any): Expr => {
     return _Expr(unwrap(method, ...args));
   };
 
-  const wrapNullArgs = (method: string) => () => wrap(method);
   const wrapExprArg = (method: string, lit=false) => (other: any) => {
 
     const expr = exprToLitOrExpr(other, lit).inner();
 
     return wrap(method, expr);
   };
-  type anyfunc = (...args: any[]) => any
-  const wrapUnaryWithDefault = (method: string, key: string, otherwise): anyfunc => (val=otherwise) => wrap(method, {[key]: val?.[key] ?? val});
 
   const rolling = (method: string) =>  (opts, weights?, minPeriods?, center?): Expr => {
     const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
@@ -569,11 +564,19 @@ export const _Expr = (_expr: any): Expr => {
     [INSPECT_SYMBOL]() {
       return _expr.toString();
     },
-    toBinary() {
-      return null as any;
+    serialize(format) {
+      return _expr.serialize(format);
     },
     toString() {
       return _expr.toString();
+    },
+    toJSON(...args: any[]) {
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+      if(args[0] === "") {
+        return _expr.toJs();
+      }
+
+      return _expr.serialize("json").toString();
     },
     get str() {
       return expr.StringFunctions(_expr);
@@ -1048,13 +1051,10 @@ export const _Expr = (_expr: any): Expr => {
   };
 };
 
-export interface ExprConstructor {
+export interface ExprConstructor extends Deserialize<Expr> {
   isExpr(arg: any): arg is Expr;
-  /**
-   * @param binary used to serialize/deserialize expr. This will only work with the output from expr.toBinary().
-   */
-  fromBinary(binary: Buffer): Expr
 }
+
 const isExpr = (anyVal: any): anyVal is Expr =>  {
   try {
     return anyVal?.[Symbol.toStringTag]?.() === "Expr";
@@ -1063,12 +1063,12 @@ const isExpr = (anyVal: any): anyVal is Expr =>  {
   }
 };
 
-const fromBinary = (buf: Buffer)  => {
-  return null as any;
-  // return _Expr(pli.JsExpr.from_bincode(buf));
+
+const deserialize = (buf, format) => {
+  return _Expr(pli.JsExpr.deserialize(buf, format));
 };
 
-export const Expr: ExprConstructor = Object.assign(_Expr, {isExpr, fromBinary});
+export const Expr: ExprConstructor = Object.assign(_Expr, {isExpr, deserialize});
 
 /** @ignore */
 export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {

@@ -23,7 +23,7 @@ import {
   ExprOrString
 } from "./utils";
 
-import {Arithmetic, Sample} from "./shared_traits";
+import {Arithmetic, Deserialize, Sample, Serialize} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -222,7 +222,7 @@ interface WriteMethods {
   ╰─────┴─────┴─────╯
   ```
  */
-export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods {
+export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods, Serialize {
   /** @ignore */
   _df: any
   dtypes: DataType[]
@@ -1163,11 +1163,6 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    * ```
    */
   tail(length?: number): DataFrame
-  /** serializes the DataFrame to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
-   * @example
-   * pl.DataFrame.fromBinary(df.toBinary())
-   */
-  toBinary(): Buffer
   /** @deprecated *since 0.4.0* use {@link writeCSV} */
   toCSV(destOrOptions?, options?);
   /**
@@ -1184,14 +1179,9 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    */
   toRecords(): Record<string, any>[]
 
-  /**
-   * @deprecated
-   * @since 0.4.0
-   * @use {@link writeJSON}
-   * this will be removed in a later version to prevent collision with native `toJSON` method
-   * */
-  toJSON(options?: WriteJsonOptions): string
-  toJSON(destination: string | Writable, options?: WriteJsonOptions): void
+  /** compat with `JSON.stringify`  */
+  toJSON(): string
+
   /**
    * Converts dataframe object into column oriented javascript objects
    * @example
@@ -1211,6 +1201,28 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
   toParquet(destination?, options?)
   toSeries(index?: number): Series
   toString(): string
+  /**
+    Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+    @param name Name for the struct Series
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "a": [1, 2, 3, 4, 5],
+    ...   "b": ["one", "two", "three", "four", "five"],
+    ... })
+    >>> df.toStruct("nums")
+    shape: (5,)
+    Series: 'nums' [struct[2]{'a': i64, 'b': str}]
+    [
+            {1,"one"}
+            {2,"two"}
+            {3,"three"}
+            {4,"four"}
+            {5,"five"}
+    ]
+    ```
+   */
+  toStruct(name: string): Series
   /**
    * Transpose a DataFrame over the diagonal.
    *
@@ -1293,6 +1305,45 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    */
   unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
   unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
+  /**
+    Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+    location of the `struct` type.
+    @param names Names of the struct columns that will be decomposed by its fields
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "int": [1, 2],
+    ...   "str": ["a", "b"],
+    ...   "bool": [true, null],
+    ...   "list": [[1, 2], [3]],
+    ... })
+    ...  .toStruct("my_struct")
+    ...  .toFrame()
+    >>> df
+    shape: (2, 1)
+    ┌─────────────────────────────┐
+    │ my_struct                   │
+    │ ---                         │
+    │ struct[4]{'int',...,'list'} │
+    ╞═════════════════════════════╡
+    │ {1,"a",true,[1, 2]}         │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}            │
+    └─────────────────────────────┘
+    >>> df.unnest("my_struct")
+    shape: (2, 4)
+    ┌─────┬─────┬──────┬────────────┐
+    │ int ┆ str ┆ bool ┆ list       │
+    │ --- ┆ --- ┆ ---  ┆ ---        │
+    │ i64 ┆ str ┆ bool ┆ list [i64] │
+    ╞═════╪═════╪══════╪════════════╡
+    │ 1   ┆ a   ┆ true ┆ [1, 2]     │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ b   ┆ null ┆ [3]        │
+    └─────┴─────┴──────┴────────────┘
+    ```
+   */
+  unnest(names: string | string[]): DataFrame
    /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
@@ -1779,8 +1830,8 @@ export const _DataFrame = (_df: any): DataFrame => {
       return wrap("sum");
     },
     tail: (length=5) => wrap("tail", length),
-    toBinary() {
-      return _df.toBincode();
+    serialize(format) {
+      return _df.serialize(format);
     },
     toCSV(...args) {
       return this.writeCSV(...args);
@@ -1804,8 +1855,13 @@ export const _DataFrame = (_df: any): DataFrame => {
     toRecords() {
       return _df.toObjects();
     },
-    toJSON(arg0?, options?): any {
-      return _df.toJs();
+    toJSON(...args: any[]) {
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+      if(args[0] === "") {
+        return _df.toJs();
+      }
+
+      return _df.serialize("json").toString();
     },
     toObject() {
       return this.getColumns().reduce((acc, curr) => {
@@ -1893,6 +1949,9 @@ export const _DataFrame = (_df: any): DataFrame => {
 
     },
     toSeries: (index = 0) => _Series(_df.selectAtIdx(index) as any) as any,
+    toStruct(name) {
+      return _Series(_df.toStruct(name));
+    },
     toString() {
       return _df.toString();
     },
@@ -1922,6 +1981,11 @@ export const _DataFrame = (_df: any): DataFrame => {
       }
 
       return df;
+    },
+    unnest(names) {
+      names = Array.isArray(names) ? names : [names];
+
+      return _DataFrame(_df.unnest(names));
     },
     var() {
       return wrap("var");
@@ -2019,7 +2083,7 @@ export const _DataFrame = (_df: any): DataFrame => {
   });
 };
 
-export interface DataFrameConstructor {
+export interface DataFrameConstructor extends Deserialize<DataFrame> {
   (): DataFrame
   (data: any, options?: {
     columns?: any[],
@@ -2028,10 +2092,6 @@ export interface DataFrameConstructor {
     inferSchemaLength?: number,
   }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
-  /**
-  * @param binary used to serialize/deserialize dataframe. This will only work with the output from expr.toBinary().
-  */
-  fromBinary(binary: Buffer): DataFrame
 }
 function DataFrameConstructor(data?, options?): DataFrame {
 
@@ -2058,13 +2118,11 @@ function objToDF(obj: Record<string, Array<any>>): any {
   return new pli.JsDataFrame(columns);
 }
 const isDataFrame = (anyVal: any): anyVal is DataFrame => anyVal?.[Symbol.toStringTag] === "DataFrame";
-const fromBinary = (buf: Buffer)  => {
-  return _DataFrame(pli.JsDataFrame.fromBincode(buf));
-};
+
 
 export const DataFrame: DataFrameConstructor = Object.assign(
   DataFrameConstructor, {
     isDataFrame,
-    fromBinary
+    deserialize: (buf, fmt) => _DataFrame(pli.JsDataFrame.deserialize(buf, fmt))
   }
 );

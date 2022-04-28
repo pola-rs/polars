@@ -46,6 +46,50 @@ impl ToExprs for Vec<&JsExpr> {
 #[napi]
 impl JsExpr {
     #[napi]
+    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+        env.to_js_value(&self.inner)
+    }
+
+    #[napi]
+    pub fn serialize(&self, format: String) -> napi::Result<Buffer> {
+        let buf = match format.as_ref() {
+            "bincode" => bincode::serialize(&self.inner)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::to_vec(&self.inner)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(Buffer::from(buf))
+    }
+
+    #[napi(factory)]
+    pub fn deserialize(buf: Buffer, format: String) -> napi::Result<JsExpr> {
+        // Safety
+        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // so we actually don't have a lifetime at all when serializing.
+
+        // &[u8] still has a lifetime. But its ok, because we drop it immediately
+        // in this scope
+        let bytes: &[u8] = &buf;
+        let bytes = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(bytes) };
+        let expr: Expr = match format.as_ref() {
+            "bincode" => bincode::deserialize(bytes)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            "json" => serde_json::from_slice(bytes)
+                .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
+            _ => {
+                return Err(napi::Error::from_reason(
+                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                ))
+            }
+        };
+        Ok(expr.into())
+    }
+    #[napi]
     pub fn __add__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
         Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner.clone()).into())
     }
@@ -1418,4 +1462,22 @@ fn concat_lst(s: Vec<&JsExpr>) -> JsExpr {
 fn concat_str(s: Vec<&JsExpr>, sep: String) -> JsExpr {
     let s = s.to_exprs();
     dsl::concat_str(s, &sep).into()
+}
+
+#[napi]
+fn min_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::min_exprs(exprs).into()
+}
+
+#[napi]
+fn max_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::max_exprs(exprs).into()
+}
+
+#[napi]
+fn as_struct(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::as_struct(&exprs).into()
 }

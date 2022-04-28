@@ -8,7 +8,7 @@ import {SeriesDateFunctions} from "./datetime";
 import {SeriesStructFunctions} from "./struct";
 import {InvalidOperationError} from "../error";
 import {RankMethod} from "../utils";
-import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
+import {Arithmetic, Comparison, Cumulative, Deserialize, Rolling, Round, Sample, Serialize} from "../shared_traits";
 import {col} from "../lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -19,7 +19,8 @@ export interface Series extends
   Comparison<Series>,
   Cumulative<Series>,
   Round<Series>,
-  Sample<Series> {
+  Sample<Series>,
+  Serialize {
   inner(): any
   name: string
   dtype: DataType
@@ -988,11 +989,7 @@ export interface Series extends
    */
   toObject(): {name: string, datatype: string, values: any[]}
   toFrame(): DataFrame
-  /** serializes the Series to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
-   * @example
-   * pl.Series.fromBinary(series.toBincode())
-   */
-  toBinary(): Buffer
+  /** compat with `JSON.stringify */
   toJSON(): string
   /** Returns an iterator over the values */
   values(): IterableIterator<any>
@@ -1059,6 +1056,9 @@ export function _Series(_s: any): Series {
     },
     toString() {
       return _s.toString();
+    },
+    serialize(format) {
+      return _s.serialize(format);
     },
     [Symbol.toStringTag]() {
       return "Series";
@@ -1677,11 +1677,16 @@ export function _Series(_s: any): Series {
     toBinary() {
       return _s.toBinary();
     },
-    toJSON() {
-      return _s.toJson().toString();
+    toJSON(...args: any[]) {
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+      if(args[0] === "") {
+        return _s.toJs();
+      }
+
+      return _s.serialize("json").toString();
     },
     toObject() {
-      return JSON.parse(_s.toJson().toString());
+      return _s.toJs();
     },
     unique(maintainOrder?) {
       if(maintainOrder) {
@@ -1692,7 +1697,6 @@ export function _Series(_s: any): Series {
     },
     valueCounts() {
       return null as any;
-
     },
     values() {
       return this[Symbol.iterator]();
@@ -1720,7 +1724,7 @@ export function _Series(_s: any): Series {
   });
 }
 
-export interface SeriesConstructor {
+export interface SeriesConstructor extends Deserialize<Series> {
   (values: any): Series
   (name: string, values: any[], dtype?): Series
 
@@ -1776,5 +1780,6 @@ const of = (...values: any[]): Series => {
 export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {
   isSeries,
   from,
-  of
+  of,
+  deserialize: (buf, fmt) => _Series(pli.JsSeries.deserialize(buf, fmt))
 });

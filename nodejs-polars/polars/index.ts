@@ -4,6 +4,7 @@ import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
 import * as cfg from "./cfg";
+import * as ldf from "./lazy/dataframe";
 import pli from "./internals/polars_internal";
 import  {
   funcs as lazy,
@@ -16,6 +17,7 @@ import  {
 namespace pl {
   export import Expr = lazyExpr.Expr
   export import DataFrame = df.DataFrame
+  export import LazyDataFrame = ldf.LazyDataFrame
   export import Series = series.Series;
   export type LazyGroupBy = lazyGroupBy;
   export type When = _when.When;
@@ -81,6 +83,7 @@ namespace pl {
   export import pearsonCorr = lazy.pearsonCorr
   export import quantile = lazy.quantile
   export import select = lazy.select
+  export import struct = lazy.struct
   export import spearmanRankCorr = lazy.spearmanRankCorr
   export import tail = lazy.tail
   export import list = lazy.list
