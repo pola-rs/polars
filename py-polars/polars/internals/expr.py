@@ -240,7 +240,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
@@ -3944,11 +3944,11 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
-        
+
         See Also
         --------
         replace_all : Replace substring on all regex pattern matches.
-        
+
         Examples
         --------
 
@@ -3978,11 +3978,11 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
-            
+
         See Also
         --------
         replace : Replace first regex match with a string value.
-        
+
         Examples
         --------
         >>> df = pl.DataFrame({"id": [1, 2], "text": ["abcabc", "123a123"]})
