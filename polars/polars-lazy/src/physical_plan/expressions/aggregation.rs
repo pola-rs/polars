@@ -306,15 +306,18 @@ impl PhysicalAggregation for AggQuantileExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Option<Series>> {
-        let series = self.expr.evaluate(df, state)?;
-        let new_name = series.name().to_string();
-        let opt_agg = series.agg_quantile(groups, self.quantile, self.interpol);
+        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        // don't change names by aggregations as is done in polars-core
+        let keep_name = ac.series().name().to_string();
 
+        let opt_agg =
+            ac.flat_naive()
+                .into_owned()
+                .agg_quantile(ac.groups(), self.quantile, self.interpol);
         let opt_agg = opt_agg.map(|mut agg| {
-            agg.rename(&new_name);
+            agg.rename(&keep_name);
             agg.into_series()
         });
-
         Ok(opt_agg)
     }
 }
