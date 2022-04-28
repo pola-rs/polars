@@ -126,11 +126,25 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
+            // the other is a literal value. In that case it is unlikely we want to expand this to the
+            // group sizes.
+            //
+            (AggState::AggregatedFlat(_), AggState::Literal(_), _)
+            | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
+                let l = ac_l.series();
+                let r = ac_r.series();
+                let mut s = apply_operator(l, r, self.op)?;
+                s.rename(l.name());
+
+                ac_l.with_series(s, true);
+                Ok(ac_l)
+            }
+            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
             // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
             // that's why a literal also takes this branch
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_), _)
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _)
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
@@ -179,7 +193,7 @@ impl PhysicalExpr for BinaryExpr {
             }
             // if the groups_len == df.len we can just apply all flat.
             (
-                AggState::Literal(_) | AggState::AggregatedList(_) | AggState::NotAggregated(_),
+                AggState::AggregatedList(_) | AggState::NotAggregated(_),
                 AggState::AggregatedFlat(s),
                 _,
             ) if s.len() != df.height() => {

@@ -148,3 +148,29 @@ fn test_when_then_otherwise_cats() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_when_then_otherwise_single_bool() -> Result<()> {
+    let df = df![
+        "key" => ["a", "b", "b"],
+        "val" => [Some(1), Some(2), None]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby_stable([col("key")])
+        .agg([when(col("val").null_count().gt(lit(0)))
+            .then(Null {}.lit())
+            .otherwise(col("val").sum())
+            .alias("sum_null_prop")])
+        .collect()?;
+
+    let expected = df![
+        "key" => ["a", "b"],
+        "sum_null_prop" => [Some(1), None]
+    ]?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}

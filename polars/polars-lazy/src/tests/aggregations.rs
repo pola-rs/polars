@@ -234,8 +234,8 @@ fn test_binary_agg_context_0() -> Result<()> {
         .lazy()
         .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(lit("a"))
-            .otherwise(lit("b"))
+            .then(repeat("a", count()))
+            .otherwise(repeat("b", count()))
             .alias("foo")])
         .collect()
         .unwrap();
