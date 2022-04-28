@@ -123,6 +123,26 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 }
 
 #[test]
+fn test_auto_explode() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("fruits")])
+        .agg([
+            col("B").skew(false).alias("bskew"),
+            col("B").kurtosis(false, false).alias("bkurt"),
+        ])
+        .collect()?;
+
+    assert!(matches!(out.column("bskew")?.dtype(), DataType::Float64));
+    assert!(matches!(out.column("bkurt")?.dtype(), DataType::Float64));
+
+    Ok(())
+}
+
+#[test]
 fn test_auto_list_agg() -> Result<()> {
     let df = fruits_cars();
 
