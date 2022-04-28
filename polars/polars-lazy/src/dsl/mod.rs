@@ -1489,7 +1489,11 @@ impl Expr {
             move |s| s.skew(bias).map(|opt_v| Series::new(s.name(), &[opt_v])),
             GetOutput::from_type(DataType::Float64),
         )
-        .with_fmt("skew")
+        .with_function_options(|mut options| {
+            options.fmt_str = "skew";
+            options.auto_explode = true;
+            options
+        })
     }
 
     #[cfg(feature = "moment")]
