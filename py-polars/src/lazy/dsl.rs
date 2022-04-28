@@ -200,6 +200,9 @@ impl PyExpr {
     pub fn unique_counts(&self) -> PyExpr {
         self.inner.clone().unique_counts().into()
     }
+    pub fn null_count(&self) -> PyExpr {
+        self.inner.clone().null_count().into()
+    }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;
         let expr = if strict {

@@ -68,10 +68,10 @@ impl OptimizationRule for SlicePushDown {
                         predicate,
                     })
                 }
-                m @ Function { options, .. }
+                m @ AnonymousFunction { options, .. }
                     if matches!(options.collect_groups, ApplyOptions::ApplyFlat) =>
                 {
-                    if let Function {
+                    if let AnonymousFunction {
                         input,
                         function,
                         output_type,
@@ -83,7 +83,7 @@ impl OptimizationRule for SlicePushDown {
                             .map(|n| pushdown(*n, offset, length, expr_arena))
                             .collect();
 
-                        Some(Function {
+                        Some(AnonymousFunction {
                             input,
                             function,
                             output_type,

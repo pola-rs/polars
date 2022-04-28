@@ -4,6 +4,7 @@ use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
+use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -292,13 +293,20 @@ pub enum Expr {
         falsy: Box<Expr>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
-    Function {
+    AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
         function: NoEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
         output_type: GetOutput,
+        options: FunctionOptions,
+    },
+    Function {
+        /// function arguments
+        input: Vec<Expr>,
+        /// function to apply
+        function: FunctionExpr,
         options: FunctionOptions,
     },
     Shift {
