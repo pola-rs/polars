@@ -1,4 +1,4 @@
-import {Expr, exprToLitOrExpr} from "./expr";
+import {Expr, _Expr, exprToLitOrExpr} from "./expr";
 import {Series} from "../series/series";
 import { DataFrame } from "../dataframe";
 import { ExprOrString, range, selectionToExprList} from "../utils";
@@ -97,14 +97,14 @@ import pli from "../internals/polars_internal";
  * ╰───────────┴─────╯
  * ```
  */
-export function col(col: string | string[] | Series<string>): Expr {
+export function col(col: string | string[] | Series): Expr {
   if(Series.isSeries(col)) {
     col = col.toArray();
   }
   if(Array.isArray(col)) {
-    return (Expr as any)(pli.cols({name: col}));
+    return _Expr(pli.cols(col));
   } else {
-    return (Expr as any)(pli.col({name: col}));
+    return _Expr(pli.col(col));
   }
 }
 
@@ -121,15 +121,15 @@ export function lit(value: any): Expr {
   }
   if(Series.isSeries(value)){
 
-    return (Expr as any)(pli.lit({value: value._series}));
+    return _Expr(pli.lit(value.inner()));
   }
 
-  return (Expr as any)(pli.lit({value}));
+  return _Expr(pli.lit(value));
 }
 
-// ----------
-// Helper Functions
-// ------
+// // ----------
+// // Helper Functions
+// // ------
 
 /**
  * __Create a range expression.__
@@ -148,10 +148,10 @@ export function lit(value: any): Expr {
  * >>>   .collect()
  * ```
  */
-export function arange<T>(opts: {low: Series<T> | T, high: Series<T> | T, step: number, eager: boolean});
-export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: true): Series<T>;
-export function arange<T>(low: Series<T> | T, high?: Series<T> | T, step?: number, eager?: false): Expr;
-export function arange<T>(opts: any, high?, step?, eager?): Series<T> | Expr {
+export function arange<T>(opts: {low: any, high: any, step: number, eager: boolean});
+export function arange(low: any, high?: any, step?: number, eager?: true): Series;
+export function arange(low: any, high?: any, step?: number, eager?: false): Expr;
+export function arange(opts: any, high?, step?, eager?): Series | Expr {
   if(typeof opts?.low === "number") {
     return arange(opts.low, opts.high, opts.step, opts.eager);
   } else {
@@ -163,9 +163,10 @@ export function arange<T>(opts: any, high?, step?, eager?): Series<T> | Expr {
       return df.select(arange(low, high, step).alias("arange") as any).getColumn("arange") as any;
     }
 
-    return (Expr as any)(pli.arange({low: low._expr, high: high._expr, step}));
+    return _Expr(pli.arange(low, high, step));
   }
 }
+
 /**
  * __Find the indexes that would sort the columns.__
  * ___
@@ -173,19 +174,18 @@ export function arange<T>(opts: any, high?, step?, eager?): Series<T> | Expr {
  * If there are duplicates in the first column, the second column will be used to determine the ordering
  * and so on.
  */
-
 export function argSortBy(exprs: Expr[] | string[], reverse: boolean | boolean[] = false): Expr {
   if(!Array.isArray(reverse)) {
     reverse = Array.from({length: exprs.length}, () => reverse) as any;
   }
   const by = selectionToExprList(exprs);
 
-  return (Expr as any)(pli.argSortBy({by, reverse}));
+  return _Expr(pli.argsortBy(by, reverse as any));
 }
 /** Alias for mean. @see {@link mean} */
 export function avg(column: string): Expr;
-export function avg(column: Series<any>): number;
-export function avg(column: Series<any> | string): number | Expr {
+export function avg(column: Series): number;
+export function avg(column: Series | string): number | Expr {
   return mean(column as any);
 }
 
@@ -199,7 +199,7 @@ export function concatList(expr: ExprOrString, expr2: ExprOrString,  ...exprs: E
 export function concatList(...exprs): Expr {
   const items = selectionToExprList(exprs as any, false);
 
-  return (Expr as any)(pli.concatList({items}));
+  return (Expr as any)(pli.concatLst(items));
 }
 
 /** Concat Utf8 Series in linear time. Non utf8 columns are cast to utf8. */
@@ -211,13 +211,13 @@ export function concatString(opts, sep=",") {
   }
   const items = selectionToExprList(opts as any, false);
 
-  return (Expr as any)(pli.concatString({items, sep}));
+  return (Expr as any)(pli.concatStr(items, sep));
 
 }
 
 /** Count the number of values in this column. */
 export function count(column: string): Expr
-export function count(column: Series<any>): number
+export function count(column: Series): number
 export function count(column) {
   if(Series.isSeries(column)) {
     return column.len();
@@ -228,10 +228,10 @@ export function count(column) {
 
 /** Compute the covariance between two columns/ expressions. */
 export function cov(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a, false)._expr;
-  b = exprToLitOrExpr(b, false)._expr;
+  a = exprToLitOrExpr(a, false);
+  b = exprToLitOrExpr(b, false);
 
-  return (Expr as any)(pli.cov({a, b}));
+  return _Expr(pli.cov(a, b));
 }
 /**
  * Exclude certain columns from a wildcard expression.
@@ -249,11 +249,11 @@ export function exclude(...columns): Expr {
 
 /** Get the first value. */
 export function first(column: string): Expr
-export function first<T>(column: Series<T>): T
-export function first<T>(column: string | Series<T>): Expr | T {
+export function first<T>(column: Series): T
+export function first<T>(column: string | Series): Expr | T {
   if(Series.isSeries(column)) {
     if(column.length) {
-      return column[0];
+      return column.get(0);
     } else {
       throw new RangeError("The series is empty, so no first value can be returned.");
     }
@@ -312,14 +312,16 @@ export function format(strings: string | TemplateStringsArray, ...expr: ExprOrSt
 
   return concatString(d, "");
 }
+
 /** Syntactic sugar for `pl.col(column).aggGroups()` */
 export function groups(column: string): Expr {
   return col(column).aggGroups();
 }
+
 /** Get the first n rows of an Expression. */
 export function head(column: ExprOrString, n?: number): Expr;
-export function head<T>(column: Series<T>, n?: number): Series<T>;
-export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr {
+export function head(column: Series, n?: number): Series;
+export function head(column: Series | ExprOrString, n?): Series | Expr {
   if(Series.isSeries(column)) {
     return column.head(n);
   } else {
@@ -329,12 +331,10 @@ export function head<T>(column: Series<T> | ExprOrString, n?): Series<T> | Expr 
 }
 
 /** Get the last value. */
-export function last(column: ExprOrString): Expr
-export function last<T>(column: Series<T>): T
-export function last<T>(column: ExprOrString | Series<T>): Expr | T {
+export function last(column: ExprOrString | Series):  any  {
   if(Series.isSeries(column)) {
     if(column.length) {
-      return column[-1];
+      return column.get(-1);
     } else {
       throw new RangeError("The series is empty, so no last value can be returned.");
     }
@@ -345,8 +345,8 @@ export function last<T>(column: ExprOrString | Series<T>): Expr | T {
 
 /** Get the mean value. */
 export function mean(column: ExprOrString): Expr;
-export function mean(column: Series<any>): number;
-export function mean(column: Series<any> | ExprOrString): number | Expr {
+export function mean(column: Series): number;
+export function mean(column: Series | ExprOrString): number | Expr {
   if(Series.isSeries(column)) {
     return column.mean();
   }
@@ -356,8 +356,8 @@ export function mean(column: Series<any> | ExprOrString): number | Expr {
 
 /** Get the median value. */
 export function median(column: ExprOrString): Expr;
-export function median(column: Series<any>): number;
-export function median(column: Series<any> | ExprOrString): number | Expr {
+export function median(column: Series): number;
+export function median(column: Series | ExprOrString): number | Expr {
   if(Series.isSeries(column)) {
     return column.median();
   }
@@ -367,8 +367,8 @@ export function median(column: Series<any> | ExprOrString): number | Expr {
 
 /** Count unique values. */
 export function nUnique(column: ExprOrString): Expr;
-export function nUnique(column: Series<any>): number;
-export function nUnique(column: Series<any> | ExprOrString): number | Expr {
+export function nUnique(column: Series): number;
+export function nUnique(column: Series | ExprOrString): number | Expr {
   if(Series.isSeries(column)) {
     return column.nUnique();
   }
@@ -379,15 +379,15 @@ export function nUnique(column: Series<any> | ExprOrString): number | Expr {
 
 /** Compute the pearson's correlation between two columns. */
 export function pearsonCorr(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a, false)._expr;
-  b = exprToLitOrExpr(b, false)._expr;
+  a = exprToLitOrExpr(a, false);
+  b = exprToLitOrExpr(b, false);
 
-  return (Expr as any)(pli.pearsonCorr({a, b}));
+  return _Expr(pli.pearsonCorr(a, b));
 }
 
 /** Get the quantile */
 export function quantile(column: ExprOrString, q: number): Expr;
-export function quantile(column: Series<any>, q: number): number;
+export function quantile(column: Series, q: number): number;
 export function quantile(column, q) {
   if(Series.isSeries(column)) {
     return column.quantile(q);
@@ -395,6 +395,7 @@ export function quantile(column, q) {
 
   return exprToLitOrExpr(column, false).quantile(q);
 }
+
 /**
  * __Run polars expressions without a context.__
  *
@@ -406,17 +407,17 @@ export function select(expr: ExprOrString, ...exprs: ExprOrString[]) {
 
 /** Compute the spearman rank correlation between two columns. */
 export function spearmanRankCorr(a: ExprOrString, b: ExprOrString): Expr {
-  a = exprToLitOrExpr(a, false)._expr;
-  b = exprToLitOrExpr(b, false)._expr;
+  a = exprToLitOrExpr(a, false);
+  b = exprToLitOrExpr(b, false);
 
-  return (Expr as any)(pli.spearmanRankCorr({a, b}));
+  return _Expr(pli.spearmanRankCorr(a, b));
 }
 
 
 /** Get the last n rows of an Expression. */
 export function tail(column: ExprOrString, n?: number): Expr;
-export function tail<T>(column: Series<T>, n?: number): Series<T>;
-export function tail<T>(column: Series<T> | ExprOrString, n?: number): Series<T> | Expr {
+export function tail(column: Series, n?: number): Series;
+export function tail(column: Series | ExprOrString, n?: number): Series | Expr {
   if(Series.isSeries(column)) {
     return column.tail(n);
   } else {
@@ -430,13 +431,13 @@ export function list(column: ExprOrString): Expr {
 }
 
 
-// export function collect_all() {}
-// export function all() {} // fold
-// export function any() {} // fold
-// export function apply() {} // lambda
-// export function fold() {}
-// export function map_binary() {} //lambda
-// export function map() {} //lambda
-// export function max() {} // fold
-// export function min() {} // fold
-// export function sum() {} // fold
+// // export function collect_all() {}
+// // export function all() {} // fold
+// // export function any() {} // fold
+// // export function apply() {} // lambda
+// // export function fold() {}
+// // export function map_binary() {} //lambda
+// // export function map() {} //lambda
+// // export function max() {} // fold
+// // export function min() {} // fold
+// // export function sum() {} // fold

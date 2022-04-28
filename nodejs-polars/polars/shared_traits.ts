@@ -1,3 +1,5 @@
+import {Expr} from "./lazy/expr";
+
 export type RollingOptions = {
   windowSize: number,
   weights?: Array<number>,
@@ -319,4 +321,163 @@ export interface Sample<T> {
 export interface Bincode<T> {
   (bincode: Uint8Array): T;
   getState(T): Uint8Array;
+}
+
+
+export interface ListFunctions<T> {
+  argMin(): T;
+  argMax(): T;
+  /**
+   * Get the value by index in the sublists.
+   * So index `0` would return the first item of every sublist
+   * and index `-1` would return the last item of every sublist
+   * if an index is out of bounds, it will return a `null`.
+   */
+  get(index: number): T
+  /**
+      Run any polars expression against the lists' elements
+      Parameters
+      ----------
+      @param expr
+          Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+      @param parallel
+          Run all expression parallel. Don't activate this blindly.
+          Parallelism is worth it if there is enough work to do per thread.
+          This likely should not be use in the groupby context, because we already parallel execution per group
+      @example
+      --------
+      >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+      >>> df.withColumn(
+      ...   pl.concatList(["a", "b"]).lst.eval(pl.first().rank()).alias("rank")
+      ... )
+      shape: (3, 3)
+      ┌─────┬─────┬────────────┐
+      │ a   ┆ b   ┆ rank       │
+      │ --- ┆ --- ┆ ---        │
+      │ i64 ┆ i64 ┆ list [f32] │
+      ╞═════╪═════╪════════════╡
+      │ 1   ┆ 4   ┆ [1.0, 2.0] │
+      ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+      │ 8   ┆ 5   ┆ [2.0, 1.0] │
+      ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+      │ 3   ┆ 2   ┆ [2.0, 1.0] │
+      └─────┴─────┴────────────┘
+   */
+  eval(expr: Expr, parallel: boolean): T
+  /** Get the first value of the sublists. */
+  first(): T
+  /**
+   * Join all string items in a sublist and place a separator between them.
+   * This errors if inner type of list `!= Utf8`.
+   * @param separator A string used to separate one element of the list from the next in the resulting string.
+   * If omitted, the list elements are separated with a comma.
+   */
+  join(separator?: string): T
+  /** Get the last value of the sublists. */
+  last(): T
+  lengths(): T;
+  max(): T;
+  mean(): T;
+  min(): T;
+  reverse(): T;
+  shift(periods: number): T;
+  slice(offset: number, length: number): T;
+  sort(reverse?: boolean): T;
+  sort(opt: {reverse: boolean}): T;
+  sum(): T;
+  unique(): T;
+}
+
+export interface DateFunctions<T> {
+  /**
+   * Extract day from underlying Date representation.
+   * Can be performed on Date and Datetime.
+   *
+   * Returns the day of month starting from 1.
+   * The return value ranges from 1 to 31. (The last day of month differs by months.)
+   * @returns day as pl.UInt32
+   */
+  day(): T;
+  /**
+   * Extract hour from underlying DateTime representation.
+   * Can be performed on Datetime.
+   *
+   * Returns the hour number from 0 to 23.
+   * @returns Hour as UInt32
+   */
+  hour(): T;
+  /**
+   * Extract minutes from underlying DateTime representation.
+   * Can be performed on Datetime.
+   *
+   * Returns the minute number from 0 to 59.
+   * @returns minute as UInt32
+   */
+  minute(): T;
+  /**
+   * Extract month from underlying Date representation.
+   * Can be performed on Date and Datetime.
+   *
+   * Returns the month number starting from 1.
+   * The return value ranges from 1 to 12.
+   * @returns Month as UInt32
+   */
+  month(): T;
+  /**
+   * Extract seconds from underlying DateTime representation.
+   * Can be performed on Datetime.
+   *
+   * Returns the number of nanoseconds since the whole non-leap second.
+   * The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
+   * @returns Nanosecond as UInt32
+   */
+  nanosecond(): T;
+  /**
+   * Extract ordinal day from underlying Date representation.
+   * Can be performed on Date and Datetime.
+   *
+   * Returns the day of year starting from 1.
+   * The return value ranges from 1 to 366. (The last day of year differs by years.)
+   * @returns Day as UInt32
+   */
+  ordinalDay(): T;
+  /**
+   * Extract seconds from underlying DateTime representation.
+   * Can be performed on Datetime.
+   *
+   * Returns the second number from 0 to 59.
+   * @returns Second as UInt32
+   */
+  second(): T;
+  /**
+   * Format Date/datetime with a formatting rule: See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+   */
+  strftime(fmt: string): T;
+  /** Return timestamp in ms as Int64 type. */
+  timestamp(): T;
+  /**
+   * Extract the week from the underlying Date representation.
+   * Can be performed on Date and Datetime
+   *
+   * Returns the ISO week number starting from 1.
+   * The return value ranges from 1 to 53. (The last week of year differs by years.)
+   * @returns Week number as UInt32
+   */
+  week(): T;
+  /**
+   * Extract the week day from the underlying Date representation.
+   * Can be performed on Date and Datetime.
+   *
+   * Returns the weekday number where monday = 0 and sunday = 6
+   * @returns Week day as UInt32
+   */
+  weekday(): T;
+  /**
+   * Extract year from underlying Date representation.
+   * Can be performed on Date and Datetime.
+   *
+   * Returns the year number in the calendar date.
+   * @returns Year as Int32
+   */
+  year(): T;
 }

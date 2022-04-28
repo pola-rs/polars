@@ -1,6 +1,5 @@
 import {DataType} from "../datatypes";
 import pli from "../internals/polars_internal";
-import {col, lit} from "./functions";
 import {
   ExprOrString,
   FillNullStrategy,
@@ -8,7 +7,6 @@ import {
   selectionToExprList,
   INSPECT_SYMBOL
 } from "../utils";
-import {isExternal} from "util/types";
 import {Series} from "../series/series";
 
 import * as expr from "./expr/";
@@ -26,6 +24,8 @@ export interface Expr extends
   get date(): expr.Datetime;
   get str(): expr.String;
   get lst(): expr.List;
+  get struct(): expr.Struct;
+  [Symbol.toStringTag](): string;
   [INSPECT_SYMBOL](): string;
   /** serializes the Expr to a [bincode buffer](https://docs.rs/bincode/latest/bincode/index.html)
    * @example
@@ -204,6 +204,7 @@ export interface Expr extends
   /** Take the first n values.  */
   head(length?: number): Expr
   head({length}: {length: number}): Expr
+  inner(): any
   /** Interpolate intermediate values. The interpolation method is linear. */
   interpolate(): Expr
   /** Get mask of duplicated values. */
@@ -476,6 +477,21 @@ export interface Expr extends
    */
   sort(reverse?: boolean, nullsLast?: boolean): Expr
   sort({reverse, nullsLast}: {reverse?: boolean, nullsLast?: boolean}): Expr
+  /**
+   * Sort this column by the ordering of another column, or multiple other columns.
+      In projection/ selection context the whole column is sorted.
+      If used in a groupby context, the groups are sorted.
+
+      Parameters
+      ----------
+      @param by
+          The column(s) used for sorting.
+      @param reverse
+          false -> order from small to large.
+          true -> order from large to small.
+   */
+  sortBy(by: ExprOrString[] | ExprOrString, reverse?: boolean | boolean[]): Expr
+  sortBy(options: {by: ExprOrString[] | ExprOrString, reverse?: boolean | boolean[]}): Expr
   /** Get standard deviation. */
   std(): Expr
   /** Add a suffix the to root column name of the expression. */
@@ -493,8 +509,8 @@ export interface Expr extends
    * Take values by index.
    * @param index An expression that leads to a UInt32 dtyped Series.
    */
-  take(index: Expr | number[] | Series<number>): Expr
-  take({index}: {index: Expr | number[] | Series<number>}): Expr
+  take(index: Expr | number[] | Series): Expr
+  take({index}: {index: Expr | number[] | Series}): Expr
   /** Take every nth value in the Series and return as a new Series. */
   takeEvery(n: number): Expr
   /**
@@ -511,56 +527,34 @@ export interface Expr extends
 }
 
 
-const _Expr = (_expr: any): Expr => {
+export const _Expr = (_expr: any): Expr => {
 
-  const wrap = (method, args?): Expr => {
-    return _Expr(pli.expr[method]({_expr, ...args }));
+  const unwrap = (method: string, ...args: any[]) => {
+    return _expr[method as any](...args);
+  };
+  const wrap = (method, ...args): Expr => {
+    return _Expr(unwrap(method, ...args));
   };
 
   const wrapNullArgs = (method: string) => () => wrap(method);
   const wrapExprArg = (method: string, lit=false) => (other: any) => {
 
-    const expr = exprToLitOrExpr(other, lit)._expr;
+    const expr = exprToLitOrExpr(other, lit).inner();
 
-    return wrap(method, {other: expr});
+    return wrap(method, expr);
   };
   type anyfunc = (...args: any[]) => any
-  const wrapUnary = (method: string, key: string): anyfunc => (val) => wrap(method, {[key]: val?.[key] ?? val});
   const wrapUnaryWithDefault = (method: string, key: string, otherwise): anyfunc => (val=otherwise) => wrap(method, {[key]: val?.[key] ?? val});
-  const wrapBinary = (method: string, key0: string, key1: string): anyfunc => (val0, val1) => {
-    if(val0[key0] !== undefined) {
-      return wrap(method, val0);
-    }
 
-    return wrap(
-      method, {
-        [key0]: val0,
-        [key1]: val1
-      }
-    );
-  };
-
-  const wrapUnaryNumber = (method: string, key: string) => {
-    const f = (val) => {
-      if(typeof val === "number") {
-
-        return f({[key]: val});
-      }
-
-      return wrap(method, val);
-    };
-
-    return f;
-  };
   const rolling = (method: string) =>  (opts, weights?, minPeriods?, center?): Expr => {
     const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
     if(windowSize === null) {
       throw new Error("window size is required");
     }
     const callOpts = {
-      window_size: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
+      windowSize: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
       weights: opts?.["weights"] ?? weights,
-      min_periods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
+      minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
       center : opts?.["center"] ?? center ?? false,
     };
 
@@ -569,14 +563,17 @@ const _Expr = (_expr: any): Expr => {
 
   return {
     _expr,
+    [Symbol.toStringTag]() {
+      return "Expr";
+    },
     [INSPECT_SYMBOL]() {
-      return pli.expr.as_str({_expr});
+      return _expr.toString();
     },
     toBinary() {
-      return pli.expr.to_bincode({_expr});
+      return null as any;
     },
     toString() {
-      return pli.expr.as_str({_expr});
+      return _expr.toString();
     },
     get str() {
       return expr.StringFunctions(_expr);
@@ -587,126 +584,290 @@ const _Expr = (_expr: any): Expr => {
     get date() {
       return expr.DateTimeFunctions(_expr);
     },
-    abs: wrapNullArgs("abs"),
-    aggGroups: wrapNullArgs("aggGroups"),
-    alias: wrapUnary("alias", "name"),
-    and: wrapExprArg("and"),
-    argMax: wrapNullArgs("argMax"),
-    argMin: wrapNullArgs("argMin"),
-    argSort: wrapUnaryWithDefault("argSort", "reverse", false),
-    argUnique: wrapNullArgs("argUnique"),
-    as: wrapUnary("alias", "name"),
-    backwardFill: wrapNullArgs("backwardFill"),
-    cast(dtype, strict=false) {
-      return wrap("cast", {dtype, strict});
+    get struct() {
+      return expr.StructFunctions(_expr);
     },
-    ceil: wrapNullArgs("ceil"),
+    abs() {
+      return _Expr(_expr.abs());
+    },
+    aggGroups() {
+      return _Expr(_expr.aggGroups());
+    },
+    alias(name) {
+      return _Expr(_expr.alias(name));
+    },
+    inner() {
+      return _expr;
+    },
+    and(other) {
+      const expr = (exprToLitOrExpr(other, false) as any).inner();
+
+      return _Expr(_expr.and(expr));
+    },
+    argMax() {
+      return _Expr(_expr.argMax());
+    },
+    argMin() {
+      return _Expr(_expr.argMin());
+    },
+    argSort(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.argSort(reverse));
+    },
+    argUnique() {
+      return _Expr(_expr.argUnique());
+    },
+    as(name) {
+      return _Expr(_expr.alias(name));
+    },
+    backwardFill() {
+      return _Expr(_expr.backwardFill());
+    },
+    cast(dtype, strict=false) {
+      return _Expr(_expr.cast(dtype, strict));
+    },
+    ceil() {
+      return _Expr(_expr.ceil());
+    },
     clip(arg, max?){
       if(typeof arg === "number") {
-        return wrap("clip", {min: arg, max});
+        return _Expr(_expr.clip(arg, max));
       } else {
-        return wrap("clip", arg);
+        return _Expr(_expr.clip(arg.min, arg.max));
       }
     },
-    count: wrapNullArgs("count"),
-    cumCount: wrapUnaryWithDefault("cumCount", "reverse", false),
-    cumMax: wrapUnaryWithDefault("cumMax", "reverse", false),
-    cumMin: wrapUnaryWithDefault("cumMin", "reverse", false),
-    cumProd: wrapUnaryWithDefault("cumProd", "reverse", false),
-    cumSum: wrapUnaryWithDefault("cumSum", "reverse", false),
-    diff: wrapBinary("diff", "n", "nullBehavior"),
-    dot: wrapExprArg("dot"),
-    exclude(...columns) {
-      return wrap("exclude", {columns: columns.flat(2)});
+    count() {
+      return _Expr(_expr.count());
     },
-    explode: wrapNullArgs("explode"),
+    cumCount(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.cumcount(reverse?.reverse ?? reverse));
+    },
+    cumMax(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.cummax(reverse));
+    },
+    cumMin(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.cummin(reverse));
+    },
+    cumProd(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.cumprod(reverse));
+    },
+    cumSum(reverse: any = false) {
+      reverse = reverse?.reverse ?? reverse;
+
+      return _Expr(_expr.cumsum(reverse));
+    },
+    diff(n, nullBehavior = "ignore") {
+
+      if(typeof n === "number") {
+
+        return _Expr(_expr.diff(n, nullBehavior));
+      }
+      else {
+        return _Expr(_expr.diff(n.n, n.nullBehavior));
+      }
+    },
+    dot(other) {
+      const expr = (exprToLitOrExpr(other, false) as any).inner();
+
+      return _Expr(_expr.dot(expr));
+    },
+    exclude(...columns) {
+      return _Expr(_expr.exclude(columns.flat(2)));
+    },
+    explode() {
+      return _Expr(_expr.explode());
+    },
     extend(o, n?) {
       if(n !== null && typeof n === "number") {
-        return wrap("extendConstant", {value: o, n});
+        return _Expr(_expr.extendConstant(o, n));
       }
 
-      return wrap("extendConstant", o);
+      return _Expr(_expr.extendConstant(o.value, o.n));
+
     },
     extendConstant(o, n?) {
       if(n !== null && typeof n === "number") {
-        return wrap("extendConstant", {value: o, n});
+        return _Expr(_expr.extendConstant(o, n));
       }
 
-      return wrap("extendConstant", o);
+      return _Expr(_expr.extendConstant(o.value, o.n));
     },
-    fillNan: wrapExprArg("fillNan", true),
+    fillNan(other) {
+      const expr = (exprToLitOrExpr(other, true) as any).inner();
+
+      return _Expr(_expr.fillNan(expr));
+    },
     fillNull(fillValue)  {
       if(["backward", "forward", "mean", "min", "max", "zero", "one"].includes(fillValue)) {
-        return wrap("fillNullWithStrategy", {strategy: fillValue});
+        return _Expr(_expr.fillNullWithStrategy(fillValue));
       }
 
-      const expr = exprToLitOrExpr(fillValue)._expr;
+      const expr = exprToLitOrExpr(fillValue).inner();
 
-      return wrap("fillNull", {other: expr});
+      return _Expr(_expr.fillNull(expr));
     },
-    filter: wrapExprArg("filter"),
-    first: wrapNullArgs("first"),
-    flatten: wrapNullArgs("explode"),
-    floor: wrapNullArgs("floor"),
-    forwardFill: wrapNullArgs("forwardFill"),
+    filter(predicate) {
+      const expr = exprToLitOrExpr(predicate).inner();
+
+      return _Expr(_expr.filter(expr));
+    },
+    first() {
+      return _Expr(_expr.first());
+    },
+    flatten() {
+      return _Expr(_expr.explode());
+    },
+    floor() {
+      return _Expr(_expr.floor());
+    },
+    forwardFill() {
+      return _Expr(_expr.forwardFill());
+    },
     hash(obj: any=0, k1=1, k2=2, k3=3) {
-      if(typeof obj === "number" || typeof obj === "bigint") {
-        return wrap("hash", { k0: obj, k1: k1, k2: k2, k3: k3 });
+      if (typeof obj === "number" || typeof obj === "bigint") {
+        return wrap("hash", BigInt(obj), BigInt(k1), BigInt(k2), BigInt(k3));
+      }
+      const o = { k0: obj, k1: k1, k2: k2, k3: k3, ...obj};
+
+      return wrap(
+        "hash",
+        BigInt(o.k0),
+        BigInt(o.k1),
+        BigInt(o.k2),
+        BigInt(o.k3)
+      );
+    },
+    head(length) {
+      if(typeof length === "number") {
+        return wrap("head", length);
       }
 
-      return wrap("hash", { k0: 0, k1, k2, k3, ...obj });
+      return wrap("head", length.length);
     },
-    head: wrapUnaryNumber("head", "length"),
-    interpolate: wrapNullArgs("interpolate"),
-    isDuplicated: wrapNullArgs("isDuplicated"),
-    isFinite: wrapNullArgs("isFinite"),
-    isFirst: wrapNullArgs("isFirst"),
+    interpolate() {
+      return _Expr(_expr.interpolate());
+    },
+    isDuplicated() {
+      return _Expr(_expr.isDuplicated());
+    },
+    isFinite() {
+      return _Expr(_expr.isFinite());
+    },
+    isInfinite() {
+      return _Expr(_expr.isInfinite());
+    },
+    isFirst() {
+      return _Expr(_expr.isFirst());
+    },
+    isNan() {
+      return _Expr(_expr.isNan());
+    },
+    isNotNan() {
+      return _Expr(_expr.isNotNan());
+    },
+    isNotNull() {
+      return _Expr(_expr.isNotNull());
+    },
+    isNull() {
+      return _Expr(_expr.isNull());
+    },
+    isUnique() {
+      return _Expr(_expr.isUnique());
+    },
     isIn(other)  {
       if(Array.isArray(other)) {
-        other = lit(Series(other));
+        other = pli.lit(Series(other).inner());
       } else {
-        other = exprToLitOrExpr(other, false);
+        other = exprToLitOrExpr(other, false).inner();
       }
 
-      return wrap("isIn", {other: other._expr});
+      return wrap("isIn", other);
     },
-    isInfinite: wrapNullArgs("isInfinite"),
-    isNan: wrapNullArgs("isNan"),
-    isNotNan: wrapNullArgs("isNotNan"),
-    isNotNull: wrapNullArgs("isNotNull"),
-    isNull: wrapNullArgs("isNull"),
-    isUnique: wrapNullArgs("isUnique"),
-    keepName: wrapNullArgs("keepName"),
+    keepName() {
+      return _Expr(_expr.keepName());
+    },
     kurtosis(obj?, bias=true) {
-      return wrap("kurtosis", {
-        fisher: obj?.["fisher"] ?? (typeof obj === "boolean" ? obj : true),
-        bias : obj?.["bias"] ?? bias,
-      });
-    },
-    last: wrapNullArgs("last"),
-    list: wrapNullArgs("list"),
-    lowerBound: wrapNullArgs("lowerBound"),
-    max: wrapNullArgs("max"),
-    mean: wrapNullArgs("mean"),
-    median: wrapNullArgs("median"),
-    min: wrapNullArgs("min"),
-    mode: wrapNullArgs("mode"),
-    not: wrapNullArgs("not"),
-    nUnique: wrapNullArgs("nUnique"),
-    or: wrapExprArg("or"),
-    over(...exprs) {
+      const fisher = obj?.["fisher"] ?? (typeof obj === "boolean" ? obj : true);
+      bias = obj?.["bias"] ?? bias;
 
+      return _Expr(_expr.kurtosis(fisher, bias));
+
+    },
+    last() {
+      return _Expr(_expr.last());
+    },
+    list() {
+      return _Expr(_expr.list());
+    },
+    lowerBound() {
+      return _Expr(_expr.lowerBound());
+    },
+    max() {
+      return _Expr(_expr.max());
+    },
+    mean() {
+      return _Expr(_expr.mean());
+    },
+    median() {
+      return _Expr(_expr.median());
+    },
+    min() {
+      return _Expr(_expr.min());
+    },
+    mode() {
+      return _Expr(_expr.mode());
+    },
+    not() {
+      return _Expr(_expr.not());
+    },
+    nUnique() {
+      return _Expr(_expr.nUnique());
+    },
+    or(other) {
+      const expr = exprToLitOrExpr(other).inner();
+
+      return _Expr(_expr.or(expr));
+    },
+    over(...exprs) {
       const partitionBy = selectionToExprList(exprs, false);
 
-      return wrap("over", {partitionBy});
+      return wrap("over", partitionBy);
     },
-    pow: wrapUnary("pow", "exponent"),
-    prefix: wrapUnary("prefix", "prefix"),
-    quantile: wrapUnary("quantile", "quantile"),
-    rank: wrapUnary("rank", "method"),
-    reinterpret: wrapUnaryWithDefault("reinterpret", "signed", true),
-    repeatBy: wrapExprArg("repeatBy"),
-    reverse: wrapNullArgs("reverse"),
+    pow(exponent) {
+      return _Expr(_expr.pow(exponent?.exponent ?? exponent));
+    },
+    prefix(prefix) {
+
+      return _Expr(_expr.prefix(prefix));
+    },
+    quantile(quantile, interpolation = "nearest") {
+      return _Expr(_expr.quantile(quantile, interpolation));
+    },
+    rank(method, reverse=false) {
+      return _Expr(_expr.rank(method?.method ?? method, method?.reverse ?? reverse));
+    },
+    reinterpret(signed: any = true) {
+      signed = signed?.signed ?? signed;
+
+      return _Expr(_expr.reinterpret(signed));
+    },
+    repeatBy(expr) {
+      const e = exprToLitOrExpr(expr, false)._expr;
+
+      return _Expr(_expr.repeatBy(e));
+    },
+    reverse() {
+      return _Expr(_expr.reverse());
+    },
     rollingMax: rolling("rollingMax"),
     rollingMean: rolling("rollingMean"),
     rollingMin: rolling("rollingMin"),
@@ -716,26 +877,44 @@ const _Expr = (_expr: any): Expr => {
     rollingMedian: rolling("rollingMedian"),
     rollingQuantile(val, interpolation?, windowSize?, weights?, minPeriods?, center?) {
       if(typeof val === "number") {
-        return wrap("rollingQuantile", {
-          quantile: val,
-          interpolation,
-          windowSize,
-          weights,
-          minPeriods,
-          center
-        });
-      }
 
-      return wrap("rollingQuantile", val);
+        return wrap("rollingQuantile",
+          val,
+          interpolation ?? "nearest",
+          {
+            windowSize,
+            weights,
+            minPeriods,
+            center
+          });
+      }
+      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
+      if(windowSize === null) {
+        throw new Error("window size is required");
+      }
+      const options = {
+        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
+        weights: val?.["weights"] ?? weights,
+        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
+        center : val?.["center"] ?? center ?? false,
+      };
+
+      return wrap("rollingQuantile",
+        val.quantile,
+        val.interpolation ?? "nearest",
+        options
+      );
     },
     rollingSkew(val, bias=true)  {
       if(typeof val === "number") {
-        return wrap("rollingSkew", {windowSize: val, bias});
+        return wrap("rollingSkew", val, bias);
       }
 
-      return wrap("rollingSkew", {bias:true, ...val});
+      return wrap("rollingSkew", val.windowSize, val.bias ?? bias);
     },
-    round: wrapUnaryNumber("round", "decimals"),
+    round(decimals) {
+      return _Expr(_expr.round(decimals?.decimals ?? decimals));
+    },
     sample(opts?, frac?, withReplacement = false, seed?) {
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
 
@@ -755,48 +934,76 @@ const _Expr = (_expr: any): Expr => {
         throw new TypeError("must specify either 'frac' or 'n'");
       }
     },
-    shift: wrapUnary("shift", "periods"),
+    shift(periods) {
+      return _Expr(_expr.shift(periods));
+    },
     shiftAndFill(optOrPeriods, fillValue?) {
       if(typeof optOrPeriods === "number") {
-        fillValue = exprToLitOrExpr(fillValue)._expr;
+        fillValue = exprToLitOrExpr(fillValue).inner();
 
-        return wrap("shiftAndFill", {periods: optOrPeriods, fillValue});
+        return wrap("shiftAndFill", optOrPeriods, fillValue);
 
       }
       else {
-        fillValue = exprToLitOrExpr(optOrPeriods.fillValue)._expr;
+        fillValue = exprToLitOrExpr(optOrPeriods.fillValue).inner();
         const periods = optOrPeriods.periods;
 
-        return wrap("shiftAndFill", {periods, fillValue});
+        return wrap("shiftAndFill", periods, fillValue);
       }
     },
-    skew: wrapUnaryWithDefault("skew", "bias", true),
+    skew(bias) {
+      return wrap("skew", bias?.bias ?? bias ?? true);
+    },
     slice(arg, len?) {
       if(typeof arg === "number") {
-        return wrap("slice", {offset: lit(arg)._expr, length: lit(len)._expr});
+        return wrap("slice", pli.lit(arg), pli.lit(len));
       }
 
-      return wrap("slice", {offset: lit(arg.offset)._expr, length: lit(arg.length)._expr});
+      return wrap("slice", pli.lit(arg.offset), pli.lit(arg.length));
     },
     sort(reverse: any = false, nullsLast=false) {
       if(typeof reverse === "boolean") {
-        return wrap("sortWith", {reverse, nullsLast});
+        return wrap("sortWith", reverse, nullsLast);
       }
 
-      return wrap("sortWith", reverse);
+      return wrap("sortWith", reverse?.reverse ?? false, reverse?.nullsLast ?? nullsLast);
     },
-    std: wrapNullArgs("std"),
-    suffix: wrapUnary("suffix", "suffix"),
-    sum: wrapNullArgs("sum"),
-    tail: wrapUnaryNumber("tail", "length"),
+    sortBy(arg, reverse=false) {
+      if(arg?.by !== undefined) {
+        return this.sortBy(arg.by, arg.reverse);
+      }
+
+      reverse = Array.isArray(reverse) ? reverse.flat() : [reverse] as any;
+      const by = selectionToExprList(arg, false);
+
+      return wrap("sortBy", by, reverse);
+    },
+    std() {
+      return _Expr(_expr.std());
+    },
+    suffix(suffix) {
+
+      return _Expr(_expr.suffix(suffix));
+    },
+    sum() {
+      return _Expr(_expr.sum());
+    },
+    tail(length) {
+      return _Expr(_expr.tail(length));
+    },
+
     take(indices)  {
       if(Array.isArray(indices)) {
-        indices = lit(Series(indices));
+        indices = pli.lit(Series(indices).inner());
+      } else {
+        indices = indices.inner();
       }
 
-      return wrap("take", {other: indices._expr});
+      return wrap("take", indices);
     },
-    takeEvery: wrapUnary("takeEvery", "n"),
+    takeEvery(n) {
+      return _Expr(_expr.takeEvery(n));
+    },
     unique(opt?) {
       if(opt) {
         return wrap("unique_stable");
@@ -804,10 +1011,16 @@ const _Expr = (_expr: any): Expr => {
 
       return wrap("unique");
     },
-    upperBound: wrapNullArgs("upperBound"),
-    where: wrapExprArg("filter"),
-    var: wrapNullArgs("var"),
+    upperBound() {
+      return _Expr(_expr.upperBound());
+    },
+    where(expr) {
 
+      return this.filter(expr);
+    },
+    var() {
+      return _Expr(_expr.var());
+    },
     add: wrapExprArg("add"),
     sub: wrapExprArg("sub"),
     div: wrapExprArg("div"),
@@ -842,10 +1055,17 @@ export interface ExprConstructor {
    */
   fromBinary(binary: Buffer): Expr
 }
-const isExpr = (anyVal: any): anyVal is Expr => isExternal(anyVal?._expr);
+const isExpr = (anyVal: any): anyVal is Expr =>  {
+  try {
+    return anyVal?.[Symbol.toStringTag]?.() === "Expr";
+  } catch (err) {
+    return false;
+  }
+};
 
 const fromBinary = (buf: Buffer)  => {
-  return _Expr(pli.expr.from_bincode(buf));
+  return null as any;
+  // return _Expr(pli.JsExpr.from_bincode(buf));
 };
 
 export const Expr: ExprConstructor = Object.assign(_Expr, {isExpr, fromBinary});
@@ -853,10 +1073,12 @@ export const Expr: ExprConstructor = Object.assign(_Expr, {isExpr, fromBinary});
 /** @ignore */
 export const exprToLitOrExpr = (expr: any, stringToLit = true): Expr  => {
   if(typeof expr === "string" && !stringToLit) {
-    return col(expr);
+    return _Expr(pli.col(expr));
   } else if (Expr.isExpr(expr)) {
     return expr;
+  } else if (Series.isSeries(expr)) {
+    return _Expr(pli.lit((expr as any)._s));
   } else {
-    return lit(expr);
+    return _Expr(pli.lit(expr));
   }
 };

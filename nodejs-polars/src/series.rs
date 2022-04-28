@@ -1,1839 +1,1614 @@
-use crate::conversion::prelude::*;
-use crate::datatypes::JsDataType;
-use crate::error::JsPolarsEr;
-use crate::list_construction::from_typed_array;
-use crate::list_construction::js_arr_to_list;
-use crate::prelude::JsResult;
-use napi::Either;
-use napi::JsBoolean;
-use napi::JsExternal;
-use napi::JsNumber;
-use napi::JsTypedArray;
-use napi::JsUndefined;
-use napi::JsUnknown;
-use napi::{CallContext, JsNull, JsObject, JsString, ValueType};
-use polars::prelude::*;
+use crate::prelude::*;
+use crate::utils::reinterpret;
+use polars_core::series::ops::NullBehavior;
 use polars_core::utils::CustomIterTools;
 
-pub struct JsSeries {}
+#[napi]
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct JsSeries {
+    pub(crate) series: Series,
+}
 
-impl IntoJs<JsExternal> for Series {
-    fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
-        cx.env.create_external(self, None)
+impl JsSeries {
+    pub(crate) fn new(series: Series) -> Self {
+        JsSeries { series }
+    }
+}
+impl From<Series> for JsSeries {
+    fn from(s: Series) -> Self {
+        JsSeries::new(s)
     }
 }
 
-#[js_function(1)]
-pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
-    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
-    let buffer_value = buff.into_value()?;
-    let s: Series = bincode::deserialize(buffer_value.as_ref()).unwrap();
+#[napi]
+impl JsSeries {
+    //
+    // FACTORIES
+    //
+    #[napi(factory)]
+    pub fn new_int_8_array(name: String, arr: Int8Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_uint8_array(name: String, arr: Uint8Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_uint8_clamped_array(name: String, arr: Uint8ClampedArray) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_int16_array(name: String, arr: Int16Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_uint16_array(name: String, arr: Uint16Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_int32_array(name: String, arr: Int32Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_uint32_array(name: String, arr: Uint32Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_float32_array(name: String, arr: Float32Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_float64_array(name: String, arr: Float64Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_bigint64_array(name: String, arr: BigInt64Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_biguint64_array(name: String, arr: BigUint64Array) -> JsSeries {
+        Series::new(&name, arr).into()
+    }
+    #[napi(factory)]
+    pub fn new_opt_str(name: String, val: Wrap<Utf8Chunked>) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_bool(name: String, val: Wrap<BooleanChunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_i32(name: String, val: Wrap<Int32Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_i64(name: String, val: Wrap<Int64Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_u64(name: String, val: Wrap<UInt64Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_u32(name: String, val: Wrap<UInt32Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
+    #[napi(factory)]
+    pub fn new_opt_f32(name: String, val: Wrap<Float32Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
 
-    s.try_into_js(&cx)
-}
+    #[napi(factory)]
+    pub fn new_opt_f64(name: String, val: Wrap<Float64Chunked>, _strict: bool) -> JsSeries {
+        let mut s = val.0.into_series();
+        s.rename(&name);
+        JsSeries::new(s)
+    }
 
-#[js_function(1)]
-pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-
-    let buf = bincode::serialize(series).unwrap();
-
-    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
-    let js_buff = bytes.into_raw();
-    Ok(js_buff)
-}
-
-#[js_function(1)]
-pub fn new_from_typed_array(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let buff: JsTypedArray = params.0.get_named_property("values")?;
-    let v = buff.into_value()?;
-    let mut series = from_typed_array(&v)?;
-    series.rename(name);
-    series.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn new_bool(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let items = params.get_as::<Vec<bool>>("values")?;
-    Series::new(name, items).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn new_opt_date(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let strict = params.get_as::<Option<bool>>("strict")?;
-    let (arr, len) = params.get_arr("values")?;
-    let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(name, len);
-    for item in arr.into_iter() {
-        match item.0.get_type()? {
-            ValueType::Object => {
-                let obj: &JsObject = unsafe { &item.0.cast() };
-                if obj.is_date()? {
-                    let d: &napi::JsDate = unsafe { &item.0.cast() };
-                    match d.value_of() {
-                        Ok(v) => builder.append_value(v as i64),
-                        Err(e) => {
-                            if strict.unwrap_or(false) {
-                                return Err(e);
+    #[napi(factory)]
+    pub fn new_opt_date(
+        name: String,
+        values: Vec<napi::JsUnknown>,
+        strict: Option<bool>,
+    ) -> napi::Result<JsSeries> {
+        let len = values.len();
+        let mut builder = PrimitiveChunkedBuilder::<Int64Type>::new(&name, len);
+        for item in values.into_iter() {
+            match item.get_type()? {
+                ValueType::Object => {
+                    let obj: &napi::JsObject = unsafe { &item.cast() };
+                    if obj.is_date()? {
+                        let d: &napi::JsDate = unsafe { &item.cast() };
+                        match d.value_of() {
+                            Ok(v) => builder.append_value(v as i64),
+                            Err(e) => {
+                                if strict.unwrap_or(false) {
+                                    return Err(e);
+                                }
+                                builder.append_null()
                             }
-                            builder.append_null()
                         }
                     }
                 }
+                ValueType::Null | ValueType::Undefined => builder.append_null(),
+                _ => {
+                    return Err(JsPolarsErr::Other("Series must be of date type".to_owned()).into())
+                }
             }
-            ValueType::Null | ValueType::Undefined => builder.append_null(),
-            _ => return Err(JsPolarsEr::Other("Series must be of date type".to_owned()).into()),
         }
+        let ca: ChunkedArray<Int64Type> = builder.finish();
+        Ok(ca
+            .into_datetime(TimeUnit::Milliseconds, None)
+            .into_series()
+            .into())
     }
-    let ca: ChunkedArray<Int64Type> = builder.finish();
-    ca.into_datetime(TimeUnit::Milliseconds, None)
-        .into_series()
-        .try_into_js(&cx)
-}
+    #[napi(factory)]
+    pub fn new_list(name: String, values: Array, dtype: Wrap<DataType>) -> napi::Result<JsSeries> {
+        use crate::list_construction::js_arr_to_list;
+        let s = js_arr_to_list(&name, &values, &dtype.0)?;
+        Ok(s.into())
+    }
 
-#[js_function(1)]
-pub fn new_opt_bool(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let (items, len) = params.get_arr("values")?;
-    let mut builder = BooleanChunkedBuilder::new(name, len);
-
-    for item in items.into_iter() {
-        match item.0.get_type()? {
-            ValueType::Boolean => {
-                let b = item.extract::<bool>()?;
-                builder.append_value(b)
+    #[napi(factory)]
+    pub fn repeat(
+        name: String,
+        val: JsAnyValue,
+        n: i64,
+        dtype: Wrap<DataType>,
+    ) -> napi::Result<JsSeries> {
+        let s: JsSeries = match dtype.0 {
+            DataType::Utf8 => {
+                let val: String = val.try_into()?;
+                let mut ca: Utf8Chunked = (0..n).map(|_| val.clone()).collect_trusted();
+                ca.rename(&name);
+                ca.into_series().into()
             }
-            ValueType::Null => builder.append_null(),
-            ValueType::Undefined => builder.append_null(),
-            _ => return Err(JsPolarsEr::Other("Series must be of boolean type".to_owned()).into()),
-        }
+            DataType::Int64 => {
+                let val: i64 = val.try_into()?;
+                let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
+                ca.rename(&name);
+                ca.into_inner().into_series().into()
+            }
+            DataType::Float64 => {
+                let val: f64 = val.try_into()?;
+                let mut ca: NoNull<Float64Chunked> = (0..n).map(|_| val).collect_trusted();
+                ca.rename(&name);
+                ca.into_inner().into_series().into()
+            }
+            _ => todo!(),
+        };
+        Ok(s)
+    }
+    //
+    // GETTERS
+    //
+    #[napi(getter)]
+    pub fn dtype(&self) -> JsDataType {
+        self.series.dtype().into()
     }
 
-    let ca: ChunkedArray<BooleanType> = builder.finish();
-    ca.into_series().try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn new_str(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let val = params.get_as::<Wrap<Utf8Chunked>>("values")?;
-    let mut s = val.0.into_series();
-    s.rename(name);
-    s.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn new_list(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<String>("name")?;
-    let values = params.get::<JsObject>("values")?;
-    let dtype: DataType = params.get_as::<JsDataType>("dtype")?.into();
-    js_arr_to_list(&name, &values, &dtype)?.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn new_object(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series: Series = cx.env.from_js_value(&params.0)?;
-    series.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn repeat(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let name = params.get_as::<&str>("name")?;
-    let val: WrappedValue = params.get::<JsUnknown>("value")?.into();
-    let n = params.get_as::<usize>("n")?;
-    let dtype: DataType = params.get_as::<JsDataType>("dtype")?.into();
-    let s: Series = match dtype {
-        DataType::Utf8 => {
-            let val = val.extract::<&str>().unwrap();
-            let mut ca: Utf8Chunked = (0..n).map(|_| val).collect_trusted();
-            ca.rename(name);
-            ca.into_series()
-        }
-        DataType::Int64 => {
-            let val = val.extract::<i64>().unwrap();
-            let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
-            ca.rename(name);
-            ca.into_inner().into_series()
-        }
-        DataType::Float64 => {
-            let val = val.extract::<Option<f64>>().unwrap_or(None);
-            let mut ca: Float64Chunked = (0..n).map(|_| val).collect_trusted();
-            ca.rename(name);
-            ca.into_series()
-        }
-        DataType::Boolean => {
-            let val = val.extract::<bool>().unwrap();
-            let mut ca: BooleanChunked = (0..n).map(|_| val).collect_trusted();
-            ca.rename(name);
-            ca.into_series()
-        }
-        DataType::Datetime(_, _) => {
-            let val = val.extract::<i64>().unwrap();
-            let mut ca: NoNull<Int64Chunked> = (0..n).map(|_| val).collect_trusted();
-            ca.rename(name);
-            ca.clone()
-                .into_datetime(TimeUnit::Milliseconds, None)
-                .into_series()
-        }
-        dt => {
-            panic!("cannot create repeat with dtype: {:?}", dt);
-        }
-    };
-    s.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn dtype(cx: CallContext) -> JsResult<JsString> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let dt: JsDataType = series.dtype().into();
-    let s = dt.to_str();
-    cx.env.create_string(s)
-}
-
-#[js_function(1)]
-pub(crate) fn get_fmt(cx: CallContext) -> JsResult<JsString> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let s = format!("{}", series);
-    cx.env.create_string(&s)
-}
-
-#[js_function(1)]
-pub fn abs(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    series.abs().map_err(JsPolarsEr::from)?.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn chunk_lengths(cx: CallContext) -> JsResult<JsObject> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let mut arr = cx.env.create_array()?;
-    for (idx, chunk_len) in series.chunk_lengths().enumerate() {
-        let js_num = cx.env.create_int64(chunk_len as i64)?;
-        arr.set_element(idx as u32, js_num)?;
+    #[napi(getter)]
+    pub fn __inner__(&self) -> External<Series> {
+        External::new(self.series.clone())
     }
-    Ok(arr)
-}
-#[js_function(1)]
-pub fn name(cx: CallContext) -> JsResult<JsString> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    series.name().try_into_js(&cx)
-}
 
-#[js_function(1)]
-pub fn rename(cx: CallContext) -> JsResult<JsUndefined> {
-    let params = get_params(&cx)?;
-    let series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let name = params.get_as::<&str>("name")?;
-    series.rename(name);
-    cx.env.get_undefined()
-}
-
-#[js_function(1)]
-pub fn get_idx(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let idx = params.get_as::<usize>("idx")?;
-    let val: AnyValue = series.get(idx);
-    val.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn bitand(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series
-        .bitand(other)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn bitor(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series
-        .bitor(other)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn bitxor(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series
-        .bitxor(other)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn mean(cx: CallContext) -> JsResult<JsNumber> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let mean = match series.dtype() {
-        DataType::Boolean => {
-            let s = series.cast(&DataType::UInt8).unwrap();
-            s.mean()
-        }
-        _ => series.mean(),
+    #[napi(getter)]
+    pub fn inner_dtype(&self) -> Option<JsDataType> {
+        self.series.dtype().inner_dtype().map(|dt| dt.into())
     }
-    .unwrap();
-    cx.env.create_double(mean)
-}
-
-#[js_function(1)]
-pub fn max(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    match series.dtype() {
-        DataType::Float32 | DataType::Float64 => {
-            let max = series.max::<f64>().unwrap();
-            cx.env.create_double(max).map(|v| v.into_unknown())
-        }
-        DataType::Boolean => {
-            let max = series.max::<u32>().map(|v| v == 1).unwrap();
-            cx.env.get_boolean(max).map(|v| v.into_unknown())
-        }
-        _ => {
-            let max = series.max::<i64>().unwrap();
-            cx.env.create_int64(max).map(|v| v.into_unknown())
-        }
+    #[napi(getter)]
+    pub fn name(&self) -> String {
+        self.series.name().to_owned()
     }
-}
-
-#[js_function(1)]
-pub fn min(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    match series.dtype() {
-        DataType::Float32 | DataType::Float64 => {
-            let min = series.min::<f64>().unwrap();
-            cx.env.create_double(min).map(|v| v.into_unknown())
-        }
-        DataType::Boolean => {
-            let min = series.min::<u32>().map(|v| v == 1).unwrap();
-            cx.env.get_boolean(min).map(|v| v.into_unknown())
-        }
-        _ => {
-            let min = series.min::<i64>().unwrap();
-            cx.env.create_int64(min).map(|v| v.into_unknown())
-        }
+    #[napi]
+    pub fn to_string(&self) -> String {
+        format!("{}", self.series)
     }
-}
-
-#[js_function(1)]
-pub fn median(cx: CallContext) -> JsResult<Either<JsNumber, JsUndefined>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let median = match series.dtype() {
-        DataType::Boolean => {
-            let s = series.cast(&DataType::UInt8).unwrap();
-            s.median()
-        }
-        _ => series.median(),
-    };
-    match median {
-        Some(m) => Ok(Either::A(cx.env.create_double(m)?)),
-        None => Ok(Either::B(cx.env.get_undefined()?)),
+    #[napi]
+    pub fn get_fmt(&self, index: f64) -> String {
+        format!("{}", self.series.get(index as usize))
     }
-}
-
-#[js_function(1)]
-pub fn sum(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    match series.dtype() {
-        DataType::Float32 | DataType::Float64 => {
-            let sum = series.sum::<f64>().unwrap();
-            cx.env.create_double(sum).map(|v| v.into_unknown())
-        }
-        DataType::Boolean => {
-            let sum = series.sum::<i32>().unwrap();
-            cx.env.create_int32(sum).map(|v| v.into_unknown())
-        }
-        _ => {
-            let sum = series.sum::<i64>().unwrap();
-            cx.env.create_int64(sum).map(|v| v.into_unknown())
-        }
+    #[napi]
+    pub fn estimated_size(&self) -> i64 {
+        self.series.estimated_size() as i64
     }
-}
 
-#[js_function(1)]
-pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let offset = params.get_as::<i64>("offset")?;
-    let length = params.get_as::<usize>("length")?;
-    series.slice(offset, length).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn append(cx: CallContext) -> JsResult<JsUndefined> {
-    let params = get_params(&cx)?;
-    let series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series.append(other).map_err(JsPolarsEr::from)?;
-    cx.env.get_undefined()
-}
-
-#[js_function(1)]
-pub fn filter(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let filter = params.get_external::<Series>(&cx, "filter")?;
-    if let Ok(ca) = filter.bool() {
-        series
-            .filter(ca)
-            .map_err(JsPolarsEr::from)?
-            .try_into_js(&cx)
-    } else {
-        Err(JsPolarsEr::Other(String::from("Expected a boolean mask")).into())
-    }
-}
-
-#[js_function(1)]
-pub fn add(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    (series + other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn sub(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    (series - other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn mul(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    (series * other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn div(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    (series / other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn rem(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    (series % other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn sort_in_place(_: CallContext) -> JsResult<JsExternal> {
-    todo!()
-}
-
-#[js_function(1)]
-pub fn value_counts(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    series
-        .value_counts(true)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn arg_min(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let arg_min = series.arg_min();
-    match arg_min {
-        Some(v) => cx.env.create_uint32(v as u32).map(|v| v.into_unknown()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
-    }
-}
-
-#[js_function(1)]
-pub fn arg_max(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let arg_max = series.arg_max();
-    match arg_max {
-        Some(v) => cx.env.create_uint32(v as u32).map(|v| v.into_unknown()),
-        None => cx.env.get_undefined().map(|v| v.into_unknown()),
-    }
-}
-
-#[js_function(1)]
-pub fn take(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let indices = params.get_as::<Vec<u32>>("indices")?;
-    let chunked: UInt32Chunked = indices.into_iter().map(Some).collect();
-    series
-        .take(&chunked)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn take_with_series(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let indices = params.get_external::<Series>(&cx, "indices")?;
-    let idx = indices.u32().map_err(JsPolarsEr::from)?;
-    series.take(idx).map_err(JsPolarsEr::from)?.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn series_equal(cx: CallContext) -> JsResult<JsBoolean> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    let null_equal = params.get_as::<bool>("null_equal")?;
-    let b = if null_equal {
-        series.series_equal_missing(other)
-    } else {
-        series.series_equal(other)
-    };
-    cx.env.get_boolean(b)
-}
-
-#[js_function(1)]
-pub fn not(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let b = series.bool().map_err(JsPolarsEr::from)?;
-    (!b).into_series().try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn as_str(cx: CallContext) -> JsResult<JsString> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let s = format!("{:?}", series);
-    cx.env.create_string(&s)
-}
-
-#[js_function(1)]
-pub fn len(cx: CallContext) -> JsResult<JsNumber> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let len = series.len();
-    cx.env.create_int64(len as i64)
-}
-
-#[js_function(1)]
-pub fn quantile(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let quantile = params.get_as::<f64>("quantile")?;
-    let q = series
-        .quantile_as_series(quantile, QuantileInterpolOptions::default())
-        .map_err(JsPolarsEr::from)?;
-    q.get(0).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn fill_null(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let strategy = params.get_as::<String>("strategy")?;
-    let strat = parse_strategy(strategy);
-    series
-        .fill_null(strat)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn map(_cx: CallContext) -> JsResult<JsExternal> {
-    todo!()
-}
-
-#[js_function(1)]
-pub fn zip_with(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let mask = params.get_external::<Series>(&cx, "mask")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    let mask = mask.bool().map_err(JsPolarsEr::from)?;
-    series
-        .zip_with(mask, other)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let fmt = params.get_as::<Option<&str>>("fmt")?;
-    if let Ok(ca) = series.utf8() {
-        ca.as_date(fmt)
-            .map_err(JsPolarsEr::from)?
-            .into_series()
-            .try_into_js(&cx)
-    } else {
-        Err(JsPolarsEr::Other("cannot parse Date expected utf8 type".into()).into())
-    }
-}
-
-#[js_function(1)]
-pub fn str_parse_datetime(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let fmt = params.get_as::<Option<&str>>("fmt")?;
-    if let Ok(ca) = series.utf8() {
-        ca.as_datetime(fmt, TimeUnit::Milliseconds)
-            .map_err(JsPolarsEr::from)?
-            .into_series()
-            .try_into_js(&cx)
-    } else {
-        Err(JsPolarsEr::Other("cannot parse Date expected utf8 type".into()).into())
-    }
-}
-#[js_function(1)]
-pub fn arr_lengths(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let ca = series.list().map_err(JsPolarsEr::from)?;
-    let s: Series = ca.clone().into_series();
-    s.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn to_dummies(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let _series = params.get_external::<Series>(&cx, "_series")?;
-    todo!()
-}
-
-#[js_function(1)]
-pub fn get_list(cx: CallContext) -> JsResult<Either<JsExternal, JsNull>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<usize>("index")?;
-
-    if let Ok(ca) = series.list() {
-        let s = ca.get(index);
-        if let Some(item) = s {
-            item.try_into_js(&cx).map(Either::A)
+    #[napi]
+    pub fn rechunk(&mut self, in_place: bool) -> Option<JsSeries> {
+        let series = self.series.rechunk();
+        if in_place {
+            self.series = series;
+            None
         } else {
-            cx.env.get_null().map(Either::B)
+            Some(series.into())
         }
-    } else {
-        cx.env.get_null().map(Either::B)
     }
-}
-
-#[js_function(1)]
-pub fn shrink_to_fit(_: CallContext) -> JsResult<JsUnknown> {
-    todo!()
-}
-
-#[js_function(1)]
-pub fn to_array(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series: &Series = params.get_external::<Series>(&cx, "_series")?;
-
-    match *series.dtype() {
-        DataType::UInt8 => cx.env.to_js_value(series.u8().unwrap()),
-        DataType::UInt16 => cx.env.to_js_value(series.u16().unwrap()),
-        DataType::UInt32 => cx.env.to_js_value(series.u32().unwrap()),
-        DataType::UInt64 => cx.env.to_js_value(series.u64().unwrap()),
-        DataType::Int8 => cx.env.to_js_value(series.i8().unwrap()),
-        DataType::Int16 => cx.env.to_js_value(series.i16().unwrap()),
-        DataType::Int32 => cx.env.to_js_value(series.i32().unwrap()),
-        DataType::Int64 => cx.env.to_js_value(series.i64().unwrap()),
-        DataType::Float32 => cx.env.to_js_value(series.f32().unwrap()),
-        DataType::Float64 => cx.env.to_js_value(series.f64().unwrap()),
-        DataType::Utf8 => cx.env.to_js_value(series.utf8().unwrap()),
-        DataType::Date => cx.env.to_js_value(series.date().unwrap()),
-        DataType::Datetime(_, _) => cx.env.to_js_value(series.datetime().unwrap()),
-        DataType::List(_) => cx.env.to_js_value(series.list().unwrap()),
-        DataType::Categorical(_) => cx.env.to_js_value(series.categorical().unwrap()),
-        _ => todo!(),
+    #[napi]
+    pub fn get_idx(&self, idx: i64) -> Wrap<AnyValue> {
+        Wrap(self.series.get(idx as usize))
     }
-}
-
-#[js_function(1)]
-pub fn is_in(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series
-        .is_in(other)
-        .map_err(JsPolarsEr::from)?
-        .into_series()
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn dot(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    let dot = series.dot(other);
-    match dot {
-        Some(d) => cx.env.create_double(d).map(Either::A),
-        None => cx.env.get_null().map(Either::B),
+    #[napi]
+    pub fn bitand(&self, other: &JsSeries) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .bitand(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out.into())
     }
-}
-#[js_function(1)]
-pub fn hash(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let k0 = params.get_as::<u64>("k0")?;
-    let k1 = params.get_as::<u64>("k1")?;
-    let k2 = params.get_as::<u64>("k2")?;
-    let k3 = params.get_as::<u64>("k3")?;
-    let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
-    series.hash(hb).into_series().try_into_js(&cx)
-}
+    #[napi]
+    pub fn bitor(&self, other: &JsSeries) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .bitor(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+    #[napi]
+    pub fn bitxor(&self, other: &JsSeries) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .bitxor(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+    #[napi]
+    pub fn cumsum(&self, reverse: Option<bool>) -> JsSeries {
+        let reverse = reverse.unwrap_or(false);
+        self.series.cumsum(reverse).into()
+    }
+    #[napi]
+    pub fn cummax(&self, reverse: Option<bool>) -> JsSeries {
+        let reverse = reverse.unwrap_or(false);
+        self.series.cummax(reverse).into()
+    }
+    #[napi]
+    pub fn cummin(&self, reverse: Option<bool>) -> JsSeries {
+        let reverse = reverse.unwrap_or(false);
+        self.series.cummin(reverse).into()
+    }
+    #[napi]
+    pub fn cumprod(&self, reverse: Option<bool>) -> JsSeries {
+        let reverse = reverse.unwrap_or(false);
+        self.series.cumprod(reverse).into()
+    }
+    #[napi]
+    pub fn chunk_lengths(&self) -> Vec<u32> {
+        self.series.chunk_lengths().map(|i| i as u32).collect()
+    }
 
-#[js_function(1)]
-pub fn reinterpret(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let signed = params.get_as::<bool>("signed")?;
-    let s = match (series.dtype(), signed) {
-        (DataType::UInt64, true) => {
-            let ca = series.u64().unwrap();
-            Ok(ca.reinterpret_signed().into_series())
+    #[napi]
+    pub fn rename(&mut self, name: String) {
+        self.series.rename(&name);
+    }
+
+    #[napi]
+    pub fn mean(&self) -> Option<f64> {
+        match self.series.dtype() {
+            DataType::Boolean => {
+                let s = self.series.cast(&DataType::UInt8).unwrap();
+                s.mean()
+            }
+            _ => self.series.mean(),
         }
-        (DataType::UInt64, false) => Ok(series.clone()),
-        (DataType::Int64, false) => {
-            let ca = series.i64().unwrap();
-            Ok(ca.reinterpret_unsigned().into_series())
-        }
-        (DataType::Int64, true) => Ok(series.clone()),
-        _ => Err(PolarsError::ComputeError(
-            "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
-        )),
     }
-    .map_err(JsPolarsEr::from)?;
-    s.try_into_js(&cx)
+
+    #[napi]
+    pub fn max(&self) -> Option<Either3<f64, bool, i64>> {
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.max::<f64>().map(Either3::A),
+            DataType::Boolean => self.series.max::<u32>().map(|v| v == 1).map(Either3::B),
+            _ => self.series.max::<i64>().map(Either3::C),
+        }
+    }
+    #[napi]
+    pub fn min(&self) -> Option<Either3<f64, bool, i64>> {
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.min::<f64>().map(Either3::A),
+            DataType::Boolean => self.series.min::<u32>().map(|v| v == 1).map(Either3::B),
+            _ => self.series.min::<i64>().map(Either3::C),
+        }
+    }
+    #[napi]
+    pub fn sum(&self) -> Option<Either3<f64, bool, i64>> {
+        match self.series.dtype() {
+            DataType::Float32 | DataType::Float64 => self.series.sum::<f64>().map(Either3::A),
+            DataType::Boolean => self.series.sum::<u32>().map(|v| v == 1).map(Either3::B),
+            _ => self.series.sum::<i64>().map(Either3::C),
+        }
+    }
+    #[napi]
+    pub fn n_chunks(&self) -> u32 {
+        self.series.n_chunks() as u32
+    }
+    #[napi]
+    pub fn limit(&self, num_elements: f64) -> JsSeries {
+        self.series.limit(num_elements as usize).into()
+    }
+    #[napi]
+    pub fn slice(&self, offset: i64, length: f64) -> JsSeries {
+        self.series.slice(offset, length as usize).into()
+    }
+    #[napi]
+    pub fn append(&mut self, other: &JsSeries) -> napi::Result<()> {
+        self.series
+            .append(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(())
+    }
+    #[napi]
+    pub fn extend(&mut self, other: &JsSeries) -> napi::Result<()> {
+        self.series
+            .extend(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(())
+    }
+    #[napi]
+    pub fn filter(&self, filter: &JsSeries) -> napi::Result<JsSeries> {
+        let filter_series = &filter.series;
+        if let Ok(ca) = filter_series.bool() {
+            let series = self.series.filter(ca).map_err(JsPolarsErr::from)?;
+            Ok(JsSeries { series })
+        } else {
+            let err = napi::Error::from_reason("Expected a boolean mask".to_owned());
+            Err(err)
+        }
+    }
+    #[napi]
+    pub fn add(&self, other: &JsSeries) -> JsSeries {
+        (&self.series + &other.series).into()
+    }
+    #[napi]
+    pub fn sub(&self, other: &JsSeries) -> JsSeries {
+        (&self.series - &other.series).into()
+    }
+    #[napi]
+    pub fn mul(&self, other: &JsSeries) -> JsSeries {
+        (&self.series * &other.series).into()
+    }
+    #[napi]
+    pub fn div(&self, other: &JsSeries) -> JsSeries {
+        (&self.series / &other.series).into()
+    }
+    #[napi]
+    pub fn rem(&self, other: &JsSeries) -> JsSeries {
+        (&self.series % &other.series).into()
+    }
+    #[napi]
+    pub fn head(&self, length: Option<i64>) -> JsSeries {
+        (self.series.head(length.map(|l| l as usize))).into()
+    }
+    #[napi]
+    pub fn tail(&self, length: Option<i64>) -> JsSeries {
+        (self.series.tail(length.map(|l| l as usize))).into()
+    }
+    #[napi]
+    pub fn sort(&self, reverse: Option<bool>) -> JsSeries {
+        let reverse = reverse.unwrap_or(false);
+        self.series.sort(reverse).into()
+    }
+    #[napi]
+    pub fn argsort(&self, reverse: bool, nulls_last: bool) -> JsSeries {
+        self.series
+            .argsort(SortOptions {
+                descending: reverse,
+                nulls_last,
+            })
+            .into_series()
+            .into()
+    }
+    #[napi]
+    pub fn unique(&self) -> napi::Result<JsSeries> {
+        let unique = self.series.unique().map_err(JsPolarsErr::from)?;
+        Ok(unique.into())
+    }
+    #[napi]
+    pub fn unique_stable(&self) -> napi::Result<JsSeries> {
+        let unique = self.series.unique_stable().map_err(JsPolarsErr::from)?;
+        Ok(unique.into())
+    }
+    #[napi]
+    pub fn value_counts(&self) -> napi::Result<Object> {
+        todo!()
+    }
+    #[napi]
+    pub fn arg_unique(&self) -> napi::Result<JsSeries> {
+        let arg_unique = self.series.arg_unique().map_err(JsPolarsErr::from)?;
+        Ok(arg_unique.into_series().into())
+    }
+    #[napi]
+    pub fn arg_min(&self) -> Option<i64> {
+        self.series.arg_min().map(|v| v as i64)
+    }
+    #[napi]
+    pub fn arg_max(&self) -> Option<i64> {
+        self.series.arg_max().map(|v| v as i64)
+    }
+    #[napi]
+    pub fn take(&self, indices: Vec<u32>) -> napi::Result<JsSeries> {
+        let indices = UInt32Chunked::from_vec("", indices);
+
+        let take = self.series.take(&indices).map_err(JsPolarsErr::from)?;
+        Ok(JsSeries::new(take))
+    }
+    #[napi]
+    pub fn take_with_series(&self, indices: &JsSeries) -> napi::Result<JsSeries> {
+        let idx = indices.series.u32().map_err(JsPolarsErr::from)?;
+        let take = self.series.take(idx).map_err(JsPolarsErr::from)?;
+        Ok(JsSeries::new(take))
+    }
+
+    #[napi]
+    pub fn null_count(&self) -> napi::Result<i64> {
+        Ok(self.series.null_count() as i64)
+    }
+
+    #[napi]
+    pub fn has_validity(&self) -> bool {
+        self.series.has_validity()
+    }
+
+    #[napi]
+    pub fn is_null(&self) -> JsSeries {
+        Self::new(self.series.is_null().into_series())
+    }
+
+    #[napi]
+    pub fn is_not_null(&self) -> JsSeries {
+        Self::new(self.series.is_not_null().into_series())
+    }
+
+    #[napi]
+    pub fn is_not_nan(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_not_nan().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    #[napi]
+    pub fn is_nan(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_nan().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    #[napi]
+    pub fn is_finite(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_finite().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    #[napi]
+    pub fn is_infinite(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_infinite().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    #[napi]
+    pub fn is_unique(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_unique().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+
+    #[napi]
+    pub fn arg_true(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.arg_true().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+    #[napi]
+    pub fn sample_n(
+        &self,
+        n: u32,
+        with_replacement: bool,
+        seed: Option<Wrap<u64>>,
+    ) -> napi::Result<Self> {
+        // Safety:
+        // Wrap is transparent.
+        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        let s = self
+            .series
+            .sample_n(n as usize, with_replacement, seed)
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        seed: Option<Wrap<u64>>,
+    ) -> napi::Result<Self> {
+        // Safety:
+        // Wrap is transparent.
+        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        let s = self
+            .series
+            .sample_frac(frac, with_replacement, seed)
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn is_duplicated(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.is_duplicated().map_err(JsPolarsErr::from)?;
+        Ok(ca.into_series().into())
+    }
+    #[napi]
+    pub fn explode(&self) -> napi::Result<JsSeries> {
+        let s = self.series.explode().map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn take_every(&self, n: i64) -> JsSeries {
+        let s = self.series.take_every(n as usize);
+        s.into()
+    }
+    #[napi]
+    pub fn series_equal(&self, other: &JsSeries, null_equal: bool, strict: bool) -> bool {
+        if strict {
+            self.series.eq(&other.series)
+        } else if null_equal {
+            self.series.series_equal_missing(&other.series)
+        } else {
+            self.series.series_equal(&other.series)
+        }
+    }
+    #[napi]
+    pub fn eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .equal(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn neq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .not_equal(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn gt(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .gt(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn gt_eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .gt_eq(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn lt(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .lt(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn lt_eq(&self, rhs: &JsSeries) -> napi::Result<JsSeries> {
+        Ok(Self::new(
+            self.series
+                .lt_eq(&rhs.series)
+                .map_err(JsPolarsErr::from)?
+                .into_series(),
+        ))
+    }
+
+    #[napi]
+    pub fn _not(&self) -> napi::Result<JsSeries> {
+        let bool = self.series.bool().map_err(JsPolarsErr::from)?;
+        Ok((!bool).into_series().into())
+    }
+    #[napi]
+    pub fn as_str(&self) -> napi::Result<String> {
+        Ok(format!("{:?}", self.series))
+    }
+    #[napi]
+    pub fn len(&self) -> i64 {
+        self.series.len() as i64
+    }
+    #[napi]
+    pub fn to_physical(&self) -> JsSeries {
+        let s = self.series.to_physical_repr().into_owned();
+        s.into()
+    }
+
+    #[napi]
+    pub fn to_typed_array(&self) -> TypedArrayBuffer {
+        let series = &self.series;
+        series.into()
+    }
+    #[napi]
+    pub fn to_array(&self) -> Wrap<&Series> {
+        Wrap(&self.series)
+    }
+
+    #[napi]
+    pub fn median(&self) -> Option<f64> {
+        match self.series.dtype() {
+            DataType::Boolean => {
+                let s = self.series.cast(&DataType::UInt8).unwrap();
+                s.median()
+            }
+            _ => self.series.median(),
+        }
+    }
+    #[napi]
+    pub fn quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+    ) -> JsAnyValue {
+        let v = self
+            .series
+            .quantile_as_series(quantile, interpolation.0)
+            .expect("invalid quantile");
+        let v = v.get(0);
+        v.into()
+    }
+    /// Rechunk and return a pointer to the start of the Series.
+    /// Only implemented for numeric types
+    pub fn as_single_ptr(&mut self) -> napi::Result<usize> {
+        let ptr = self.series.as_single_ptr().map_err(JsPolarsErr::from)?;
+        Ok(ptr)
+    }
+
+    #[napi]
+    pub fn drop_nulls(&self) -> JsSeries {
+        self.series.drop_nulls().into()
+    }
+
+    #[napi]
+    pub fn fill_null(&self, strategy: Wrap<FillNullStrategy>) -> napi::Result<JsSeries> {
+        let series = self
+            .series
+            .fill_null(strategy.0)
+            .map_err(JsPolarsErr::from)?;
+        Ok(JsSeries::new(series))
+    }
+
+    #[napi]
+    pub fn is_in(&self, other: &JsSeries) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .is_in(&other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out.into_series().into())
+    }
+
+    #[napi]
+    pub fn clone(&self) -> JsSeries {
+        JsSeries::new(self.series.clone())
+    }
+
+    #[napi]
+    pub fn shift(&self, periods: i64) -> JsSeries {
+        let s = self.series.shift(periods);
+        JsSeries::new(s)
+    }
+    #[napi]
+    pub fn zip_with(&self, mask: &JsSeries, other: &JsSeries) -> napi::Result<JsSeries> {
+        let mask = mask.series.bool().map_err(JsPolarsErr::from)?;
+        let s = self
+            .series
+            .zip_with(mask, &other.series)
+            .map_err(JsPolarsErr::from)?;
+        Ok(JsSeries::new(s))
+    }
+
+    // Struct namespace
+    #[napi]
+    pub fn struct_to_frame(&self) -> napi::Result<crate::dataframe::JsDataFrame> {
+        let ca = self.series.struct_().map_err(JsPolarsErr::from)?;
+        let df: DataFrame = ca.clone().into();
+        Ok(df.into())
+    }
+
+    #[napi]
+    pub fn struct_fields(&self) -> napi::Result<Vec<&str>> {
+        let ca = self.series.struct_().map_err(JsPolarsErr::from)?;
+        Ok(ca.fields().iter().map(|s| s.name()).collect())
+    }
+    // String Namespace
+
+    #[napi]
+    pub fn str_lengths(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.str_lengths().into_series();
+        Ok(JsSeries::new(s))
+    }
+
+    #[napi]
+    pub fn str_contains(&self, pat: String) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.contains(&pat).map_err(JsPolarsErr::from)?.into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_json_path_match(&self, pat: String) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .json_path_match(&pat)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_extract(&self, pat: String, group_index: i64) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .extract(&pat, group_index as usize)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_replace(&self, pat: String, val: String) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .replace(&pat, &val)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_replace_all(&self, pat: String, val: String) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .replace_all(&pat, &val)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_to_uppercase(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.to_uppercase().into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_to_lowercase(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.to_lowercase().into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_slice(&self, start: i64, length: Option<i64>) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .str_slice(start, length.map(|l| l as u64))
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_hex_encode(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.hex_encode().into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_hex_decode(&self, strict: Option<bool>) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .hex_decode(strict)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_base64_encode(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca.base64_encode().into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn str_base64_decode(&self, strict: Option<bool>) -> napi::Result<JsSeries> {
+        let ca = self.series.utf8().map_err(JsPolarsErr::from)?;
+        let s = ca
+            .base64_decode(strict)
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn strftime(&self, fmt: String) -> napi::Result<JsSeries> {
+        let s = self.series.strftime(&fmt).map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn arr_lengths(&self) -> napi::Result<JsSeries> {
+        let ca = self.series.list().map_err(JsPolarsErr::from)?;
+        let s = ca.lst_lengths().into_series();
+        Ok(JsSeries::new(s))
+    }
+    // #[napi]
+    // pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> napi::Result<JsSeries> {
+    //   let ca = self.series.timestamp(tu.0).map_err(JsPolarsErr::from)?;
+    //   Ok(ca.into_series().into())
+    // }
+    #[napi]
+    pub fn to_dummies(&self) -> napi::Result<JsSeries> {
+        todo!()
+        // let df = self.series.to_dummies().map_err(JsPolarsErr::from)?;
+        // Ok(df.into())
+    }
+
+    #[napi]
+    pub fn get_list(&self, index: i64) -> Option<JsSeries> {
+        if let Ok(ca) = &self.series.list() {
+            let s = ca.get(index as usize);
+            s.map(|s| s.into())
+        } else {
+            None
+        }
+    }
+
+    #[napi]
+    pub fn rolling_sum(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_sum(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_mean(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_mean(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_median(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_median(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_max(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_max(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_min(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_min(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_var(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_var(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_std(&self, options: JsRollingOptions) -> napi::Result<JsSeries> {
+        let s = self
+            .series
+            .rolling_std(options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn rolling_quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+        options: JsRollingOptions,
+    ) -> napi::Result<JsSeries> {
+        let interpol = interpolation.0;
+        let s = self
+            .series
+            .rolling_quantile(quantile, interpol, options.into())
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn year(&self) -> napi::Result<JsSeries> {
+        let s = self.series.year().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn month(&self) -> napi::Result<JsSeries> {
+        let s = self.series.month().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn weekday(&self) -> napi::Result<JsSeries> {
+        let s = self.series.weekday().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn week(&self) -> napi::Result<JsSeries> {
+        let s = self.series.week().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn day(&self) -> napi::Result<JsSeries> {
+        let s = self.series.day().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn ordinal_day(&self) -> napi::Result<JsSeries> {
+        let s = self.series.ordinal_day().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn hour(&self) -> napi::Result<JsSeries> {
+        let s = self.series.hour().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn minute(&self) -> napi::Result<JsSeries> {
+        let s = self.series.minute().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn second(&self) -> napi::Result<JsSeries> {
+        let s = self.series.second().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn nanosecond(&self) -> napi::Result<JsSeries> {
+        let s = self.series.nanosecond().map_err(JsPolarsErr::from)?;
+        Ok(s.into_series().into())
+    }
+    #[napi]
+    pub fn dt_epoch_seconds(&self) -> napi::Result<JsSeries> {
+        let ms = self
+            .series
+            .timestamp(TimeUnit::Milliseconds)
+            .map_err(JsPolarsErr::from)?;
+        Ok((ms / 1000).into_series().into())
+    }
+    #[napi]
+    pub fn peak_max(&self) -> JsSeries {
+        self.series.peak_max().into_series().into()
+    }
+    #[napi]
+    pub fn peak_min(&self) -> JsSeries {
+        self.series.peak_min().into_series().into()
+    }
+
+    #[napi]
+    pub fn n_unique(&self) -> napi::Result<i64> {
+        let n = self.series.n_unique().map_err(JsPolarsErr::from)?;
+        Ok(n as i64)
+    }
+
+    #[napi]
+    pub fn is_first(&self) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .is_first()
+            .map_err(JsPolarsErr::from)?
+            .into_series();
+        Ok(out.into())
+    }
+
+    #[napi]
+    pub fn round(&self, decimals: u32) -> napi::Result<JsSeries> {
+        let s = self.series.round(decimals).map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn floor(&self) -> napi::Result<JsSeries> {
+        let s = self.series.floor().map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn ceil(&self) -> napi::Result<JsSeries> {
+        let s = self.series.ceil().map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+    #[napi]
+    pub fn shrink_to_fit(&mut self) {
+        self.series.shrink_to_fit();
+    }
+
+    #[napi]
+    pub fn dot(&self, other: &JsSeries) -> Option<f64> {
+        self.series.dot(&other.series)
+    }
+
+    #[napi]
+    pub fn hash(&self, k0: Wrap<u64>, k1: Wrap<u64>, k2: Wrap<u64>, k3: Wrap<u64>) -> JsSeries {
+        let hb = ahash::RandomState::with_seeds(k0.0, k1.0, k2.0, k3.0);
+        self.series.hash(hb).into_series().into()
+    }
+    #[napi]
+    pub fn reinterpret(&self, signed: bool) -> napi::Result<JsSeries> {
+        let s = reinterpret(&self.series, signed).map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn mode(&self) -> napi::Result<JsSeries> {
+        let s = self.series.mode().map_err(JsPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[napi]
+    pub fn interpolate(&self) -> JsSeries {
+        let s = self.series.interpolate();
+        s.into()
+    }
+
+    #[napi]
+    pub fn rank(&self, method: Wrap<RankMethod>, reverse: Option<bool>) -> napi::Result<JsSeries> {
+        let reverse = reverse.unwrap_or(false);
+
+        let options = RankOptions {
+            method: method.0,
+            descending: reverse,
+        };
+        Ok(self.series.rank(options).into())
+    }
+    #[napi]
+    pub fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> napi::Result<JsSeries> {
+        Ok(self.series.diff(n as usize, null_behavior.0).into())
+    }
+
+    #[napi]
+    pub fn skew(&self, bias: bool) -> napi::Result<Option<f64>> {
+        let out = self.series.skew(bias).map_err(JsPolarsErr::from)?;
+        Ok(out)
+    }
+
+    #[napi]
+    pub fn kurtosis(&self, fisher: bool, bias: bool) -> napi::Result<Option<f64>> {
+        let out = self
+            .series
+            .kurtosis(fisher, bias)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out)
+    }
+
+    #[napi]
+    pub fn cast(&self, dtype: Wrap<DataType>, strict: Option<bool>) -> napi::Result<JsSeries> {
+        let strict = strict.unwrap_or(false);
+        let dtype = dtype.0;
+        let out = if strict {
+            self.series.strict_cast(&dtype)
+        } else {
+            self.series.cast(&dtype)
+        };
+        let out = out.map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    #[napi]
+    pub fn abs(&self) -> napi::Result<JsSeries> {
+        let out = self.series.abs().map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    #[napi]
+    pub fn reshape(&self, dims: Vec<i64>) -> napi::Result<JsSeries> {
+        let out = self.series.reshape(&dims).map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    #[napi]
+    pub fn shuffle(&self, seed: Wrap<u64>) -> JsSeries {
+        self.series.shuffle(seed.0).into()
+    }
+
+    #[napi]
+    pub fn extend_constant(&self, value: Wrap<AnyValue>, n: i64) -> napi::Result<JsSeries> {
+        let out = self
+            .series
+            .extend_constant(value.0, n as usize)
+            .map_err(JsPolarsErr::from)?;
+        Ok(out.into())
+    }
+
+    #[napi]
+    pub fn time_unit(&self) -> Option<String> {
+        if let DataType::Datetime(tu, _) | DataType::Duration(tu) = self.series.dtype() {
+            Some(
+                match tu {
+                    TimeUnit::Nanoseconds => "ns",
+                    TimeUnit::Microseconds => "us",
+                    TimeUnit::Milliseconds => "ms",
+                }
+                .to_owned(),
+            )
+        } else {
+            None
+        }
+    }
+    #[napi]
+    pub fn to_json(&self) -> napi::Result<Buffer> {
+        let buf = serde_json::to_vec(&self.series).unwrap();
+        Ok(Buffer::from(buf))
+    }
+    #[napi]
+    pub fn to_binary(&self) -> napi::Result<Buffer> {
+        let buf = bincode::serialize(&self.series).unwrap();
+        Ok(Buffer::from(buf))
+    }
 }
 
-#[js_function(1)]
-pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let method = params.get_as::<String>("method")?;
-    let method = str_to_rankmethod(method)?;
-    series
-        .rank(RankOptions {
-            method,
-            descending: false,
-        })
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn diff(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let n = params.get_as::<usize>("n")?;
-    let null_behavior = params.get_as::<String>("null_behavior")?;
-    let null_behavior = str_to_null_behavior(null_behavior)?;
-    series.diff(n, null_behavior).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn cast(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let dtype: DataType = params.get_as::<JsDataType>("dtype")?.into();
-    let strict = params.get_as::<bool>("strict")?;
-    let out = if strict {
-        series.strict_cast(&dtype)
-    } else {
-        series.cast(&dtype)
+macro_rules! impl_set_at_idx_wrap {
+    ($name:ident, $native:ty, $cast:ident) => {
+        #[napi]
+        pub fn $name(
+            series: &JsSeries,
+            indices: Vec<u32>,
+            value: Option<Wrap<$native>>,
+        ) -> napi::Result<JsSeries> {
+            let value = value.map(|v| v.0);
+            let s = series
+                .series
+                .$cast()
+                .map_err(JsPolarsErr::from)?
+                .set_at_idx(indices.iter().map(|idx| *idx as usize), value)
+                .map_err(JsPolarsErr::from)?
+                .into_series();
+            Ok(s.into())
+        }
     };
-    out.map_err(JsPolarsEr::from)?.try_into_js(&cx)
+}
+macro_rules! impl_set_at_idx {
+    ($name:ident, $native:ty, $cast:ident) => {
+        #[napi]
+        pub fn $name(
+            series: &JsSeries,
+            indices: Vec<u32>,
+            value: Option<$native>,
+        ) -> napi::Result<JsSeries> {
+            let s = series
+                .series
+                .$cast()
+                .map_err(JsPolarsErr::from)?
+                .set_at_idx(indices.iter().map(|idx| *idx as usize), value)
+                .map_err(JsPolarsErr::from)?
+                .into_series();
+            Ok(s.into())
+        }
+    };
 }
 
-#[js_function(1)]
-pub fn skew(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let bias = params.get_as::<bool>("bias")?;
-    let skew = series.skew(bias).map_err(JsPolarsEr::from)?;
-    match skew {
-        Some(skew) => cx.env.create_double(skew).map(Either::A),
-        None => cx.env.get_null().map(Either::B),
-    }
-}
-#[js_function(1)]
-pub fn kurtosis(cx: CallContext) -> JsResult<Either<JsNumber, JsNull>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let fisher = params.get_as::<bool>("fisher")?;
-    let bias = params.get_as::<bool>("bias")?;
-    let kurtosis = series.kurtosis(fisher, bias).map_err(JsPolarsEr::from)?;
-    match kurtosis {
-        Some(k) => cx.env.create_double(k).map(Either::A),
-        None => cx.env.get_null().map(Either::B),
-    }
+impl_set_at_idx_wrap!(series_set_at_idx_str, &str, utf8);
+impl_set_at_idx!(series_set_at_idx_f64, f64, f64);
+impl_set_at_idx_wrap!(series_set_at_idx_f32, f32, f32);
+impl_set_at_idx_wrap!(series_set_at_idx_u8, u8, u8);
+impl_set_at_idx_wrap!(series_set_at_idx_u16, u16, u16);
+impl_set_at_idx!(series_set_at_idx_u32, u32, u32);
+impl_set_at_idx_wrap!(series_set_at_idx_u64, u64, u64);
+impl_set_at_idx_wrap!(series_set_at_idx_i8, i8, i8);
+impl_set_at_idx_wrap!(series_set_at_idx_i16, i16, i16);
+impl_set_at_idx!(series_set_at_idx_i32, i32, i32);
+impl_set_at_idx!(series_set_at_idx_i64, i64, i64);
+
+macro_rules! impl_set_with_mask_wrap {
+    ($name:ident, $native:ty, $cast:ident) => {
+        #[napi]
+        pub fn $name(
+            series: &JsSeries,
+            mask: &JsSeries,
+            value: Option<Wrap<$native>>,
+        ) -> napi::Result<JsSeries> {
+            let value = value.map(|v| v.0);
+            let mask = mask.series.bool().map_err(JsPolarsErr::from)?;
+            let ca = series.series.$cast().map_err(JsPolarsErr::from)?;
+            let new = ca
+                .set(mask, value)
+                .map_err(JsPolarsErr::from)?
+                .into_series();
+            Ok(new.into())
+        }
+    };
 }
 
-#[js_function(1)]
-pub fn get_str(cx: CallContext) -> JsResult<Either<JsString, JsNull>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    if let Ok(ca) = series.utf8() {
+macro_rules! impl_set_with_mask {
+    ($name:ident, $native:ty, $cast:ident) => {
+        #[napi]
+        pub fn $name(
+            series: &JsSeries,
+            mask: &JsSeries,
+            value: Option<$native>,
+        ) -> napi::Result<JsSeries> {
+            let mask = mask.series.bool().map_err(JsPolarsErr::from)?;
+            let ca = series.series.$cast().map_err(JsPolarsErr::from)?;
+            let new = ca
+                .set(mask, value)
+                .map_err(JsPolarsErr::from)?
+                .into_series();
+            Ok(new.into())
+        }
+    };
+}
+
+impl_set_with_mask_wrap!(series_set_with_mask_str, &str, utf8);
+impl_set_with_mask!(series_set_with_mask_f64, f64, f64);
+impl_set_with_mask_wrap!(series_set_with_mask_f32, f32, f32);
+impl_set_with_mask_wrap!(series_set_with_mask_u8, u8, u8);
+impl_set_with_mask_wrap!(series_set_with_mask_u16, u16, u16);
+impl_set_with_mask!(series_set_with_mask_u32, u32, u32);
+impl_set_with_mask_wrap!(series_set_with_mask_u64, u64, u64);
+impl_set_with_mask_wrap!(series_set_with_mask_i8, i8, i8);
+impl_set_with_mask_wrap!(series_set_with_mask_i16, i16, i16);
+impl_set_with_mask!(series_set_with_mask_i32, i32, i32);
+impl_set_with_mask!(series_set_with_mask_i64, i64, i64);
+
+macro_rules! impl_get {
+    ($name:ident, $series_variant:ident, $type:ty, $cast:ty) => {
+        #[napi]
+        pub fn $name(s: &JsSeries, index: i64) -> Option<$cast> {
+            if let Ok(ca) = s.series.$series_variant() {
+                let index = if index < 0 {
+                    (ca.len() as i64 + index) as usize
+                } else {
+                    index as usize
+                };
+                ca.get(index).map(|s| s as $cast)
+            } else {
+                None
+            }
+        }
+    };
+}
+
+impl_get!(series_get_f32, f32, f32, f64);
+impl_get!(series_get_f64, f64, f64, f64);
+impl_get!(series_get_u8, u8, u8, i32);
+impl_get!(series_get_u16, u16, u16, u32);
+impl_get!(series_get_u32, u32, u32, u32);
+impl_get!(series_get_u64, u64, u64, i64);
+impl_get!(series_get_i8, i8, i8, i32);
+impl_get!(series_get_i16, i16, i16, i32);
+impl_get!(series_get_i32, i32, i32, i32);
+impl_get!(series_get_i64, i64, i64, i32);
+// impl_get!(series_get_str, utf8, &str);
+impl_get!(series_get_date, date, i32, i32);
+impl_get!(series_get_datetime, datetime, i64, i64);
+impl_get!(series_get_duration, duration, i64, i64);
+
+#[napi]
+pub fn series_get_str(s: &JsSeries, index: i64) -> Option<String> {
+    if let Ok(ca) = s.series.utf8() {
         let index = if index < 0 {
             (ca.len() as i64 + index) as usize
         } else {
             index as usize
         };
-        match ca.get(index) {
-            Some(s) => s.try_into_js(&cx).map(Either::A),
-            None => cx.env.get_null().map(Either::B),
-        }
+        ca.get(index).map(|s| s.to_owned())
     } else {
-        cx.env.get_null().map(Either::B)
+        None
     }
 }
-
-#[js_function(1)]
-pub fn argsort(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let val = params.get_as::<bool>("reverse")?;
-    let sort_opts = SortOptions {
-        descending: val,
-        nulls_last: true,
-    };
-    series.argsort(sort_opts).into_series().try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn n_chunks(cx: CallContext) -> JsResult<JsNumber> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let n = series.n_chunks();
-    cx.env.create_uint32(n as u32)
-}
-
-#[js_function(1)]
-pub fn null_count(cx: CallContext) -> JsResult<JsNumber> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let n = series.null_count();
-    cx.env.create_uint32(n as u32)
-}
-
-#[js_function(1)]
-pub fn has_validity(cx: CallContext) -> JsResult<JsBoolean> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let n = series.has_validity();
-    cx.env.get_boolean(n)
-}
-#[js_function(1)]
-pub fn get_date(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    match series.date() {
-        Ok(ca) => {
-            let index = if index < 0 {
-                (ca.len() as i64 + index) as usize
-            } else {
-                index as usize
-            };
-            match ca.get(index) {
-                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-    }
-}
-
-#[js_function(1)]
-pub fn get_datetime(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    match series.datetime() {
-        Ok(ca) => {
-            let index = if index < 0 {
-                (ca.len() as i64 + index) as usize
-            } else {
-                index as usize
-            };
-            match ca.get(index) {
-                Some(v) => cx.env.create_date(v as f64).map(|v| v.into_unknown()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-    }
-}
-
-#[js_function(1)]
-pub fn to_js(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let obj: JsUnknown = cx.env.to_js_value(series)?;
-    Ok(obj)
-}
-
-#[js_function(1)]
-pub fn to_json(cx: CallContext) -> JsResult<napi::JsBuffer> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let buf = serde_json::to_vec(series).unwrap();
-
-    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
-    let js_buff = bytes.into_raw();
-    Ok(js_buff)
-}
-
-#[js_function(1)]
-pub fn rechunk(cx: CallContext) -> JsResult<Either<JsExternal, JsUndefined>> {
-    let params = get_params(&cx)?;
-    let series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let in_place = params.get_as::<Option<bool>>("inPlace")?;
-    let rechunked_series = series.rechunk();
-    if in_place.unwrap_or(false) {
-        cx.env.get_undefined().map(Either::B)
-    } else {
-        rechunked_series.try_into_js(&cx).map(Either::A)
-    }
-}
-
-#[js_function(1)]
-pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let val = params.get_as::<AnyValue>("value")?;
-    let n = params.get_as::<usize>("n")?;
-    series
-        .extend_constant(val, n)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn extend(cx: CallContext) -> JsResult<JsUndefined> {
-    let params = get_params(&cx)?;
-    let series: &mut Series = params.get_external_mut::<Series>(&cx, "_series")?;
-    let other = params.get_external::<Series>(&cx, "other")?;
-    series.extend(other).map_err(JsPolarsEr::from)?;
-    cx.env.get_undefined()
-}
-
-macro_rules! init_method {
-    ($name:ident, $js_type:ty, $type:ty, $getter:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let name = params.get_as::<&str>("name")?;
-            let arr = params.get::<JsObject>("values")?;
-            let len = arr.get_array_length()?;
-            let mut items: Vec<$type> = Vec::with_capacity(len as usize);
-
-            for i in 0..len {
-                let item: $js_type = arr.get_element_unchecked(i)?;
-                let item = item.$getter()? as $type;
-                items.push(item)
-            }
-            Series::new(name, items).try_into_js(&cx)
-        }
-    };
-}
-
-init_method!(new_i8, JsNumber, i8, get_int32);
-init_method!(new_i16, JsNumber, i16, get_int32);
-init_method!(new_i32, JsNumber, i32, get_int32);
-init_method!(new_i64, JsNumber, i64, get_int64);
-init_method!(new_u8, JsNumber, u8, get_uint32);
-init_method!(new_u16, JsNumber, u16, get_uint32);
-init_method!(new_u32, JsNumber, u32, get_uint32);
-init_method!(new_u64, JsNumber, u64, get_int64);
-init_method!(new_f32, JsNumber, f32, get_double);
-init_method!(new_f64, JsNumber, f64, get_double);
-
-macro_rules! init_method_opt {
-    ($name:ident, $type:ty, $native:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let name = params.get_as::<&str>("name")?;
-            let strict = params.get_as::<bool>("strict")?;
-            let arr = params.get::<JsObject>("values")?;
-            let len = arr.get_array_length()?;
-
-            let mut builder = PrimitiveChunkedBuilder::<$type>::new(name, len as usize);
-            for i in 0..len {
-                let item: JsUnknown = arr.get_element_unchecked(i)?;
-                let item: WrappedValue = item.into();
-                match item.extract::<$native>() {
-                    Ok(val) => builder.append_value(val),
-                    Err(e) => {
-                        if strict {
-                            return Err(e);
-                        }
-                        builder.append_null()
-                    }
-                }
-            }
-
-            let ca: ChunkedArray<$type> = builder.finish();
-            ca.into_series().try_into_js(&cx)
-        }
-    };
-}
-
-init_method_opt!(new_opt_f64, Float64Type, f64);
-init_method_opt!(new_opt_u16, UInt16Type, u16);
-init_method_opt!(new_opt_u32, UInt32Type, u32);
-init_method_opt!(new_opt_u64, UInt64Type, u64);
-init_method_opt!(new_opt_i8, Int8Type, i8);
-init_method_opt!(new_opt_i16, Int16Type, i16);
-init_method_opt!(new_opt_i32, Int32Type, i32);
-init_method_opt!(new_opt_i64, Int64Type, i64);
-init_method_opt!(new_opt_f32, Float32Type, f32);
-
-macro_rules! impl_from_chunked {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series.$name().into_series().try_into_js(&cx)
-        }
-    };
-}
-
-impl_from_chunked!(is_null);
-impl_from_chunked!(is_not_null);
-impl_from_chunked!(peak_max);
-impl_from_chunked!(peak_min);
-
-macro_rules! impl_from_chunked_with_err {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series
-                .$name()
-                .map_err(JsPolarsEr::from)?
-                .into_series()
-                .try_into_js(&cx)
-        }
-    };
-}
-impl_from_chunked_with_err!(arg_unique);
-impl_from_chunked_with_err!(is_not_nan);
-impl_from_chunked_with_err!(is_nan);
-impl_from_chunked_with_err!(is_finite);
-impl_from_chunked_with_err!(is_infinite);
-impl_from_chunked_with_err!(is_unique);
-impl_from_chunked_with_err!(arg_true);
-impl_from_chunked_with_err!(is_duplicated);
-impl_from_chunked_with_err!(year);
-impl_from_chunked_with_err!(month);
-impl_from_chunked_with_err!(weekday);
-impl_from_chunked_with_err!(week);
-impl_from_chunked_with_err!(day);
-impl_from_chunked_with_err!(ordinal_day);
-impl_from_chunked_with_err!(hour);
-impl_from_chunked_with_err!(minute);
-impl_from_chunked_with_err!(second);
-impl_from_chunked_with_err!(nanosecond);
-impl_from_chunked_with_err!(is_first);
-
-#[js_function(1)]
-pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-
-    series
-        .timestamp(TimeUnit::Milliseconds)
-        .map_err(JsPolarsEr::from)?
-        .into_series()
-        .try_into_js(&cx)
-}
-macro_rules! impl_method {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series.$name().try_into_js(&cx)
-        }
-    };
-    ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<$type> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series.$name().try_into_js(&cx)
-        }
-    };
-    ($name:ident, $type:ty, $property:expr ) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let prop = params.get_as::<$type>($property)?;
-            series.$name(prop).try_into_js(&cx)
-        }
-    };
-}
-
-impl_method!(clone);
-impl_method!(drop_nulls);
-impl_method!(interpolate);
-
-impl_method!(cumsum, bool, "reverse");
-impl_method!(cummax, bool, "reverse");
-impl_method!(cummin, bool, "reverse");
-impl_method!(cumprod, bool, "reverse");
-impl_method!(sort, bool, "reverse");
-impl_method!(tail, Option<usize>, "length");
-impl_method!(head, Option<usize>, "length");
-impl_method!(limit, usize, "num_elements");
-impl_method!(shift, i64, "periods");
-impl_method!(take_every, usize, "n");
-
-macro_rules! impl_method_with_err {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series.$name().map_err(JsPolarsEr::from)?.try_into_js(&cx)
-        }
-    };
-    ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<$type> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            series.$name().map_err(JsPolarsEr::from)?.try_into_js(&cx)
-        }
-    };
-    ($name:ident, $type:ty, $property:expr ) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let prop = params.get_as::<$type>($property)?;
-            series
-                .$name(prop)
-                .map_err(JsPolarsEr::from)?
-                .try_into_js(&cx)
-        }
-    };
-    ($name:ident, $type1:ty, $property1:expr , $type2:ty, $property2:expr ) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let prop1 = params.get_as::<$type1>($property1)?;
-            let prop2 = params.get_as::<$type2>($property2)?;
-            series
-                .$name(prop1, prop2)
-                .map_err(JsPolarsEr::from)?
-                .try_into_js(&cx)
-        }
-    };
-}
-
-impl_method_with_err!(unique);
-impl_method_with_err!(unique_stable);
-impl_method_with_err!(explode);
-impl_method_with_err!(floor);
-impl_method_with_err!(ceil);
-impl_method_with_err!(mode);
-
-impl_method_with_err!(n_unique, JsNumber);
-impl_method_with_err!(round, u32, "decimals");
-impl_method_with_err!(strftime, &str, "fmt");
-
-#[js_function(1)]
-pub(crate) fn clip(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let min = params.get_as::<f64>("min")?;
-    let max = params.get_as::<f64>("max")?;
-    series
-        .clip(min, max)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn sample_n(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let n = params.get_as::<usize>("n")?;
-    let with_replacement = params.get_as::<bool>("withReplacement")?;
-    let seed = params.get_as::<Option<u64>>("seed")?;
-    series
-        .sample_n(n, with_replacement, seed)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let frac = params.get_as::<f64>("frac")?;
-    let with_replacement = params.get_as::<bool>("withReplacement")?;
-    let seed = params.get_as::<Option<u64>>("seed")?;
-    series
-        .sample_frac(frac, with_replacement, seed)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-
-macro_rules! impl_equality {
-    ($name:ident, $method:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_external::<Series>(&cx, "rhs")?;
-            series.$method(rhs).into_series().try_into_js(&cx)
-        }
-    };
-}
-
-impl_equality!(eq, equal);
-impl_equality!(neq, not_equal);
-impl_equality!(gt, gt);
-impl_equality!(gt_eq, gt_eq);
-impl_equality!(lt, lt);
-impl_equality!(lt_eq, lt_eq);
-
-macro_rules! impl_str_method {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let ca = series.utf8().map_err(JsPolarsEr::from)?;
-            ca.$name().into_series().try_into_js(&cx)
-        }
-    };
-    ($fn_name:ident, $method_name:ident) => {
-        #[js_function(1)]
-        pub fn $fn_name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let ca = series.utf8().map_err(JsPolarsEr::from)?;
-            ca.$method_name().into_series().try_into_js(&cx)
-        }
-    };
-}
-
-impl_str_method!(str_lengths);
-impl_str_method!(str_to_uppercase, to_uppercase);
-impl_str_method!(str_to_lowercase, to_lowercase);
-
-macro_rules! impl_str_method_with_err {
-    ($name:ident, $type:ty, $property:expr ) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let ca = series.utf8().map_err(JsPolarsEr::from)?;
-            let pat = params.get_as::<$type>($property)?;
-            ca.$name(&pat)
-                .map_err(JsPolarsEr::from)?
-                .into_series()
-                .try_into_js(&cx)
-        }
-    };
-    ($fn_name:ident, $method_name:ident, $type:ty, $property:expr ) => {
-        #[js_function(1)]
-        pub fn $fn_name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let ca = series.utf8().map_err(JsPolarsEr::from)?;
-            let arg = params.get_as::<$type>($property)?;
-            ca.$method_name(arg)
-                .map_err(JsPolarsEr::from)?
-                .into_series()
-                .try_into_js(&cx)
-        }
-    };
-    ($fn_name:ident, $method_name:ident,  $type1:ty, $property1:expr, $type2:ty, $property2:expr) => {
-        #[js_function(1)]
-        pub fn $fn_name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let ca = series.utf8().map_err(JsPolarsEr::from)?;
-            let prop1 = params.get_as::<$type1>($property1)?;
-            let prop2 = params.get_as::<$type2>($property2)?;
-            ca.$method_name(prop1, prop2)
-                .map_err(JsPolarsEr::from)?
-                .into_series()
-                .try_into_js(&cx)
-        }
-    };
-}
-
-impl_str_method_with_err!(str_contains, contains, &str, "pat");
-impl_str_method_with_err!(str_json_path_match, json_path_match, &str, "pat");
-impl_str_method_with_err!(str_extract, extract, &str, "pat", usize, "groupIndex");
-impl_str_method_with_err!(str_replace, replace, &str, "pat", &str, "val");
-impl_str_method_with_err!(str_replace_all, replace_all, &str, "pat", &str, "val");
-impl_str_method_with_err!(str_slice, str_slice, i64, "start", Option<u64>, "length");
-
-#[js_function(1)]
-pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.hex_encode().into_series().try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn hex_decode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let strict = params.get_as::<Option<bool>>("strict")?;
-
-    let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.hex_decode(strict)
-        .map_err(JsPolarsEr::from)?
-        .into_series()
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn base64_encode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.base64_encode().into_series().try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn base64_decode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let strict = params.get_as::<Option<bool>>("strict")?;
-
-    let ca = series.utf8().map_err(JsPolarsEr::from)?;
-    ca.base64_decode(strict)
-        .map_err(JsPolarsEr::from)?
-        .into_series()
-        .try_into_js(&cx)
-}
-
-macro_rules! impl_rolling_method {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let window_size = params.get_as::<usize>("window_size")?;
-            let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-            let min_periods = params.get_as::<usize>("min_periods")?;
-            let center = params.get_as::<bool>("center")?;
-            let options = RollingOptions {
-                window_size,
-                weights,
-                min_periods,
-                center,
-            };
-            series
-                .$name(options)
-                .map_err(JsPolarsEr::from)?
-                .try_into_js(&cx)
-        }
-    };
-}
-
-#[js_function(1)]
-pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let quantile = params.get_as::<f64>("quantile")?;
-    let interpolation: QuantileInterpolOptions =
-        params.get_or("interpolation", QuantileInterpolOptions::Nearest)?;
-    let window_size: usize = params.get_or("window_size", 2)?;
-    let min_periods: usize = params.get_or("min_periods", 2)?;
-    let center: bool = params.get_or("center", false)?;
-    let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-    let options = RollingOptions {
-        window_size,
-        weights,
-        min_periods,
-        center,
-    };
-
-    series
-        .rolling_quantile(quantile, interpolation, options)
-        .map_err(JsPolarsEr::from)?
-        .try_into_js(&cx)
-}
-impl_rolling_method!(rolling_sum);
-impl_rolling_method!(rolling_mean);
-impl_rolling_method!(rolling_max);
-impl_rolling_method!(rolling_min);
-impl_rolling_method!(rolling_var);
-impl_rolling_method!(rolling_std);
-impl_rolling_method!(rolling_median);
-
-macro_rules! impl_set_with_mask {
-    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let filter = params.get_external::<Series>(&cx, "filter")?;
-            let value = params.get_as::<Option<$native>>("value")?;
-            let mask = filter.bool().map_err(JsPolarsEr::from)?;
-            let ca = series.$cast().map_err(JsPolarsEr::from)?;
-            let new = ca.set(mask, value).map_err(JsPolarsEr::from)?;
-
-            new.into_series().try_into_js(&cx)
-        }
-    };
-}
-
-impl_set_with_mask!(set_with_mask_str, &str, utf8, Utf8);
-impl_set_with_mask!(set_with_mask_f64, f64, f64, Float64);
-impl_set_with_mask!(set_with_mask_f32, f32, f32, Float32);
-impl_set_with_mask!(set_with_mask_u8, u8, u8, UInt8);
-impl_set_with_mask!(set_with_mask_u16, u16, u16, UInt16);
-impl_set_with_mask!(set_with_mask_u32, u32, u32, UInt32);
-impl_set_with_mask!(set_with_mask_u64, u64, u64, UInt64);
-impl_set_with_mask!(set_with_mask_i8, i8, i8, Int8);
-impl_set_with_mask!(set_with_mask_i16, i16, i16, Int16);
-impl_set_with_mask!(set_with_mask_i32, i32, i32, Int32);
-impl_set_with_mask!(set_with_mask_i64, i64, i64, Int64);
-impl_set_with_mask!(set_with_mask_bool, bool, bool, Boolean);
-
-macro_rules! impl_set_at_idx {
-    ($name:ident, $native:ty, $cast:ident, $variant:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsUndefined> {
-            let params = get_params(&cx)?;
-            let series: &mut Series = params.get_external_mut::<Series>(&cx, "_series")?;
-            let indices = params.get_as::<Vec<u32>>("indices")?;
-            let value = params.get_as::<Option<$native>>("value")?;
-            let ca = series.$cast().map_err(JsPolarsEr::from)?;
-            let ca = ca
-                .set_at_idx(indices.iter().map(|idx| *idx as usize), value)
-                .map_err(JsPolarsEr::from)?
-                .into_series();
-            let old_series = std::mem::replace(series, ca);
-            std::mem::drop(old_series);
-            cx.env.get_undefined()
-        }
-    };
-}
-
-impl_set_at_idx!(set_at_idx_str, &str, utf8, Utf8);
-impl_set_at_idx!(set_at_idx_f64, f64, f64, Float64);
-impl_set_at_idx!(set_at_idx_f32, f32, f32, Float32);
-impl_set_at_idx!(set_at_idx_u8, u8, u8, UInt8);
-impl_set_at_idx!(set_at_idx_u16, u16, u16, UInt16);
-impl_set_at_idx!(set_at_idx_u32, u32, u32, UInt32);
-impl_set_at_idx!(set_at_idx_u64, u64, u64, UInt64);
-impl_set_at_idx!(set_at_idx_i8, i8, i8, Int8);
-impl_set_at_idx!(set_at_idx_i16, i16, i16, Int16);
-impl_set_at_idx!(set_at_idx_i32, i32, i32, Int32);
-impl_set_at_idx!(set_at_idx_i64, i64, i64, Int64);
-
-macro_rules! impl_get {
-    ($name:ident, $series_variant:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsUnknown> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let index = params.get_as::<i64>("index")?;
-            match series.$series_variant() {
-                Ok(ca) => {
-                    let index = if index < 0 {
-                        (ca.len() as i64 + index) as usize
-                    } else {
-                        index as usize
-                    };
-                    match ca.get(index) {
-                        Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown()),
-                        None => cx.env.get_null().map(|v| v.into_unknown()),
-                    }
-                }
-                Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-    };
-}
-
-impl_get!(get_f32, f32);
-impl_get!(get_f64, f64);
-impl_get!(get_u8, u8);
-impl_get!(get_u16, u16);
-impl_get!(get_u32, u32);
-impl_get!(get_i8, i8);
-impl_get!(get_i16, i16);
-impl_get!(get_i32, i32);
-// impl_get!(get_i64, i64);
-
-#[js_function(1)]
-pub fn get_u64(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    match series.u64() {
-        Ok(ca) => {
-            let index = if index < 0 {
-                (ca.len() as i64 + index) as usize
-            } else {
-                index as usize
-            };
-            match ca.get(index) {
-                Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown().unwrap()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-    }
-}
-#[js_function(1)]
-pub fn get_i64(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    match series.i64() {
-        Ok(ca) => {
-            let index = if index < 0 {
-                (ca.len() as i64 + index) as usize
-            } else {
-                index as usize
-            };
-            match ca.get(index) {
-                Some(v) => v.try_into_js(&cx).map(|v| v.into_unknown().unwrap()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-    }
-}
-
-#[js_function(1)]
-pub fn get_bool(cx: CallContext) -> JsResult<JsUnknown> {
-    let params = get_params(&cx)?;
-    let series = params.get_external::<Series>(&cx, "_series")?;
-    let index = params.get_as::<i64>("index")?;
-    match series.bool() {
-        Ok(ca) => {
-            let index = if index < 0 {
-                (ca.len() as i64 + index) as usize
-            } else {
-                index as usize
-            };
-            match ca.get(index) {
-                Some(v) => cx.env.get_boolean(v).map(|v| v.into_unknown()),
-                None => cx.env.get_null().map(|v| v.into_unknown()),
-            }
-        }
-        Err(_) => cx.env.get_null().map(|v| v.into_unknown()),
-    }
-}
-
 macro_rules! impl_arithmetic {
   ($name:ident, $type:ty, $operand:tt) => {
-    #[js_function(1)]
-      pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-          let params = get_params(&cx)?;
-          let series = params.get_external::<Series>(&cx, "_series")?;
-          let other = params.get_as::<$type>("other")?;
-          (series $operand other).try_into_js(&cx)
+      #[napi]
+      pub fn $name(s: &JsSeries, other: JsAnyValue) -> napi::Result<JsSeries> {
+          let other: $type = other.try_into()?;
+          Ok(JsSeries::new(&s.series $operand other))
       }
   };
 }
-
-impl_arithmetic!(add_u8, u8, +);
-impl_arithmetic!(add_u16, u16, +);
-impl_arithmetic!(add_u32, u32, +);
-impl_arithmetic!(add_u64, u64, +);
-impl_arithmetic!(add_i8, i8, +);
-impl_arithmetic!(add_i16, i16, +);
-impl_arithmetic!(add_i32, i32, +);
-impl_arithmetic!(add_i64, i64, +);
-impl_arithmetic!(add_f32, f32, +);
-impl_arithmetic!(add_f64, f64, +);
-impl_arithmetic!(sub_u8, u8, -);
-impl_arithmetic!(sub_u16, u16, -);
-impl_arithmetic!(sub_u32, u32, -);
-impl_arithmetic!(sub_u64, u64, -);
-impl_arithmetic!(sub_i8, i8, -);
-impl_arithmetic!(sub_i16, i16, -);
-impl_arithmetic!(sub_i32, i32, -);
-impl_arithmetic!(sub_i64, i64, -);
-impl_arithmetic!(sub_f32, f32, -);
-impl_arithmetic!(sub_f64, f64, -);
-impl_arithmetic!(div_u8, u8, /);
-impl_arithmetic!(div_u16, u16, /);
-impl_arithmetic!(div_u32, u32, /);
-impl_arithmetic!(div_u64, u64, /);
-impl_arithmetic!(div_i8, i8, /);
-impl_arithmetic!(div_i16, i16, /);
-impl_arithmetic!(div_i32, i32, /);
-impl_arithmetic!(div_i64, i64, /);
-impl_arithmetic!(div_f32, f32, /);
-impl_arithmetic!(div_f64, f64, /);
-impl_arithmetic!(mul_u8, u8, *);
-impl_arithmetic!(mul_u16, u16, *);
-impl_arithmetic!(mul_u32, u32, *);
-impl_arithmetic!(mul_u64, u64, *);
-impl_arithmetic!(mul_i8, i8, *);
-impl_arithmetic!(mul_i16, i16, *);
-impl_arithmetic!(mul_i32, i32, *);
-impl_arithmetic!(mul_i64, i64, *);
-impl_arithmetic!(mul_f32, f32, *);
-impl_arithmetic!(mul_f64, f64, *);
-impl_arithmetic!(rem_u8, u8, %);
-impl_arithmetic!(rem_u16, u16, %);
-impl_arithmetic!(rem_u32, u32, %);
-impl_arithmetic!(rem_u64, u64, %);
-impl_arithmetic!(rem_i8, i8, %);
-impl_arithmetic!(rem_i16, i16, %);
-impl_arithmetic!(rem_i32, i32, %);
-impl_arithmetic!(rem_i64, i64, %);
-impl_arithmetic!(rem_f32, f32, %);
-impl_arithmetic!(rem_f64, f64, %);
+impl_arithmetic!(series_add_u8, u8, +);
+impl_arithmetic!(series_add_u16, u16, +);
+impl_arithmetic!(series_add_u32, u32, +);
+impl_arithmetic!(series_add_u64, u64, +);
+impl_arithmetic!(series_add_i8, i8, +);
+impl_arithmetic!(series_add_i16, i16, +);
+impl_arithmetic!(series_add_i32, i32, +);
+impl_arithmetic!(series_add_i64, i64, +);
+impl_arithmetic!(series_add_datetime, i64, +);
+impl_arithmetic!(series_add_duration, i64, +);
+impl_arithmetic!(series_add_f32, f32, +);
+impl_arithmetic!(series_add_f64, f64, +);
+impl_arithmetic!(series_sub_u8, u8, -);
+impl_arithmetic!(series_sub_u16, u16, -);
+impl_arithmetic!(series_sub_u32, u32, -);
+impl_arithmetic!(series_sub_u64, u64, -);
+impl_arithmetic!(series_sub_i8, i8, -);
+impl_arithmetic!(series_sub_i16, i16, -);
+impl_arithmetic!(series_sub_i32, i32, -);
+impl_arithmetic!(series_sub_i64, i64, -);
+impl_arithmetic!(series_sub_datetime, i64, -);
+impl_arithmetic!(series_sub_duration, i64, -);
+impl_arithmetic!(series_sub_f32, f32, -);
+impl_arithmetic!(series_sub_f64, f64, -);
+impl_arithmetic!(series_div_u8, u8, /);
+impl_arithmetic!(series_div_u16, u16, /);
+impl_arithmetic!(series_div_u32, u32, /);
+impl_arithmetic!(series_div_u64, u64, /);
+impl_arithmetic!(series_div_i8, i8, /);
+impl_arithmetic!(series_div_i16, i16, /);
+impl_arithmetic!(series_div_i32, i32, /);
+impl_arithmetic!(series_div_i64, i64, /);
+impl_arithmetic!(series_div_f32, f32, /);
+impl_arithmetic!(series_div_f64, f64, /);
+impl_arithmetic!(series_mul_u8, u8, *);
+impl_arithmetic!(series_mul_u16, u16, *);
+impl_arithmetic!(series_mul_u32, u32, *);
+impl_arithmetic!(series_mul_u64, u64, *);
+impl_arithmetic!(series_mul_i8, i8, *);
+impl_arithmetic!(series_mul_i16, i16, *);
+impl_arithmetic!(series_mul_i32, i32, *);
+impl_arithmetic!(series_mul_i64, i64, *);
+impl_arithmetic!(series_mul_f32, f32, *);
+impl_arithmetic!(series_mul_f64, f64, *);
+impl_arithmetic!(series_rem_u8, u8, %);
+impl_arithmetic!(series_rem_u16, u16, %);
+impl_arithmetic!(series_rem_u32, u32, %);
+impl_arithmetic!(series_rem_u64, u64, %);
+impl_arithmetic!(series_rem_i8, i8, %);
+impl_arithmetic!(series_rem_i16, i16, %);
+impl_arithmetic!(series_rem_i32, i32, %);
+impl_arithmetic!(series_rem_i64, i64, %);
+impl_arithmetic!(series_rem_f32, f32, %);
+impl_arithmetic!(series_rem_f64, f64, %);
 
 macro_rules! impl_rhs_arithmetic {
     ($name:ident, $type:ty, $operand:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let other = params.get_as::<$type>("other")?;
-            other.$operand(series).try_into_js(&cx)
+        #[napi]
+
+        pub fn $name(s: &JsSeries, other: JsAnyValue) -> napi::Result<JsSeries> {
+            let other: $type = other.try_into()?;
+            Ok(JsSeries::new(other.$operand(&s.series)))
         }
     };
 }
-impl_rhs_arithmetic!(add_u8_rhs, u8, add);
-impl_rhs_arithmetic!(add_u16_rhs, u16, add);
-impl_rhs_arithmetic!(add_u32_rhs, u32, add);
-impl_rhs_arithmetic!(add_u64_rhs, u64, add);
-impl_rhs_arithmetic!(add_i8_rhs, i8, add);
-impl_rhs_arithmetic!(add_i16_rhs, i16, add);
-impl_rhs_arithmetic!(add_i32_rhs, i32, add);
-impl_rhs_arithmetic!(add_i64_rhs, i64, add);
-impl_rhs_arithmetic!(add_f32_rhs, f32, add);
-impl_rhs_arithmetic!(add_f64_rhs, f64, add);
-impl_rhs_arithmetic!(sub_u8_rhs, u8, sub);
-impl_rhs_arithmetic!(sub_u16_rhs, u16, sub);
-impl_rhs_arithmetic!(sub_u32_rhs, u32, sub);
-impl_rhs_arithmetic!(sub_u64_rhs, u64, sub);
-impl_rhs_arithmetic!(sub_i8_rhs, i8, sub);
-impl_rhs_arithmetic!(sub_i16_rhs, i16, sub);
-impl_rhs_arithmetic!(sub_i32_rhs, i32, sub);
-impl_rhs_arithmetic!(sub_i64_rhs, i64, sub);
-impl_rhs_arithmetic!(sub_f32_rhs, f32, sub);
-impl_rhs_arithmetic!(sub_f64_rhs, f64, sub);
-impl_rhs_arithmetic!(div_u8_rhs, u8, div);
-impl_rhs_arithmetic!(div_u16_rhs, u16, div);
-impl_rhs_arithmetic!(div_u32_rhs, u32, div);
-impl_rhs_arithmetic!(div_u64_rhs, u64, div);
-impl_rhs_arithmetic!(div_i8_rhs, i8, div);
-impl_rhs_arithmetic!(div_i16_rhs, i16, div);
-impl_rhs_arithmetic!(div_i32_rhs, i32, div);
-impl_rhs_arithmetic!(div_i64_rhs, i64, div);
-impl_rhs_arithmetic!(div_f32_rhs, f32, div);
-impl_rhs_arithmetic!(div_f64_rhs, f64, div);
-impl_rhs_arithmetic!(mul_u8_rhs, u8, mul);
-impl_rhs_arithmetic!(mul_u16_rhs, u16, mul);
-impl_rhs_arithmetic!(mul_u32_rhs, u32, mul);
-impl_rhs_arithmetic!(mul_u64_rhs, u64, mul);
-impl_rhs_arithmetic!(mul_i8_rhs, i8, mul);
-impl_rhs_arithmetic!(mul_i16_rhs, i16, mul);
-impl_rhs_arithmetic!(mul_i32_rhs, i32, mul);
-impl_rhs_arithmetic!(mul_i64_rhs, i64, mul);
-impl_rhs_arithmetic!(mul_f32_rhs, f32, mul);
-impl_rhs_arithmetic!(mul_f64_rhs, f64, mul);
-impl_rhs_arithmetic!(rem_u8_rhs, u8, rem);
-impl_rhs_arithmetic!(rem_u16_rhs, u16, rem);
-impl_rhs_arithmetic!(rem_u32_rhs, u32, rem);
-impl_rhs_arithmetic!(rem_u64_rhs, u64, rem);
-impl_rhs_arithmetic!(rem_i8_rhs, i8, rem);
-impl_rhs_arithmetic!(rem_i16_rhs, i16, rem);
-impl_rhs_arithmetic!(rem_i32_rhs, i32, rem);
-impl_rhs_arithmetic!(rem_i64_rhs, i64, rem);
-impl_rhs_arithmetic!(rem_f32_rhs, f32, rem);
-impl_rhs_arithmetic!(rem_f64_rhs, f64, rem);
+
+impl_rhs_arithmetic!(series_add_u8_rhs, u8, add);
+impl_rhs_arithmetic!(series_add_u16_rhs, u16, add);
+impl_rhs_arithmetic!(series_add_u32_rhs, u32, add);
+impl_rhs_arithmetic!(series_add_u64_rhs, u64, add);
+impl_rhs_arithmetic!(series_add_i8_rhs, i8, add);
+impl_rhs_arithmetic!(series_add_i16_rhs, i16, add);
+impl_rhs_arithmetic!(series_add_i32_rhs, i32, add);
+impl_rhs_arithmetic!(series_add_i64_rhs, i64, add);
+impl_rhs_arithmetic!(series_add_f32_rhs, f32, add);
+impl_rhs_arithmetic!(series_add_f64_rhs, f64, add);
+impl_rhs_arithmetic!(series_sub_u8_rhs, u8, sub);
+impl_rhs_arithmetic!(series_sub_u16_rhs, u16, sub);
+impl_rhs_arithmetic!(series_sub_u32_rhs, u32, sub);
+impl_rhs_arithmetic!(series_sub_u64_rhs, u64, sub);
+impl_rhs_arithmetic!(series_sub_i8_rhs, i8, sub);
+impl_rhs_arithmetic!(series_sub_i16_rhs, i16, sub);
+impl_rhs_arithmetic!(series_sub_i32_rhs, i32, sub);
+impl_rhs_arithmetic!(series_sub_i64_rhs, i64, sub);
+impl_rhs_arithmetic!(series_sub_f32_rhs, f32, sub);
+impl_rhs_arithmetic!(series_sub_f64_rhs, f64, sub);
+impl_rhs_arithmetic!(series_div_u8_rhs, u8, div);
+impl_rhs_arithmetic!(series_div_u16_rhs, u16, div);
+impl_rhs_arithmetic!(series_div_u32_rhs, u32, div);
+impl_rhs_arithmetic!(series_div_u64_rhs, u64, div);
+impl_rhs_arithmetic!(series_div_i8_rhs, i8, div);
+impl_rhs_arithmetic!(series_div_i16_rhs, i16, div);
+impl_rhs_arithmetic!(series_div_i32_rhs, i32, div);
+impl_rhs_arithmetic!(series_div_i64_rhs, i64, div);
+impl_rhs_arithmetic!(series_div_f32_rhs, f32, div);
+impl_rhs_arithmetic!(series_div_f64_rhs, f64, div);
+impl_rhs_arithmetic!(series_mul_u8_rhs, u8, mul);
+impl_rhs_arithmetic!(series_mul_u16_rhs, u16, mul);
+impl_rhs_arithmetic!(series_mul_u32_rhs, u32, mul);
+impl_rhs_arithmetic!(series_mul_u64_rhs, u64, mul);
+impl_rhs_arithmetic!(series_mul_i8_rhs, i8, mul);
+impl_rhs_arithmetic!(series_mul_i16_rhs, i16, mul);
+impl_rhs_arithmetic!(series_mul_i32_rhs, i32, mul);
+impl_rhs_arithmetic!(series_mul_i64_rhs, i64, mul);
+impl_rhs_arithmetic!(series_mul_f32_rhs, f32, mul);
+impl_rhs_arithmetic!(series_mul_f64_rhs, f64, mul);
+impl_rhs_arithmetic!(series_rem_u8_rhs, u8, rem);
+impl_rhs_arithmetic!(series_rem_u16_rhs, u16, rem);
+impl_rhs_arithmetic!(series_rem_u32_rhs, u32, rem);
+impl_rhs_arithmetic!(series_rem_u64_rhs, u64, rem);
+impl_rhs_arithmetic!(series_rem_i8_rhs, i8, rem);
+impl_rhs_arithmetic!(series_rem_i16_rhs, i16, rem);
+impl_rhs_arithmetic!(series_rem_i32_rhs, i32, rem);
+impl_rhs_arithmetic!(series_rem_i64_rhs, i64, rem);
+impl_rhs_arithmetic!(series_rem_f32_rhs, f32, rem);
+impl_rhs_arithmetic!(series_rem_f64_rhs, f64, rem);
 
 macro_rules! impl_eq_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.equal(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series
+                    .equal(rhs)
+                    .map_err(JsPolarsErr::from)?
+                    .into_series(),
+            ))
         }
     };
 }
 
-impl_eq_num!(eq_u8, u8);
-impl_eq_num!(eq_u16, u16);
-impl_eq_num!(eq_u32, u32);
-impl_eq_num!(eq_u64, u64);
-impl_eq_num!(eq_i8, i8);
-impl_eq_num!(eq_i16, i16);
-impl_eq_num!(eq_i32, i32);
-impl_eq_num!(eq_i64, i64);
-impl_eq_num!(eq_f32, f32);
-impl_eq_num!(eq_f64, f64);
-impl_eq_num!(eq_str, &str);
+impl_eq_num!(series_eq_u8, u8);
+impl_eq_num!(series_eq_u16, u16);
+impl_eq_num!(series_eq_u32, u32);
+impl_eq_num!(series_eq_u64, u64);
+impl_eq_num!(series_eq_i8, i8);
+impl_eq_num!(series_eq_i16, i16);
+impl_eq_num!(series_eq_i32, i32);
+impl_eq_num!(series_eq_i64, i64);
+impl_eq_num!(series_eq_f32, f32);
+impl_eq_num!(series_eq_f64, f64);
+impl_eq_num!(series_eq_str, &str);
 
 macro_rules! impl_neq_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.not_equal(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series
+                    .not_equal(rhs)
+                    .map_err(JsPolarsErr::from)?
+                    .into_series(),
+            ))
         }
     };
 }
-
-impl_neq_num!(neq_u8, u8);
-impl_neq_num!(neq_u16, u16);
-impl_neq_num!(neq_u32, u32);
-impl_neq_num!(neq_u64, u64);
-impl_neq_num!(neq_i8, i8);
-impl_neq_num!(neq_i16, i16);
-impl_neq_num!(neq_i32, i32);
-impl_neq_num!(neq_i64, i64);
-impl_neq_num!(neq_f32, f32);
-impl_neq_num!(neq_f64, f64);
-impl_neq_num!(neq_str, &str);
+impl_neq_num!(series_neq_u8, u8);
+impl_neq_num!(series_neq_u16, u16);
+impl_neq_num!(series_neq_u32, u32);
+impl_neq_num!(series_neq_u64, u64);
+impl_neq_num!(series_neq_i8, i8);
+impl_neq_num!(series_neq_i16, i16);
+impl_neq_num!(series_neq_i32, i32);
+impl_neq_num!(series_neq_i64, i64);
+impl_neq_num!(series_neq_f32, f32);
+impl_neq_num!(series_neq_f64, f64);
+impl_neq_num!(series_neq_str, &str);
 
 macro_rules! impl_gt_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.gt(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series.gt(rhs).map_err(JsPolarsErr::from)?.into_series(),
+            ))
         }
     };
 }
-
-impl_gt_num!(gt_u8, u8);
-impl_gt_num!(gt_u16, u16);
-impl_gt_num!(gt_u32, u32);
-impl_gt_num!(gt_u64, u64);
-impl_gt_num!(gt_i8, i8);
-impl_gt_num!(gt_i16, i16);
-impl_gt_num!(gt_i32, i32);
-impl_gt_num!(gt_i64, i64);
-impl_gt_num!(gt_f32, f32);
-impl_gt_num!(gt_f64, f64);
-impl_gt_num!(gt_str, &str);
+impl_gt_num!(series_gt_u8, u8);
+impl_gt_num!(series_gt_u16, u16);
+impl_gt_num!(series_gt_u32, u32);
+impl_gt_num!(series_gt_u64, u64);
+impl_gt_num!(series_gt_i8, i8);
+impl_gt_num!(series_gt_i16, i16);
+impl_gt_num!(series_gt_i32, i32);
+impl_gt_num!(series_gt_i64, i64);
+impl_gt_num!(series_gt_f32, f32);
+impl_gt_num!(series_gt_f64, f64);
+impl_gt_num!(series_gt_str, &str);
 
 macro_rules! impl_gt_eq_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.gt_eq(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series
+                    .gt_eq(rhs)
+                    .map_err(JsPolarsErr::from)?
+                    .into_series(),
+            ))
         }
     };
 }
-
-impl_gt_eq_num!(gt_eq_u8, u8);
-impl_gt_eq_num!(gt_eq_u16, u16);
-impl_gt_eq_num!(gt_eq_u32, u32);
-impl_gt_eq_num!(gt_eq_u64, u64);
-impl_gt_eq_num!(gt_eq_i8, i8);
-impl_gt_eq_num!(gt_eq_i16, i16);
-impl_gt_eq_num!(gt_eq_i32, i32);
-impl_gt_eq_num!(gt_eq_i64, i64);
-impl_gt_eq_num!(gt_eq_f32, f32);
-impl_gt_eq_num!(gt_eq_f64, f64);
-impl_gt_eq_num!(gt_eq_str, &str);
+impl_gt_eq_num!(series_gt_eq_u8, u8);
+impl_gt_eq_num!(series_gt_eq_u16, u16);
+impl_gt_eq_num!(series_gt_eq_u32, u32);
+impl_gt_eq_num!(series_gt_eq_u64, u64);
+impl_gt_eq_num!(series_gt_eq_i8, i8);
+impl_gt_eq_num!(series_gt_eq_i16, i16);
+impl_gt_eq_num!(series_gt_eq_i32, i32);
+impl_gt_eq_num!(series_gt_eq_i64, i64);
+impl_gt_eq_num!(series_gt_eq_f32, f32);
+impl_gt_eq_num!(series_gt_eq_f64, f64);
+impl_gt_eq_num!(series_gt_eq_str, &str);
 
 macro_rules! impl_lt_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.lt(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series.lt(rhs).map_err(JsPolarsErr::from)?.into_series(),
+            ))
         }
     };
 }
-
-impl_lt_num!(lt_u8, u8);
-impl_lt_num!(lt_u16, u16);
-impl_lt_num!(lt_u32, u32);
-impl_lt_num!(lt_u64, u64);
-impl_lt_num!(lt_i8, i8);
-impl_lt_num!(lt_i16, i16);
-impl_lt_num!(lt_i32, i32);
-impl_lt_num!(lt_i64, i64);
-impl_lt_num!(lt_f32, f32);
-impl_lt_num!(lt_f64, f64);
-impl_lt_num!(lt_str, &str);
+impl_lt_num!(series_lt_u8, u8);
+impl_lt_num!(series_lt_u16, u16);
+impl_lt_num!(series_lt_u32, u32);
+impl_lt_num!(series_lt_u64, u64);
+impl_lt_num!(series_lt_i8, i8);
+impl_lt_num!(series_lt_i16, i16);
+impl_lt_num!(series_lt_i32, i32);
+impl_lt_num!(series_lt_i64, i64);
+impl_lt_num!(series_lt_f32, f32);
+impl_lt_num!(series_lt_f64, f64);
+impl_lt_num!(series_lt_str, &str);
 
 macro_rules! impl_lt_eq_num {
     ($name:ident, $type:ty) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let series = params.get_external::<Series>(&cx, "_series")?;
-            let rhs = params.get_as::<$type>("rhs")?;
-            series.lt_eq(rhs).into_series().try_into_js(&cx)
+        #[napi]
+        pub fn $name(s: &JsSeries, rhs: JsAnyValue) -> napi::Result<JsSeries> {
+            let rhs: $type = rhs.try_into()?;
+            Ok(JsSeries::new(
+                s.series
+                    .lt_eq(rhs)
+                    .map_err(JsPolarsErr::from)?
+                    .into_series(),
+            ))
         }
     };
 }
-
-impl_lt_eq_num!(lt_eq_u8, u8);
-impl_lt_eq_num!(lt_eq_u16, u16);
-impl_lt_eq_num!(lt_eq_u32, u32);
-impl_lt_eq_num!(lt_eq_u64, u64);
-impl_lt_eq_num!(lt_eq_i8, i8);
-impl_lt_eq_num!(lt_eq_i16, i16);
-impl_lt_eq_num!(lt_eq_i32, i32);
-impl_lt_eq_num!(lt_eq_i64, i64);
-impl_lt_eq_num!(lt_eq_f32, f32);
-impl_lt_eq_num!(lt_eq_f64, f64);
-impl_lt_eq_num!(lt_eq_str, &str);
+impl_lt_eq_num!(series_lt_eq_u8, u8);
+impl_lt_eq_num!(series_lt_eq_u16, u16);
+impl_lt_eq_num!(series_lt_eq_u32, u32);
+impl_lt_eq_num!(series_lt_eq_u64, u64);
+impl_lt_eq_num!(series_lt_eq_i8, i8);
+impl_lt_eq_num!(series_lt_eq_i16, i16);
+impl_lt_eq_num!(series_lt_eq_i32, i32);
+impl_lt_eq_num!(series_lt_eq_i64, i64);
+impl_lt_eq_num!(series_lt_eq_f32, f32);
+impl_lt_eq_num!(series_lt_eq_f64, f64);
+impl_lt_eq_num!(series_lt_eq_str, &str);
