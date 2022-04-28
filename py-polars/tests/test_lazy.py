@@ -1223,3 +1223,18 @@ def test_group_lengths() -> None:
             )
         )
     )
+
+
+def test_quantile_filtered_agg() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "group": [0, 0, 0, 0, 1, 1, 1, 1],
+                "value": [1, 2, 3, 4, 1, 2, 3, 4],
+            }
+        )
+        .groupby("group")
+        .agg(pl.col("value").filter(pl.col("value") < 2).quantile(0.5))["value"]
+        .to_list()
+        == [1.0, 1.0]
+    )
