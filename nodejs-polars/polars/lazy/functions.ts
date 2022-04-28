@@ -166,7 +166,10 @@ export function arange(opts: any, high?, step?, eager?): Series | Expr {
     return _Expr(pli.arange(low, high, step));
   }
 }
-
+/**  Alias for `pl.col("*")` */
+export function all(): Expr {
+  return col("*");
+}
 /**
  * __Find the indexes that would sort the columns.__
  * ___
@@ -431,6 +434,72 @@ export function list(column: ExprOrString): Expr {
 }
 
 
+/**
+    Collect several columns into a Series of dtype Struct
+    Parameters
+    ----------
+    @param exprs
+        Columns/Expressions to collect into a Struct
+    @param eager
+        Evaluate immediately
+
+    Examples
+    --------
+    ```
+    >>> pl.DataFrame(
+    ...     {
+    ...         "int": [1, 2],
+    ...         "str": ["a", "b"],
+    ...         "bool": [True, None],
+    ...         "list": [[1, 2], [3]],
+    ...     }
+    ... ).select([pl.struct(pl.all()).alias("my_struct")])
+    shape: (2, 1)
+    ┌───────────────────────┐
+    │ my_struct             │
+    │ ---                   │
+    │ struct{int, ... list} │
+    ╞═══════════════════════╡
+    │ {1,"a",true,[1, 2]}   │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}      │
+    └───────────────────────┘
+
+    // Only collect specific columns as a struct:
+    >>> df = pl.DataFrame({
+    ...   "a": [1, 2, 3, 4],
+    ...   "b": ["one", "two", "three", "four"],
+    ...   "c": [9, 8, 7, 6]
+    ... })
+    >>> df.withColumn(pl.struct(pl.col(["a", "b"])).alias("a_and_b"))
+    shape: (4, 4)
+    ┌─────┬───────┬─────┬───────────────────────────────┐
+    │ a   ┆ b     ┆ c   ┆ a_and_b                       │
+    │ --- ┆ ---   ┆ --- ┆ ---                           │
+    │ i64 ┆ str   ┆ i64 ┆ struct[2]{'a': i64, 'b': str} │
+    ╞═════╪═══════╪═════╪═══════════════════════════════╡
+    │ 1   ┆ one   ┆ 9   ┆ {1,"one"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ two   ┆ 8   ┆ {2,"two"}                     │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ three ┆ 7   ┆ {3,"three"}                   │
+    ├╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 4   ┆ four  ┆ 6   ┆ {4,"four"}                    │
+    └─────┴───────┴─────┴───────────────────────────────┘
+```
+*/
+export function struct(exprs: Series[]): Series
+export function struct(exprs: ExprOrString | ExprOrString[]): Expr
+export function struct(exprs: ExprOrString | ExprOrString[] | Series[]): Expr | Series {
+  exprs = Array.isArray(exprs) ? exprs : [exprs];
+
+  if (Series.isSeries(exprs[0])) {
+    return select(_Expr(pli.asStruct(exprs.map(e => pli.lit(e.inner()))))).toSeries();
+  }
+  exprs = selectionToExprList(exprs);
+
+  return _Expr(pli.asStruct(exprs));
+}
 // // export function collect_all() {}
 // // export function all() {} // fold
 // // export function any() {} // fold

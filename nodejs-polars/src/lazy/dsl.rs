@@ -1419,3 +1419,21 @@ fn concat_str(s: Vec<&JsExpr>, sep: String) -> JsExpr {
     let s = s.to_exprs();
     dsl::concat_str(s, &sep).into()
 }
+
+#[napi]
+fn min_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::min_exprs(exprs).into()
+}
+
+#[napi]
+fn max_exprs(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::max_exprs(exprs).into()
+}
+
+#[napi]
+fn as_struct(exprs: Vec<&JsExpr>) -> JsExpr {
+    let exprs = exprs.to_exprs();
+    polars::lazy::dsl::as_struct(&exprs).into()
+}

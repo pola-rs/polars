@@ -1212,6 +1212,28 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
   toSeries(index?: number): Series
   toString(): string
   /**
+    Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+    @param name Name for the struct Series
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "a": [1, 2, 3, 4, 5],
+    ...   "b": ["one", "two", "three", "four", "five"],
+    ... })
+    >>> df.toStruct("nums")
+    shape: (5,)
+    Series: 'nums' [struct[2]{'a': i64, 'b': str}]
+    [
+            {1,"one"}
+            {2,"two"}
+            {3,"three"}
+            {4,"four"}
+            {5,"five"}
+    ]
+    ```
+   */
+  toStruct(name: string): Series
+  /**
    * Transpose a DataFrame over the diagonal.
    *
    * @note This is a very expensive operation. Perhaps you can do it differently.
@@ -1293,6 +1315,45 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    */
   unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
   unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
+  /**
+    Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+    location of the `struct` type.
+    @param names Names of the struct columns that will be decomposed by its fields
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "int": [1, 2],
+    ...   "str": ["a", "b"],
+    ...   "bool": [true, null],
+    ...   "list": [[1, 2], [3]],
+    ... })
+    ...  .toStruct("my_struct")
+    ...  .toFrame()
+    >>> df
+    shape: (2, 1)
+    ┌─────────────────────────────┐
+    │ my_struct                   │
+    │ ---                         │
+    │ struct[4]{'int',...,'list'} │
+    ╞═════════════════════════════╡
+    │ {1,"a",true,[1, 2]}         │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}            │
+    └─────────────────────────────┘
+    >>> df.unnest("my_struct")
+    shape: (2, 4)
+    ┌─────┬─────┬──────┬────────────┐
+    │ int ┆ str ┆ bool ┆ list       │
+    │ --- ┆ --- ┆ ---  ┆ ---        │
+    │ i64 ┆ str ┆ bool ┆ list [i64] │
+    ╞═════╪═════╪══════╪════════════╡
+    │ 1   ┆ a   ┆ true ┆ [1, 2]     │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ b   ┆ null ┆ [3]        │
+    └─────┴─────┴──────┴────────────┘
+    ```
+   */
+  unnest(names: string | string[]): DataFrame
    /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
@@ -1893,6 +1954,9 @@ export const _DataFrame = (_df: any): DataFrame => {
 
     },
     toSeries: (index = 0) => _Series(_df.selectAtIdx(index) as any) as any,
+    toStruct(name) {
+      return _Series(_df.toStruct(name));
+    },
     toString() {
       return _df.toString();
     },
@@ -1922,6 +1986,11 @@ export const _DataFrame = (_df: any): DataFrame => {
       }
 
       return df;
+    },
+    unnest(names) {
+      names = Array.isArray(names) ? names : [names];
+
+      return _DataFrame(_df.unnest(names));
     },
     var() {
       return wrap("var");

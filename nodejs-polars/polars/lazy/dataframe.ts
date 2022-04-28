@@ -9,7 +9,6 @@ import {
   selectionToExprList,
   ValueOrArray
 } from "../utils";
-import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
 
 
@@ -250,14 +249,18 @@ export interface LazyDataFrame {
    */
   tail(length?: number): LazyDataFrame
   /**
+   * compatibility with `JSON.stringify`
+   */
+  toJSON(): String
+  /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
    * @param maintainOrder
    * @param subset - subset to drop duplicates for
    * @param keep "first" | "last"
    */
-   unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
-   unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
+  unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
+  unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
   /**
    * Aggregate the columns in the DataFrame to their variance value.
    */
@@ -551,6 +554,12 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
     },
     tail(length=5) {
       return _LazyDataFrame(_ldf.tail(length));
+    },
+    toJSON(...args) {
+      console.log(args);
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+
+      return _ldf.toJson();
     },
     withColumn(expr) {
       return _LazyDataFrame(_ldf.withColumn(expr._expr));

@@ -81,6 +81,7 @@ namespace pl {
   export import pearsonCorr = lazy.pearsonCorr
   export import quantile = lazy.quantile
   export import select = lazy.select
+  export import struct = lazy.struct
   export import spearmanRankCorr = lazy.spearmanRankCorr
   export import tail = lazy.tail
   export import list = lazy.list

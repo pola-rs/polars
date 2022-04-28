@@ -45,6 +45,16 @@ impl JsLazyGroupBy {
 #[napi]
 impl JsLazyFrame {
     #[napi]
+    pub fn to_json(&self) -> napi::Result<Buffer> {
+        let bytes = serde_json::to_vec(&self.ldf.logical_plan)
+            .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?;
+        Ok(bytes.into())
+    }
+    #[napi]
+    pub fn to_js(&self, env: Env) -> napi::Result<napi::JsUnknown> {
+        env.to_js_value(&self.ldf.logical_plan)
+    }
+    #[napi]
     pub fn describe_plan(&self) -> String {
         self.ldf.describe_plan()
     }
