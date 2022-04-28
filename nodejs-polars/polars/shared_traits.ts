@@ -481,3 +481,22 @@ export interface DateFunctions<T> {
    */
   year(): T;
 }
+
+export interface Serialize {
+  /**
+   * Serializes object to desired format via [serde](https://serde.rs/)
+   *
+   * @param format [json](https://github.com/serde-rs/json) | [bincode](https://github.com/bincode-org/bincode)
+   *
+   */
+  serialize(format: "json" | "bincode"): Buffer
+}
+export interface Deserialize<T> {
+  /**
+  * De-serializes buffer via [serde](https://serde.rs/)
+  * @param buf buffer to deserialize
+  * @param format [json](https://github.com/serde-rs/json) | [bincode](https://github.com/bincode-org/bincode)
+  *
+  */
+  deserialize(buf: Buffer, format: "json" | "bincode"): T
+}

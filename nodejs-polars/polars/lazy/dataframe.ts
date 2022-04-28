@@ -1,6 +1,7 @@
 
 import {DataFrame, _DataFrame} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
+import pli from "../internals/polars_internal";
 import {
   columnOrColumnsStrict,
   ColumnSelection,
@@ -9,8 +10,8 @@ import {
   selectionToExprList,
   ValueOrArray
 } from "../utils";
-import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
+import {Deserialize, Serialize} from "../shared_traits";
 
 
 type LazyJoinOptions =  {
@@ -33,7 +34,7 @@ type LazyOptions = {
 /**
  * Representation of a Lazy computation graph / query.
  */
-export interface LazyDataFrame {
+export interface LazyDataFrame extends Serialize {
   /** @ignore */
   _ldf: any;
   get columns(): string[]
@@ -250,14 +251,18 @@ export interface LazyDataFrame {
    */
   tail(length?: number): LazyDataFrame
   /**
+   * compatibility with `JSON.stringify`
+   */
+  toJSON(): String
+  /**
    * Drop duplicate rows from this DataFrame.
    * Note that this fails if there is a column of type `List` in the DataFrame.
    * @param maintainOrder
    * @param subset - subset to drop duplicates for
    * @param keep "first" | "last"
    */
-   unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
-   unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
+  unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"): LazyDataFrame
+  unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first" | "last"}): LazyDataFrame
   /**
    * Aggregate the columns in the DataFrame to their variance value.
    */
@@ -552,6 +557,18 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
     tail(length=5) {
       return _LazyDataFrame(_ldf.tail(length));
     },
+    toJSON(...args: any[]) {
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+      if(args[0] === "") {
+        return JSON.parse(_ldf.serialize("json").toString());
+      }
+
+      return _ldf.serialize("json").toString();
+
+    },
+    serialize(format) {
+      return _ldf.serialize(format);
+    },
     withColumn(expr) {
       return _LazyDataFrame(_ldf.withColumn(expr._expr));
     },
@@ -568,3 +585,10 @@ export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
     },
   };
 };
+
+
+export interface LazyDataFrameConstructor extends Deserialize<LazyDataFrame> {}
+
+export const LazyDataFrame: LazyDataFrameConstructor = Object.assign(_LazyDataFrame, {
+  deserialize: (buf, fmt) => _LazyDataFrame(pli.JsLazyFrame.deserialize(buf, fmt))
+});
