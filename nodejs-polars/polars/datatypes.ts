@@ -1,4 +1,4 @@
-import {jsTypeToPolarsType} from "@polars/internals/construction";
+import {jsTypeToPolarsType} from "./internals/construction";
 import pli from "./internals/polars_internal";
 
 export type DtypeToPrimitive<T> = T extends DataType.Bool ? boolean :
@@ -30,8 +30,7 @@ T extends DataType.Float32 ? Float32Array :
 T extends DataType.Float64 ? Float64Array :
 never
 
-export type Optional<T> = T | undefined;
-
+export type Optional<T> = T | undefined | null;
 export enum DataType {
   Int8,
   Int16,
@@ -51,6 +50,7 @@ export enum DataType {
   Time,
   Object,
   Categorical,
+  Struct
 }
 
 
@@ -71,44 +71,76 @@ export type JoinOptions = {
 
 
 export const DTYPE_TO_FFINAME: Record<DataType, string> = {
-  [DataType.Int8]: "i8",
-  [DataType.Int16]: "i16",
-  [DataType.Int32]: "i32",
-  [DataType.Int64]: "i64",
-  [DataType.UInt8]: "u8",
-  [DataType.UInt16]: "u16",
-  [DataType.UInt32]: "u32",
-  [DataType.UInt64]: "u64",
-  [DataType.Float32]: "f32",
-  [DataType.Float64]: "f64",
-  [DataType.Bool]: "bool",
-  [DataType.Utf8]: "str",
-  [DataType.List]: "list",
-  [DataType.Date]: "date",
-  [DataType.Datetime]: "datetime",
-  [DataType.Time]: "time",
-  [DataType.Object]: "object",
-  [DataType.Categorical]: "categorical",
+  [DataType.Int8]: "I8",
+  [DataType.Int16]: "I16",
+  [DataType.Int32]: "I32",
+  [DataType.Int64]: "I64",
+  [DataType.UInt8]: "U8",
+  [DataType.UInt16]: "U16",
+  [DataType.UInt32]: "U32",
+  [DataType.UInt64]: "U64",
+  [DataType.Float32]: "F32",
+  [DataType.Float64]: "F64",
+  [DataType.Bool]: "Bool",
+  [DataType.Utf8]: "Str",
+  [DataType.List]: "List",
+  [DataType.Date]: "Date",
+  [DataType.Datetime]: "Datetime",
+  [DataType.Time]: "Time",
+  [DataType.Object]: "Object",
+  [DataType.Categorical]: "Categorical",
+  [DataType.Struct]: "Struct",
 };
 
-const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, string> = {
-  Float32: "new_opt_f32",
-  Float64: "new_opt_f64",
-  Int8: "new_opt_i8",
-  Int16: "new_opt_i16",
-  Int32: "new_opt_i32",
-  Int64: "new_opt_i64",
-  UInt8: "new_opt_u8",
-  UInt16: "new_opt_u16",
-  UInt32: "new_opt_u32",
-  UInt64: "new_opt_u64",
-  Date: "new_opt_u32",
-  Datetime: "new_opt_u32",
-  Bool: "new_opt_bool",
-  Utf8: "new_str",
-  Categorical: "new_str",
-  Object: "new_object",
-  List: "new_list",
+const POLARS_TYPE_TO_CONSTRUCTOR: Record<string, any> = {
+  Float32(name, values, strict?) {
+    return pli.JsSeries.newOptF64(name, values, strict);
+  },
+  Float64(name, values, strict?) {
+    return pli.JsSeries.newOptF64(name, values, strict);
+  },
+  Int8(name, values, strict?) {
+    return pli.JsSeries.newOptI32(name, values, strict);
+  },
+  Int16(name, values, strict?) {
+    return pli.JsSeries.newOptI32(name, values, strict);
+  },
+  Int32(name, values, strict?) {
+    return pli.JsSeries.newOptI32(name, values, strict);
+  },
+  Int64(name, values, strict?) {
+    return pli.JsSeries.newOptI64(name, values, strict);
+  },
+  UInt8(name, values, strict?) {
+    return pli.JsSeries.newOptU32(name, values, strict);
+  },
+  UInt16(name, values, strict?) {
+    return pli.JsSeries.newOptU32(name, values, strict);
+  },
+  UInt32(name, values, strict?) {
+    return pli.JsSeries.newOptU32(name, values, strict);
+  },
+  UInt64(name, values, strict?) {
+    return pli.JsSeries.newOptU64(name, values, strict);
+  },
+  Date(name, values, strict?) {
+    return pli.JsSeries.newOptI64(name, values, strict);
+  },
+  Datetime(name, values, strict?) {
+    return pli.JsSeries.newOptI64(name, values, strict);
+  },
+  Bool(name, values, strict?) {
+    return pli.JsSeries.newOptBool(name, values, strict);
+  },
+  Utf8(name, values, strict?) {
+    return (pli.JsSeries.newOptStr as any)(name, values, strict);
+  },
+  Categorical(name, values, strict?) {
+    return (pli.JsSeries.newOptStr as any)(name, values, strict);
+  },
+  List(name, values, _strict, dtype) {
+    return pli.JsSeries.newList(name, values, dtype);
+  },
 };
 
 export const polarsTypeToConstructor = (dtype: DataType): CallableFunction => {
@@ -117,5 +149,6 @@ export const polarsTypeToConstructor = (dtype: DataType): CallableFunction => {
     throw new Error(`Cannot construct Series for type ${DataType[dtype]}.`);
   }
 
-  return pli.series[constructor];
+
+  return constructor;
 };

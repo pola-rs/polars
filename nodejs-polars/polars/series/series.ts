@@ -1,51 +1,42 @@
 import pli from "../internals/polars_internal";
 import {arrayToJsSeries} from "../internals/construction";
-import {DataType, DtypeToPrimitive, DTYPE_TO_FFINAME, Optional} from "../datatypes";
-import {DataFrame, dfWrapper} from "../dataframe";
+import {DataType, DTYPE_TO_FFINAME, Optional} from "../datatypes";
+import {DataFrame, _DataFrame} from "../dataframe";
 import {StringFunctions} from "./string";
-import {ListFunctions} from "./list";
-import {DateTimeFunctions} from "./datetime";
-import {InvalidOperationError, todo} from "../error";
+import {SeriesListFunctions} from "./list";
+import {SeriesDateFunctions} from "./datetime";
+import {SeriesStructFunctions} from "./struct";
+import {InvalidOperationError} from "../error";
 import {RankMethod} from "../utils";
-import {col} from "../lazy/functions";
-import {isExternal, isTypedArray} from "util/types";
 import {Arithmetic, Comparison, Cumulative, Rolling, Round, Sample} from "../shared_traits";
+import {col} from "../lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
-
-type ValueOrNever<V> = V extends ArrayLike<infer U> ? Series<U> : never;
-type DataTypeOrValue<T, U> = U extends true ? DtypeToPrimitive<T> : DtypeToPrimitive<T> | null;
-type ArrayLikeDataType<T> = ArrayLike<DtypeToPrimitive<T>>
-type ArrayLikeOrDataType<T, U> = ArrayLike<DataTypeOrValue<T, U>>
-
-/** @ignore */
-export type JsSeries = any;
-
-export interface Series<T> extends
-  ArrayLike<T>,
-  Rolling<Series<T>>,
-  Arithmetic<Series<T>>,
-  Comparison<Series<boolean>>,
-  Cumulative<Series<T>>,
-  Round<Series<T>>,
-  Sample<Series<T>> {
-  /** @ignore */
-  _series: JsSeries;
+export interface Series extends
+  ArrayLike<any>,
+  Rolling<Series>,
+  Arithmetic<Series>,
+  Comparison<Series>,
+  Cumulative<Series>,
+  Round<Series>,
+  Sample<Series> {
+  inner(): any
   name: string
   dtype: DataType
   str: StringFunctions
-  lst: ListFunctions<T>
-  date: DateTimeFunctions
+  lst: SeriesListFunctions,
+  struct: SeriesStructFunctions,
+  date: SeriesDateFunctions
   [inspect](): string;
-  [Symbol.iterator](): IterableIterator<T>;
-  inner(): JsSeries
-  bitand(other: Series<any>): Series<T>
-  bitor(other: Series<any>): Series<T>
-  bitxor(other: Series<any>): Series<T>
+  [Symbol.iterator](): IterableIterator<any>;
+  // inner(): JsSeries
+  bitand(other: Series): Series
+  bitor(other: Series): Series
+  bitxor(other: Series): Series
   /**
    * Take absolute values
    */
-  abs(): Series<T>
+  abs(): Series
   /**
    * __Rename this Series.__
    *
@@ -53,7 +44,7 @@ export interface Series<T> extends
    * @see {@link rename}
    *
    */
-  alias(name: string): Series<T>
+  alias(name: string): Series
   /**
    * __Append a Series to this one.__
    * ___
@@ -73,7 +64,7 @@ export interface Series<T> extends
    *         6
    * ]
    */
-  append(other: Series<T>): void
+  append(other: Series): void
   // TODO!
   // /**
   //  * __Apply a function over elements in this Series and return a new Series.__
@@ -109,20 +100,20 @@ export interface Series<T> extends
    * Get index values where Boolean Series evaluate True.
    *
    */
-  argTrue(): Series<number>
+  argTrue(): Series
   /**
    * Get unique index as Series.
    */
-  argUnique(): Series<number>
+  argUnique(): Series
   /**
    * Index location of the sorted variant of this Series.
    * ___
    * @param reverse
    * @return {SeriesType} indexes - Indexes that can be used to sort this array.
    */
-  argSort(): Series<T>
-  argSort(reverse: boolean): Series<T>
-  argSort({reverse}: {reverse: boolean}): Series<T>
+  argSort(): Series
+  argSort(reverse: boolean): Series
+  argSort({reverse}: {reverse: boolean}): Series
   /**
    * __Rename this Series.__
    *
@@ -130,22 +121,20 @@ export interface Series<T> extends
    * @see {@link rename} {@link alias}
    *
    */
-  as(name: string): Series<T>
+  as(name: string): Series
   /**
    * Cast between data types.
    */
-  cast<D extends DataType>(dtype: D): Series<DtypeToPrimitive<D>>
-  cast<D extends DataType>(dtype: D, strict: boolean): Series<DtypeToPrimitive<D>>
-  cast<D extends DataType>(dtype: D, opt: {strict: boolean}): Series<DtypeToPrimitive<D>>
+  cast(dtype: DataType, strict?: boolean): Series
   /**
    * Get the length of each individual chunk
    */
-  chunkLengths(): Array<number>
+  chunkLengths(): Array<any>
   /**
    * Cheap deep clones.
    */
-  clone(): Series<T>
-  concat(other: Series<T>): Series<T>
+  clone(): Series
+  concat(other: Series): Series
 
   /**
    * __Quick summary statistics of a series. __
@@ -199,8 +188,8 @@ export interface Series<T> extends
    * @param n - number of slots to shift
    * @param nullBehavior - `'ignore' | 'drop'`
    */
-  diff(n: number, nullBehavior: "ignore" | "drop"): Series<T>
-  diff({n, nullBehavior}: {n: number, nullBehavior: "ignore" | "drop"}): Series<T>
+  diff(n: number, nullBehavior: "ignore" | "drop"): Series
+  diff({n, nullBehavior}: {n: number, nullBehavior: "ignore" | "drop"}): Series
   /**
   * Compute the dot/inner product between two Series
   * ___
@@ -212,11 +201,11 @@ export interface Series<T> extends
   * 32.0
   * ```
   */
-  dot(other: Series<any>): Optional<number>
+  dot(other: Series): number | undefined | null
   /**
    * Create a new Series that copies data from this Series without null values.
    */
-  dropNulls(): Series<T>
+  dropNulls(): Series
   /**
    * __Explode a list or utf8 Series.__
    *
@@ -246,15 +235,13 @@ export interface Series<T> extends
   * @deprecated
   * @see {@link extendConstant}
   */
-  extend(value: any, n: number): Series<T>
-  extend(opt: {value: any, n: number}): Series<T>
+  extend(value: any, n: number): Series
   /**
    * Extend the Series with given number of values.
    * @param value The value to extend the Series with. This value may be null to fill with nulls.
    * @param n The number of values to extend.
    */
-  extendConstant(value: any, n: number): Series<T>
-  extendConstant(opt: {value: any, n: number}): Series<T>
+  extendConstant(value: any, n: number): Series
   /**
    * __Fill null values with a filling strategy.__
    * ___
@@ -282,17 +269,17 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  fillNull(strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"): Series<T>
-  fillNull({strategy}: {strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"}): Series<T>
+  fillNull(strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"): Series
+  fillNull({strategy}: {strategy: "backward" | "forward" | "min" | "max" | "mean" | "one" | "zero"}): Series
   /**
    * __Filter elements by a boolean mask.__
    * @param {SeriesType} predicate - Boolean mask
    *
    */
-  filter(predicate: Series<boolean>): Series<T>
-  filter({predicate}: {predicate: Series<boolean>}): Series<T>
-  get(index: number): T
-  getIndex(n: number): T
+  filter(predicate: Series): Series
+  filter({predicate}: {predicate: Series}): Series
+  get(index: number): any
+  getIndex(n: number): any
   /**
    * Returns True if the Series has a validity bitmask.
    * If there is none, it means that there are no null values.
@@ -319,8 +306,8 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  hash(k0?: number, k1?: number, k2?: number, k3?: number): Series<bigint>
-  hash({k0, k1, k2, k3}: {k0?: number, k1?: number, k2?: number, k3?: number}): Series<bigint>
+  hash(k0?: number | bigint, k1?: number | bigint, k2?: number | bigint, k3?: number | bigint): Series
+  hash({k0, k1, k2, k3}: {k0?: number | bigint, k1?: number | bigint, k2?: number | bigint, k3?: number | bigint}): Series
   /**
    * __Get first N elements as Series.__
    * ___
@@ -337,7 +324,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  head(length?: number): Series<T>
+  head(length?: number): Series
   /**
    * __Interpolate intermediate values.__
    *
@@ -358,7 +345,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  interpolate(): Series<T>
+  interpolate(): Series
   /**
    * Check if this Series is a Boolean.
    */
@@ -385,15 +372,15 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  isDuplicated(): Series<boolean>
+  isDuplicated(): Series
   /**
    * Get mask of finite values if Series dtype is Float.
    */
-  isFinite(): T extends number ? Series<boolean> : never
+  isFinite(): Series
   /**
    * Get a mask of the first unique value.
    */
-  isFirst(): Series<boolean>
+  isFirst(): Series
   /**
    * Check if this Series is a Float.
    */
@@ -401,7 +388,7 @@ export interface Series<T> extends
   /**
    * Check if elements of this Series are in the right Series, or List values of the right Series.
    */
-  isIn<U>(other: Series<U> | U[]): Series<boolean>
+  isIn<U>(other: Series | U[]): Series
   /**
    * __Get mask of infinite values if Series dtype is Float.__
    * @example
@@ -418,7 +405,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  isInfinite(): T extends number ? Series<boolean> : never
+  isInfinite(): Series
   /**
    * __Get mask of non null values.__
    *
@@ -439,7 +426,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  isNotNull(): Series<boolean>
+  isNotNull(): Series
   /**
    * __Get mask of null values.__
    *
@@ -460,7 +447,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  isNull(): Series<boolean>
+  isNull(): Series
   /**
    * Check if this Series datatype is numeric.
    */
@@ -482,7 +469,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  isUnique(): Series<boolean>
+  isUnique(): Series
   /**
    * Checks if this Series datatype is a Utf8.
    */
@@ -531,7 +518,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  limit(n?: number): Series<T>
+  limit(n?: number): Series
   /**
    * Get the maximum value in this Series.
    * @example
@@ -595,7 +582,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  mode(): Series<T>
+  mode(): Series
   /**
    * Get the number of chunks that this Series contains.
    */
@@ -635,7 +622,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  peakMax(): Series<boolean>
+  peakMax(): Series
   /**
    * Get a boolean mask of the local minimum peaks.
    * ___
@@ -654,7 +641,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  peakMin(): Series<boolean>
+  peakMin(): Series
   /**
    * Get the quantile value of this Series.
    * ___
@@ -666,7 +653,7 @@ export interface Series<T> extends
    * 2
    * ```
    */
-  quantile(quantile: number): number
+  quantile(quantile: number, interpolation?: string): number
   /**
    * Assign ranks to data, dealing with ties appropriately.
    * @param method
@@ -688,11 +675,10 @@ export interface Series<T> extends
    *  * __'random'__: Like 'ordinal', but the rank for ties is not dependent
    *    on the order that the values occur in `a`.
    */
-  rank(method?: RankMethod): Series<number>
-  rechunk(): Series<T>
-  rechunk(inPlace: boolean): void
-  rechunk({inPlace}: {inPlace: true}): void
-  rechunk({inPlace}: {inPlace: false}): Series<T>
+  rank(method?: RankMethod): Series
+  rechunk(): Series
+  rechunk(inPlace: true): Series
+  rechunk(inPlace: false): void
   /**
    * __Reinterpret the underlying bits as a signed/unsigned integer.__
    *
@@ -706,7 +692,7 @@ export interface Series<T> extends
    * @see {@link cast}
    *
    */
-  reinterpret(signed?: boolean): T extends bigint ? Series<number> : T extends number ? Series<bigint> : never
+  reinterpret(signed?: boolean): Series
   /**
    * __Rename this Series.__
    *
@@ -726,7 +712,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  rename(name: string): Series<T>;
+  rename(name: string): Series;
   rename(name: string, inPlace: boolean): void
   rename({name, inPlace}: {name: string, inPlace?: boolean}): void
   rename({name, inPlace}: {name: string, inPlace: true}): void
@@ -746,15 +732,14 @@ export interface Series<T> extends
    * false
    * ```
    */
-  seriesEqual<U>(other: Series<U>, nullEqual?: boolean): boolean
-  seriesEqual<U>(other: Series<U>, opt: {nullEqual?: boolean}): boolean
+  seriesEqual<U>(other: Series, nullEqual?: boolean, strict?: boolean): boolean
   /**
    * __Set masked values__
    * @param filter Boolean mask
    * @param value value to replace masked values with
    */
-  set(filter: Series<boolean>, value: T): Series<T>
-  setAtIdx(indices: number[] | Series<number>, value: T): Series<T>
+  set(filter: Series, value: any): Series
+  setAtIdx(indices: number[] | Series, value: any): Series
   /**
    * __Shift the values by a given period__
    *
@@ -782,8 +767,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  shift(periods: number): Series<T>
-  shift(opts: {periods?: number}): Series<T>
+  shift(periods: number): Series
   /**
    * Shift the values by a given period
    *
@@ -792,15 +776,15 @@ export interface Series<T> extends
    * @param periods - Number of places to shift (may be negative).
    * @param fillValue - Fill null & undefined values with the result of this expression.
    */
-  shiftAndFill(periods: number, fillValue: any): Series<T>
-  shiftAndFill(opt: {periods: number, fillValue: any}): Series<T>
+  shiftAndFill(periods: number, fillValue: any): Series
+  shiftAndFill(args: {periods: number, fillValue: any}): Series
+
   /**
    * __Shrink memory usage of this Series to fit the exact capacity needed to hold the data.__
    * @param inPlace - Modify the Series in-place.
    */
-  shrinkToFit(): Series<T>
+  shrinkToFit(): Series
   shrinkToFit(inPlace: true): void
-  shrinkToFit({inPlace}: {inPlace: true}): void
   /**
    * __Compute the sample skewness of a data set.__
    *
@@ -813,15 +797,13 @@ export interface Series<T> extends
    * @param bias - If false, then the calculations are corrected for statistical bias.
    */
   skew(bias?: boolean): number | undefined
-  skew(opt: {bias?: boolean}): number | undefined
   /**
    * Create subslices of the Series.
    *
    * @param offset - Start of the slice (negative indexing may be used).
    * @param length - length of the slice.
    */
-  slice(opt: {offset: number, length: number}): Series<T>
-  slice(start: number, length?: number): Series<T>
+  slice(start: number, length?: number): Series
   /**
    * __Sort this Series.__
    * @param reverse - Reverse sort
@@ -848,9 +830,9 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  sort(): Series<T>
-  sort(reverse?: boolean): Series<T>
-  sort(options: {reverse: boolean}): Series<T>
+  sort(): Series
+  sort(reverse?: boolean): Series
+  sort(options: {reverse: boolean}): Series
   /**
    * Reduce this Series to the sum value.
    * @example
@@ -879,7 +861,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  tail(length?: number): Series<T>
+  tail(length?: number): Series
   /**
    * Take every nth value in the Series and return as new Series.
    * @param n - nth value to take
@@ -895,7 +877,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  takeEvery(n: number): Series<T>
+  takeEvery(n: number): Series
   /**
    * Take values by index.
    * ___
@@ -912,7 +894,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  take(indices: Array<number>): Series<T>
+  take(indices: Array<number>): Series
 
   /**
    * __Get unique elements in series.__
@@ -931,7 +913,7 @@ export interface Series<T> extends
    * ]
    * ```
    */
-  unique(maintainOrder?: boolean | {maintainOrder: boolean}): Series<T>
+  unique(maintainOrder?: boolean | {maintainOrder: boolean}): Series
    /**
    * __Count the unique values in a Series.__
    * ___
@@ -963,7 +945,7 @@ export interface Series<T> extends
    * @param other - Series of same type
    *
    */
-  zipWith<U>(mask: Series<boolean>, other: Series<T>): Series<U>
+  zipWith(mask: Series, other: Series): Series
 
   /**
    * __Convert this Series to a Javascript Array.__
@@ -980,7 +962,14 @@ export interface Series<T> extends
    * true
    * ```
    */
-  toArray(): Array<T>
+  toArray(): Array<any>
+  /**
+   * Converts series to a javascript typedArray.
+   *
+   * __Warning:__
+   * This will throw an error if you have nulls, or are using non numeric data types
+   */
+  toTypedArray(): any
 
   /**
    * _Returns a Javascript object representation of Series_
@@ -1006,143 +995,158 @@ export interface Series<T> extends
   toBinary(): Buffer
   toJSON(): string
   /** Returns an iterator over the values */
-  values(): IterableIterator<T>
+  values(): IterableIterator<any>
 }
 
-/** @ignore */
-export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
-  const unwrap = <U>(method: string, args?: object, _series = _s): U => {
+export interface RollingOptions {
+  windowSize: number
+  weights?: Array<number>
+  minPeriods: number
+  center: boolean
+}
+export function _Series(_s: any): Series {
+  const unwrap = (method: keyof any, ...args: any[]) => {
+    return _s[method as any](...args);
+  };
+  const wrap = (method, ...args): Series => {
+    return _Series(unwrap(method, ...args));
+  };
+  const  dtypeWrap = (method: string, ...args: any[])  => {
+    const dtype = _s.dtype;
 
-    return pli.series[method]({_series, ...args});
-  };
-  const wrap = <U>(method, args?, _series = _s): Series<U> => {
-    return seriesWrapper(unwrap(method, args, _series));
-  };
-  const noArgWrap = <U>(method: string) => () => wrap<U>(method);
-  const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
-  const dtypeAccessor = (fn) => (method, args: {field, key}, _series = _s) => {
-    const dtype = unwrap<string>("dtype");
-    if (args.field?._series) {
-      return fn(method, {[args.key]: args.field._series}, _series);
-    } else {
-      const dt = (DTYPE_TO_FFINAME as any)[DataType[dtype]];
-      const internalMethod = `${method}_${dt}`;
-      if (DataType[dtype] === DataType.List) {
-        return seriesWrapper(fn(internalMethod, {[args.key]: args.field}, _series));
-      }
+    const dt = (DTYPE_TO_FFINAME as any)[dtype];
+    const internalMethod = `series${method}${dt}`;
 
-      return fn(internalMethod, {[args.key]: args.field}, _series);
-    }
-  };
-  const inPlaceOptional = (method: string) => (obj?: {inPlace: boolean} | boolean): any => {
-    if (obj === true || obj?.["inPlace"] === true) {
-      unwrap(method, {inPlace: true});
-    } else {
-      return wrap(method);
-    }
+    return _Series(pli[internalMethod](_s, ...args));
   };
 
-  const rolling = (method: string) => (opts, weights?, minPeriods?, center?): Series<T> => {
+  const dtypeUnwrap = (method: string, ...args: any[]) =>  {
+    const dtype = _s.dtype;
+
+    const dt = (DTYPE_TO_FFINAME as any)[dtype];
+    const internalMethod = `series${method}${dt}`;
+
+    return pli[internalMethod](_s, ...args);
+  };
+
+  const rolling =  (method: string, opts, weights?, minPeriods?, center?)  => {
     const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
     if (windowSize === null) {
       throw new Error("window size is required");
     }
     const callOpts = {
-      window_size: opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null),
+      windowSize: opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null),
       weights: opts?.["weights"] ?? weights,
-      min_periods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
+      minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
       center: opts?.["center"] ?? center ?? false,
     };
 
-    return wrap(method, callOpts);
+    return _Series(_s[method](callOpts));
   };
-
-  const seriesObject = {
-    _series: _s,
+  const series = {
+    _s,
     [inspect]() {
-      return unwrap<string>("get_fmt");
+      return _s.toString();
     },
     *[Symbol.iterator]() {
       let start = 0;
-      let len = unwrap<number>("len");
+      let len = _s.len();
       while (start < len) {
-        const v = this.get(start);
+        const v = _s.getIdx(start);
         start++;
-        yield v;
+        yield v as any;
       }
     },
     toString() {
-      return unwrap<string>("get_fmt");
+      return _s.toString();
     },
-    get [Symbol.toStringTag]() {
+    [Symbol.toStringTag]() {
       return "Series";
     },
     get dtype() {
-      return unwrap("dtype");
+      return _s.dtype as any;
     },
     get name() {
-      return unwrap("name");
+      return _s.name;
     },
     get length() {
-      return unwrap("len");
+      return _s.len();
     },
     get str() {
       return StringFunctions(_s);
     },
     get lst() {
-      return ListFunctions(_s);
+      return SeriesListFunctions(_s);
     },
     get date() {
-      return DateTimeFunctions(_s);
+      return SeriesDateFunctions(_s);
     },
-    abs: noArgWrap("abs"),
+    get struct() {
+      return SeriesStructFunctions(_s);
+    },
+    abs() {
+      return wrap("abs");
+    },
     add(field) {
-      return dtypeAccessor(wrap)("add", {field, key: "other"});
+      return dtypeWrap("Add", field);
     },
-    alias(name) {
-      const s = this.clone();
-      unwrap("rename", {name}, s._series);
+    alias(name: string) {
+      const s = _s.clone();
+      s.rename(name);
 
-      return s;
+      return _Series(s);
     },
-    append(other) {
-      return wrap("append", {other: other._series});
+    append(other: Series) {
+      _s.append(other.inner());
     },
-    argMax: noArgUnwrap("arg_max"),
-    argMin: noArgUnwrap("arg_min"),
-    argSort(reverse: any = false) {
-      return typeof reverse === "boolean" ?
-        wrap("argsort", {reverse}) :
-        wrap("argsort", reverse);
+    argMax() {
+      return _s.argMax();
     },
-    argTrue: noArgWrap("arg_true"),
-    argUnique: noArgWrap("arg_unique"),
+    argMin() {
+      return _s.argMin();
+    },
+    argSort(reverse: any = false, nullsLast=true) {
+      if(typeof reverse === "boolean") {
+        return _Series(_s.argsort(reverse, nullsLast));
+      }
+
+      return _Series(_s.argsort(
+        reverse.reverse,
+        reverse.nullsLast ?? nullsLast
+      ));
+    },
+    argTrue() {
+      return _Series(_s.argTrue());
+    },
+    argUnique() {
+      return _Series(_s.argUnique());
+    },
     as(name) {
       return this.alias(name);
     },
     bitand(other) {
-      return wrap("bitand", {other: other._series});
+      return _Series(_s.bitand(other._s));
     },
     bitor(other) {
-      return wrap("bitor", {other: other._series});
+      return _Series(_s.bitor(other._s));
     },
     bitxor(other) {
-      return wrap("bitxor", {other: other._series});
+      return _Series(_s.bitxor(other._s));
     },
-    cast(dtype, strict: any = false) {
-      return typeof strict === "boolean" ?
-        wrap("cast", {dtype, strict}) :
-        wrap("cast", {dtype, ...strict});
+    cast(dtype, strict = false) {
+      return _Series(_s.cast(dtype, strict));
     },
-    chunkLengths: noArgUnwrap("chunk_lengths"),
+    chunkLengths() {
+      return _s.chunkLengths();
+    },
     clone() {
-      return wrap("clone");
+      return _Series(_s.clone());
     },
     concat(other) {
-      const s = this.clone();
-      unwrap("append", {other: other._series}, s._series);
+      const s = _s.clone();
+      s.append(other.inner());
 
-      return s;
+      return _Series(s);
     },
     cumCount(reverse?) {
       return this
@@ -1150,28 +1154,20 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         .select(col(this.name).cumCount(reverse))
         .getColumn(this.name);
     },
-    cumMax(reverse: any = false) {
-      return typeof reverse === "boolean" ?
-        wrap("cummax", {reverse}) :
-        wrap("cummax", reverse);
+    cumSum(reverse?) {
+      return _Series(_s.cumsum(reverse));
     },
-    cumMin(reverse: any = false) {
-      return typeof reverse === "boolean" ?
-        wrap("cummin", {reverse}) :
-        wrap("cummin", reverse);
+    cumMax(reverse?) {
+      return _Series(_s.cummax(reverse));
     },
-    cumProd(reverse: any = false) {
-      return typeof reverse === "boolean" ?
-        wrap("cumprod", {reverse}) :
-        wrap("cumprod", reverse);
+    cumMin(reverse?) {
+      return _Series(_s.cummin(reverse));
     },
-    cumSum(reverse: any = false) {
-      return typeof reverse === "boolean" ?
-        wrap("cumsum", {reverse}) :
-        wrap("cumsum", reverse);
+    cumProd(reverse?) {
+      return _Series(_s.cumprod(reverse));
     },
     describe() {
-      let s = seriesWrapper(_s);
+      let s = this.clone();
       let stats = {};
       if (!this.length) {
         throw new RangeError("Series must contain at least one value");
@@ -1197,9 +1193,6 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
           "null_count": s.nullCount(),
           "count": s.len(),
         };
-      } else if (s.isDateTime()) {
-        throw todo();
-
       } else {
         throw new InvalidOperationError("describe", s.dtype);
       }
@@ -1209,223 +1202,327 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         "value": Object.values(stats)
       });
     },
-    diff(n: any = 1, null_behavior = "ignore") {
+    diff(n: any = 1, nullBehavior = "ignore") {
       return typeof n === "number" ?
-        wrap("diff", {n, null_behavior}) :
-        wrap("diff", {
-          n: n?.n ?? 1,
-          null_behavior: n.nullBehavior ?? null_behavior
-        });
+        _Series(_s.diff(n, nullBehavior)) :
+        _Series(_s.diff(n?.n ?? 1, n.nullBehavior ?? nullBehavior));
     },
-    div(field) {
-      return dtypeAccessor(wrap)("div", {field, key: "other"});
+    div(field: Series) {
+      return dtypeWrap("Div", field);
     },
-    divideBy(field) {
+    divideBy(field: Series) {
       return this.div(field);
     },
-    dot(other) {
-      return unwrap("dot", {other: other._series});
+    dot(other: Series) {
+      return wrap("dot", (other as any)._s) as any;
     },
-    dropNulls: noArgWrap("drop_nulls"),
+    dropNulls() {
+      return wrap("dropNulls");
+    },
     eq(field) {
-      return dtypeAccessor(wrap)("eq", {field, key: "rhs"});
+      return dtypeWrap("Eq", field);
     },
-    equals(field) {
+    equals(field: Series) {
       return this.eq(field);
     },
-    explode: noArgWrap("explode"),
-    extend(o, n?) {
-      return this.extendConstant(o, n);
+    explode() {
+      return wrap("explode");
     },
-    extendConstant(o, n?) {
-      if (n !== null && typeof n === "number") {
-        return wrap("extend_constant", {value: o, n});
-      }
-
-      return wrap("extend_constant", o);
+    extend(value, n) {
+      return wrap("extendConstant", value, n);
+    },
+    extendConstant(value, n) {
+      return wrap("extendConstant", value, n);
     },
     fillNull(strategy) {
       return typeof strategy === "string" ?
-        wrap("fill_null", {strategy}) :
-        wrap("fill_null", strategy);
+        wrap("fillNull", strategy) :
+        wrap("fillNull", strategy.strategy);
     },
     filter(predicate) {
       return Series.isSeries(predicate) ?
-        wrap("filter", {filter: predicate._series}) :
-        wrap("filter", {filter: predicate.predicate._series});
+        wrap("filter", (predicate as any)._s) :
+        wrap("filter", (SeriesConstructor("", predicate) as any)._s);
     },
     get(field) {
-      return dtypeAccessor(unwrap)("get", {field, key: "index"});
+      return dtypeUnwrap("Get", field);
     },
     getIndex(idx) {
-      return unwrap("get_idx", {idx});
+      return _s.getIdx(idx);
     },
     gt(field) {
-      return dtypeAccessor(wrap)("gt", {field, key: "rhs"});
-    },
-    gtEq(field) {
-      return dtypeAccessor(wrap)("gt_eq", {field, key: "rhs"});
+      return dtypeWrap("Gt", field);
     },
     greaterThan(field) {
       return this.gt(field);
     },
+    gtEq(field) {
+      return dtypeWrap("GtEq", field);
+    },
     greaterThanEquals(field) {
       return this.gtEq(field);
     },
-    hash(obj: any = 0, k1 = 1, k2 = 2, k3 = 3) {
+    hash(obj: any = 0n, k1 = 1n, k2 = 2n, k3 = 3n) {
       if (typeof obj === "number" || typeof obj === "bigint") {
-        return wrap<bigint>("hash", {k0: obj, k1: k1, k2: k2, k3: k3});
+        return wrap("hash", BigInt(obj), BigInt(k1), BigInt(k2), BigInt(k3));
       }
+      const o = { k0: obj, k1: k1, k2: k2, k3: k3, ...obj};
 
-      return wrap("hash", {k0: 0, k1, k2, k3, ...obj});
+      return wrap(
+        "hash",
+        BigInt(o.k0),
+        BigInt(o.k1),
+        BigInt(o.k2),
+        BigInt(o.k3)
+      );
     },
-    hasValidity: noArgUnwrap("has_validity"),
+    hasValidity() {
+      return _s.hasValidity();
+    },
     head(length = 5) {
-      return wrap("head", {length});
+      return wrap("head", length);
     },
     inner() {
       return _s;
     },
-    interpolate: noArgWrap("interpolate"),
+    interpolate() {
+      return wrap("interpolate");
+    },
     isBoolean() {
-      const dtype = unwrap<keyof DataType>("dtype");
+      const dtype = this.dtype;
 
-      return DataType[dtype] === DataType.Bool;
+      return dtype === pli.DataType.Bool;
     },
     isDateTime() {
-      const dtype = unwrap<keyof DataType>("dtype");
+      const dtype = this.dtype;
 
-      return [DataType.Date, DataType.Datetime].includes(DataType[dtype]);
+      return [pli.DataType.Date, pli.DataType.Datetime].includes(dtype);
     },
-    isDuplicated: noArgWrap("is_duplicated"),
+    isDuplicated() {
+      return wrap("isDuplicated");
+    },
     isFinite() {
-      const dtype = unwrap<keyof DataType>("dtype");
+      const dtype = this.dtype;
 
-      if (![DataType.Float32, DataType.Float64].includes(DataType[dtype])) {
+      if (![pli.DataType.Float32, pli.DataType.Float64].includes(dtype)) {
         throw new InvalidOperationError("isFinite", dtype);
       } else {
-        return wrap("is_finite") as any;
+        return wrap("isFinite");
       }
     },
-    isFirst: noArgWrap("is_first"),
+    isFirst() {
+      return wrap("isFirst");
+    },
     isFloat() {
-      const dtype = this.dtype as any as string;
+      const dtype = this.dtype;
 
-      return [DataType.Float32, DataType.Float64].includes(DataType[dtype]);
+      return [pli.DataType.Float32, pli.DataType.Float64].includes(dtype);
     },
     isIn(other) {
       return Series.isSeries(other) ?
-        wrap("is_in", {other: other._series}) :
-        wrap("is_in", {other: Series(other)._series});
+        wrap("isIn", (other as any)._s) :
+        wrap("isIn", (Series("", other) as any)._s);
     },
     isInfinite() {
-      const dtype = unwrap<keyof DataType>("dtype");
+      const dtype = this.dtype;
 
-      if (![DataType.Float32, DataType.Float64].includes(DataType[dtype])) {
-        throw new InvalidOperationError("isInfinite", dtype);
+      if (![pli.DataType.Float32, pli.DataType.Float64].includes(dtype)) {
+        throw new InvalidOperationError("isFinite", dtype);
       } else {
-        return wrap("is_infinite") as any;
+        return wrap("isInfinite");
       }
     },
-    isNotNull: noArgWrap("is_not_null"),
-    isNull: noArgWrap("is_null"),
+    isNotNull() {
+      return wrap("isNotNull");
+    },
+    isNull() {
+      return wrap("isNull");
+    },
+    isNaN() {
+      return wrap("isNan");
+    },
+    isNotNaN() {
+      return wrap("isNotNan");
+    },
     isNumeric() {
-      const dtype = unwrap<keyof DataType>("dtype");
+      const dtype = this.dtype;
 
       const numericTypes = [
-        DataType.Int8,
-        DataType.Int16,
-        DataType.Int32,
-        DataType.Int64,
-        DataType.UInt8,
-        DataType.UInt16,
-        DataType.UInt32,
-        DataType.UInt64,
-        DataType.Float32,
-        DataType.Float64
+        pli.DataType.Int8,
+        pli.DataType.Int16,
+        pli.DataType.Int32,
+        pli.DataType.Int64,
+        pli.DataType.UInt8,
+        pli.DataType.UInt16,
+        pli.DataType.UInt32,
+        pli.DataType.UInt64,
+        pli.DataType.Float32,
+        pli.DataType.Float64
       ];
 
-      return numericTypes.includes(DataType[dtype]);
-
+      return numericTypes.includes(dtype);
     },
-    isUnique: noArgWrap("is_unique"),
+    isUnique() {
+      return wrap("isUnique");
+    },
     isUtf8() {
-      const dtype = unwrap<keyof DataType>("dtype");
-
-      return DataType[dtype] === DataType.Utf8;
+      return this.dtype === pli.DataType.Utf8;
     },
     kurtosis(fisher: any = true, bias = true) {
       if (typeof fisher === "boolean") {
-        return unwrap("kurtosis", {fisher, bias});
+        return _s.kurtosis(fisher, bias);
       }
-
-      return unwrap("kurtosis", {
+      const d =  {
         fisher: true,
         bias,
         ...fisher
-      });
+      };
+
+      return _s.kurtosis(d.fisher, d.bias);
     },
-    len: noArgUnwrap("len"),
-    lessThan: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
-    lessThanEquals: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
-    limit: (n = 10) => wrap("limit", {num_elements: n}),
-    ltEq: (field) => dtypeAccessor(wrap)("lt_eq", {field, key: "rhs"}),
-    lt: (field) => dtypeAccessor(wrap)("lt", {field, key: "rhs"}),
-    max: noArgUnwrap("max"),
-    mean: noArgUnwrap("mean"),
-    median: noArgUnwrap("median"),
-    min: noArgUnwrap("min"),
-    minus: (field) => dtypeAccessor(wrap)("sub", {field, key: "other"}),
-    mode: noArgWrap("mode"),
-    mul: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
-    nChunks: noArgUnwrap<number>("n_chunks"),
-    neq: (field) => dtypeAccessor(wrap)("neq", {field, key: "rhs"}),
-    notEquals: (field) => dtypeAccessor(wrap)("neq", {field, key: "rhs"}),
-    nullCount: noArgUnwrap<number>("null_count"),
-    nUnique: noArgUnwrap<number>("n_unique"),
-    peakMax: noArgWrap("peak_max"),
-    peakMin: noArgWrap("peak_min"),
-    plus: (field) => dtypeAccessor(wrap)("add", {field, key: "other"}),
-    quantile: (quantile) => unwrap<number>("quantile", {quantile}),
-    rank: (method = "average") => wrap("rank", {method}),
-    rechunk: inPlaceOptional("rechunk"),
+    len() {
+      return this.length;
+    },
+    lt(field) {
+      return dtypeWrap("Lt", field);
+    },
+    lessThan(field) {
+      return dtypeWrap("Lt", field);
+    },
+    ltEq(field) {
+      return dtypeWrap("LtEq", field);
+    },
+    lessThanEquals(field) {
+      return dtypeWrap("LtEq", field);
+    },
+    limit(n=10) {
+      return wrap("limit", n);
+    },
+    max() {
+      return _s.max() as any;
+    },
+    mean() {
+      return _s.mean() as any;
+    },
+    median() {
+      return _s.median() as any;
+    },
+    min() {
+      return _s.min() as any;
+    },
+    mode() {
+      return wrap("mode");
+    },
+    minus(other) {
+      return dtypeWrap("Sub", other);
+    },
+    mul(other) {
+      return dtypeWrap("Mul", other);
+    },
+    nChunks() {
+      return _s.nChunks();
+    },
+    neq(other) {
+      return dtypeWrap("Neq", other);
+    },
+    notEquals(other) {
+      return this.neq(other);
+    },
+    nullCount() {
+      return _s.nullCount();
+    },
+    nUnique() {
+      return _s.nUnique();
+    },
+    peakMax() {
+      return wrap("peakMax");
+    },
+    peakMin() {
+      return wrap("peakMin");
+    },
+    plus(other) {
+      return dtypeWrap("Add", other);
+    },
+    quantile(quantile, interpolation = "nearest") {
+      return _s.quantile(quantile, interpolation);
+    },
+    rank(method = "average", reverse = false) {
+      return wrap("rank", method, reverse);
+    },
+    rechunk(inPlace = false) {
+      return wrap("rechunk", inPlace);
+    },
     reinterpret(signed = true) {
-      const dtype = unwrap<string>("dtype");
-      if ([DataType.UInt64, DataType.Int64].includes(DataType[dtype])) {
-        return wrap("reinterpret", {signed}) as any;
+      const dtype = this.dtype;
+      if ([pli.DataType.UInt64, pli.DataType.Int64].includes(dtype)) {
+        return wrap("reinterpret", signed);
       } else {
         throw new InvalidOperationError("reinterpret", dtype);
       }
     },
-    rem: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
-    modulo: (field) => dtypeAccessor(wrap)("rem", {field, key: "other"}),
-    rename(obj: any, inPlace = false) {
+    rem(field) {
+      return dtypeWrap("Rem", field);
+    },
+    modulo(field) {
+      return this.rem(field);
+    },
+    rename(obj: any, inPlace = false): any {
       if (obj?.inPlace ?? inPlace) {
-        unwrap("rename", {name: obj?.name ?? obj});
+        _s.rename(obj?.name ?? obj);
       } else {
         return this.alias(obj?.name ?? obj);
       }
     },
-    rollingMax: rolling("rolling_max"),
-    rollingMean: rolling("rolling_mean"),
-    rollingMin: rolling("rolling_min"),
-    rollingSum: rolling("rolling_sum"),
-    rollingStd: rolling("rolling_std"),
-    rollingVar: rolling("rolling_var"),
-    rollingMedian: rolling("rollingMedian"),
-    rollingQuantile(val, interpolation?, windowSize?, weights?, minPeriods?, center?) {
+    rollingMax(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingMax", windowSize, weights, minPeriods, center);
+    },
+    rollingMean(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingMean", windowSize, weights, minPeriods, center);
+    },
+    rollingMin(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingMin", windowSize, weights, minPeriods, center);
+    },
+    rollingSum(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingSum", windowSize, weights, minPeriods, center);
+    },
+    rollingStd(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingStd", windowSize, weights, minPeriods, center);
+    },
+    rollingVar(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingVar", windowSize, weights, minPeriods, center);
+    },
+    rollingMedian(windowSize, weights?, minPeriods?, center? ) {
+      return rolling("rollingMedian", windowSize, weights, minPeriods, center);
+    },
+    rollingQuantile(val, interpolation = "nearest", windowSize?, weights?, minPeriods?, center?) {
       if(typeof val === "number") {
-        return wrap("rolling_quantile", {
-          quantile: val,
-          interpolation,
-          windowSize,
-          weights,
-          minPeriods,
-          center
-        });
-      }
 
-      return wrap("rolling_quantile", val);
+        return wrap("rollingQuantile",
+          val,
+          interpolation ?? "nearest",
+          {
+            windowSize,
+            weights,
+            minPeriods,
+            center
+          });
+      }
+      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
+      if(windowSize === null) {
+        throw new Error("window size is required");
+      }
+      const options = {
+        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
+        weights: val?.["weights"] ?? weights,
+        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
+        center : val?.["center"] ?? center ?? false,
+      };
+
+      return wrap("rollingQuantile",
+        val.quantile,
+        val.interpolation ?? "nearest",
+        options
+      );
     },
     rollingSkew(windowSize, bias?) {
       return this
@@ -1433,15 +1530,18 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
         .select(col(this.name).rollingSkew(windowSize, bias))
         .getColumn(this.name);
     },
-
-    floor: noArgWrap("floor"),
-    ceil: noArgWrap("ceil"),
+    floor() {
+      return wrap("floor");
+    },
+    ceil() {
+      return wrap("ceil");
+    },
     round(opt): any {
       if (this.isNumeric()) {
         if (typeof opt === "number") {
-          return wrap("round", {decimals: opt});
-        } else {
           return wrap("round", opt);
+        } else {
+          return wrap("round", opt.decimals);
         }
 
       } else {
@@ -1449,161 +1549,160 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       }
     },
     clip(arg, max?) {
-      const dtypes = [
-        DataType.Int32,
-        DataType.Int64,
-        DataType.Float32,
-        DataType.Float64,
-        DataType.UInt32
-      ];
-      if(dtypes.includes(this.dtype)) {
-        throw new InvalidOperationError("clip", this.dtype);
-      }
-      if(typeof arg === "number") {
-        return wrap("clip", {min: arg, max});
-      } else {
-        return wrap("clip", arg);
-      }
+      return this
+        .toFrame()
+        .select(
+          col(this.name).clip(arg, max)
+        )
+        .getColumn(this.name);
+    },
+    setAtIdx(indices, value) {
+      indices = Series.isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
+
+      return dtypeWrap("SetAtIdx", indices, value);
+    },
+    set(mask, value) {
+      mask = Series.isSeries(mask) ? mask : Series.from(mask);
+
+      return dtypeWrap("SetWithMask", mask.inner(), value);
     },
     sample(opts?, frac?, withReplacement = false, seed?) {
       if(arguments.length === 0) {
-        return wrap("sample_n", {
-          n: 1,
+        return wrap("sampleN",
+          1,
           withReplacement,
           seed
-        });
+        );
       }
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
         return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
-        return wrap("sample_n", {
-          n: opts,
+        return wrap("sampleN",
+          opts,
           withReplacement,
           seed
-        });
+        );
       }
       if(typeof frac === "number") {
-        return wrap("sample_frac", {
+        return wrap("sampleFrac",
           frac,
           withReplacement,
           seed
-        });
+        );
       }
       else {
         throw new TypeError("must specify either 'frac' or 'n'");
       }
-    },
-    seriesEqual(other, opt: any = true) {
-      return unwrap<boolean>(
-        "series_equal", {
-          other: other._series,
-          null_equal: opt?.nullEqual ?? opt
-        });
-    },
-    set(filter, value) {
-      const dtype = this.dtype;
-      const dt = DTYPE_TO_FFINAME[DataType[dtype]];
-
-      return wrap(`set_with_mask_${dt}`, {filter: filter._series, value});
-    },
-    setAtIdx(indices, value) {
-      const dtype = this.dtype;
-      const dt = DTYPE_TO_FFINAME[DataType[dtype]];
-
-      indices = Series.isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
-      unwrap(`set_at_idx_${dt}`, {indices, value});
-
-      return this;
 
     },
-    shift(opt: any = 1) {
-      if (typeof opt === "number") {
-        return wrap<T>("shift", {periods: opt});
-      }
-
-      return wrap<T>("shift", opt);
+    seriesEqual(other, nullEqual: any = true, strict=false) {
+      return _s.seriesEqual(other._s, nullEqual, strict);
     },
-    shiftAndFill(opt, fillValue?) {
+    shift(periods=1) {
+      return wrap("shift", periods);
+    },
+    shiftAndFill(periods, fillValue?) {
       return this
         .toFrame()
         .select(
-          col(this.name).shiftAndFill(opt, fillValue)
+          col(this.name).shiftAndFill(periods, fillValue)
         )
         .getColumn(this.name);
     },
-    shrinkToFit: inPlaceOptional("shrink_to_fit"),
-    skew(opt: any = true) {
-      if (typeof opt === "boolean") {
-        return unwrap("skew", {bias: opt});
+    shrinkToFit(inPlace?: boolean) {
+      if(inPlace) {
+        _s.shrinkToFit();
+      } else {
+        const s = this.clone();
+        s.shrinkToFit();
+
+        return s as any;
       }
 
-      return unwrap("skew", opt);
     },
-    slice(opts, length?) {
-      if (typeof opts === "number") {
-        return wrap("slice", {offset: opts, length});
+    skew(bias: any = true) {
+      if (typeof bias === "boolean") {
+        return _s.skew(bias) as any;
       }
 
-      return wrap("slice", opts);
+      return _s.skew(bias?.bias ?? true) as any;
     },
-    sort(opt: any = false) {
-      if (typeof opt === "boolean") {
-        return wrap("sort", {reverse: opt});
+    slice(offset, length?) {
+      if (typeof offset === "number") {
+        return wrap("slice", offset, length);
       }
 
-      return wrap("sort", opt);
+      return wrap("slice", offset.offset, offset.length);
     },
-    sub: (field) => dtypeAccessor(wrap)("sub", {field, key: "other"}),
-    sum: noArgUnwrap("sum"),
-    tail: (length = 5) => wrap("tail", {length}),
-    take: (indices) => wrap("take", {indices}),
-    takeEvery: (n) => wrap("take_every", {n}),
-    multiplyBy: (field) => dtypeAccessor(wrap)("mul", {field, key: "other"}),
+    sort(reverse?) {
+      if (typeof reverse === "boolean") {
+        return wrap("sort", reverse);
+      }
+
+      return wrap("sort", reverse?.reverse ?? false);
+
+    },
+    sub(field) {
+      return dtypeWrap("Sub", field);
+    },
+    sum() {
+      return _s.sum() as any;
+    },
+    tail(length=5) {
+      return wrap("tail", length);
+    },
+    take(indices) {
+      return wrap("take", indices);
+    },
+    takeEvery(n) {
+      return wrap("takeEvery", n);
+    },
+    multiplyBy(field) {
+      return this.mul(field);
+    },
     toArray() {
-
-      const arr = unwrap<any>("to_js").values;
-      const dtype = this.dtype as any as string;
-      if (DataType[dtype] === DataType.List) {
-        return arr.map((s: any) => s.values);
+      return _s.toArray();
+    },
+    toTypedArray() {
+      if(!this.hasValidity()) {
+        return _s.toTypedArray();
+      } else {
+        throw new Error("data contains nulls, unable to convert to TypedArray");
       }
-
-      return arr;
     },
     toFrame() {
-      return dfWrapper(pli.df.read_columns({columns: [_s]}));
+      return _DataFrame(new pli.JsDataFrame([_s]));
     },
     toBinary() {
-      return unwrap("to_bincode");
+      return _s.toBinary();
     },
-    toJSON(arg0?) {
-      // JSON.stringify passes `""` by default then stringifies the JS output
-      if(arg0 === "") {
-        return unwrap("to_js");
-      }
-
-      return unwrap<Buffer>("to_json").toString();
+    toJSON() {
+      return _s.toJson().toString();
     },
-    toObject: noArgUnwrap("to_js"),
-    unique(opt?) {
-      if(opt) {
-        return wrap("unique_stable");
+    toObject() {
+      return JSON.parse(_s.toJson().toString());
+    },
+    unique(maintainOrder?) {
+      if(maintainOrder) {
+        return wrap("uniqueStable");
       } else {
         return wrap("unique");
       }
     },
     valueCounts() {
-      return dfWrapper(unwrap("value_counts"));
+      return null as any;
+
     },
     values() {
       return this[Symbol.iterator]();
     },
     zipWith(mask, other) {
-      return wrap("zip_with", {mask: mask._series, other: other._series});
-    },
-  } as Series<T>;
+      return wrap("zipWith", mask._s, other._s);
+    }
+  };
 
-  return new Proxy(seriesObject, {
+  return new Proxy(series, {
     get: function (target, prop, receiver) {
       if (typeof prop !== "symbol" && !Number.isNaN(Number(prop))) {
         return target.get(Number(prop));
@@ -1619,63 +1718,63 @@ export const seriesWrapper = <T>(_s: JsSeries): Series<T> => {
       }
     }
   });
-};
-
+}
 
 export interface SeriesConstructor {
-  <V extends ArrayLike<any>>(values: V): ValueOrNever<V>
-  <V extends ArrayLike<any>>(name: string, values: V): ValueOrNever<V>
-  <T extends DataType, U extends ArrayLikeDataType<T>>(name: string, values: U, dtype: T): Series<DtypeToPrimitive<T>>
-  <T extends DataType, U extends boolean, V extends ArrayLikeOrDataType<T, U>>(name: string, values: V, dtype?: T, strict?: U): Series<DataTypeOrValue<T, U>>
+  (values: any): Series
+  (name: string, values: any[], dtype?): Series
 
   /**
    * Creates an array from an array-like object.
    * @param arrayLike — An array-like object to convert to an array.
    */
-  from<T>(arrayLike: ArrayLike<T>): Series<T>
-  /**
+  from<T>(arrayLike: ArrayLike<T>): Series
+  from<T>(name: string, arrayLike: ArrayLike<T>): Series
+   /**
    * Returns a new Series from a set of elements.
-   * @param items — A set of elements to include in the new series object.
+   * @param items — A set of elements to include in the new Series object.
    */
-  of<T>(...items: T[]): Series<T>
-  isSeries(arg: any): arg is Series<any>;
+  of<T>(...items: T[]): Series
+  isSeries(arg: any): arg is Series;
   /**
    * @param binary used to serialize/deserialize series. This will only work with the output from series.toBinary().
   */
-  fromBinary(binary: Buffer): Series<unknown>
+  // fromBinary(binary: Buffer): Series
 }
 
-function SeriesConstructor (arg0: any, arg1?: any, dtype?: any, strict?: any) {
+
+let SeriesConstructor = function(arg0: any, arg1?: any, dtype?: any, strict?: any): Series {
   if (typeof arg0 === "string") {
     const _s = arrayToJsSeries(arg0, arg1, dtype, strict);
 
-    return seriesWrapper(_s);
+    return _Series(_s) as any;
   }
 
   return SeriesConstructor("", arg0);
-}
-
-const isSeries = <T>(anyVal: any): anyVal is Series<T> => isExternal(anyVal?._series);
-
-const from = <T>(values: ArrayLike<T>): Series<T> => {
-  if(isTypedArray(values)) {
-    return seriesWrapper(pli.series.new_from_typed_array({name: "", values}));
+};
+const isSeries = (anyVal: any): anyVal is Series =>  {
+  try {
+    return anyVal?.[Symbol.toStringTag]?.() === "Series";
+  } catch (err) {
+    return false;
   }
-
-  return SeriesConstructor("", values);
 };
 
-const fromBinary = (buf: Buffer)  => {
-  return seriesWrapper(pli.series.from_bincode(buf));
+const from = (name, values?: ArrayLike<any>): Series => {
+  if(Array.isArray(name) ){
+    return SeriesConstructor("", values);
+
+  } else {
+    return SeriesConstructor(name, values);
+  }
+};
+const of = (...values: any[]): Series => {
+  return Series.from(values);
 };
 
-const of = <T>(...values: T[]): Series<T> => {
-  return from(values);
-};
 
 export const Series: SeriesConstructor = Object.assign(SeriesConstructor, {
   isSeries,
   from,
-  fromBinary,
   of
 });

@@ -1,63 +1,75 @@
-import {JsSeries, Series, seriesWrapper} from "./series";
+import {Series, _Series} from "./series";
 import {col} from "../lazy/functions";
+import {ListFunctions} from "../shared_traits";
 
-export interface ListFunctions<T> {
-  get(index: number): Series<T>
-  first(): Series<T>
-  /**
-   * Join all string items in a sublist and place a separator between them.
-   * This errors if inner type of list `!= Utf8`.
-   * @param separator A string used to separate one element of the list from the next in the resulting string.
-   * If omitted, the list elements are separated with a comma.
-   */
-  join(separator?: string): Series<string>
-  last(): Series<T>
-  /** Get the length of the arrays as UInt32. */
-  lengths(): Series<number>
-  /** Compute the max value of the arrays in the list */
-  max(): Series<number>
-  /** Compute the mean value of the arrays in the list */
-  mean(): Series<number>
-  /** Compute the min value of the arrays in the list */
-  min(): Series<number>
-  /** Reverse the arrays in the list */
-  reverse(): Series<Series<T>>
-  /** Sort the arrays in the list */
-  sort(reverse?: boolean): Series<Series<T>>
-  sort(opt: {reverse: boolean}): Series<Series<T>>
-  /** Sum all the arrays in the list */
-  sum(): Series<number>
-  /** Get the unique/distinct values in the list */
-  unique(): Series<Series<T>>
-}
-
-export const ListFunctions = <T>(_s: JsSeries): ListFunctions<T> => {
-  const callExpr = (method) => (...args) => {
-    const s = seriesWrapper(_s);
+export type SeriesListFunctions =  ListFunctions<Series>;
+export const SeriesListFunctions = (_s): ListFunctions<Series> => {
+  const wrap = (method, ...args) => {
+    const s = _Series(_s);
 
     return s
       .toFrame()
       .select(
-        col(s.name)
-          .lst[method](...args)
+        col(s.name).lst[method](...args)
           .as(s.name)
       )
       .getColumn(s.name);
   };
 
   return {
-    get: callExpr("get"),
-    first: callExpr("first"),
-    join: callExpr("join"),
-    last: callExpr("last"),
-    lengths: callExpr("lengths"),
-    max: callExpr("max"),
-    mean: callExpr("mean"),
-    min: callExpr("min"),
-    reverse: callExpr("reverse"),
-    sort: callExpr("sort"),
-    sum: callExpr("sum"),
-    unique: callExpr("unique")
-  } as any;
+    argMax() {
 
+      return wrap("argMax");
+    },
+    argMin() {
+      return wrap("argMin");
+    },
+    get(index: number) {
+      return wrap("get", index);
+    },
+    eval(expr, parallel) {
+      return wrap("eval", expr, parallel);
+    },
+    first() {
+      return wrap("get", 0);
+    },
+    join(separator = ",") {
+      return wrap("join", separator);
+    },
+    last() {
+      return wrap("get", -1);
+    },
+    lengths() {
+      return wrap("lengths");
+    },
+    max() {
+      return wrap("max");
+    },
+    mean() {
+      return wrap("mean");
+    },
+    min() {
+      return wrap("min");
+    },
+    reverse() {
+      return wrap("reverse");
+    },
+    shift(n) {
+      return wrap("shift", n);
+    },
+    slice(offset, length) {
+      return wrap("slice", offset, length);
+    },
+    sort(reverse: any = false) {
+      return typeof reverse === "boolean" ?
+        wrap("sort", reverse) :
+        wrap("sort", reverse.reverse);
+    },
+    sum() {
+      return wrap("sum");
+    },
+    unique() {
+      return wrap("unique");
+    },
+  };
 };

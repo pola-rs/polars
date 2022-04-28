@@ -1,1170 +1,1421 @@
-use crate::conversion::prelude::*;
-use crate::conversion::utils;
-use crate::datatypes::JsDataType;
-use crate::prelude::JsResult;
-use napi::*;
-use polars::lazy::dsl::Operator;
-
-use crate::error::JsPolarsEr;
+use crate::prelude::*;
+use crate::utils::reinterpret;
 use polars::lazy::dsl;
-use polars::prelude::*;
+use polars::lazy::dsl::Expr;
+use polars::lazy::dsl::Operator;
+use polars_core::series::ops::NullBehavior;
 use std::borrow::Cow;
 
-pub struct JsExpr {}
+#[napi]
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct JsExpr {
+    pub(crate) inner: dsl::Expr,
+}
 
-pub struct JsWhen {}
-
-pub struct JsWhenThen {}
-
-pub struct JsWhenThenThen {}
-
-impl IntoJs<JsExternal> for Expr {
-    fn try_into_js(self, cx: &CallContext) -> JsResult<JsExternal> {
-        cx.env.create_external(self, None)
+pub(crate) trait ToExprs {
+    fn to_exprs(self) -> Vec<Expr>;
+}
+impl JsExpr {
+    pub(crate) fn new(inner: dsl::Expr) -> JsExpr {
+        JsExpr { inner }
+    }
+}
+impl From<dsl::Expr> for JsExpr {
+    fn from(s: dsl::Expr) -> JsExpr {
+        JsExpr::new(s)
+    }
+}
+impl ToExprs for Vec<JsExpr> {
+    fn to_exprs(self) -> Vec<Expr> {
+        // Safety
+        // repr is transparent
+        // and has only got one inner field`
+        unsafe { std::mem::transmute(self) }
     }
 }
 
-#[js_function(1)]
-pub(crate) fn add(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let other = params.get_external::<Expr>(&cx, "other")?.clone();
-    dsl::binary_expr(expr, Operator::Plus, other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn sub(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let other = params.get_external::<Expr>(&cx, "other")?.clone();
-    dsl::binary_expr(expr, Operator::Minus, other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn mul(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let other = params.get_external::<Expr>(&cx, "other")?.clone();
-    dsl::binary_expr(expr, Operator::Multiply, other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn div(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let other = params.get_external::<Expr>(&cx, "other")?.clone();
-    dsl::binary_expr(expr, Operator::Divide, other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub(crate) fn rem(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let other = params.get_external::<Expr>(&cx, "other")?.clone();
-    dsl::binary_expr(expr, Operator::Modulus, other).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn col(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let n = params.get_as::<&str>("name")?;
-    dsl::col(n).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn cols(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let names = params.get_as::<Vec<String>>("name")?;
-    dsl::cols(names).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn lit(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let value = params.get::<JsUnknown>("value")?;
-    let lit = match value.get_type()? {
-        ValueType::Boolean => bool::from_js(value).map(dsl::lit)?,
-        ValueType::Bigint => u64::from_js(value).map(dsl::lit)?,
-        ValueType::Number => {
-            let f_val = f64::from_js(value)?;
-            if f_val.round() == f_val {
-                let val = f_val as i64;
-                if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
-                    dsl::lit(val as i32)
-                } else {
-                    dsl::lit(val)
-                }
-            } else {
-                dsl::lit(f_val)
-            }
-        }
-        ValueType::Object => {
-            let obj: JsObject = unsafe { value.cast() };
-            if obj.is_date()? {
-                let d: JsDate = unsafe { value.cast() };
-                let d = d.value_of()?;
-                dsl::lit(d as i64).cast(DataType::Datetime(TimeUnit::Milliseconds, None))
-            } else {
-                panic!(
-                    "could not convert value {:?} as a Literal",
-                    value.coerce_to_string()?.into_utf8()?.into_owned()?
-                )
-            }
-        }
-        ValueType::String => String::from_js(value).map(dsl::lit)?,
-        ValueType::Null | ValueType::Undefined => dsl::lit(Null {}),
-        ValueType::External => {
-            let val = unsafe { value.cast::<JsExternal>() };
-            if let Ok(series) = cx.env.get_value_external::<Series>(&val) {
-                let n = series.name();
-                let series = series.clone();
-                dsl::lit(series).alias(n)
-            } else {
-                panic!(
-                    "could not convert value {:?} as a Literal",
-                    value.coerce_to_string()?.into_utf8()?.into_owned()?
-                )
-            }
-        }
-        _ => panic!(
-            "could not convert value {:?} as a Literal",
-            value.coerce_to_string()?.into_utf8()?.into_owned()?
-        ),
-    };
-
-    lit.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn as_str(cx: CallContext) -> JsResult<JsString> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let s = format!("{:#?}", expr);
-    cx.env.create_string_from_std(s)
-}
-
-#[js_function(1)]
-pub fn cast(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let dtype: DataType = params.get_as::<JsDataType>("dtype")?.into();
-    let strict = params.get_as::<bool>("strict")?;
-    let expr = if strict {
-        expr.clone().strict_cast(dtype)
-    } else {
-        expr.clone().cast(dtype)
-    };
-    expr.try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn arg_max(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    expr.clone()
-        .apply(
-            |s| Ok(Series::new(s.name(), &[s.arg_max().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn arg_min(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    expr.clone()
-        .apply(
-            |s| Ok(Series::new(s.name(), &[s.arg_min().map(|idx| idx as u32)])),
-            GetOutput::from_type(DataType::UInt32),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn shift_and_fill(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let periods = params.get_as::<i64>("periods")?;
-    let fill_value = params.get_external::<Expr>(&cx, "fillValue")?.clone();
-    expr.clone()
-        .shift_and_fill(periods, fill_value)
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn fill_null_with_strategy(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let strat = params.get_as::<String>("strategy").map(parse_strategy)?;
-
-    expr.clone()
-        .apply(move |s| s.fill_null(strat), GetOutput::same_type())
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn take_every(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let n = params.get_as::<usize>("n")?;
-    expr.clone()
-        .map(move |s: Series| Ok(s.take_every(n)), GetOutput::same_type())
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn slice(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let offset = params.get_external::<Expr>(&cx, "offset")?.clone();
-    let length = params.get_external::<Expr>(&cx, "length")?.clone();
-
-    expr.clone().slice(offset, length).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn over(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let arr: JsObject = params.0.get_named_property("partitionBy")?;
-    let len = arr.get_array_length()?;
-    let partition_by: Vec<Expr> = (0..len)
-        .map(|v| {
-            let external = arr
-                .get_element_unchecked::<JsExternal>(v)
-                .expect("element exists");
-            let expr: &mut Expr = cx
-                .env
-                .get_value_external(&external)
-                .expect("value to be an expr");
-            expr.clone()
-        })
-        .collect();
-    expr.clone().over(partition_by).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_parse_date(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let fmt = params.get_as::<Option<String>>("fmt")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        ca.as_date(fmt.as_deref()).map(|ca| ca.into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Date))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_parse_datetime(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let fmt = params.get_as::<Option<String>>("fmt")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        ca.as_datetime(fmt.as_deref(), TimeUnit::Milliseconds)
-            .map(|ca| ca.into_series())
-    };
-
-    expr.clone()
-        .map(
-            function,
-            GetOutput::from_type(DataType::Datetime(TimeUnit::Milliseconds, None)),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_to_uppercase(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.to_uppercase().into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt32))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_to_lowercase(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.to_lowercase().into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt32))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_slice(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let start = params.get_as::<i64>("start")?;
-    let length = params.get_as::<Option<u64>>("length")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.str_slice(start, length)?.into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Utf8))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_lengths(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.str_lengths().into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt32))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_replace(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let pat = params.get_as::<String>("pat")?;
-    let val = params.get_as::<String>("val")?;
-
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        match ca.replace(&pat, &val) {
-            Ok(ca) => Ok(ca.into_series()),
-            Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-        }
-    };
-
-    expr.clone()
-        .map(function, GetOutput::same_type())
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_replace_all(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let pat = params.get_as::<String>("pat")?;
-    let val = params.get_as::<String>("val")?;
-
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        match ca.replace_all(&pat, &val) {
-            Ok(ca) => Ok(ca.into_series()),
-            Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-        }
-    };
-
-    expr.clone()
-        .map(function, GetOutput::same_type())
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_strip(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    let function = |s: Series| {
-        let ca = s.utf8()?;
-
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::same_type())
-        .with_fmt("str.strip")
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn str_rstrip(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let function = |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::same_type())
-        .with_fmt("str.rstrip")
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn str_lstrip(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let function = |s: Series| {
-        let ca = s.utf8()?;
-        Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
-    };
-
-    expr.clone()
-        .map(function, GetOutput::same_type())
-        .with_fmt("str.lstrip")
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_contains(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let pat = params.get_as::<String>("pat")?;
-
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        match ca.contains(&pat) {
-            Ok(ca) => Ok(ca.into_series()),
-            Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-        }
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Boolean))
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn str_concat(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let delimiter = params.get_as::<String>("delimiter")?;
-    expr.clone().str().concat(&delimiter).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_json_path_match(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let pat = params.get_as::<String>("pat")?;
-
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        match ca.json_path_match(&pat) {
-            Ok(ca) => Ok(ca.into_series()),
-            Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-        }
-    };
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Boolean))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_extract(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let pat = params.get_as::<String>("pat")?;
-    let group_index = params.get_as::<usize>("groupIndex")?;
-
-    let function = move |s: Series| {
-        let ca = s.utf8()?;
-        match ca.extract(&pat, group_index) {
-            Ok(ca) => Ok(ca.into_series()),
-            Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
-        }
-    };
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Boolean))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn str_split(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let by = params.get_as::<String>("by")?;
-    let inclusive: bool = params.get_or("inclusive", false)?;
-    if inclusive {
-        expr.clone().str().split_inclusive(&by).try_into_js(&cx)
-    } else {
-        expr.clone().str().split(&by).try_into_js(&cx)
+impl ToExprs for Vec<&JsExpr> {
+    fn to_exprs(self) -> Vec<Expr> {
+        self.into_iter()
+            .map(|e| e.inner.clone())
+            .collect::<Vec<Expr>>()
     }
 }
 
-#[js_function(1)]
-pub fn hex_encode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-
-    expr.clone()
-        .map(
-            move |s| Ok(s.utf8()?.hex_encode().into_series()),
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn hex_decode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let strict = params.get_as::<Option<bool>>("strict")?;
-    expr.clone()
-        .map(
-            move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn base64_encode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    expr.clone()
-        .map(
-            move |s| Ok(s.utf8()?.base64_encode().into_series()),
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn base64_decode(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let strict = params.get_as::<Option<bool>>("strict")?;
-    expr.clone()
-        .map(
-            move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
-            GetOutput::same_type(),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn strftime(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let fmt = params.get_as::<String>("fmt")?;
-
-    let function = move |s: Series| s.strftime(&fmt);
-
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::Utf8))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn timestamp(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    expr.clone()
-        .map(
-            |s| {
-                s.timestamp(TimeUnit::Milliseconds)
-                    .map(|ca| ca.into_series())
-            },
-            GetOutput::from_type(DataType::Int64),
-        )
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn hash(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let k0 = params.get_as::<u64>("k0")?;
-    let k1 = params.get_as::<u64>("k1")?;
-    let k2 = params.get_as::<u64>("k2")?;
-    let k3 = params.get_as::<u64>("k3")?;
-    let function = move |s: Series| {
-        let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
-        Ok(s.hash(hb).into_series())
-    };
-    expr.clone()
-        .map(function, GetOutput::from_type(DataType::UInt64))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn reinterpret(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let signed = params.get_as::<bool>("signed")?;
-    let function = move |s: Series| utils::reinterpret(&s, signed);
-    let dt = if signed {
-        DataType::Int64
-    } else {
-        DataType::UInt64
-    };
-    expr.clone()
-        .map(function, GetOutput::from_type(dt))
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn exclude(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let columns = params.get_as::<Vec<String>>("columns")?;
-    expr.clone().exclude(&columns).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn reshape(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let dims = params.get_as::<Vec<i64>>("dims")?;
-    expr.clone().reshape(&dims).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn sort_with(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let descending: bool = params.get_or("reverse", false)?;
-    let nulls_last: bool = params.get_or("nullsLast", false)?;
-
-    expr.clone()
-        .sort_with(SortOptions {
-            descending,
-            nulls_last,
-        })
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn sample_frac(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let frac = params.get_as::<f64>("frac")?;
-    let with_replacement = params.get_as::<bool>("withReplacement")?;
-    let seed = params.get_as::<Option<u64>>("seed")?;
-    expr.clone()
-        .sample_frac(frac, with_replacement, seed)
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn sort_by(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let by = params.get_external_vec::<Expr>(&cx, "by")?;
-    let reverse: Vec<bool> = params.get_as("reverse")?;
-
-    expr.clone().sort_by(by, reverse).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn quantile(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let quantile = params.get_as::<f64>("quantile")?;
-    expr.clone()
-        .quantile(quantile, QuantileInterpolOptions::default())
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn extend_constant(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    let val = params.get::<JsUnknown>("value")?;
-    let n = params.get_as::<usize>("n")?;
-    match val.get_type()? {
-        ValueType::Undefined | ValueType::Null => expr.apply(
-            move |s| s.extend_constant(AnyValue::Null, n),
-            GetOutput::same_type(),
-        ),
-        ValueType::Boolean => {
-            let val = bool::from_js(val)?;
-            expr.apply(
-                move |s| s.extend_constant(AnyValue::Boolean(val), n),
-                GetOutput::same_type(),
-            )
-        }
-        ValueType::Number => {
-            let f_val = f64::from_js(val)?;
-            if f_val.round() == f_val {
-                let val = f_val as i64;
-                if val > 0 && val < i32::MAX as i64 || val < 0 && val > i32::MIN as i64 {
-                    expr.apply(
-                        move |s| s.extend_constant(AnyValue::Int32(val as i32), n),
-                        GetOutput::same_type(),
-                    )
-                } else {
-                    expr.apply(
-                        move |s| s.extend_constant(AnyValue::Int64(val), n),
-                        GetOutput::same_type(),
-                    )
-                }
-            } else {
-                expr.apply(
-                    move |s| s.extend_constant(AnyValue::Float64(f_val), n),
-                    GetOutput::same_type(),
-                )
-            }
-        }
-        ValueType::String => {
-            let val = String::from_js(val)?;
-            expr.apply(
-                move |s| s.extend_constant(AnyValue::Utf8(&val), n),
-                GetOutput::same_type(),
-            )
-        }
-        ValueType::Bigint => {
-            let val = u64::from_js(val)?;
-            expr.apply(
-                move |s| s.extend_constant(AnyValue::UInt64(val), n),
-                GetOutput::same_type(),
-            )
-        }
-        ValueType::Object => {
-            if val.is_date()? {
-                let d: JsDate = unsafe { val.cast() };
-                let d = d.value_of()?;
-                let d = d as i64;
-                expr.apply(
-                    move |s| {
-                        s.extend_constant(AnyValue::Datetime(d, TimeUnit::Milliseconds, &None), n)
-                    },
-                    GetOutput::same_type(),
-                )
-            } else {
-                return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into());
-            }
-        }
-
-        _ => return Err(JsPolarsEr::Other("Unsupported Data type".to_owned()).into()),
+#[napi]
+impl JsExpr {
+    #[napi]
+    pub fn __add__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner.clone()).into())
     }
-    .try_into_js(&cx)
+
+    #[napi]
+    pub fn __sub__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner.clone()).into())
+    }
+
+    #[napi]
+    pub fn __mul__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner.clone()).into())
+    }
+
+    #[napi]
+    pub fn __truediv__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner.clone()).into())
+    }
+
+    #[napi]
+    pub fn __mod__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner.clone()).into())
+    }
+
+    #[napi]
+    pub fn __floordiv__(&self, rhs: &JsExpr) -> napi::Result<JsExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner.clone()).into())
+    }
+
+    #[napi]
+    pub fn to_string(&self) -> String {
+        format!("{:?}", self.inner)
+    }
+
+    #[napi]
+    pub fn eq(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.eq(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn neq(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.neq(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn gt(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.gt(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn gt_eq(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.gt_eq(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn lt_eq(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.lt_eq(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn lt(&self, other: &JsExpr) -> JsExpr {
+        self.clone().inner.lt(other.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn alias(&self, name: String) -> JsExpr {
+        self.clone().inner.alias(&name).into()
+    }
+
+    #[napi]
+    pub fn is_not(&self) -> JsExpr {
+        self.clone().inner.not().into()
+    }
+
+    #[napi]
+    pub fn is_null(&self) -> JsExpr {
+        self.clone().inner.is_null().into()
+    }
+
+    #[napi]
+    pub fn is_not_null(&self) -> JsExpr {
+        self.clone().inner.is_not_null().into()
+    }
+
+    #[napi]
+    pub fn is_infinite(&self) -> JsExpr {
+        self.clone().inner.is_infinite().into()
+    }
+
+    #[napi]
+    pub fn is_finite(&self) -> JsExpr {
+        self.clone().inner.is_finite().into()
+    }
+
+    #[napi]
+    pub fn is_nan(&self) -> JsExpr {
+        self.clone().inner.is_nan().into()
+    }
+
+    #[napi]
+    pub fn is_not_nan(&self) -> JsExpr {
+        self.clone().inner.is_not_nan().into()
+    }
+
+    #[napi]
+    pub fn min(&self) -> JsExpr {
+        self.clone().inner.min().into()
+    }
+
+    #[napi]
+    pub fn max(&self) -> JsExpr {
+        self.clone().inner.max().into()
+    }
+
+    #[napi]
+    pub fn mean(&self) -> JsExpr {
+        self.clone().inner.mean().into()
+    }
+
+    #[napi]
+    pub fn median(&self) -> JsExpr {
+        self.clone().inner.median().into()
+    }
+
+    #[napi]
+    pub fn sum(&self) -> JsExpr {
+        self.clone().inner.sum().into()
+    }
+
+    #[napi]
+    pub fn n_unique(&self) -> JsExpr {
+        self.clone().inner.n_unique().into()
+    }
+
+    #[napi]
+    pub fn arg_unique(&self) -> JsExpr {
+        self.clone().inner.arg_unique().into()
+    }
+
+    #[napi]
+    pub fn unique(&self) -> JsExpr {
+        self.clone().inner.unique().into()
+    }
+
+    #[napi]
+    pub fn unique_stable(&self) -> JsExpr {
+        self.clone().inner.unique_stable().into()
+    }
+
+    #[napi]
+    pub fn first(&self) -> JsExpr {
+        self.clone().inner.first().into()
+    }
+
+    #[napi]
+    pub fn last(&self) -> JsExpr {
+        self.clone().inner.last().into()
+    }
+
+    #[napi]
+    pub fn list(&self) -> JsExpr {
+        self.clone().inner.list().into()
+    }
+
+    #[napi]
+    pub fn quantile(&self, quantile: f64, interpolation: Wrap<QuantileInterpolOptions>) -> JsExpr {
+        self.clone()
+            .inner
+            .quantile(quantile, interpolation.0)
+            .into()
+    }
+
+    #[napi]
+    pub fn agg_groups(&self) -> JsExpr {
+        self.clone().inner.agg_groups().into()
+    }
+
+    #[napi]
+    pub fn count(&self) -> JsExpr {
+        self.clone().inner.count().into()
+    }
+
+    #[napi]
+    pub fn value_counts(&self, multithreaded: bool) -> JsExpr {
+        self.inner.clone().value_counts(multithreaded).into()
+    }
+
+    #[napi]
+    pub fn unique_counts(&self) -> JsExpr {
+        self.inner.clone().unique_counts().into()
+    }
+
+    #[napi]
+    pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> JsExpr {
+        let dt = data_type.0;
+        let expr = if strict {
+            self.inner.clone().strict_cast(dt)
+        } else {
+            self.inner.clone().cast(dt)
+        };
+        expr.into()
+    }
+
+    #[napi]
+    pub fn sort_with(&self, descending: bool, nulls_last: bool) -> JsExpr {
+        self.clone()
+            .inner
+            .sort_with(SortOptions {
+                descending,
+                nulls_last,
+            })
+            .into()
+    }
+
+    #[napi]
+    pub fn arg_sort(&self, reverse: bool) -> JsExpr {
+        self.clone().inner.arg_sort(reverse).into()
+    }
+    #[napi]
+    pub fn arg_max(&self) -> JsExpr {
+        self.clone().inner.arg_max().into()
+    }
+    #[napi]
+    pub fn arg_min(&self) -> JsExpr {
+        self.clone().inner.arg_min().into()
+    }
+    #[napi]
+    pub fn take(&self, idx: &JsExpr) -> JsExpr {
+        self.clone().inner.take(idx.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn sort_by(&self, by: Vec<&JsExpr>, reverse: Vec<bool>) -> JsExpr {
+        let by = by.into_iter().map(|e| e.inner.clone()).collect::<Vec<_>>();
+        self.clone().inner.sort_by(by, reverse).into()
+    }
+    #[napi]
+    pub fn backward_fill(&self) -> JsExpr {
+        self.clone().inner.backward_fill().into()
+    }
+
+    #[napi]
+    pub fn forward_fill(&self) -> JsExpr {
+        self.clone().inner.forward_fill().into()
+    }
+
+    #[napi]
+    pub fn shift(&self, periods: i64) -> JsExpr {
+        self.clone().inner.shift(periods).into()
+    }
+
+    #[napi]
+    pub fn shift_and_fill(&self, periods: i64, fill_value: &JsExpr) -> JsExpr {
+        self.clone()
+            .inner
+            .shift_and_fill(periods, fill_value.inner.clone())
+            .into()
+    }
+
+    #[napi]
+    pub fn fill_null(&self, expr: &JsExpr) -> JsExpr {
+        self.clone().inner.fill_null(expr.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn fill_null_with_strategy(&self, strategy: Wrap<FillNullStrategy>) -> JsExpr {
+        self.inner
+            .clone()
+            .apply(move |s| s.fill_null(strategy.0), GetOutput::same_type())
+            .with_fmt("fill_null")
+            .into()
+    }
+    #[napi]
+    pub fn fill_nan(&self, expr: &JsExpr) -> JsExpr {
+        self.inner.clone().fill_nan(expr.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn drop_nulls(&self) -> JsExpr {
+        self.inner.clone().drop_nulls().into()
+    }
+
+    #[napi]
+    pub fn drop_nans(&self) -> JsExpr {
+        self.inner.clone().drop_nans().into()
+    }
+
+    #[napi]
+    pub fn filter(&self, predicate: &JsExpr) -> JsExpr {
+        self.clone().inner.filter(predicate.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn reverse(&self) -> JsExpr {
+        self.clone().inner.reverse().into()
+    }
+
+    #[napi]
+    pub fn std(&self) -> JsExpr {
+        self.clone().inner.std().into()
+    }
+
+    #[napi]
+    pub fn var(&self) -> JsExpr {
+        self.clone().inner.var().into()
+    }
+    #[napi]
+    pub fn is_unique(&self) -> JsExpr {
+        self.clone().inner.is_unique().into()
+    }
+
+    #[napi]
+    pub fn is_first(&self) -> JsExpr {
+        self.clone().inner.is_first().into()
+    }
+
+    #[napi]
+    pub fn explode(&self) -> JsExpr {
+        self.clone().inner.explode().into()
+    }
+    #[napi]
+    pub fn take_every(&self, n: i64) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s: Series| Ok(s.take_every(n as usize)),
+                GetOutput::same_type(),
+            )
+            .with_fmt("take_every")
+            .into()
+    }
+    #[napi]
+    pub fn tail(&self, n: Option<i64>) -> JsExpr {
+        let n = n.map(|v| v as usize);
+        self.clone().inner.tail(n).into()
+    }
+
+    #[napi]
+    pub fn head(&self, n: Option<i64>) -> JsExpr {
+        let n = n.map(|v| v as usize);
+        self.clone().inner.head(n).into()
+    }
+    #[napi]
+    pub fn slice(&self, offset: &JsExpr, length: &JsExpr) -> JsExpr {
+        self.inner
+            .clone()
+            .slice(offset.inner.clone(), length.inner.clone())
+            .into()
+    }
+    #[napi]
+    pub fn round(&self, decimals: u32) -> JsExpr {
+        self.clone().inner.round(decimals).into()
+    }
+
+    #[napi]
+    pub fn floor(&self) -> JsExpr {
+        self.clone().inner.floor().into()
+    }
+
+    #[napi]
+    pub fn ceil(&self) -> JsExpr {
+        self.clone().inner.ceil().into()
+    }
+    #[napi]
+    pub fn clip(&self, min: f64, max: f64) -> JsExpr {
+        self.clone().inner.clip(min, max).into()
+    }
+
+    #[napi]
+    pub fn abs(&self) -> JsExpr {
+        self.clone().inner.abs().into()
+    }
+    #[napi]
+    pub fn is_duplicated(&self) -> JsExpr {
+        self.clone().inner.is_duplicated().into()
+    }
+    #[napi]
+    pub fn over(&self, partition_by: Vec<&JsExpr>) -> JsExpr {
+        self.clone().inner.over(partition_by.to_exprs()).into()
+    }
+    #[napi]
+    pub fn _and(&self, expr: &JsExpr) -> JsExpr {
+        self.clone().inner.and(expr.inner.clone()).into()
+    }
+    #[napi]
+    pub fn not(&self) -> JsExpr {
+        self.clone().inner.not().into()
+    }
+    #[napi]
+    pub fn _xor(&self, expr: &JsExpr) -> JsExpr {
+        self.clone().inner.xor(expr.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn _or(&self, expr: &JsExpr) -> JsExpr {
+        self.clone().inner.or(expr.inner.clone()).into()
+    }
+    #[napi]
+    pub fn is_in(&self, expr: &JsExpr) -> JsExpr {
+        self.clone().inner.is_in(expr.inner.clone()).into()
+    }
+    #[napi]
+    pub fn repeat_by(&self, by: &JsExpr) -> JsExpr {
+        self.clone().inner.repeat_by(by.inner.clone()).into()
+    }
+
+    #[napi]
+    pub fn pow(&self, exponent: f64) -> JsExpr {
+        self.clone().inner.pow(exponent).into()
+    }
+    #[napi]
+    pub fn cumsum(&self, reverse: bool) -> JsExpr {
+        self.clone().inner.cumsum(reverse).into()
+    }
+    #[napi]
+    pub fn cummax(&self, reverse: bool) -> JsExpr {
+        self.clone().inner.cummax(reverse).into()
+    }
+    #[napi]
+    pub fn cummin(&self, reverse: bool) -> JsExpr {
+        self.clone().inner.cummin(reverse).into()
+    }
+    #[napi]
+    pub fn cumprod(&self, reverse: bool) -> JsExpr {
+        self.clone().inner.cumprod(reverse).into()
+    }
+
+    #[napi]
+    pub fn product(&self) -> JsExpr {
+        self.clone().inner.product().into()
+    }
+
+    #[napi]
+    pub fn str_parse_date(&self, fmt: Option<String>, strict: bool, exact: bool) -> JsExpr {
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Date,
+                fmt,
+                strict,
+                exact,
+            })
+            .into()
+    }
+    #[napi]
+    pub fn str_parse_datetime(&self, fmt: Option<String>, strict: bool, exact: bool) -> JsExpr {
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
+                fmt,
+                strict,
+                exact,
+            })
+            .into()
+    }
+
+    #[napi]
+    pub fn str_strip(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .with_fmt("str.strip")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_rstrip(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim_end())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .with_fmt("str.rstrip")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_lstrip(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+
+            Ok(ca.apply(|s| Cow::Borrowed(s.trim_start())).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .with_fmt("str.lstrip")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_to_uppercase(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.to_uppercase().into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.to_uppercase")
+            .into()
+    }
+    #[napi]
+    pub fn str_slice(&self, start: i64, length: Option<i64>) -> JsExpr {
+        let function = move |s: Series| {
+            let length = length.map(|l| l as u64);
+            let ca = s.utf8()?;
+            Ok(ca.str_slice(start, length)?.into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.slice")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_to_lowercase(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.to_lowercase().into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.to_lowercase")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_lengths(&self) -> JsExpr {
+        let function = |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.str_lengths().into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.len")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_replace(&self, pat: String, val: String) -> JsExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.replace(&pat, &val) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            }
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .with_fmt("str.replace")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_replace_all(&self, pat: String, val: String) -> JsExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.replace_all(&pat, &val) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            }
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::same_type())
+            .with_fmt("str.replace_all")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_contains(&self, pat: String) -> JsExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.contains(&pat) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            }
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::Boolean))
+            .with_fmt("str.contains")
+            .into()
+    }
+    #[napi]
+    pub fn str_hex_encode(&self) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8().map(|s| s.hex_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("str.hex_encode")
+            .into()
+    }
+    #[napi]
+    pub fn str_hex_decode(&self, strict: Option<bool>) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8()?.hex_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("str.hex_decode")
+            .into()
+    }
+    #[napi]
+    pub fn str_base64_encode(&self) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8().map(|s| s.base64_encode().into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("str.base64_encode")
+            .into()
+    }
+
+    #[napi]
+    pub fn str_base64_decode(&self, strict: Option<bool>) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                move |s| s.utf8()?.base64_decode(strict).map(|s| s.into_series()),
+                GetOutput::same_type(),
+            )
+            .with_fmt("str.base64_decode")
+            .into()
+    }
+    #[napi]
+    pub fn str_json_path_match(&self, pat: String) -> JsExpr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            match ca.json_path_match(&pat) {
+                Ok(ca) => Ok(ca.into_series()),
+                Err(e) => Err(PolarsError::ComputeError(format!("{:?}", e).into())),
+            }
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::Boolean))
+            .with_fmt("str.json_path_match")
+            .into()
+    }
+    #[napi]
+    pub fn str_extract(&self, pat: String, group_index: i64) -> JsExpr {
+        self.inner
+            .clone()
+            .str()
+            .extract(&pat, group_index as usize)
+            .into()
+    }
+    #[napi]
+    pub fn strftime(&self, fmt: String) -> JsExpr {
+        self.inner.clone().dt().strftime(&fmt).into()
+    }
+    #[napi]
+    pub fn str_split(&self, by: String) -> JsExpr {
+        self.inner.clone().str().split(&by).into()
+    }
+    #[napi]
+    pub fn str_split_inclusive(&self, by: String) -> JsExpr {
+        self.inner.clone().str().split_inclusive(&by).into()
+    }
+    #[napi]
+    pub fn str_split_exact(&self, by: String, n: i64) -> JsExpr {
+        self.inner.clone().str().split_exact(&by, n as usize).into()
+    }
+    #[napi]
+    pub fn str_split_exact_inclusive(&self, by: String, n: i64) -> JsExpr {
+        self.inner
+            .clone()
+            .str()
+            .split_exact_inclusive(&by, n as usize)
+            .into()
+    }
+
+    #[napi]
+    pub fn year(&self) -> JsExpr {
+        self.clone().inner.dt().year().into()
+    }
+    #[napi]
+    pub fn month(&self) -> JsExpr {
+        self.clone().inner.dt().month().into()
+    }
+    #[napi]
+    pub fn week(&self) -> JsExpr {
+        self.clone().inner.dt().week().into()
+    }
+    #[napi]
+    pub fn weekday(&self) -> JsExpr {
+        self.clone().inner.dt().weekday().into()
+    }
+    #[napi]
+    pub fn day(&self) -> JsExpr {
+        self.clone().inner.dt().day().into()
+    }
+    #[napi]
+    pub fn ordinal_day(&self) -> JsExpr {
+        self.clone().inner.dt().ordinal_day().into()
+    }
+    #[napi]
+    pub fn hour(&self) -> JsExpr {
+        self.clone().inner.dt().hour().into()
+    }
+    #[napi]
+    pub fn minute(&self) -> JsExpr {
+        self.clone().inner.dt().minute().into()
+    }
+    #[napi]
+    pub fn second(&self) -> JsExpr {
+        self.clone().inner.dt().second().into()
+    }
+    #[napi]
+    pub fn nanosecond(&self) -> JsExpr {
+        self.clone().inner.dt().nanosecond().into()
+    }
+    #[napi]
+    pub fn duration_days(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.days().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn duration_hours(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.hours().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn duration_seconds(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.seconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn duration_nanoseconds(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.nanoseconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn duration_milliseconds(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.milliseconds().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn timestamp(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .dt()
+            .timestamp(TimeUnit::Milliseconds)
+            .into()
+    }
+    #[napi]
+    pub fn dt_epoch_seconds(&self) -> JsExpr {
+        self.clone()
+            .inner
+            .map(
+                |s| {
+                    s.timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| (ca / 1000).into_series())
+                },
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+    #[napi]
+    pub fn dot(&self, other: &JsExpr) -> JsExpr {
+        self.inner.clone().dot(other.inner.clone()).into()
+    }
+    #[napi]
+    pub fn hash(&self, k0: Wrap<u64>, k1: Wrap<u64>, k2: Wrap<u64>, k3: Wrap<u64>) -> JsExpr {
+        let function = move |s: Series| {
+            let hb = ahash::RandomState::with_seeds(k0.0, k1.0, k2.0, k3.0);
+            Ok(s.hash(hb).into_series())
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(DataType::UInt64))
+            .into()
+    }
+
+    #[napi]
+    pub fn reinterpret(&self, signed: bool) -> JsExpr {
+        let function = move |s: Series| reinterpret(&s, signed);
+        let dt = if signed {
+            DataType::Int64
+        } else {
+            DataType::UInt64
+        };
+        self.clone()
+            .inner
+            .map(function, GetOutput::from_type(dt))
+            .into()
+    }
+    #[napi]
+    pub fn mode(&self) -> JsExpr {
+        self.inner.clone().mode().into()
+    }
+    #[napi]
+    pub fn keep_name(&self) -> JsExpr {
+        self.inner.clone().keep_name().into()
+    }
+    #[napi]
+    pub fn prefix(&self, prefix: String) -> JsExpr {
+        self.inner.clone().prefix(&prefix).into()
+    }
+    #[napi]
+    pub fn suffix(&self, suffix: String) -> JsExpr {
+        self.inner.clone().suffix(&suffix).into()
+    }
+
+    #[napi]
+    pub fn exclude(&self, columns: Vec<String>) -> JsExpr {
+        self.inner.clone().exclude(&columns).into()
+    }
+
+    #[napi]
+    pub fn exclude_dtype(&self, dtypes: Vec<Wrap<DataType>>) -> JsExpr {
+        // Safety:
+        // Wrap is transparent.
+        let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
+        self.inner.clone().exclude_dtype(&dtypes).into()
+    }
+    #[napi]
+    pub fn interpolate(&self) -> JsExpr {
+        self.inner.clone().interpolate().into()
+    }
+    #[napi]
+    pub fn rolling_sum(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_sum(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_min(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_min(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_max(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_max(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_mean(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_mean(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_std(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_std(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_var(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_var(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_median(&self, options: JsRollingOptions) -> JsExpr {
+        self.inner.clone().rolling_median(options.into()).into()
+    }
+    #[napi]
+    pub fn rolling_quantile(
+        &self,
+        quantile: f64,
+        interpolation: Wrap<QuantileInterpolOptions>,
+        options: JsRollingOptions,
+    ) -> JsExpr {
+        self.inner
+            .clone()
+            .rolling_quantile(quantile, interpolation.0, options.into())
+            .into()
+    }
+    #[napi]
+    pub fn rolling_skew(&self, window_size: i64, bias: bool) -> JsExpr {
+        self.inner
+            .clone()
+            .rolling_apply_float(window_size as usize, move |ca| {
+                ca.clone().into_series().skew(bias).unwrap()
+            })
+            .into()
+    }
+    #[napi]
+    pub fn lower_bound(&self) -> JsExpr {
+        self.inner.clone().lower_bound().into()
+    }
+
+    #[napi]
+    pub fn upper_bound(&self) -> JsExpr {
+        self.inner.clone().upper_bound().into()
+    }
+
+    #[napi]
+    pub fn lst_max(&self) -> JsExpr {
+        self.inner.clone().arr().max().into()
+    }
+    #[napi]
+    pub fn lst_min(&self) -> JsExpr {
+        self.inner.clone().arr().min().into()
+    }
+
+    #[napi]
+    pub fn lst_sum(&self) -> JsExpr {
+        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
+    }
+
+    #[napi]
+    pub fn lst_mean(&self) -> JsExpr {
+        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
+    }
+
+    #[napi]
+    pub fn lst_sort(&self, reverse: bool) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .sort(reverse)
+            .with_fmt("arr.sort")
+            .into()
+    }
+
+    #[napi]
+    pub fn lst_reverse(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .reverse()
+            .with_fmt("arr.reverse")
+            .into()
+    }
+
+    #[napi]
+    pub fn lst_unique(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .unique()
+            .with_fmt("arr.unique")
+            .into()
+    }
+    #[napi]
+    pub fn lst_lengths(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .lengths()
+            .with_fmt("arr.lengths")
+            .into()
+    }
+    #[napi]
+    pub fn lst_get(&self, index: i64) -> JsExpr {
+        self.inner.clone().arr().get(index).into()
+    }
+    #[napi]
+    pub fn lst_join(&self, separator: String) -> JsExpr {
+        self.inner.clone().arr().join(&separator).into()
+    }
+    #[napi]
+    pub fn lst_arg_min(&self) -> JsExpr {
+        self.inner.clone().arr().arg_min().into()
+    }
+
+    #[napi]
+    pub fn lst_arg_max(&self) -> JsExpr {
+        self.inner.clone().arr().lengths().into()
+    }
+    #[napi]
+    pub fn lst_diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .diff(n as usize, null_behavior.0)
+            .into()
+    }
+
+    #[napi]
+    pub fn lst_shift(&self, periods: i64) -> JsExpr {
+        self.inner.clone().arr().shift(periods).into()
+    }
+    #[napi]
+    pub fn lst_slice(&self, offset: i64, length: i64) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .slice(offset, length as usize)
+            .into()
+    }
+    #[napi]
+    pub fn lst_eval(&self, expr: &JsExpr, parallel: bool) -> JsExpr {
+        self.inner
+            .clone()
+            .arr()
+            .eval(expr.inner.clone(), parallel)
+            .into()
+    }
+
+    #[napi]
+    pub fn rank(&self, method: Wrap<RankMethod>, reverse: bool) -> JsExpr {
+        let options = RankOptions {
+            method: method.0,
+            descending: reverse,
+        };
+        self.inner.clone().rank(options).into()
+    }
+    #[napi]
+    pub fn diff(&self, n: i64, null_behavior: Wrap<NullBehavior>) -> JsExpr {
+        self.inner.clone().diff(n as usize, null_behavior.0).into()
+    }
+    #[napi]
+    pub fn pct_change(&self, n: i64) -> JsExpr {
+        self.inner.clone().pct_change(n as usize).into()
+    }
+
+    #[napi]
+    pub fn skew(&self, bias: bool) -> JsExpr {
+        self.inner.clone().skew(bias).into()
+    }
+    #[napi]
+    pub fn kurtosis(&self, fisher: bool, bias: bool) -> JsExpr {
+        self.inner.clone().kurtosis(fisher, bias).into()
+    }
+    #[napi]
+    pub fn str_concat(&self, delimiter: String) -> JsExpr {
+        self.inner.clone().str().concat(&delimiter).into()
+    }
+    #[napi]
+    pub fn cat_set_ordering(&self, ordering: String) -> JsExpr {
+        let ordering = match ordering.as_ref() {
+            "physical" => CategoricalOrdering::Physical,
+            "lexical" => CategoricalOrdering::Lexical,
+            _ => panic!("expected one of {{'physical', 'lexical'}}"),
+        };
+
+        self.inner.clone().cat().set_ordering(ordering).into()
+    }
+    #[napi]
+    pub fn reshape(&self, dims: Vec<i64>) -> JsExpr {
+        self.inner.clone().reshape(&dims).into()
+    }
+    #[napi]
+    pub fn cumcount(&self, reverse: bool) -> JsExpr {
+        self.inner.clone().cumcount(reverse).into()
+    }
+    #[napi]
+    pub fn to_physical(&self) -> JsExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.to_physical_repr().into_owned()),
+                GetOutput::map_dtype(|dt| dt.to_physical()),
+            )
+            .with_fmt("to_physical")
+            .into()
+    }
+
+    #[napi]
+    pub fn shuffle(&self, seed: Wrap<u64>) -> JsExpr {
+        self.inner.clone().shuffle(seed.0).into()
+    }
+
+    #[napi]
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<i64>) -> JsExpr {
+        let seed = seed.map(|s| s as u64);
+        self.inner
+            .clone()
+            .sample_frac(frac, with_replacement, seed)
+            .into()
+    }
+    #[napi]
+    pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: i64) -> JsExpr {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods: min_periods as usize,
+        };
+        self.inner.clone().ewm_mean(options).into()
+    }
+    #[napi]
+    pub fn ewm_std(&self, alpha: f64, adjust: bool, min_periods: i64) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods: min_periods as usize,
+        };
+        self.inner.clone().ewm_std(options).into()
+    }
+    #[napi]
+    pub fn ewm_var(&self, alpha: f64, adjust: bool, min_periods: i64) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            min_periods: min_periods as usize,
+        };
+        self.inner.clone().ewm_var(options).into()
+    }
+    #[napi]
+    pub fn extend_constant(&self, value: JsAnyValue, n: i64) -> Self {
+        self.inner
+            .clone()
+            .apply(
+                move |s| s.extend_constant(value.clone().into(), n as usize),
+                GetOutput::same_type(),
+            )
+            .with_fmt("extend")
+            .into()
+    }
+    #[napi]
+    pub fn any(&self) -> JsExpr {
+        self.inner.clone().any().into()
+    }
+
+    #[napi]
+    pub fn all(&self) -> JsExpr {
+        self.inner.clone().all().into()
+    }
+    #[napi]
+    pub fn struct_field_by_name(&self, name: String) -> JsExpr {
+        self.inner.clone().struct_().field_by_name(&name).into()
+    }
+    #[napi]
+    pub fn struct_rename_fields(&self, names: Vec<String>) -> JsExpr {
+        self.inner.clone().struct_().rename_fields(names).into()
+    }
+    #[napi]
+    pub fn log(&self, base: f64) -> JsExpr {
+        self.inner.clone().log(base).into()
+    }
+    #[napi]
+    pub fn entropy(&self, base: f64) -> JsExpr {
+        self.inner.clone().entropy(base).into()
+    }
+    #[napi]
+    pub fn add(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner.clone()).into()
+    }
+    #[napi]
+    pub fn sub(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner.clone()).into()
+    }
+    #[napi]
+    pub fn mul(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner.clone()).into()
+    }
+    #[napi]
+    pub fn true_div(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner.clone()).into()
+    }
+    #[napi]
+    pub fn rem(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner.clone()).into()
+    }
+    #[napi]
+    pub fn div(&self, rhs: &JsExpr) -> JsExpr {
+        dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner.clone()).into()
+    }
 }
-//
-macro_rules! impl_expr {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let expr = params.get_external::<Expr>(&cx, "_expr")?;
-            let other = params.get_external::<Expr>(&cx, "other")?.clone();
-            expr.clone().$name(other).try_into_js(&cx)
+
+#[napi]
+#[derive(Clone)]
+pub struct When {
+    predicate: Expr,
+}
+#[napi]
+#[derive(Clone)]
+pub struct WhenThen {
+    predicate: Expr,
+    then: Expr,
+}
+
+#[napi]
+#[derive(Clone)]
+pub struct WhenThenThen {
+    inner: dsl::WhenThenThen,
+}
+
+#[napi]
+impl When {
+    #[napi]
+    pub fn then(&self, expr: &JsExpr) -> WhenThen {
+        WhenThen {
+            predicate: self.predicate.clone(),
+            then: expr.inner.clone(),
         }
-    };
-    ($name:ident, $type:ty, $key:expr) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let expr = params.get_external::<Expr>(&cx, "_expr")?;
-            let arg = params.get_as::<$type>($key)?;
-            expr.clone().$name(arg).try_into_js(&cx)
+    }
+}
+#[napi]
+impl WhenThen {
+    #[napi]
+    pub fn when(&self, predicate: &JsExpr) -> WhenThenThen {
+        let e = dsl::when(self.predicate.clone())
+            .then(self.then.clone())
+            .when(predicate.inner.clone());
+        WhenThenThen { inner: e }
+    }
+
+    #[napi]
+    pub fn otherwise(&self, expr: &JsExpr) -> JsExpr {
+        dsl::ternary_expr(
+            self.predicate.clone(),
+            self.then.clone(),
+            expr.inner.clone(),
+        )
+        .into()
+    }
+}
+
+#[napi]
+impl WhenThenThen {
+    #[napi]
+    pub fn when(&self, predicate: &JsExpr) -> WhenThenThen {
+        Self {
+            inner: self.inner.clone().when(predicate.inner.clone()),
         }
-    };
-}
+    }
 
-impl_expr!(eq);
-impl_expr!(neq);
-impl_expr!(gt);
-impl_expr!(gt_eq);
-impl_expr!(lt_eq);
-impl_expr!(lt);
-impl_expr!(take);
-impl_expr!(fill_null);
-impl_expr!(fill_nan);
-impl_expr!(filter);
-impl_expr!(and);
-impl_expr!(xor);
-impl_expr!(or);
-impl_expr!(is_in);
-impl_expr!(repeat_by);
-impl_expr!(dot);
-impl_expr!(alias, &str, "name");
-impl_expr!(sort, bool, "reverse");
-impl_expr!(arg_sort, bool, "reverse");
-impl_expr!(shift, i64, "periods");
-impl_expr!(tail, Option<usize>, "length");
-impl_expr!(head, Option<usize>, "length");
-impl_expr!(round, u32, "decimals");
-impl_expr!(pow, f64, "exponent");
-impl_expr!(cumsum, bool, "reverse");
-impl_expr!(cummax, bool, "reverse");
-impl_expr!(cummin, bool, "reverse");
-impl_expr!(cumprod, bool, "reverse");
-impl_expr!(cumcount, bool, "reverse");
-impl_expr!(prefix, &str, "prefix");
-impl_expr!(suffix, &str, "suffix");
-impl_expr!(skew, bool, "bias");
-
-macro_rules! impl_no_arg_expr {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let expr = params.get_external::<Expr>(&cx, "_expr")?;
-            expr.clone().$name().try_into_js(&cx)
+    #[napi]
+    pub fn then(&self, expr: &JsExpr) -> WhenThenThen {
+        Self {
+            inner: self.inner.clone().then(expr.inner.clone()),
         }
-    };
-}
-impl_no_arg_expr!(not);
-impl_no_arg_expr!(is_null);
-impl_no_arg_expr!(is_not_null);
-impl_no_arg_expr!(is_infinite);
-impl_no_arg_expr!(is_finite);
-impl_no_arg_expr!(is_nan);
-impl_no_arg_expr!(is_not_nan);
-impl_no_arg_expr!(min);
-impl_no_arg_expr!(max);
-impl_no_arg_expr!(mean);
-impl_no_arg_expr!(median);
-impl_no_arg_expr!(sum);
-impl_no_arg_expr!(n_unique);
-impl_no_arg_expr!(arg_unique);
-impl_no_arg_expr!(unique);
-impl_no_arg_expr!(unique_stable);
-impl_no_arg_expr!(first);
-impl_no_arg_expr!(last);
-impl_no_arg_expr!(list);
-impl_no_arg_expr!(count);
-impl_no_arg_expr!(agg_groups);
-
-impl_no_arg_expr!(backward_fill);
-impl_no_arg_expr!(forward_fill);
-impl_no_arg_expr!(reverse);
-impl_no_arg_expr!(std);
-impl_no_arg_expr!(var);
-impl_no_arg_expr!(is_unique);
-impl_no_arg_expr!(is_first);
-impl_no_arg_expr!(explode);
-impl_no_arg_expr!(floor);
-impl_no_arg_expr!(ceil);
-impl_no_arg_expr!(abs);
-impl_no_arg_expr!(is_duplicated);
-
-impl_no_arg_expr!(mode);
-impl_no_arg_expr!(keep_name);
-impl_no_arg_expr!(interpolate);
-impl_no_arg_expr!(lower_bound);
-impl_no_arg_expr!(upper_bound);
-
-macro_rules! impl_dt_expr {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let expr = params.get_external::<Expr>(&cx, "_expr")?;
-            expr.clone().dt().$name().try_into_js(&cx)
-        }
-    };
-}
-impl_dt_expr!(year);
-impl_dt_expr!(month);
-impl_dt_expr!(week);
-impl_dt_expr!(weekday);
-impl_dt_expr!(day);
-impl_dt_expr!(ordinal_day);
-impl_dt_expr!(hour);
-impl_dt_expr!(minute);
-impl_dt_expr!(second);
-impl_dt_expr!(nanosecond);
-
-macro_rules! impl_rolling_method {
-    ($name:ident) => {
-        #[js_function(1)]
-        pub fn $name(cx: CallContext) -> JsResult<JsExternal> {
-            let params = get_params(&cx)?;
-            let expr = params.get_external::<Expr>(&cx, "_expr")?;
-            let window_size = params.get_as::<usize>("window_size")?;
-            let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-            let min_periods = params.get_as::<usize>("min_periods")?;
-            let center = params.get_as::<bool>("center")?;
-            let options = RollingOptions {
-                window_size,
-                weights,
-                min_periods,
-                center,
-            };
-            expr.clone().$name(options).try_into_js(&cx)
-        }
-    };
-}
-impl_rolling_method!(rolling_max);
-impl_rolling_method!(rolling_min);
-impl_rolling_method!(rolling_mean);
-impl_rolling_method!(rolling_std);
-impl_rolling_method!(rolling_var);
-impl_rolling_method!(rolling_sum);
-impl_rolling_method!(rolling_median);
-
-#[js_function(1)]
-pub fn rolling_quantile(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let quantile = params.get_as::<f64>("quantile")?;
-    let interpolation: QuantileInterpolOptions =
-        params.get_or("interpolation", QuantileInterpolOptions::Nearest)?;
-    let window_size: usize = params.get_or("window_size", 2)?;
-    let min_periods: usize = params.get_or("min_periods", 2)?;
-    let center: bool = params.get_or("center", false)?;
-    let weights = params.get_as::<Option<Vec<f64>>>("weights")?;
-    let options = RollingOptions {
-        window_size,
-        weights,
-        min_periods,
-        center,
-    };
-    expr.clone()
-        .rolling_quantile(quantile, interpolation, options)
-        .try_into_js(&cx)
+    }
+    #[napi]
+    pub fn otherwise(&self, expr: &JsExpr) -> JsExpr {
+        self.inner.clone().otherwise(expr.inner.clone()).into()
+    }
 }
 
-#[js_function(1)]
-pub fn rolling_skew(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let window_size = params.get_as::<usize>("windowSize")?;
-    let bias = params.get_as::<bool>("bias")?;
-
-    expr.clone()
-        .rolling_apply_float(window_size, move |ca| {
-            ca.clone().into_series().skew(bias).unwrap()
-        })
-        .try_into_js(&cx)
+#[napi]
+pub fn when(predicate: &JsExpr) -> When {
+    When {
+        predicate: predicate.inner.clone(),
+    }
 }
 
-#[js_function(1)]
-pub fn lst_lengths(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .lengths()
-        .try_into_js(&cx)
+#[napi]
+pub fn col(name: String) -> JsExpr {
+    dsl::col(&name).into()
 }
 
-#[js_function(1)]
-pub fn lst_max(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .max()
-        .try_into_js(&cx)
+#[napi]
+pub fn count() -> JsExpr {
+    dsl::count().into()
 }
 
-#[js_function(1)]
-pub fn lst_min(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .min()
-        .try_into_js(&cx)
+#[napi]
+pub fn first() -> JsExpr {
+    dsl::first().into()
 }
 
-#[js_function(1)]
-pub fn lst_sum(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .sum()
-        .try_into_js(&cx)
+#[napi]
+pub fn last() -> JsExpr {
+    dsl::last().into()
 }
 
-#[js_function(1)]
-pub fn lst_mean(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .mean()
-        .try_into_js(&cx)
+#[napi]
+pub fn cols(names: Vec<String>) -> JsExpr {
+    dsl::cols(names).into()
 }
 
-#[js_function(1)]
-pub fn lst_sort(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let reverse = params.get_as::<bool>("reverse")?;
-
-    expr.clone().arr().sort(reverse).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn lst_reverse(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .reverse()
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn lst_unique(cx: CallContext) -> JsResult<JsExternal> {
-    get_params(&cx)?
-        .get_external::<Expr>(&cx, "_expr")?
-        .clone()
-        .arr()
-        .unique()
-        .try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn lst_get(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let index = params.get_as::<i64>("index")?;
-
-    expr.clone().arr().get(index).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn lst_join(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let sep = params.get_as::<String>("separator")?;
-
-    expr.clone().arr().join(&sep).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn rank(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let method = params.get_as::<String>("method").map(str_to_rankmethod)??;
-
-    expr.clone()
-        .rank(RankOptions {
-            method,
-            descending: false,
-        })
-        .try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn clip(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let min = params.get_as::<f64>("min")?;
-    let max = params.get_as::<f64>("max")?;
-
-    expr.clone().clip(min, max).try_into_js(&cx)
-}
-#[js_function(1)]
-pub fn diff(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let n = params.get_as::<usize>("n")?;
-    let null_behavior = params
-        .get_as::<String>("nullBehavior")
-        .map(str_to_null_behavior)??;
-
-    expr.clone().diff(n, null_behavior).try_into_js(&cx)
-}
-
-#[js_function(1)]
-pub fn kurtosis(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let fisher = params.get_or::<bool>("fisher", true)?;
-    let bias = params.get_or::<bool>("bias", false)?;
-
-    expr.clone().kurtosis(fisher, bias).try_into_js(&cx)
-}
-
-// When
-#[js_function(1)]
-pub fn when(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    cx.env.create_external(dsl::when(predicate), None)
-}
-
-// When::then
-#[js_function(1)]
-pub fn when_then(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let w = params.get_external::<dsl::When>(&cx, "_when")?.clone();
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    cx.env.create_external(w.then(expr), None)
-}
-
-// WhenThen::when
-#[js_function(1)]
-pub fn when_then_when(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let whenthen = params.get_external::<WhenThen>(&cx, "_when")?.clone();
-    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
-
-    cx.env.create_external(whenthen.when(predicate), None)
-}
-
-// WhenThen::otherwise
-#[js_function(1)]
-pub fn when_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let whenthen = params.get_external::<WhenThen>(&cx, "_when")?.clone();
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-
-    cx.env.create_external(whenthen.otherwise(expr), None)
-}
-
-// WhenThenThen::when
-#[js_function(1)]
-pub fn when_then_then_when(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
-    let predicate = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    cx.env.create_external(whenthenthen.when(predicate), None)
-}
-
-// WhenThenThen::then
-#[js_function(1)]
-pub fn when_then_then_then(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-    cx.env.create_external(whenthenthen.then(expr), None)
-}
-
-// WhenThenThen::otherwise
-#[js_function(1)]
-pub fn when_then_then_otherwise(cx: CallContext) -> JsResult<JsExternal> {
-    let params = get_params(&cx)?;
-    let whenthenthen = params.get_external::<WhenThenThen>(&cx, "_when")?.clone();
-    let expr = params.get_external::<Expr>(&cx, "_expr")?.clone();
-
-    cx.env.create_external(whenthenthen.otherwise(expr), None)
-}
-
-#[js_function(1)]
-pub fn from_bincode(cx: CallContext) -> JsResult<JsExternal> {
-    let buff: napi::JsBuffer = cx.get::<napi::JsBuffer>(0)?;
-
-    let s = buff.into_value()?;
-    let v: &[u8] = &s;
-
+#[napi]
+pub fn dtype_cols(dtypes: Vec<Wrap<DataType>>) -> crate::lazy::dsl::JsExpr {
     // Safety
-    // this is safe because the buf was created from js-land
-    // JS manages the lifecycle & we only are borrowing.
-    let v = unsafe { std::mem::transmute::<&'_ [u8], &'static [u8]>(v) };
-    let expr: Expr = bincode::deserialize(v).unwrap();
-
-    expr.try_into_js(&cx)
+    // Wrap is transparent
+    let dtypes: Vec<DataType> = unsafe { std::mem::transmute(dtypes) };
+    dsl::dtype_cols(dtypes).into()
 }
 
-#[js_function(1)]
-pub fn to_bincode(cx: CallContext) -> JsResult<napi::JsBuffer> {
-    let params = get_params(&cx)?;
-    let expr = params.get_external::<Expr>(&cx, "_expr")?;
-    let buf = bincode::serialize(&expr).unwrap();
+#[napi]
+fn arange(low: Wrap<Expr>, high: Wrap<Expr>, step: Option<i64>) -> JsExpr {
+    let step = step.unwrap_or(1) as usize;
+    polars::lazy::dsl::arange(low.0, high.0, step).into()
+}
 
-    let bytes = cx.env.create_buffer_with_data(buf).unwrap();
-    let js_buff = bytes.into_raw();
-    Ok(js_buff)
+#[napi]
+fn pearson_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+    polars::lazy::dsl::pearson_corr(a.0, b.0).into()
+}
+
+#[napi]
+fn spearman_rank_corr(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+    polars::lazy::dsl::spearman_rank_corr(a.0, b.0).into()
+}
+
+#[napi]
+fn cov(a: Wrap<Expr>, b: Wrap<Expr>) -> JsExpr {
+    polars::lazy::dsl::cov(a.0, b.0).into()
+}
+
+#[napi]
+fn argsort_by(by: Vec<&JsExpr>, reverse: Vec<bool>) -> JsExpr {
+    let by = by.to_exprs();
+
+    polars::lazy::dsl::argsort_by(by, &reverse).into()
+}
+
+#[napi]
+pub fn lit(value: JsAnyValue) -> JsExpr {
+    match value {
+        JsAnyValue::Boolean(v) => dsl::lit(v),
+        JsAnyValue::Utf8(v) => dsl::lit(v),
+        JsAnyValue::UInt8(v) => dsl::lit(v),
+        JsAnyValue::UInt16(v) => dsl::lit(v),
+        JsAnyValue::UInt32(v) => dsl::lit(v),
+        JsAnyValue::UInt64(v) => dsl::lit(v),
+        JsAnyValue::Int8(v) => dsl::lit(v),
+        JsAnyValue::Int16(v) => dsl::lit(v),
+        JsAnyValue::Int32(v) => dsl::lit(v),
+        JsAnyValue::Int64(v) => dsl::lit(v),
+        JsAnyValue::Float32(v) => dsl::lit(v),
+        JsAnyValue::Float64(v) => dsl::lit(v),
+        JsAnyValue::Date(v) => dsl::lit(v),
+        JsAnyValue::Datetime(v, _, _) => dsl::lit(v),
+        // JsAnyValue::Duration(v, _) => dsl::lit(v),
+        JsAnyValue::Time(v) => dsl::lit(v),
+        JsAnyValue::List(v) => dsl::lit(v),
+        _ => dsl::lit(polars::prelude::Null {}),
+    }
+    .into()
+}
+
+#[napi]
+pub fn range(low: i64, high: i64, dtype: Wrap<DataType>) -> JsExpr {
+    match dtype.0 {
+        DataType::Int32 => dsl::range(low as i32, high as i32).into(),
+        DataType::UInt32 => dsl::range(low as u32, high as u32).into(),
+        _ => dsl::range(low, high).into(),
+    }
+}
+
+#[napi]
+fn concat_lst(s: Vec<&JsExpr>) -> JsExpr {
+    let s = s.to_exprs();
+    dsl::concat_lst(s).into()
+}
+
+#[napi]
+fn concat_str(s: Vec<&JsExpr>, sep: String) -> JsExpr {
+    let s = s.to_exprs();
+    dsl::concat_str(s, &sep).into()
 }

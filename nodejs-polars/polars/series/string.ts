@@ -1,7 +1,8 @@
 import pli from "../internals/polars_internal";
 import {DataType} from "../datatypes";
-import {JsSeries, Series, seriesWrapper} from "./series";
+import {_Series, Series} from "./series";
 import {regexToString} from "../utils";
+import {todo} from "../error";
 import {col} from "../lazy/functions";
 
 
@@ -17,13 +18,13 @@ export interface StringFunctions {
    * '1-null-2'
    * ```
    */
-  concat(delimiter: string): Series<string>
+  concat(delimiter: string): Series
   /**
    * Check if strings in Series contain regex pattern.
    * @param pattern A valid regex pattern
    * @returns Boolean mask
    */
-  contains(pattern: string | RegExp): Series<boolean>
+  contains(pattern: string | RegExp): Series
   /**
    * Decodes a value using the provided encoding
    * @param encoding - hex | base64
@@ -44,8 +45,8 @@ export interface StringFunctions {
    * ]
    * ```
    */
-  decode(encoding: "hex" | "base64", strict?: boolean): Series<string>
-  decode(options: {encoding: "hex" | "base64", strict?: boolean}): Series<string>
+  decode(encoding: "hex" | "base64", strict?: boolean): Series
+  decode(options: {encoding: "hex" | "base64", strict?: boolean}): Series
   /**
    * Encodes a value using the provided encoding
    * @param encoding - hex | base64
@@ -62,7 +63,7 @@ export interface StringFunctions {
    * ]
    * ```
    */
-  encode(encoding: "hex" | "base64"): Series<string>
+  encode(encoding: "hex" | "base64"): Series
   /**
    * Extract the target capture group from provided patterns.
    * @param pattern A valid regex pattern
@@ -93,7 +94,7 @@ export interface StringFunctions {
    * └─────────┘
    * ```
    */
-  extract(pattern: string | RegExp, groupIndex: number): Series<string>
+  extract(pattern: string | RegExp, groupIndex: number): Series
   /**
    * Extract the first match of json string with provided JSONPath expression.
    * Throw errors if encounter invalid json strings.
@@ -122,76 +123,68 @@ export interface StringFunctions {
    * ]
    * ```
    */
-  jsonPathMatch(jsonPath: string): Series<string>
+  jsonPathMatch(jsonPath: string): Series
   /**  Get length of the string values in the Series. */
-  lengths(): Series<number>
+  lengths(): Series
   /** Remove leading whitespace. */
-  lstrip(): Series<string>
+  lstrip(): Series
   /**
    * Replace first regex match with a string value.
    * @param pattern A valid regex pattern
    * @param value Substring to replace.
    */
-  replace(pattern: string | RegExp, value: string): Series<string>
+  replace(pattern: string | RegExp, value: string): Series
+
   /**
    * Replace all regex matches with a string value.
    * @param pattern - A valid regex pattern
    * @param value Substring to replace.
    */
-  replaceAll(pattern: string | RegExp, value: string): Series<string>
+  replaceAll(pattern: string | RegExp, value: string): Series
   /** Modify the strings to their lowercase equivalent. */
-  toLowerCase(): Series<string>
+  toLowerCase(): Series
   /** Modify the strings to their uppercase equivalent. */
-  toUpperCase(): Series<string>
+  toUpperCase(): Series
   /** Remove trailing whitespace. */
-  rstrip(): Series<string>
+  rstrip(): Series
   /** Remove leading and trailing whitespace. */
-  strip(): Series<string>
+  strip(): Series
   /**
    * Create subslices of the string values of a Utf8 Series.
    * @param start - Start of the slice (negative indexing may be used).
    * @param length - Optional length of the slice.
    */
-  slice(start: number, length?: number): Series<string>
+  slice(start: number, length?: number): Series
   /**
    * Split a string into substrings using the specified separator.
    * The return type will by of type List<Utf8>
    * @param separator — A string that identifies character or characters to use in separating the string.
    * @param inclusive Include the split character/string in the results
    */
-  split(separator: string, options?: {inclusive?: boolean} | boolean): Series<Series<string>>
+  split(separator: string, options?: {inclusive?: boolean} | boolean): Series
   /**
    * Parse a Series of dtype Utf8 to a Date/Datetime Series.
    * @param datatype Date or Datetime.
-   * @param fmt formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
+   * @param fmt formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strptime/index.html)
    */
-  strftime(datatype: DataType.Date, fmt?: string): Series<Date>
-  strftime(datatype: DataType.Datetime, fmt?: string): Series<Date>
+  strptime(datatype: DataType.Date, fmt?: string): Series
+  strptime(datatype: DataType.Datetime, fmt?: string): Series
 }
 
-export const StringFunctions = (_s: JsSeries): StringFunctions => {
-  const wrap = (method, args?, _series = _s): any => {
-    return seriesWrapper(pli.series.str[method]({_series, ...args }));
-  };
-  const callExpr = (method) => (...args) => {
-    const s = seriesWrapper(_s);
+export const StringFunctions = (_s: any): StringFunctions => {
+  const wrap = (method, ...args): any => {
+    const ret = _s[method](...args);
 
-    return s
-      .toFrame()
-      .select(
-        col(s.name)
-          .lst[method](...args)
-          .as(s.name)
-      )
-      .getColumn(s.name);
+    return _Series(ret);
   };
 
   const handleDecode = (encoding, strict) => {
     switch (encoding) {
     case "hex":
-      return wrap(`decodeHex`, {strict});
+      return wrap("strHexDecode", strict);
     case "base64":
-      return wrap(`decodeBase64`, {strict});
+
+      return wrap("strBase64Decode", strict);
     default:
       throw new RangeError("supported encodings are 'hex' and 'base64'");
     }
@@ -199,20 +192,19 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
 
   return {
     concat(delimiter: string) {
-      const s = seriesWrapper(_s);
 
-      return s
+      return _Series(_s)
         .toFrame()
         .select(
-          col(s.name)
+          col(_s.name)
             .str
             .concat(delimiter)
-            .as(s.name)
+            .as(_s.name)
         )
-        .getColumn(s.name);
+        .getColumn(_s.name);
     },
     contains(pat: string | RegExp) {
-      return wrap("contains", {pat: regexToString(pat)});
+      return wrap("strContains", regexToString(pat));
     },
     decode(arg, strict=false) {
       if(typeof arg === "string") {
@@ -224,41 +216,41 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
     encode(encoding) {
       switch (encoding) {
       case "hex":
-        return wrap(`encodeHex`);
+        return wrap(`strHexEncode`);
       case "base64":
-        return wrap(`encodeBase64`);
+        return wrap(`strBase64Encode`);
       default:
         throw new RangeError("supported encodings are 'hex' and 'base64'");
       }
     },
     extract(pat: string | RegExp, groupIndex: number) {
-      return wrap("extract", {pat: regexToString(pat), groupIndex});
+      return wrap("strExtract", regexToString(pat), groupIndex);
     },
     jsonPathMatch(pat: string) {
-      return wrap("jsonPathMatch", {pat});
+
+      return wrap("strJsonPathMatch", pat);
     },
     lengths() {
-      return wrap("lengths");
+      return wrap("strLengths");
     },
     lstrip() {
-      return wrap("replace", {pat: /^\s*/.source, val: ""});
+      return wrap("strReplace", /^\s*/.source, "");
     },
     replace(pat: RegExp, val: string) {
-      return wrap("replace", {pat: regexToString(pat), val});
+      return wrap("strReplace", regexToString(pat), val);
     },
     replaceAll(pat: RegExp, val: string) {
-      return wrap("replaceAll", {pat: regexToString(pat), val});
+      return wrap("strReplaceAll", regexToString(pat), val);
     },
     rstrip() {
-      return wrap("replace", {pat: /[ \t]+$/.source, val: ""});
+      return wrap("strReplace", /[ \t]+$/.source, "");
     },
     slice(start: number, length?: number) {
-      return wrap("slice", {start, length});
+      return wrap("strSlice", start, length);
     },
     split(by: string, options?) {
       const inclusive = typeof options === "boolean" ? options : options?.inclusive;
-
-      const s = seriesWrapper(_s);
+      const s = _Series(_s);
 
       return s
         .toFrame()
@@ -269,7 +261,6 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
             .as(s.name)
         )
         .getColumn(s.name);
-
 
     },
     // splitExact(by: string, options?, inclusive?) {
@@ -288,7 +279,7 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
     //     .getColumn(s.name);
     // },
     strip() {
-      const s = seriesWrapper(_s);
+      const s = _Series(_s);
 
       return s
         .toFrame()
@@ -301,20 +292,25 @@ export const StringFunctions = (_s: JsSeries): StringFunctions => {
         .getColumn(s.name);
 
     },
-    strftime(dtype, fmt?) {
-      if (dtype === DataType.Date) {
-        return wrap("parseDate", {fmt});
-      } else if (dtype === DataType.Datetime) {
-        return wrap("parseDateTime", {fmt});
-      } else {
-        throw new Error(`only "DataType.Date" and "DataType.Datetime" are supported`);
-      }
+    strptime(dtype, fmt?) {
+      const s = _Series(_s);
+
+      return s
+        .toFrame()
+        .select(
+          col(s.name)
+            .str
+            .strptime(dtype, fmt)
+            .as(s.name)
+        )
+        .getColumn(s.name);
+
     },
     toLowerCase() {
-      return wrap("toLowerCase");
+      return wrap("strToLowercase");
     },
     toUpperCase() {
-      return wrap("toUpperCase");
+      return wrap("strToUppercase");
     },
   };
 };

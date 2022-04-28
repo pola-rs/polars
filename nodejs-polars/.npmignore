@@ -3,7 +3,8 @@ Cargo.lock
 .cargo
 .github
 npm
-# .eslintrc
+.eslintrc
 .prettierignore
 rustfmt.toml
 yarn.lock
+*.node

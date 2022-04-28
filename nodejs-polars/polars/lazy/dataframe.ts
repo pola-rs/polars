@@ -1,5 +1,5 @@
 
-import {DataFrame, dfWrapper} from "../dataframe";
+import {DataFrame, _DataFrame} from "../dataframe";
 import {Expr, exprToLitOrExpr} from "./expr";
 import {
   columnOrColumnsStrict,
@@ -12,7 +12,6 @@ import {
 import pli from "../internals/polars_internal";
 import {LazyGroupBy} from "./groupby";
 
-type JsLazyFrame = any;
 
 type LazyJoinOptions =  {
   how?: "left" | "inner" | "outer" | "cross";
@@ -284,12 +283,12 @@ export interface LazyDataFrame {
 }
 
 
-export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
-  const unwrap = (method: string, args?: object, _ldf=ldf): any => {
-    return pli.ldf[method]({_ldf, ...args });
+export const _LazyDataFrame = (_ldf: any): LazyDataFrame => {
+  const unwrap = (method: string, ...args: any[]) => {
+    return _ldf[method as any](...args);
   };
-  const wrap = (method, args?, _ldf=ldf): LazyDataFrame => {
-    return LazyDataFrame(unwrap(method, args, _ldf));
+  const wrap = (method, ...args): LazyDataFrame => {
+    return _LazyDataFrame(unwrap(method, ...args));
   };
   const wrapNullArgs = (method: string) => () => wrap(method);
   const withOptimizationToggle = (method) =>  (lazyOptions?: LazyOptions) => {
@@ -300,21 +299,33 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
   };
 
   return {
-    _ldf: ldf,
+    _ldf,
     get columns() {
-      return unwrap("columns");
+      return _ldf.columns;
     },
-    describePlan: () => unwrap("describePlan"),
-    describeOptimizedPlan: withOptimizationToggle("describeOptimizedPlan"),
-    cache: wrapNullArgs("cache"),
-    clone: wrapNullArgs("clone"),
-    collectSync: () => dfWrapper(unwrap("collectSync")),
-    collect: () => unwrap("collect").then(dfWrapper),
+    describePlan() {
+      return _ldf.describePlan();
+    },
+    describeOptimizedPlan() {
+      return _ldf.describeOptimizedPlan();
+    },
+    cache() {
+      return _LazyDataFrame(_ldf.cache());
+    },
+    clone() {
+      return _LazyDataFrame((_ldf as any).clone());
+    },
+    collectSync() {
+      return _DataFrame(_ldf.collectSync());
+    },
+    collect() {
+      return _ldf.collect().then(_DataFrame);
+    },
     drop(...cols) {
-      return wrap("dropColumns", {cols: cols.flat(2)});
+      return _LazyDataFrame(_ldf.dropColumns(cols.flat(2)));
     },
     distinct(...args: any[]) {
-      return this.unique(...args);
+      return _LazyDataFrame((_ldf.unique as any)(...args));
     },
     unique(opts: any = false, subset?, keep = "first") {
       const defaultOptions = {
@@ -323,31 +334,35 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
       };
 
       if(typeof opts === "boolean") {
-        return wrap("unique", {...defaultOptions, maintainOrder: opts, subset, keep});
+        const o = {...defaultOptions, maintainOrder: opts, subset, keep};
+
+        return _LazyDataFrame(_ldf.unique(o.maintainOrder, o?.subset?.flat(2), o.keep));
       }
 
       if(opts.subset) {
         opts.subset = [opts.subset].flat(3);
       }
+      const o = {...defaultOptions, ...opts};
 
-      return wrap("unique", {...defaultOptions, ...opts});
+      return _LazyDataFrame(_ldf.unique(o.maintainOrder, o.subset, o.keep));
     },
     dropNulls(...subset) {
       if(subset.length) {
-        return wrap("dropNulls", {subset: subset.flat(2)});
+        return wrap("dropNulls", subset.flat(2));
       } else {
         return wrap("dropNulls");
       }
     },
     explode(...columns) {
       if(!columns.length) {
-        const cols = selectionToExprList(LazyDataFrame(ldf).columns, false);
 
-        return wrap("explode", {column: cols});
+        const cols = selectionToExprList(_ldf.columns, false);
+
+        return wrap("explode", cols);
       }
       const column = selectionToExprList(columns, false);
 
-      return wrap("explode", {column});
+      return wrap("explode", column);
     },
     fetchSync(numRows, opts?) {
       if(opts?.noOptimization) {
@@ -355,14 +370,17 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
         opts.projectionPushdown = false;
       }
       if(opts) {
-        const _ldf = unwrap("optimizationToggle", opts);
-
-        return dfWrapper(unwrap("fetchSync", {numRows}, _ldf));
-
+        _ldf = _ldf.optimizationToggle(
+          opts.typeCoercion,
+          opts.predicatePushdown,
+          opts.projectionPushdown,
+          opts.simplifyExpr,
+          opts.stringCache,
+          opts.slicePushdown
+        );
       }
 
-      return dfWrapper(unwrap("fetchSync", {numRows}));
-
+      return _DataFrame(_ldf.fetchSync(numRows));
     },
     fetch(numRows, opts?) {
       if(opts?.noOptimization) {
@@ -370,13 +388,17 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
         opts.projectionPushdown = false;
       }
       if(opts) {
-        const _ldf = unwrap("optimizationToggle", opts);
-
-        return unwrap("fetch", {numRows}, _ldf).then(dfWrapper);
-
+        _ldf = _ldf.optimizationToggle(
+          opts.typeCoercion,
+          opts.predicatePushdown,
+          opts.projectionPushdown,
+          opts.simplifyExpr,
+          opts.stringCache,
+          opts.slicePushdown
+        );
       }
 
-      return unwrap("fetch", {numRows}).then(dfWrapper);
+      return _ldf.fetch(numRows).then(_DataFrame);
 
     },
     first() {
@@ -385,23 +407,25 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
     fillNull(exprOrValue) {
       const fillValue = exprToLitOrExpr(exprOrValue)._expr;
 
-      return wrap("fillNull", {fillValue});
+      return _LazyDataFrame(_ldf.fillNull(fillValue));
     },
     filter(exprOrValue) {
       const predicate = exprToLitOrExpr(exprOrValue, false)._expr;
 
-      return wrap("filter", {predicate});
-
+      return _LazyDataFrame(_ldf.filter(predicate));
     },
     groupBy(opt, maintainOrder: any=true) {
       if(opt?.by !== undefined) {
-        return LazyGroupBy(ldf, opt.by, opt.maintainOrder);
-      }
+        const by = selectionToExprList([opt.by], false);
 
-      return LazyGroupBy(ldf, opt, maintainOrder);
+        return LazyGroupBy(_ldf.groupby(by, opt.maintainOrder));
+      }
+      const by = selectionToExprList([opt], false);
+
+      return LazyGroupBy(_ldf.groupby(by, maintainOrder));
     },
     head(len=5) {
-      return  wrap("slice", {offset: 0, len});
+      return _LazyDataFrame(_ldf.slice(0, len));
     },
     join(df, options: {[k: string]: any} & LazyJoinOptions ) {
       options =  {
@@ -425,91 +449,122 @@ export const LazyDataFrame = (ldf: JsLazyFrame): LazyDataFrame => {
         rightOn = selectionToExprList(options.rightOn, false);
       }
 
-      return wrap("join", {
-        other: df._ldf,
-        how,
+      const ldf =  (_ldf.join as any)(
+        df._ldf,
         leftOn,
         rightOn,
-        suffix,
         allowParallel,
-        forceParallel
-      });
+        forceParallel,
+        how,
+        suffix,
+        [],
+        []
+      );
+
+      return _LazyDataFrame(ldf);
     },
-    last: () => wrap("tail", {length: 1}),
+    last() {
+      return _LazyDataFrame(_ldf.tail(1));
+    },
     limit(len=5) {
-      return  wrap("slice", {offset: 0, len});
+      return _LazyDataFrame(_ldf.slice(0, len));
     },
-    max: wrapNullArgs("max"),
-    mean: wrapNullArgs("mean"),
-    median: wrapNullArgs("median"),
+    max() {
+      return _LazyDataFrame(_ldf.max());
+    },
+    mean() {
+      return _LazyDataFrame(_ldf.mean());
+    },
+    median() {
+      return _LazyDataFrame(_ldf.median());
+    },
     melt(ids, values) {
-      return wrap("melt", {
-        idVars: columnOrColumnsStrict(ids),
-        valueVars: columnOrColumnsStrict(values)
-      });
+      return _LazyDataFrame(_ldf.melt(
+        columnOrColumnsStrict(ids),
+        columnOrColumnsStrict(values)
+      ));
     },
-    min: wrapNullArgs("min"),
-    quantile: (quantile) => wrap("quantile", {quantile}),
+    min() {
+      return _LazyDataFrame(_ldf.min());
+    },
+    quantile(quantile, interpolation="nearest") {
+      return _LazyDataFrame(_ldf.quantile(quantile, interpolation));
+    },
     rename(mapping) {
       const existing = Object.keys(mapping);
       const replacements = Object.values(mapping);
 
-      return wrap("rename", {existing, replacements});
+      return _LazyDataFrame(_ldf.rename(existing, replacements));
     },
-    reverse: wrapNullArgs("reverse"),
+    reverse() {
+      return _LazyDataFrame(_ldf.reverse());
+    },
     select(...exprs) {
-      const predicate = selectionToExprList(exprs, false);
+      const selections = selectionToExprList(exprs, false);
 
-      return wrap("select", {predicate});
+      return _LazyDataFrame(_ldf.select(selections));
     },
-    shift: (periods) => wrap("shift", {periods}),
+    shift(periods) {
+      return _LazyDataFrame(_ldf.shift(periods));
+    },
     shiftAndFill(optOrPeriods, fillValue?) {
       if(typeof optOrPeriods === "number") {
         fillValue = exprToLitOrExpr(fillValue)._expr;
 
-        return wrap("shiftAndFill", {periods: optOrPeriods, fillValue});
-
+        return _LazyDataFrame(_ldf.shiftAndFill(optOrPeriods, fillValue));
       }
       else {
         fillValue = exprToLitOrExpr(optOrPeriods.fillValue)._expr;
         const periods = optOrPeriods.periods;
 
-        return wrap("shiftAndFill", {periods, fillValue});
+        return _LazyDataFrame(_ldf.shiftAndFill(periods, fillValue));
       }
     },
     slice(opt, len?) {
       if(opt?.offset !== undefined) {
-        return wrap("slice", {offset: opt.offset, len: opt.length});
+        return _LazyDataFrame(_ldf.slice(opt.offset, opt.length));
       }
 
-      return wrap("slice", {offset: opt, len});
+      return _LazyDataFrame(_ldf.slice(opt, len));
     },
     sort(arg, reverse=false) {
       if(arg?.by !== undefined) {
         return this.sort(arg.by, arg.reverse);
       }
       if(typeof arg === "string") {
-        return wrap("sort", {by: arg, reverse});
+        return wrap("sort", arg, reverse, true);
       } else {
         reverse = [reverse].flat(3) as any;
         const by = selectionToExprList(arg, false);
 
-        return wrap("sort_by_exprs", {by, reverse});
+        return wrap("sortByExprs", by, reverse, true);
       }
     },
-    std: wrapNullArgs("std"),
-    sum: wrapNullArgs("sum"),
-    var: wrapNullArgs("var"),
-    tail(length=5) {
-      return wrap("tail", {length});
+    std() {
+      return _LazyDataFrame(_ldf.std());
     },
-    withColumn: (expr) => wrap("withColumn", {expr: expr._expr}),
+    sum() {
+      return _LazyDataFrame(_ldf.sum());
+    },
+    var() {
+      return _LazyDataFrame(_ldf.var());
+    },
+    tail(length=5) {
+      return _LazyDataFrame(_ldf.tail(length));
+    },
+    withColumn(expr) {
+      return _LazyDataFrame(_ldf.withColumn(expr._expr));
+    },
     withColumns(...columns) {
       const exprs = selectionToExprList(columns, false);
 
-      return wrap("withColumns", {exprs});
+      return _LazyDataFrame(_ldf.withColumns(exprs));
     },
-    withColumnRenamed: (existing, replacement) => wrap("withColumnRenamed", {existing, replacement}),
-    withRowCount: (name="row_nr") => wrap("withRowCount", {name}),
+    withColumnRenamed(existing, replacement) {
+      return _LazyDataFrame(_ldf.rename([existing], [replacement]));
+    },
+    withRowCount(name="row_nr") {
+      return _LazyDataFrame(_ldf.withRowCount(name));
+    },
   };
 };
