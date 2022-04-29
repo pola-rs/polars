@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.20.0"
+version = "0.21.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -156,8 +156,8 @@ jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/r
 lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
-polars-arrow = { version = "0.20.0", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.20.0", path = "../polars-utils" }
+polars-arrow = { version = "0.21.0", path = "../polars-arrow", features = ["compute"] }
+polars-utils = { version = "0.21.0", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon = "1.5"
@@ -169,11 +169,11 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/jorgecarleitao/arrow2"
 # git = "https://github.com/ritchie46/arrow2"
-rev = "f981955f0e6c6bb233020dc01b717112ff15647c"
+# rev = "f981955f0e6c6bb233020dc01b717112ff15647c"
 # branch = "polars"
-version = "0.10"
+version = "0.11"
 default-features = false
 features = [
   "compute_aggregate",
