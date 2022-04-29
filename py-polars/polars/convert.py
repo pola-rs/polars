@@ -158,7 +158,19 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     └─────┴─────┘
 
     """
-    return DataFrame._from_dicts(dicts)
+    # To deal with structs, we have to modify the data, but we dont want to modify
+    # `data` directly. Thus we create a separate list of dicts, and only do so for the
+    # for the fields that need this, to save memory
+    struct_cols = []
+    for col_name, value in dicts[0].items():
+        if isinstance(value, dict):
+            struct_series = from_dicts([row[col_name] for row in dicts]).to_struct(col_name)
+            struct_cols.append(struct_series)
+    df_struct = DataFrame(struct_cols)
+    dicts_without_structs = [{col_name: row[col_name] for col_name in row if col_name not in df_struct.columns} for row in dicts]
+    df = DataFrame._from_dicts(dicts_without_structs)
+    return DataFrame([*df, *struct_cols])
+
 
 
 # Note that we cannot overload because pyarrow has no stubs :(
