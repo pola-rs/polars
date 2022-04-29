@@ -2060,7 +2060,10 @@ class Series:
         return array
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
-        return self.to_numpy().__array__(dtype)
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
