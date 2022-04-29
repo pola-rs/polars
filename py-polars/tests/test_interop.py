@@ -202,12 +202,14 @@ def test_from_dicts_struct() -> None:
     assert df["a"][0] == {"b": 1, "c": 2}
     assert df["a"][1] == {"b": 3, "c": 4}
 
+
 def test_from_dicts_nested_struct() -> None:
     data = [{"a": {"b": {"c": 1}}}, {"a": {"b": {"c": 2}}}]
     df = pl.from_dicts(data)
     assert df.shape == (2, 1)
     assert df["a"][0] == {"b": {"c": 1}}
     assert df["a"][1] == {"b": {"c": 2}}
+
 
 @pytest.mark.skip("not implemented yet")
 def test_from_dicts_list_of_struct() -> None:
@@ -216,6 +218,7 @@ def test_from_dicts_list_of_struct() -> None:
     assert df.shape == (2, 1)
     assert df["a"][0] == [{"b": 1}, {"b": 2}]
     assert df["a"][1] == [{"b": 3}, {"b": 4}]
+
 
 def test_from_records() -> None:
     data = [[1, 2, 3], [4, 5, 6]]
