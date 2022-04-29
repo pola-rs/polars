@@ -1,4 +1,7 @@
 mod csv;
+#[cfg(feature = "parquet")]
+mod parquet;
+
 use polars::prelude::*;
 
 pub(crate) fn create_df() -> DataFrame {
