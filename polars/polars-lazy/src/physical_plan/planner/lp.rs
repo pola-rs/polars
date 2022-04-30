@@ -368,8 +368,12 @@ impl DefaultPlanner {
                                                 | AAggExpr::First(_)
                                                 | AAggExpr::Count(_)
                                         )
+                                    },
+                                    BinaryExpr {left, right, ..} => {
+                                        matches!(expr_arena.get(*left), Literal(_) | Column(_)) &&
+                                        matches!(expr_arena.get(*right), Literal(_) | Column(_))
                                     }
-                                    Literal(_) | BinaryExpr{..} | Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Count | Alias(_, _) => {
+                                    Literal(_) | Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Count | Alias(_, _) => {
                                         true
                                     }
                                     _ => {

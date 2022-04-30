@@ -998,3 +998,11 @@ fn test_whitespace_skipping() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_duplicate_column_err() {
+    let csv = "a,b,a
+  12,1435,1";
+    let file = Cursor::new(csv);
+    assert!(CsvReader::new(file).finish().is_err());
+}

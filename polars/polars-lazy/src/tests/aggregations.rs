@@ -123,7 +123,8 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 }
 
 #[test]
-fn test_auto_explode() -> Result<()> {
+#[cfg(feature = "moment")]
+fn test_auto_skew_kurtosis_agg() -> Result<()> {
     let df = fruits_cars();
 
     let out = df

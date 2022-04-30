@@ -232,7 +232,7 @@ impl Executor for PartitionGroupByExec {
                     None,
                     state,
                     false,
-                    None,
+                    self.slice,
                 );
             }
             if state.verbose {
@@ -291,6 +291,6 @@ impl Executor for PartitionGroupByExec {
         columns.extend(agg_columns);
         state.clear_schema_cache();
 
-        Ok(DataFrame::new_no_checks(columns))
+        DataFrame::new(columns)
     }
 }
