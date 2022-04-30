@@ -47,19 +47,3 @@ fn test_filter_after_tail() -> Result<()> {
 
     Ok(())
 }
-
-#[test]
-fn test_partitioned_groupby() -> Result<()> {
-    let df = df![
-        "a" => ["foo", "foo", "bar"],
-        "b" => [1, 2, 3]
-    ]?;
-
-    let out = df
-        .lazy()
-        .groupby([col("a")])
-        .agg([col("b").head(Some(2)).alias("bar")])
-        .collect()?;
-
-    Ok(())
-}
