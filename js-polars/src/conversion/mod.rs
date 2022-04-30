@@ -111,6 +111,31 @@ impl FromJsValue for AnyValue<'_> {
     }
 }
 
+impl From<Wrap<&Series>> for JsValue {
+    fn from(val: Wrap<&Series>) -> Self {
+        let s = val.0;
+        let len = s.len();
+        let dtype = s.dtype();
+
+        match dtype {
+            DataType::Struct(_) => {
+                let ca = s.struct_().unwrap();
+                let df: DataFrame = ca.clone().into();
+                let (height, _) = df.shape();
+                df_to_struct(&df).unwrap().into()
+            }
+            _ => {
+                let mut arr = js_sys::Array::new_with_length(len as u32);
+
+                for (idx, val) in s.iter().enumerate() {
+                    arr.set(idx as u32, Wrap(val).into());
+                }
+                arr.into()
+            }
+        }
+    }
+}
+
 impl From<Wrap<AnyValue<'_>>> for JsValue {
     fn from(av: Wrap<AnyValue<'_>>) -> Self {
         match av.0 {
@@ -166,4 +191,21 @@ pub(crate) fn str_to_rankmethod(method: &str) -> JsResult<RankMethod> {
         _ => return Err(JsError::new("use one of 'avg, min, max, dense, ordinal'").into()),
     };
     Ok(method)
+}
+
+pub fn df_to_struct(df: &DataFrame) -> JsResult<js_sys::Array> {
+    let height = df.height() as u32;
+    let mut rows = js_sys::Array::new_with_length(height);
+
+    for idx in 0..height {
+        let mut obj = js_sys::Object::new();
+
+        for col in df.get_columns() {
+            let key: JsValue = col.name().into();
+            let val: JsValue = Wrap(col.get(idx as usize)).into();
+            js_sys::Reflect::set(&obj, &key, &val)?;
+        }
+        rows.set(idx, obj.into());
+    }
+    Ok(rows)
 }

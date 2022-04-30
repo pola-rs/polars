@@ -8,11 +8,11 @@ use crate::utils::update_row_counts;
 use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{prelude::*, POOL, Pool};
+use polars_core::{prelude::*, Pool, POOL};
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
-use rayon::ThreadPoolBuilder;
+use rayon::{ThreadPoolBuilder, ThreadPool};
 use std::borrow::Cow;
 use std::fmt;
 use std::sync::atomic::Ordering;
@@ -407,21 +407,7 @@ impl<'a> CoreReader<'a> {
             self.quote_char,
         );
 
-        // If the number of threads given by the user is lower than our global thread pool we create
-        // new one.
-        let owned_pool;
-        let pool = if POOL.current_num_threads() != n_threads {
-            owned_pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(n_threads)
-                    .build()
-                    .unwrap(),
-            );
-            owned_pool.unwrap()
-        } else {
-            let p = POOL.pool();
-           p.unwrap()
-        };
+        let pool = get_pool(n_threads);
 
         // all the buffers returned from the threads
         // Structure:
@@ -670,4 +656,32 @@ impl<'a> CoreReader<'a> {
         }
         Ok(df)
     }
+}
+
+// #[cfg(not(feature = "browser"))]
+// fn get_pool(n_threads: usize) -> ThreadPool {
+//     // If the number of threads given by the user is lower than our global thread pool we create
+//     // new one.
+
+//     let owned_pool;
+//     let pool = if POOL.current_num_threads() != n_threads {
+//         owned_pool = Some(
+//             ThreadPoolBuilder::new()
+//                 .num_threads(n_threads)
+//                 .build()
+//                 .unwrap(),
+//         );
+//         owned_pool.unwrap()
+//     } else {
+//         let p = POOL.pool();
+//         p.unwrap()
+//     };
+//     pool
+// }
+
+// #[cfg(feature = "browser")]
+fn get_pool(n_threads: usize) -> Pool {
+    Pool::new(None)
+    // let p = POOL.pool();
+    // p.unwrap()
 }

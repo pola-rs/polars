@@ -1,9 +1,9 @@
+use crate::conversion::*;
 use crate::datatypes::JsDataType;
 use polars::prelude::*;
 use wasm_bindgen::convert::FromWasmAbi;
 use wasm_bindgen::JsCast;
-use crate::conversion::*;
-
+use polars::export::rayon::prelude::*;
 use super::{error::JsPolarsErr, series::*, JsResult};
 use std::io::{BufReader, Cursor};
 
@@ -37,7 +37,59 @@ extern "C" {
     fn ptr(this: &ExternDataFrame) -> f64;
     #[wasm_bindgen(typescript_type = "DataFrame[]")]
     pub type DataFrameArray;
+}
 
+
+#[wasm_bindgen]
+pub fn read_csv(buff: &[u8], 
+    infer_schema_length: Option<u32>,
+    chunk_size: u32,
+    has_header: bool,
+    ignore_errors: bool,
+    n_rows: Option<u32>,
+    skip_rows: u32,
+    rechunk: bool,
+    encoding: String,
+    n_threads: Option<u32>,
+    low_memory: bool,
+    parse_dates: bool,
+    skip_rows_after_header: u32,
+) -> JsResult<JsDataFrame> {
+    let infer_schema_length = infer_schema_length.map(|i| i as usize);
+    let n_threads = n_threads.map(|i| i as usize);
+    let n_rows = n_rows.map(|i| i as usize);
+    let skip_rows = skip_rows as usize;
+    let chunk_size = chunk_size as usize;
+
+    let encoding = match encoding.as_ref() {
+        "utf8" => CsvEncoding::Utf8,
+        "utf8-lossy" => CsvEncoding::LossyUtf8,
+        e => return Err(JsPolarsErr::Other(format!("encoding not {} not implemented.", e)).into()),
+    };
+
+    let cursor = Cursor::new(buff);
+    let df = CsvReader::new(cursor)
+        .infer_schema(infer_schema_length)
+        .has_header(has_header)
+        .with_n_rows(n_rows)
+        .with_delimiter(",".as_bytes()[0])
+        .with_skip_rows(skip_rows)
+        .with_ignore_parser_errors(ignore_errors)
+        .with_rechunk(rechunk)
+        .with_chunk_size(chunk_size)
+        .with_encoding(encoding)
+        // .with_columns(columns)
+        // .with_n_threads(n_threads)
+        .low_memory(low_memory)
+        // .with_comment_char(comment_char)
+        // .with_null_values(null_values)
+        .with_parse_dates(parse_dates)
+        // .with_quote_char(quote_char)
+        // .with_row_count(row_count)
+        .finish()
+        .map_err(JsPolarsErr::from)?;
+
+    Ok(df.into())
 }
 
 #[wasm_bindgen(js_class=DataFrame)]
@@ -427,4 +479,17 @@ impl JsDataFrame {
         }
         Ok(rows)
     }
+    pub fn toObject(&mut self) -> JsResult<js_sys::Object> {
+        let mut obj = js_sys::Object::new();
+        self.df.rechunk();
+
+        for col in self.df.get_columns() {
+            let key: JsValue = col.name().into();
+            let val: JsValue = Wrap(col).into();
+            js_sys::Reflect::set(&obj, &key, &val)?;
+        }
+
+        Ok(obj)
+    }
+
 }

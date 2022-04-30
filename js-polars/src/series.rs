@@ -65,8 +65,7 @@ extern_struct!(ExternSeries, JsSeries);
 extern_iterator!(SeriesArray, ExternSeries, JsSeries);
 
 #[wasm_bindgen(js_class=Series)]
-impl JsSeries {
-}
+impl JsSeries {}
 
 pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> {
     match (s.dtype(), signed) {

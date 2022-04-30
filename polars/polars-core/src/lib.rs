@@ -84,9 +84,9 @@ impl Pool {
         None
     }
     pub fn current_num_threads(&self) -> usize {
-        let window = web_sys::window().expect("to be called in browser");
-        let nav = window.navigator();
-        nav.hardware_concurrency() as usize
+        
+        // hardcodede for now. need a better way to detect this inside workers.
+        16
     }
 
     pub fn install<OP, R>(&self, op: OP) -> R
@@ -123,7 +123,7 @@ lazy_static! {
     ));
 }
 
-// pool MUST be initialized in browser. 
+// pool MUST be initialized in browser.
 #[cfg(feature = "browser")]
 lazy_static! {
     pub static ref POOL: Pool = Pool::new(None);
