@@ -163,6 +163,7 @@ def read_csv(
     skip_rows_after_header: int = 0,
     row_count_name: Optional[str] = None,
     row_count_offset: int = 0,
+    sample_size: int = 1024,
     **kwargs: Any,
 ) -> DataFrame:
     """
@@ -253,6 +254,8 @@ def read_csv(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    sample_size:
+        Set the sample size. This is used to sample statistics to estimate the allocation needed.
 
     Returns
     -------
@@ -417,6 +420,7 @@ def read_csv(
             skip_rows_after_header=skip_rows_after_header,
             row_count_name=row_count_name,
             row_count_offset=row_count_offset,
+            sample_size=sample_size,
         )
 
     if new_columns:

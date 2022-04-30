@@ -513,6 +513,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         skip_rows_after_header: int = 0,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        sample_size: int = 1024,
     ) -> DF:
         """
         see pl.read_csv
@@ -606,6 +607,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             parse_dates,
             skip_rows_after_header,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            sample_size=sample_size,
         )
         return self
 

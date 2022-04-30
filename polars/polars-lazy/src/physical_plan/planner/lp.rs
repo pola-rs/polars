@@ -274,7 +274,7 @@ impl DefaultPlanner {
                 let input_schema = lp_arena.get(input).schema(lp_arena).clone();
                 let input = self.create_physical_plan(input, lp_arena, expr_arena)?;
 
-                let mut phys_keys =
+                let phys_keys =
                     self.create_physical_expressions(&keys, Context::Default, expr_arena)?;
 
                 let phys_aggs =
@@ -304,26 +304,28 @@ impl DefaultPlanner {
                 }
 
                 // We first check if we can partition the groupby on the latest moment.
-                // TODO: fix this brittle/ buggy state and implement partitioned groupby's in eager
                 let mut partitionable = true;
 
                 // checks:
                 //      1. complex expressions in the groupby itself are also not partitionable
                 //          in this case anything more than col("foo")
                 //      2. a custom function cannot be partitioned
-                if keys.len() == 1 && apply.is_none() {
+                //      3. we don't bother with more than 2 keys, as the cardinality likely explodes
+                //         by the combinations
+                if !keys.is_empty() && keys.len() < 3 && apply.is_none() {
                     // complex expressions in the groupby itself are also not partitionable
                     // in this case anything more than col("foo")
-                    if (&*expr_arena).iter(keys[0]).count() > 1 {
-                        partitionable = false;
+                    for key in keys {
+                        if (&*expr_arena).iter(key).count() > 1 {
+                            partitionable = false;
+                            break;
+                        }
                     }
 
                     if partitionable {
                         for agg in &aggs {
                             let aexpr = expr_arena.get(*agg);
                             let depth = (&*expr_arena).iter(*agg).count();
-
-                            // has_aexpr(*agg)
 
                             // col()
                             // lit() etc.
@@ -333,12 +335,18 @@ impl DefaultPlanner {
                             }
 
                             // it should end with an aggregation
-                            if matches!(aexpr, AExpr::Alias(_, _)) {
+                            if let AExpr::Alias(input, _) = aexpr {
                                 // col().agg().alias() is allowed: count of 3
-                                // col().alias() is not allowed: count of 4
+                                // col().alias() is not allowed: count of 2
+                                // count().alias() is allowed: count of 2
                                 if depth <= 2 {
-                                    partitionable = false;
-                                    break;
+                                    match expr_arena.get(*input) {
+                                        AExpr::Count => {}
+                                        _ => {
+                                            partitionable = false;
+                                            break;
+                                        }
+                                    }
                                 }
                             }
 
@@ -358,12 +366,19 @@ impl DefaultPlanner {
                                                 | AAggExpr::Mean(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
+                                                | AAggExpr::Count(_)
                                         )
+                                    },
+                                    BinaryExpr {left, right, ..} => {
+                                        matches!(expr_arena.get(*left), Literal(_) | Column(_)) &&
+                                        matches!(expr_arena.get(*right), Literal(_) | Column(_))
                                     }
-                                    Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Alias(_, _) => {
+                                    Literal(_) | Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Count | Alias(_, _) => {
                                         true
                                     }
-                                    _ => false,
+                                    _ => {
+                                        false
+                                    },
                                 }
                             }) &&
                                 // we only allow expressions that end with an aggregation
@@ -395,7 +410,7 @@ impl DefaultPlanner {
                 if partitionable {
                     Ok(Box::new(executors::PartitionGroupByExec::new(
                         input,
-                        phys_keys.pop().unwrap(),
+                        phys_keys,
                         phys_aggs,
                         aggs.into_iter()
                             .map(|n| node_to_expr(n, expr_arena))

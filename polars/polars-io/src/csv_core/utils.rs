@@ -201,7 +201,7 @@ pub fn infer_file_schema(
 
         let byterecord = SplitFields::new(header_line, delimiter, quote_char);
         if has_header {
-            byterecord
+            let headers = byterecord
                 .map(|(slice, needs_escaping)| {
                     let slice_escaped = if needs_escaping && (slice.len() >= 2) {
                         &slice[1..(slice.len() - 1)]
@@ -211,7 +211,14 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     Ok(s.into())
                 })
-                .collect::<Result<_>>()?
+                .collect::<Result<Vec<_>>>()?;
+
+            if PlHashSet::from_iter(headers.iter()).len() != headers.len() {
+                return Err(PolarsError::ComputeError(
+                    "CSV header contains duplicate column names".into(),
+                ));
+            }
+            headers
         } else {
             let mut column_names: Vec<String> = byterecord
                 .enumerate()

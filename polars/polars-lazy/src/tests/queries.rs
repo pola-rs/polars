@@ -259,36 +259,16 @@ fn test_lazy_binary_ops() {
 }
 
 #[test]
-fn test_lazy_query_1() {
-    // test on aggregation pushdown
-    // and a filter that is not in the projection
-    let df_a = load_df();
-    let df_b = df_a.clone();
-    df_a.lazy()
-        .left_join(df_b.lazy(), col("b"), col("b"))
-        .filter(col("a").lt(lit(2)))
-        .groupby([col("b")])
-        .agg([col("b").first(), col("c").first()])
-        .select([col("b"), col("c")])
-        .collect()
-        .unwrap();
-}
-
-#[test]
 fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(
-            col("a")
-                .map(|s| Ok(s * 2), GetOutput::same_type())
-                .alias("foo"),
-        )
+        .with_column(col("a").map(|s| Ok(s * 2), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
     let new = ldf.collect().unwrap();
-    assert_eq!(new.shape(), (1, 2));
+    assert_eq!(new.shape(), (0, 2));
 }
 
 #[test]
@@ -616,7 +596,7 @@ fn test_lazy_wildcard() {
     let new = df
         .lazy()
         .groupby([col("b")])
-        .agg([col("*").sum(), col("*").first()])
+        .agg([col("*").sum().suffix(""), col("*").first().suffix("_first")])
         .collect()
         .unwrap();
     assert_eq!(new.shape(), (3, 5)); // Should exclude b from wildcard aggregations.
