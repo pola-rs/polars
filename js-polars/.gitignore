@@ -14,3 +14,4 @@ bin/
 .vscode
 *.node
 docs/
+dist/

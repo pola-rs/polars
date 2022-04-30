@@ -79,6 +79,7 @@ log = []
 partition_by = []
 semi_anti_join = []
 chunked_ids = []
+browser = ["web-sys", "js-sys"]
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -166,6 +167,7 @@ regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
+js-sys = { version = "0.3.56", optional = true }
 
 [dependencies.arrow]
 package = "arrow2"
@@ -188,6 +190,13 @@ features = [
   "compute_take",
 ]
 
+[dependencies.web-sys]
+version = "0.3.56"
+features = [
+  'Navigator',
+  "Window"
+]
+optional = true
 [dev-dependencies]
 bincode = "1"
 

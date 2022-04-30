@@ -232,6 +232,9 @@ bench = [
   "lazy",
 ]
 
+browser = ["polars-core/browser"]
+browser-parquet = ["polars-io", "polars-core/parquet", "polars-lazy/parquet", "polars-io/browser-parquet"]
+
 [dependencies]
 polars-core = { version = "0.21.0", path = "./polars-core", features = ["docs", "private"], default-features = false }
 polars-io = { version = "0.21.0", path = "./polars-io", features = ["private"], default-features = false, optional = true }

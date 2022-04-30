@@ -7,7 +7,16 @@ edition = "2021"
 homepage = "https://github.com/pola-rs/polars"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
+
+[package.metadata.wasm-pack.profile.dev]
 wasm-opt = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -32,19 +41,13 @@ spmc = "0.3.0"
 [dependencies.polars]
 features = [
   "abs",
-  "arange",
-  "cum_agg",
   # "diagonal_concat",
-  "dataframe_arithmetic",
   "diff",
   "dot_diagram",
-  "dot_product",
   "dtype-categorical",
   "dtype-full",
   # "extract_jsonpath",
   # "horizontal_concat",
-  "interpolate",
-  "is_first",
   "list",
   "log",
   "mode",
@@ -52,6 +55,7 @@ features = [
   "object",
   "pct_change",
   "performant",
+  "json",
   # "private",
   # "fmt",
   "product",
@@ -59,14 +63,12 @@ features = [
   "reinterpret",
   # "rolling_window",
   "round_series",
-  "row_hash",
-  # "rows",
+  "rows",
   # "temporal",
-  "string_encoding",
   "strings",
   "true_div",
-  "unique_counts",
-  "wasm"
+  "browser",
+  # "browser-parquet"
 ]
 default-features = false
 path =  "../polars"
@@ -87,8 +89,6 @@ features = [
   'DedicatedWorkerGlobalScope',
   'MessageEvent',
 ]
-
-
 
 
 [workspace]

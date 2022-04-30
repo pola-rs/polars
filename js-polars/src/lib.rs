@@ -7,7 +7,6 @@ mod utils;
 use wasm_bindgen::prelude::*;
 pub use wasm_bindgen_rayon::init_thread_pool;
 
-
 pub type JsResult<T> = std::result::Result<T, JsValue>;
 extern crate console_error_panic_hook;
 use std::panic;

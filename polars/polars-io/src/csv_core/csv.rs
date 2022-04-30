@@ -8,7 +8,7 @@ use crate::utils::update_row_counts;
 use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{prelude::*, POOL};
+use polars_core::{prelude::*, POOL, Pool};
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;
@@ -417,9 +417,10 @@ impl<'a> CoreReader<'a> {
                     .build()
                     .unwrap(),
             );
-            owned_pool.as_ref().unwrap()
+            owned_pool.unwrap()
         } else {
-            &POOL
+            let p = POOL.pool();
+           p.unwrap()
         };
 
         // all the buffers returned from the threads
