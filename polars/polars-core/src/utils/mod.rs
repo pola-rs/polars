@@ -139,15 +139,44 @@ pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
-    trait Len {
-        fn len(&self) -> usize;
-    }
-    impl Len for DataFrame {
-        fn len(&self) -> usize {
-            self.height()
+    let total_len = df.height();
+    let chunk_size = total_len / n;
+    let mut out = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let offset = i * chunk_size;
+        let len = if i == (n - 1) {
+            total_len - offset
+        } else {
+            chunk_size
+        };
+        let df = df.slice((i * chunk_size) as i64, len);
+        if df.n_chunks()? > 1 {
+            let iter = df.iter_chunks().map(|chunk| {
+                DataFrame::new_no_checks(
+                    df.iter()
+                        .zip(chunk.into_arrays())
+                        .map(|(s, arr)| {
+                            // Safety:
+                            // datatypes are correct
+                            unsafe {
+                                Series::from_chunks_and_dtype_unchecked(
+                                    s.name(),
+                                    vec![arr],
+                                    s.dtype(),
+                                )
+                            }
+                        })
+                        .collect(),
+                )
+            });
+            out.extend(iter)
+        } else {
+            out.push(df)
         }
     }
-    split_array!(df, n, i64)
+
+    Ok(out)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {

@@ -19,7 +19,12 @@ fn test_chunked_left_join() -> Result<()> {
     assert_eq!(band_members.n_chunks()?, 2);
 
     let out = band_instruments.join(&band_members, ["name"], ["name"], JoinType::Left, None)?;
-    dbg!(out);
+    let expected = df![
+        "name" => ["john", "paul", "keith"],
+        "plays" => ["guitar", "bass", "guitar"],
+        "band" => [Some("beatles"), Some("beatles"), None],
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
 
     Ok(())
 }
