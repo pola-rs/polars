@@ -847,3 +847,29 @@ def test_from_time_arrow() -> None:
         time(0, 0, 20),
         time(0, 0, 30),
     ]
+
+
+def test_datetime_strptime_patterns() -> None:
+    # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "09-05-2019" "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 1
+    assert s[0] is None
