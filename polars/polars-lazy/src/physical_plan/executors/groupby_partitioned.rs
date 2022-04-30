@@ -184,6 +184,7 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
             .unwrap_or(1000);
 
         let (unique_estimate, sampled_method) = match (keys.len(), keys[0].dtype()) {
+            #[cfg(feature = "dtype-categorical")]
             (1, DataType::Categorical(Some(rev_map))) => (rev_map.len(), "known"),
             _ => {
                 let sample_frac = std::env::var("POLARS_PARTITION_SAMPLE_FRAC")
