@@ -358,9 +358,10 @@ impl DefaultPlanner {
                                                 | AAggExpr::Mean(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
+                                                | AAggExpr::Count(_)
                                         )
                                     }
-                                    Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Alias(_, _) => {
+                                    Not(_) | IsNotNull(_) | IsNull(_) | Column(_) | Count | Alias(_, _) => {
                                         true
                                     }
                                     _ => false,
