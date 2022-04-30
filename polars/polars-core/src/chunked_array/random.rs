@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
+use crate::utils::{CustomIterTools, NoNull};
 use num::{Float, NumCast};
 use rand::distributions::Bernoulli;
 use rand::prelude::*;
@@ -13,18 +13,26 @@ fn get_random_seed() -> u64 {
 
 fn create_rand_index_with_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+    let dist = Uniform::new(0, len as IdxSize);
     (0..n as IdxSize)
-        .map(move |_| Uniform::new(0, len as IdxSize).sample(&mut rng))
+        .map(move |_| dist.sample(&mut rng))
         .collect_trusted::<NoNull<IdxCa>>()
         .into_inner()
 }
 
-fn create_rand_index_no_replacement(n: usize, len: usize, seed: Option<u64>) -> IdxCa {
+fn create_rand_index_no_replacement(
+    n: usize,
+    len: usize,
+    seed: Option<u64>,
+    shuffle: bool,
+) -> IdxCa {
     let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
-    let mut idx = Vec::from_iter_trusted_length(0..len as IdxSize);
-    idx.shuffle(&mut rng);
-    idx.truncate(n);
-    IdxCa::new_vec("", idx)
+    let mut buf = vec![0; n];
+    (0..len as IdxSize).choose_multiple_fill(&mut rng, &mut buf);
+    if shuffle {
+        buf.shuffle(&mut rng)
+    }
+    IdxCa::new_vec("", buf)
 }
 
 impl<T> ChunkedArray<T>
@@ -63,7 +71,7 @@ impl Series {
                 unsafe { self.take_unchecked(&idx) }
             }
             false => {
-                let idx = create_rand_index_no_replacement(n, len, seed);
+                let idx = create_rand_index_no_replacement(n, len, seed, false);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { self.take_unchecked(&idx) }
@@ -83,7 +91,12 @@ impl Series {
     }
 
     pub fn shuffle(&self, seed: u64) -> Self {
-        self.sample_n(self.len(), false, Some(seed)).unwrap()
+        let len = self.len();
+        let n = len;
+        let idx = create_rand_index_no_replacement(n, len, Some(seed), true);
+        // Safety we know that we never go out of bounds
+        debug_assert_eq!(len, self.len());
+        unsafe { self.take_unchecked(&idx).unwrap() }
     }
 }
 
@@ -108,7 +121,7 @@ where
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
             }
             false => {
-                let idx = create_rand_index_no_replacement(n, len, seed);
+                let idx = create_rand_index_no_replacement(n, len, seed, false);
                 // Safety we know that we never go out of bounds
                 debug_assert_eq!(len, self.len());
                 unsafe { Ok(self.take_unchecked((&idx).into())) }
@@ -139,7 +152,7 @@ impl DataFrame {
         // all columns should used the same indices. So we first create the indices.
         let idx = match with_replacement {
             true => create_rand_index_with_replacement(n, self.height(), seed),
-            false => create_rand_index_no_replacement(n, self.height(), seed),
+            false => create_rand_index_no_replacement(n, self.height(), seed, false),
         };
         // Safety:
         // indices are within bounds
