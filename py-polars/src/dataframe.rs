@@ -109,6 +109,7 @@ impl PyDataFrame {
         parse_dates: bool,
         skip_rows_after_header: usize,
         row_count: Option<(String, u32)>,
+        sample_size: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -173,6 +174,7 @@ impl PyDataFrame {
             .with_quote_char(quote_char)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
+            .sample_size(sample_size)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
