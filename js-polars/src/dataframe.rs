@@ -1,11 +1,11 @@
 use crate::conversion::*;
 use crate::datatypes::JsDataType;
 use polars::prelude::*;
-use wasm_bindgen::convert::FromWasmAbi;
+// use wasm_bindgen::convert::FromWasmAbi;
 use wasm_bindgen::JsCast;
-use polars::export::rayon::prelude::*;
+// use polars::export::rayon::prelude::*;
 use super::{error::JsPolarsErr, series::*, JsResult};
-use std::io::{BufReader, Cursor};
+use std::io::{Cursor};
 
 use wasm_bindgen::prelude::*;
 
@@ -99,14 +99,14 @@ impl JsDataFrame {
         DataFrame::new_no_checks(vec![]).into()
     }
 
-    pub fn read_json(buf: &[u8]) -> JsResult<JsDataFrame> {
-        let reader = Cursor::new(buf);
-        let out = JsonReader::new(reader)
-            .with_json_format(JsonFormat::JsonLines)
-            .finish()
-            .map_err(|e| JsPolarsErr::Other(format!("{:?}", e)))?;
-        Ok(out.into())
-    }
+    // pub fn read_json(buf: &[u8]) -> JsResult<JsDataFrame> {
+    //     let reader = Cursor::new(buf);
+    //     let out = JsonReader::new(reader)
+    //         .with_json_format(JsonFormat::JsonLines)
+    //         .finish()
+    //         .map_err(|e| JsPolarsErr::Other(format!("{:?}", e)))?;
+    //     Ok(out.into())
+    // }
 
     pub fn read_columns(columns: js_sys::Iterator) -> JsResult<JsDataFrame> {
         let cols = to_series_collection(columns);
@@ -465,10 +465,10 @@ impl JsDataFrame {
 
     pub fn toRecords(&self) -> JsResult<js_sys::Array> {
         let height = self.df.height() as u32;
-        let mut rows = js_sys::Array::new_with_length(height);
+        let rows = js_sys::Array::new_with_length(height);
 
         for idx in 0..height {
-            let mut obj = js_sys::Object::new();
+            let obj = js_sys::Object::new();
 
             for col in self.df.get_columns() {
                 let key: JsValue = col.name().into();
@@ -480,7 +480,7 @@ impl JsDataFrame {
         Ok(rows)
     }
     pub fn toObject(&mut self) -> JsResult<js_sys::Object> {
-        let mut obj = js_sys::Object::new();
+        let obj = js_sys::Object::new();
         self.df.rechunk();
 
         for col in self.df.get_columns() {

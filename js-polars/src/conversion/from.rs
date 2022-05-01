@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsObject;
+// use wasm_bindgen::JsObject;
 
-use super::super::{error::JsPolarsErr, JsResult};
+// use super::super::{error::JsPolarsErr, JsResult};
 
 // macro_rules! numbers {
 //   ($($n:ident)*) => ($(

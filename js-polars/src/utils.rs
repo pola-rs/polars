@@ -20,7 +20,7 @@ pub fn str_to_polarstype(s: &str) -> DataType {
         "Time" => DataType::Time,
         "List" => DataType::List(DataType::Null.into()),
         "Categorical" => DataType::Categorical(None),
-        "Object" => DataType::Object("object"),
+        // "Object" => DataType::Object("object"),
         tp => panic!("Type {} not implemented in str_to_polarstype", tp),
     }
 }

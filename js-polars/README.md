@@ -10,16 +10,6 @@
 
 1. 
    `wasm-pack build -t web`
-2. wasm-rayon will generate a `.js` file in `pkg/snippets/*/workerHelpers.js`
-  you will need to update `line 54` from
-
-    `const pkg = await import('../../..');`
-    
-    to 
-  
-    `const pkg = await import('../../../polars.js');`
-
-3. run `yarn webpack` 
 
 4.  run `python server.py`
 

@@ -22,6 +22,8 @@ crate-type = ["cdylib"]
 
 [profile.release]
 lto = true
+codegen-units=16
+opt-level=3
 
 [features]
 
@@ -34,40 +36,36 @@ thiserror = "1.0.20"
 paste = "1.0.6"
 futures-channel = "0.3.21"
 wasm-bindgen-futures = "0.4.29"
-wasm-bindgen-rayon = { version = "1.0" }
+wasm-bindgen-rayon = { version = "1.0", features = ["no-bundler"] }
 rayon = "1.5"
 spmc = "0.3.0"
+wee_alloc = "0.4.5"
 
 [dependencies.polars]
 features = [
-  "abs",
+  # "abs",
   # "diagonal_concat",
-  "diff",
-  "dot_diagram",
-  "dtype-categorical",
+  # "diff",
+  # "dot_diagram",
+  # "dtype-categorical",
   "dtype-full",
   # "extract_jsonpath",
   # "horizontal_concat",
   "list",
-  "log",
-  "mode",
-  "moment",
-  "object",
-  "pct_change",
-  "performant",
-  "json",
+  # "mode",
+  # "object",
+  # "performant",
+  # "json",
   "csv-file",
   # "private",
   # "fmt",
-  "product",
-  "rank",
-  "reinterpret",
+  # "product",
+  # "rank",
+  # "reinterpret",
   # "rolling_window",
-  "round_series",
   "rows",
   # "temporal",
   "strings",
-  "true_div",
   "browser",
   # "browser-parquet"
 ]
@@ -78,10 +76,10 @@ path =  "../polars"
 version = "0.3.56"
 features = [
   'console',
-  'CanvasRenderingContext2d',
+  # 'CanvasRenderingContext2d',
   'ErrorEvent',
-  'Event',
-  'ImageData',
+  # 'Event',
+  # 'ImageData',
   'Navigator',
   'Window',
   'Worker',

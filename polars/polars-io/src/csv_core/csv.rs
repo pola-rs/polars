@@ -658,6 +658,7 @@ impl<'a> CoreReader<'a> {
     }
 }
 
+
 // #[cfg(not(feature = "browser"))]
 // fn get_pool(n_threads: usize) -> ThreadPool {
 //     // If the number of threads given by the user is lower than our global thread pool we create

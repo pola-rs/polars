@@ -10,6 +10,11 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 pub type JsResult<T> = std::result::Result<T, JsValue>;
 extern crate console_error_panic_hook;
 use std::panic;
+// extern crate wee_alloc;
+
+// // Use `wee_alloc` as the global allocator.
+// #[global_allocator]
+// static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
 pub fn init_hooks() {

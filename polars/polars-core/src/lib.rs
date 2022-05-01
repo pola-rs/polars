@@ -46,36 +46,36 @@ pub struct Pool {
     inner: Option<ThreadPool>,
 }
 
-#[cfg(not(feature = "browser"))]
-impl Pool {
-    pub fn new(pool: Option<ThreadPool>) -> Pool {
-        Pool { inner: pool }
-    }
-    pub fn pool(&self) -> Option<ThreadPool> {
-        pool.inner
-    }
-    pub fn current_num_threads(&self) -> usize {
-        self.inner.unwrap().current_num_threads()
-    }
+// #[cfg(not(feature = "browser"))]
+// impl Pool {
+//     pub fn new(pool: Option<ThreadPool>) -> Pool {
+//         Pool { inner: pool }
+//     }
+//     pub fn pool(&self) -> Option<ThreadPool> {
+//         pool.inner
+//     }
+//     pub fn current_num_threads(&self) -> usize {
+//         self.inner.unwrap().current_num_threads()
+//     }
 
-    pub fn install<OP, R>(&self, op: OP) -> R
-    where
-        OP: FnOnce() -> R + Send,
-        R: Send,
-    {
-        self.inner.unwrap().install(op)
-    }
-    pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
-    where
-        A: FnOnce() -> RA + Send,
-        B: FnOnce() -> RB + Send,
-        RA: Send,
-        RB: Send,
-    {
-        self.inner.unwrap().join(oper_a, oper_b)
-    }
-}
-#[cfg(feature = "browser")]
+//     pub fn install<OP, R>(&self, op: OP) -> R
+//     where
+//         OP: FnOnce() -> R + Send,
+//         R: Send,
+//     {
+//         self.inner.unwrap().install(op)
+//     }
+//     pub fn join<A, B, RA, RB>(&self, oper_a: A, oper_b: B) -> (RA, RB)
+//     where
+//         A: FnOnce() -> RA + Send,
+//         B: FnOnce() -> RB + Send,
+//         RA: Send,
+//         RB: Send,
+//     {
+//         self.inner.unwrap().join(oper_a, oper_b)
+//     }
+// }
+
 impl Pool {
     pub fn new(pool: Option<ThreadPool>) -> Pool {
         Pool { inner: pool }
@@ -107,24 +107,23 @@ impl Pool {
     }
 }
 // this is re-exported in utils for polars child crates
-#[cfg(not(feature = "browser"))]
-lazy_static! {
-    pub static ref POOL: Pool = Pool::new(Some(
-        ThreadPoolBuilder::new()
-            .num_threads(
-                std::env::var("POLARS_MAX_THREADS")
-                    .map(|s| s.parse::<usize>().expect("integer"))
-                    .unwrap_or_else(|_| std::thread::available_parallelism()
-                        .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
-                        .get())
-            )
-            .build()
-            .expect("could not spawn threads")
-    ));
-}
+// #[cfg(not(feature = "browser"))]
+// lazy_static! {
+//     pub static ref POOL: Pool = Pool::new(Some(
+//         ThreadPoolBuilder::new()
+//             .num_threads(
+//                 std::env::var("POLARS_MAX_THREADS")
+//                     .map(|s| s.parse::<usize>().expect("integer"))
+//                     .unwrap_or_else(|_| std::thread::available_parallelism()
+//                         .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
+//                         .get())
+//             )
+//             .build()
+//             .expect("could not spawn threads")
+//     ));
+// }
 
 // pool MUST be initialized in browser.
-#[cfg(feature = "browser")]
 lazy_static! {
     pub static ref POOL: Pool = Pool::new(None);
 }

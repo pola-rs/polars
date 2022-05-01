@@ -1,13 +1,13 @@
-use crate::conversion::str_to_null_behavior;
-use crate::conversion::str_to_rankmethod;
-use crate::conversion::Wrap;
-use crate::utils::str_to_polarstype;
-use crate::{console_log, log};
+// use crate::conversion::str_to_null_behavior;
+// use crate::conversion::str_to_rankmethod;
+// use crate::conversion::Wrap;
+// use crate::utils::str_to_polarstype;
+// use crate::{console_log, log};
 use polars::prelude::*;
 use wasm_bindgen::JsCast;
 
-use super::{error::JsPolarsErr, JsResult};
-use crate::conversion::FromJsValue;
+// use super::{error::JsPolarsErr, JsResult};
+// use crate::conversion::FromJsValue;
 use crate::{extern_iterator, extern_struct};
 
 use std::ops::Deref;
@@ -67,23 +67,23 @@ extern_iterator!(SeriesArray, ExternSeries, JsSeries);
 #[wasm_bindgen(js_class=Series)]
 impl JsSeries {}
 
-pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> {
-    match (s.dtype(), signed) {
-        (DataType::UInt64, true) => {
-            let ca = s.u64().unwrap();
-            Ok(ca.reinterpret_signed().into_series())
-        }
-        (DataType::UInt64, false) => Ok(s.clone()),
-        (DataType::Int64, false) => {
-            let ca = s.i64().unwrap();
-            Ok(ca.reinterpret_unsigned().into_series())
-        }
-        (DataType::Int64, true) => Ok(s.clone()),
-        _ => Err(PolarsError::ComputeError(
-            "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
-        )),
-    }
-}
+// pub fn reinterpret(s: &Series, signed: bool) -> polars::prelude::Result<Series> {
+//     match (s.dtype(), signed) {
+//         (DataType::UInt64, true) => {
+//             let ca = s.u64().unwrap();
+//             Ok(ca.reinterpret_signed().into_series())
+//         }
+//         (DataType::UInt64, false) => Ok(s.clone()),
+//         (DataType::Int64, false) => {
+//             let ca = s.i64().unwrap();
+//             Ok(ca.reinterpret_unsigned().into_series())
+//         }
+//         (DataType::Int64, true) => Ok(s.clone()),
+//         _ => Err(PolarsError::ComputeError(
+//             "reinterpret is only allowed for 64bit integers dtype, use cast otherwise".into(),
+//         )),
+//     }
+// }
 pub(crate) fn to_series_collection(iter: js_sys::Iterator) -> Vec<Series> {
     let cols: Vec<Series> = iter
         .into_iter()
@@ -99,17 +99,17 @@ pub(crate) fn to_series_collection(iter: js_sys::Iterator) -> Vec<Series> {
     cols
 }
 
-pub(crate) fn to_jsseries_collection(s: Vec<Series>) -> Vec<u32> {
-    use wasm_bindgen::convert::IntoWasmAbi;
-    let s: Vec<u32> = s
-        .into_iter()
-        .map(move |series| {
-            let js_ser = JsSeries { series };
+// pub(crate) fn to_jsseries_collection(s: Vec<Series>) -> Vec<u32> {
+//     use wasm_bindgen::convert::IntoWasmAbi;
+//     let s: Vec<u32> = s
+//         .into_iter()
+//         .map(move |series| {
+//             let js_ser = JsSeries { series };
 
-            js_ser.into_abi()
-        })
-        .collect();
+//             js_ser.into_abi()
+//         })
+//         .collect();
 
-    s
-    // todo!()
-}
+//     s
+//     // todo!()
+// }

@@ -18,7 +18,7 @@ pub enum JsDataType {
     Date,
     Datetime,
     Time,
-    Object,
+    // Object,
     Categorical,
 }
 
@@ -41,7 +41,7 @@ impl JsDataType {
             JsDataType::Date => "Date",
             JsDataType::Datetime => "Datetime",
             JsDataType::Time => "Time",
-            JsDataType::Object => "Object",
+            // JsDataType::Object => "Object",
             JsDataType::Categorical => "Categorical",
         }
         .to_owned()
