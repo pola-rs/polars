@@ -32,21 +32,12 @@ const df = pl.read_csv(
   low_memory,
   parse_dates,
   skip_rows_after_header,
-).rechunk()
+).rechunk().head(100)
 console.log(df)
 console.timeEnd("readCsv")
-console.time('handleRecords')
-let count = 0
-const handler = (obj) => {
-  count++
-  console.log(count)
-}
 
-df.handleRecords(handler)
-console.log(count)
-console.timeEnd('handleRecords')
 console.time('toRecords')
-// df.toRecords()
+df.toRecords()
 console.timeEnd('toRecords')
 // console.log(df)
 
