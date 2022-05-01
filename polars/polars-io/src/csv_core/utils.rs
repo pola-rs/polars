@@ -412,6 +412,7 @@ fn decompress_impl<R: Read>(
     delimiter: u8,
     quote_char: Option<u8>,
 ) -> Option<Vec<u8>> {
+    let chunk_size = 4096;
     Some(match n_rows {
         None => {
             // decompression will likely be an order of maginitude larger
@@ -426,13 +427,13 @@ fn decompress_impl<R: Read>(
             // make sure that we have enough bytes to decode the header (even if it has embedded new line chars)
             // those extra bytes in the buffer don't matter, we don't need to track them
             loop {
-                let read = decoder.take(4096).read_to_end(&mut out).ok()?;
+                let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
                 if read == 0 {
                     break;
                 }
                 if next_line_position_naive(&out).is_some() {
                     // an extra shot
-                    let read = decoder.take(4096).read_to_end(&mut out).ok()?;
+                    let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
                     if read == 0 {
                         break;
                     }
@@ -460,13 +461,12 @@ fn decompress_impl<R: Read>(
                         buf_pos += pos;
                     }
                     None => {
-                        // take
-                        let read = decoder.take(4096).read_to_end(&mut out).ok()?;
+                        // take more bytes so that we might find a new line the next iteration
+                        let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
                         // we depleted the reader
                         if read == 0 {
                             break;
                         }
-                        buf_pos += next_line_position_naive(&out[buf_pos..]).unwrap_or(1);
                         continue;
                     }
                 };

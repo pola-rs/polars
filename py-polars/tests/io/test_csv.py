@@ -223,6 +223,18 @@ a,b,c
     assert out2.frame_equal(expected)
 
 
+def test_partial_decompression(foods_csv: str) -> None:
+    fout = io.BytesIO()
+    with open(foods_csv, "rb") as fread:
+        with gzip.GzipFile(fileobj=fout, mode="w") as f:
+            f.write(fread.read())
+
+    csv_bytes = fout.getvalue()
+    for n_rows in [1, 5, 26]:
+        out = pl.read_csv(csv_bytes, n_rows=n_rows)
+        assert out.shape == (n_rows, 4)
+
+
 def test_empty_bytes() -> None:
     b = b""
     with pytest.raises(ValueError):
