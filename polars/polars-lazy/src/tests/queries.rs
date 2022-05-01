@@ -1956,3 +1956,28 @@ fn test_is_in() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_partitioned_gb() -> Result<()> {
+    // keep these dtypes
+    let out = df![
+        "keys" => [1, 1, 1, 1, 2],
+        "vals" => ["a", "b", "c", "a", "a"]
+    ]?
+    .lazy()
+    .groupby([col("keys")])
+    .agg([
+        (col("vals").eq(lit("a"))).sum().alias("eq_a"),
+        (col("vals").eq(lit("b"))).sum().alias("eq_b"),
+    ])
+    .sort("keys", Default::default())
+    .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "keys" => [1, 2],
+        "eq_a" => [2 as IdxSize, 1],
+        "eq_b" => [1 as IdxSize, 0],
+    ]?));
+
+    Ok(())
+}
