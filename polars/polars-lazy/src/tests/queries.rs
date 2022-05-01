@@ -1959,6 +1959,7 @@ fn test_is_in() -> Result<()> {
 
 #[test]
 fn test_partitioned_gb() -> Result<()> {
+    // don't move these to integration tests
     // keep these dtypes
     let out = df![
         "keys" => [1, 1, 1, 1, 2],
@@ -1977,6 +1978,25 @@ fn test_partitioned_gb() -> Result<()> {
         "keys" => [1, 2],
         "eq_a" => [2 as IdxSize, 1],
         "eq_b" => [1 as IdxSize, 0],
+    ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_count() -> Result<()> {
+    // don't move these to integration tests
+    let out = df![
+        "col" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+    ]?
+    .lazy()
+    .groupby([col("col")])
+    .agg([count().alias("count")])
+    .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "count" => [100 as IdxSize],
     ]?));
 
     Ok(())
