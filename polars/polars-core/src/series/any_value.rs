@@ -78,7 +78,30 @@ impl Series {
                     AnyValue::Duration(_, tu) => any_values_to_primitive::<Int64Type>(av)
                         .into_duration(*tu)
                         .into_series(),
-                    _ => todo!(),
+                    #[cfg(feature = "dtype-struct")]
+                    AnyValue::StructOwned(payload) => {
+                        let vals = &payload.0;
+                        let fields = &payload.1;
+
+                        // the fields of the struct
+                        let mut series_fields = Vec::with_capacity(vals.len());
+                        for (i, field) in fields.iter().enumerate() {
+                            let mut field_avs = Vec::with_capacity(av.len());
+
+                            av.iter().for_each(|av| match av {
+                                AnyValue::StructOwned(pl) => {
+                                    let av_val = pl.0[i].clone();
+                                    field_avs.push(av_val)
+                                }
+                                _ => field_avs.push(AnyValue::Null),
+                            });
+                            series_fields.push(Series::new(field.name(), &field_avs))
+                        }
+                        return StructChunked::new(name, &series_fields)
+                            .unwrap()
+                            .into_series();
+                    }
+                    av => panic!("av {:?} not implemented", av),
                 };
                 s.rename(name);
                 s
