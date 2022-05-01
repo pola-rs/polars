@@ -1,4 +1,6 @@
 use crate::csv::CsvEncoding;
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+use crate::csv_core::parser::next_line_position_naive;
 use crate::csv_core::parser::{
     next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines,
 };
@@ -403,17 +405,90 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 }
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
+fn decompress_impl<R: Read>(
+    decoder: &mut R,
+    bytes: &[u8],
+    n_rows: Option<usize>,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<Vec<u8>> {
+    let chunk_size = 4096;
+    Some(match n_rows {
+        None => {
+            // decompression will likely be an order of maginitude larger
+            let mut out = Vec::with_capacity(bytes.len() * 10);
+            decoder.read_to_end(&mut out).ok()?;
+            out
+        }
+        Some(n_rows) => {
+            // we take the first rows first '\n\
+            let mut out = vec![];
+            let mut expected_fields = 0;
+            // make sure that we have enough bytes to decode the header (even if it has embedded new line chars)
+            // those extra bytes in the buffer don't matter, we don't need to track them
+            loop {
+                let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                if read == 0 {
+                    break;
+                }
+                if next_line_position_naive(&out).is_some() {
+                    // an extra shot
+                    let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                    if read == 0 {
+                        break;
+                    }
+                    // now that we have enough, we compute the number of fields (also takes enmbedding into account)
+                    expected_fields = SplitFields::new(&out, delimiter, quote_char)
+                        .into_iter()
+                        .count();
+                    break;
+                }
+            }
+
+            let mut line_count = 0;
+            let mut buf_pos = 0;
+            // keep decoding bytes and count lines
+            // keep track of the n_rows we read
+            while line_count < n_rows {
+                match next_line_position(
+                    &out[buf_pos + 1..],
+                    expected_fields,
+                    delimiter,
+                    quote_char,
+                ) {
+                    Some(pos) => {
+                        line_count += 1;
+                        buf_pos += pos;
+                    }
+                    None => {
+                        // take more bytes so that we might find a new line the next iteration
+                        let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                        // we depleted the reader
+                        if read == 0 {
+                            break;
+                        }
+                        continue;
+                    }
+                };
+            }
+            out
+        }
+    })
+}
+
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+pub(crate) fn decompress(
+    bytes: &[u8],
+    n_rows: Option<usize>,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
-        let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decoder.read_to_end(&mut out).ok()?;
-        Some(out)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
-        let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decoder.read_to_end(&mut out).ok()?;
-        Some(out)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
     } else {
         None
     }
