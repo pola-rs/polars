@@ -339,7 +339,6 @@ pub(crate) enum AnyValueBuffer<'a> {
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
     List(Box<dyn ListBuilderTrait>),
-    #[cfg(feature = "dtype-struct")]
     All(Vec<AnyValue<'a>>),
 }
 
@@ -435,9 +434,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
             List(inner) => AnyValueBuffer::List(get_list_builder(inner, len * 10, len, "")),
-            #[cfg(feature = "dtype-struct")]
-            Struct(_) => AnyValueBuffer::All(Vec::with_capacity(len)),
-            _ => unimplemented!(),
+            _ => AnyValueBuffer::All(Vec::with_capacity(len)),
         }
     }
 }
