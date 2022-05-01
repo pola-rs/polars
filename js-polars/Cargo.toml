@@ -22,8 +22,8 @@ crate-type = ["cdylib"]
 
 [profile.release]
 lto = true
-codegen-units=16
-opt-level=3
+codegen-units=1
+opt-level='s'
 
 [features]
 
@@ -39,7 +39,6 @@ wasm-bindgen-futures = "0.4.29"
 wasm-bindgen-rayon = { version = "1.0", features = ["no-bundler"] }
 rayon = "1.5"
 spmc = "0.3.0"
-wee_alloc = "0.4.5"
 
 [dependencies.polars]
 features = [
@@ -52,7 +51,7 @@ features = [
   # "extract_jsonpath",
   # "horizontal_concat",
   "list",
-  # "mode",
+  "mode",
   # "object",
   # "performant",
   # "json",

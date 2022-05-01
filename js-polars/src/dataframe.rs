@@ -479,6 +479,25 @@ impl JsDataFrame {
         }
         Ok(rows)
     }
+    pub fn handleRecords(&self, f: &js_sys::Function) -> JsResult<()> {
+        let this = JsValue::null();
+
+        let height = self.df.height() as u32;
+        // let rows = js_sys::Array::new_with_length(height);
+
+        for idx in 0..height {
+            let obj = js_sys::Object::new();
+
+            for col in self.df.get_columns() {
+                let key: JsValue = col.name().into();
+                let val: JsValue = Wrap(col.get(idx as usize)).into();
+                js_sys::Reflect::set(&obj, &key, &val)?;
+            }
+            f.call1(&this, &obj);
+            // rows.set(idx, obj.into());
+        }
+        Ok(())
+    }
     pub fn toObject(&mut self) -> JsResult<js_sys::Object> {
         let obj = js_sys::Object::new();
         self.df.rechunk();
