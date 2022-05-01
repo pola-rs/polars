@@ -190,7 +190,7 @@ impl<'a> CoreReader<'a> {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
-                    if let Some(b) = decompress(&reader_bytes) {
+                    if let Some(b) = decompress(&reader_bytes, n_rows, delimiter, quote_char) {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
