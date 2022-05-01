@@ -227,3 +227,13 @@ def test_struct_with_validity() -> None:
     df = pl.from_arrow(tbl)
     assert isinstance(df, pl.DataFrame)
     assert df["a"].to_list() == [{"b": 1}, {"b": None}]
+
+
+def test_from_dicts_struct() -> None:
+    assert pl.from_dicts([{"a": 1, "b": {"a": 1, "b": 2}}]).to_series(1).to_list() == [
+        {"a": 1, "b": 2}
+    ]
+
+    assert pl.from_dicts(
+        [{"a": 1, "b": {"a_deep": 1, "b_deep": {"a_deeper": [1, 2, 4]}}}]
+    ).to_series(1).to_list() == [{"a_deep": 1, "b_deep": {"a_deeper": [1, 2, 4]}}]
