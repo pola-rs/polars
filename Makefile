@@ -13,6 +13,7 @@ coverage:
 		rustup override set nightly-2022-04-01; \
 		source <(cargo llvm-cov show-env --export-prefix); \
 		export CARGO_TARGET_DIR=\$$CARGO_LLVM_COV_TARGET_DIR; \
+		export CARGO_INCREMENTAL=1; \
 		cargo llvm-cov clean --workspace; \
 		$(MAKE) -C py-polars venv; \
 		source py-polars/venv/bin/activate; \
