@@ -119,11 +119,7 @@ impl<R: Read + Seek> IpcReader<R> {
     ) -> Result<DataFrame> {
         let rechunk = self.rechunk;
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        let projection = projection.map(|x| {
-            let mut x = x.to_vec();
-            x.sort_unstable();
-            x
-        });
+        let projection = projection.map(|x| x.to_vec());
 
         let schema = if let Some(projection) = &projection {
             apply_projection(&metadata.schema, projection)
@@ -180,11 +176,7 @@ where
         let schema = &metadata.schema;
 
         if let Some(columns) = self.columns {
-            let mut prj = columns_to_projection(columns, schema)?;
-
-            // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
-            prj.sort_unstable();
-            self.projection = Some(prj);
+            self.projection = Some(columns_to_projection(columns, schema)?);
         }
 
         let schema = if let Some(projection) = &self.projection {

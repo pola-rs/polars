@@ -39,24 +39,24 @@ def test_from_to_file(
 
 def test_select_columns() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
-    expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
+    expected = pl.DataFrame({"c": ["a", "b", "c"], "b": [True, False, True]})
 
     f = io.BytesIO()
     df.write_ipc(f)
     f.seek(0)
 
-    read_df = pl.read_ipc(f, columns=["b", "c"], use_pyarrow=False)
+    read_df = pl.read_ipc(f, columns=["c", "b"], use_pyarrow=False)
     assert expected.frame_equal(read_df)
 
 
 def test_select_projection() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [True, False, True], "c": ["a", "b", "c"]})
-    expected = pl.DataFrame({"b": [True, False, True], "c": ["a", "b", "c"]})
+    expected = pl.DataFrame({"c": ["a", "b", "c"], "b": [True, False, True]})
     f = io.BytesIO()
     df.write_ipc(f)
     f.seek(0)
 
-    read_df = pl.read_ipc(f, columns=[1, 2], use_pyarrow=False)
+    read_df = pl.read_ipc(f, columns=[2, 1], use_pyarrow=False)
     assert expected.frame_equal(read_df)
 
 
