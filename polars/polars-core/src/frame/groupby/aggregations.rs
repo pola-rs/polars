@@ -81,7 +81,7 @@ impl Series {
         }
     }
 
-    #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
@@ -110,7 +110,7 @@ impl Series {
         }
     }
 
-    #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn agg_first(&self, groups: &GroupsProxy) -> Series {
         let out = match groups {
             GroupsProxy::Idx(groups) => {
@@ -144,7 +144,7 @@ impl Series {
         self.restore_logical(out)
     }
 
-    #[cfg(feature = "private")]
+    #[doc(hidden)]
     pub fn agg_n_unique(&self, groups: &GroupsProxy) -> Option<Series> {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
@@ -169,7 +169,26 @@ impl Series {
         }
     }
 
-    #[cfg(feature = "private")]
+    #[doc(hidden)]
+    pub fn agg_mean(&self, groups: &GroupsProxy) -> Option<Series> {
+        use DataType::*;
+        match self.dtype() {
+            // risk of overflow
+            UInt8 | UInt16 | Int8 | Int16 => {
+                self.cast(&DataType::Float64).unwrap().agg_mean(groups)
+            }
+            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
+            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
+            Int32 => self.i32().unwrap().agg_mean(groups),
+            Int64 => self.i64().unwrap().agg_mean(groups),
+            UInt32 => self.u32().unwrap().agg_mean(groups),
+            UInt64 => self.u64().unwrap().agg_mean(groups),
+            // logical types don't have agg_mean
+            _ => None,
+        }
+    }
+
+    #[doc(hidden)]
     pub fn agg_last(&self, groups: &GroupsProxy) -> Series {
         let out = match groups {
             GroupsProxy::Idx(groups) => {

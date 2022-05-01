@@ -87,6 +87,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.name()
     }
 
+    fn chunk_lengths(&self) -> ChunkIdIter {
+        let s = self.0.fields().first().unwrap();
+        s.chunk_lengths()
+    }
+
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
         let s = self.0.fields().first().unwrap();
@@ -138,6 +143,20 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
                 s.take_iter(&mut *iter)
             })
             .map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_chunked_unchecked(by))
+            .into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0
+            .apply_fields(|s| s._take_opt_chunked_unchecked(by))
+            .into_series()
     }
 
     /// Take by index from an iterator. This operation clones the data.

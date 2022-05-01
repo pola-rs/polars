@@ -12,7 +12,8 @@ check:
 	    -p polars-io \
 	    -p polars-lazy \
 	    -p polars-arrow \
-	    -p polars-time
+	    -p polars-time \
+	    -p polars-ops
 
 clippy:
 	cargo clippy --all-features \
@@ -21,6 +22,7 @@ clippy:
 	    -p polars-lazy \
 	    -p polars-arrow \
 	    -p polars-utils \
+	    -p polars-ops \
 	    -p polars-time
 
 clippy-default:
@@ -44,8 +46,8 @@ integration-tests:
 miri:
 	# not tested on all features because miri does not support SIMD
 	# some tests are also filtered, because miri cannot deal with the rayon threadpool
-	# Miri also reports UB in prettytable.rs, so we must toggle that feature off.
-	MIRIFLAGS="-Zmiri-disable-isolation" \
+	# we ignore leaks because the thread pool of rayon is never killed.
+	MIRIFLAGS="-Zmiri-disable-isolation -Zmiri-ignore-leaks" \
 	POLARS_ALLOW_EXTENSION=1 \
 	cargo miri test \
 	    --no-default-features \

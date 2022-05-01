@@ -98,3 +98,4 @@ def test_assert_frame_equal_column_mismatch_order() -> None:
     df2 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
     with pytest.raises(AssertionError):
         pl.testing.assert_frame_equal(df1, df2)
+    pl.testing.assert_frame_equal(df1, df2, check_column_names=False)

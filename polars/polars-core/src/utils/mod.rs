@@ -139,15 +139,44 @@ pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
-    trait Len {
-        fn len(&self) -> usize;
-    }
-    impl Len for DataFrame {
-        fn len(&self) -> usize {
-            self.height()
+    let total_len = df.height();
+    let chunk_size = total_len / n;
+    let mut out = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let offset = i * chunk_size;
+        let len = if i == (n - 1) {
+            total_len - offset
+        } else {
+            chunk_size
+        };
+        let df = df.slice((i * chunk_size) as i64, len);
+        if df.n_chunks()? > 1 {
+            let iter = df.iter_chunks().map(|chunk| {
+                DataFrame::new_no_checks(
+                    df.iter()
+                        .zip(chunk.into_arrays())
+                        .map(|(s, arr)| {
+                            // Safety:
+                            // datatypes are correct
+                            unsafe {
+                                Series::from_chunks_and_dtype_unchecked(
+                                    s.name(),
+                                    vec![arr],
+                                    s.dtype(),
+                                )
+                            }
+                        })
+                        .collect(),
+                )
+            });
+            out.extend(iter)
+        } else {
+            out.push(df)
         }
     }
-    split_array!(df, n, i64)
+
+    Ok(out)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
@@ -903,6 +932,17 @@ pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
     std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
 }
 
+#[cfg(feature = "chunked_ids")]
+pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
+    let mut vals = Vec::with_capacity(len);
+
+    for (chunk_i, chunk) in chunks.iter().enumerate() {
+        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+    }
+
+    vals
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -931,23 +971,5 @@ mod test {
             a.chunk_id().collect::<Vec<_>>(),
             b.chunk_id().collect::<Vec<_>>()
         );
-    }
-
-    #[test]
-    fn test_df_macro_trailing_commas() -> Result<()> {
-        let a = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2]
-        }?;
-
-        let b = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2],
-        }?;
-
-        assert!(a.frame_equal(&b));
-        Ok(())
     }
 }

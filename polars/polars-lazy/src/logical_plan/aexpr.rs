@@ -1,3 +1,4 @@
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -74,10 +75,17 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    Function {
+    AnonymousFunction {
         input: Vec<Node>,
         function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: GetOutput,
+        options: FunctionOptions,
+    },
+    Function {
+        /// function arguments
+        input: Vec<Node>,
+        /// function to apply
+        function: FunctionExpr,
         options: FunctionOptions,
     },
     Shift {
@@ -115,6 +123,36 @@ impl AExpr {
     ) -> Result<DataType> {
         self.to_field(schema, ctxt, arena)
             .map(|f| f.data_type().clone())
+    }
+
+    pub(crate) fn replace_input(self, input: Node) -> Self {
+        use AExpr::*;
+        match self {
+            Alias(_, name) => Alias(input, name),
+            IsNotNull(_) => IsNotNull(input),
+            IsNull(_) => IsNull(input),
+            Cast {
+                expr: _,
+                data_type,
+                strict,
+            } => Cast {
+                expr: input,
+                data_type,
+                strict,
+            },
+            _ => todo!(),
+        }
+    }
+
+    pub(crate) fn get_input(&self) -> Node {
+        use AExpr::*;
+        match self {
+            Alias(input, _) => *input,
+            IsNotNull(input) => *input,
+            IsNull(input) => *input,
+            Cast { expr, .. } => *expr,
+            _ => todo!(),
+        }
     }
 
     /// Get Field result of the expression. The schema is the input data.
@@ -160,9 +198,6 @@ impl AExpr {
             BinaryExpr { left, right, op } => {
                 use DataType::*;
 
-                let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
-                let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
-
                 let expr_type = match op {
                     Operator::Lt
                     | Operator::Gt
@@ -172,15 +207,24 @@ impl AExpr {
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
-                    Operator::Minus => match (left_type, right_type) {
-                        // T - T != T if T is a datetime / date
-                        (Datetime(tul, _), Datetime(tur, _)) => {
-                            Duration(get_time_units(&tul, &tur))
+                    _ => {
+                        // don't traverse tree until strictly needed. Can have terrible performance.
+                        // # 3210
+                        let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
+                        let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
+
+                        match op {
+                            Operator::Minus => match (left_type, right_type) {
+                                // T - T != T if T is a datetime / date
+                                (Datetime(tul, _), Datetime(tur, _)) => {
+                                    Duration(get_time_units(&tul, &tur))
+                                }
+                                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                                (left, right) => get_supertype(&left, &right)?,
+                            },
+                            _ => get_supertype(&left_type, &right_type)?,
                         }
-                        (Date, Date) => Duration(TimeUnit::Milliseconds),
-                        (left, right) => get_supertype(&left, &right)?,
-                    },
-                    _ => get_supertype(&left_type, &right_type)?,
+                    }
                 };
 
                 let out_field;
@@ -271,7 +315,7 @@ impl AExpr {
                     Ok(truthy)
                 }
             }
-            Function {
+            AnonymousFunction {
                 output_type, input, ..
             } => {
                 let fields = input
@@ -279,6 +323,15 @@ impl AExpr {
                     .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
+            }
+            Function {
+                function, input, ..
+            } => {
+                let fields = input
+                    .iter()
+                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    .collect::<Result<Vec<_>>>()?;
+                function.get_field(schema, ctxt, &fields)
             }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),

@@ -513,6 +513,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         skip_rows_after_header: int = 0,
         row_count_name: Optional[str] = None,
         row_count_offset: int = 0,
+        sample_size: int = 1024,
     ) -> DF:
         """
         see pl.read_csv
@@ -606,6 +607,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             parse_dates,
             skip_rows_after_header,
             _prepare_row_count_args(row_count_name, row_count_offset),
+            sample_size=sample_size,
         )
         return self
 
@@ -1007,7 +1009,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Parameters
         ----------
         file
-            Write to this file instead of returning an string.
+            Write to this file instead of returning a string.
         pretty
             Pretty serialize json.
         row_oriented
@@ -1215,6 +1217,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Convert every row to a dictionary.
 
         Note that this is slow.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.to_dicts()
+        [{'foo': 1, 'bar': 4}, {'foo': 2, 'bar': 5}, {'foo': 3, 'bar': 6}]
+
         """
 
         pydf = self._df
@@ -2354,6 +2364,27 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Column to replace.
         new_col
             New column to insert.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> s = pl.Series([10, 20, 30])
+        >>> df.replace("foo", s)  # works in-place!
+        >>> df
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 10  ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 20  ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 30  ┆ 6   │
+        └─────┴─────┘
+
         """
         self._df.replace(column, new_col.inner())
 
@@ -5538,16 +5569,28 @@ class GroupBy(Generic[DF]):
         -------
         Result of groupby split apply operations.
 
-
         Examples
         --------
 
-        >>> df.groupby(["foo", "bar"]).agg(
+        >>> df = pl.DataFrame(
+        ...     {"foo": ["one", "two", "two", "one", "two"], "bar": [5, 3, 2, 4, 1]}
+        ... )
+        >>> df.groupby("foo").agg(
         ...     [
-        ...         pl.sum("ham"),
-        ...         pl.col("spam").tail(4).sum(),
+        ...         pl.sum("bar").suffix("_sum"),
+        ...         pl.col("bar").sort().tail(2).sum().suffix("_tail_sum"),
         ...     ]
-        ... )  # doctest: +SKIP
+        ... )
+        shape: (2, 3)
+        ┌─────┬─────────┬──────────────┐
+        │ foo ┆ bar_sum ┆ bar_tail_sum │
+        │ --- ┆ ---     ┆ ---          │
+        │ str ┆ i64     ┆ i64          │
+        ╞═════╪═════════╪══════════════╡
+        │ one ┆ 9       ┆ 9            │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ two ┆ 6       ┆ 5            │
+        └─────┴─────────┴──────────────┘
 
         """
 

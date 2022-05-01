@@ -132,7 +132,7 @@ def test_split_exact() -> None:
         {
             "field_0": ["a", None, "b", "c"],
             "field_1": ["a", None, None, "c"],
-            "field_2": [None, None, None, None],
+            "field_2": pl.Series([None, None, None, None], dtype=pl.Utf8),
         }
     )
 
@@ -195,3 +195,28 @@ def test_dot_in_groupby() -> None:
         .agg(pl.col("x").dot("y").alias("dot"))
         .frame_equal(pl.DataFrame({"group": ["a", "b"], "dot": [6, 15]}))
     )
+
+
+def test_list_eval_expression() -> None:
+    df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+
+    for parallel in [True, False]:
+        assert df.with_column(
+            pl.concat_list(["a", "b"])
+            .arr.eval(pl.first().rank(), parallel=parallel)
+            .alias("rank")
+        ).to_dict(False) == {
+            "a": [1, 8, 3],
+            "b": [4, 5, 2],
+            "rank": [[1.0, 2.0], [2.0, 1.0], [2.0, 1.0]],
+        }
+
+        assert df["a"].reshape((1, -1)).arr.eval(
+            pl.first(), parallel=parallel
+        ).to_list() == [[1, 8, 3]]
+
+
+def test_null_count_expr() -> None:
+    df = pl.DataFrame({"key": ["a", "b", "b", "a"], "val": [1, 2, None, 1]})
+
+    assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}

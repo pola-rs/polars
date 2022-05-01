@@ -49,7 +49,11 @@ fn test_combine_columns_in_filter() -> Result<()> {
 
     let out = df
         .lazy()
-        .filter(cols(vec!["a".to_string(), "b".to_string()]).gt(lit(2)))
+        .filter(
+            cols(vec!["a".to_string(), "b".to_string()])
+                .cast(DataType::Utf8)
+                .gt(lit("2")),
+        )
         .collect()?;
 
     let expected = df![
@@ -59,5 +63,33 @@ fn test_combine_columns_in_filter() -> Result<()> {
 
     // "b" > "2" == true
     assert!(out.frame_equal(&expected));
+    Ok(())
+}
+
+fn create_n_filters(col_name: &str, num_filters: usize) -> Vec<Expr> {
+    (0..num_filters)
+        .into_iter()
+        .map(|i| col(col_name).eq(lit(format!("{}", i))))
+        .collect()
+}
+
+fn and_filters(expr: Vec<Expr>) -> Expr {
+    expr.into_iter().reduce(polars::prelude::Expr::and).unwrap()
+}
+
+#[test]
+fn test_many_filters() -> Result<()> {
+    // just check if it runs. in #3210
+    // we had terrible tree traversion perf.
+    let df = df! {
+        "id" => ["1", "2"]
+    }?;
+    let filters = create_n_filters("id", 30);
+    let _ = df
+        .lazy()
+        .filter(and_filters(filters))
+        .with_predicate_pushdown(false)
+        .collect()?;
+
     Ok(())
 }

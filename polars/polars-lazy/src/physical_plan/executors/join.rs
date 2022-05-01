@@ -129,6 +129,8 @@ impl Executor for JoinExec {
             self.how.clone(),
             Some(self.suffix.clone().into_owned()),
             self.slice,
+            true,
+            state.verbose,
         );
 
         if state.verbose {

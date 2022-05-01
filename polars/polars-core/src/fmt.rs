@@ -7,6 +7,7 @@ use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
+
 const LIMIT: usize = 25;
 
 use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_us_to_datetime};
@@ -635,19 +636,24 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{}", v),
             #[cfg(feature = "dtype-struct")]
-            AnyValue::Struct(vals) => {
-                write!(f, "{{")?;
-                if !vals.is_empty() {
-                    for v in &vals[..vals.len() - 1] {
-                        write!(f, "{},", v)?;
-                    }
-                    // last value has no trailing comma
-                    write!(f, "{}", vals[vals.len() - 1])?;
-                }
-                write!(f, "}}")
-            }
+            AnyValue::Struct(vals, _) => fmt_struct(f, vals),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
         }
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
+    write!(f, "{{")?;
+    if !vals.is_empty() {
+        for v in &vals[..vals.len() - 1] {
+            write!(f, "{},", v)?;
+        }
+        // last value has no trailing comma
+        write!(f, "{}", vals[vals.len() - 1])?;
+    }
+    write!(f, "}}")
 }
 
 macro_rules! impl_fmt_list {

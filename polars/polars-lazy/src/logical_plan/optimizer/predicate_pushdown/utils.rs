@@ -115,8 +115,8 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
             | AExpr::BinaryExpr {..}
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
             // cast may create nulls
@@ -144,7 +144,7 @@ pub(super) fn predicate_column_is_pushdown_boundary(node: Node, expr_arena: &Are
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AExpr::Function {..}
+            | AExpr::AnonymousFunction {..}
             | AExpr::BinaryExpr {..}
             // cast may change precision.
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}

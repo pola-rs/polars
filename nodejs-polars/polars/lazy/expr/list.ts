@@ -1,83 +1,67 @@
-import {Expr} from "../expr";
-import pli from "../../internals/polars_internal";
-
+import {Expr, _Expr} from "../expr";
+import {ListFunctions} from "../../shared_traits";
 /**
  * namespace containing expr list functions
  */
-export interface ExprList {
-  /**
-   * Get the value by index in the sublists.
-   * So index `0` would return the first item of every sublist
-   * and index `-1` would return the last item of every sublist
-   * if an index is out of bounds, it will return a `null`.
-   */
-  get(index: number): Expr
-  /** Get the first value of the sublists. */
-  first(): Expr
-  /**
-   * Join all string items in a sublist and place a separator between them.
-   * This errors if inner type of list `!= Utf8`.
-   * @param separator A string used to separate one element of the list from the next in the resulting string.
-   * If omitted, the list elements are separated with a comma.
-   */
-  join(separator?: string): Expr
-  /** Get the last value of the sublists. */
-  last(): Expr
-  lengths(): Expr;
-  max(): Expr;
-  mean(): Expr;
-  min(): Expr;
-  reverse(): Expr;
-  sort(reverse?: boolean): Expr;
-  sort(opt: {reverse: boolean}): Expr;
-  sum(): Expr;
-  unique(): Expr;
-}
-
+export type ExprList =  ListFunctions<Expr>;
 export const ExprListFunctions = (_expr: any): ExprList => {
-  const wrap = (method, args?): Expr => {
-
-    return (Expr as any)(pli.expr.lst[method]({_expr, ...args }));
+  const wrap = (method, ...args: any[]): Expr => {
+    return _Expr(_expr[method](...args));
   };
 
   return {
+    argMax() {
+      return wrap("lstArgMax");
+    },
+    argMin() {
+      return wrap("lstArgMin");
+    },
     get(index: number) {
-      return wrap("get", {index});
+      return wrap("lstGet", index);
+    },
+    eval(expr, parallel) {
+      return wrap("lstEval", expr, parallel);
     },
     first() {
-      return wrap("get", {index:0});
+      return wrap("lstGet", 0);
     },
     join(separator = ",") {
-      return wrap("join", {separator});
+      return wrap("lstJoin", separator);
     },
     last() {
-      return wrap("get", {index:-1});
+      return wrap("lstGet", -1);
     },
     lengths() {
-      return wrap("lengths");
+      return wrap("lstLengths");
     },
     max() {
-      return wrap("max");
+      return wrap("lstMax");
     },
     mean() {
-      return wrap("mean");
+      return wrap("lstMean");
     },
     min() {
-      return wrap("min");
+      return wrap("lstMin");
     },
     reverse() {
-      return wrap("reverse");
+      return wrap("lstReverse");
+    },
+    shift(n) {
+      return wrap("lstShift", n);
+    },
+    slice(offset, length) {
+      return wrap("lstSlice", offset, length);
     },
     sort(reverse: any = false) {
       return typeof reverse === "boolean" ?
-        wrap("sort", {reverse}) :
-        wrap("sort", reverse);
+        wrap("lstSort", reverse) :
+        wrap("lstSort", reverse.reverse);
     },
     sum() {
-      return wrap("sum");
+      return wrap("lstSum");
     },
     unique() {
-      return wrap("unique");
+      return wrap("lstUnique");
     },
   };
 };

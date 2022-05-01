@@ -1,7 +1,6 @@
 import {DataType} from "../../datatypes";
-import pli from "../../internals/polars_internal";
 import { regexToString } from "../../utils";
-import {Expr} from "../expr";
+import {Expr, _Expr} from "../expr";
 
 /**
  * namespace containing expr string functions
@@ -171,21 +170,21 @@ export interface ExprString {
    * @param datatype Date or Datetime.
    * @param fmt formatting syntax. [Read more](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html)
    */
-  strftime(datatype: DataType.Date, fmt?: string): Expr
-  strftime(datatype: DataType.Datetime, fmt?: string): Expr
+  strptime(datatype: DataType.Date, fmt?: string): Expr
+  strptime(datatype: DataType.Datetime, fmt?: string): Expr
 }
 
 export const ExprStringFunctions = (_expr: any): ExprString => {
-  const wrap = (method, args?): Expr => {
-
-    return (Expr as any)(pli.expr.str[method]({_expr, ...args }));
+  const wrap = (method, ...args: any[]): Expr => {
+    return _Expr(_expr[method](...args));
   };
+
   const handleDecode = (encoding, strict) => {
     switch (encoding) {
     case "hex":
-      return wrap(`decodeHex`, {strict});
+      return wrap(`strHexDecode`, strict);
     case "base64":
-      return wrap(`decodeBase64`, {strict});
+      return wrap(`strBase64Decode`, strict);
     default:
       throw new RangeError("supported encodings are 'hex' and 'base64'");
     }
@@ -193,10 +192,10 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
 
   return {
     concat(delimiter: string) {
-      return wrap("concat", {delimiter});
+      return wrap("strConcat", delimiter);
     },
     contains(pat: string | RegExp) {
-      return wrap("contains", {pat: regexToString(pat)});
+      return wrap("strContains", regexToString(pat));
     },
     decode(arg, strict=false) {
       if(typeof arg === "string") {
@@ -208,59 +207,59 @@ export const ExprStringFunctions = (_expr: any): ExprString => {
     encode(encoding) {
       switch (encoding) {
       case "hex":
-        return wrap(`encodeHex`);
+        return wrap(`strHexEncode`);
       case "base64":
-        return wrap(`encodeBase64`);
+        return wrap(`strBase64Encode`);
       default:
         throw new RangeError("supported encodings are 'hex' and 'base64'");
       }
     },
     extract(pat: string | RegExp, groupIndex: number) {
-      return wrap("extract", {pat: regexToString(pat), groupIndex});
+      return wrap("strExtract", regexToString(pat), groupIndex);
     },
     jsonPathMatch(pat: string) {
-      return wrap("jsonPathMatch", {pat});
+      return wrap("strJsonPathMatch", pat);
     },
     lengths() {
-      return wrap("lengths");
+      return wrap("strLengths");
     },
     lstrip() {
-      return wrap("lstrip");
+      return wrap("strLstrip");
     },
     replace(pat: RegExp, val: string) {
-      return wrap("replace", {pat: regexToString(pat), val});
+      return wrap("strReplace", regexToString(pat), val);
     },
     replaceAll(pat: RegExp, val: string) {
-      return wrap("replaceAll", {pat: regexToString(pat), val});
+      return wrap("strReplaceAll", regexToString(pat), val);
     },
     rstrip() {
-      return wrap("rstrip");
+      return wrap("strRstrip");
     },
     slice(start: number, length?: number) {
-      return wrap("slice", {start, length});
+      return wrap("strSlice", start, length);
     },
     split(by: string, options?) {
       const inclusive = typeof options === "boolean" ? options : options?.inclusive;
 
-      return wrap("split", {by, inclusive});
+      return wrap("strSplit", by, inclusive);
     },
     strip() {
-      return wrap("strip");
+      return wrap("strStrip");
     },
-    strftime(dtype, fmt?) {
+    strptime(dtype, fmt?) {
       if (dtype === DataType.Date) {
-        return wrap("parseDate", {fmt});
+        return wrap("strParseDate", fmt, false, false);
       } else if (dtype === DataType.Datetime) {
-        return wrap("parseDateTime", {fmt});
+        return wrap("strParseDatetime", fmt, false, false);
       } else {
         throw new Error(`only "DataType.Date" and "DataType.Datetime" are supported`);
       }
     },
     toLowerCase() {
-      return wrap("toLowerCase");
+      return wrap("strToLowercase");
     },
     toUpperCase() {
-      return wrap("toUpperCase");
+      return wrap("strToUppercase");
     },
   };
 };

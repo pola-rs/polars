@@ -185,40 +185,22 @@ describe("typedArrays", () => {
     const expected = float64Arrays.map(i => [...i]);
     expect(actual).toEqual(expected);
   });
-  test("invalid:list", () => {
-    const float64Arrays = [
-      new Float64Array([33, 44, 55]),
-      new BigUint64Array([1n, 2n, 3n]),
-    ];
-    const fn = () =>  pl.Series(float64Arrays).toArray();
-    expect(fn).toThrow();
-  });
+
 });
 describe("series", () => {
   const chance = new Chance();
 
   describe("create series", () => {
-    it.each`
-      values
-      ${[1, 1n]}
-      ${["foo", 2]}
-      ${[false, "false"]}
-    `("does not allow multiple types", ({ values }) => {
-      try {
-        pl.Series("", values);
-      } catch (err) {
-        expect((err as Error).message).toBeDefined();
-      }
-    });
+
 
     it.each`
       values                    | dtype         | type
-      ${["foo", "bar", "baz"]}  | ${"Utf8"}     | ${"string"}
-      ${[1, 2, 3]}              | ${"Float64"}  | ${"number"}
-      ${[1n, 2n, 3n]}           | ${"UInt64"}   | ${"bigint"}
-      ${[true, false]}          | ${"Bool"}     | ${"boolean"}
-      ${[]}                     | ${"Float64"}  | ${"empty"}
-      ${[new Date(Date.now())]} | ${"Datetime"} | ${"Date"}
+      ${["foo", "bar", "baz"]}  | ${pl.Utf8}     | ${"string"}
+      ${[1, 2, 3]}              | ${pl.Float64}  | ${"number"}
+      ${[1n, 2n, 3n]}           | ${pl.UInt64}   | ${"bigint"}
+      ${[true, false]}          | ${pl.Bool}     | ${"boolean"}
+      ${[]}                     | ${pl.Float64}  | ${"empty"}
+      ${[new Date(Date.now())]} | ${pl.Datetime} | ${"Date"}
     `("defaults to $dtype for \"$type\"", ({ values, dtype}) => {
       const name = chance.string();
       const s = pl.Series(name, values);
@@ -229,9 +211,9 @@ describe("series", () => {
 
     it.each`
       values                   | dtype
-      ${["foo", "bar", "baz"]} | ${"Utf8"}
-      ${[1, 2, 3]}             | ${"Float64"}
-      ${[1n, 2n, 3n]}          | ${"UInt64"}
+      ${["foo", "bar", "baz"]} | ${pl.Utf8}
+      ${[1, 2, 3]}             | ${pl.Float64}
+      ${[1n, 2n, 3n]}          | ${pl.UInt64}
     `("defaults to $dtype for $input", ({ values, dtype }) => {
       const name = chance.string();
       const s = pl.Series(name, values);
@@ -239,110 +221,8 @@ describe("series", () => {
       expect(s.length).toStrictEqual(values.length);
       expect(s.dtype).toStrictEqual(dtype);
     });
-
-    it.each`
-    values | type
-    ${[1, 2, 3]} | ${"number"}
-    ${["1", "2", "3"]} | ${"string"}
-    ${[1n, 2n, 3n]} | ${"bigint"}
-    ${[true, false, null]} | ${"Option<bool>"}
-    ${[1, 2, null]} | ${"Option<number>"}
-    ${[1n, 2n, null]} |  ${"Option<bigint>"}
-    ${[1.11, 2.22, 3.33, null]} |  ${"Option<float>"}
-    ${new Int8Array([9, 10, 11])} | ${"Int8Array"}
-    ${new Int16Array([12321, 2456, 22])} | ${"Int16Array"}
-    ${new Int32Array([515121, 32411322, 32423])} | ${"Int32Array"}
-    ${new Uint8Array([1, 2, 3, 4, 5, 6, 11])} | ${"Uint8Array"}
-    ${new Uint16Array([1, 2, 3, 55, 11])} | ${"Uint16Array"}
-    ${new Uint32Array([1123, 2, 3000, 12801, 99, 43242])} | ${"Uint32Array"}
-    ${new BigInt64Array([1123n, 2n, 3000n, 12801n, 99n, 43242n])} | ${"BigInt64Array"}
-    ${new BigUint64Array([1123n, 2n, 3000n, 12801n, 99n, 43242n])} | ${"BigUint64Array"}
-    `("can be created from $type", ({values}) => {
-      const name = chance.string();
-      const s = pl.Series(name, values);
-      expect([...s]).toEqual([...values]);
-    });
   });
 
-  describe("math", () => {
-
-    it("can add", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-      let s = pl.Series("", [item]);
-      s = s.add(other);
-      expect(s[0]).toStrictEqual(item + other);
-    });
-
-    it("can subtract", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.sub(other);
-      expect(s[0]).toStrictEqual(item - other);
-    });
-
-    it("can multiply", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.mul(other);
-      expect(s[0]).toStrictEqual(item * other);
-    });
-
-    it("can divide", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.div(other);
-      expect(s[0]).toStrictEqual(item / other);
-    });
-
-    it("can add two series", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-      let s = pl.Series("", [item]);
-      s = s.add(pl.Series("", [other]));
-      expect(s[0]).toStrictEqual(item + other);
-    });
-
-    it("can subtract two series", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.sub(pl.Series("", [other]));
-      expect(s[0]).toStrictEqual(item - other);
-    });
-
-    it("can multiply two series", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.mul(pl.Series("", [other]));
-      expect(s[0]).toStrictEqual(item * other);
-    });
-
-    it("can divide two series", () => {
-      const item = chance.natural({max: 100});
-      const other = chance.natural({max: 100});
-
-      let s = pl.Series("", [item]);
-      s = s.div(pl.Series("", [other]));
-      expect(s[0]).toStrictEqual(item / other);
-    });
-  });
-
-  describe("comparator", () => {
-    it("can perform 'eq", () => {
-      const s =  pl.Series("", [1, 2, 3]).eq(1);
-      expect([...s]).toEqual([true, false, false]);
-    });
-  });
 });
 describe("series", () => {
   const numSeries = () => pl.Series("foo", [1, 2, 3], pl.Int32);
@@ -352,12 +232,12 @@ describe("series", () => {
 
   const chance = new Chance();
 
-  test("to/fromBinary round trip", () => {
-    const s = pl.Series("serde", [1, 2, 3, 4, 5, 2]);
-    const buf = s.toBinary();
-    const actual = pl.Series.fromBinary(buf);
-    expect(s).toStrictEqual(actual);
-  });
+  // test("to/fromBinary round trip", () => {
+  //   const s = pl.Series("serde", [1, 2, 3, 4, 5, 2]);
+  //   const buf = s.toBinary();
+  //   const actual = pl.Series.fromBinary(buf);
+  //   expect(s).toStrictEqual(actual);
+  // });
   it.each`
   series        | getter
   ${numSeries()}  | ${"dtype"}
@@ -451,7 +331,6 @@ describe("series", () => {
   ${numSeries()}  | ${"rank"}         | ${["average"]}
   ${numSeries()}  | ${"rechunk"}      | ${[]}
   ${numSeries()}  | ${"rechunk"}      | ${[true]}
-  ${numSeries()}  | ${"rechunk"}      | ${[{inPlace: true}]}
   ${numSeries()}  | ${"rename"}       | ${["new name"]}
   ${numSeries()}  | ${"rename"}       | ${["new name", true]}
   ${numSeries()}  | ${"rename"}       | ${[{name: "new name"}]}
@@ -511,13 +390,10 @@ describe("series", () => {
   ${numSeries()}  | ${"seriesEqual"}  | ${[other()]}
   ${numSeries()}  | ${"seriesEqual"}  | ${[other(), true]}
   ${numSeries()}  | ${"seriesEqual"}  | ${[other(), false]}
-  ${numSeries()}  | ${"seriesEqual"}  | ${[other(), {nullEqual:true}]}
-  ${numSeries()}  | ${"seriesEqual"}  | ${[other(), {nullEqual:false}]}
   ${numSeries()}  | ${"set"}          | ${[boolSeries(), 2]}
-  ${numSeries()}  | ${"setAtIdx"}     | ${[[0, 1], 1]}
+  ${fltSeries()}  | ${"setAtIdx"}     | ${[[0, 1], 1]}
   ${numSeries()}  | ${"shift"}        | ${[]}
   ${numSeries()}  | ${"shift"}        | ${[1]}
-  ${numSeries()}  | ${"shift"}        | ${[{periods: 1}]}
   ${numSeries()}  | ${"shiftAndFill"} | ${[1, 2]}
   ${numSeries()}  | ${"shiftAndFill"} | ${[{periods: 1, fillValue: 2}]}
   ${numSeries()}  | ${"skew"}         | ${[]}
@@ -550,10 +426,10 @@ describe("series", () => {
 
   it.each`
   name               | actual                                               |  expected
-  ${"dtype:Utf8"}    | ${pl.Series(["foo"]).dtype}                          | ${"Utf8"}
-  ${"dtype:UInt64"}  | ${pl.Series([1n]).dtype}                             | ${"UInt64"}
-  ${"dtype:Float64"} | ${pl.Series([1]).dtype}                              | ${"Float64"}
-  ${"dtype"}         | ${pl.Series(["foo"]).dtype}                          | ${"Utf8"}
+  ${"dtype:Utf8"}    | ${pl.Series(["foo"]).dtype}                          | ${pl.Utf8}
+  ${"dtype:UInt64"}  | ${pl.Series([1n]).dtype}                             | ${pl.UInt64}
+  ${"dtype:Float64"} | ${pl.Series([1]).dtype}                              | ${pl.Float64}
+  ${"dtype"}         | ${pl.Series(["foo"]).dtype}                          | ${pl.Utf8}
   ${"name"}          | ${pl.Series("a", ["foo"]).name}                      | ${"a"}
   ${"length"}        | ${pl.Series([1, 2, 3, 4]).length}                    | ${4}
   ${"abs"}           | ${pl.Series([1, 2, -3]).abs()}                       | ${pl.Series([1, 2, 3])}
@@ -579,7 +455,7 @@ describe("series", () => {
   ${"cumProd"}       | ${pl.Series("", [1, 2, 3], pl.Int32).cumProd()}      | ${pl.Series("", [1, 2, 6], pl.Int64)}
   ${"cumSum"}        | ${pl.Series("", [1, 2, 3], pl.Int32).cumSum()}       | ${pl.Series("", [1, 3, 6], pl.Int32)}
   ${"diff"}          | ${pl.Series([1, 2, 12]).diff(1, "drop").toObject()}  | ${pl.Series([1, 10]).toObject()}
-  ${"diff"}          | ${pl.Series([1, 11]).diff(1, "ignore")}              | ${pl.Series("", [null, 10], pl.Float64, false)}
+  ${"diff"}          | ${pl.Series([1, 11]).diff(1, "ignore")}              | ${pl.Series("", [null, 10], pl.Float64)}
   ${"dropNulls"}     | ${pl.Series([1, null, 2]).dropNulls()}               | ${pl.Series([1, 2])}
   ${"dropNulls"}     | ${pl.Series([1, undefined, 2]).dropNulls()}          | ${pl.Series([1, 2])}
   ${"dropNulls"}     | ${pl.Series(["a", null, "f"]).dropNulls()}           | ${pl.Series(["a", "f"])}
@@ -626,7 +502,6 @@ describe("series", () => {
   ${"quantile"}      | ${pl.Series([1, 2, 3]).quantile(0.5)}                | ${2}
   ${"rank"}          | ${pl.Series([1, 2, 3, 2, 2, 3, 0]).rank("dense")}    | ${pl.Series("", [2, 3, 4, 3, 3, 4, 1], pl.UInt32)}
   ${"rename"}        | ${pl.Series([1, 3, 0]).rename("b")}                  | ${pl.Series("b", [1, 3, 0])}
-  ${"rename"}        | ${pl.Series([1, 3, 0]).rename({name: "b"})}          | ${pl.Series("b", [1, 3, 0])}
   ${"rollingMax"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingMax(2)}          | ${pl.Series("", [null, 2, 3, 3, 2], pl.Float64)}
   ${"rollingMin"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingMin(2)}          | ${pl.Series("", [null, 1, 2, 2, 1], pl.Float64)}
   ${"rollingSum"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingSum(2)}          | ${pl.Series("", [null, 3, 5, 5, 3], pl.Float64)}
@@ -648,7 +523,6 @@ describe("series", () => {
   ${"take"}          | ${pl.Series([1, 3, 2, 9, 1]).take([0, 1, 3])}        | ${pl.Series([1, 3, 9])}
   ${"toArray"}       | ${pl.Series([1, 2, 3]).toArray()}                    | ${[1, 2, 3]}
   ${"unique"}        | ${pl.Series([1, 2, 3, 3]).unique().sort()}           | ${pl.Series([1, 2, 3])}
-  ${"toFrame"}       | ${pl.Series("foo", [1, 2, 3]).toFrame().toJSON()}    | ${pl.DataFrame([pl.Series("foo", [1, 2, 3])]).toJSON()}
   ${"shiftAndFill"}  | ${pl.Series("foo", [1, 2, 3]).shiftAndFill(1, 99)}   | ${pl.Series("foo", [99, 1, 2])}
   `("$# $name: expected matches actual ", ({expected, actual}) => {
     if(pl.Series.isSeries(expected) && pl.Series.isSeries(actual)) {
@@ -685,8 +559,8 @@ describe("series", () => {
   });
   it.each`
   name | fn | errorType
-  ${"isFinite"} | ${pl.Series(["foo"]).isFinite} | ${InvalidOperationError}
-  ${"isInfinite"} | ${pl.Series(["foo"]).isInfinite} | ${InvalidOperationError}
+  ${"isFinite"} | ${pl.Series(["foo"]).isFinite} | ${TypeError}
+  ${"isInfinite"} | ${pl.Series(["foo"]).isInfinite} | ${TypeError}
   ${"rollingMax"} | ${() => pl.Series(["foo"]).rollingMax(null as any)} | ${Error}
   ${"sample"} | ${() => pl.Series(["foo"]).sample(null as any)} | ${Error}
   `("$# $name throws an error ", ({fn, errorType}) => {
@@ -803,38 +677,6 @@ describe("comparators & math", () => {
     const expected = pl.Series([true, false]);
     expect(s.ltEq(1)).toSeriesEqual(expected);
     expect(s.lessThanEquals(1)).toSeriesEqual(expected);
-  });
-});
-describe("series proxy & metadata", () => {
-  const {Series} = pl;
-  test("toString & inspect", () => {
-    const s = pl.Series("foo", [1, 2, 3], pl.Int16);
-    const sString = s.toString();
-    const inspectString = s[Symbol.for("nodejs.util.inspect.custom")]();
-    const expected = "shape: (3,)\nSeries: 'foo' [i16]\n[\n\t1\n\t2\n\t3\n]";
-    expect(sString).toStrictEqual(expected);
-    expect(inspectString).toStrictEqual(expected);
-  });
-  test("stringTag", () => {
-    const s = pl.Series([1]);
-    const t = s[Symbol.toStringTag];
-    expect(t).toStrictEqual("Series");
-  });
-  test("get", () => {
-    const s = pl.Series([2, 3, 9, -1]);
-    const [two,, nine] = s;
-    expect(two).toStrictEqual(2);
-    expect(nine).toStrictEqual(9);
-  });
-  test("from", () => {
-    const expected = Series("", [1, 2, 3]);
-    const actual = Series.from([1, 2, 3]);
-    expect(actual).toSeriesEqual(expected);
-  });
-  test("of", () => {
-    const expected = Series("", [1, 2, 3]);
-    const actual = Series.of(1, 2, 3);
-    expect(actual).toSeriesEqual(expected);
   });
 });
 describe("StringFunctions", () => {

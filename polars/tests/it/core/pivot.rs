@@ -147,3 +147,23 @@ fn test_pivot_new() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_pivot_2() -> Result<()> {
+    let df = df![
+        "name"=> ["avg", "avg", "act", "test", "test"],
+        "err" => [Some("name1"), Some("name2"), None, Some("name1"), Some("name2")],
+        "wght"=> [0.0, 0.1, 1.0, 0.4, 0.2]
+    ]?;
+
+    let out = df.pivot_stable(["wght"], ["err"], ["name"], PivotAgg::First, false)?;
+    let expected = df![
+        "err" => [Some("name1"), Some("name2"), None],
+        "avg" => [Some(0.0), Some(0.1), None],
+        "act" => [None, None, Some(1.)],
+        "test" => [Some(0.4), Some(0.2), None],
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}

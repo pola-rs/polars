@@ -4,9 +4,8 @@ import { DataType } from "./datatypes";
 import * as func from "./functions";
 import * as io from "./io";
 import * as cfg from "./cfg";
-import {version as _version} from "../package.json";
-
-import type { FillNullStrategy as _FillNullStrategy } from "./utils";
+import * as ldf from "./lazy/dataframe";
+import pli from "./internals/polars_internal";
 import  {
   funcs as lazy,
   Expr as lazyExpr,
@@ -18,12 +17,12 @@ import  {
 namespace pl {
   export import Expr = lazyExpr.Expr
   export import DataFrame = df.DataFrame
+  export import LazyDataFrame = ldf.LazyDataFrame
   export import Series = series.Series;
   export type LazyGroupBy = lazyGroupBy;
   export type When = _when.When;
   export type WhenThen = _when.WhenThen;
   export type WhenThenThen = _when.WhenThenThen;
-  export type FillNullStrategy = _FillNullStrategy;
   export import Config = cfg.Config;
   export import Int8 = DataType.Int8
   export import Int16 = DataType.Int16
@@ -46,11 +45,12 @@ namespace pl {
   export import repeat =  func.repeat;
   export import concat =  func.concat;
 
-  // IO
+  // // IO
   export import scanCSV = io.scanCSV;
   export import scanIPC = io.scanIPC;
   export import scanParquet = io.scanParquet;
 
+  export import readRecords = io.readRecords;
   export import readCSV = io.readCSV;
   export import readIPC = io.readIPC;
   export import readJSON = io.readJSON;
@@ -60,7 +60,7 @@ namespace pl {
   export import readCSVStream = io.readCSVStream;
   export import readJSONStream = io.readJSONStream;
 
-  // lazy
+  // // lazy
   export import col = lazy.col
   export import cols = lazy.cols
   export import lit = lazy.lit
@@ -83,11 +83,12 @@ namespace pl {
   export import pearsonCorr = lazy.pearsonCorr
   export import quantile = lazy.quantile
   export import select = lazy.select
+  export import struct = lazy.struct
   export import spearmanRankCorr = lazy.spearmanRankCorr
   export import tail = lazy.tail
   export import list = lazy.list
   export import when = _when.when;
-  export const version = _version;
+  export const version = pli.version();
 }
 
 export = pl;

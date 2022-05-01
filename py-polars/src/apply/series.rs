@@ -67,7 +67,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         applyer
             .apply_lambda_with_list_out_type(py, new_lambda, null_count, &series, dt)
             .map(|ca| ca.into_series().into())
-    } else if out.is_instance_of::<PyTuple>().unwrap() {
+    } else if out.is_instance_of::<PyDict>().unwrap() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
     }

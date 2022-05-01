@@ -8,7 +8,7 @@ use crate::chunked_array::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
@@ -184,6 +184,16 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
     fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
@@ -237,10 +247,6 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
         self.0.cast(data_type)
-    }
-
-    fn to_dummies(&self) -> Result<DataFrame> {
-        ToDummies::to_dummies(&self.0)
     }
 
     fn get(&self, index: usize) -> AnyValue {

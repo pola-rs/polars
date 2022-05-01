@@ -12,7 +12,7 @@ use crate::chunked_array::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
@@ -126,10 +126,6 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
                 self.0.vec_hash_combine(build_hasher, hashes)
-            }
-
-            fn agg_mean(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.agg_mean(groups)
             }
 
             fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
@@ -345,6 +341,16 @@ macro_rules! impl_dyn_series {
                 self.0.median().map(|v| v as f64)
             }
 
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                self.0.take_chunked_unchecked(by).into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                self.0.take_opt_chunked_unchecked(by).into_series()
+            }
+
             fn take(&self, indices: &IdxCa) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
@@ -398,10 +404,6 @@ macro_rules! impl_dyn_series {
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
                 self.0.cast(data_type)
-            }
-
-            fn to_dummies(&self) -> Result<DataFrame> {
-                ToDummies::to_dummies(&self.0)
             }
 
             fn get(&self, index: usize) -> AnyValue {

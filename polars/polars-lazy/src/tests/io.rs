@@ -334,6 +334,7 @@ fn skip_rows_and_slice() -> Result<()> {
 
 #[test]
 fn test_row_count() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0u32, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV.to_string())
             .with_row_count(Some(RowCount {

@@ -1251,6 +1251,10 @@ class Expr:
         """Count unique values."""
         return wrap_expr(self._pyexpr.n_unique())
 
+    def null_count(self) -> "Expr":
+        """Count unique values."""
+        return wrap_expr(self._pyexpr.null_count())
+
     def arg_unique(self) -> "Expr":
         """Get index of first unique value."""
         return wrap_expr(self._pyexpr.arg_unique())
@@ -3036,6 +3040,23 @@ class ExprListNameSpace:
     def lengths(self) -> Expr:
         """
         Get the length of the arrays as UInt32.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2], "bar": [["a", "b"], ["c"]]})
+        >>> df.select(pl.col("bar").arr.lengths())
+        shape: (2, 1)
+        ┌─────┐
+        │ bar │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.arr_lengths())
 
@@ -3181,18 +3202,75 @@ class ExprListNameSpace:
         ----------
         index
             Index to return per sublist
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.get(0))
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 3    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        └──────┘
+
         """
         return wrap_expr(self._pyexpr.lst_get(index))
 
     def first(self) -> "Expr":
         """
         Get the first value of the sublists.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.first())
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 3    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        └──────┘
+
         """
         return self.get(0)
 
     def last(self) -> "Expr":
         """
         Get the last value of the sublists.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.last())
+        shape: (3, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        └──────┘
+
         """
         return self.get(-1)
 
@@ -3208,6 +3286,25 @@ class ExprListNameSpace:
         Returns
         -------
         Boolean mask
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [[3, 2, 1], [], [1, 2]]})
+        >>> df.select(pl.col("foo").arr.contains(1))
+        shape: (3, 1)
+        ┌───────┐
+        │ foo   │
+        │ ---   │
+        │ bool  │
+        ╞═══════╡
+        │ true  │
+        ├╌╌╌╌╌╌╌┤
+        │ false │
+        ├╌╌╌╌╌╌╌┤
+        │ true  │
+        └───────┘
+
         """
         return wrap_expr(self._pyexpr).map(lambda s: s.arr.contains(item))
 
@@ -3389,6 +3486,43 @@ class ExprListNameSpace:
 
         """
         return self.slice(-n, n)
+
+    def eval(self, expr: "Expr", parallel: bool = False) -> "Expr":
+        """
+        Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.lst_eval(expr._pyexpr, parallel))
 
 
 class ExprStringNameSpace:
@@ -3809,6 +3943,23 @@ class ExprStringNameSpace:
             Regex pattern.
         value
             Replacement string.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"id": [1, 2], "text": ["123abc", "abc456"]})
+        >>> df.with_column(pl.col("text").str.replace(r"abc\b", "ABC"))
+        shape: (2, 2)
+        ┌─────┬────────┐
+        │ id  ┆ text   │
+        │ --- ┆ ---    │
+        │ i64 ┆ str    │
+        ╞═════╪════════╡
+        │ 1   ┆ 123ABC │
+        ├╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+        │ 2   ┆ abc456 │
+        └─────┴────────┘
+
         """
         return wrap_expr(self._pyexpr.str_replace(pattern, value))
 
@@ -4279,6 +4430,16 @@ class ExprDateTimeNameSpace:
         A series of dtype Int64
         """
         return wrap_expr(self._pyexpr.duration_hours())
+
+    def minutes(self) -> Expr:
+        """
+        Extract the minutes from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return wrap_expr(self._pyexpr.duration_minutes())
 
     def seconds(self) -> Expr:
         """

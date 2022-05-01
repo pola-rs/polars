@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.20.0"
+version = "0.21.0"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -18,7 +18,7 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
 # ipc = []
 lazy = []
-parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "polars-utils", "memmap"]
+parquet = ["polars-core/parquet", "arrow/io_parquet", "arrow/io_parquet_compression", "memmap"]
 dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-time/dtype-datetime"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
@@ -34,9 +34,9 @@ private = ["polars-time/private"]
 [dependencies]
 ahash = "0.7"
 anyhow = "1.0"
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "36b08249dd03c8b8f88f454158fcf3401c647a49", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
-# arrow = { package = "arrow2", version = "0.10", default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "3c64e7ab957880d9d6c72289c34fffd96a6c7030", default-features = false }
+# arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
+# arrow = { package = "arrow2", version = "0.11", default-features = false }
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
@@ -45,12 +45,13 @@ lexical = { version = "6", optional = true, default-features = false, features =
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
-polars-arrow = { version = "0.20.0", path = "../polars-arrow" }
-polars-core = { version = "0.20.0", path = "../polars-core", features = ["private"], default-features = false }
-polars-time = { version = "0.20.0", path = "../polars-time", default-features = false }
-polars-utils = { version = "0.20.0", path = "../polars-utils", optional = true }
+polars-arrow = { version = "0.21.0", path = "../polars-arrow" }
+polars-core = { version = "0.21.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-time = { version = "0.21.0", path = "../polars-time", features = ["private"], default-features = false }
+polars-utils = { version = "0.21.0", path = "../polars-utils" }
 rayon = "1.5"
 regex = "1.5"
+serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 simdutf8 = "0.1"
 

@@ -1259,7 +1259,9 @@ def format(fstring: str, *args: Union["pli.Expr", str]) -> "pli.Expr":
     return concat_str(exprs, sep="")
 
 
-def concat_list(exprs: Sequence[Union[str, "pli.Expr", "pli.Series"]]) -> "pli.Expr":
+def concat_list(
+    exprs: Union[Sequence[Union[str, "pli.Expr", "pli.Series"]], "pli.Expr"]
+) -> "pli.Expr":
     """
     Concat the arrays in a Series dtype List in linear time.
 
@@ -1420,7 +1422,34 @@ def select(
     return pli.DataFrame([]).select(exprs)
 
 
-def struct(exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"]) -> "pli.Expr":
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: Literal[True],
+) -> "pli.Series":
+    ...
+
+
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: Literal[False],
+) -> "pli.Expr":
+    ...
+
+
+@overload
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
+    ...
+
+
+def struct(
+    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    eager: bool = False,
+) -> Union["pli.Expr", "pli.Series"]:
     """
     Collect several columns into a Series of dtype Struct
 
@@ -1428,6 +1457,8 @@ def struct(exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"]) -> "pli.E
     ----------
     exprs
         Columns/Expressions to collect into a Struct
+    eager
+        Evaluate immediately
 
     Examples
     --------
@@ -1473,6 +1504,9 @@ def struct(exprs: Union[Sequence[Union["pli.Expr", str]], "pli.Expr"]) -> "pli.E
     └─────┴───────┴─────┴───────────────────────────────┘
 
     """
+
+    if eager:
+        return pli.select(struct(exprs, eager=False)).to_series()
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(_as_struct(exprs))
 

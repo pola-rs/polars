@@ -1,8 +1,9 @@
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
+use crate::prelude::{LogicalPlan, NullValues, ScanArgsIpc, ScanArgsParquet};
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -13,8 +14,10 @@ use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::{
     AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
 };
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use std::io::BufWriter;
 
 #[pyclass]
 #[repr(transparent)]
@@ -91,6 +94,36 @@ impl From<LazyFrame> for PyLazyFrame {
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
+    pub fn to_json(&self, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+        serde_json::to_writer(file, &self.ldf.logical_plan)
+            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+        Ok(())
+    }
+
+    #[staticmethod]
+    #[cfg(feature = "json")]
+    pub fn read_json(py_f: PyObject) -> PyResult<Self> {
+        // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
+        // so don't bother with files.
+        let mut json = String::new();
+        let _ = get_file_like(py_f, false)?
+            .read_to_string(&mut json)
+            .unwrap();
+
+        // Safety
+        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // so we actually don't have a lifetime at all when serializing.
+
+        // &str still has a lifetime. Bit its ok, because we drop it immediately
+        // in this scope
+        let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
+
+        let lp = serde_json::from_str::<LogicalPlan>(json)
+            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+        Ok(LazyFrame::from(lp).into())
+    }
+
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     pub fn new_from_csv(

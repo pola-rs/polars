@@ -18,23 +18,11 @@ pub struct StructChunked {
     arrow_array: ArrayRef,
 }
 
-/// Returns an ['ArrayRef'](arrow::array::ArrayRef) for a given
-/// [`Series`], handling nested Struct-type series seperately.
-fn array_ref_for_series(series: &Series) -> ArrayRef {
-    match series.dtype() {
-        DataType::Struct(_) => {
-            let s = series.struct_().unwrap();
-            s.arrow_array.clone()
-        }
-        _ => series.chunks()[0].clone() as ArrayRef,
-    }
-}
-
 fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
     let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
 
     let new_fields = fields.iter().map(|s| s.field().to_arrow()).collect();
-    let field_arrays = fields.iter().map(array_ref_for_series).collect::<Vec<_>>();
+    let field_arrays = fields.iter().map(|s| s.to_arrow(0)).collect::<Vec<_>>();
     let arr = StructArray::new(ArrowDataType::Struct(new_fields), field_arrays, None);
     (Arc::new(arr), fields)
 }
@@ -133,7 +121,11 @@ impl LogicalType for StructChunked {
 
     /// Gets AnyValue from LogicalType
     fn get_any_value(&self, i: usize) -> AnyValue<'_> {
-        AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect())
+        if let DataType::Struct(flds) = self.dtype() {
+            AnyValue::Struct(self.fields.iter().map(|s| s.get(i)).collect(), flds)
+        } else {
+            unreachable!()
+        }
     }
 
     // in case of a struct, a cast will coerce the inner types

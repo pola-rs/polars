@@ -200,6 +200,9 @@ impl PyExpr {
     pub fn unique_counts(&self) -> PyExpr {
         self.inner.clone().unique_counts().into()
     }
+    pub fn null_count(&self) -> PyExpr {
+        self.inner.clone().null_count().into()
+    }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;
         let expr = if strict {
@@ -683,6 +686,17 @@ impl PyExpr {
             )
             .into()
     }
+
+    pub fn duration_minutes(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.minutes().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+
     pub fn duration_seconds(&self) -> PyExpr {
         self.inner
             .clone()
@@ -1164,6 +1178,10 @@ impl PyExpr {
 
     fn lst_slice(&self, offset: i64, length: usize) -> Self {
         self.inner.clone().arr().slice(offset, length).into()
+    }
+
+    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
     fn rank(&self, method: &str, reverse: bool) -> Self {

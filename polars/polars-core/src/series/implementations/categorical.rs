@@ -8,7 +8,7 @@ use crate::chunked_array::{
         compare_inner::{IntoPartialOrdInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
@@ -222,6 +222,18 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         self.try_with_state(false, |cats| cats.filter(filter))
             .map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        let cats = self.0.logical().take_chunked_unchecked(by);
+        self.finish_with_state(false, cats).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        let cats = self.0.logical().take_opt_chunked_unchecked(by);
+        self.finish_with_state(false, cats).into_series()
     }
 
     fn take(&self, indices: &IdxCa) -> Result<Series> {

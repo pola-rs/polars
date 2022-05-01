@@ -1,6 +1,6 @@
 {
   "name": "nodejs-polars-win32-ia32-msvc",
-  "version": "0.0.5",
+  "version": "0.0.0",
   "os": [
     "win32"
   ],

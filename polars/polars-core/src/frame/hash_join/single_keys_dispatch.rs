@@ -1,16 +1,11 @@
 use super::*;
-use crate::frame::hash_join::single_keys::{
-    hash_join_tuples_inner, hash_join_tuples_left, hash_join_tuples_outer,
-};
-#[cfg(feature = "semi_anti_join")]
-use crate::frame::hash_join::single_keys::{
-    hash_join_tuples_left_anti, hash_join_tuples_left_semi,
-};
+#[cfg(feature = "chunked_ids")]
+use crate::utils::create_chunked_index_mapping;
 
 impl Series {
     #[cfg(feature = "private")]
     #[doc(hidden)]
-    pub fn hash_join_left(&self, other: &Series) -> Vec<(IdxSize, Option<IdxSize>)> {
+    pub fn hash_join_left(&self, other: &Series) -> LeftJoinIds {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -59,7 +54,7 @@ impl Series {
         }
     }
 
-    pub(super) fn hash_join_inner(&self, other: &Series) -> Vec<(IdxSize, IdxSize)> {
+    pub(super) fn hash_join_inner(&self, other: &Series) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let (lhs, rhs) = (self.to_physical_repr(), other.to_physical_repr());
 
         use DataType::*;
@@ -141,7 +136,7 @@ where
 fn num_group_join_inner<T>(
     left: &ChunkedArray<T>,
     right: &ChunkedArray<T>,
-) -> Vec<(IdxSize, IdxSize)>
+) -> (Vec<IdxSize>, Vec<IdxSize>)
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64 + Copy,
@@ -175,10 +170,43 @@ where
     }
 }
 
-fn num_group_join_left<T>(
-    left: &ChunkedArray<T>,
-    right: &ChunkedArray<T>,
-) -> Vec<(IdxSize, Option<IdxSize>)>
+#[cfg(feature = "chunked_ids")]
+fn create_mappings(
+    chunks_left: &[ArrayRef],
+    chunks_right: &[ArrayRef],
+    left_len: usize,
+    right_len: usize,
+) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
+    let mapping_left = || {
+        if chunks_left.len() > 1 {
+            Some(create_chunked_index_mapping(chunks_left, left_len))
+        } else {
+            None
+        }
+    };
+
+    let mapping_right = || {
+        if chunks_right.len() > 1 {
+            Some(create_chunked_index_mapping(chunks_right, right_len))
+        } else {
+            None
+        }
+    };
+
+    POOL.join(mapping_left, mapping_right)
+}
+
+#[cfg(not(feature = "chunked_ids"))]
+fn create_mappings(
+    _chunks_left: &[ArrayRef],
+    _chunks_right: &[ArrayRef],
+    _left_len: usize,
+    _right_len: usize,
+) -> (Option<Vec<ChunkId>>, Option<Vec<ChunkId>>) {
+    (None, None)
+}
+
+fn num_group_join_left<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> LeftJoinIds
 where
     T: PolarsIntegerType,
     T::Native: Hash + Eq + Send + AsU64,
@@ -196,17 +224,32 @@ where
         (0, 0, 1, 1) => {
             let keys_a = splitted_to_slice(&splitted_a);
             let keys_b = splitted_to_slice(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+            hash_join_tuples_left(keys_a, keys_b, None, None)
         }
         (0, 0, _, _) => {
             let keys_a = splitted_by_chunks(&splitted_a);
             let keys_b = splitted_by_chunks(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+
+            let (mapping_left, mapping_right) =
+                create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(
+                keys_a,
+                keys_b,
+                mapping_left.as_deref(),
+                mapping_right.as_deref(),
+            )
         }
         _ => {
             let keys_a = splitted_to_opt_vec(&splitted_a);
             let keys_b = splitted_to_opt_vec(&splitted_b);
-            hash_join_tuples_left(keys_a, keys_b)
+            let (mapping_left, mapping_right) =
+                create_mappings(left.chunks(), right.chunks(), left.len(), right.len());
+            hash_join_tuples_left(
+                keys_a,
+                keys_b,
+                mapping_left.as_deref(),
+                mapping_right.as_deref(),
+            )
         }
     }
 }
@@ -292,18 +335,26 @@ impl Utf8Chunked {
         (splitted_a, splitted_b, swap, hb)
     }
 
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(IdxSize, IdxSize)> {
+    fn hash_join_inner(&self, other: &Utf8Chunked) -> (Vec<IdxSize>, Vec<IdxSize>) {
         let (splitted_a, splitted_b, swap, hb) = self.prepare(other, true);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
         hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
     }
 
-    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(IdxSize, Option<IdxSize>)> {
+    fn hash_join_left(&self, other: &Utf8Chunked) -> LeftJoinIds {
         let (splitted_a, splitted_b, _, hb) = self.prepare(other, false);
         let str_hashes_a = prepare_strs(&splitted_a, &hb);
         let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_left(str_hashes_a, str_hashes_b)
+
+        let (mapping_left, mapping_right) =
+            create_mappings(self.chunks(), other.chunks(), self.len(), other.len());
+        hash_join_tuples_left(
+            str_hashes_a,
+            str_hashes_b,
+            mapping_left.as_deref(),
+            mapping_right.as_deref(),
+        )
     }
 
     #[cfg(feature = "semi_anti_join")]

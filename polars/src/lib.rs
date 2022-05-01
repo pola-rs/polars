@@ -153,6 +153,7 @@
 //! ## Compile times and opt-in features
 //! The opt-in features are (not including dtype features):
 //!
+//! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
 //!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
@@ -293,8 +294,9 @@
 //!                            cardinality. Setting this env var will turn partitioned groupby's off
 //! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
 //!                                     defaults to `0.001`
-//! * `POLARS_PARTITION_CARDINALITY_FRAC` -> at which (estimated) cardinality a partitioned groupby should run.
-//!                                          defaults to `0.005`, any higher cardinality will run default groupby.
+//! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
+//!                                          defaults to `1000`, any higher cardinality will run default groupby.
+//! * `POLARS_FORCE_PARTITION` -> Force partitioned groupby if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.

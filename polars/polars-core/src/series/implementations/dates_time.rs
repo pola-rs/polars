@@ -14,7 +14,7 @@ use super::SeriesWrap;
 use super::*;
 use crate::chunked_array::{
     ops::{explode::ExplodeByOffsets, ToBitRepr},
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
@@ -75,11 +75,6 @@ macro_rules! impl_dyn_series {
 
             fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
                 self.0.vec_hash_combine(build_hasher, hashes)
-            }
-
-            fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
             }
 
             fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
@@ -318,6 +313,18 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                let ca = self.0.deref().take_chunked_unchecked(by);
+                ca.$into_logical().into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                let ca = self.0.deref().take_opt_chunked_unchecked(by);
+                ca.$into_logical().into_series()
+            }
+
             fn take(&self, indices: &IdxCa) -> Result<Series> {
                 ChunkTake::take(self.0.deref(), indices.into())
                     .map(|ca| ca.$into_logical().into_series())
@@ -383,10 +390,6 @@ macro_rules! impl_dyn_series {
                         .into_series()),
                     _ => self.0.cast(data_type),
                 }
-            }
-
-            fn to_dummies(&self) -> Result<DataFrame> {
-                self.0.to_dummies()
             }
 
             fn get(&self, index: usize) -> AnyValue {

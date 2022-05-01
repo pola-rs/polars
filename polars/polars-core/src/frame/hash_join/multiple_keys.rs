@@ -1,9 +1,8 @@
+use super::*;
 use crate::frame::groupby::hashing::{populate_multiple_key_hashmap, HASHMAP_INIT_SIZE};
-use crate::frame::hash_join::single_keys::on_match_left_join_extend;
 use crate::frame::hash_join::{
     get_hash_tbl_threaded_join_mut_partitioned, get_hash_tbl_threaded_join_partitioned,
 };
-use crate::prelude::hash_join::single_keys::LeftJoinTuples;
 use crate::prelude::*;
 use crate::utils::series::to_physical_and_bit_repr;
 use crate::utils::{set_partition_size, split_df};
@@ -29,7 +28,7 @@ pub(crate) unsafe fn compare_df_rows2(
     true
 }
 
-pub(crate) fn create_build_table(
+pub(crate) fn create_probe_table(
     hashes: &[UInt64Chunked],
     keys: &DataFrame,
 ) -> Vec<HashMap<IdxHash, Vec<IdxSize>, IdBuildHasher>> {
@@ -178,7 +177,7 @@ pub(crate) fn inner_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
     swap: bool,
-) -> Vec<(IdxSize, IdxSize)> {
+) -> (Vec<IdxSize>, Vec<IdxSize>) {
     // we assume that the b DataFrame is the shorter relation.
     // b will be used for the build phase.
 
@@ -189,7 +188,7 @@ pub(crate) fn inner_join_multiple_keys(
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
 
-    let hash_tbls = create_build_table(&build_hashes, b);
+    let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
     drop(build_hashes);
 
@@ -235,7 +234,7 @@ pub(crate) fn inner_join_multiple_keys(
                 results
             })
             .flatten()
-            .collect()
+            .unzip()
     })
 }
 
@@ -243,13 +242,24 @@ pub(crate) fn inner_join_multiple_keys(
 pub fn private_left_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
-) -> Vec<(IdxSize, Option<IdxSize>)> {
+    // map the global indices to [chunk_idx, array_idx]
+    // only needed if we have non contiguous memory
+    chunk_mapping_left: Option<&[ChunkId]>,
+    chunk_mapping_right: Option<&[ChunkId]>,
+) -> LeftJoinIds {
     let a = DataFrame::new_no_checks(to_physical_and_bit_repr(a.get_columns()));
     let b = DataFrame::new_no_checks(to_physical_and_bit_repr(b.get_columns()));
-    left_join_multiple_keys(&a, &b)
+    left_join_multiple_keys(&a, &b, chunk_mapping_left, chunk_mapping_right)
 }
 
-pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJoinTuples> {
+pub(crate) fn left_join_multiple_keys(
+    a: &DataFrame,
+    b: &DataFrame,
+    // map the global indices to [chunk_idx, array_idx]
+    // only needed if we have non contiguous memory
+    chunk_mapping_left: Option<&[ChunkId]>,
+    chunk_mapping_right: Option<&[ChunkId]>,
+) -> LeftJoinIds {
     // we should not join on logical types
     debug_assert!(!a.iter().any(|s| s.is_logical()));
     debug_assert!(!b.iter().any(|s| s.is_logical()));
@@ -261,7 +271,7 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
     let (build_hashes, random_state) = df_rows_to_hashes_threaded(&dfs_b, None);
     let (probe_hashes, _) = df_rows_to_hashes_threaded(&dfs_a, Some(random_state));
 
-    let hash_tbls = create_build_table(&build_hashes, b);
+    let hash_tbls = create_probe_table(&build_hashes, b);
     // early drop to reduce memory pressure
     drop(build_hashes);
 
@@ -270,15 +280,17 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
 
     // next we probe the other relation
     // code duplication is because we want to only do the swap check once
-    POOL.install(move || {
+    let results = POOL.install(move || {
         probe_hashes
             .into_par_iter()
             .zip(offsets)
             .map(move |(probe_hashes, offset)| {
                 // local reference
                 let hash_tbls = &hash_tbls;
-                let mut results =
-                    Vec::with_capacity(probe_hashes.len() / POOL.current_num_threads());
+
+                let len = probe_hashes.len() / POOL.current_num_threads();
+                let mut result_idx_left = Vec::with_capacity(len);
+                let mut result_idx_right = Vec::with_capacity(len);
                 let local_offset = offset;
 
                 let mut idx_a = local_offset as IdxSize;
@@ -299,20 +311,30 @@ pub(crate) fn left_join_multiple_keys(a: &DataFrame, b: &DataFrame) -> Vec<LeftJ
                         match entry {
                             // left and right matches
                             Some((_, indexes_b)) => {
-                                on_match_left_join_extend(&mut results, indexes_b, idx_a);
+                                result_idx_left
+                                    .extend(std::iter::repeat(idx_a).take(indexes_b.len()));
+                                result_idx_right.extend(indexes_b.iter().copied().map(Some))
                             }
                             // only left values, right = null
-                            None => results.push((idx_a, None)),
+                            None => {
+                                result_idx_left.push(idx_a);
+                                result_idx_right.push(None);
+                            }
                         }
                         idx_a += 1;
                     }
                 }
 
-                results
+                finish_left_join_mappings(
+                    result_idx_left,
+                    result_idx_right,
+                    chunk_mapping_left,
+                    chunk_mapping_right,
+                )
             })
-            .flatten()
-            .collect()
-    })
+            .collect::<Vec<_>>()
+    });
+    flatten_left_join_ids(results)
 }
 
 #[cfg(feature = "semi_anti_join")]

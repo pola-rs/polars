@@ -10,6 +10,7 @@ use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
 use polars_time::prelude::*;
+use polars_utils::flatten;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::borrow::Cow;
@@ -189,7 +190,7 @@ impl<'a> CoreReader<'a> {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
-                    if let Some(b) = decompress(&reader_bytes) {
+                    if let Some(b) = decompress(&reader_bytes, n_rows, delimiter, quote_char) {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
@@ -330,7 +331,7 @@ impl<'a> CoreReader<'a> {
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
 
             // if we only need to parse n_rows,
-            // we first try to use the line statistics the total bytes we need to process
+            // we first try to use the line statistics to estimate the total bytes we need to process
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
 
@@ -549,7 +550,7 @@ impl<'a> CoreReader<'a> {
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            let mut dfs = dfs.into_iter().flatten().collect::<Vec<_>>();
+            let mut dfs = flatten(&dfs, None);
             if self.row_count.is_some() {
                 update_row_counts(&mut dfs)
             }

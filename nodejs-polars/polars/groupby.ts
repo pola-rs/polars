@@ -1,9 +1,10 @@
-import {DataFrame, dfWrapper} from "./dataframe";
+import {DataFrame, _DataFrame} from "./dataframe";
 import * as utils from "./utils";
 import util from "util";
 import {Expr} from "./lazy/expr";
 import {col, exclude} from "./lazy/functions";
 import pli from "./internals/polars_internal";
+import {selectionToExprList} from "./utils";
 
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -169,7 +170,7 @@ export type PivotOps = Pick<GroupBy,
 > & {[inspect](): string}
 
 export function GroupBy(
-  df: DataFrame,
+  df: any,
   by: string[],
   maintainOrder = false
 ) {
@@ -188,11 +189,11 @@ export function GroupBy(
   };
 
   const agg = (...aggs): DataFrame => {
-
     if(utils.isExprArray(aggs))  {
       aggs = [aggs].flat(2);
 
-      return dfWrapper(df).lazy()
+      return _DataFrame(df)
+        .lazy()
         .groupBy(by, maintainOrder)
         .agg(...aggs)
         .collectSync({noOptimization:true});
@@ -202,7 +203,7 @@ export function GroupBy(
           return [values].flat(2).map(v => col(key)[v as any]());
         });
 
-      return dfWrapper(df)
+      return _DataFrame(df)
         .lazy()
         .groupBy(by, maintainOrder)
         .agg(...pairs)
@@ -216,9 +217,13 @@ export function GroupBy(
     agg,
     pivot,
     aggList: () => agg(exclude(by as any).list()),
-    count: () => dfWrapper(pli.df.groupby({by, agg: "count", _df: df})),
+    count() {
+      return _DataFrame(df.groupby([by].flat(), null, "count"));
+    },
     first: () => agg(exclude(by as any).first()),
-    groups: () => dfWrapper(pli.df.groupby({by, agg: "groups", _df: df})),
+    groups() {
+      return _DataFrame(df.groupby([by].flat(), null, "groups"));
+    },
     head: (n=5) => agg(exclude(by as any).head(n)),
     last: () => agg(exclude(by as any).last()),
     max: () => agg(exclude(by as any).max()),
@@ -234,13 +239,13 @@ export function GroupBy(
 }
 
 function PivotOps(
-  df: DataFrame,
+  df: any,
   by: string | string[],
   pivotCol: string,
   valueCol: string
 ): PivotOps {
 
-  const pivot =  (agg) => () =>  dfWrapper(pli.df.pivot({by, pivotCol, valueCol, agg, _df: df}));
+  const pivot =  (agg) => () =>  _DataFrame(df.pivot([by].flat(), [pivotCol], [valueCol], agg));
   const customInspect = () => util.formatWithOptions(inspectOpts, "PivotOps {by: %O}", by);
 
   return {

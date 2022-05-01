@@ -1,5 +1,6 @@
 import io
-from datetime import date, datetime, timedelta
+import typing
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
@@ -815,3 +816,60 @@ def test_timelike_init() -> None:
     for ts in [durations, dates, datetimes]:
         s = pl.Series(ts)
         assert s.to_list() == ts
+
+
+def test_duration_filter() -> None:
+    date_df = pl.DataFrame(
+        {
+            "start_date": [date(2022, 1, 1), date(2022, 1, 1), date(2022, 1, 1)],
+            "end_date": [date(2022, 1, 7), date(2022, 2, 20), date(2023, 1, 1)],
+        }
+    ).with_column((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
+
+    assert date_df.filter(pl.col("time_passed") < timedelta(days=30)).shape[0] == 1
+    assert date_df.filter(pl.col("time_passed") >= timedelta(days=30)).shape[0] == 2
+
+
+def test_agg_logical() -> None:
+    dates = [date(2001, 1, 1), date(2002, 1, 1)]
+    s = pl.Series(dates)
+    assert s.max() == dates[1]
+    assert s.min() == dates[0]
+
+
+@typing.no_type_check
+def test_from_time_arrow() -> None:
+    times = pa.array([10, 20, 30], type=pa.time32("s"))
+    times_table = pa.table([times], names=["times"])
+
+    assert pl.from_arrow(times_table).to_series().to_list() == [
+        time(0, 0, 10),
+        time(0, 0, 20),
+        time(0, 0, 30),
+    ]
+
+
+def test_datetime_strptime_patterns() -> None:
+    # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "09-05-2019" "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 1
+    assert s[0] is None

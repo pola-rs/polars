@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.23"
+version = "0.13.25"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -93,12 +93,13 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
-  "series_from_anyvalue",
   "unique_counts",
   "log",
   "serde-lazy",
   "partition_by",
   "semi_anti_join",
+  "list_eval",
+  "to_dummies",
 ]
 
 # [patch.crates-io]

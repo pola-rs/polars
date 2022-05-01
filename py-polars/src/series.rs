@@ -396,34 +396,16 @@ impl PySeries {
         }
     }
 
-    pub fn max(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.max::<f64>().to_object(py),
-            DataType::Boolean => self.series.max::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.max::<i64>().to_object(py),
-        }
+    pub fn max(&self, py: Python) -> PyObject {
+        Wrap(self.series.max_as_series().get(0)).into_py(py)
     }
 
-    pub fn min(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.min::<f64>().to_object(py),
-            DataType::Boolean => self.series.min::<u32>().map(|v| v == 1).to_object(py),
-            _ => self.series.min::<i64>().to_object(py),
-        }
+    pub fn min(&self, py: Python) -> PyObject {
+        Wrap(self.series.min_as_series().get(0)).into_py(py)
     }
 
-    pub fn sum(&self) -> PyObject {
-        let gil = Python::acquire_gil();
-        let py = gil.python();
-        match self.series.dtype() {
-            DataType::Float32 | DataType::Float64 => self.series.sum::<f64>().to_object(py),
-            DataType::Boolean => self.series.sum::<u64>().to_object(py),
-            _ => self.series.sum::<i64>().to_object(py),
-        }
+    pub fn sum(&self, py: Python) -> PyObject {
+        Wrap(self.series.sum_as_series().get(0)).into_py(py)
     }
 
     pub fn n_chunks(&self) -> usize {
@@ -635,27 +617,36 @@ impl PySeries {
         }
     }
     pub fn eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.equal(&rhs.series).into_series()))
+        let s = self.series.equal(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn neq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.not_equal(&rhs.series).into_series()))
+        let s = self
+            .series
+            .not_equal(&rhs.series)
+            .map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn gt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.gt(&rhs.series).into_series()))
+        let s = self.series.gt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn gt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.gt_eq(&rhs.series).into_series()))
+        let s = self.series.gt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn lt(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.lt(&rhs.series).into_series()))
+        let s = self.series.lt(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn lt_eq(&self, rhs: &PySeries) -> PyResult<Self> {
-        Ok(Self::new(self.series.lt_eq(&rhs.series).into_series()))
+        let s = self.series.lt_eq(&rhs.series).map_err(PyPolarsErr::from)?;
+        Ok(Self::new(s.into_series()))
     }
 
     pub fn _not(&self) -> PyResult<Self> {
@@ -682,74 +673,78 @@ impl PySeries {
 
         let series = &self.series;
 
-        let primitive_to_list = |dt: &DataType, series: &Series| match dt {
-            DataType::Boolean => PyList::new(python, series.bool().unwrap()),
-            DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
-            DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
-            DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
-            DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
-            DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
-            DataType::Int8 => PyList::new(python, series.i8().unwrap()),
-            DataType::Int16 => PyList::new(python, series.i16().unwrap()),
-            DataType::Int32 => PyList::new(python, series.i32().unwrap()),
-            DataType::Int64 => PyList::new(python, series.i64().unwrap()),
-            DataType::Float32 => PyList::new(python, series.f32().unwrap()),
-            DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            dt => panic!("to_list() not implemented for {:?}", dt),
-        };
-
-        let pylist = match series.dtype() {
-            DataType::Categorical(_) => {
-                PyList::new(python, series.categorical().unwrap().iter_str())
-            }
-            DataType::Object(_) => {
-                let v = PyList::empty(python);
-                for i in 0..series.len() {
-                    let obj: Option<&ObjectValue> = self.series.get_object(i).map(|any| any.into());
-                    let val = obj.to_object(python);
-
-                    v.append(val).unwrap();
+        fn to_list_recursive(python: Python, series: &Series) -> PyObject {
+            let pylist = match series.dtype() {
+                DataType::Boolean => PyList::new(python, series.bool().unwrap()),
+                DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+                DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+                DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+                DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+                DataType::Int8 => PyList::new(python, series.i8().unwrap()),
+                DataType::Int16 => PyList::new(python, series.i16().unwrap()),
+                DataType::Int32 => PyList::new(python, series.i32().unwrap()),
+                DataType::Int64 => PyList::new(python, series.i64().unwrap()),
+                DataType::Float32 => PyList::new(python, series.f32().unwrap()),
+                DataType::Float64 => PyList::new(python, series.f64().unwrap()),
+                DataType::Categorical(_) => {
+                    PyList::new(python, series.categorical().unwrap().iter_str())
                 }
-                v
-            }
-            DataType::List(inner_dtype) => {
-                let v = PyList::empty(python);
-                let ca = series.list().unwrap();
-                for opt_s in ca.amortized_iter() {
-                    match opt_s {
-                        None => {
-                            v.append(python.None()).unwrap();
-                        }
-                        Some(s) => {
-                            let pylst = primitive_to_list(inner_dtype, s.as_ref());
-                            v.append(pylst).unwrap();
+                DataType::Object(_) => {
+                    let v = PyList::empty(python);
+                    for i in 0..series.len() {
+                        let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
+                        let val = obj.to_object(python);
+
+                        v.append(val).unwrap();
+                    }
+                    v
+                }
+                DataType::List(_) => {
+                    let v = PyList::empty(python);
+                    let ca = series.list().unwrap();
+                    for opt_s in ca.amortized_iter() {
+                        match opt_s {
+                            None => {
+                                v.append(python.None()).unwrap();
+                            }
+                            Some(s) => {
+                                let pylst = to_list_recursive(python, s.as_ref());
+                                v.append(pylst).unwrap();
+                            }
                         }
                     }
+                    v
                 }
-                v
-            }
-            DataType::Date => {
-                let ca = series.date().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Datetime(_, _) => {
-                let ca = series.datetime().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Utf8 => {
-                let ca = series.utf8().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Struct(_) => {
-                let ca = series.struct_().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Duration(_) => {
-                let ca = series.duration().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            dt => primitive_to_list(dt, series),
-        };
+                DataType::Date => {
+                    let ca = series.date().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Time => {
+                    let ca = series.time().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Datetime(_, _) => {
+                    let ca = series.datetime().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Utf8 => {
+                    let ca = series.utf8().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Struct(_) => {
+                    let ca = series.struct_().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Duration(_) => {
+                    let ca = series.duration().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                dt => panic!("to_list() not implemented for {:?}", dt),
+            };
+            pylist.to_object(python)
+        }
+
+        let pylist = to_list_recursive(python, series);
         pylist.to_object(python)
     }
 
@@ -1842,7 +1837,8 @@ macro_rules! impl_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.equal(rhs).into_series()))
+                let s = self.series.equal(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1866,7 +1862,8 @@ macro_rules! impl_neq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.not_equal(rhs).into_series()))
+                let s = self.series.not_equal(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1889,7 +1886,8 @@ macro_rules! impl_gt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.gt(rhs).into_series()))
+                let s = self.series.gt(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1912,7 +1910,8 @@ macro_rules! impl_gt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.gt_eq(rhs).into_series()))
+                let s = self.series.gt_eq(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1936,7 +1935,8 @@ macro_rules! impl_lt_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.lt(rhs).into_series()))
+                let s = self.series.lt(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };
@@ -1959,7 +1959,8 @@ macro_rules! impl_lt_eq_num {
         #[pymethods]
         impl PySeries {
             pub fn $name(&self, rhs: $type) -> PyResult<PySeries> {
-                Ok(PySeries::new(self.series.lt_eq(rhs).into_series()))
+                let s = self.series.lt_eq(rhs).map_err(PyPolarsErr::from)?;
+                Ok(PySeries::new(s.into_series()))
             }
         }
     };

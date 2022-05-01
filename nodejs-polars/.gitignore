@@ -10,3 +10,4 @@ bin/
 .vscode
 *.node
 docs/
+run.js

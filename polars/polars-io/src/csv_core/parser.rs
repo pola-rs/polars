@@ -34,7 +34,7 @@ pub(crate) fn next_line_position(
         return None;
     }
     loop {
-        let pos = input.iter().position(|b| *b == b'\n')? + 1;
+        let pos = memchr::memchr(b'\n', input)? + 1;
         if input.len() - pos == 0 {
             return None;
         }
@@ -133,7 +133,7 @@ pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)>
             return None;
         }
         bytes_trunc = &bytes[n_read..];
-        match bytes_trunc.iter().position(|&b| b == b'\n') {
+        match memchr::memchr(b'\n', bytes_trunc) {
             Some(position) => {
                 n_read += position + 1;
                 lengths.push(position + 1);

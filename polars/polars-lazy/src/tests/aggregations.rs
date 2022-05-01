@@ -123,6 +123,27 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "moment")]
+fn test_auto_skew_kurtosis_agg() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("fruits")])
+        .agg([
+            col("B").skew(false).alias("bskew"),
+            col("B").kurtosis(false, false).alias("bkurt"),
+        ])
+        .collect()?;
+
+    assert!(matches!(out.column("bskew")?.dtype(), DataType::Float64));
+    assert!(matches!(out.column("bkurt")?.dtype(), DataType::Float64));
+
+    Ok(())
+}
+
+#[test]
 fn test_auto_list_agg() -> Result<()> {
     let df = fruits_cars();
 
@@ -234,8 +255,8 @@ fn test_binary_agg_context_0() -> Result<()> {
         .lazy()
         .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(lit("a"))
-            .otherwise(lit("b"))
+            .then(repeat("a", count()))
+            .otherwise(repeat("b", count()))
             .alias("foo")])
         .collect()
         .unwrap();

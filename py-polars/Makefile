@@ -39,10 +39,14 @@ install-wheel:
 build-no-venv:
 	maturin build -o wheels
 
+build-no-venv-release:
+	maturin build -o wheels --release
+
 build-and-test-no-venv:
 	maturin build -o wheels
 	pip install --force-reinstall -U wheels/polars-*.whl
 	pytest tests
 
 install-no-venv: build-no-venv install-wheel
+install-no-venv-release: build-no-venv-release install-wheel
 

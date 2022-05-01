@@ -15,6 +15,8 @@ import pytest
 
 import polars as pl
 from polars import testing
+from polars.datatypes import List
+from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -399,7 +401,7 @@ def test_selection() -> None:
     assert df[[2], ["a", "b"]].shape == (1, 2)
     assert df.select_at_idx(0).name == "a"
     assert (df["a"] == df["a"]).sum() == 3
-    assert (df["c"] == df["a"]).sum() == 0
+    assert (df["c"] == df["a"].cast(str)).sum() == 0
     assert df[:, "a":"b"].shape == (3, 2)  # type: ignore
     assert df[:, "a":"c"].columns == ["a", "b", "c"]  # type: ignore
     expect = pl.DataFrame({"c": ["b"]})
@@ -2079,3 +2081,12 @@ def test_partition_by() -> None:
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
+
+
+@typing.no_type_check
+def test_list_of_list_of_struct() -> None:
+    expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
+    pa_df = pa.Table.from_pylist(expected)
+    df = pl.from_arrow(pa_df)
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
+    assert df.to_dicts() == expected

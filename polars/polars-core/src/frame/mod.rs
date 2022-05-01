@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{accumulate_dataframes_horizontal, get_supertype, split_ca, split_df, NoNull};
+use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -46,6 +46,7 @@ pub enum NullStrategy {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum UniqueKeepStrategy {
     First,
     Last,
@@ -152,6 +153,18 @@ impl DataFrame {
     /// FFI buffers are included in this estimation.
     pub fn estimated_size(&self) -> usize {
         self.columns.iter().map(|s| s.estimated_size()).sum()
+    }
+
+    // reduce monomorphization
+    fn apply_columns_par(&self, func: &(dyn Fn(&Series) -> Series + Send + Sync)) -> Vec<Series> {
+        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
+    }
+
+    fn try_apply_columns_par(
+        &self,
+        func: &(dyn Fn(&Series) -> Result<Series> + Send + Sync),
+    ) -> Result<Vec<Series>> {
+        POOL.install(|| self.columns.par_iter().map(|s| func(s)).collect())
     }
 
     /// Get the index of the column.
@@ -371,20 +384,20 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.columns = POOL.install(|| self.columns.par_iter().map(|s| s.rechunk()).collect());
+        self.columns = self.apply_columns_par(&|s| s.rechunk());
         self
     }
 
-    /// Ensure all the chunks in the DataFrame are aligned.
-    pub fn rechunk(&mut self) -> &mut Self {
+    /// Estimates of the DataFrames columns consist of the same chunk sizes
+    pub fn should_rechunk(&self) -> bool {
         let hb = RandomState::default();
         let hb2 = RandomState::with_seeds(392498, 98132457, 0, 412059);
-        if self
+        !self
             .columns
             .iter()
             // The idea is that we creat a hash of the chunk lengths.
-            // Consisting of the combined hash + the sum (asumming collision probablility is nihil)
-            // if not, we can add more hashes.
+            // Consisting of the combined hash + the sum (assuming collision probability is nihil)
+            // if not, we can add more hashes or at worst case we do an extra rechunk.
             // the old solution to this was clone all lengths to a vec and compare the vecs
             .map(|s| {
                 s.chunk_lengths().map(|i| i as u64).fold(
@@ -405,10 +418,15 @@ impl DataFrame {
                 )
             })
             .all_equal()
-        {
-            self
-        } else {
+    }
+
+    /// Ensure all the chunks in the DataFrame are aligned.
+    pub fn rechunk(&mut self) -> &mut Self {
+        if self.should_rechunk() {
+            debug_assert!(!self.columns.iter().map(|s| s.n_chunks()).all_equal());
             self.as_single_chunk_par()
+        } else {
+            self
         }
     }
 
@@ -556,8 +574,7 @@ impl DataFrame {
             .ok_or_else(|| {
                 PolarsError::NoData("Can not determine number of chunks if there is no data".into())
             })?
-            .chunks()
-            .len())
+            .n_chunks())
     }
 
     /// Get a reference to the schema fields of the `DataFrame`.
@@ -1432,15 +1449,9 @@ impl DataFrame {
         if std::env::var("POLARS_VERT_PAR").is_ok() {
             return self.filter_vertical(mask);
         }
-
-        let new_col = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| match s.dtype() {
-                    DataType::Utf8 => s.filter_threaded(mask, true),
-                    _ => s.filter(mask),
-                })
-                .collect::<Result<Vec<_>>>()
+        let new_col = self.try_apply_columns_par(&|s| match s.dtype() {
+            DataType::Utf8 => s.filter_threaded(mask, true),
+            _ => s.filter(mask),
         })?;
         Ok(DataFrame::new_no_checks(new_col))
     }
@@ -1460,15 +1471,11 @@ impl DataFrame {
     where
         I: Iterator<Item = usize> + Clone + Sync + TrustedLen,
     {
-        let new_col = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| {
-                    let mut i = iter.clone();
-                    s.take_iter(&mut i)
-                })
-                .collect::<Result<_>>()
+        let new_col = self.try_apply_columns_par(&|s| {
+            let mut i = iter.clone();
+            s.take_iter(&mut i)
         })?;
+
         Ok(DataFrame::new_no_checks(new_col))
     }
 
@@ -1508,14 +1515,9 @@ impl DataFrame {
                 .map(|s| s.take_iter_unchecked(&mut iter))
                 .collect::<Vec<_>>()
         } else {
-            POOL.install(|| {
-                self.columns
-                    .par_iter()
-                    .map(|s| {
-                        let mut i = iter.clone();
-                        s.take_iter_unchecked(&mut i)
-                    })
-                    .collect::<Vec<_>>()
+            self.apply_columns_par(&|s| {
+                let mut i = iter.clone();
+                s.take_iter_unchecked(&mut i)
             })
         };
         DataFrame::new_no_checks(new_col)
@@ -1564,14 +1566,9 @@ impl DataFrame {
                 .map(|s| s.take_opt_iter_unchecked(&mut iter))
                 .collect::<Vec<_>>()
         } else {
-            POOL.install(|| {
-                self.columns
-                    .par_iter()
-                    .map(|s| {
-                        let mut i = iter.clone();
-                        s.take_opt_iter_unchecked(&mut i)
-                    })
-                    .collect::<Vec<_>>()
+            self.apply_columns_par(&|s| {
+                let mut i = iter.clone();
+                s.take_opt_iter_unchecked(&mut i)
             })
         };
 
@@ -1596,13 +1593,10 @@ impl DataFrame {
             Cow::Borrowed(indices)
         };
         let new_col = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| match s.dtype() {
-                    DataType::Utf8 => s.take_threaded(&indices, true),
-                    _ => s.take(&indices),
-                })
-                .collect::<Result<_>>()
+            self.try_apply_columns_par(&|s| match s.dtype() {
+                DataType::Utf8 => s.take_threaded(&indices, true),
+                _ => s.take(&indices),
+            })
         })?;
 
         Ok(DataFrame::new_no_checks(new_col))
@@ -1610,13 +1604,10 @@ impl DataFrame {
 
     pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
         let cols = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| match s.dtype() {
-                    DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
-                    _ => s.take_unchecked(idx).unwrap(),
-                })
-                .collect()
+            self.apply_columns_par(&|s| match s.dtype() {
+                DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
+                _ => s.take_unchecked(idx).unwrap(),
+            })
         });
         DataFrame::new_no_checks(cols)
     }
@@ -2055,7 +2046,7 @@ impl DataFrame {
     ///
     /// // create a mask
     /// let values = df.column("values")?;
-    /// let mask = values.lt_eq(1) | values.gt_eq(5_i32);
+    /// let mask = values.lt_eq(1)? | values.gt_eq(5_i32)?;
     ///
     /// df.try_apply("foo", |s| {
     ///     s.utf8()?
@@ -2245,7 +2236,8 @@ impl DataFrame {
     /// See the method on [Series](../series/enum.Series.html#method.shift) for more info on the `shift` operation.
     #[must_use]
     pub fn shift(&self, periods: i64) -> Self {
-        let col = POOL.install(|| self.columns.par_iter().map(|s| s.shift(periods)).collect());
+        let col = self.apply_columns_par(&|s| s.shift(periods));
+
         DataFrame::new_no_checks(col)
     }
 
@@ -2258,12 +2250,8 @@ impl DataFrame {
     ///
     /// See the method on [Series](../series/enum.Series.html#method.fill_null) for more info on the `fill_null` operation.
     pub fn fill_null(&self, strategy: FillNullStrategy) -> Result<Self> {
-        let col = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.fill_null(strategy))
-                .collect::<Result<Vec<_>>>()
-        })?;
+        let col = self.try_apply_columns_par(&|s| s.fill_null(strategy))?;
+
         Ok(DataFrame::new_no_checks(col))
     }
 
@@ -2297,7 +2285,8 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn max(&self) -> Self {
-        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.max_as_series()).collect());
+        let columns = self.apply_columns_par(&|s| s.max_as_series());
+
         DataFrame::new_no_checks(columns)
     }
 
@@ -2331,7 +2320,8 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn std(&self) -> Self {
-        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.std_as_series()).collect());
+        let columns = self.apply_columns_par(&|s| s.std_as_series());
+
         DataFrame::new_no_checks(columns)
     }
     /// Aggregate the columns to their variation values.
@@ -2364,7 +2354,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn var(&self) -> Self {
-        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.var_as_series()).collect());
+        let columns = self.apply_columns_par(&|s| s.var_as_series());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2398,7 +2388,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn min(&self) -> Self {
-        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.min_as_series()).collect());
+        let columns = self.apply_columns_par(&|s| s.min_as_series());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2432,7 +2422,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn sum(&self) -> Self {
-        let columns = POOL.install(|| self.columns.par_iter().map(|s| s.sum_as_series()).collect());
+        let columns = self.apply_columns_par(&|s| s.sum_as_series());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2466,12 +2456,7 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn mean(&self) -> Self {
-        let columns = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.mean_as_series())
-                .collect()
-        });
+        let columns = self.apply_columns_par(&|s| s.mean_as_series());
         DataFrame::new_no_checks(columns)
     }
 
@@ -2505,23 +2490,14 @@ impl DataFrame {
     /// ```
     #[must_use]
     pub fn median(&self) -> Self {
-        let columns = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.median_as_series())
-                .collect()
-        });
+        let columns = self.apply_columns_par(&|s| s.median_as_series());
         DataFrame::new_no_checks(columns)
     }
 
     /// Aggregate the columns to their quantile values.
     pub fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Self> {
-        let columns = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.quantile_as_series(quantile, interpol))
-                .collect::<Result<Vec<_>>>()
-        })?;
+        let columns = self.try_apply_columns_par(&|s| s.quantile_as_series(quantile, interpol))?;
+
         Ok(DataFrame::new_no_checks(columns))
     }
 
@@ -2530,7 +2506,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmin(&self) -> Result<Option<Series>> {
         let min_fn = |acc: &Series, s: &Series| {
-            let mask = acc.lt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.lt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -2560,7 +2536,7 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "zip_with")))]
     pub fn hmax(&self) -> Result<Option<Series>> {
         let max_fn = |acc: &Series, s: &Series| {
-            let mask = acc.gt(s) & acc.is_not_null() | s.is_null();
+            let mask = acc.gt(s)? & acc.is_not_null() | s.is_null();
             acc.zip_with(&mask, s)
         };
 
@@ -2682,62 +2658,6 @@ impl DataFrame {
         F: Fn(DataFrame, Args) -> Result<B>,
     {
         f(self, args)
-    }
-
-    /// Create dummy variables.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    ///
-    /// # #[macro_use] extern crate polars_core;
-    /// # fn main() {
-    ///
-    ///  use polars_core::prelude::*;
-    ///
-    ///  let df = df! {
-    ///       "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
-    ///       "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
-    ///       "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
-    ///   }.unwrap();
-    ///
-    ///   let dummies = df.to_dummies().unwrap();
-    ///   dbg!(dummies);
-    /// # }
-    /// ```
-    /// Outputs:
-    /// ```text
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | id_1 | id_3 | id_2 | type_A | type_B | type_C | code_X1 | code_X2 | code_X3 |
-    ///  | ---  | ---  | ---  | ---    | ---    | ---    | ---     | ---     | ---     |
-    ///  | u8   | u8   | u8   | u8     | u8     | u8     | u8      | u8      | u8      |
-    ///  +======+======+======+========+========+========+=========+=========+=========+
-    ///  | 1    | 0    | 0    | 1      | 0      | 0      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 0    | 1    | 0      | 1      | 0      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 1    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 0       | 0       | 1       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 0    | 1    | 0      | 0      | 1      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 0    | 1    | 0    | 0      | 0      | 1      | 0       | 1       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 0      | 1      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    ///  | 1    | 0    | 0    | 0      | 1      | 0      | 1       | 0       | 0       |
-    ///  +------+------+------+--------+--------+--------+---------+---------+---------+
-    /// ```
-    pub fn to_dummies(&self) -> Result<Self> {
-        let cols = POOL.install(|| {
-            self.columns
-                .par_iter()
-                .map(|s| s.to_dummies())
-                .collect::<Result<Vec<_>>>()
-        })?;
-
-        accumulate_dataframes_horizontal(cols)
     }
 
     /// Drop duplicate rows from a `DataFrame`.
@@ -2923,7 +2843,7 @@ impl DataFrame {
         let cols = self
             .columns
             .iter()
-            .map(|s| Series::new(s.name(), &[s.null_count() as u32]))
+            .map(|s| Series::new(s.name(), &[s.null_count() as IdxSize]))
             .collect();
         Self::new_no_checks(cols)
     }
@@ -2950,9 +2870,46 @@ impl DataFrame {
             .reduce(|acc, b| get_supertype(&acc?, &b.unwrap()))
     }
 
-    #[cfg(any(feature = "partition_by", feature = "semi_anti_join"))]
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId]) -> Self {
+        let cols = self.apply_columns_par(&|s| match s.dtype() {
+            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, true),
+            _ => s._take_chunked_unchecked(idx),
+        });
+
+        DataFrame::new_no_checks(cols)
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    pub(crate) unsafe fn take_opt_chunked_unchecked(&self, idx: &[Option<ChunkId>]) -> Self {
+        let cols = self.apply_columns_par(&|s| match s.dtype() {
+            DataType::Utf8 => s._take_opt_chunked_unchecked_threaded(idx, true),
+            _ => s._take_opt_chunked_unchecked(idx),
+        });
+
+        DataFrame::new_no_checks(cols)
+    }
+
     pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
-        self.take_iter_unchecked(idx.iter().map(|i| *i as usize))
+        let ptr = idx.as_ptr() as *mut IdxSize;
+        let len = idx.len();
+
+        // create a temporary vec. we will not drop it.
+        let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        let out = self.take_unchecked(&ca);
+
+        // ref count of buffers should be one because we dropped all allocations
+        let arr = {
+            let arr_ref = std::mem::take(&mut ca.chunks).pop().unwrap();
+            arr_ref
+                .as_any()
+                .downcast_ref::<PrimitiveArray<IdxSize>>()
+                .unwrap()
+                .clone()
+        };
+        // the only owned heap allocation is the `Vec` we created and must not be dropped
+        let _ = std::mem::ManuallyDrop::new(arr.into_mut().right().unwrap());
+        out
     }
 
     #[cfg(feature = "partition_by")]
@@ -3117,16 +3074,7 @@ mod test {
     #[cfg_attr(miri, ignore)]
     fn test_select() {
         let df = create_frame();
-        assert_eq!(df.column("days").unwrap().equal(1).sum(), Some(1));
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_filter() {
-        let df = create_frame();
-        println!("{}", df.column("days").unwrap());
-        println!("{:?}", df);
-        println!("{:?}", df.filter(&df.column("days").unwrap().equal(0)))
+        assert_eq!(df.column("days").unwrap().equal(1).unwrap().sum(), Some(1));
     }
 
     #[test]
@@ -3136,12 +3084,11 @@ mod test {
         let v = vec!["test".to_string()];
         let s0 = Series::new(col_name, v);
         let mut df = DataFrame::new(vec![s0]).unwrap();
-        println!("{}", df.column(col_name).unwrap());
-        println!("{:?}", df);
 
-        df = df.filter(&df.column(col_name).unwrap().equal("")).unwrap();
+        df = df
+            .filter(&df.column(col_name).unwrap().equal("").unwrap())
+            .unwrap();
         assert_eq!(df.column(col_name).unwrap().n_chunks(), 1);
-        println!("{:?}", df);
     }
 
     #[test]
@@ -3158,47 +3105,10 @@ mod test {
     }
 
     #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_sort() {
-        let mut df = create_frame();
-        df.sort_in_place(["temp"], false).unwrap();
-        println!("{:?}", df);
-    }
-
-    #[test]
     fn slice() {
         let df = create_frame();
         let sliced_df = df.slice(0, 2);
         assert_eq!(sliced_df.shape(), (2, 2));
-        println!("{:?}", df)
-    }
-
-    #[test]
-    #[cfg(feature = "dtype-u8")]
-    #[cfg_attr(miri, ignore)]
-    fn get_dummies() {
-        let df = df! {
-            "id" => &[1, 2, 3, 1, 2, 3, 1, 1],
-            "type" => &["A", "B", "B", "B", "C", "C", "C", "B"],
-            "code" => &["X1", "X2", "X3", "X3", "X2", "X2", "X1", "X1"]
-        }
-        .unwrap();
-        let dummies = df.to_dummies().unwrap();
-        dbg!(&dummies);
-        assert_eq!(
-            Vec::from(dummies.column("id_1").unwrap().u8().unwrap()),
-            &[
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(0),
-                Some(0),
-                Some(1),
-                Some(1)
-            ]
-        );
-        dbg!(dummies);
     }
 
     #[test]
@@ -3222,7 +3132,6 @@ mod test {
             "str" => ["a", "a", "b", "b", "c", "c"]
         }
         .unwrap();
-        dbg!(&df);
         let df = df
             .unique_stable(None, UniqueKeepStrategy::First)
             .unwrap()
@@ -3234,7 +3143,6 @@ mod test {
             "str" => ["a", "b", "c"]
         }
         .unwrap();
-        dbg!(&df);
         assert!(df.frame_equal(&valid));
     }
 

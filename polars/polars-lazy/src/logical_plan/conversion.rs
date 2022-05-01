@@ -95,15 +95,24 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 falsy: f,
             }
         }
-        Expr::Function {
+        Expr::AnonymousFunction {
             input,
             function,
             output_type,
             options,
-        } => AExpr::Function {
+        } => AExpr::AnonymousFunction {
             input: to_aexprs(input, arena),
             function,
             output_type,
+            options,
+        },
+        Expr::Function {
+            input,
+            function,
+            options,
+        } => AExpr::Function {
+            input: to_aexprs(input, arena),
+            function,
             options,
         },
         Expr::Shift { input, periods } => AExpr::Shift {
@@ -571,15 +580,24 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Box::new(f),
             }
         }
-        AExpr::Function {
+        AExpr::AnonymousFunction {
             input,
             function,
             output_type,
             options,
-        } => Expr::Function {
+        } => Expr::AnonymousFunction {
             input: nodes_to_exprs(&input, expr_arena),
             function,
             output_type,
+            options,
+        },
+        AExpr::Function {
+            input,
+            function,
+            options,
+        } => Expr::Function {
+            input: nodes_to_exprs(&input, expr_arena),
+            function,
             options,
         },
         AExpr::Window {

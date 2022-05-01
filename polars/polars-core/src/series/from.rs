@@ -90,17 +90,8 @@ impl Series {
                 let chunks = cast_chunks(&chunks, &DataType::Utf8).unwrap();
                 Ok(Utf8Chunked::from_chunks(name, chunks).into_series())
             }
-            ArrowDataType::List(fld) => {
-                let chunks = chunks
-                    .iter()
-                    .map(|arr| {
-                        let arr: ArrayRef =
-                            cast(arr.as_ref(), &ArrowDataType::LargeList(fld.clone()))
-                                .unwrap()
-                                .into();
-                        convert_list_inner(&arr, fld)
-                    })
-                    .collect();
+            ArrowDataType::List(_) => {
+                let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(ListChunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Boolean => Ok(BooleanChunked::from_chunks(name, chunks).into_series()),
@@ -163,6 +154,10 @@ impl Series {
             }
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+                let mut chunks = chunks;
+                if matches!(dtype, ArrowDataType::Time32(_)) {
+                    chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
+                }
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
@@ -174,11 +169,8 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             }
-            ArrowDataType::LargeList(fld) => {
-                let chunks = chunks
-                    .iter()
-                    .map(|arr| convert_list_inner(arr, fld))
-                    .collect();
+            ArrowDataType::LargeList(_) => {
+                let chunks = chunks.iter().map(convert_inner_types).collect();
                 Ok(ListChunked::from_chunks(name, chunks).into_series())
             }
             ArrowDataType::Null => {
@@ -390,11 +382,30 @@ impl Series {
                 } else {
                     chunks[0].clone()
                 };
-                let struct_arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
-                assert!(
-                    struct_arr.validity().is_none(),
-                    "polars struct does not support validity"
-                );
+                let arr = convert_inner_types(&arr);
+                let mut struct_arr =
+                    std::borrow::Cow::Borrowed(arr.as_any().downcast_ref::<StructArray>().unwrap());
+
+                if let Some(validity) = struct_arr.validity() {
+                    let new_values = struct_arr
+                        .values()
+                        .iter()
+                        .map(|arr| {
+                            Arc::from(match arr.validity() {
+                                None => arr.with_validity(Some(validity.clone())),
+                                Some(arr_validity) => {
+                                    arr.with_validity(Some(arr_validity & validity))
+                                }
+                            })
+                        })
+                        .collect();
+
+                    struct_arr = std::borrow::Cow::Owned(StructArray::new(
+                        struct_arr.data_type().clone(),
+                        new_values,
+                        None,
+                    ));
+                }
                 let fields = struct_arr
                     .values()
                     .iter()
@@ -416,22 +427,44 @@ impl Series {
     }
 }
 
-fn convert_list_inner(arr: &ArrayRef, fld: &ArrowField) -> ArrayRef {
-    // if inner type is Utf8, we need to convert that to large utf8
-    match fld.data_type() {
+fn convert_inner_types(arr: &ArrayRef) -> ArrayRef {
+    match arr.data_type() {
         ArrowDataType::Utf8 => {
+            let arr = arr.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
+            Arc::from(utf8_to_large_utf8(arr))
+        }
+        ArrowDataType::List(field) => {
+            let out = cast(&**arr, &ArrowDataType::LargeList(field.clone())).unwrap();
+            convert_inner_types(&(Arc::from(out) as ArrayRef))
+        }
+        ArrowDataType::LargeList(_) => {
             let arr = arr.as_any().downcast_ref::<ListArray<i64>>().unwrap();
-            let offsets = arr.offsets().iter().map(|x| *x as i64).collect();
-            let values = arr.values();
-            let values =
-                utf8_to_large_utf8(values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap());
+            let values = convert_inner_types(arr.values());
+            let dtype = ListArray::<i64>::default_datatype(values.data_type().clone());
+            unsafe {
+                Arc::from(ListArray::<i64>::new_unchecked(
+                    dtype,
+                    arr.offsets().clone(),
+                    values,
+                    arr.validity().cloned(),
+                ))
+            }
+        }
+        ArrowDataType::Struct(fields) => {
+            let arr = arr.as_any().downcast_ref::<StructArray>().unwrap();
+            let values = arr
+                .values()
+                .iter()
+                .map(convert_inner_types)
+                .collect::<Vec<_>>();
 
-            Arc::new(LargeListArray::from_data(
-                ArrowDataType::LargeList(
-                    ArrowField::new(&fld.name, ArrowDataType::LargeUtf8, true).into(),
-                ),
-                offsets,
-                Arc::new(values),
+            let fields = fields
+                .iter()
+                .map(|f| ArrowField::new(&f.name, DataType::from(&f.data_type).to_arrow(), true))
+                .collect();
+            Arc::new(StructArray::new(
+                ArrowDataType::Struct(fields),
+                values,
                 arr.validity().cloned(),
             ))
         }

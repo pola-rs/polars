@@ -549,7 +549,7 @@ class Series:
         """
         return self ** 0.5
 
-    def any(self) -> "Series":
+    def any(self) -> bool:
         """
         Check if any boolean value in the column is `True`
 
@@ -557,9 +557,9 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()
+        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
-    def all(self) -> "Series":
+    def all(self) -> bool:
         """
         Check if all boolean values in the column are `True`
 
@@ -567,7 +567,7 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()
+        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
     def log(self, base: float = math.e) -> "Series":
         """
@@ -697,7 +697,7 @@ class Series:
         └────────────┴───────┘
 
         """
-        stats: Dict[str, Union[Optional[float], int, str]]
+        stats: Dict[str, Union[Optional[float], int, str, date, datetime, timedelta]]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
@@ -776,7 +776,7 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> Union[int, float]:
+    def min(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the minimal value in this Series.
 
@@ -789,7 +789,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> Union[int, float]:
+    def max(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the maximum value in this Series.
 
@@ -953,6 +953,17 @@ class Series:
         where `pk` are discrete probabilities.
 
         This routine will normalize pk if they don’t sum to 1.
+
+        Examples
+        --------
+
+        >>> a = pl.Series([0.99, 0.005, 0.005])
+        >>> a.entropy()
+        0.06293300616044681
+        >>> b = pl.Series([0.65, 0.10, 0.25])
+        >>> b.entropy()
+        0.8568409950394724
+
         """
         return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
@@ -2051,7 +2062,10 @@ class Series:
         return array
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
-        return self.to_numpy().__array__(dtype)
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -3754,6 +3768,21 @@ class StringNameSpace:
         Returns
         -------
         Series[u32]
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["foo", "bar", "hello", "world"])
+        >>> s.str.lengths()
+        shape: (4,)
+        Series: '' [u32]
+        [
+                3
+                3
+                5
+                5
+        ]
+
         """
         return wrap_s(self._s.str_lengths())
 
@@ -4009,6 +4038,19 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "123ABC"
+                "abc456"
+        ]
+
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
@@ -4078,7 +4120,7 @@ class StringNameSpace:
 
 class ListNameSpace:
     """
-    Series.dt namespace.
+    Series.arr namespace.
     """
 
     def __init__(self, series: Series):
@@ -4087,6 +4129,19 @@ class ListNameSpace:
     def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([[1, 2, 3], [5]])
+        >>> s.arr.lengths()
+        shape: (2,)
+        Series: '' [u32]
+        [
+                3
+                1
+        ]
+
         """
         return wrap_s(self._s.arr_lengths())
 
@@ -4171,6 +4226,19 @@ class ListNameSpace:
         Returns
         -------
         Series of dtype Utf8
+
+        Examples
+        --------
+
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
+        >>> s.arr.join(separator="-")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "foo-bar"
+                "hello-world"
+        ]
+
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
 
@@ -4351,6 +4419,43 @@ class ListNameSpace:
 
         """
         return self.slice(-n, n)
+
+    def eval(self, expr: "pli.Expr", parallel: bool = False) -> "Series":
+        """
+        Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr, parallel)).to_series()
 
 
 class DateTimeNameSpace:
@@ -4637,28 +4742,29 @@ class DateTimeNameSpace:
     def to_python_datetime(self) -> Series:
         """
         Go from Date/Datetime to python DateTime objects
+
+        .. deprecated:: 0.13.23
+            Use :func:`Series.to_list`.
+
         """
         return (self.timestamp("ms") / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> Union[date, datetime]:
+    def min(self) -> Union[date, datetime, timedelta]:
         """
         Return minimum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.min()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        # we can ignore types because we are certain we get a logical type
+        return wrap_s(self._s).min()  # type: ignore
 
-    def max(self) -> Union[date, datetime]:
+    def max(self) -> Union[date, datetime, timedelta]:
         """
         Return maximum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.max()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return wrap_s(self._s).max()  # type: ignore
 
-    def median(self) -> Union[date, datetime]:
+    def median(self) -> Union[date, datetime, timedelta]:
         """
         Return median as python DateTime
         """
@@ -4818,6 +4924,16 @@ class DateTimeNameSpace:
         A series of dtype Int64
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.hours()).to_series()
+
+    def minutes(self) -> Series:
+        """
+        Extract the minutes from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.minutes()).to_series()
 
     def seconds(self) -> Series:
         """

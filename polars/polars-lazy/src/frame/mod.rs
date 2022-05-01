@@ -31,12 +31,14 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::physical_plan::state::ExecutionState;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
 use crate::prelude::{
     drop_nulls::ReplaceDropNulls, fast_projection::FastProjection,
-    simplify_expr::SimplifyBooleanRule, slice_pushdown::SlicePushDown, *,
+    simplify_expr::SimplifyBooleanRule, slice_pushdown_lp::SlicePushDown, *,
 };
 
 use crate::logical_plan::FETCH_ROWS;
@@ -46,6 +48,7 @@ use polars_core::frame::explode::MeltArgs;
 use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
@@ -83,7 +86,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone, Default)]
 #[must_use]
 pub struct LazyFrame {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
 }
 
@@ -529,6 +532,8 @@ impl LazyFrame {
                 .expect("predicate pushdown failed");
             lp_arena.replace(lp_top, alp);
         }
+        // make sure its before slice pushdown.
+        rules.push(Box::new(FastProjection {}));
 
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};
@@ -538,6 +543,9 @@ impl LazyFrame {
                 .expect("slice pushdown failed");
 
             lp_arena.replace(lp_top, alp);
+
+            // expressions use the stack optimizer
+            rules.push(Box::new(slice_pushdown_opt));
         }
 
         if type_coercion {
@@ -559,7 +567,6 @@ impl LazyFrame {
             rules.push(Box::new(opt));
         }
 
-        rules.push(Box::new(FastProjection {}));
         rules.push(Box::new(ReplaceDropNulls {}));
 
         lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top);

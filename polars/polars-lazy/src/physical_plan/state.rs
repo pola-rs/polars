@@ -1,9 +1,10 @@
 use parking_lot::{Mutex, RwLock};
 use polars_core::frame::groupby::GroupsProxy;
+use polars_core::frame::hash_join::JoinOptIds;
 use polars_core::prelude::*;
 use std::ops::Deref;
 
-pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, Vec<(IdxSize, Option<IdxSize>)>>>>;
+pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, JoinOptIds>>>;
 pub type GroupsProxyCache = Arc<Mutex<PlHashMap<String, GroupsProxy>>>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.

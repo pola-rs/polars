@@ -166,6 +166,7 @@ Computations
     Expr.sign
     Expr.unique_counts
     Expr.value_counts
+    Expr.null_count
 
 Manipulation/ selection
 -----------------------
@@ -278,6 +279,7 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.hours
+    ExprDateTimeNameSpace.minutes
     ExprDateTimeNameSpace.seconds
     ExprDateTimeNameSpace.milliseconds
     ExprDateTimeNameSpace.nanoseconds
@@ -341,6 +343,7 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.slice
     ExprListNameSpace.head
     ExprListNameSpace.tail
+    ExprListNameSpace.eval
 
 Categories
 ----------
