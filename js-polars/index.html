@@ -9,7 +9,12 @@
       border: 1px solid black;
     }
   </style>
-  <script type='module' src="./index.js"></script>
+  <script type='module'>
+    const worker = new Worker("./worker.js", {type: 'module'});
+    worker.addEventListener('message', async ({data}) => {
+      console.log(data)
+    })
+  </script>
 
 
 </head>

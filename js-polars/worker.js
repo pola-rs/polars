@@ -1,10 +1,12 @@
 import * as pl from './pkg/index.js'
+const filepath = "http://localhost:8000/examples/reddit_1m.csv"
+
 await pl.default()
 await pl.init_hooks()
-await pl.initThreadPool(16);
-const res = await fetch("http://localhost:8000/examples/reddit_1m.csv")
+await pl.initThreadPool(navigator.hardwareConcurrency);
+
+const res = await fetch(filepath)
 const b = await res.arrayBuffer()
-console.log('start')
 console.time("readCsv")
 const infer_schema_length = 10;
 const chunk_size = 40000
@@ -33,12 +35,10 @@ const df = pl.read_csv(
   parse_dates,
   skip_rows_after_header,
 ).rechunk().head(100)
-console.log(df)
 console.timeEnd("readCsv")
 
 console.time('toRecords')
 df.toRecords()
 console.timeEnd('toRecords')
-// console.log(df)
 
 self.postMessage(df.head().toObject())

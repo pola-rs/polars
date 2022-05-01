@@ -15,4 +15,4 @@ bin/
 *.node
 docs/
 dist/
-examples/
+examples/**
