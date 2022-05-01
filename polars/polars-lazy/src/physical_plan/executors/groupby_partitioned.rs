@@ -118,7 +118,7 @@ fn get_outer_agg_exprs(
     Ok((aggs_and_names, outer_phys_aggs))
 }
 
-fn estimate_unique_count(keys: &[Series], sample_size: usize) -> usize {
+fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
     // https://stats.stackexchange.com/a/19090/147321
     // estimated unique size
     // u + ui / m (s - m)
@@ -128,6 +128,9 @@ fn estimate_unique_count(keys: &[Series], sample_size: usize) -> usize {
     // ui: groups with single unique value counted in sample
     let set_size = keys[0].len();
     let offset = (keys[0].len() / 2) as i64;
+    if set_size < sample_size {
+        sample_size = set_size;
+    }
 
     let finish = |groups: &GroupsProxy| {
         let u = groups.len() as f32;
@@ -172,7 +175,7 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
             eprintln!("POLARS_FORCE_PARTITION set: running partitioned HASH AGGREGATION")
         }
         true
-    } else if original_df.height() < 1000 {
+    } else if original_df.height() < 1000 && !cfg!(test) {
         if state.verbose {
             eprintln!("DATAFRAME < 1000 rows: running default HASH AGGREGATION")
         }
@@ -268,28 +271,31 @@ impl Executor for PartitionGroupByExec {
 
         let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
-            outer_phys_aggs
+            let out: Result<Vec<_>> = outer_phys_aggs
                 .par_iter()
                 .zip(aggs_and_names.par_iter().map(|(_, name)| name))
                 .filter_map(|(expr, name)| {
                     let agg_expr = expr.as_agg_expr().unwrap();
                     // If None the column doesn't exist anymore.
                     // For instance when summing a string this column will not be in the aggregation result
-                    let opt_agg = agg_expr.evaluate_partitioned_final(&df, groups, state).ok();
-                    opt_agg.map(|opt_s| {
-                        opt_s.map(|mut s| {
-                            s.rename(name);
-                            s
+                    let opt_agg = agg_expr.evaluate_partitioned_final(&df, groups, state);
+                    opt_agg
+                        .map(|opt_s| {
+                            opt_s.map(|mut s| {
+                                s.rename(name);
+                                s
+                            })
                         })
-                    })
+                        .transpose()
                 })
-                .flatten()
-                .collect()
+                .collect();
+
+            out
         };
-        let (mut columns, agg_columns): (Vec<_>, Vec<_>) =
+        let (mut columns, agg_columns): (Vec<_>, _) =
             POOL.install(|| rayon::join(get_columns, get_agg));
 
-        columns.extend(agg_columns);
+        columns.extend(agg_columns?);
         state.clear_schema_cache();
 
         DataFrame::new(columns)
