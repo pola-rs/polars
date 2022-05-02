@@ -1933,10 +1933,7 @@ def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
 def test_empty_is_in() -> None:
     assert pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
-    ).shape == (
-        0,
-        1,
-    )
+    ).shape == (0, 1)
 
 
 def test_groupby_slice_expression_args() -> None:
