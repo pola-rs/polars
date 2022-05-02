@@ -96,7 +96,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     let mut parsed_dfs = Vec::with_capacity(1024);
 
     while let Some(batch) = reader.next_record_batch()? {
-        let current_num_rows = num_rows as u32;
+        let current_num_rows = num_rows as IdxSize;
         num_rows += batch.len();
         let mut df = DataFrame::try_from((batch, arrow_schema.fields.as_slice()))?;
 

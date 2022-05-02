@@ -505,7 +505,7 @@ impl<'a> CoreReader<'a> {
                                     .map(|buf| buf.into_series())
                                     .collect::<Result<_>>()?,
                             );
-                            let current_row_count = local_df.height() as u32;
+                            let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_count {
                                 local_df.with_row_count_mut(&rc.name, Some(rc.offset));
                             };
@@ -630,7 +630,7 @@ impl<'a> CoreReader<'a> {
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
-                        let n_read = df.height() as u32;
+                        let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
                     })
                     .collect::<Result<Vec<_>>>()
