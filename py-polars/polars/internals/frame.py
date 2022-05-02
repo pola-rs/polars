@@ -1599,6 +1599,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Does quite a lot. Read the comments.
         """
         if isinstance(item, pli.Expr):
+            warnings.warn(
+                "'using expressions in []' is deprecated. please use 'select'",
+                DeprecationWarning,
+            )
             return self.select(item)
         # select rows and columns at once
         # every 2d selection, i.e. tuple is row column order, just like numpy
