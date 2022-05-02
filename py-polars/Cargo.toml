@@ -100,6 +100,7 @@ features = [
   "semi_anti_join",
   "list_eval",
   "to_dummies",
+  "bigidx"
 ]
 
 # [patch.crates-io]
@@ -110,10 +111,7 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
-strip = true
-codegen-units = 1
-lto = "fat"
-
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
-# target-cpu = "native"
+target-cpu = "native"
+overflow-checks = true
