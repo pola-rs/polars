@@ -4373,7 +4373,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def select(
         self: DF,
-        exprs: Union[
+        *exprs: Union[
             str,
             "pli.Expr",
             Sequence[Union[str, "pli.Expr", bool, int, float, "pli.Series"]],
@@ -4412,9 +4412,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └─────┘
 
         """
+        expr_list = exprs[0] if len(exprs) == 1 else exprs
         return (
             self.lazy()
-            .select(exprs)  # type: ignore
+            .select(expr_list)  # type: ignore
             .collect(no_optimization=True, string_cache=False)
         )
 

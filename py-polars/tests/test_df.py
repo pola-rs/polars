@@ -1933,7 +1933,10 @@ def test_first_last_expression(fruits_cars: pl.DataFrame) -> None:
 def test_empty_is_in() -> None:
     assert pl.DataFrame({"foo": ["a", "b", "c", "d"]}).filter(
         pl.col("foo").is_in([])
-    ).shape == (0, 1)
+    ).shape == (
+        0,
+        1,
+    )
 
 
 def test_groupby_slice_expression_args() -> None:
@@ -2090,3 +2093,22 @@ def test_list_of_list_of_struct() -> None:
     df = pl.from_arrow(pa_df)
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
+
+
+def test_select() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6, 7, 8],
+            "ham": ["a", "b", "c"],
+        }
+    )
+    assert df.select("foo").columns == ["foo"]
+    assert df.select(["foo", "bar"]).columns == ["foo", "bar"]
+    assert df.select("foo", "ham").columns == ["foo", "ham"]
+    s = pl.Series("baz", ["d", "e", "f"])
+    assert df.select(s).columns == ["baz"]
+    assert df.select([s]).columns == ["baz"]
+    e = pl.col("foo").alias("qux")
+    assert df.select(e).columns == ["qux"]
+    assert df.select([e]).columns == ["qux"]
