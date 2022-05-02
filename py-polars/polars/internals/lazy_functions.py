@@ -1026,7 +1026,7 @@ def argsort_by(
     """
     if isinstance(exprs, str) or not isinstance(exprs, Sequence):
         exprs = [exprs]
-    if isinstance(exprs, str) or not isinstance(reverse, Sequence):
+    if isinstance(reverse, bool):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
