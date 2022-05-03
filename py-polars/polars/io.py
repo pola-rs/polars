@@ -704,6 +704,9 @@ def read_ipc_schema(
     -------
     Dictionary mapping column names to datatypes
     """
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
     return _ipc_schema(file)
 
 
