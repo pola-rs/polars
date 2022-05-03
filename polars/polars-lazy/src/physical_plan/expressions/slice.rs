@@ -254,9 +254,9 @@ impl PhysicalAggregation for SliceExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
+    ) -> Result<Series> {
         let mut ac = self.evaluate_on_groups(df, groups, state)?;
         let s = ac.aggregated();
-        Ok(Some(s))
+        Ok(s)
     }
 }

@@ -94,3 +94,5 @@ impl PhysicalExpr for CastExpr {
         Ok(self)
     }
 }
+
+impl PhysicalAggregation for CastExpr {}

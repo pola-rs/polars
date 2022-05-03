@@ -314,7 +314,7 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!
                 if self.state.safe_to_agg(&self.groups) {
-                    let agg = s.agg_list(&self.groups).unwrap();
+                    let agg = s.agg_list(&self.groups);
                     self.update_groups = UpdateGroups::WithGroupsLen;
                     self.state = AggState::AggregatedList(agg);
                 }
@@ -381,9 +381,7 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                let out = s
-                    .agg_list(&self.groups)
-                    .expect("should be able to aggregate this to list");
+                let out = s.agg_list(&self.groups);
 
                 if !self.sorted {
                     self.sorted = true;
@@ -416,7 +414,7 @@ impl<'a> AggregationContext<'a> {
             let s = s.clone();
             // // todo! optimize this, we don't have to call agg_list, create the list directly.
             let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
-            s.agg_list(&self.groups).unwrap()
+            s.agg_list(&self.groups)
         } else {
             self.aggregated()
         }
@@ -527,7 +525,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub trait PhysicalAggregation: Send + Sync {
+pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
     #[allow(clippy::ptr_arg)]
     /// Should be called on the final aggregation node like sum, min, max, etc.
     /// When called on a tail, slice, sort, etc. it should return a list-array
@@ -536,7 +534,11 @@ pub trait PhysicalAggregation: Send + Sync {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>>;
+    ) -> Result<Series> {
+        let mut ac = self.evaluate_on_groups(df, groups, state)?;
+        let s = ac.aggregated();
+        Ok(s)
+    }
 
     /// This is called in partitioned aggregation.
     /// Partitioned results may differ from aggregation results.
@@ -551,10 +553,9 @@ pub trait PhysicalAggregation: Send + Sync {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Vec<Series>>> {
+    ) -> Result<Vec<Series>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.aggregate(df, groups, state)
-            .map(|opt| opt.map(|s| vec![s]))
+        self.aggregate(df, groups, state).map(|s| vec![s])
     }
 
     /// Called to merge all the partitioned results in a final aggregate.
@@ -564,7 +565,7 @@ pub trait PhysicalAggregation: Send + Sync {
         final_df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
+    ) -> Result<Series> {
         self.aggregate(final_df, groups, state)
     }
 }

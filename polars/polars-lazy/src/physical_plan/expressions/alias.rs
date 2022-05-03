@@ -1,4 +1,3 @@
-use crate::physical_plan::expressions::utils::as_aggregated;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
@@ -69,17 +68,4 @@ impl PhysicalExpr for AliasExpr {
     }
 }
 
-impl PhysicalAggregation for AliasExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let opt_agg = as_aggregated(self.physical_expr.as_ref(), df, groups, state)?;
-        Ok(opt_agg.map(|mut agg| {
-            agg.rename(&self.name);
-            agg
-        }))
-    }
-}
+impl PhysicalAggregation for AliasExpr {}

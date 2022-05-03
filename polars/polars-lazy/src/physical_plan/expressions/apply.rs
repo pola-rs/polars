@@ -212,15 +212,4 @@ impl PhysicalExpr for ApplyExpr {
     }
 }
 
-impl PhysicalAggregation for ApplyExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(Some(s))
-    }
-}
+impl PhysicalAggregation for ApplyExpr {}

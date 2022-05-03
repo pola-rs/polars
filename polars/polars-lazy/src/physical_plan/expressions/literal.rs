@@ -172,7 +172,7 @@ impl PhysicalAggregation for LiteralExpr {
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        PhysicalExpr::evaluate(self, df, state).map(Some)
+    ) -> Result<Series> {
+        PhysicalExpr::evaluate(self, df, state)
     }
 }

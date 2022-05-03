@@ -57,7 +57,7 @@ impl PhysicalAggregation for ShiftExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
+    ) -> Result<Series> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         let s = ac
             .aggregated()
@@ -65,6 +65,6 @@ impl PhysicalAggregation for ShiftExpr {
             .unwrap()
             .apply(|s| s.shift(self.periods).into_series())
             .into_series();
-        Ok(Some(s))
+        Ok(s)
     }
 }

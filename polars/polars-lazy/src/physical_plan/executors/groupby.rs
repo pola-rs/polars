@@ -68,17 +68,15 @@ pub(super) fn groupby_helper(
         let get_agg = || aggs
             .par_iter()
             .map(|expr| {
-                let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
-                if let Some(agg) = &opt_agg {
-                    if agg.len() != groups.len() {
-                        return Err(PolarsError::ComputeError(
-                            format!("returned aggregation is a different length: {} than the group lengths: {}",
-                            agg.len(),
-                            groups.len()).into()
-                        ))
-                    }
-                };
-                Ok(opt_agg)
+                let agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
+                if agg.len() != groups.len() {
+                    return Err(PolarsError::ComputeError(
+                        format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                agg.len(),
+                                groups.len()).into()
+                    ))
+                }
+                Ok(agg)
             })
             .collect::<Result<Vec<_>>>();
 
@@ -86,7 +84,7 @@ pub(super) fn groupby_helper(
     });
     let agg_columns = agg_columns?;
 
-    columns.extend(agg_columns.into_iter().flatten());
+    columns.extend_from_slice(&agg_columns);
     state.clear_schema_cache();
     DataFrame::new(columns)
 }
