@@ -179,5 +179,4 @@ impl PhysicalExpr for SortByExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
     }
-
 }

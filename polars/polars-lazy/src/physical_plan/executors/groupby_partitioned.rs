@@ -63,8 +63,10 @@ fn run_partitions(
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
+                // don't naively call par_iter here, it will segfault in rayon
+                // if you do, throw it on the POOL threadpool.
                 let agg_columns = phys_aggs
-                    .par_iter()
+                    .iter()
                     .map(|expr| {
                         let agg_expr = expr.as_agg_expr()?;
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
@@ -77,7 +79,6 @@ fn run_partitions(
                         } else {
                             Ok(agg)
                         }
-
                     }).collect::<Result<Vec<_>>>()?;
                 columns.reserve(agg_columns.len() * 2);
                 for res in agg_columns {
@@ -260,7 +261,7 @@ impl Executor for PartitionGroupByExec {
 
         // MERGE phase
         // merge and hash aggregate again
-        let df = dbg!(accumulate_dataframes_vertical(dfs)?);
+        let df = accumulate_dataframes_vertical(dfs)?;
         // the partitioned groupby has added columns so we must update the schema.
         let keys = self.keys(&df, state)?;
 
@@ -302,6 +303,6 @@ impl Executor for PartitionGroupByExec {
         columns.extend(agg_columns?);
         state.clear_schema_cache();
 
-        DataFrame::new(columns)
+        Ok(DataFrame::new(columns).unwrap())
     }
 }

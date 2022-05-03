@@ -230,7 +230,7 @@ impl PhysicalAggregation for AggregationExpr {
     ) -> Result<Series> {
         match self.agg_type {
             GroupByMethod::Mean => {
-                let mut series = self.expr.evaluate(final_df, state)?;
+                let series = self.expr.evaluate(final_df, state)?;
                 let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
                 let new_name = series.name().to_string();
 
@@ -247,10 +247,7 @@ impl PhysicalAggregation for AggregationExpr {
                         let agg_s = &agg_s / &agg_count;
                         Ok(rename_series(agg_s, &new_name))
                     }
-                    None => {
-                        series.rename(&new_name);
-                        Ok(series)
-                    }
+                    None => Ok(Series::full_null(&new_name, groups.len(), series.dtype())),
                 }
             }
             GroupByMethod::List => {
