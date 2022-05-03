@@ -869,8 +869,8 @@ fn test_with_row_count() -> Result<()> {
         .finish()?;
     let rc = df.column("rc")?;
     assert_eq!(
-        rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
-        (0u32..27).collect::<Vec<_>>()
+        rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+        (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
         .with_row_count(Some(RowCount {
@@ -880,8 +880,8 @@ fn test_with_row_count() -> Result<()> {
         .finish()?;
     let rc = df.column("rc_2")?;
     assert_eq!(
-        rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
-        (10u32..37).collect::<Vec<_>>()
+        rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+        (10 as IdxSize..37).collect::<Vec<_>>()
     );
     Ok(())
 }

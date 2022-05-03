@@ -460,7 +460,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (UInt32, Int32) => Some(Int64),
         (UInt32, Int64) => Some(Int64),
-
+        // needed for bigidx
+        (UInt64, Int32) => Some(Int64),
         (UInt64, Int64) => Some(Int64),
 
         (Int8, UInt8) => Some(Int8),

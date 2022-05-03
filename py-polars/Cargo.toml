@@ -39,7 +39,6 @@ parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
-bigidx = ["polars/bigidx"]
 
 default = ["json", "parquet", "ipc", "avro", "is_in", "json", "polars/repeat_by"]
 
