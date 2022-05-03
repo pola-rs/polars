@@ -13,6 +13,7 @@ pub struct PartitionGroupByExec {
     aggs: Vec<Expr>,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
+    input_schema: SchemaRef,
 }
 
 impl PartitionGroupByExec {
@@ -23,6 +24,7 @@ impl PartitionGroupByExec {
         aggs: Vec<Expr>,
         maintain_order: bool,
         slice: Option<(i64, usize)>,
+        input_schema: SchemaRef,
     ) -> Self {
         Self {
             input,
@@ -31,6 +33,7 @@ impl PartitionGroupByExec {
             aggs,
             maintain_order,
             slice,
+            input_schema,
         }
     }
 
@@ -60,27 +63,29 @@ fn run_partitions(
                 let groups = gb.get_groups();
 
                 let mut columns = gb.keys();
+                // don't naively call par_iter here, it will segfault in rayon
+                // if you do, throw it on the POOL threadpool.
                 let agg_columns = phys_aggs
-                    .par_iter()
+                    .iter()
                     .map(|expr| {
                         let agg_expr = expr.as_agg_expr()?;
-                        let opt_agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
-                        if let Some(agg) = &opt_agg {
-                            if agg[0].len() != groups.len() {
-                                panic!(
-                                    "returned aggregation is a different length: {} than the group lengths: {}",
-                                    agg.len(),
-                                    groups.len()
-                                )
-                            }
-                        };
-                        Ok(opt_agg)
+                        let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
+                        if agg[0].len() != groups.len() {
+                            Err(PolarsError::ComputeError(
+                                format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                        agg.len(),
+                                        groups.len()).into()
+                            ))
+                        } else {
+                            Ok(agg)
+                        }
                     }).collect::<Result<Vec<_>>>()?;
+                columns.reserve(agg_columns.len() * 2);
+                for res in agg_columns {
+                    columns.extend_from_slice(&res);
+                }
 
-                columns.extend(agg_columns.into_iter().flatten().flat_map(|v| v.into_iter()));
-
-                let df = DataFrame::new_no_checks(columns);
-                Ok(df)
+                DataFrame::new(columns)
             })
     }).collect()
 }
@@ -245,10 +250,14 @@ impl Executor for PartitionGroupByExec {
 
             // Run the partitioned aggregations
             let n_threads = POOL.current_num_threads();
+
+            // set it here, because `self.input.execute` will clear the schema cache.
+            state.set_schema(self.input_schema.clone());
             let dfs = run_partitions(&original_df, self, state, n_threads, self.maintain_order)?;
             let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;
             (dfs, aggs_and_names, outer_phys_aggs)
         };
+        state.clear_schema_cache();
 
         // MERGE phase
         // merge and hash aggregate again
@@ -274,19 +283,15 @@ impl Executor for PartitionGroupByExec {
             let out: Result<Vec<_>> = outer_phys_aggs
                 .par_iter()
                 .zip(aggs_and_names.par_iter().map(|(_, name)| name))
-                .filter_map(|(expr, name)| {
+                .map(|(expr, name)| {
                     let agg_expr = expr.as_agg_expr().unwrap();
                     // If None the column doesn't exist anymore.
                     // For instance when summing a string this column will not be in the aggregation result
-                    let opt_agg = agg_expr.evaluate_partitioned_final(&df, groups, state);
-                    opt_agg
-                        .map(|opt_s| {
-                            opt_s.map(|mut s| {
-                                s.rename(name);
-                                s
-                            })
-                        })
-                        .transpose()
+                    let agg = agg_expr.evaluate_partitioned_final(&df, groups, state);
+                    agg.map(|mut s| {
+                        s.rename(name);
+                        s
+                    })
                 })
                 .collect();
 
@@ -298,6 +303,6 @@ impl Executor for PartitionGroupByExec {
         columns.extend(agg_columns?);
         state.clear_schema_cache();
 
-        DataFrame::new(columns)
+        Ok(DataFrame::new(columns).unwrap())
     }
 }

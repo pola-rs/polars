@@ -386,11 +386,9 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
-            let opt_agg = agg_col.agg_mean(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_mean(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -425,11 +423,9 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
-            let opt_agg = agg_col.agg_sum(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_sum(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -463,11 +459,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
-            let opt_agg = agg_col.agg_min(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_min(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -501,11 +495,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
-            let opt_agg = agg_col.agg_max(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_max(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -611,11 +603,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
-            let opt_agg = agg_col.agg_n_unique(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_n_unique(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -642,11 +632,9 @@ impl<'df> GroupBy<'df> {
         for agg_col in agg_cols {
             let new_name =
                 fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile, interpol));
-            let opt_agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -665,11 +653,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
-            let opt_agg = agg_col.agg_median(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_median(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -679,11 +665,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var);
-            let opt_agg = agg_col.agg_var(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_var(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -693,11 +677,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std);
-            let opt_agg = agg_col.agg_std(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_std(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -826,11 +808,9 @@ impl<'df> GroupBy<'df> {
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format!($name_fmt, $agg_col.name());
-                let opt_agg = $agg_col.$agg_fn(&$self.groups);
-                if let Some(mut agg) = opt_agg {
-                    agg.rename(&new_name);
-                    $cols.push(agg.into_series());
-                }
+                let mut agg = $agg_col.$agg_fn(&$self.groups);
+                agg.rename(&new_name);
+                $cols.push(agg.into_series());
             }};
         }
         macro_rules! finish_agg {
@@ -903,10 +883,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
-            if let Some(mut agg) = agg_col.agg_list(&self.groups) {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_list(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }

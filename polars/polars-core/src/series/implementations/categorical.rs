@@ -99,12 +99,13 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.logical().vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0.logical().agg_list(groups).map(|s| {
-            s.cast(&DataType::List(Box::new(self.dtype().clone())))
-                .unwrap()
-        })
+        self.0
+            .logical()
+            .agg_list(groups)
+            .cast(&DataType::List(Box::new(self.dtype().clone())))
+            .unwrap()
     }
 
     fn zip_outer_join_column(

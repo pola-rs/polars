@@ -115,7 +115,7 @@ impl PhysicalAggregation for SortExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
+    ) -> Result<Series> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
         let agg_s = ac.aggregated();
         let agg_s = agg_s
@@ -123,6 +123,6 @@ impl PhysicalAggregation for SortExpr {
             .unwrap()
             .apply_amortized(|s| s.as_ref().sort_with(self.options))
             .into_series();
-        Ok(Some(agg_s))
+        Ok(agg_s)
     }
 }

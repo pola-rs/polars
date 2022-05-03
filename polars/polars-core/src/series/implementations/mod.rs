@@ -172,15 +172,15 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_min(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_min(groups)
             }
 
-            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_max(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_max(groups)
             }
 
-            fn agg_sum(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 use DataType::*;
                 match self.dtype() {
                     Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().agg_sum(groups),
@@ -188,15 +188,15 @@ macro_rules! impl_dyn_series {
                 }
             }
 
-            fn agg_std(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_std(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_std(groups)
             }
 
-            fn agg_var(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_var(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_var(groups)
             }
 
-            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
             }
 
@@ -205,11 +205,11 @@ macro_rules! impl_dyn_series {
                 groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> Option<Series> {
+            ) -> Series {
                 self.0.agg_quantile(groups, quantile, interpol)
             }
 
-            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_median(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_median(groups)
             }
             fn zip_outer_join_column(

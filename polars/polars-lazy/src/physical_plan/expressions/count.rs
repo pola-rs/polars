@@ -58,33 +58,4 @@ impl PhysicalExpr for CountExpr {
     }
 }
 
-impl PhysicalAggregation for CountExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(Some(s))
-    }
-
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Vec<Series>>> {
-        PhysicalAggregation::aggregate(self, df, groups, state).map(|opt| opt.map(|s| vec![s]))
-    }
-
-    fn evaluate_partitioned_final(
-        &self,
-        final_df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        PhysicalAggregation::aggregate(self, final_df, groups, state)
-    }
-}
+impl PhysicalAggregation for CountExpr {}

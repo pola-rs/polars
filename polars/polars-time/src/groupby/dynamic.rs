@@ -441,7 +441,7 @@ mod test {
                     },
                 )
                 .unwrap();
-            let sum = a.agg_sum(&groups).unwrap();
+            let sum = a.agg_sum(&groups);
             let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
             assert_eq!(sum, expected);
         }
