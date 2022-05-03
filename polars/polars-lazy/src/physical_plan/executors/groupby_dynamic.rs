@@ -44,17 +44,15 @@ impl Executor for GroupByDynamicExec {
                 self.aggs
                     .par_iter()
                     .map(|expr| {
-                        let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
-                        if let Some(agg) = &opt_agg {
-                            if agg.len() != groups.len() {
-                                return Err(PolarsError::ComputeError(
-                                    format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                            agg.len(),
-                                            groups.len()).into()
-                                ))
-                            }
-                        };
-                        Ok(opt_agg)
+                        let agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
+                        if agg.len() != groups.len() {
+                            return Err(PolarsError::ComputeError(
+                                format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                        agg.len(),
+                                        groups.len()).into()
+                            ))
+                        }
+                        Ok(agg)
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
@@ -63,7 +61,7 @@ impl Executor for GroupByDynamicExec {
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend(agg_columns.into_iter().flatten());
+        columns.extend_from_slice(&agg_columns);
 
         DataFrame::new(columns)
     }

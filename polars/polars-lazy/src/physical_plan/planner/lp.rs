@@ -412,6 +412,7 @@ impl DefaultPlanner {
                             .collect(),
                         maintain_order,
                         options.slice,
+                        input_schema,
                     )))
                 } else {
                     Ok(Box::new(executors::GroupByExec::new(

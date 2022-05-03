@@ -45,14 +45,14 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         let fields = self
             .0
             .fields()
             .iter()
             .map(|s| s.agg_list(groups))
-            .collect::<Option<Vec<_>>>()?;
-        Some(StructChunked::new_unchecked(self.name(), &fields).into_series())
+            .collect::<Vec<_>>();
+        StructChunked::new_unchecked(self.name(), &fields).into_series()
     }
 
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {

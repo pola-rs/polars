@@ -168,36 +168,36 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_std(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_var(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn agg_quantile(
             &self,
-            _groups: &GroupsProxy,
+            groups: &GroupsProxy,
             _quantile: f64,
             _interpol: QuantileInterpolOptions,
-        ) -> Option<Series> {
-            None
+        ) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_median(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn zip_outer_join_column(
             &self,

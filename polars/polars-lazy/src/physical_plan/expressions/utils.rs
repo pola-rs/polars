@@ -9,7 +9,7 @@ pub(crate) fn as_aggregated(
     df: &DataFrame,
     groups: &GroupsProxy,
     state: &ExecutionState,
-) -> Result<Option<Series>> {
+) -> Result<Series> {
     match expr.as_agg_expr() {
         Ok(agg_expr) => agg_expr.aggregate(df, groups, state),
         // if we have a function that is not a final aggregation, we can always evaluate the
@@ -17,7 +17,7 @@ pub(crate) fn as_aggregated(
         Err(_) => {
             let mut ac = expr.evaluate_on_groups(df, groups, state)?;
             let s = ac.aggregated();
-            Ok(Some(s))
+            Ok(s)
         }
     }
 }

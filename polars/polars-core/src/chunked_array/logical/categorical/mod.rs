@@ -278,7 +278,7 @@ mod test {
         ));
 
         let groups = s.group_tuples(false, true);
-        let aggregated = s.agg_list(&groups).unwrap();
+        let aggregated = s.agg_list(&groups);
         match aggregated.get(0) {
             AnyValue::List(s) => {
                 assert!(matches!(s.dtype(), DataType::Categorical(_)));

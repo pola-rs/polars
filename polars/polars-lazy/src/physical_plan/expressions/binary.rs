@@ -318,18 +318,7 @@ impl PhysicalExpr for BinaryExpr {
     }
 }
 
-impl PhysicalAggregation for BinaryExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated_arity_operation();
-        Ok(Some(s))
-    }
-}
+impl PhysicalAggregation for BinaryExpr {}
 
 #[cfg(feature = "parquet")]
 mod stats {
