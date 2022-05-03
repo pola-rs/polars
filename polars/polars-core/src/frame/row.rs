@@ -1,4 +1,3 @@
-use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
 use crate::utils::get_supertype;
 use crate::POOL;
@@ -338,7 +337,6 @@ pub(crate) enum AnyValueBuffer<'a> {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
-    List(Box<dyn ListBuilderTrait>),
     All(Vec<AnyValue<'a>>),
 }
 
@@ -374,8 +372,7 @@ impl<'a> AnyValueBuffer<'a> {
             (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
-            (List(builder), AnyValue::List(v)) => builder.append_series(&v),
-            (List(builder), AnyValue::Null) => builder.append_null(),
+            // Struct and List can be recursive so use anyvalues for that
             (All(vals), v) => vals.push(v),
             _ => return None,
         };
@@ -405,7 +402,6 @@ impl<'a> AnyValueBuffer<'a> {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
-            List(mut b) => b.finish().into_series(),
             All(vals) => Series::new("", vals),
         }
     }
@@ -433,7 +429,7 @@ impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
-            List(inner) => AnyValueBuffer::List(get_list_builder(inner, len * 10, len, "")),
+            // Struct and List can be recursive so use anyvalues for that
             _ => AnyValueBuffer::All(Vec::with_capacity(len)),
         }
     }

@@ -1287,6 +1287,7 @@ dependencies = [
  "mimalloc",
  "ndarray",
  "numpy",
+ "once_cell",
  "polars",
  "polars-core",
  "pyo3",
