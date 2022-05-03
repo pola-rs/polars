@@ -511,16 +511,16 @@ impl PySeries {
         self.series.arg_max()
     }
 
-    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::from_vec("", indices);
+        let indices = IdxCa::from_vec("", indices);
 
         let take = self.series.take(&indices).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.u32().map_err(PyPolarsErr::from)?;
+        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }

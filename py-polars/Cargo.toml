@@ -39,6 +39,7 @@ parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
+bigidx = ["polars/bigidx"]
 
 default = ["json", "parquet", "ipc", "avro", "is_in", "json", "polars/repeat_by"]
 
@@ -100,7 +101,6 @@ features = [
   "semi_anti_join",
   "list_eval",
   "to_dummies",
-  "bigidx"
 ]
 
 # [patch.crates-io]
@@ -111,7 +111,10 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
+strip = true
+codegen-units = 1
+lto = "fat"
+
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
-target-cpu = "native"
-overflow-checks = true
+# target-cpu = "native"
