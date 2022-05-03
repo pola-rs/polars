@@ -64,7 +64,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 

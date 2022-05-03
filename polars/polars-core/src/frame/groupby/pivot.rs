@@ -249,13 +249,13 @@ impl DataFrame {
 
                     use PivotAgg::*;
                     let value_agg = match agg_fn {
-                        Sum => value_col.agg_sum(&groups).unwrap(),
-                        Min => value_col.agg_min(&groups).unwrap(),
-                        Max => value_col.agg_max(&groups).unwrap(),
+                        Sum => value_col.agg_sum(&groups),
+                        Min => value_col.agg_min(&groups),
+                        Max => value_col.agg_max(&groups),
                         Last => value_col.agg_last(&groups),
                         First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups).unwrap(),
-                        Median => value_col.agg_median(&groups).unwrap(),
+                        Mean => value_col.agg_mean(&groups),
+                        Median => value_col.agg_median(&groups),
                         Count => groups.group_count().into_series(),
                     };
 
