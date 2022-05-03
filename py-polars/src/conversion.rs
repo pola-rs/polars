@@ -541,13 +541,9 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
-            Python::with_gil(|py| {
-                let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-                let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;
-                let py_pyseries = series.getattr(py, "_s").unwrap();
-                let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
-                Ok(Wrap(AnyValue::List(series)))
-            })
+            let avs = ob.extract::<Wrap<Row>>()?.0;
+            let s = Series::new("", &avs.0);
+            Ok(Wrap(AnyValue::List(s)))
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
@@ -555,26 +551,22 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if ob.get_type().name()?.contains("date") {
             let gil = Python::acquire_gil();
             let py = gil.python();
-            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-            let utils = pypolars.getattr(py, "utils").unwrap();
-            let utils = utils
+            let date = py_modules::UTILS
                 .getattr(py, "_date_to_pl_date")
                 .unwrap()
                 .call1(py, (ob,))
                 .unwrap();
-            let v = utils.extract::<i32>(py).unwrap();
+            let v = date.extract::<i32>(py).unwrap();
             Ok(Wrap(AnyValue::Date(v)))
         } else if ob.get_type().name()?.contains("timedelta") {
             let gil = Python::acquire_gil();
             let py = gil.python();
-            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-            let utils = pypolars.getattr(py, "utils").unwrap();
-            let utils = utils
+            let td = py_modules::UTILS
                 .getattr(py, "_timedelta_to_pl_timedelta")
                 .unwrap()
                 .call1(py, (ob, "us"))
                 .unwrap();
-            let v = utils.extract::<i64>(py).unwrap();
+            let v = td.extract::<i64>(py).unwrap();
             Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
