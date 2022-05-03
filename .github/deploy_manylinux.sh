@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # easier debugging
+set -e
 pwd
 ls -la
 
@@ -18,7 +19,7 @@ maturin publish \
 # now compile polars with bigidx feature
 sed -i 's/name = "polars"/name = "polars-u64-idx"/' pyproject.toml
 # a brittle hack to insert the 'bigidx' feature
-sed '/s/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' Cargo.toml
+sed 's/"dynamic_groupby",/"dynamic_groupby",\n"bigidx",/' Cargo.toml
 
 maturin publish \
   --skip-existing \

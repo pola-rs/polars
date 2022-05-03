@@ -107,6 +107,7 @@ semi_anti_join = ["polars-core/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
 chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 to_dummies = ["polars-ops/to_dummies"]
+bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
 
 test = [
   "lazy",
