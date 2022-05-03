@@ -237,3 +237,13 @@ def test_from_dicts_struct() -> None:
     assert pl.from_dicts(
         [{"a": 1, "b": {"a_deep": 1, "b_deep": {"a_deeper": [1, 2, 4]}}}]
     ).to_series(1).to_list() == [{"a_deep": 1, "b_deep": {"a_deeper": [1, 2, 4]}}]
+
+    data = [
+        {"a": [{"b": 0, "c": 1}]},
+        {"a": [{"b": 1, "c": 2}]},
+    ]
+
+    assert pl.from_dicts(data).to_series().to_list() == [
+        [{"b": 0, "c": 1}],
+        [{"b": 1, "c": 2}],
+    ]

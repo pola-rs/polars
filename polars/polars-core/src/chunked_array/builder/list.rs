@@ -409,7 +409,13 @@ impl<'a> AnonymousListBuilder<'a> {
     }
 
     pub fn append_series(&mut self, s: &'a Series) {
-        self.builder.push_multiple(s.chunks());
+        match s.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => self.builder.push(&**s.array_ref(0)),
+            _ => {
+                self.builder.push_multiple(s.chunks());
+            }
+        }
     }
 
     pub fn finish(self) -> ListChunked {
