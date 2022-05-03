@@ -2,7 +2,6 @@
 use crate::ArrowSchema;
 use dirs::home_dir;
 use polars_core::frame::DataFrame;
-#[cfg(any(feature = "ipc", feature = "avro", feature = "parquet"))]
 use polars_core::prelude::*;
 use std::path::{Path, PathBuf};
 
@@ -69,7 +68,7 @@ pub(crate) fn columns_to_projection(
 
 /// Because of threading every row starts from `0` or from `offset`.
 /// We must correct that so that they are monotonically increasing.
-pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, u32)]) {
+pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
     if !dfs.is_empty() {
         let mut previous = dfs[0].1;
         for (df, n_read) in &mut dfs[1..] {
