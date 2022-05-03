@@ -3,7 +3,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{LogicalPlan, NullValues, ScanArgsIpc, ScanArgsParquet};
+use crate::prelude::{IdxSize, LogicalPlan, NullValues, ScanArgsIpc, ScanArgsParquet};
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -635,12 +635,12 @@ impl PyLazyFrame {
             .into()
     }
 
-    pub fn slice(&self, offset: i64, len: u32) -> Self {
+    pub fn slice(&self, offset: i64, len: IdxSize) -> Self {
         let ldf = self.ldf.clone();
         ldf.slice(offset, len).into()
     }
 
-    pub fn tail(&self, n: u32) -> Self {
+    pub fn tail(&self, n: IdxSize) -> Self {
         let ldf = self.ldf.clone();
         ldf.tail(n).into()
     }
