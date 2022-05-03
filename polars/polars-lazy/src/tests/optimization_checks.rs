@@ -315,7 +315,7 @@ fn test_with_row_count_opts() -> Result<()> {
         .tail(5)
         .collect()?;
     let expected = df![
-        "row_nr" => [5_u32, 6, 7, 8, 9],
+        "row_nr" => [5 as IdxSize, 6, 7, 8, 9],
         "a" => [5, 6, 7, 8, 9],
     ]?;
 
@@ -328,7 +328,7 @@ fn test_with_row_count_opts() -> Result<()> {
         .collect()?;
     assert_eq!(
         out.column("row_nr")?
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &[1, 2]
@@ -342,7 +342,7 @@ fn test_with_row_count_opts() -> Result<()> {
         .collect()?;
     assert_eq!(
         out.column("row_nr")?
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &[3]
@@ -356,7 +356,7 @@ fn test_with_row_count_opts() -> Result<()> {
         .collect()?;
     assert_eq!(
         out.column("row_nr")?
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &[0, 1]
@@ -369,7 +369,7 @@ fn test_with_row_count_opts() -> Result<()> {
         .collect()?;
     assert_eq!(
         out.column("row_nr")?
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>(),
         &[0]

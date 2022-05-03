@@ -321,12 +321,15 @@ impl DataFrame {
     ///  | 3   | Patricia |
     ///  +-----+----------+
     /// ```
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Result<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
         columns.push(
-            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
-                .into_series(),
+            IdxCa::from_vec(
+                name,
+                (offset..(self.height() as IdxSize) + offset).collect(),
+            )
+            .into_series(),
         );
 
         columns.extend_from_slice(&self.columns);
@@ -334,12 +337,15 @@ impl DataFrame {
     }
 
     /// Add a row count in place.
-    pub fn with_row_count_mut(&mut self, name: &str, offset: Option<u32>) -> &mut Self {
+    pub fn with_row_count_mut(&mut self, name: &str, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
         self.columns.insert(
             0,
-            UInt32Chunked::from_vec(name, (offset..(self.height() as u32) + offset).collect())
-                .into_series(),
+            IdxCa::from_vec(
+                name,
+                (offset..(self.height() as IdxSize) + offset).collect(),
+            )
+            .into_series(),
         );
         self
     }

@@ -335,7 +335,7 @@ fn skip_rows_and_slice() -> Result<()> {
 #[test]
 fn test_row_count() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
-    for offset in [0u32, 10] {
+    for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV.to_string())
             .with_row_count(Some(RowCount {
                 name: "rc".into(),
@@ -347,7 +347,7 @@ fn test_row_count() -> Result<()> {
         let df = lf.collect()?;
         let rc = df.column("rc")?;
         assert_eq!(
-            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
@@ -365,7 +365,7 @@ fn test_row_count() -> Result<()> {
         let df = lf.collect()?;
         let rc = df.column("rc")?;
         assert_eq!(
-            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
@@ -384,7 +384,7 @@ fn test_row_count() -> Result<()> {
         let df = lf.collect()?;
         let rc = df.column("rc")?;
         assert_eq!(
-            rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
+            rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
     }

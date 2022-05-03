@@ -78,7 +78,7 @@ fn test_row_count_pd() -> Result<()> {
         .collect()?;
 
     let expected = df![
-        "row_count" => [0u32, 1, 2],
+        "row_count" => [0 as IdxSize, 1, 2],
         "x" => [3i32, 6, 9]
     ]?;
 
