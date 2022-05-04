@@ -15,6 +15,7 @@ from typing import (
     Tuple,
     Type,
     Union,
+    cast,
     overload,
 )
 from urllib.request import urlopen
@@ -334,10 +335,10 @@ def read_csv(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
 
-        df = from_arrow(tbl, rechunk)
+        df = cast(DataFrame, from_arrow(tbl, rechunk))
         if new_columns:
-            return update_columns(df, new_columns)  # type: ignore
-        return df  # type: ignore
+            return update_columns(df, new_columns)
+        return df
 
     if new_columns and dtypes and isinstance(dtypes, dict):
         current_columns = None
@@ -1000,7 +1001,7 @@ def read_sql(
             partition_num=partition_num,
             protocol=protocol,
         )
-        return from_arrow(tbl)  # type: ignore[return-value]
+        return cast(DataFrame, from_arrow(tbl))
     else:
         raise ImportError(
             "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
