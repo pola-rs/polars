@@ -1,3 +1,4 @@
+import typing
 from datetime import datetime
 from typing import Dict, Sequence, Type, Union
 
@@ -367,3 +368,12 @@ def test_from_pandas_ns_resolution() -> None:
         columns=["date"],
     )
     assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)
+
+
+@typing.no_type_check
+def test_pandas_string_none_conversion_3298() -> None:
+    data = {"col_1": ["a", "b", "c", "d"]}
+    data["col_1"][0] = None
+    df_pd = pd.DataFrame(data)
+    df_pl = pl.DataFrame(df_pd)
+    assert df_pl.to_series().to_list() == [None, "b", "c", "d"]
