@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.21.0"
+version = "0.21.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -45,10 +45,10 @@ lexical = { version = "6", optional = true, default-features = false, features =
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
-polars-arrow = { version = "0.21.0", path = "../polars-arrow" }
-polars-core = { version = "0.21.0", path = "../polars-core", features = ["private"], default-features = false }
-polars-time = { version = "0.21.0", path = "../polars-time", features = ["private"], default-features = false }
-polars-utils = { version = "0.21.0", path = "../polars-utils" }
+polars-arrow = { version = "0.21.1", path = "../polars-arrow" }
+polars-core = { version = "0.21.1", path = "../polars-core", features = ["private"], default-features = false }
+polars-time = { version = "0.21.1", path = "../polars-time", features = ["private"], default-features = false }
+polars-utils = { version = "0.21.1", path = "../polars-utils" }
 rayon = "1.5"
 regex = "1.5"
 serde = { version = "1", features = ["derive"], optional = true }
