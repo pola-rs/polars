@@ -657,6 +657,49 @@ class LazyFrame(Generic[DF]):
         """
         return self._ldf.columns()
 
+    @property
+    def dtypes(self) -> List[Type[DataType]]:
+        """
+        Get dtypes of columns in LazyFrame.
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.dtypes
+        [<class 'polars.datatypes.int64'>, <class 'polars.datatypes.float64'>, <class 'polars.datatypes.utf8'>]
+
+        See Also
+        --------
+        schema : Return a dict of [column name, dtype]
+        """
+        return self._ldf.dtypes()
+
+    @property
+    def schema(self) -> Dict[str, Type[DataType]]:
+        """
+        Get a dict[column name, DataType]
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.schema
+        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+
+        """
+        return self._ldf.schema()
+
     def cache(self: LDF) -> LDF:
         """
         Cache the result once the execution of the physical plan hits this node.

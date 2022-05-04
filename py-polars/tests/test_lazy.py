@@ -1238,3 +1238,23 @@ def test_quantile_filtered_agg() -> None:
         .to_list()
         == [1.0, 1.0]
     )
+
+
+def test_lazy_schema() -> None:
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    ).lazy()
+    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    ).lazy()
+    assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]

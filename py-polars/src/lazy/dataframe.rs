@@ -16,7 +16,7 @@ use polars_core::prelude::{
 };
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 use std::io::BufWriter;
 
 #[pyclass]
@@ -714,6 +714,26 @@ impl PyLazyFrame {
 
     pub fn columns(&self) -> Vec<String> {
         self.ldf.schema().iter_names().cloned().collect()
+    }
+
+    pub fn dtypes(&self, py: Python) -> PyObject {
+        let schema = self.ldf.schema();
+        let iter = schema
+            .iter_dtypes()
+            .map(|dt| Wrap(dt.clone()).to_object(py));
+        PyList::new(py, iter).to_object(py)
+    }
+
+    pub fn schema(&self, py: Python) -> PyObject {
+        let schema = self.ldf.schema();
+        let schema_dict = PyDict::new(py);
+
+        schema.iter_fields().for_each(|fld| {
+            schema_dict
+                .set_item(fld.name(), Wrap(fld.data_type().clone()))
+                .unwrap()
+        });
+        schema_dict.to_object(py)
     }
 
     pub fn unnest(&self, cols: Vec<String>) -> PyLazyFrame {
