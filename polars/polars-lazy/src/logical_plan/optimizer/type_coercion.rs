@@ -201,6 +201,53 @@ impl OptimizationRule for TypeCoercionRule {
                                 | (DataType::Duration(_), DataType::Date)
                         );
 
+                    let list_arithmetic = op.is_arithmetic()
+                        && matches!(
+                            (&type_left, &type_right),
+                            (DataType::List(_), _) | (_, DataType::List(_))
+                        );
+
+                    // Special path for list arithmetic
+                    if list_arithmetic {
+                        match (&type_left, &type_right) {
+                            (DataType::List(inner), _) => {
+                                return if type_right != **inner {
+                                    let new_node_right = expr_arena.add(AExpr::Cast {
+                                        expr: node_right,
+                                        data_type: *inner.clone(),
+                                        strict: false,
+                                    });
+
+                                    Some(AExpr::BinaryExpr {
+                                        left: node_left,
+                                        op,
+                                        right: new_node_right,
+                                    })
+                                } else {
+                                    None
+                                };
+                            }
+                            (_, DataType::List(inner)) => {
+                                return if type_left != **inner {
+                                    let new_node_left = expr_arena.add(AExpr::Cast {
+                                        expr: node_left,
+                                        data_type: *inner.clone(),
+                                        strict: false,
+                                    });
+
+                                    Some(AExpr::BinaryExpr {
+                                        left: new_node_left,
+                                        op,
+                                        right: node_right,
+                                    })
+                                } else {
+                                    None
+                                };
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+
                     if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
                         None
                     } else {
