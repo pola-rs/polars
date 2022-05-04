@@ -261,7 +261,7 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "object" and len(values) > 0:
-        if isinstance(values.values[0], str):
+        if isinstance(_get_first_non_none(values.values), str):  # type: ignore
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
 
         # array is null array, we set to a float64 array
