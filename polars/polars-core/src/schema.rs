@@ -149,13 +149,13 @@ impl Schema {
         ArrowSchema::from(fields)
     }
 
-    pub fn iter_fields(&self) -> impl Iterator<Item = Field> + '_ {
+    pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
         self.inner
             .iter()
             .map(|(name, dtype)| Field::new(name, dtype.clone()))
     }
 
-    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + '_ {
+    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + ExactSizeIterator + '_ {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 
