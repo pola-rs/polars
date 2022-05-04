@@ -1024,9 +1024,9 @@ def argsort_by(
     reverse
         Default is ascending.
     """
-    if not isinstance(exprs, list):
-        exprs = [exprs]  # type: ignore
-    if not isinstance(reverse, list):
+    if isinstance(exprs, str) or not isinstance(exprs, Sequence):
+        exprs = [exprs]
+    if isinstance(reverse, bool):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))

@@ -268,10 +268,10 @@ class Series:
     def inner(self) -> "PySeries":
         return self._s
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state: Any) -> None:
         self._s = sequence_to_pyseries("", [], Float32)
         self._s.__setstate__(state)
 
@@ -309,11 +309,13 @@ class Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
+            assert f is not None
+            return wrap_s(f(ts))
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
+            assert f is not None
+            return wrap_s(f(d))
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
@@ -418,7 +420,7 @@ class Series:
             return wrap_s(self._s._not())
         return NotImplemented
 
-    def __rtruediv__(self, other: Any) -> np.ndarray:
+    def __rtruediv__(self, other: Any) -> "Series":
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
@@ -427,7 +429,7 @@ class Series:
         if isinstance(other, int):
             other = float(other)
 
-        return self.cast(Float64).__rfloordiv__(other)  # type: ignore
+        return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if self.is_datelike():
