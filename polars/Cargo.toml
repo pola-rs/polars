@@ -113,6 +113,7 @@ list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
 describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones"]
 string_justify = ["polars-lazy/string_justify", "polars-ops/string_justify"]
+cut_qcut = ["polars-ops/cut_qcut"]
 
 test = [
   "lazy",

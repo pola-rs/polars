@@ -80,4 +80,17 @@ pub trait DataFrameOps: IntoDf {
 
         accumulate_dataframes_horizontal(cols)
     }
+    #[cfg(feature = "cut_qcut")]
+    fn qcut(&self, bins: Vec<f64>) -> Result<DataFrame> {
+        let df = self.to_df();
+
+        let cols = POOL.install(|| {
+            df.get_columns()
+                .par_iter()
+                .map(|s| s.to_ops().qcut(bins.clone()))
+                .collect::<Result<Vec<_>>>()
+        })?;
+
+        Ok(DataFrame::new_no_checks(cols))
+    }
 }

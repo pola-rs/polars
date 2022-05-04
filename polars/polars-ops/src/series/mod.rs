@@ -46,7 +46,8 @@ impl IntoSeriesOps for Series {
 
 impl<T: PolarsIntegerType> IntoSeriesOps for &ChunkedArray<T>
 where
-    T::Native: NumericNative,
+    T::Native: NumericNative + From<f64>,
+    ChunkedArray<T>: ChunkQuantile<f64>,
 {
     fn to_ops(&self) -> SeriesOpsRef {
         Arc::new(WrapInt((*self).clone()))

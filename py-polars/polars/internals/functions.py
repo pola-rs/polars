@@ -32,6 +32,16 @@ def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
     """
     return df.to_dummies()
 
+def get_dummies(df: "pli.DataFrame") -> "pli.DataFrame":
+    """
+    Convert categorical variables into dummy/indicator variables.
+
+    Parameters
+    ----------
+    df
+        DataFrame to convert.
+    """
+    return df.cut()
 
 @overload
 def concat(

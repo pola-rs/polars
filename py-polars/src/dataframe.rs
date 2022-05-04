@@ -1293,6 +1293,11 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
+    pub fn qcut(&self, bins: Vec<f64>) -> PyResult<Self> {
+        let df = self.df.qcut(bins).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
+    }
+
     pub fn null_count(&self) -> Self {
         let df = self.df.null_count();
         df.into()

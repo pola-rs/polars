@@ -904,6 +904,13 @@ class Series:
         """
         return pli.wrap_df(self._s.to_dummies())
 
+    def qcut(self, bins: List[float]) -> "pli.Series":
+        """
+        TODO: Complete
+        """
+        return pli.wrap_df(self._s.qcut(bins))
+
+
     def value_counts(self) -> "pli.DataFrame":
         """
         Count the unique values in a Series.
