@@ -3,6 +3,16 @@ LazyFrame
 =========
 .. currentmodule:: polars
 
+Attributes
+----------
+
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.columns
+    LazyFrame.dtypes
+    LazyFrame.schema
+
 Aggregation
 -----------
 .. autosummary::
