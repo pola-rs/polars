@@ -151,7 +151,7 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
     if keys.len() == 1 {
         // we sample as that will work also with sorted data.
         // not that sampling without replacement is very very expensive. don't do that.
-        let s = keys[0].sample_n(sample_size, true, None).unwrap();
+        let s = keys[0].sample_n(sample_size, true, false, None).unwrap();
         // fast multi-threaded way to get unique.
         let groups = s.group_tuples(true, false);
         finish(&groups)
