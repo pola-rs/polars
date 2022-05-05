@@ -550,7 +550,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 dtypes_dict = {name: dt for (name, dt) in dtype_list}
             if dtype_slice is not None:
                 raise ValueError(
-                    "cannot use glob patterns and unamed dtypes as `dtypes` argument; Use dtypes: Mapping[str, Type[DataType]"
+                    "cannot use glob patterns and unnamed dtypes as `dtypes` argument; Use dtypes: Mapping[str, Type[DataType]"
                 )
             from polars import scan_csv
 
@@ -2836,7 +2836,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             This column must be sorted in ascending order. If not the output will not make sense.
 
             In case of a rolling groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
+            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window
         offset
@@ -2948,7 +2948,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             This column must be sorted in ascending order. If not the output will not make sense.
 
             In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
+            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
         every
             interval of the window
         period

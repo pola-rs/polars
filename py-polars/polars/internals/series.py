@@ -1210,7 +1210,7 @@ class Series:
         append_chunks
             If set to `True` the append operation will add the chunks from `other` to self. This is super cheap.
 
-            if set to `False` the append operation will do the same as `DataFrame.extend` wich:
+            if set to `False` the append operation will do the same as `DataFrame.extend` which:
             extends the memory backed by this `Series` with the values from `other`.
 
             Different from `append chunks`, `extent` appends the data from `other` to the underlying memory locations and
@@ -2339,7 +2339,7 @@ class Series:
 
     def ceil(self) -> "Series":
         """
-        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
 
         Only works on floating point Series
         """
