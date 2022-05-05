@@ -16,13 +16,12 @@ mod sort;
 mod sortby;
 mod take;
 mod ternary;
-mod utils;
 mod window;
 
 pub(crate) use {
     aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
     is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
-    take::*, ternary::*, utils::*, window::*,
+    take::*, ternary::*, window::*,
 };
 
 use crate::physical_plan::state::ExecutionState;
@@ -486,12 +485,8 @@ pub trait PhysicalExpr: Send + Sync {
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
-    /// Convert to a aggregation expression.
-    /// This can only be done for the final expressions that produce an aggregated result.
-    ///
-    /// The expression sum, min, max etc can be called as `evaluate` in the standard context,
-    /// or during a groupby execution, this method is called to convert them to an AggPhysicalExpr
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    /// Convert to a partitioned aggregator.
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         let e = self.as_expression();
         Err(PolarsError::InvalidOperation(
             format!("{:?} is not an agg expression", e).into(),
@@ -525,21 +520,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
-    #[allow(clippy::ptr_arg)]
-    /// Should be called on the final aggregation node like sum, min, max, etc.
-    /// When called on a tail, slice, sort, etc. it should return a list-array
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(s)
-    }
-
+pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
     /// This is called in partitioned aggregation.
     /// Partitioned results may differ from aggregation results.
     /// For instance, for a `mean` operation a partitioned result
@@ -553,19 +534,14 @@ pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<Series>> {
-        // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.aggregate(df, groups, state).map(|s| vec![s])
-    }
+    ) -> Result<Series>;
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned_final(
+    fn finalize(
         &self,
-        final_df: &DataFrame,
+        partitioned: &Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
-        self.aggregate(final_df, groups, state)
-    }
+    ) -> Result<Series>;
 }

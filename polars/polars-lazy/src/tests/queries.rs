@@ -1991,13 +1991,42 @@ fn test_partitioned_gb_count() -> Result<()> {
     ]?
     .lazy()
     .groupby([col("col")])
-    .agg([count().alias("count")])
+    .agg([
+        // we make sure to alias with a different name
+        count().alias("counted"),
+        col("col").count().alias("count2"),
+    ])
     .collect()?;
 
     assert!(out.frame_equal(&df![
         "col" => [0],
-        "count" => [100 as IdxSize],
+        "counted" => [100 as IdxSize],
+        "count2" => [100 as IdxSize],
     ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_mean() -> Result<()> {
+    // don't move these to integration tests
+    let out = df![
+        "key" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+    ]?
+    .lazy()
+    .with_columns([lit("a").alias("str"), lit(1).alias("int")])
+    .groupby([col("key")])
+    .agg([
+        col("str").mean().alias("mean_str"),
+        col("int").mean().alias("mean_int"),
+    ])
+    .collect()?;
+
+    assert_eq!(out.shape(), (1, 3));
+    let str_col = out.column("mean_str")?;
+    assert_eq!(str_col.get(0), AnyValue::Null);
+    let int_col = out.column("mean_int")?;
+    assert_eq!(int_col.get(0), AnyValue::Float64(1.0));
 
     Ok(())
 }
