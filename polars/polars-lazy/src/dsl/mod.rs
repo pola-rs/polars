@@ -587,6 +587,19 @@ impl Expr {
         }
     }
 
+    fn map_private(self, function_expr: FunctionExpr, fmt_str: &'static str) -> Self {
+        Expr::Function {
+            input: vec![self],
+            function: function_expr,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str,
+            },
+        }
+    }
+
     /// Apply a function/closure once the logical plan get executed with many arguments
     ///
     /// See the [`Expr::map`] function for the differences between [`map`](Expr::map) and [`apply`](Expr::apply).
@@ -631,7 +644,7 @@ impl Expr {
                 collect_groups: ApplyOptions::ApplyList,
                 input_wildcard_expansion: false,
                 auto_explode: false,
-                fmt_str: "",
+                fmt_str: "map_list",
             },
         }
     }
@@ -1077,11 +1090,7 @@ impl Expr {
 
     /// Raise expression to the power `exponent`
     pub fn pow(self, exponent: f64) -> Self {
-        self.map(
-            move |s: Series| s.pow(exponent),
-            GetOutput::from_type(DataType::Float64),
-        )
-        .with_fmt("pow")
+        self.map_private(FunctionExpr::Pow(exponent), "pow")
     }
 
     /// Filter a single column
