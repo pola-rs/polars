@@ -685,6 +685,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
             let tu = get_time_units(tu_l, tu_r);
             Some(Datetime(tu, None))
         }
+        (List(inner), other) | (other, List(inner)) => {
+            let st = _get_supertype(inner, other)?;
+            Some(DataType::List(Box::new(st)))
+        }
         _ => None,
     }
 }

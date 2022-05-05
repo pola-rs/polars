@@ -1624,7 +1624,7 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.slice(offset, length))
 
-    def limit(self: LDF, n: int) -> LDF:
+    def limit(self: LDF, n: int = 5) -> LDF:
         """
         Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
         use the `fetch` operation.
@@ -1636,7 +1636,7 @@ class LazyFrame(Generic[DF]):
         """
         return self.slice(0, n)
 
-    def head(self: LDF, n: int) -> LDF:
+    def head(self: LDF, n: int = 5) -> LDF:
         """
         Gets the first `n` rows of the DataFrame. You probably don't want to use this!
 
@@ -1652,7 +1652,7 @@ class LazyFrame(Generic[DF]):
         """
         return self.limit(n)
 
-    def tail(self: LDF, n: int) -> LDF:
+    def tail(self: LDF, n: int = 5) -> LDF:
         """
         Get the last `n` rows of the DataFrame.
 

@@ -162,6 +162,27 @@ impl LazyFrame {
         (root, expr_arena, lp_arena)
     }
 
+    /// Set allowed optimizations
+    pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
+        self.opt_state = opt_state;
+        self
+    }
+
+    /// Turn off all optimizations
+    pub fn without_optimizations(self) -> Self {
+        self.with_optimizations(OptState {
+            projection_pushdown: false,
+            predicate_pushdown: false,
+            type_coercion: true,
+            simplify_expr: false,
+            global_string_cache: false,
+            slice_pushdown: false,
+            // will be toggled by a scan operation such as csv scan or parquet scan
+            agg_scan_projection: false,
+            aggregate_pushdown: false,
+        })
+    }
+
     /// Toggle projection pushdown optimization.
     pub fn with_projection_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.projection_pushdown = toggle;

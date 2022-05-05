@@ -286,8 +286,15 @@ impl PhysicalExpr for BinaryExpr {
                     let lhs = ac_l.aggregated();
                     ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));
 
+                    // we should only explode lists
+                    // not aggregated flat states
+                    let flatten = |s: Series| match s.dtype() {
+                        DataType::List(_) => s.explode(),
+                        _ => Ok(s),
+                    };
+
                     let out =
-                        apply_operator(&lhs.explode()?, &ac_r.aggregated().explode()?, self.op)?;
+                        apply_operator(&flatten(lhs)?, &flatten(ac_r.aggregated())?, self.op)?;
                     ac_l.with_series(out, false);
                     Ok(ac_l)
                 } else {

@@ -398,7 +398,19 @@ impl Operator {
     pub(crate) fn is_comparison(&self) -> bool {
         matches!(
             self,
-            Self::Eq | Self::NotEq | Self::Lt | Self::LtEq | Self::Gt | Self::GtEq
+            Self::Eq
+                | Self::NotEq
+                | Self::Lt
+                | Self::LtEq
+                | Self::Gt
+                | Self::GtEq
+                | Self::And
+                | Self::Or
+                | Self::Xor
         )
+    }
+
+    pub(crate) fn is_arithmetic(&self) -> bool {
+        !(self.is_comparison())
     }
 }
