@@ -45,26 +45,4 @@ impl PhysicalExpr for ShiftExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.input.to_field(input_schema)
     }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-impl PhysicalAggregation for ShiftExpr {
-    // As a final aggregation a Shift returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
-        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-        let s = ac
-            .aggregated()
-            .list()
-            .unwrap()
-            .apply(|s| s.shift(self.periods).into_series())
-            .into_series();
-        Ok(s)
-    }
 }

@@ -16,13 +16,12 @@ mod sort;
 mod sortby;
 mod take;
 mod ternary;
-mod utils;
 mod window;
 
 pub(crate) use {
     aggregation::*, alias::*, apply::*, binary::*, cast::*, column::*, count::*, filter::*,
     is_not_null::*, is_null::*, literal::*, not::*, shift::*, slice::*, sort::*, sortby::*,
-    take::*, ternary::*, utils::*, window::*,
+    take::*, ternary::*, window::*,
 };
 
 use crate::physical_plan::state::ExecutionState;
@@ -526,20 +525,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
 }
 
 pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
-    #[allow(clippy::ptr_arg)]
-    /// Should be called on the final aggregation node like sum, min, max, etc.
-    /// When called on a tail, slice, sort, etc. it should return a list-array
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(s)
-    }
-
     /// This is called in partitioned aggregation.
     /// Partitioned results may differ from aggregation results.
     /// For instance, for a `mean` operation a partitioned result
@@ -555,7 +540,8 @@ pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
         state: &ExecutionState,
     ) -> Result<Vec<Series>> {
         // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.aggregate(df, groups, state).map(|s| vec![s])
+        self.evaluate_on_groups(df, groups, state)
+            .map(|mut ac| vec![ac.aggregated()])
     }
 
     /// Called to merge all the partitioned results in a final aggregate.
@@ -566,6 +552,7 @@ pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Series> {
-        self.aggregate(final_df, groups, state)
+        self.evaluate_on_groups(final_df, groups, state)
+            .map(|mut ac| ac.aggregated())
     }
 }

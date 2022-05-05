@@ -43,7 +43,7 @@ impl Executor for GroupByRollingExec {
                     self.aggs
                         .par_iter()
                         .map(|expr| {
-                            let agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
+                            let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
                             if agg.len() != groups.len() {
                                 return Err(PolarsError::ComputeError(
                                     format!("returned aggregation is a different length: {} than the group lengths: {}",
