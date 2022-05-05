@@ -2645,6 +2645,7 @@ class Expr:
         self,
         fraction: float = 1.0,
         with_replacement: bool = True,
+        shuffle: bool = False,
         seed: Optional[int] = None,
     ) -> "Expr":
         """
@@ -2658,8 +2659,12 @@ class Expr:
             Allow values to be sampled more than once.
         seed
             Seed initialization. If None given a random seed is used.
+        shuffle
+            Shuffle the order of sampled data points.
         """
-        return wrap_expr(self._pyexpr.sample_frac(fraction, with_replacement, seed))
+        return wrap_expr(
+            self._pyexpr.sample_frac(fraction, with_replacement, shuffle, seed)
+        )
 
     def ewm_mean(
         self,

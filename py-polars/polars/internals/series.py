@@ -3053,6 +3053,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        shuffle: bool = False,
         seed: Optional[int] = None,
     ) -> "Series":
         """
@@ -3066,6 +3067,8 @@ class Series:
             Fraction between 0.0 and 1.0 .
         with_replacement
             sample with replacement.
+        shuffle
+            Shuffle the order of sampled data points.
         seed
             Initialization seed. If None is given a random seed is used.
 
@@ -3085,12 +3088,12 @@ class Series:
             raise ValueError("n and frac were both supplied")
 
         if n is None and frac is not None:
-            return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+            return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
 
         if n is None:
             n = 1
 
-        return wrap_s(self._s.sample_n(n, with_replacement, seed))
+        return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> "Series":
         """

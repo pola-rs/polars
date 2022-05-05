@@ -4892,6 +4892,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        shuffle: bool = False,
         seed: Optional[int] = None,
     ) -> DF:
         """
@@ -4905,6 +4906,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Fraction between 0.0 and 1.0 .
         with_replacement
             Sample with replacement.
+        shuffle
+            Shuffle the order of sampled data points.
         seed
             Initialization seed. If None is given a random seed is used.
 
@@ -4934,12 +4937,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
             raise ValueError("n and frac were both supplied")
 
         if n is None and frac is not None:
-            return self._from_pydf(self._df.sample_frac(frac, with_replacement, seed))
+            return self._from_pydf(
+                self._df.sample_frac(frac, with_replacement, shuffle, seed)
+            )
 
         if n is None:
             n = 1
 
-        return self._from_pydf(self._df.sample_n(n, with_replacement, seed))
+        return self._from_pydf(self._df.sample_n(n, with_replacement, shuffle, seed))
 
     def fold(
         self, operation: Callable[["pli.Series", "pli.Series"], "pli.Series"]

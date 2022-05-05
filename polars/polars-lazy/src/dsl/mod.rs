@@ -1636,9 +1636,15 @@ impl Expr {
     }
 
     #[cfg(feature = "random")]
-    pub fn sample_frac(self, frac: f64, with_replacement: bool, seed: Option<u64>) -> Self {
+    pub fn sample_frac(
+        self,
+        frac: f64,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
         self.apply(
-            move |s| s.sample_frac(frac, with_replacement, seed),
+            move |s| s.sample_frac(frac, with_replacement, shuffle, seed),
             GetOutput::same_type(),
         )
         .with_fmt("shuffle")
