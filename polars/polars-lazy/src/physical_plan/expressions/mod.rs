@@ -485,12 +485,8 @@ pub trait PhysicalExpr: Send + Sync {
     /// Get the output field of this expr
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
-    /// Convert to a aggregation expression.
-    /// This can only be done for the final expressions that produce an aggregated result.
-    ///
-    /// The expression sum, min, max etc can be called as `evaluate` in the standard context,
-    /// or during a groupby execution, this method is called to convert them to an AggPhysicalExpr
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    /// Convert to a partitioned aggregator.
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         let e = self.as_expression();
         Err(PolarsError::InvalidOperation(
             format!("{:?} is not an agg expression", e).into(),
@@ -524,7 +520,7 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     }
 }
 
-pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
+pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
     /// This is called in partitioned aggregation.
     /// Partitioned results may differ from aggregation results.
     /// For instance, for a `mean` operation a partitioned result
@@ -546,7 +542,7 @@ pub trait PhysicalAggregation: Send + Sync + PhysicalExpr {
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
-    fn evaluate_partitioned_final(
+    fn finalize(
         &self,
         final_df: &DataFrame,
         groups: &GroupsProxy,

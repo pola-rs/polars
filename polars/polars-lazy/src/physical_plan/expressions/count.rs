@@ -53,9 +53,9 @@ impl PhysicalExpr for CountExpr {
         Ok(Field::new("count", DataType::UInt32))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         Ok(self)
     }
 }
 
-impl PhysicalAggregation for CountExpr {}
+impl PartitionedAggregation for CountExpr {}

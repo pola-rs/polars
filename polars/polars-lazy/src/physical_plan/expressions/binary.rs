@@ -1,5 +1,5 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
+use crate::physical_plan::PartitionedAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
@@ -316,7 +316,7 @@ impl PhysicalExpr for BinaryExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         Ok(self)
     }
     #[cfg(feature = "parquet")]
@@ -325,7 +325,7 @@ impl PhysicalExpr for BinaryExpr {
     }
 }
 
-impl PhysicalAggregation for BinaryExpr {}
+impl PartitionedAggregation for BinaryExpr {}
 
 #[cfg(feature = "parquet")]
 mod stats {

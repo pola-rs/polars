@@ -63,9 +63,9 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         Ok(self)
     }
 }
 
-impl PhysicalAggregation for AliasExpr {}
+impl PartitionedAggregation for AliasExpr {}

@@ -1,5 +1,5 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
+use crate::physical_plan::PartitionedAggregation;
 use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -163,7 +163,7 @@ impl PhysicalExpr for AggregationExpr {
         self.expr.to_field(input_schema)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         Ok(self)
     }
 }
@@ -173,7 +173,7 @@ fn rename_series(mut s: Series, name: &str) -> Series {
     s
 }
 
-impl PhysicalAggregation for AggregationExpr {
+impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
@@ -214,7 +214,7 @@ impl PhysicalAggregation for AggregationExpr {
         }
     }
 
-    fn evaluate_partitioned_final(
+    fn finalize(
         &self,
         final_df: &DataFrame,
         groups: &GroupsProxy,

@@ -68,7 +68,7 @@ fn run_partitions(
                 let agg_columns = phys_aggs
                     .iter()
                     .map(|expr| {
-                        let agg_expr = expr.as_agg_expr()?;
+                        let agg_expr = expr.as_partitioned_aggregator()?;
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
                         if agg[0].len() != groups.len() {
                             Err(PolarsError::ComputeError(
@@ -284,10 +284,10 @@ impl Executor for PartitionGroupByExec {
                 .par_iter()
                 .zip(aggs_and_names.par_iter().map(|(_, name)| name))
                 .map(|(expr, name)| {
-                    let agg_expr = expr.as_agg_expr().unwrap();
+                    let agg_expr = expr.as_partitioned_aggregator().unwrap();
                     // If None the column doesn't exist anymore.
                     // For instance when summing a string this column will not be in the aggregation result
-                    let agg = agg_expr.evaluate_partitioned_final(&df, groups, state);
+                    let agg = agg_expr.finalize(&df, groups, state);
                     agg.map(|mut s| {
                         s.rename(name);
                         s
