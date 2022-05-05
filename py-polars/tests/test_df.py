@@ -1793,7 +1793,7 @@ def test_arithmetic() -> None:
     )
     assert out.frame_equal(expected, null_equal=True)
 
-    # cannot do arithmetics with a sequence
+    # cannot do arithmetic with a sequence
     with pytest.raises(ValueError, match="Operation not supported"):
         _ = df + [1]  # type: ignore
 

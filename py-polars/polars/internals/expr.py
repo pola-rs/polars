@@ -844,7 +844,7 @@ class Expr:
 
     def ceil(self) -> "Expr":
         """
-        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
 
         Only works on floating point Series
         """
@@ -1154,7 +1154,7 @@ class Expr:
 
         """
         # we first must check if it is not an expr, as expr does not implement __bool__
-        # and thus leads to a value error in the second comparisson.
+        # and thus leads to a value error in the second comparison.
         if not isinstance(fill_value, Expr) and fill_value in [
             "backward",
             "forward",
