@@ -218,3 +218,22 @@ fn test_filter_null_creation_by_cast() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_predicate_pd_apply() -> Result<()> {
+    let q = df![
+        "a" => [1, 2, 3],
+    ]?
+    .lazy()
+    .select([
+        // map_list is use in python `col().apply`
+        col("a"),
+        col("a")
+            .map_list(|s| Ok(s), GetOutput::same_type())
+            .alias("a_applied"),
+    ])
+    .filter(col("a").lt(lit(3)));
+
+    assert!(predicate_at_scan(q.clone()));
+    Ok(())
+}
