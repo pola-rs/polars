@@ -68,4 +68,30 @@ impl PhysicalExpr for AliasExpr {
     }
 }
 
-impl PartitionedAggregation for AliasExpr {}
+impl PartitionedAggregation for AliasExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.evaluate_partitioned(df, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
+    }
+
+    fn finalize(
+        &self,
+        partitioned: &Series,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.finalize(partitioned, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
+    }
+}

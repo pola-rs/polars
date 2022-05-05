@@ -89,10 +89,4 @@ impl PhysicalExpr for CastExpr {
             fld
         })
     }
-
-    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
-        Ok(self)
-    }
 }
-
-impl PartitionedAggregation for CastExpr {}

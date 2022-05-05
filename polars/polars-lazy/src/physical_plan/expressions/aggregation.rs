@@ -179,26 +179,27 @@ impl PartitionedAggregation for AggregationExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<Series>> {
+    ) -> Result<Series> {
         match self.agg_type {
+            #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
                 let series = self.expr.evaluate(df, state)?;
-                let mut new_name = series.name().to_string();
-                let agg_s = series.agg_sum(groups);
+                let new_name = series.name().to_string();
+                let mut agg_s = series.agg_sum(groups);
+                agg_s.rename(&new_name);
 
-                // the
                 if !agg_s.dtype().is_numeric() {
-                    Ok(vec![agg_s])
+                    Ok(agg_s)
                 } else {
-                    let mut agg_s = match agg_s.dtype() {
+                    let agg_s = match agg_s.dtype() {
                         DataType::Float32 => agg_s,
                         _ => agg_s.cast(&DataType::Float64).unwrap(),
                     };
-                    agg_s.rename(&new_name);
-                    new_name.push_str("__POLARS_MEAN_COUNT");
                     let mut count_s = series.agg_valid_count(groups);
-                    count_s.rename(&new_name);
-                    Ok(vec![agg_s, count_s])
+                    count_s.rename("count");
+                    Ok(StructChunked::new(&new_name, &[agg_s, count_s])
+                        .unwrap()
+                        .into_series())
                 }
             }
             GroupByMethod::List => {
@@ -206,48 +207,50 @@ impl PartitionedAggregation for AggregationExpr {
                 let new_name = series.name();
                 let mut agg = series.agg_list(groups);
                 agg.rename(new_name);
-                Ok(vec![agg])
+                Ok(agg)
             }
-            _ => Ok(vec![self
-                .evaluate_on_groups(df, groups, state)?
-                .aggregated()]),
+            _ => Ok(self.evaluate_on_groups(df, groups, state)?.aggregated()),
         }
     }
 
     fn finalize(
         &self,
-        final_df: &DataFrame,
+        partitioned: &Series,
         groups: &GroupsProxy,
-        state: &ExecutionState,
+        _state: &ExecutionState,
     ) -> Result<Series> {
         match self.agg_type {
+            GroupByMethod::Count | GroupByMethod::Sum => {
+                let mut agg = partitioned.agg_sum(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
-                let series = self.expr.evaluate(final_df, state)?;
-                let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
-                let new_name = series.name().to_string();
-
-                // The partitioned groupby yields
-                // "foo" and "foo__POLARS_MEAN_COUNT"
-                // if it can do the mean.
-                // for instance on string columns, it only returns "foo" (with only null values)
-                // the count column is not there and we can just yield the "foo" column
-                match final_df.column(&count_name).ok() {
-                    // we can finalize the aggregation
-                    Some(count) => {
+                let new_name = partitioned.name();
+                match partitioned.dtype() {
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => {
+                        let ca = partitioned.struct_().unwrap();
+                        let sum = &ca.fields()[0];
+                        let count = &ca.fields()[1];
                         let (agg_count, agg_s) =
-                            POOL.join(|| count.agg_sum(groups), || series.agg_sum(groups));
+                            POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups));
                         let agg_s = &agg_s / &agg_count;
-                        Ok(rename_series(agg_s, &new_name))
+                        Ok(rename_series(agg_s, new_name))
                     }
-                    None => Ok(Series::full_null(&new_name, groups.len(), series.dtype())),
+                    _ => Ok(Series::full_null(
+                        new_name,
+                        groups.len(),
+                        partitioned.dtype(),
+                    )),
                 }
             }
             GroupByMethod::List => {
                 // the groups are scattered over multiple groups/sub dataframes.
                 // we now must collect them into a single group
-                let series = self.expr.evaluate(final_df, state)?;
-                let ca = series.list().unwrap();
-                let new_name = series.name().to_string();
+                let ca = partitioned.list().unwrap();
+                let new_name = partitioned.name().to_string();
 
                 let mut values = Vec::with_capacity(groups.len());
                 let mut can_fast_explode = true;
@@ -287,9 +290,27 @@ impl PartitionedAggregation for AggregationExpr {
                 }
                 Ok(ca.into_series())
             }
-            _ => self
-                .evaluate_on_groups(final_df, groups, state)
-                .map(|mut ac| ac.aggregated()),
+            GroupByMethod::First => {
+                let mut agg = partitioned.agg_first(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Last => {
+                let mut agg = partitioned.agg_last(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Max => {
+                let mut agg = partitioned.agg_max(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Min => {
+                let mut agg = partitioned.agg_min(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            _ => unimplemented!(),
         }
     }
 }

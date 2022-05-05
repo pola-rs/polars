@@ -534,21 +534,14 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<Series>> {
-        // we return a vec, such that an implementor can return more information, such as a sum and count.
-        self.evaluate_on_groups(df, groups, state)
-            .map(|mut ac| vec![ac.aggregated()])
-    }
+    ) -> Result<Series>;
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
     fn finalize(
         &self,
-        final_df: &DataFrame,
+        partitioned: &Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Series> {
-        self.evaluate_on_groups(final_df, groups, state)
-            .map(|mut ac| ac.aggregated())
-    }
+    ) -> Result<Series>;
 }

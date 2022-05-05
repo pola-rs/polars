@@ -356,6 +356,9 @@ impl DefaultPlanner {
                             if !((&*expr_arena).iter(*agg).all(|(_, ae)| {
                                 use AExpr::*;
                                 match ae {
+                                    // struct is needed to keep both states
+                                    #[cfg(feature = "dtype-struct")]
+                                    Agg(AAggExpr::Mean(_)) => true,
                                     // only allowed expressions
                                     Agg(agg_e) => {
                                         matches!(
@@ -363,12 +366,12 @@ impl DefaultPlanner {
                                             AAggExpr::Min(_)
                                                 | AAggExpr::Max(_)
                                                 | AAggExpr::Sum(_)
-                                                | AAggExpr::Mean(_)
                                                 | AAggExpr::Last(_)
                                                 | AAggExpr::First(_)
+                                                | AAggExpr::Count(_)
                                         )
                                     },
-                                    Column(_) | Alias(_, _) => {
+                                    Column(_) | Alias(_, _) | Count => {
                                         true
                                     }
                                     _ => {
@@ -407,9 +410,6 @@ impl DefaultPlanner {
                         input,
                         phys_keys,
                         phys_aggs,
-                        aggs.into_iter()
-                            .map(|n| node_to_expr(n, expr_arena))
-                            .collect(),
                         maintain_order,
                         options.slice,
                         input_schema,
