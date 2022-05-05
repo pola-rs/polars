@@ -1,5 +1,5 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
+use crate::physical_plan::PartitionedAggregation;
 use crate::prelude::*;
 use polars_arrow::export::arrow::{array::*, compute::concatenate::concatenate};
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -36,55 +36,30 @@ impl PhysicalExpr for AggregationExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let out = self.aggregate(df, groups, state)?;
-        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
-        self.expr.to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-fn rename_series(mut s: Series, name: &str) -> Series {
-    s.rename(name);
-    s
-}
-
-impl PhysicalAggregation for AggregationExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
         let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
 
-        match self.agg_type {
+        let out = match self.agg_type {
             GroupByMethod::Min => {
                 let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Max => {
                 let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Median => {
                 let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Mean => {
                 let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Sum => {
                 let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Count => {
                 // a few fast paths that prevent materializing new groups
@@ -126,7 +101,7 @@ impl PhysicalAggregation for AggregationExpr {
                             }
                         };
                         s.rename(&keep_name);
-                        Ok(s.into_series())
+                        s.into_series()
                     }
                     UpdateGroups::WithGroupsLen => {
                         // no need to update the groups
@@ -134,79 +109,97 @@ impl PhysicalAggregation for AggregationExpr {
                         // not the correct order
                         let mut ca = ac.groups.group_count();
                         ca.rename(&keep_name);
-                        Ok(ca.into_series())
+                        ca.into_series()
                     }
                     // materialize groups
                     _ => {
                         let mut ca = ac.groups().group_count();
                         ca.rename(&keep_name);
-                        Ok(ca.into_series())
+                        ca.into_series()
                     }
                 }
             }
             GroupByMethod::First => {
                 let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
                 agg_s.rename(&keep_name);
-                Ok(agg_s)
+                agg_s
             }
             GroupByMethod::Last => {
                 let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
                 agg_s.rename(&keep_name);
-                Ok(agg_s)
+                agg_s
             }
             GroupByMethod::NUnique => {
                 let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::List => {
                 let agg = ac.aggregated();
-                Ok(rename_series(agg, &keep_name))
+                rename_series(agg, &keep_name)
             }
             GroupByMethod::Groups => {
                 let mut column: ListChunked = ac.groups().as_list_chunked();
                 column.rename(&keep_name);
-                Ok(column.into_series())
+                column.into_series()
             }
             GroupByMethod::Std => {
                 let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Var => {
                 let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
-                Ok(rename_series(agg_s, &keep_name))
+                rename_series(agg_s, &keep_name)
             }
             GroupByMethod::Quantile(_, _) => {
                 // implemented explicitly in AggQuantile struct
                 unimplemented!()
             }
-        }
+        };
+
+        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
     }
 
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.expr.to_field(input_schema)
+    }
+
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
+        Ok(self)
+    }
+}
+
+fn rename_series(mut s: Series, name: &str) -> Series {
+    s.rename(name);
+    s
+}
+
+impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Vec<Series>> {
+    ) -> Result<Series> {
         match self.agg_type {
+            #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
                 let series = self.expr.evaluate(df, state)?;
-                let mut new_name = series.name().to_string();
-                let agg_s = series.agg_sum(groups);
+                let new_name = series.name().to_string();
+                let mut agg_s = series.agg_sum(groups);
+                agg_s.rename(&new_name);
 
-                // the
                 if !agg_s.dtype().is_numeric() {
-                    Ok(vec![agg_s])
+                    Ok(agg_s)
                 } else {
-                    let mut agg_s = match agg_s.dtype() {
+                    let agg_s = match agg_s.dtype() {
                         DataType::Float32 => agg_s,
                         _ => agg_s.cast(&DataType::Float64).unwrap(),
                     };
-                    agg_s.rename(&new_name);
-                    new_name.push_str("__POLARS_MEAN_COUNT");
                     let mut count_s = series.agg_valid_count(groups);
-                    count_s.rename(&new_name);
-                    Ok(vec![agg_s, count_s])
+                    count_s.rename("count");
+                    Ok(StructChunked::new(&new_name, &[agg_s, count_s])
+                        .unwrap()
+                        .into_series())
                 }
             }
             GroupByMethod::List => {
@@ -214,48 +207,50 @@ impl PhysicalAggregation for AggregationExpr {
                 let new_name = series.name();
                 let mut agg = series.agg_list(groups);
                 agg.rename(new_name);
-                Ok(vec![agg])
+                Ok(agg)
             }
-            _ => Ok(vec![PhysicalAggregation::aggregate(
-                self, df, groups, state,
-            )?]),
+            _ => Ok(self.evaluate_on_groups(df, groups, state)?.aggregated()),
         }
     }
 
-    fn evaluate_partitioned_final(
+    fn finalize(
         &self,
-        final_df: &DataFrame,
+        partitioned: &Series,
         groups: &GroupsProxy,
-        state: &ExecutionState,
+        _state: &ExecutionState,
     ) -> Result<Series> {
         match self.agg_type {
+            GroupByMethod::Count | GroupByMethod::Sum => {
+                let mut agg = partitioned.agg_sum(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
-                let series = self.expr.evaluate(final_df, state)?;
-                let count_name = format!("{}__POLARS_MEAN_COUNT", series.name());
-                let new_name = series.name().to_string();
-
-                // The partitioned groupby yields
-                // "foo" and "foo__POLARS_MEAN_COUNT"
-                // if it can do the mean.
-                // for instance on string columns, it only returns "foo" (with only null values)
-                // the count column is not there and we can just yield the "foo" column
-                match final_df.column(&count_name).ok() {
-                    // we can finalize the aggregation
-                    Some(count) => {
+                let new_name = partitioned.name();
+                match partitioned.dtype() {
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => {
+                        let ca = partitioned.struct_().unwrap();
+                        let sum = &ca.fields()[0];
+                        let count = &ca.fields()[1];
                         let (agg_count, agg_s) =
-                            POOL.join(|| count.agg_sum(groups), || series.agg_sum(groups));
+                            POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups));
                         let agg_s = &agg_s / &agg_count;
-                        Ok(rename_series(agg_s, &new_name))
+                        Ok(rename_series(agg_s, new_name))
                     }
-                    None => Ok(Series::full_null(&new_name, groups.len(), series.dtype())),
+                    _ => Ok(Series::full_null(
+                        new_name,
+                        groups.len(),
+                        partitioned.dtype(),
+                    )),
                 }
             }
             GroupByMethod::List => {
                 // the groups are scattered over multiple groups/sub dataframes.
                 // we now must collect them into a single group
-                let series = self.expr.evaluate(final_df, state)?;
-                let ca = series.list().unwrap();
-                let new_name = series.name().to_string();
+                let ca = partitioned.list().unwrap();
+                let new_name = partitioned.name().to_string();
 
                 let mut values = Vec::with_capacity(groups.len());
                 let mut can_fast_explode = true;
@@ -295,28 +290,28 @@ impl PhysicalAggregation for AggregationExpr {
                 }
                 Ok(ca.into_series())
             }
-            _ => PhysicalAggregation::aggregate(self, final_df, groups, state),
+            GroupByMethod::First => {
+                let mut agg = partitioned.agg_first(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Last => {
+                let mut agg = partitioned.agg_last(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Max => {
+                let mut agg = partitioned.agg_max(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            GroupByMethod::Min => {
+                let mut agg = partitioned.agg_min(groups);
+                agg.rename(partitioned.name());
+                Ok(agg)
+            }
+            _ => unimplemented!(),
         }
-    }
-}
-
-impl PhysicalAggregation for AggQuantileExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
-        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
-        // don't change names by aggregations as is done in polars-core
-        let keep_name = ac.series().name().to_string();
-
-        let mut agg =
-            ac.flat_naive()
-                .into_owned()
-                .agg_quantile(ac.groups(), self.quantile, self.interpol);
-        agg.rename(&keep_name);
-        Ok(agg)
     }
 }
 
@@ -355,15 +350,19 @@ impl PhysicalExpr for AggQuantileExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let out = self.aggregate(df, groups, state)?;
-        Ok(AggregationContext::new(out, Cow::Borrowed(groups), true))
+        let mut ac = self.expr.evaluate_on_groups(df, groups, state)?;
+        // don't change names by aggregations as is done in polars-core
+        let keep_name = ac.series().name().to_string();
+
+        let mut agg =
+            ac.flat_naive()
+                .into_owned()
+                .agg_quantile(ac.groups(), self.quantile, self.interpol);
+        agg.rename(&keep_name);
+        Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.expr.to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
     }
 }

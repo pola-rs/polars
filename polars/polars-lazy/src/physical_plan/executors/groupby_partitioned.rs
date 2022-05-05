@@ -1,6 +1,4 @@
 use super::*;
-use crate::logical_plan::Context;
-use crate::utils::rename_aexpr_root_names;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::POOL;
 use rayon::prelude::*;
@@ -10,7 +8,6 @@ pub struct PartitionGroupByExec {
     input: Box<dyn Executor>,
     keys: Vec<Arc<dyn PhysicalExpr>>,
     phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
-    aggs: Vec<Expr>,
     maintain_order: bool,
     slice: Option<(i64, usize)>,
     input_schema: SchemaRef,
@@ -21,7 +18,6 @@ impl PartitionGroupByExec {
         input: Box<dyn Executor>,
         keys: Vec<Arc<dyn PhysicalExpr>>,
         phys_aggs: Vec<Arc<dyn PhysicalExpr>>,
-        aggs: Vec<Expr>,
         maintain_order: bool,
         slice: Option<(i64, usize)>,
         input_schema: SchemaRef,
@@ -30,7 +26,6 @@ impl PartitionGroupByExec {
             input,
             keys,
             phys_aggs,
-            aggs,
             maintain_order,
             slice,
             input_schema,
@@ -68,9 +63,9 @@ fn run_partitions(
                 let agg_columns = phys_aggs
                     .iter()
                     .map(|expr| {
-                        let agg_expr = expr.as_agg_expr()?;
+                        let agg_expr = expr.as_partitioned_aggregator()?;
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
-                        if agg[0].len() != groups.len() {
+                        if agg.len() != groups.len() {
                             Err(PolarsError::ComputeError(
                                 format!("returned aggregation is a different length: {} than the group lengths: {}",
                                         agg.len(),
@@ -80,47 +75,12 @@ fn run_partitions(
                             Ok(agg)
                         }
                     }).collect::<Result<Vec<_>>>()?;
-                columns.reserve(agg_columns.len() * 2);
-                for res in agg_columns {
-                    columns.extend_from_slice(&res);
-                }
+
+                columns.extend_from_slice(&agg_columns);
 
                 DataFrame::new(columns)
             })
     }).collect()
-}
-
-#[allow(clippy::type_complexity)]
-fn get_outer_agg_exprs(
-    exec: &PartitionGroupByExec,
-    df: &DataFrame,
-) -> Result<(Vec<(Node, Arc<str>)>, Vec<Arc<dyn PhysicalExpr>>)> {
-    // Due to the PARTITIONED GROUPBY the column names are be changed.
-    // To make sure sure we can select the columns with the new names, we re-create the physical
-    // aggregations with new root column names (being the output of the partitioned aggregation)j
-    // We also keep a hold on the output names to rename the final aggregation.
-    let mut expr_arena = Arena::with_capacity(32);
-    let schema = df.schema();
-    let aggs_and_names = exec
-        .aggs
-        .iter()
-        .map(|e| {
-            let out_field = e.to_field(&schema, Context::Aggregation)?;
-            let out_name: Arc<str> = Arc::from(out_field.name().as_str());
-            let node = to_aexpr(e.clone(), &mut expr_arena);
-            rename_aexpr_root_names(node, &mut expr_arena, out_name.clone());
-            Ok((node, out_name))
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    let planner = DefaultPlanner {};
-
-    let outer_phys_aggs = aggs_and_names
-        .iter()
-        .map(|(e, _)| planner.create_physical_expr(*e, Context::Aggregation, &mut expr_arena))
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok((aggs_and_names, outer_phys_aggs))
 }
 
 fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
@@ -224,7 +184,7 @@ fn can_run_partitioned(keys: &[Series], original_df: &DataFrame, state: &Executi
 
 impl Executor for PartitionGroupByExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let (dfs, aggs_and_names, outer_phys_aggs) = {
+        let dfs = {
             let original_df = self.input.execute(state)?;
 
             // already get the keys. This is the very last minute decision which groupby method we choose.
@@ -253,9 +213,7 @@ impl Executor for PartitionGroupByExec {
 
             // set it here, because `self.input.execute` will clear the schema cache.
             state.set_schema(self.input_schema.clone());
-            let dfs = run_partitions(&original_df, self, state, n_threads, self.maintain_order)?;
-            let (aggs_and_names, outer_phys_aggs) = get_outer_agg_exprs(self, &original_df)?;
-            (dfs, aggs_and_names, outer_phys_aggs)
+            run_partitions(&original_df, self, state, n_threads, self.maintain_order)?
         };
         state.clear_schema_cache();
 
@@ -280,18 +238,14 @@ impl Executor for PartitionGroupByExec {
 
         let get_columns = || gb.keys_sliced(self.slice);
         let get_agg = || {
-            let out: Result<Vec<_>> = outer_phys_aggs
+            let out: Result<Vec<_>> = self
+                .phys_aggs
                 .par_iter()
-                .zip(aggs_and_names.par_iter().map(|(_, name)| name))
-                .map(|(expr, name)| {
-                    let agg_expr = expr.as_agg_expr().unwrap();
-                    // If None the column doesn't exist anymore.
-                    // For instance when summing a string this column will not be in the aggregation result
-                    let agg = agg_expr.evaluate_partitioned_final(&df, groups, state);
-                    agg.map(|mut s| {
-                        s.rename(name);
-                        s
-                    })
+                // we slice the keys off and finalize every aggregation
+                .zip(&df.get_columns()[self.keys.len()..])
+                .map(|(expr, partitioned_s)| {
+                    let agg_expr = expr.as_partitioned_aggregator().unwrap();
+                    agg_expr.finalize(partitioned_s, groups, state)
                 })
                 .collect();
 

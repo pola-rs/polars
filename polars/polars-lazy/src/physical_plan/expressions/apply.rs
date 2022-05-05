@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
@@ -206,10 +205,4 @@ impl PhysicalExpr for ApplyExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.inputs[0].to_field(input_schema)
     }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
 }
-
-impl PhysicalAggregation for ApplyExpr {}

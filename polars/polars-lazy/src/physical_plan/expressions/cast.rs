@@ -89,10 +89,4 @@ impl PhysicalExpr for CastExpr {
             fld
         })
     }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
 }
-
-impl PhysicalAggregation for CastExpr {}

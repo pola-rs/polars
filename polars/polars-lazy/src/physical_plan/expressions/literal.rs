@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -159,20 +158,5 @@ impl PhysicalExpr for LiteralExpr {
             Series(s) => s.field().into_owned(),
         };
         Ok(field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for LiteralExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Series> {
-        PhysicalExpr::evaluate(self, df, state)
     }
 }
