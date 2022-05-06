@@ -10,7 +10,7 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{get_supertype, split_ca, split_df, NoNull};
+use crate::utils::{concat_df, get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2261,6 +2261,124 @@ impl DataFrame {
         Ok(DataFrame::new_no_checks(col))
     }
 
+    /// Summary statistics for a DataFrame. Only summarizes numeric datatypes at the moment and returns nulls for non numeric datatypes.
+    /// Try in keep output similar to pandas
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use polars_core::prelude::*;
+    /// let df1: DataFrame = df!("categorical" => &["d","e","f"],
+    ///                          "numeric" => &[1, 2, 3],
+    ///                          "object" => &["a", "b", "c"])?;
+    /// assert_eq!(df1.shape(), (3, 3));
+    ///
+    /// let df2: DataFrame = df1.describe();
+    /// assert_eq!(df2.shape(), (8, 4));
+    /// ```
+    ///
+    /// Output:
+    ///
+    /// ```text
+    /// shape: (8, 4)
+    /// ┌──────────┬─────────────┬─────────┬────────┐
+    /// │ describe ┆ categorical ┆ numeric ┆ object │
+    /// │ ---      ┆ ---         ┆ ---     ┆ ---    │
+    /// │ str      ┆ str         ┆ f64     ┆ str    │
+    /// ╞══════════╪═════════════╪═════════╪════════╡
+    /// │ count    ┆ null        ┆ 3.0     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ mean     ┆ null        ┆ 2.0     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ std      ┆ null        ┆ 1.0     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ min      ┆ null        ┆ 1.0     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 0.25%    ┆ null        ┆ 1.5     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 0.5%     ┆ null        ┆ 2.0     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ 0.75%    ┆ null        ┆ 2.5     ┆ null   │
+    /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+    /// │ max      ┆ null        ┆ 3.0     ┆ null   │
+    /// └──────────┴─────────────┴─────────┴────────┘
+    ///
+    #[must_use]
+    pub fn describe(&self, percentiles: Option<&[f64]>) -> Self {
+        fn is_numeric(s: &Series) -> bool {
+            let types = [
+                DataType::Int8,
+                DataType::Int16,
+                DataType::Int32,
+                DataType::Int64,
+                DataType::UInt8,
+                DataType::UInt16,
+                DataType::UInt32,
+                DataType::UInt64,
+                DataType::Float32,
+                DataType::Float64,
+            ];
+
+            types.contains(&s.dtype())
+        }
+
+        fn describe_cast(df: &DataFrame) -> DataFrame {
+            let mut columns: Vec<Series> = vec![];
+
+            for s in df.columns.iter() {
+                if is_numeric(&s) || *s.dtype() == DataType::Boolean {
+                    columns.push(s.cast(&DataType::Float64).expect("cast to float failed"))
+                } else {
+                    columns.push(s.clone())
+                }
+            }
+
+            DataFrame::new(columns).unwrap()
+        }
+
+        fn count(df: &DataFrame) -> DataFrame {
+            let columns = df.apply_columns_par(&|s| s.count_as_series());
+            DataFrame::new_no_checks(columns)
+        }
+
+        let percentiles = percentiles.unwrap_or(&[0.25, 0.5, 0.75]);
+
+        let mut headers: Vec<String> = vec![
+            "count".to_string(),
+            "mean".to_string(),
+            "std".to_string(),
+            "min".to_string(),
+        ];
+
+        let mut tmp: Vec<DataFrame> = vec![
+            describe_cast(&count(self)),
+            describe_cast(&self.mean()),
+            describe_cast(&self.std()),
+            describe_cast(&self.min()),
+        ];
+
+        for p in percentiles {
+            tmp.push(describe_cast(
+                &self
+                    .quantile(*p, QuantileInterpolOptions::Linear)
+                    .expect("quantile failed"),
+            ));
+            headers.push(format!("{}%", *p));
+        }
+
+        // Keep order same as pandas
+        tmp.push(describe_cast(&self.max()));
+        headers.push("max".to_string());
+
+        let mut summary = concat_df(&tmp).expect("unable to create dataframe");
+
+        summary
+            .insert_at_idx(0, Series::new("describe", headers))
+            .expect("insert of header failed");
+
+        return summary;
+    }
+
     /// Aggregate the columns to their maximum values.
     ///
     /// # Example
@@ -3236,6 +3354,21 @@ mod test {
         base.columns = vec![];
         let out = base.with_column(Series::new("c", [1]))?;
         assert_eq!(out.shape(), (1, 1));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_df_describe() -> Result<()> {
+        let df1: DataFrame = df!("categorical" => &["d","e","f"],
+                                 "numeric" => &[1, 2, 3],
+                                 "object" => &["a", "b", "c"])?;
+
+        assert_eq!(df1.shape(), (3, 3));
+
+        let df2: DataFrame = df1.describe(None);
+
+        assert_eq!(df2.shape(), (8, 4));
 
         Ok(())
     }
