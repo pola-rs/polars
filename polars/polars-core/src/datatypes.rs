@@ -510,43 +510,7 @@ impl Display for DataType {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => "cat",
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => {
-                return match fields.len() {
-                    1 => {
-                        write!(f, "struct{{{}: {}}}", fields[0].name(), fields[0].dtype)
-                    }
-                    2 => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}': {}, '{}': {}}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[0].dtype,
-                            fields[1].name(),
-                            fields[1].dtype
-                        )
-                    }
-                    3 => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}', '{}', '{}'}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[1].name(),
-                            fields[2].name()
-                        )
-                    }
-                    _ => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}',...,'{}'}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[fields.len() - 1].name()
-                        )
-                    }
-                }
-            }
+            DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)

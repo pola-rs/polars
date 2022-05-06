@@ -3492,6 +3492,52 @@ class ExprListNameSpace:
         """
         return self.slice(-n, n)
 
+    def to_struct(
+        self,
+        n_field_strategy: str = "first_non_null",
+        name_generator: Optional[Callable[[int], str]] = None,
+    ) -> "Expr":
+        """
+        Convert the series of type `List` to a series of type `Struct`.
+
+        Parameters
+        ----------
+        n_field_strategy
+            Strategy to determine the number of fields of the struct.
+            Any of {'first_non_null', 'max_width'}
+        name_generator
+            A custom function that can be used to generate the field names.
+            Default field names are `field_0, field_1 .. field_n`
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
+        >>> df.select([pl.col("a").arr.to_struct()])
+        shape: (2, 1)
+        ┌────────────┐
+        │ a          │
+        │ ---        │
+        │ struct[3]  │
+        ╞════════════╡
+        │ {1,2,3}    │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {1,2,null} │
+        └────────────┘
+        >>> df.select(
+        ...     [
+        ...         pl.col("a").arr.to_struct(
+        ...             name_generator=lambda idx: f"col_name_{idx}"
+        ...         )
+        ...     ]
+        ... ).to_series().to_list()
+        [{'col_name_0': 1, 'col_name_1': 2, 'col_name_2': 3},
+        {'col_name_0': 1, 'col_name_1': 2, 'col_name_2': None}]
+
+        """
+
+        return wrap_expr(self._pyexpr.lst_to_struct(n_field_strategy, name_generator))
+
     def eval(self, expr: "Expr", parallel: bool = False) -> "Expr":
         """
         Run any polars expression against the lists' elements

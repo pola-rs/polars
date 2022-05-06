@@ -170,17 +170,17 @@ impl ListChunked {
         self.apply_amortized(|s| s.as_ref().slice(offset, length))
     }
 
-    pub fn lst_lengths(&self) -> UInt32Chunked {
+    pub fn lst_lengths(&self) -> IdxCa {
         let mut lengths = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
             let offsets = arr.offsets().as_slice();
             let mut last = offsets[0];
             for o in &offsets[1..] {
-                lengths.push((*o - last) as u32);
+                lengths.push((*o - last) as IdxSize);
                 last = *o;
             }
         });
-        UInt32Chunked::from_vec(self.name(), lengths)
+        IdxCa::from_vec(self.name(), lengths)
     }
 
     /// Get the value by index in the sublists.

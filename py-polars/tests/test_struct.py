@@ -247,3 +247,27 @@ def test_from_dicts_struct() -> None:
         [{"b": 0, "c": 1}],
         [{"b": 1, "c": 2}],
     ]
+
+
+def test_list_to_struct() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
+    assert df.select([pl.col("a").arr.to_struct()]).to_series().to_list() == [
+        {"field_0": 1, "field_1": 2, "field_2": 3},
+        {"field_0": 1, "field_1": 2, "field_2": None},
+    ]
+
+    df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
+    assert df.select(
+        [pl.col("a").arr.to_struct(name_generator=lambda idx: f"col_name_{idx}")]
+    ).to_series().to_list() == [
+        {"col_name_0": 1, "col_name_1": 2},
+        {"col_name_0": 1, "col_name_1": 2},
+    ]
+
+    df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
+    assert df.select(
+        [pl.col("a").arr.to_struct(n_field_strategy="max_width")]
+    ).to_series().to_list() == [
+        {"field_0": 1, "field_1": 2, "field_2": None},
+        {"field_0": 1, "field_1": 2, "field_2": 1},
+    ]
