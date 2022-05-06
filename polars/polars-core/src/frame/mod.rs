@@ -2273,7 +2273,7 @@ impl DataFrame {
     ///                          "object" => &["a", "b", "c"])?;
     /// assert_eq!(df1.shape(), (3, 3));
     ///
-    /// let df2: DataFrame = df1.describe();
+    /// let df2: DataFrame = df1.describe(None);
     /// assert_eq!(df2.shape(), (8, 4));
     /// ```
     ///
