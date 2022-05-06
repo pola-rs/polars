@@ -2319,14 +2319,14 @@ impl DataFrame {
                 DataType::Float64,
             ];
 
-            types.contains(&s.dtype())
+            types.contains(s.dtype())
         }
 
         fn describe_cast(df: &DataFrame) -> DataFrame {
             let mut columns: Vec<Series> = vec![];
 
             for s in df.columns.iter() {
-                if is_numeric(&s) || *s.dtype() == DataType::Boolean {
+                if is_numeric(s) || *s.dtype() == DataType::Boolean {
                     columns.push(s.cast(&DataType::Float64).expect("cast to float failed"))
                 } else {
                     columns.push(s.clone())
@@ -2376,7 +2376,7 @@ impl DataFrame {
             .insert_at_idx(0, Series::new("describe", headers))
             .expect("insert of header failed");
 
-        return summary;
+        summary
     }
 
     /// Aggregate the columns to their maximum values.
