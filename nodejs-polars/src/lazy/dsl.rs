@@ -1185,11 +1185,12 @@ impl JsExpr {
 
     #[napi]
     pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<i64>) -> JsExpr {
-        let seed = seed.map(|s| s as u64);
-        self.inner
-            .clone()
-            .sample_frac(frac, with_replacement, seed)
-            .into()
+        todo!()
+        // let seed = seed.map(|s| s as u64);
+        // self.inner
+        //     .clone()
+        //     .sample_frac(frac, with_replacement, seed)
+        //     .into()
     }
     #[napi]
     pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: i64) -> JsExpr {

@@ -552,12 +552,13 @@ impl JsSeries {
     ) -> napi::Result<Self> {
         // Safety:
         // Wrap is transparent.
-        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
-        let s = self
-            .series
-            .sample_n(n as usize, with_replacement, seed)
-            .map_err(JsPolarsErr::from)?;
-        Ok(s.into())
+        todo!()
+        // let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        // let s = self
+        //     .series
+        //     .sample_n(n as usize, with_replacement, seed)
+        //     .map_err(JsPolarsErr::from)?;
+        // Ok(s.into())
     }
 
     #[napi]
@@ -567,14 +568,15 @@ impl JsSeries {
         with_replacement: bool,
         seed: Option<Wrap<u64>>,
     ) -> napi::Result<Self> {
+        todo!()
         // Safety:
         // Wrap is transparent.
-        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
-        let s = self
-            .series
-            .sample_frac(frac, with_replacement, seed)
-            .map_err(JsPolarsErr::from)?;
-        Ok(s.into())
+        // let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        // let s = self
+        //     .series
+        //     .sample_frac(frac, with_replacement, seed)
+        //     .map_err(JsPolarsErr::from)?;
+        // Ok(s.into())
     }
     #[napi]
     pub fn is_duplicated(&self) -> napi::Result<JsSeries> {

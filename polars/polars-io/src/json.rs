@@ -71,9 +71,9 @@ pub use arrow::{
 use polars_arrow::conversion::chunk_to_struct;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
 use std::convert::TryFrom;
 use std::io::{BufRead, Seek, Write};
-
 pub enum JsonFormat {
     Json,
     JsonLines,
