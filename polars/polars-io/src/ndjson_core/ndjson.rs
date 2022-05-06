@@ -136,6 +136,8 @@ pub(crate) struct CoreJsonReader<'a> {
     low_memory: bool,
 }
 impl<'a> CoreJsonReader<'a> {
+
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
@@ -263,9 +265,8 @@ impl<'a> CoreJsonReader<'a> {
 
 fn parse_lines(bytes: &[u8], buffers: &mut PlHashMap<String, Buffer>) -> Result<usize> {
     let mut stream = Deserializer::from_slice(bytes).into_iter::<Value>();
-    while let Some(value) = stream.next() {
-        let v = value.unwrap();
-
+    for value in stream.by_ref() {
+        let v = value.unwrap_or(Value::Null);
         match v {
             Value::Object(value) => {
                 buffers

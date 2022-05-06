@@ -97,23 +97,6 @@ impl Buffer {
         };
     }
 
-    pub(crate) fn dtype(&self) -> DataType {
-        match self {
-            Buffer::Boolean(_) => DataType::Boolean,
-            Buffer::Int32(_) => DataType::Int32,
-            Buffer::Int64(_) => DataType::Int64,
-            Buffer::UInt32(_) => DataType::UInt32,
-            Buffer::UInt64(_) => DataType::UInt64,
-            Buffer::Float32(_) => DataType::Float32,
-            Buffer::Float64(_) => DataType::Float64,
-            Buffer::Utf8(_) => DataType::Utf8,
-            #[cfg(feature = "dtype-datetime")]
-            Buffer::Datetime(_) => DataType::Datetime(TimeUnit::Microseconds, None),
-            #[cfg(feature = "dtype-date")]
-            Buffer::Date(_) => DataType::Date,
-        }
-    }
-
     #[inline]
     pub(crate) fn add(&mut self, value: &Value) -> Result<()> {
         use Buffer::*;
@@ -225,10 +208,7 @@ where
     match infer_pattern_single(val) {
         None => None,
         Some(pattern) => match DatetimeInfer::<T::Native>::try_from(pattern) {
-            Ok(mut infer) => {
-                let parsed = infer.parse(val);
-                parsed
-            }
+            Ok(mut infer) => infer.parse(val),
             Err(_) => None,
         },
     }
