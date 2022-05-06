@@ -40,11 +40,11 @@ arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", 
 csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
-lazy_static = "1.4"
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
+once_cell = "1"
 polars-arrow = { version = "0.21.1", path = "../polars-arrow" }
 polars-core = { version = "0.21.1", path = "../polars-core", features = ["private"], default-features = false }
 polars-time = { version = "0.21.1", path = "../polars-time", features = ["private"], default-features = false }

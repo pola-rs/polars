@@ -153,9 +153,9 @@ hashbrown = { version = "0.12", features = ["rayon"] }
 hex = { version = "0.4", optional = true }
 indexmap = { version = "1", features = ["std"] }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
-lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
+once_cell = "1"
 polars-arrow = { version = "0.21.1", path = "../polars-arrow", features = ["compute"] }
 polars-utils = { version = "0.21.1", path = "../polars-utils" }
 rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
