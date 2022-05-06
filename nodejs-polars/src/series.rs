@@ -548,17 +548,17 @@ impl JsSeries {
         &self,
         n: u32,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<Wrap<u64>>,
     ) -> napi::Result<Self> {
         // Safety:
         // Wrap is transparent.
-        todo!()
-        // let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
-        // let s = self
-        //     .series
-        //     .sample_n(n as usize, with_replacement, seed)
-        //     .map_err(JsPolarsErr::from)?;
-        // Ok(s.into())
+        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        let s = self
+            .series
+            .sample_n(n as usize, with_replacement, shuffle, seed)
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
     }
 
     #[napi]
@@ -566,17 +566,17 @@ impl JsSeries {
         &self,
         frac: f64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<Wrap<u64>>,
     ) -> napi::Result<Self> {
-        todo!()
         // Safety:
         // Wrap is transparent.
-        // let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
-        // let s = self
-        //     .series
-        //     .sample_frac(frac, with_replacement, seed)
-        //     .map_err(JsPolarsErr::from)?;
-        // Ok(s.into())
+        let seed: Option<u64> = unsafe { std::mem::transmute(seed) };
+        let s = self
+            .series
+            .sample_frac(frac, with_replacement, shuffle, seed)
+            .map_err(JsPolarsErr::from)?;
+        Ok(s.into())
     }
     #[napi]
     pub fn is_duplicated(&self) -> napi::Result<JsSeries> {

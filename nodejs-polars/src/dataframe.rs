@@ -1037,14 +1037,15 @@ impl JsDataFrame {
         &self,
         n: i64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
-        todo!()
-        // let df = self
-        //     .df
-        //     .sample_n(n as usize, with_replacement, seed.map(|s| s as u64))
-        //     .map_err(JsPolarsErr::from)?;
-        // Ok(df.into())
+        
+        let df = self
+            .df
+            .sample_n(n as usize, with_replacement, shuffle, seed.map(|s| s as u64))
+            .map_err(JsPolarsErr::from)?;
+        Ok(df.into())
     }
 
     #[napi]
@@ -1052,14 +1053,15 @@ impl JsDataFrame {
         &self,
         frac: f64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
-        todo!()
-        // let df = self
-        //     .df
-        //     .sample_frac(frac, with_replacement, seed.map(|s| s as u64))
-        //     .map_err(JsPolarsErr::from)?;
-        // Ok(df.into())
+        
+        let df = self
+            .df
+            .sample_frac(frac, with_replacement, shuffle, seed.map(|s| s as u64))
+            .map_err(JsPolarsErr::from)?;
+        Ok(df.into())
     }
 
     #[napi]

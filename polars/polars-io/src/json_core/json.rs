@@ -4,29 +4,21 @@ use crate::json_core::buffer::*;
 use crate::mmap::ReaderBytes;
 use crate::prelude::*;
 use crate::RowCount;
-use arrow::array::{ArrayRef, StructArray};
-use arrow::io::ndjson::read::FallibleStreamingIterator;
+
 pub use arrow::{
-    error::Result as ArrowResult,
-    io::{json, ndjson},
+    array::{StructArray},
+    io::ndjson,
 };
-use polars_arrow::conversion::chunk_to_struct;
-use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
-use polars_core::prelude::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
-use std::convert::TryFrom;
-use std::fs::File;
-use std::io::{BufRead, Seek, Write};
-use std::path::PathBuf;
+
 
 use crate::mmap::MmapBytesReader;
-use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{prelude::*, POOL};
-use rayon::prelude::*;
+use polars_core::{prelude::*, POOL, utils::accumulate_dataframes_vertical};
+use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::{Deserializer, Value};
+use std::borrow::Cow;
+use std::fs::File;
 use std::io::Cursor;
+use std::path::PathBuf;
 
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
@@ -41,10 +33,11 @@ where
     n_rows: Option<usize>,
     infer_schema_len: Option<usize>,
     chunk_size: usize,
-    projection: Option<Vec<String>>,
     schema: Option<&'a Schema>,
     row_count: Option<RowCount>,
     path: Option<PathBuf>,
+    low_memory: bool,
+
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -77,6 +70,11 @@ where
         self.path = path.map(|p| p.into());
         self
     }
+    /// Reduce memory consumption at the expense of performance
+    pub fn low_memory(mut self, toggle: bool) -> Self {
+      self.low_memory = toggle;
+      self
+    }
 }
 
 impl<'a> JsonLineReader<'a, File> {
@@ -98,11 +96,11 @@ where
             rechunk: true,
             n_rows: None,
             infer_schema_len: Some(128),
-            projection: None,
             schema: None,
             path: None,
             chunk_size: 1 << 18,
             row_count: None,
+            low_memory: false,
         }
     }
     fn finish(mut self) -> Result<DataFrame> {
@@ -118,7 +116,7 @@ where
             1024,
             self.chunk_size,
             0,
-            None,
+            self.low_memory,
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
@@ -133,16 +131,13 @@ pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
     schema: Cow<'a, Schema>,
-    /// Optional projection for which columns to load (zero-based column indices)
-    projection: Option<Vec<usize>>,
-    /// Current line number, used in error reporting
-    line_number: usize,
     skip_rows: usize,
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
     row_count: Option<RowCount>,
+    low_memory: bool
 }
 impl<'a> CoreJsonReader<'a> {
     pub(crate) fn new(
@@ -155,11 +150,11 @@ impl<'a> CoreJsonReader<'a> {
         sample_size: usize,
         chunk_size: usize,
         skip_rows: usize,
-        mut projection: Option<Vec<usize>>,
+        low_memory: bool,
     ) -> Result<CoreJsonReader<'a>> {
-        let mut reader_bytes = reader_bytes;
+        let reader_bytes = reader_bytes;
 
-        let mut schema = match schema {
+        let schema = match schema {
             Some(schema) => Cow::Borrowed(schema),
             None => {
                 let bytes: &[u8] = &reader_bytes;
@@ -178,26 +173,17 @@ impl<'a> CoreJsonReader<'a> {
             sample_size,
             chunk_size,
             skip_rows,
-            line_number: 0,
             n_rows,
             n_threads,
             row_count,
-            projection,
+            low_memory
+
         })
     }
-    fn parse_json(&mut self, mut n_threads: usize, mut bytes: &[u8]) -> Result<DataFrame> {
-        let logging = std::env::var("POLARS_VERBOSE").is_ok();
-        // todo!()
-        let low_memory = false;
-
+    fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
         let mut total_rows = 128;
-        let infer_len = Some(128);
-
-        let mut bytes = &bytes[..];
 
         if let Some((mean, std)) = get_line_stats(bytes, self.sample_size) {
-            // x % upper bound of byte length per line assuming normally distributed
-            let line_length_upper_bound = mean + 1.1 * std;
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
         }
 
@@ -205,52 +191,65 @@ impl<'a> CoreJsonReader<'a> {
             n_threads = 1;
         }
 
-        let n_chunks = total_rows / self.chunk_size;
+        // let n_chunks = total_rows / self.chunk_size;
 
         let rows_per_thread = total_rows / n_threads;
 
         let max_proxy = bytes.len() / n_threads / 2;
-        let capacity = if low_memory {
+        let capacity = if self.low_memory {
             self.chunk_size
         } else {
             std::cmp::min(rows_per_thread, max_proxy)
         };
 
-        // assume 10 chars per str
-        let init_str_bytes = capacity * 5;
-
         let expected_fields = &self.schema.len();
         let file_chunks =
             get_file_chunks(bytes, n_threads, *expected_fields, SEP, Some(QUOTE_CHAR));
+        // If the number of threads given by the user is lower than our global thread pool we create
+        // new one.
+        let owned_pool;
+        let pool = if POOL.current_num_threads() != n_threads {
+            owned_pool = Some(
+                ThreadPoolBuilder::new()
+                    .num_threads(n_threads)
+                    .build()
+                    .unwrap(),
+            );
+            owned_pool.as_ref().unwrap()
+        } else {
+            &POOL
+        };
 
-        let mut dfs = file_chunks
+        let dfs = pool.install(|| {
+          file_chunks
             .into_par_iter()
             .map(|(bytes_offset_thread, stop_at_nbytes)| {
                 let mut read = bytes_offset_thread;
 
                 let mut last_read = usize::MAX;
 
-                let mut buffers = init_buffers(&self.schema, capacity).unwrap();
+                let mut buffers = init_buffers(&self.schema, capacity)?;
 
                 loop {
                     if read >= stop_at_nbytes || read == last_read {
                         break;
                     }
-                    let byte_len = bytes.len();
                     let local_bytes = &bytes[read..stop_at_nbytes];
 
                     last_read = read;
-                    read += parse_lines(local_bytes, &mut buffers).unwrap();
+                    read += parse_lines(local_bytes, &mut buffers)?;
                 }
                 let df = DataFrame::new_no_checks(
                     buffers
-                        .into_iter()
-                        .map(|(_, buf)| buf.into_series().unwrap())
-                        .collect::<Vec<_>>(),
+                        .into_values()
+                        .map(|buf| buf.into_series())
+                        .collect::<Result<_>>()?,
                 );
-                df
+                Ok(df)
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()
+        })?;
+
 
         accumulate_dataframes_vertical(dfs)
     }
@@ -270,10 +269,6 @@ impl<'a> CoreJsonReader<'a> {
         }
         Ok(df)
     }
-}
-
-fn infer(reader_bytes: &ReaderBytes, infer_schema_len: Option<usize>) -> Result<(Schema, usize)> {
-    todo!()
 }
 
 fn parse_lines(bytes: &[u8], buffers: &mut PlHashMap<String, Buffer>) -> Result<usize> {

@@ -1571,6 +1571,7 @@ export function _Series(_s: any): Series {
         return wrap("sampleN",
           1,
           withReplacement,
+          false,
           seed
         );
       }
@@ -1581,6 +1582,7 @@ export function _Series(_s: any): Series {
         return wrap("sampleN",
           opts,
           withReplacement,
+          false,
           seed
         );
       }
