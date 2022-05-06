@@ -100,6 +100,7 @@ features = [
   "partition_by",
   "semi_anti_join",
   "list_eval",
+  "list_to_struct",
   "to_dummies",
 ]
 
