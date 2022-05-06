@@ -3,13 +3,15 @@ pub(crate) mod series;
 use crate::prelude::*;
 use crate::POOL;
 pub use arrow;
-pub use num_cpus;
 pub use polars_arrow::utils::TrustMyLength;
 pub use polars_arrow::utils::*;
 pub use rayon;
 use rayon::prelude::*;
 use std::borrow::Cow;
 use std::ops::{Deref, DerefMut};
+
+#[cfg(feature = "private")]
+pub use crate::chunked_array::ops::sort::argsort_no_nulls;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -106,26 +108,85 @@ where
     split_array!(ca, n, i64)
 }
 
+// prefer this one over split_ca, as this can push the null_count into the thread pool
+#[doc(hidden)]
+pub fn split_offsets(len: usize, n: usize) -> Vec<(usize, usize)> {
+    if n == 1 {
+        vec![(0, len)]
+    } else {
+        let chunk_size = len / n;
+
+        (0..n)
+            .map(|partition| {
+                let offset = partition * chunk_size;
+                let len = if partition == (n - 1) {
+                    len - offset
+                } else {
+                    chunk_size
+                };
+                (partition * chunk_size, len)
+            })
+            .collect_trusted()
+    }
+}
+
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
-    trait Len {
-        fn len(&self) -> usize;
-    }
-    impl Len for DataFrame {
-        fn len(&self) -> usize {
-            self.height()
+    let total_len = df.height();
+    let chunk_size = total_len / n;
+    let mut out = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let offset = i * chunk_size;
+        let len = if i == (n - 1) {
+            total_len - offset
+        } else {
+            chunk_size
+        };
+        let df = df.slice((i * chunk_size) as i64, len);
+        if df.n_chunks()? > 1 {
+            let iter = df.iter_chunks().map(|chunk| {
+                DataFrame::new_no_checks(
+                    df.iter()
+                        .zip(chunk.into_arrays())
+                        .map(|(s, arr)| {
+                            // Safety:
+                            // datatypes are correct
+                            unsafe {
+                                Series::from_chunks_and_dtype_unchecked(
+                                    s.name(),
+                                    vec![arr],
+                                    s.dtype(),
+                                )
+                            }
+                        })
+                        .collect(),
+                )
+            });
+            out.extend(iter)
+        } else {
+            out.push(df)
         }
     }
-    split_array!(df, n, i64)
+
+    Ok(out)
+}
+
+pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
+    let (raw_offset, slice_len) = slice_offsets(offset, len, vals.len());
+    &vals[raw_offset..raw_offset + slice_len]
 }
 
 #[inline]
 #[cfg(feature = "private")]
+#[doc(hidden)]
 pub fn slice_offsets(offset: i64, length: usize, array_len: usize) -> (usize, usize) {
     let abs_offset = offset.abs() as usize;
 
@@ -273,6 +334,7 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Date => $self.date().unwrap().$method($($args),*),
             DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
+            DataType::Struct(_) => $self.struct_().unwrap().$method($($args),*),
             dt => panic!("dtype {:?} not supported", dt)
         }
     }
@@ -357,11 +419,12 @@ macro_rules! df {
 }
 
 #[cfg(feature = "private")]
-pub fn get_time_units(l: &TimeUnit, r: &TimeUnit) -> TimeUnit {
-    if l == r {
-        *l
-    } else {
-        TimeUnit::Milliseconds
+pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
+    use TimeUnit::*;
+    match (tu_l, tu_r) {
+        (Nanoseconds, Microseconds) => Microseconds,
+        (_, Milliseconds) => Milliseconds,
+        _ => *tu_l,
     }
 }
 
@@ -397,7 +460,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (UInt32, Int32) => Some(Int64),
         (UInt32, Int64) => Some(Int64),
-
+        // needed for bigidx
+        (UInt64, Int32) => Some(Int64),
         (UInt64, Int64) => Some(Int64),
 
         (Int8, UInt8) => Some(Int8),
@@ -611,43 +675,36 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         }
         (Duration(_), Date) | (Date, Duration(_)) => Some(Datetime(TimeUnit::Milliseconds, None)),
         (Duration(lu), Duration(ru)) => Some(Duration(get_time_units(lu, ru))),
-        // we cast nanoseconds to milliseconds as that always fits with occasional loss of precision
-        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Milliseconds, None))
-        | (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Nanoseconds, None)) => {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
+
         // None and Some("") timezones
-        (Datetime(TimeUnit::Nanoseconds, None), Datetime(TimeUnit::Nanoseconds, tz))
-            if tz.as_deref() == Some("") =>
+        // we cast from more precision to higher precision as that always fits with occasional loss of precision
+        (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r))
+            if (tz_l.is_none() || tz_l.as_deref() == Some(""))
+                && (tz_r.is_none() || tz_r.as_deref() == Some("")) =>
         {
-            Some(Datetime(TimeUnit::Nanoseconds, None))
+            let tu = get_time_units(tu_l, tu_r);
+            Some(Datetime(tu, None))
         }
-        (Datetime(TimeUnit::Nanoseconds, tz), Datetime(TimeUnit::Nanoseconds, None))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Nanoseconds, None))
+        (List(inner), other) | (other, List(inner)) => {
+            let st = _get_supertype(inner, other)?;
+            Some(DataType::List(Box::new(st)))
         }
-        (Datetime(TimeUnit::Milliseconds, None), Datetime(TimeUnit::Milliseconds, tz))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
-        (Datetime(TimeUnit::Milliseconds, tz), Datetime(TimeUnit::Milliseconds, None))
-            if tz.as_deref() == Some("") =>
-        {
-            Some(Datetime(TimeUnit::Milliseconds, None))
-        }
-
-        (Datetime(TimeUnit::Nanoseconds, tz_l), Datetime(TimeUnit::Milliseconds, tz_r))
-        | (Datetime(TimeUnit::Milliseconds, tz_l), Datetime(TimeUnit::Nanoseconds, tz_r)) => {
-            match (tz_l.as_deref(), tz_r.as_deref()) {
-                (Some(""), None) | (None, Some("")) => Some(Datetime(TimeUnit::Milliseconds, None)),
-                _ => None,
-            }
-        }
-
         _ => None,
     }
+}
+
+/// This takes ownership of the DataFrame so that drop is called earlier.
+/// Does not check if schema is correct
+pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> Result<DataFrame>
+where
+    I: IntoIterator<Item = DataFrame>,
+{
+    let mut iter = dfs.into_iter();
+    let mut acc_df = iter.next().unwrap();
+    for df in iter {
+        acc_df.vstack_mut_unchecked(&df);
+    }
+    Ok(acc_df)
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
@@ -693,9 +750,17 @@ where
     F: Fn(Series) -> Result<Series> + Send + Sync,
 {
     let n_threads = n_threads.unwrap_or_else(|| POOL.current_num_threads());
-    let slices = split_series(&s, n_threads)?;
+    let splits = split_offsets(s.len(), n_threads);
 
-    let chunks = POOL.install(|| slices.into_par_iter().map(&f).collect::<Result<Vec<_>>>())?;
+    let chunks = POOL.install(|| {
+        splits
+            .into_par_iter()
+            .map(|(offset, len)| {
+                let s = s.slice(offset as i64, len);
+                f(s)
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
 
     let mut iter = chunks.into_iter();
     let first = iter.next().unwrap();
@@ -872,6 +937,17 @@ pub(crate) unsafe fn copy_from_slice_unchecked<T>(src: &[T], dst: &mut [T]) {
     std::ptr::copy_nonoverlapping(src.as_ptr(), dst.as_mut_ptr(), dst.len());
 }
 
+#[cfg(feature = "chunked_ids")]
+pub(crate) fn create_chunked_index_mapping(chunks: &[ArrayRef], len: usize) -> Vec<ChunkId> {
+    let mut vals = Vec::with_capacity(len);
+
+    for (chunk_i, chunk) in chunks.iter().enumerate() {
+        vals.extend((0..chunk.len()).map(|array_i| [chunk_i as IdxSize, array_i as IdxSize]))
+    }
+
+    vals
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -900,23 +976,5 @@ mod test {
             a.chunk_id().collect::<Vec<_>>(),
             b.chunk_id().collect::<Vec<_>>()
         );
-    }
-
-    #[test]
-    fn test_df_macro_trailing_commas() -> Result<()> {
-        let a = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2]
-        }?;
-
-        let b = df! {
-            "a" => &["a one", "a two"],
-            "b" => &["b one", "b two"],
-            "c" => &[1, 2],
-        }?;
-
-        assert!(a.frame_equal(&b));
-        Ok(())
     }
 }

@@ -1,8 +1,7 @@
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use crate::utils::rename_field;
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_core::frame::groupby::{fmt_groupby_column, GroupByMethod};
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_time_units};
 use polars_utils::arena::{Arena, Node};
@@ -76,10 +75,17 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    Function {
+    AnonymousFunction {
         input: Vec<Node>,
         function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: GetOutput,
+        options: FunctionOptions,
+    },
+    Function {
+        /// function arguments
+        input: Vec<Node>,
+        /// function to apply
+        function: FunctionExpr,
         options: FunctionOptions,
     },
     Shift {
@@ -95,9 +101,11 @@ pub enum AExpr {
     Wildcard,
     Slice {
         input: Node,
-        offset: i64,
-        length: usize,
+        offset: Node,
+        length: Node,
     },
+    Count,
+    Nth(i64),
 }
 
 impl Default for AExpr {
@@ -117,6 +125,36 @@ impl AExpr {
             .map(|f| f.data_type().clone())
     }
 
+    pub(crate) fn replace_input(self, input: Node) -> Self {
+        use AExpr::*;
+        match self {
+            Alias(_, name) => Alias(input, name),
+            IsNotNull(_) => IsNotNull(input),
+            IsNull(_) => IsNull(input),
+            Cast {
+                expr: _,
+                data_type,
+                strict,
+            } => Cast {
+                expr: input,
+                data_type,
+                strict,
+            },
+            _ => todo!(),
+        }
+    }
+
+    pub(crate) fn get_input(&self) -> Node {
+        use AExpr::*;
+        match self {
+            Alias(input, _) => *input,
+            IsNotNull(input) => *input,
+            IsNull(input) => *input,
+            Cast { expr, .. } => *expr,
+            _ => todo!(),
+        }
+    }
+
     /// Get Field result of the expression. The schema is the input data.
     pub(crate) fn to_field(
         &self,
@@ -126,20 +164,10 @@ impl AExpr {
     ) -> Result<Field> {
         use AExpr::*;
         match self {
+            Count => Ok(Field::new("count", DataType::UInt32)),
             Window { function, .. } => {
                 let e = arena.get(*function);
-
-                let field = e.to_field(schema, ctxt, arena);
-                match e {
-                    Agg(_) => field,
-                    _ => {
-                        let field = field?;
-                        Ok(Field::new(
-                            field.name(),
-                            DataType::List(Box::new(field.data_type().clone())),
-                        ))
-                    }
-                }
+                e.to_field(schema, ctxt, arena)
             }
             IsUnique(expr) => {
                 let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
@@ -163,16 +191,12 @@ impl AExpr {
                 name,
                 arena.get(*expr).get_type(schema, ctxt, arena)?,
             )),
-            Column(name) => {
-                let field = schema.field_with_name(name).map(|f| f.clone())?;
-                Ok(field)
-            }
+            Column(name) => schema
+                .get_field(name)
+                .ok_or_else(|| PolarsError::NotFound(name.to_string())),
             Literal(sv) => Ok(Field::new("literal", sv.get_datatype())),
             BinaryExpr { left, right, op } => {
                 use DataType::*;
-
-                let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
-                let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
 
                 let expr_type = match op {
                     Operator::Lt
@@ -183,15 +207,24 @@ impl AExpr {
                     | Operator::LtEq
                     | Operator::GtEq
                     | Operator::Or => DataType::Boolean,
-                    Operator::Minus => match (left_type, right_type) {
-                        // T - T != T if T is a datetime / date
-                        (Datetime(tul, _), Datetime(tur, _)) => {
-                            Duration(get_time_units(&tul, &tur))
+                    _ => {
+                        // don't traverse tree until strictly needed. Can have terrible performance.
+                        // # 3210
+                        let left_type = arena.get(*left).get_type(schema, ctxt, arena)?;
+                        let right_type = arena.get(*right).get_type(schema, ctxt, arena)?;
+
+                        match op {
+                            Operator::Minus => match (left_type, right_type) {
+                                // T - T != T if T is a datetime / date
+                                (Datetime(tul, _), Datetime(tur, _)) => {
+                                    Duration(get_time_units(&tul, &tur))
+                                }
+                                (Date, Date) => Duration(TimeUnit::Milliseconds),
+                                (left, right) => get_supertype(&left, &right)?,
+                            },
+                            _ => get_supertype(&left_type, &right_type)?,
                         }
-                        (Date, Date) => Duration(TimeUnit::Milliseconds),
-                        (left, right) => get_supertype(&left, &right)?,
-                    },
-                    _ => get_supertype(&left_type, &right_type)?,
+                    }
                 };
 
                 let out_field;
@@ -211,115 +244,58 @@ impl AExpr {
             Filter { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Agg(agg) => {
                 use AAggExpr::*;
-                let field = match agg {
-                    Min(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Min,
-                    ),
-                    Max(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Max,
-                    ),
+                match agg {
+                    Max(expr) | Sum(expr) | Min(expr) | First(expr) | Last(expr) => {
+                        arena.get(*expr).to_field(schema, ctxt, arena)
+                    }
                     Median(expr) => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Median,
-                        );
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         if field.data_type() != &DataType::Utf8 {
                             field.coerce(DataType::Float64);
                         }
-                        field
+                        Ok(field)
                     }
                     Mean(expr) => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Mean,
-                        );
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
-                    First(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::First,
-                    ),
-                    Last(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Last,
-                    ),
-                    List(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::List,
-                    ),
+                    List(expr) => {
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::List(field.data_type().clone().into()));
+                        Ok(field)
+                    }
                     Std(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::Float64);
-                        let mut field = field_by_context(field, ctxt, GroupByMethod::Std);
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
                     Var(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::Float64);
-                        let mut field = field_by_context(field, ctxt, GroupByMethod::Var);
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
                     NUnique(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::UInt32);
-                        match ctxt {
-                            Context::Default => field,
-                            Context::Aggregation => {
-                                let new_name =
-                                    fmt_groupby_column(field.name(), GroupByMethod::NUnique);
-                                rename_field(&field, &new_name)
-                            }
-                        }
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::UInt32);
+                        Ok(field)
                     }
-                    Sum(expr) => field_by_context(
-                        arena.get(*expr).to_field(schema, ctxt, arena)?,
-                        ctxt,
-                        GroupByMethod::Sum,
-                    ),
                     Count(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let field = Field::new(field.name(), DataType::UInt32);
-                        match ctxt {
-                            Context::Default => field,
-                            Context::Aggregation => {
-                                let new_name =
-                                    fmt_groupby_column(field.name(), GroupByMethod::Count);
-                                rename_field(&field, &new_name)
-                            }
-                        }
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::UInt32);
+                        Ok(field)
                     }
                     AggGroups(expr) => {
-                        let field = arena.get(*expr).to_field(schema, ctxt, arena)?;
-                        let new_name = fmt_groupby_column(field.name(), GroupByMethod::Groups);
-                        Field::new(&new_name, DataType::List(DataType::UInt32.into()))
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
+                        field.coerce(DataType::List(DataType::UInt32.into()));
+                        Ok(field)
                     }
-                    Quantile {
-                        expr,
-                        quantile,
-                        interpol,
-                    } => {
-                        let mut field = field_by_context(
-                            arena.get(*expr).to_field(schema, ctxt, arena)?,
-                            ctxt,
-                            GroupByMethod::Quantile(*quantile, *interpol),
-                        );
+                    Quantile { expr, .. } => {
+                        let mut field = arena.get(*expr).to_field(schema, ctxt, arena)?;
                         field.coerce(DataType::Float64);
-                        field
+                        Ok(field)
                     }
-                };
-                Ok(field)
+                }
             }
             Cast {
                 expr, data_type, ..
@@ -339,7 +315,7 @@ impl AExpr {
                     Ok(truthy)
                 }
             }
-            Function {
+            AnonymousFunction {
                 output_type, input, ..
             } => {
                 let fields = input
@@ -348,27 +324,19 @@ impl AExpr {
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
             }
+            Function {
+                function, input, ..
+            } => {
+                let fields = input
+                    .iter()
+                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    .collect::<Result<Vec<_>>>()?;
+                function.get_field(schema, ctxt, &fields)
+            }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Wildcard => panic!("should be no wildcard at this point"),
-        }
-    }
-}
-
-pub(crate) fn field_by_context(
-    mut field: Field,
-    ctxt: Context,
-    groupby_method: GroupByMethod,
-) -> Field {
-    if &DataType::Boolean == field.data_type() {
-        field = Field::new(field.name(), DataType::UInt32)
-    }
-
-    match ctxt {
-        Context::Default => field,
-        Context::Aggregation => {
-            let new_name = fmt_groupby_column(field.name(), groupby_method);
-            rename_field(&field, &new_name)
+            Nth(_) => panic!("should be no nth at this point"),
         }
     }
 }

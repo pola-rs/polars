@@ -34,7 +34,7 @@ pub(crate) fn next_line_position(
         return None;
     }
     loop {
-        let pos = input.iter().position(|b| *b == b'\n')? + 1;
+        let pos = memchr::memchr(b'\n', input)? + 1;
         if input.len() - pos == 0 {
             return None;
         }
@@ -65,12 +65,12 @@ pub(crate) fn is_whitespace(b: u8) -> bool {
 }
 
 #[inline]
-fn skip_condition<F>(input: &[u8], f: F) -> (&[u8], usize)
+fn skip_condition<F>(input: &[u8], f: F) -> &[u8]
 where
     F: Fn(u8) -> bool,
 {
     if input.is_empty() {
-        return (input, 0);
+        return input;
     }
     let mut read = 0;
     let len = input.len();
@@ -81,7 +81,7 @@ where
         }
         read += 1;
     }
-    (&input[read..], read)
+    &input[read..]
 }
 
 /// Makes sure that the bytes stream starts with
@@ -96,39 +96,28 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
     (&input[pos..], pos)
 }
 
-/// Remove whitespace and line endings from the start of file.
+/// Remove whitespace from the start of buffer.
 #[inline]
-pub(crate) fn skip_whitespace(input: &[u8]) -> (&[u8], usize) {
-    skip_condition(input, |b| is_whitespace(b) || is_line_ending(b))
+pub(crate) fn skip_whitespace(input: &[u8]) -> &[u8] {
+    skip_condition(input, is_whitespace)
 }
 
 #[inline]
 /// Can be used to skip whitespace, but exclude the delimiter
-pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> (&[u8], usize) {
+pub(crate) fn skip_whitespace_exclude(input: &[u8], exclude: u8) -> &[u8] {
+    skip_condition(input, |b| b != exclude && (is_whitespace(b)))
+}
+
+#[inline]
+/// Can be used to skip whitespace, but exclude the delimiter
+pub(crate) fn skip_whitespace_line_ending_exclude(input: &[u8], exclude: u8) -> &[u8] {
     skip_condition(input, |b| {
         b != exclude && (is_whitespace(b) || is_line_ending(b))
     })
 }
 
-/// Local version of slice::starts_with (as it won't inline)
 #[inline]
-fn starts_with(bytes: &[u8], needle: u8) -> bool {
-    !bytes.is_empty() && bytes[0] == needle
-}
-
-/// Slice `"100"` to `100`, if slice starts with `"` it does not check that it ends with `"`, but
-/// assumes this. Be aware of this.
-#[inline]
-pub(crate) fn drop_quotes(input: &[u8]) -> &[u8] {
-    if starts_with(input, b'"') {
-        &input[1..input.len() - 1]
-    } else {
-        input
-    }
-}
-
-#[inline]
-pub(crate) fn skip_line_ending(input: &[u8]) -> (&[u8], usize) {
+pub(crate) fn skip_line_ending(input: &[u8]) -> &[u8] {
     skip_condition(input, is_line_ending)
 }
 
@@ -144,7 +133,7 @@ pub(crate) fn get_line_stats(bytes: &[u8], n_lines: usize) -> Option<(f32, f32)>
             return None;
         }
         bytes_trunc = &bytes[n_read..];
-        match bytes_trunc.iter().position(|&b| b == b'\n') {
+        match memchr::memchr(b'\n', bytes_trunc) {
             Some(position) => {
                 n_read += position + 1;
                 lengths.push(position + 1);
@@ -302,7 +291,9 @@ impl<'a> Iterator for SplitFields<'a> {
         // There can be strings with delimiters:
         // "Street, City",
 
-        let pos = if self.quoting && self.v[0] == self.quote_char {
+        // Safety:
+        // we have checked bounds
+        let pos = if self.quoting && unsafe { *self.v.get_unchecked(0) } == self.quote_char {
             needs_escaping = true;
             // There can be pair of double-quotes within string.
             // Each of the embedded double-quote characters must be represented
@@ -388,11 +379,20 @@ pub(crate) fn parse_lines(
     buffers: &mut [Buffer],
     ignore_parser_errors: bool,
     n_lines: usize,
+    // length or original schema
+    schema_len: usize,
 ) -> Result<usize> {
     assert!(
         !projection.is_empty(),
         "at least one column should be projected"
     );
+    // only when we have one column \n should not be skipped
+    // other widths should have commas.
+    let skipwh = if schema_len > 1 {
+        skip_whitespace_line_ending_exclude
+    } else {
+        skip_whitespace_exclude
+    };
 
     // we use the pointers to track the no of bytes read.
     let start = bytes.as_ptr() as usize;
@@ -406,8 +406,7 @@ pub(crate) fn parse_lines(
             return Ok(end - start);
         }
 
-        let (b, _) = skip_whitespace_exclude(bytes, delimiter);
-        bytes = b;
+        bytes = skipwh(bytes, delimiter);
         if bytes.is_empty() {
             return Ok(original_bytes_len);
         }
@@ -463,6 +462,11 @@ pub(crate) fn parse_lines(
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = &null_values {
                             if let Some(null_value) = null_values.get(processed_fields) {
+                                let field = if needs_escaping && !field.is_empty() {
+                                    &field[1..field.len() - 1]
+                                } else {
+                                    field
+                                };
                                 if field == null_value.as_bytes() {
                                     add_null = true;
                                 }
@@ -535,17 +539,6 @@ pub(crate) fn parse_lines(
 #[cfg(test)]
 mod test {
     use super::*;
-
-    #[test]
-    fn test_skip() {
-        let input = b"    hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-        let input = b"\n        hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-        let input = b"\t\n\r
-        hello";
-        assert_eq!(skip_whitespace(input).0, b"hello");
-    }
 
     #[test]
     fn test_splitfields() {

@@ -23,6 +23,8 @@ try:
 except ImportError:  # pragma: no cover
     _PYARROW_AVAILABLE = False
 
+import math
+
 from polars import internals as pli
 from polars.internals.construction import (
     arrow_to_pyseries,
@@ -219,6 +221,8 @@ class Series:
             self._s = arrow_to_pyseries(name, values)
         elif isinstance(values, np.ndarray):
             self._s = numpy_to_pyseries(name, values, strict, nan_to_null)
+            if dtype is not None:
+                self._s = self.cast(dtype, strict=True)._s
         elif isinstance(values, Sequence):
             self._s = sequence_to_pyseries(name, values, dtype=dtype, strict=strict)
         elif _PANDAS_AVAILABLE and isinstance(values, (pd.Series, pd.DatetimeIndex)):
@@ -264,10 +268,10 @@ class Series:
     def inner(self) -> "PySeries":
         return self._s
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state: Any) -> None:
         self._s = sequence_to_pyseries("", [], Float32)
         self._s.__setstate__(state)
 
@@ -305,11 +309,13 @@ class Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
+            assert f is not None
+            return wrap_s(f(ts))
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
+            assert f is not None
+            return wrap_s(f(d))
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
@@ -342,10 +348,19 @@ class Series:
     def _arithmetic(self, other: Any, op_s: str, op_ffi: str) -> "Series":
         if isinstance(other, Series):
             return wrap_s(getattr(self._s, op_s)(other._s))
-        other = maybe_cast(other, self.dtype, self.time_unit)
-        f = get_ffi_func(op_ffi, self.dtype, self._s)
+        if isinstance(other, float) and not self.is_float():
+            _s = sequence_to_pyseries("", [other])
+            if "rhs" in op_ffi:
+                return wrap_s(getattr(_s, op_s)(self._s))
+            else:
+                return wrap_s(getattr(self._s, op_s)(_s))
+        else:
+            other = maybe_cast(other, self.dtype, self.time_unit)
+            f = get_ffi_func(op_ffi, self.dtype, self._s)
         if f is None:
-            return NotImplemented
+            raise ValueError(
+                f"cannot do arithmetic with series of dtype: {self.dtype} and argument of type: {type(other)}"
+            )
         return wrap_s(f(other))
 
     def __add__(self, other: Any) -> "Series":
@@ -370,7 +385,8 @@ class Series:
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         result = self._arithmetic(other, "div", "div_<>")
-        if self.is_float():
+        # todo! in place, saves allocation
+        if self.is_float() or isinstance(other, float):
             result = result.floor()
         return result
 
@@ -404,7 +420,7 @@ class Series:
             return wrap_s(self._s._not())
         return NotImplemented
 
-    def __rtruediv__(self, other: Any) -> np.ndarray:
+    def __rtruediv__(self, other: Any) -> "Series":
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
@@ -413,7 +429,7 @@ class Series:
         if isinstance(other, int):
             other = float(other)
 
-        return self.cast(Float64).__rfloordiv__(other)  # type: ignore
+        return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if self.is_datelike():
@@ -500,6 +516,22 @@ class Series:
         else:
             raise ValueError(f'cannot use "{key}" for indexing')
 
+    def estimated_size(self) -> int:
+        """
+        Returns an estimation of the total (heap) allocated size of the `Series` in bytes.
+
+        This estimation is the sum of the size of its buffers, validity, including nested arrays.
+        Multiple arrays may share buffers and bitmaps. Therefore, the size of 2 arrays is not the
+        sum of the sizes computed from this function. In particular, [`StructArray`]'s size is an upper bound.
+
+        When an array is sliced, its allocated size remains constant because the buffer unchanged.
+        However, this function will yield a smaller number. This is because this function returns
+        the visible size of the buffer, not its total capacity.
+
+        FFI buffers are included in this estimation.
+        """
+        return self._s.estimated_size()
+
     def sqrt(self) -> "Series":
         """
         Compute the square root of the elements
@@ -517,7 +549,7 @@ class Series:
         """
         return self ** 0.5
 
-    def any(self) -> "Series":
+    def any(self) -> bool:
         """
         Check if any boolean value in the column is `True`
 
@@ -525,9 +557,9 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).any()).to_series()
+        return self.to_frame().select(pli.col(self.name).any()).to_series()[0]
 
-    def all(self) -> "Series":
+    def all(self) -> bool:
         """
         Check if all boolean values in the column are `True`
 
@@ -535,16 +567,13 @@ class Series:
         -------
         Boolean literal
         """
-        return self.to_frame().select(pli.col(self.name).all()).to_series()
+        return self.to_frame().select(pli.col(self.name).all()).to_series()[0]
 
-    def log(self) -> "Series":
+    def log(self, base: float = math.e) -> "Series":
         """
-        Natural logarithm, element-wise.
-
-        The natural logarithm log is the inverse of the exponential function, so that log(exp(x)) = x.
-        The natural logarithm is logarithm in base e.
+        Compute the logarithm to a given base
         """
-        return np.log(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).log(base)).to_series()
 
     def log10(self) -> "Series":
         """
@@ -563,6 +592,10 @@ class Series:
         Create a new Series that copies data from this Series without null values.
         """
         return wrap_s(self._s.drop_nulls())
+
+    def drop_nans(self) -> "Series":
+        """ """
+        return self.filter(self.is_not_nan())
 
     def to_frame(self) -> "pli.DataFrame":
         """
@@ -664,7 +697,7 @@ class Series:
         └────────────┴───────┘
 
         """
-        stats: Dict[str, Union[Optional[float], int, str]]
+        stats: Dict[str, Union[Optional[float], int, str, date, datetime, timedelta]]
 
         if self.len() == 0:
             raise ValueError("Series must contain at least one value")
@@ -743,7 +776,7 @@ class Series:
         """
         return self.to_frame().select(pli.col(self.name).product()).to_series()[0]
 
-    def min(self) -> Union[int, float]:
+    def min(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the minimal value in this Series.
 
@@ -756,7 +789,7 @@ class Series:
         """
         return self._s.min()
 
-    def max(self) -> Union[int, float]:
+    def max(self) -> Union[int, float, date, datetime, timedelta]:
         """
         Get the maximum value in this Series.
 
@@ -894,6 +927,45 @@ class Series:
 
         """
         return pli.wrap_df(self._s.value_counts())
+
+    def unique_counts(self) -> "Series":
+        """
+        Returns a count of the unique values in the order of appearance.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("id", ["a", "b", "b", "c", "c", "c"])
+        >>> s.unique_counts()
+        shape: (3,)
+        Series: 'id' [u32]
+        [
+            1
+            2
+            3
+        ]
+        """
+        return pli.select(pli.lit(self).unique_counts()).to_series()
+
+    def entropy(self, base: float = math.e) -> Optional[float]:
+        """
+        Compute the entropy as `-sum(pk * log(pk)`.
+        where `pk` are discrete probabilities.
+
+        This routine will normalize pk if they don’t sum to 1.
+
+        Examples
+        --------
+
+        >>> a = pl.Series([0.99, 0.005, 0.005])
+        >>> a.entropy()
+        0.06293300616044681
+        >>> b = pl.Series([0.65, 0.10, 0.25])
+        >>> b.entropy()
+        0.8568409950394724
+
+        """
+        return pli.select(pli.lit(self).entropy(base)).to_series()[0]
 
     @property
     def name(self) -> str:
@@ -1127,7 +1199,7 @@ class Series:
         """
         return wrap_s(self._s.slice(offset, length))
 
-    def append(self, other: "Series") -> None:
+    def append(self, other: "Series", append_chunks: bool = True) -> None:
         """
         Append a Series to this one.
 
@@ -1135,6 +1207,25 @@ class Series:
         ----------
         other
             Series to append.
+        append_chunks
+            If set to `True` the append operation will add the chunks from `other` to self. This is super cheap.
+
+            if set to `False` the append operation will do the same as `DataFrame.extend` which:
+            extends the memory backed by this `Series` with the values from `other`.
+
+            Different from `append chunks`, `extent` appends the data from `other` to the underlying memory locations and
+            thus may cause a reallocation (which are expensive).
+
+            If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+            and thus will yield faster queries.
+
+            Prefer `extend` over `append_chunks` when you want to do a query after a single append. For instance during
+            online operations where you add `n` rows and rerun a query.
+
+            Prefer `append_chunks` over `extend` when you want to append many times before doing a query. For instance
+            when you read in multiple files and when to store them in a single `Series`.
+            In the latter case, finish the sequence of `append_chunks` operations with a `rechunk`.
+
 
         Examples
         --------
@@ -1154,7 +1245,10 @@ class Series:
         ]
 
         """
-        self._s.append(other._s)
+        if append_chunks:
+            self._s.append(other._s)
+        else:
+            self._s.extend(other._s)
 
     def filter(self, predicate: Union["Series", list]) -> "Series":
         """
@@ -1304,7 +1398,7 @@ class Series:
         else:
             return wrap_s(self._s.sort(reverse))
 
-    def argsort(self, reverse: bool = False) -> "Series":
+    def argsort(self, reverse: bool = False, nulls_last: bool = False) -> "Series":
         """
         Index location of the sorted variant of this Series.
 
@@ -1312,6 +1406,8 @@ class Series:
         -------
         indexes
             Indexes that can be used to sort this array.
+        nulls_last
+            Place null values last.
 
         Examples
         --------
@@ -1328,7 +1424,7 @@ class Series:
         ]
 
         """
-        return wrap_s(self._s.argsort(reverse))
+        return wrap_s(self._s.argsort(reverse, nulls_last))
 
     def arg_unique(self) -> "Series":
         """
@@ -1348,9 +1444,14 @@ class Series:
         """
         return self._s.arg_max()
 
-    def unique(self) -> "Series":
+    def unique(self, maintain_order: bool = False) -> "Series":
         """
         Get unique elements in series.
+
+        Parameters
+        ----------
+        maintain_order
+            Maintain order of data. This requires more work.
 
         Examples
         --------
@@ -1365,9 +1466,11 @@ class Series:
         ]
 
         """
+        if maintain_order:
+            return pli.select(pli.lit(self).unique(maintain_order)).to_series()
         return wrap_s(self._s.unique())
 
-    def take(self, indices: Union[np.ndarray, List[int]]) -> "Series":
+    def take(self, indices: Union[np.ndarray, List[int], "pli.Expr"]) -> "Series":
         """
         Take values by index.
 
@@ -1388,6 +1491,8 @@ class Series:
         ]
 
         """
+        if isinstance(indices, pli.Expr):
+            return pli.select(pli.lit(self).take(indices)).to_series()
         if isinstance(indices, list):
             indices = np.array(indices)
         return wrap_s(self._s.take(indices))
@@ -1749,7 +1854,9 @@ class Series:
 
     def cast(
         self,
-        dtype: Union[Type[DataType], Type[int], Type[float], Type[str], Type[bool]],
+        dtype: Union[
+            Type[DataType], Type[int], Type[float], Type[str], Type[bool], DataType
+        ],
         strict: bool = True,
     ) -> "Series":
         """
@@ -1784,8 +1891,8 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)
-        return wrap_s(self._s.cast(str(pl_dtype), strict))
+        pl_dtype = py_type_to_dtype(dtype)  # type: ignore
+        return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> "Series":
         """
@@ -1955,7 +2062,10 @@ class Series:
         return array
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
-        return self.to_numpy().__array__(dtype)
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -2007,6 +2117,10 @@ class Series:
         Convert this Series to numpy. This operation clones data but is completely safe.
 
         If you want a zero-copy view and know what you are doing, use `.view()`.
+
+        Notes
+        -----
+        If you are attempting to convert Utf8 to an array you'll need to install `pyarrow`.
 
         Examples
         --------
@@ -2070,6 +2184,16 @@ class Series:
 
         """
         return self._s.to_arrow()
+
+    def to_pandas(self) -> "pd.Series":
+        """
+        Convert this Series to a pandas Series
+        """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(  # pragma: no cover
+                "'pyarrow' is required for converting a 'polars' Series to a 'pandas' Series."
+            )
+        return self.to_arrow().to_pandas()
 
     def set(self, filter: "Series", value: Union[int, float]) -> "Series":
         """
@@ -2154,7 +2278,7 @@ class Series:
 
     def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
         """
-        Fill null values with a filling strategy.
+        Fill null values using a filling strategy, literal, or Expr.
 
         Examples
         --------
@@ -2172,24 +2296,32 @@ class Series:
         shape: (4,)
         Series: 'a' [i64]
         [
-                1
-                2
-                3
-                1
+            1
+            2
+            3
+            1
         ]
-
+        >>> s = pl.Series("b", ["x", None, "z"])
+        >>> s.fill_null(pl.lit(""))
+        shape: (3,)
+        Series: 'b' [str]
+        [
+            "x"
+            ""
+            "z"
+        ]
         Parameters
         ----------
         strategy
-
-        Fill null strategy or a value
-               * "backward"
-               * "forward"
-               * "min"
-               * "max"
-               * "mean"
-               * "one"
-               * "zero"
+            One of:
+            - "backward"
+            - "forward"
+            - "min"
+            - "max"
+            - "mean"
+            - "one"
+            - "zero"
+            Or an expression.
         """
         if not isinstance(strategy, str):
             return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
@@ -2207,7 +2339,7 @@ class Series:
 
     def ceil(self) -> "Series":
         """
-        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
 
         Only works on floating point Series
         """
@@ -2270,6 +2402,12 @@ class Series:
 
         """
         return wrap_s(self._s.mode())
+
+    def sign(self) -> "Series":
+        """
+        Returns an element-wise indication of the sign of a number.
+        """
+        return np.sign(self)  # type: ignore
 
     def sin(self) -> "Series":
         """
@@ -2494,6 +2632,34 @@ class Series:
         Returns
         -------
         New Series
+
+        Examples
+        --------
+
+        >>> s1 = pl.Series([1, 2, 3, 4, 5])
+        >>> s2 = pl.Series([5, 4, 3, 2, 1])
+        >>> s1.zip_with(s1 < s2, s2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                2
+                1
+        ]
+        >>> mask = pl.Series([True, False, True, False, True])
+        >>> s1.zip_with(mask, s2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                4
+                3
+                2
+                5
+        ]
+
         """
         return wrap_s(self._s.zip_with(mask._s, other._s))
 
@@ -2887,7 +3053,8 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
-        seed: int = 0,
+        shuffle: bool = False,
+        seed: Optional[int] = None,
     ) -> "Series":
         """
         Sample from this Series by setting either `n` or `frac`.
@@ -2900,13 +3067,15 @@ class Series:
             Fraction between 0.0 and 1.0 .
         with_replacement
             sample with replacement.
+        shuffle
+            Shuffle the order of sampled data points.
         seed
-            Initialization seed
+            Initialization seed. If None is given a random seed is used.
 
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3, 4, 5])
-        >>> s.sample(2)  # doctest: +IGNORE_RESULT
+        >>> s.sample(2, seed=0)  # doctest: +IGNORE_RESULT
         shape: (2,)
         Series: 'a' [i64]
         [
@@ -2915,9 +3084,16 @@ class Series:
         ]
 
         """
-        if n is not None:
-            return wrap_s(self._s.sample_n(n, with_replacement, seed))
-        return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+        if n is not None and frac is not None:
+            raise ValueError("n and frac were both supplied")
+
+        if n is None and frac is not None:
+            return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
+
+        if n is None:
+            n = 1
+
+        return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> "Series":
         """
@@ -3385,7 +3561,9 @@ class Series:
             .to_series()
         )
 
-    def extend(self, value: Optional[Union[int, float, str, bool]], n: int) -> "Series":
+    def extend_constant(
+        self, value: Optional[Union[int, float, str, bool]], n: int
+    ) -> "Series":
         """
         Extend the Series with given number of values.
 
@@ -3395,13 +3573,29 @@ class Series:
             The value to extend the Series with. This value may be None to fill with nulls.
         n
             The number of values to extend.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([1, 2, 3])
+        >>> s.extend_constant(99, n=2)
+        shape: (5,)
+        Series: '' [i64]
+        [
+                1
+                2
+                3
+                99
+                99
+        ]
+
         """
-        return wrap_s(self._s.extend(value, n))
+        return wrap_s(self._s.extend_constant(value, n))
 
     @property
     def time_unit(self) -> Optional[str]:
         """
-        Get the time unit of underlying Datetime Series as {"ns", "ms"}
+        Get the time unit of underlying Datetime Series as {"ns", "us", "ms"}
         """
         return self._s.time_unit()
 
@@ -3428,6 +3622,60 @@ class Series:
         Create an object namespace of all string related methods.
         """
         return StringNameSpace(self)
+
+    @property
+    def cat(self) -> "CatNameSpace":
+        """
+        Create an object namespace of all categorical related methods.
+        """
+        return CatNameSpace(self)
+
+    @property
+    def struct(self) -> "StructNameSpace":
+        """
+        Create an object namespace of all struct related methods.
+        """
+        return StructNameSpace(self)
+
+
+class StructNameSpace:
+    def __init__(self, s: "Series"):
+        self.s = s
+
+    def to_frame(self) -> "pli.DataFrame":
+        """
+        Convert this Struct Series to a DataFrame
+        """
+        return pli.wrap_df(self.s._s.struct_to_frame())
+
+    def field(self, name: str) -> Series:
+        """
+        Retrieve one of the fields of this `Struct` as a new Series
+
+        Parameters
+        ----------
+        name
+            Name of the field
+        """
+        return pli.select(pli.lit(self.s).struct.field(name)).to_series()
+
+    @property
+    def fields(self) -> List[str]:
+        """
+        Get the names of the fields
+        """
+        return self.s._s.struct_fields()
+
+    def rename_fields(self, names: List[str]) -> Series:
+        """
+        Rename the fields of the struct
+
+        Parameters
+        ----------
+        names
+            New names in the order of the struct's fields
+        """
+        return pli.select(pli.lit(self.s).struct.rename_fields(names)).to_series()
 
 
 class StringNameSpace:
@@ -3466,7 +3714,49 @@ class StringNameSpace:
         Returns
         -------
         A Date/ Datetime Series
+
+        Examples
+        --------
+
+        Dealing with different formats.
+
+        >>> s = pl.Series(
+        ...     "date",
+        ...     [
+        ...         "2021-04-22",
+        ...         "2022-01-04 00:00:00",
+        ...         "01/31/22",
+        ...         "Sun Jul  8 00:34:60 2001",
+        ...     ],
+        ... )
+        >>> (
+        ...     s.to_frame().with_column(
+        ...         pl.col("date")
+        ...         .str.strptime(pl.Date, "%F", strict=False)
+        ...         .fill_null(
+        ...             pl.col("date").str.strptime(pl.Date, "%F %T", strict=False)
+        ...         )
+        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%D", strict=False))
+        ...         .fill_null(pl.col("date").str.strptime(pl.Date, "%c", strict=False))
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌────────────┐
+        │ date       │
+        │ ---        │
+        │ date       │
+        ╞════════════╡
+        │ 2021-04-22 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2022-01-04 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2022-01-31 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 2001-07-08 │
+        └────────────┘
+
         """
+
         s = wrap_s(self._s)
         return (
             s.to_frame()
@@ -3481,6 +3771,21 @@ class StringNameSpace:
         Returns
         -------
         Series[u32]
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["foo", "bar", "hello", "world"])
+        >>> s.str.lengths()
+        shape: (4,)
+        Series: '' [u32]
+        [
+                3
+                3
+                5
+                5
+        ]
+
         """
         return wrap_s(self._s.str_lengths())
 
@@ -3662,6 +3967,70 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
+    def split(self, by: str, inclusive: bool = False) -> Series:
+        """
+        Split the string by a substring.
+        The return type will by of type List<Utf8>
+
+        Parameters
+        ----------
+        by
+            substring
+        inclusive
+            Include the split character/string in the results
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.split(by, inclusive)).to_series()
+
+    def split_exact(self, by: str, n: int, inclusive: bool = False) -> Series:
+        """
+        Split the string by a substring into a struct of `n` fields.
+        The return type will by of type Struct<Utf8>
+
+        If it cannot make `n` splits, the remaiming field elements will be null
+
+        Parameters
+        ----------
+        by
+            substring
+        n
+            Number of splits to make
+        inclusive
+            Include the split character/string in the results
+
+        Examples
+        --------
+
+        >>> (
+        ...     pl.DataFrame({"x": ["a_1", None, "c", "d_4"]}).select(
+        ...         [
+        ...             pl.col("x").str.split_exact("_", 1).alias("fields"),
+        ...         ]
+        ...     )
+        ... )
+        shape: (4, 1)
+        ┌───────────────────────────────────────────┐
+        │ fields                                    │
+        │ ---                                       │
+        │ struct[2]{'field_0': str, 'field_1': str} │
+        ╞═══════════════════════════════════════════╡
+        │ {"a","1"}                                 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {null,null}                               │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"c",null}                                │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ {"d","4"}                                 │
+        └───────────────────────────────────────────┘
+
+        """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame()
+            .select(pli.col(s.name).str.split_exact(by, n, inclusive))
+            .to_series()
+        )
+
     def replace(self, pattern: str, value: str) -> Series:
         """
         Replace first regex match with a string value.
@@ -3672,6 +4041,19 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "123ABC"
+                "abc456"
+        ]
+
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
@@ -3741,7 +4123,7 @@ class StringNameSpace:
 
 class ListNameSpace:
     """
-    Series.dt namespace.
+    Series.arr namespace.
     """
 
     def __init__(self, series: Series):
@@ -3750,6 +4132,19 @@ class ListNameSpace:
     def lengths(self) -> Series:
         """
         Get the length of the arrays as UInt32.
+
+        Examples
+        --------
+
+        >>> s = pl.Series([[1, 2, 3], [5]])
+        >>> s.arr.lengths()
+        shape: (2,)
+        Series: '' [u32]
+        [
+                3
+                1
+        ]
+
         """
         return wrap_s(self._s.arr_lengths())
 
@@ -3821,6 +4216,35 @@ class ListNameSpace:
         """
         return pli.select(pli.lit(wrap_s(self._s)).arr.get(index)).to_series()
 
+    def join(self, separator: str) -> "Series":
+        """
+        Join all string items in a sublist and place a separator between them.
+        This errors if inner type of list `!= Utf8`.
+
+        Parameters
+        ----------
+        separator
+            string to separate the items with
+
+        Returns
+        -------
+        Series of dtype Utf8
+
+        Examples
+        --------
+
+        >>> s = pl.Series([["foo", "bar"], ["hello", "world"]])
+        >>> s.arr.join(separator="-")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "foo-bar"
+                "hello-world"
+        ]
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.join(separator)).to_series()
+
     def first(self) -> "Series":
         """
         Get the first value of the sublists.
@@ -3850,6 +4274,191 @@ class ListNameSpace:
         s_list = wrap_s(self._s)
         out = s.is_in(s_list)
         return out.rename(s_list.name)
+
+    def arg_min(self) -> "Series":
+        """
+        Retrieve the index of the minimal value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_min()).to_series()
+
+    def arg_max(self) -> "Series":
+        """
+        Retrieve the index of the maximum value in every sublist
+
+        Returns
+        -------
+        Series of dtype UInt32/UInt64 (depending on compilation)
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.arg_max()).to_series()
+
+    def diff(self, n: int = 1, null_behavior: str = "ignore") -> "Series":
+        """
+        Calculate the n-th discrete difference of every sublist.
+
+        Parameters
+        ----------
+        n
+            number of slots to shift
+        null_behavior
+            {'ignore', 'drop'}
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.diff()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 1]
+            [null, -8, -1]
+        ]
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.diff(n, null_behavior)
+        ).to_series()
+
+    def shift(self, periods: int = 1) -> "Series":
+        """
+        Shift the values by a given period and fill the parts that will be empty due to this operation
+        with nulls.
+
+        Parameters
+        ----------
+        periods
+            Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.shift()
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [null, 1, ... 3]
+            [null, 10, 2]
+        ]
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.shift(periods)).to_series()
+
+    def slice(self, offset: int, length: int) -> "Series":
+        """
+        Slice every sublist
+
+        Parameters
+        ----------
+        offset
+            Take the values from this index offset
+        length
+            The length of the slice to take
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.slice(1, 2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [2, 3]
+            [2, 1]
+        ]
+
+        """
+        return pli.select(
+            pli.lit(wrap_s(self._s)).arr.slice(offset, length)
+        ).to_series()
+
+    def head(self, n: int = 5) -> "Series":
+        """
+        Slice the head of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.head(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [1, 2]
+            [10, 2]
+        ]
+
+        """
+        return self.slice(0, n)
+
+    def tail(self, n: int = 5) -> "Series":
+        """
+        Slice the tail of every sublist
+
+        Parameters
+        ----------
+        n
+            How many values to take in the slice.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", [[1, 2, 3, 4], [10, 2, 1]])
+        >>> s.arr.tail(2)
+        shape: (2,)
+        Series: 'a' [list]
+        [
+            [3, 4]
+            [2, 1]
+        ]
+
+        """
+        return self.slice(-n, n)
+
+    def eval(self, expr: "pli.Expr", parallel: bool = False) -> "Series":
+        """
+        Run any polars expression against the lists' elements
+
+        Parameters
+        ----------
+        expr
+            Expression to run. Note that you can select an element with `pl.first()`, or `pl.col()`
+        parallel
+            Run all expression parallel. Don't activate this blindly.
+            Parallelism is worth it if there is enough work to do per thread.
+
+            This likely should not be use in the groupby context, because we already parallel execution per group
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+        >>> df.with_column(
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ... )
+        shape: (3, 3)
+        ┌─────┬─────┬────────────┐
+        │ a   ┆ b   ┆ rank       │
+        │ --- ┆ --- ┆ ---        │
+        │ i64 ┆ i64 ┆ list [f32] │
+        ╞═════╪═════╪════════════╡
+        │ 1   ┆ 4   ┆ [1.0, 2.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 8   ┆ 5   ┆ [2.0, 1.0] │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 3   ┆ 2   ┆ [2.0, 1.0] │
+        └─────┴─────┴────────────┘
+
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).arr.eval(expr, parallel)).to_series()
 
 
 class DateTimeNameSpace:
@@ -4122,37 +4731,43 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.nanosecond())
 
-    def timestamp(self) -> Series:
+    def timestamp(self, tu: str = "us") -> Series:
         """
-        Return timestamp in ms as Int64 type.
+        Return a timestamp in the given time unit.
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms'}
         """
-        return wrap_s(self._s.timestamp())
+        return wrap_s(self._s.timestamp(tu))
 
     def to_python_datetime(self) -> Series:
         """
         Go from Date/Datetime to python DateTime objects
+
+        .. deprecated:: 0.13.23
+            Use :func:`Series.to_list`.
+
         """
-        return (self.timestamp() / 1000).apply(
+        return (self.timestamp("ms") / 1000).apply(
             lambda ts: datetime.utcfromtimestamp(ts), Object
         )
 
-    def min(self) -> Union[date, datetime]:
+    def min(self) -> Union[date, datetime, timedelta]:
         """
         Return minimum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.min()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        # we can ignore types because we are certain we get a logical type
+        return wrap_s(self._s).min()  # type: ignore
 
-    def max(self) -> Union[date, datetime]:
+    def max(self) -> Union[date, datetime, timedelta]:
         """
         Return maximum as python DateTime
         """
-        s = wrap_s(self._s)
-        out = s.max()
-        return _to_python_datetime(out, s.dtype, s.time_unit)
+        return wrap_s(self._s).max()  # type: ignore
 
-    def median(self) -> Union[date, datetime]:
+    def median(self) -> Union[date, datetime, timedelta]:
         """
         Return median as python DateTime
         """
@@ -4168,10 +4783,31 @@ class DateTimeNameSpace:
         out = int(s.mean())
         return _to_python_datetime(out, s.dtype, s.time_unit)
 
+    def epoch(self, tu: str = "us") -> Series:
+        """
+        Get the time passed since the Unix EPOCH in the give time unit
+
+        Parameters
+        ----------
+        tu
+            One of {'ns', 'us', 'ms', 's', 'd'}
+        """
+        if tu in ["ns", "us", "ms"]:
+            return self.timestamp(tu)
+        if tu == "s":
+            return wrap_s(self._s.dt_epoch_seconds())
+        if tu == "d":
+            return wrap_s(self._s).cast(Date).cast(Int32)
+        else:
+            raise ValueError(f"time unit {tu} not understood")
+
     def epoch_days(self) -> Series:
         """
         Get the number of days since the unix EPOCH.
         If the date is before the unix EPOCH, the number of days will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -4184,16 +4820,22 @@ class DateTimeNameSpace:
         Get the number of milliseconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of milliseconds will be negative.
 
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
+
         Returns
         -------
         Milliseconds as Int64
         """
-        return self.timestamp()
+        return self.timestamp("ms")
 
     def epoch_seconds(self) -> Series:
         """
         Get the number of seconds since the unix EPOCH
         If the date is before the unix EPOCH, the number of seconds will be negative.
+
+        .. deprecated:: 0.13.9
+            Use :func:`epoch` instead.
 
         Returns
         -------
@@ -4201,26 +4843,67 @@ class DateTimeNameSpace:
         """
         return wrap_s(self._s.dt_epoch_seconds())
 
-    def and_time_unit(self, tu: str) -> "Series":
+    def with_time_unit(self, tu: str) -> "Series":
         """
-        Set time unit a Series of type Datetime
+        Set time unit a Series of dtype Datetime or Duration. This does not modify underlying data,
+        and should be used to fix an incorrect time unit.
 
         Parameters
         ----------
         tu
-            Time unit for the `Datetime` Series: any of {"ns", "ms"}
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.with_time_unit(tu)).to_series()
+
+    def cast_time_unit(self, tu: str) -> "Series":
+        """
+        Cast the underlying data to another time unit. This may lose precision.
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.cast_time_unit(tu)).to_series()
+
+    def and_time_unit(self, tu: str) -> "Series":
+        """
+        Set time unit a Series of type Datetime
+
+        ..deprecated::
+            Use `with_time_unit`
+
+        Parameters
+        ----------
+        tu
+            Time unit for the `Datetime` Series: any of {"ns", "us", "ms"}
 
         """
-        return wrap_s(self._s.and_time_unit(tu))
+        return self.with_time_unit(tu)
 
     def and_time_zone(self, tz: Optional[str]) -> "Series":
         """
-        Set time zone a Series of type Datetime
+        Set time zone a Series of type Datetime.
+
+        ..deprecated::
+            Use `with_time_zone`
 
         Parameters
         ----------
         tz
-            Time zone for the `Datetime` Series: any of {"ns", "ms"}
+            Time zone for the `Datetime` Series
+
+        """
+        return wrap_s(self._s.and_time_zone(tz))
+
+    def with_time_zone(self, tz: Optional[str]) -> "Series":
+        """
+        Set time zone a Series of type Datetime.
+
+        Parameters
+        ----------
+        tz
+            Time zone for the `Datetime` Series
 
         """
         return wrap_s(self._s.and_time_zone(tz))
@@ -4244,6 +4927,16 @@ class DateTimeNameSpace:
         A series of dtype Int64
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.hours()).to_series()
+
+    def minutes(self) -> Series:
+        """
+        Extract the minutes from a Duration type.
+
+        Returns
+        -------
+        A series of dtype Int64
+        """
+        return pli.select(pli.lit(wrap_s(self._s)).dt.minutes()).to_series()
 
     def seconds(self) -> Series:
         """
@@ -4274,6 +4967,56 @@ class DateTimeNameSpace:
         A series of dtype Int64
         """
         return pli.select(pli.lit(wrap_s(self._s)).dt.nanoseconds()).to_series()
+
+
+class CatNameSpace:
+    """
+    Namespace for categorical related series.
+    """
+
+    def __init__(self, s: Series):
+        self._s = s
+
+    def set_ordering(self, ordering: str) -> "Series":
+        """
+        Determine how this categorical series should be sorted.
+
+        Parameters
+        ----------
+        ordering
+            One of:
+                - 'physical' -> use the physical representation of the categories to determine the order (default)
+                - 'lexical' -. use the string values to determine the ordering
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
+        ... ).with_columns(
+        ...     [
+        ...         pl.col("cats").cast(pl.Categorical).cat.set_ordering("lexical"),
+        ...     ]
+        ... )
+        >>> df.sort(["cats", "vals"])
+        shape: (5, 2)
+        ┌──────┬──────┐
+        │ cats ┆ vals │
+        │ ---  ┆ ---  │
+        │ cat  ┆ i64  │
+        ╞══════╪══════╡
+        │ a    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ b    ┆ 3    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ k    ┆ 2    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 1    │
+        ├╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ z    ┆ 3    │
+        └──────┴──────┘
+        """
+        return pli.select(pli.lit(self._s).cat.set_ordering(ordering)).to_series()
 
 
 class SeriesIter:

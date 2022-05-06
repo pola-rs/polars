@@ -26,6 +26,66 @@ impl LazyFrame {
     }
 }
 
+impl Expr {
+    /// Get a dot language representation of the Expression.
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
+    pub fn to_dot(&self) -> Result<String> {
+        let mut s = String::with_capacity(512);
+        self.dot_viz(&mut s, (0, 0), "").expect("io error");
+        s.push_str("\n}");
+        Ok(s)
+    }
+
+    fn write_dot(
+        &self,
+        acc_str: &mut String,
+        prev_node: &str,
+        current_node: &str,
+        id: usize,
+    ) -> std::fmt::Result {
+        if id == 0 {
+            writeln!(acc_str, "graph expr {{")
+        } else {
+            writeln!(
+                acc_str,
+                "\"{}\" -- \"{}\"",
+                prev_node.replace('"', r#"\""#),
+                current_node.replace('"', r#"\""#)
+            )
+        }
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_diagram")))]
+    fn dot_viz(
+        &self,
+        acc_str: &mut String,
+        id: (usize, usize),
+        prev_node: &str,
+    ) -> std::fmt::Result {
+        let (mut branch, id) = id;
+
+        match self {
+            Expr::BinaryExpr { left, op, right } => {
+                let current_node = format!(
+                    r#"BINARY
+                    left _;
+                    op {:?},
+                    right: _ [{},{}]"#,
+                    op, branch, id
+                );
+
+                self.write_dot(acc_str, prev_node, &current_node, id)?;
+                for input in [left, right] {
+                    input.dot_viz(acc_str, (branch, id + 1), &current_node)?;
+                    branch += 1;
+                }
+                Ok(())
+            }
+            _ => self.write_dot(acc_str, prev_node, &format!("{}{}", branch, id), id),
+        }
+    }
+}
+
 impl LogicalPlan {
     fn write_dot(
         &self,
@@ -90,7 +150,7 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -118,7 +178,7 @@ impl LogicalPlan {
                 selection,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = projection {
                     n_columns = format!("{}", columns.len());
@@ -143,7 +203,7 @@ impl LogicalPlan {
                 let current_node = format!(
                     "π {}/{} [{:?}]",
                     expr.len(),
-                    input.schema().fields().len(),
+                    input.schema().len(),
                     (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -160,7 +220,7 @@ impl LogicalPlan {
                 let current_node = format!(
                     "LOCAL π {}/{} [{:?}]",
                     expr.len(),
-                    input.schema().fields().len(),
+                    input.schema().len(),
                     (branch, id)
                 );
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
@@ -240,7 +300,7 @@ impl LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -270,7 +330,7 @@ impl LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -278,7 +338,7 @@ impl LogicalPlan {
 
                 let pred = fmt_predicate(predicate.as_ref());
                 let current_node = format!(
-                    "PARQUET SCAN {};\nπ {}/{};\nσ {} [{:?}]",
+                    "IPC SCAN {};\nπ {}/{};\nσ {} [{:?}]",
                     path.to_string_lossy(),
                     n_columns,
                     total_columns,
@@ -313,6 +373,10 @@ impl LogicalPlan {
                 let current_node = format!("{} [{:?}]", options.fmt_str, (branch, id));
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
+            }
+            Error { err, .. } => {
+                let current_node = format!("{:?}", &**err);
+                self.write_dot(acc_str, prev_node, &current_node, id)
             }
         }
     }

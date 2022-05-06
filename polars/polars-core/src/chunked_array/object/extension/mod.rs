@@ -190,9 +190,8 @@ mod test {
         let values = &[Some(foo1), None, Some(foo2), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups =
-            GroupsProxy::Idx(vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])].into());
-        let out = ca.agg_list(&groups).unwrap();
+        let groups = GroupsProxy::Idx(vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into());
+        let out = ca.agg_list(&groups);
         assert!(matches!(out.dtype(), DataType::List(_)));
         assert_eq!(out.len(), groups.len());
     }
@@ -214,8 +213,8 @@ mod test {
         let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
         let ca = ObjectChunked::new("", values);
 
-        let groups = vec![(0u32, vec![0u32, 1]), (2, vec![2]), (3, vec![3])].into();
-        let out = ca.agg_list(&GroupsProxy::Idx(groups)).unwrap();
+        let groups = vec![(0, vec![0, 1]), (2, vec![2]), (3, vec![3])].into();
+        let out = ca.agg_list(&GroupsProxy::Idx(groups));
         let a = out.explode().unwrap();
 
         let ca_foo = a.as_any().downcast_ref::<ObjectChunked<Foo>>().unwrap();

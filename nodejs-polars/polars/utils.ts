@@ -1,9 +1,8 @@
 import {Expr, exprToLitOrExpr} from "./lazy/expr";
-import type {Series} from "./series/series";
-import type {DataFrame} from "./dataframe";
+import {Series} from "./series/series";
+import {DataFrame} from "./dataframe";
 import path from "path";
 import {isExternal, isRegExp} from "util/types";
-
 export type ValueOrArray<T> = T | Array<ValueOrArray<T>>;
 export type ColumnSelection = ValueOrArray<string>
 export type ExpressionSelection = ValueOrArray<Expr>
@@ -27,7 +26,7 @@ export function columnOrColumns(columns: ColumnSelection |  string | Array<strin
 export function columnOrColumnsStrict(...columns: string[] | ValueOrArray<string>[]): Array<string> {
   return columns.flat(3) as any;
 }
-export function selectionToExprList(columns: any[], stringToLit?): Expr[] {
+export function selectionToExprList(columns: any[], stringToLit?) {
   return [columns].flat(3).map(expr => exprToLitOrExpr(expr, stringToLit)._expr);
 }
 
@@ -44,9 +43,9 @@ export const range = (start: number, end: number) => {
 };
 
 
-export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  isExternal(ty[0]?._df);
-export const isSeriesArray = <T>(ty: any): ty is Series<T>[] => Array.isArray(ty) &&  isExternal(ty[0]?._series);
-export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && isExternal(ty[0]?._expr);
+export const isDataFrameArray = (ty: any): ty is DataFrame[] => Array.isArray(ty) &&  DataFrame.isDataFrame(ty[0]);
+export const isSeriesArray = <T>(ty: any): ty is Series[] => Array.isArray(ty) &&  Series.isSeries(ty[0]);
+export const isExprArray = (ty: any): ty is Expr[] => Array.isArray(ty) && Expr.isExpr(ty[0]);
 export const isIterator = <T>(ty: any): ty is Iterable<T> => ty !== null && typeof ty[Symbol.iterator] === "function";
 export const regexToString = (r: string | RegExp): string => {
   if(isRegExp(r)) {

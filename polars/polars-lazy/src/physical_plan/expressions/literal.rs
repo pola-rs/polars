@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -77,8 +76,9 @@ impl PhysicalExpr for LiteralExpr {
             DateTime(ndt, tu) => {
                 use polars_core::chunked_array::temporal::conversion::*;
                 let timestamp = match tu {
-                    TimeUnit::Nanoseconds => naive_datetime_to_datetime_ns(ndt),
-                    TimeUnit::Milliseconds => naive_datetime_to_datetime_ms(ndt),
+                    TimeUnit::Nanoseconds => datetime_to_timestamp_ns(*ndt),
+                    TimeUnit::Microseconds => datetime_to_timestamp_us(*ndt),
+                    TimeUnit::Milliseconds => datetime_to_timestamp_ms(*ndt),
                 };
                 Int64Chunked::full("literal", timestamp, 1)
                     .into_datetime(*tu, None)
@@ -88,6 +88,15 @@ impl PhysicalExpr for LiteralExpr {
             Duration(v, tu) => {
                 let duration = match tu {
                     TimeUnit::Milliseconds => v.num_milliseconds(),
+                    TimeUnit::Microseconds => match v.num_microseconds() {
+                        Some(v) => v,
+                        None => {
+                            // Overflow
+                            return Err(PolarsError::InvalidOperation(
+                                format!("cannot represent {:?} as {:?}", v, tu).into(),
+                            ));
+                        }
+                    },
                     TimeUnit::Nanoseconds => {
                         match v.num_nanoseconds() {
                             Some(v) => v,
@@ -149,20 +158,5 @@ impl PhysicalExpr for LiteralExpr {
             Series(s) => s.field().into_owned(),
         };
         Ok(field)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for LiteralExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        _groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        PhysicalExpr::evaluate(self, df, state).map(Some)
     }
 }

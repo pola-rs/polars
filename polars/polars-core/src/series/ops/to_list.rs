@@ -3,6 +3,18 @@ use crate::prelude::*;
 use polars_arrow::kernels::list::array_to_unit_list;
 use std::borrow::Cow;
 
+fn reshape_fast_path(name: &str, s: &Series) -> Series {
+    let chunks = s
+        .chunks()
+        .iter()
+        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+        .collect::<Vec<_>>();
+
+    let mut ca = ListChunked::from_chunks(name, chunks);
+    ca.set_fast_explode();
+    ca.into_series()
+}
+
 impl Series {
     /// Convert the values of this Series to a ListChunked with a length of 1,
     /// So a Series of:
@@ -19,7 +31,7 @@ impl Series {
         let arr = ListArray::from_data(data_type, offsets.into(), values.clone(), None);
         let name = self.name();
 
-        let mut ca = ListChunked::new_from_chunks(name, vec![Arc::new(arr)]);
+        let mut ca = ListChunked::from_chunks(name, vec![Arc::new(arr)]);
         if self.dtype() != &self.dtype().to_physical() {
             ca.to_logical(inner_type.clone())
         }
@@ -29,11 +41,21 @@ impl Series {
     }
 
     pub fn reshape(&self, dims: &[i64]) -> Result<Series> {
+        if dims.is_empty() {
+            panic!("dimensions cannot be empty")
+        }
         let s = if let DataType::List(_) = self.dtype() {
             Cow::Owned(self.explode()?)
         } else {
             Cow::Borrowed(self)
         };
+
+        // no rows
+        if dims[0] == 0 {
+            let s = reshape_fast_path(self.name(), &s);
+            return Ok(s);
+        }
+
         let s_ref = s.as_ref();
 
         let mut dims = dims.to_vec();
@@ -50,15 +72,12 @@ impl Series {
 
         let prod = dims.iter().product::<i64>() as usize;
         if prod != s_ref.len() {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 format!("cannot reshape len {} into shape {:?}", s_ref.len(), dims).into(),
             ));
         }
 
         match dims.len() {
-            0 => {
-                panic!("dimensions cannot be empty")
-            }
             1 => Ok(s_ref.slice(0, dims[0] as usize)),
             2 => {
                 let mut rows = dims[0];
@@ -74,15 +93,8 @@ impl Series {
 
                 // fast path, we can create a unit list so we only allocate offsets
                 if rows as usize == s_ref.len() && cols == 1 {
-                    let chunks = s_ref
-                        .chunks()
-                        .iter()
-                        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
-                        .collect::<Vec<_>>();
-
-                    let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
-                    ca.set_fast_explode();
-                    return Ok(ca.into_series());
+                    let s = reshape_fast_path(self.name(), s_ref);
+                    return Ok(s);
                 }
 
                 let mut builder =
@@ -119,22 +131,6 @@ mod test {
         let out = s.to_list()?;
         assert!(expected.into_series().series_equal(&out.into_series()));
 
-        Ok(())
-    }
-
-    #[test]
-    #[cfg(all(feature = "temporal", feature = "dtype-date"))]
-    fn test_to_list_logical() -> Result<()> {
-        let ca = Utf8Chunked::new("a", &["2021-01-01", "2021-01-02", "2021-01-03"]);
-        let out = ca.as_date(None)?.into_series();
-        let out = out.to_list().unwrap();
-        assert_eq!(out.len(), 1);
-        let s = format!("{:?}", out);
-        // check if dtype is maintained all the way to formatting
-        assert!(s.contains("[2021-01-01, 2021-01-02, 2021-01-03]"));
-
-        let expl = out.explode().unwrap();
-        assert_eq!(expl.dtype(), &DataType::Date);
         Ok(())
     }
 

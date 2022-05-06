@@ -1,11 +1,49 @@
 use crate::chunked_array::builder::{get_list_builder, AnonymousListBuilder};
 use crate::prelude::*;
+#[cfg(feature = "dtype-duration")]
+use chrono::Duration as ChronoDuration;
+#[cfg(feature = "dtype-date")]
+use chrono::NaiveDate;
+#[cfg(feature = "dtype-datetime")]
+use chrono::NaiveDateTime;
+#[cfg(feature = "dtype-time")]
+use chrono::NaiveTime;
 use std::borrow::Cow;
 
 pub trait NamedFrom<T, Phantom: ?Sized> {
     /// Initialize by name and values.
     fn new(name: &str, _: T) -> Self;
 }
+
+pub trait NamedFromOwned<T> {
+    /// Initialize by name and values.
+    fn from_vec(name: &str, _: T) -> Self;
+}
+
+macro_rules! impl_named_from_owned {
+    ($type:ty, $polars_type:ident) => {
+        impl NamedFromOwned<$type> for Series {
+            fn from_vec(name: &str, v: $type) -> Self {
+                ChunkedArray::<$polars_type>::from_vec(name, v).into_series()
+            }
+        }
+    };
+}
+
+#[cfg(feature = "dtype-i8")]
+impl_named_from_owned!(Vec<i8>, Int8Type);
+#[cfg(feature = "dtype-i16")]
+impl_named_from_owned!(Vec<i16>, Int16Type);
+impl_named_from_owned!(Vec<i32>, Int32Type);
+impl_named_from_owned!(Vec<i64>, Int64Type);
+#[cfg(feature = "dtype-u8")]
+impl_named_from_owned!(Vec<u8>, UInt8Type);
+#[cfg(feature = "dtype-u16")]
+impl_named_from_owned!(Vec<u16>, UInt16Type);
+impl_named_from_owned!(Vec<u32>, UInt32Type);
+impl_named_from_owned!(Vec<u64>, UInt64Type);
+impl_named_from_owned!(Vec<f32>, Float32Type);
+impl_named_from_owned!(Vec<f64>, Float64Type);
 
 macro_rules! impl_named_from {
     ($type:ty, $polars_type:ident, $method:ident) => {
@@ -22,38 +60,59 @@ macro_rules! impl_named_from {
     };
 }
 
-impl_named_from!([String], Utf8Type, new_from_slice);
-impl_named_from!([bool], BooleanType, new_from_slice);
+impl_named_from!([String], Utf8Type, from_slice);
+impl_named_from!([bool], BooleanType, from_slice);
 #[cfg(feature = "dtype-u8")]
-impl_named_from!([u8], UInt8Type, new_from_slice);
+impl_named_from!([u8], UInt8Type, from_slice);
 #[cfg(feature = "dtype-u16")]
-impl_named_from!([u16], UInt16Type, new_from_slice);
-impl_named_from!([u32], UInt32Type, new_from_slice);
-impl_named_from!([u64], UInt64Type, new_from_slice);
+impl_named_from!([u16], UInt16Type, from_slice);
+impl_named_from!([u32], UInt32Type, from_slice);
+impl_named_from!([u64], UInt64Type, from_slice);
 #[cfg(feature = "dtype-i8")]
-impl_named_from!([i8], Int8Type, new_from_slice);
+impl_named_from!([i8], Int8Type, from_slice);
 #[cfg(feature = "dtype-i16")]
-impl_named_from!([i16], Int16Type, new_from_slice);
-impl_named_from!([i32], Int32Type, new_from_slice);
-impl_named_from!([i64], Int64Type, new_from_slice);
-impl_named_from!([f32], Float32Type, new_from_slice);
-impl_named_from!([f64], Float64Type, new_from_slice);
-impl_named_from!([Option<String>], Utf8Type, new_from_opt_slice);
-impl_named_from!([Option<bool>], BooleanType, new_from_opt_slice);
+impl_named_from!([i16], Int16Type, from_slice);
+impl_named_from!([i32], Int32Type, from_slice);
+impl_named_from!([i64], Int64Type, from_slice);
+impl_named_from!([f32], Float32Type, from_slice);
+impl_named_from!([f64], Float64Type, from_slice);
+impl_named_from!([Option<String>], Utf8Type, from_slice_options);
+impl_named_from!([Option<bool>], BooleanType, from_slice_options);
 #[cfg(feature = "dtype-u8")]
-impl_named_from!([Option<u8>], UInt8Type, new_from_opt_slice);
+impl_named_from!([Option<u8>], UInt8Type, from_slice_options);
 #[cfg(feature = "dtype-u16")]
-impl_named_from!([Option<u16>], UInt16Type, new_from_opt_slice);
-impl_named_from!([Option<u32>], UInt32Type, new_from_opt_slice);
-impl_named_from!([Option<u64>], UInt64Type, new_from_opt_slice);
+impl_named_from!([Option<u16>], UInt16Type, from_slice_options);
+impl_named_from!([Option<u32>], UInt32Type, from_slice_options);
+impl_named_from!([Option<u64>], UInt64Type, from_slice_options);
 #[cfg(feature = "dtype-i8")]
-impl_named_from!([Option<i8>], Int8Type, new_from_opt_slice);
+impl_named_from!([Option<i8>], Int8Type, from_slice_options);
 #[cfg(feature = "dtype-i16")]
-impl_named_from!([Option<i16>], Int16Type, new_from_opt_slice);
-impl_named_from!([Option<i32>], Int32Type, new_from_opt_slice);
-impl_named_from!([Option<i64>], Int64Type, new_from_opt_slice);
-impl_named_from!([Option<f32>], Float32Type, new_from_opt_slice);
-impl_named_from!([Option<f64>], Float64Type, new_from_opt_slice);
+impl_named_from!([Option<i16>], Int16Type, from_slice_options);
+impl_named_from!([Option<i32>], Int32Type, from_slice_options);
+impl_named_from!([Option<i64>], Int64Type, from_slice_options);
+impl_named_from!([Option<f32>], Float32Type, from_slice_options);
+impl_named_from!([Option<f64>], Float64Type, from_slice_options);
+
+macro_rules! impl_named_from_range {
+    ($range:ty, $polars_type:ident) => {
+        impl NamedFrom<$range, $polars_type> for ChunkedArray<$polars_type> {
+            fn new(name: &str, range: $range) -> Self {
+                let values = range.collect::<Vec<_>>();
+                ChunkedArray::<$polars_type>::from_vec(name, values)
+            }
+        }
+
+        impl NamedFrom<$range, $polars_type> for Series {
+            fn new(name: &str, range: $range) -> Self {
+                ChunkedArray::new(name, range).into_series()
+            }
+        }
+    };
+}
+impl_named_from_range!(std::ops::Range<i64>, Int64Type);
+impl_named_from_range!(std::ops::Range<i32>, Int32Type);
+impl_named_from_range!(std::ops::Range<u64>, UInt64Type);
+impl_named_from_range!(std::ops::Range<u32>, UInt32Type);
 
 impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
     fn new(name: &str, s: T) -> Self {
@@ -63,8 +122,8 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         let dt = series_slice[0].dtype();
 
         // inner type is also list so we need the anonymous builder
-        if matches!(dt, DataType::List(_)) {
-            let mut builder = AnonymousListBuilder::new(name, list_cap);
+        if let DataType::List(inner) = dt {
+            let mut builder = AnonymousListBuilder::new(name, list_cap, *inner.clone());
             for s in series_slice {
                 builder.append_series(s)
             }
@@ -104,7 +163,7 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
 }
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_slice(name, v.as_ref()).into_series()
+        Utf8Chunked::from_slice(name, v.as_ref()).into_series()
     }
 }
 
@@ -118,32 +177,32 @@ impl NamedFrom<&Series, str> for Series {
 
 impl<'a, T: AsRef<[&'a str]>> NamedFrom<T, [&'a str]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_slice(name, v.as_ref())
+        Utf8Chunked::from_slice(name, v.as_ref())
     }
 }
 
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, v.as_ref()).into_series()
+        Utf8Chunked::from_slice_options(name, v.as_ref()).into_series()
     }
 }
 
 impl<'a, T: AsRef<[Option<&'a str>]>> NamedFrom<T, [Option<&'a str>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_slice(name, v.as_ref())
+        Utf8Chunked::from_slice_options(name, v.as_ref())
     }
 }
 
 impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Series {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+        Utf8Chunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
             .into_series()
     }
 }
 
 impl<'a, T: AsRef<[Cow<'a, str>]>> NamedFrom<T, [Cow<'a, str>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_iter(name, v.as_ref().iter().map(|value| value.as_ref()))
+        Utf8Chunked::from_iter_values(name, v.as_ref().iter().map(|value| value.as_ref()))
     }
 }
 
@@ -155,7 +214,7 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
 
 impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> for Utf8Chunked {
     fn new(name: &str, v: T) -> Self {
-        Utf8Chunked::new_from_opt_iter(
+        Utf8Chunked::from_iter_options(
             name,
             v.as_ref()
                 .iter()
@@ -164,17 +223,143 @@ impl<'a, T: AsRef<[Option<Cow<'a, str>>]>> NamedFrom<T, [Option<Cow<'a, str>>]> 
     }
 }
 
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[NaiveDate]>> NamedFrom<T, [NaiveDate]> for DateChunked {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::from_naive_date(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[NaiveDate]>> NamedFrom<T, [NaiveDate]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[Option<NaiveDate>]>> NamedFrom<T, [Option<NaiveDate>]> for DateChunked {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::from_naive_date_options(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-date")]
+impl<T: AsRef<[Option<NaiveDate>]>> NamedFrom<T, [Option<NaiveDate>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DateChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[NaiveDateTime]>> NamedFrom<T, [NaiveDateTime]> for DatetimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::from_naive_datetime(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Milliseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[NaiveDateTime]>> NamedFrom<T, [NaiveDateTime]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[Option<NaiveDateTime>]>> NamedFrom<T, [Option<NaiveDateTime>]> for DatetimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::from_naive_datetime_options(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Milliseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-datetime")]
+impl<T: AsRef<[Option<NaiveDateTime>]>> NamedFrom<T, [Option<NaiveDateTime>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DatetimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[ChronoDuration]>> NamedFrom<T, [ChronoDuration]> for DurationChunked {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::from_duration(name, v.as_ref().iter().copied(), TimeUnit::Nanoseconds)
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[ChronoDuration]>> NamedFrom<T, [ChronoDuration]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[Option<ChronoDuration>]>> NamedFrom<T, [Option<ChronoDuration>]>
+    for DurationChunked
+{
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::from_duration_options(
+            name,
+            v.as_ref().iter().copied(),
+            TimeUnit::Nanoseconds,
+        )
+    }
+}
+
+#[cfg(feature = "dtype-duration")]
+impl<T: AsRef<[Option<ChronoDuration>]>> NamedFrom<T, [Option<ChronoDuration>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        DurationChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[NaiveTime]>> NamedFrom<T, [NaiveTime]> for TimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::from_naive_time(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[NaiveTime]>> NamedFrom<T, [NaiveTime]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::new(name, v).into_series()
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[Option<NaiveTime>]>> NamedFrom<T, [Option<NaiveTime>]> for TimeChunked {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::from_naive_time_options(name, v.as_ref().iter().copied())
+    }
+}
+
+#[cfg(feature = "dtype-time")]
+impl<T: AsRef<[Option<NaiveTime>]>> NamedFrom<T, [Option<NaiveTime>]> for Series {
+    fn new(name: &str, v: T) -> Self {
+        TimeChunked::new(name, v).into_series()
+    }
+}
+
 #[cfg(feature = "object")]
 impl<T: PolarsObject> NamedFrom<&[T], &[T]> for ObjectChunked<T> {
     fn new(name: &str, v: &[T]) -> Self {
-        ObjectChunked::new_from_slice(name, v)
+        ObjectChunked::from_slice(name, v)
     }
 }
 
 #[cfg(feature = "object")]
 impl<T: PolarsObject, S: AsRef<[Option<T>]>> NamedFrom<S, [Option<T>]> for ObjectChunked<T> {
     fn new(name: &str, v: S) -> Self {
-        ObjectChunked::new_from_opt_slice(name, v.as_ref())
+        ObjectChunked::from_slice_options(name, v.as_ref())
     }
 }
 
@@ -182,6 +367,41 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
     /// Specialization that prevents an allocation
     /// prefer this over ChunkedArray::new when you have a `Vec<T::Native>` and no null values.
     pub fn new_vec(name: &str, v: Vec<T::Native>) -> Self {
-        ChunkedArray::new_from_aligned_vec(name, v)
+        ChunkedArray::from_vec(name, v)
+    }
+}
+
+/// For any [`ChunkedArray`] and [`Series`]
+impl<T: IntoSeries> NamedFrom<T, T> for Series {
+    fn new(name: &str, t: T) -> Self {
+        let mut s = t.into_series();
+        s.rename(name);
+        s
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[cfg(all(
+        feature = "dtype-datetime",
+        feature = "dtype-duration",
+        feature = "dtype-date",
+        feature = "dtype-time"
+    ))]
+    #[test]
+    fn test_temporal_df_construction() {
+        // check if we can construct.
+        let _df = df![
+            "date" => [NaiveDate::from_ymd(2021, 1, 1)],
+            "datetime" => [NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0)],
+            "optional_date" => [Some(NaiveDate::from_ymd(2021, 1, 1))],
+            "optional_datetime" => [Some(NaiveDate::from_ymd(2021, 1, 1).and_hms(0, 0, 0))],
+            "time" => [NaiveTime::from_hms(23, 23, 23)],
+            "optional_time" => [Some(NaiveTime::from_hms(23, 23, 23))],
+            "duration" => [ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap()],
+            "optional_duration" => [Some(ChronoDuration::from_std(std::time::Duration::from_secs(10)).unwrap())],
+        ].unwrap();
     }
 }

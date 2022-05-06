@@ -1,13 +1,14 @@
-use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
+use polars_io::RowCount;
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub struct ScanArgsParquet {
     pub n_rows: Option<usize>,
     pub cache: bool,
     pub parallel: bool,
     pub rechunk: bool,
+    pub row_count: Option<RowCount>,
 }
 
 impl Default for ScanArgsParquet {
@@ -17,6 +18,7 @@ impl Default for ScanArgsParquet {
             cache: true,
             parallel: true,
             rechunk: true,
+            row_count: None,
         }
     }
 }
@@ -27,10 +29,12 @@ impl LazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         parallel: bool,
+        row_count: Option<RowCount>,
     ) -> Result<Self> {
-        let mut lf: LazyFrame = LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel)?
-            .build()
-            .into();
+        let mut lf: LazyFrame =
+            LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel, row_count)?
+                .build()
+                .into();
         lf.opt_state.agg_scan_projection = true;
         Ok(lf)
     }
@@ -40,26 +44,29 @@ impl LazyFrame {
     pub fn scan_parquet(path: String, args: ScanArgsParquet) -> Result<Self> {
         if path.contains('*') {
             let paths = glob::glob(&path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
             let lfs = paths
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
-                    Self::scan_parquet_impl(path_string, args.n_rows, args.cache, false)
+                    Self::scan_parquet_impl(path_string, args.n_rows, args.cache, false, None)
                 })
                 .collect::<Result<Vec<_>>>()?;
 
             concat(&lfs, args.rechunk)
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
-                .map(|lf| {
+                .map(|mut lf| {
                     if let Some(n_rows) = args.n_rows {
-                        lf.slice(0, n_rows as u32)
-                    } else {
-                        lf
-                    }
+                        lf = lf.slice(0, n_rows as IdxSize)
+                    };
+
+                    if let Some(rc) = args.row_count {
+                        lf = lf.with_row_count(&rc.name, Some(rc.offset))
+                    };
+                    lf
                 })
         } else {
-            Self::scan_parquet_impl(path, args.n_rows, args.cache, args.parallel)
+            Self::scan_parquet_impl(path, args.n_rows, args.cache, args.parallel, args.row_count)
         }
     }
 }

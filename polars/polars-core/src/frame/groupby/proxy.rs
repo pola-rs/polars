@@ -1,20 +1,23 @@
 use crate::prelude::*;
-use crate::utils::NoNull;
+use crate::utils::{slice_slice, NoNull};
 use crate::POOL;
 use polars_arrow::utils::CustomIterTools;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
+use std::mem::ManuallyDrop;
+use std::ops::Deref;
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
-    first: Vec<u32>,
-    all: Vec<Vec<u32>>,
+    pub(crate) sorted: bool,
+    first: Vec<IdxSize>,
+    all: Vec<Vec<IdxSize>>,
 }
 
-pub type IdxItem = (u32, Vec<u32>);
-pub type BorrowIdxItem<'a> = (u32, &'a Vec<u32>);
+pub type IdxItem = (IdxSize, Vec<IdxSize>);
+pub type BorrowIdxItem<'a> = (IdxSize, &'a Vec<IdxSize>);
 
 impl Drop for GroupsIdx {
     fn drop(&mut self) {
@@ -42,6 +45,10 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
+    pub fn new(first: Vec<IdxSize>, all: Vec<Vec<IdxSize>>, sorted: bool) -> Self {
+        Self { sorted, first, all }
+    }
+
     pub fn sort(&mut self) {
         let mut idx = 0;
         let first = std::mem::take(&mut self.first);
@@ -69,19 +76,29 @@ impl GroupsIdx {
         let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
+        self.sorted = true
     }
+    pub fn is_sorted(&self) -> bool {
+        self.sorted
+    }
+
     pub fn iter(
         &self,
-    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<u32>>, std::slice::Iter<Vec<u32>>> {
+    ) -> std::iter::Zip<std::iter::Copied<std::slice::Iter<IdxSize>>, std::slice::Iter<Vec<IdxSize>>>
+    {
         self.into_iter()
     }
 
-    pub fn all(&self) -> &[Vec<u32>] {
+    pub fn all(&self) -> &[Vec<IdxSize>] {
         &self.all
     }
 
-    pub fn first(&self) -> &[u32] {
+    pub fn first(&self) -> &[IdxSize] {
         &self.first
+    }
+
+    pub fn first_mut(&mut self) -> &mut Vec<IdxSize> {
+        &mut self.first
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -98,15 +115,19 @@ impl GroupsIdx {
 impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
         let (first, all) = iter.into_iter().unzip();
-        GroupsIdx { first, all }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 
 impl<'a> IntoIterator for &'a GroupsIdx {
     type Item = BorrowIdxItem<'a>;
     type IntoIter = std::iter::Zip<
-        std::iter::Copied<std::slice::Iter<'a, u32>>,
-        std::slice::Iter<'a, Vec<u32>>,
+        std::iter::Copied<std::slice::Iter<'a, IdxSize>>,
+        std::slice::Iter<'a, Vec<IdxSize>>,
     >;
 
     fn into_iter(self) -> Self::IntoIter {
@@ -116,7 +137,7 @@ impl<'a> IntoIterator for &'a GroupsIdx {
 
 impl<'a> IntoIterator for GroupsIdx {
     type Item = IdxItem;
-    type IntoIter = std::iter::Zip<std::vec::IntoIter<u32>, std::vec::IntoIter<Vec<u32>>>;
+    type IntoIter = std::iter::Zip<std::vec::IntoIter<IdxSize>, std::vec::IntoIter<Vec<IdxSize>>>;
 
     fn into_iter(mut self) -> Self::IntoIter {
         let first = std::mem::take(&mut self.first);
@@ -131,14 +152,18 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
         I: IntoParallelIterator<Item = IdxItem>,
     {
         let (first, all) = par_iter.into_par_iter().unzip();
-        GroupsIdx { first, all }
+        GroupsIdx {
+            sorted: false,
+            first,
+            all,
+        }
     }
 }
 
 impl<'a> IntoParallelIterator for &'a GroupsIdx {
     type Iter = rayon::iter::Zip<
-        rayon::iter::Copied<rayon::slice::Iter<'a, u32>>,
-        rayon::slice::Iter<'a, Vec<u32>>,
+        rayon::iter::Copied<rayon::slice::Iter<'a, IdxSize>>,
+        rayon::slice::Iter<'a, Vec<IdxSize>>,
     >;
     type Item = BorrowIdxItem<'a>;
 
@@ -148,7 +173,7 @@ impl<'a> IntoParallelIterator for &'a GroupsIdx {
 }
 
 impl IntoParallelIterator for GroupsIdx {
-    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<u32>, rayon::vec::IntoIter<Vec<u32>>>;
+    type Iter = rayon::iter::Zip<rayon::vec::IntoIter<IdxSize>, rayon::vec::IntoIter<Vec<IdxSize>>>;
     type Item = IdxItem;
 
     fn into_par_iter(mut self) -> Self::Iter {
@@ -162,7 +187,7 @@ impl IntoParallelIterator for GroupsIdx {
 ///  - first value is an index to the start of the group
 ///  - second value is the length of the group
 /// Only used when group values are stored together
-pub type GroupsSlice = Vec<[u32; 2]>;
+pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupsProxy {
@@ -200,6 +225,19 @@ impl GroupsProxy {
                 groups.sort_unstable_by_key(|[first, _]| *first);
             }
         }
+    }
+
+    pub fn group_lengths(&self, name: &str) -> IdxCa {
+        let ca: NoNull<IdxCa> = match self {
+            GroupsProxy::Idx(groups) => groups
+                .iter()
+                .map(|(_, groups)| groups.len() as IdxSize)
+                .collect_trusted(),
+            GroupsProxy::Slice(groups) => groups.iter().map(|g| g[1]).collect_trusted(),
+        };
+        let mut ca = ca.into_inner();
+        ca.rename(name);
+        ca
     }
 
     #[cfg(feature = "private")]
@@ -253,18 +291,17 @@ impl GroupsProxy {
         self.len() == 0
     }
 
-    pub fn group_count(&self) -> UInt32Chunked {
+    pub fn group_count(&self) -> IdxCa {
         match self {
             GroupsProxy::Idx(groups) => {
-                let ca: NoNull<UInt32Chunked> = groups
+                let ca: NoNull<IdxCa> = groups
                     .iter()
-                    .map(|(_first, idx)| idx.len() as u32)
+                    .map(|(_first, idx)| idx.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
             }
             GroupsProxy::Slice(groups) => {
-                let ca: NoNull<UInt32Chunked> =
-                    groups.iter().map(|[_first, len]| *len).collect_trusted();
+                let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             }
         }
@@ -274,17 +311,59 @@ impl GroupsProxy {
             GroupsProxy::Idx(groups) => groups
                 .iter()
                 .map(|(_first, idx)| {
-                    let ca: NoNull<UInt32Chunked> = idx.iter().map(|&v| v as u32).collect();
+                    let ca: NoNull<IdxCa> = idx.iter().map(|&v| v as IdxSize).collect();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
             GroupsProxy::Slice(groups) => groups
                 .iter()
                 .map(|&[first, len]| {
-                    let ca: NoNull<UInt32Chunked> = (first..first + len).collect_trusted();
+                    let ca: NoNull<IdxCa> = (first..first + len).collect_trusted();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
+        }
+    }
+
+    pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups {
+        // Safety:
+        // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
+        // so that we never call drop on them.
+        // These groups lifetimes are bounded to the `self`. This must remain valid
+        // for the scope of the aggregation.
+        let sliced = match self {
+            GroupsProxy::Idx(groups) => {
+                let first = unsafe {
+                    let first = slice_slice(groups.first(), offset, len);
+                    let ptr = first.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, first.len(), first.len())
+                };
+
+                let all = unsafe {
+                    let all = slice_slice(groups.all(), offset, len);
+                    let ptr = all.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, all.len(), all.len())
+                };
+                ManuallyDrop::new(GroupsProxy::Idx(GroupsIdx::new(
+                    first,
+                    all,
+                    groups.is_sorted(),
+                )))
+            }
+            GroupsProxy::Slice(groups) => {
+                let groups = unsafe {
+                    let groups = slice_slice(groups, offset, len);
+                    let ptr = groups.as_ptr() as *mut _;
+                    Vec::from_raw_parts(ptr, groups.len(), groups.len())
+                };
+
+                ManuallyDrop::new(GroupsProxy::Slice(groups))
+            }
+        };
+
+        SlicedGroups {
+            sliced,
+            borrowed: self,
         }
     }
 }
@@ -297,7 +376,7 @@ impl From<GroupsIdx> for GroupsProxy {
 
 pub enum GroupsIndicator<'a> {
     Idx(BorrowIdxItem<'a>),
-    Slice([u32; 2]),
+    Slice([IdxSize; 2]),
 }
 
 impl<'a> GroupsIndicator<'a> {
@@ -378,5 +457,20 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
                 }
             })
             .drive_unindexed(consumer)
+    }
+}
+
+pub struct SlicedGroups<'a> {
+    sliced: ManuallyDrop<GroupsProxy>,
+    #[allow(dead_code)]
+    // we need the lifetime to ensure the slice remains valid
+    borrowed: &'a GroupsProxy,
+}
+
+impl Deref for SlicedGroups<'_> {
+    type Target = GroupsProxy;
+
+    fn deref(&self) -> &Self::Target {
+        self.sliced.deref()
     }
 }

@@ -1,4 +1,6 @@
-use napi::{JsFunction, JsObject};
+use napi::bindgen_prelude::{Buffer, Null};
+use napi::threadsafe_function::*;
+use napi::{Either, JsFunction, JsObject};
 use std::io;
 use std::io::Write;
 
@@ -29,7 +31,25 @@ impl<'a> JsWriteStream<'a> {
         }
     }
 }
+pub struct ThreadsafeWriteable {
+    pub inner: ThreadsafeFunction<Either<Buffer, Null>, ErrorStrategy::CalleeHandled>,
+}
 
+impl Write for ThreadsafeWriteable {
+    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+        let tsfn = self.inner.clone();
+        tsfn.call(
+            Ok(Either::A(buf.into())),
+            ThreadsafeFunctionCallMode::Blocking,
+        );
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> Result<(), io::Error> {
+        // JS write streams do not have a 'flush'
+        Ok(())
+    }
+}
 impl Write for JsFileLike<'_> {
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         let stream_write: JsFunction = self.inner.get_named_property("push").unwrap();

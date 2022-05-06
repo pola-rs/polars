@@ -56,7 +56,7 @@ impl PhysicalExpr for FilterExpr {
                     let groups = groups
                         .par_iter()
                         .map(|(first, idx)| unsafe {
-                            let idx: Vec<u32> = idx
+                            let idx: Vec<IdxSize> = idx
                                 .iter()
                                 // Safety:
                                 // just checked bounds in short circuited lhs
@@ -80,7 +80,7 @@ impl PhysicalExpr for FilterExpr {
                     let groups = groups
                         .par_iter()
                         .map(|&[first, len]| unsafe {
-                            let idx: Vec<u32> = (first..first + len)
+                            let idx: Vec<IdxSize> = (first..first + len)
                                 // Safety:
                                 // just checked bounds in short circuited lhs
                                 .filter(|&i| {

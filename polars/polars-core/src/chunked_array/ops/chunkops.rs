@@ -5,8 +5,6 @@ use crate::utils::slice_offsets;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::concatenate;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[inline]
 fn slice(
@@ -45,6 +43,9 @@ fn slice(
             break;
         }
     }
+    if new_chunks.is_empty() {
+        new_chunks.push(chunks[0].slice(0, 0).into());
+    }
     new_chunks
 }
 
@@ -65,7 +66,7 @@ where
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
@@ -88,7 +89,7 @@ impl ChunkOps for BooleanChunked {
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
@@ -111,31 +112,12 @@ impl ChunkOps for Utf8Chunked {
             )
             .unwrap()
             .into()];
-            ChunkedArray::new_from_chunks(self.name(), chunks)
+            ChunkedArray::from_chunks(self.name(), chunks)
         }
     }
     #[inline]
     fn slice(&self, offset: i64, length: usize) -> Self {
         self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()))
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkOps for CategoricalChunked {
-    fn rechunk(&self) -> Self
-    where
-        Self: std::marker::Sized,
-    {
-        let mut out: CategoricalChunked = self.deref().rechunk().into();
-        let cat_map = self.categorical_map.clone();
-        out.categorical_map = cat_map;
-        out
-    }
-    #[inline]
-    fn slice(&self, offset: i64, length: usize) -> Self {
-        let mut out = self.copy_with_chunks(slice(&self.chunks, offset, length, self.len()));
-        out.set_fast_unique(false);
-        out
     }
 }
 
@@ -153,7 +135,7 @@ impl ChunkOps for ListChunked {
             )
             .unwrap()
             .into()];
-            let mut ca = ListChunked::new_from_chunks(self.name(), chunks);
+            let mut ca = ListChunked::from_chunks(self.name(), chunks);
             if self.can_fast_explode() {
                 ca.set_fast_explode()
             }
@@ -217,10 +199,10 @@ mod test {
     #[cfg(feature = "dtype-categorical")]
     fn test_categorical_map_after_rechunk() {
         let s = Series::new("", &["foo", "bar", "spam"]);
-        let mut a = s.cast(&DataType::Categorical).unwrap();
+        let mut a = s.cast(&DataType::Categorical(None)).unwrap();
 
         a.append(&a.slice(0, 2)).unwrap();
         let a = a.rechunk();
-        assert!(a.categorical().unwrap().categorical_map.is_some());
+        assert!(a.categorical().unwrap().get_rev_map().len() > 0);
     }
 }

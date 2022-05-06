@@ -1,18 +1,12 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::datatypes::CategoricalChunked;
 use crate::prelude::*;
+#[cfg(feature = "dtype-struct")]
+use crate::series::iterator::SeriesIter;
 use crate::utils::CustomIterTools;
 use arrow::array::*;
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 type LargeStringArray = Utf8Array<i64>;
 type LargeListArray = ListArray<i64>;
-
-// If parallel feature is enable, then, activate the parallel module.
-#[cfg(feature = "parallel")]
-#[cfg_attr(docsrs, doc(cfg(feature = "parallel")))]
 pub mod par;
 
 /// A `PolarsIterator` is an iterator over a `ChunkedArray` which contains polars types. A `PolarsIterator`
@@ -45,16 +39,6 @@ where
                     .trust_my_length(self.len())
             },
         )
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl<'a> IntoIterator for &'a CategoricalChunked {
-    type Item = Option<u32>;
-    type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.deref().into_iter()
     }
 }
 
@@ -122,6 +106,7 @@ impl<'a> ExactSizeIterator for BoolIterNoNull<'a> {}
 
 impl BooleanChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = bool>
@@ -203,6 +188,7 @@ impl<'a> ExactSizeIterator for Utf8IterNoNull<'a> {}
 
 impl Utf8Chunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter<'a>(
         &'a self,
     ) -> impl Iterator<Item = &'a str>
@@ -225,7 +211,7 @@ impl<'a> IntoIterator for &'a ListChunked {
     type Item = Option<Series>;
     type IntoIter = Box<dyn PolarsIterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        let dtype = self.inner_dtype().to_arrow();
+        let dtype = self.inner_dtype();
 
         // we know that we only iterate over length == self.len()
         unsafe {
@@ -235,7 +221,11 @@ impl<'a> IntoIterator for &'a ListChunked {
                     .trust_my_length(self.len())
                     .map(move |arr| {
                         arr.map(|arr| {
-                            Series::try_from_unchecked("", vec![Arc::from(arr)], &dtype).unwrap()
+                            Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![Arc::from(arr)],
+                                &dtype,
+                            )
                         })
                     }),
             )
@@ -245,15 +235,17 @@ impl<'a> IntoIterator for &'a ListChunked {
 
 pub struct ListIterNoNull<'a> {
     array: &'a LargeListArray,
+    inner_type: DataType,
     current: usize,
     current_end: usize,
 }
 
 impl<'a> ListIterNoNull<'a> {
     /// create a new iterator
-    pub fn new(array: &'a LargeListArray) -> Self {
+    pub fn new(array: &'a LargeListArray, inner_type: DataType) -> Self {
         ListIterNoNull {
             array,
+            inner_type,
             current: 0,
             current_end: array.len(),
         }
@@ -269,7 +261,13 @@ impl<'a> Iterator for ListIterNoNull<'a> {
         } else {
             let old = self.current;
             self.current += 1;
-            unsafe { Some(Series::try_from(("", self.array.value_unchecked(old))).unwrap()) }
+            unsafe {
+                Some(Series::from_chunks_and_dtype_unchecked(
+                    "",
+                    vec![Arc::from(self.array.value_unchecked(old))],
+                    &self.inner_type,
+                ))
+            }
         }
     }
 
@@ -299,6 +297,7 @@ impl<'a> ExactSizeIterator for ListIterNoNull<'a> {}
 
 impl ListChunked {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = Series>
@@ -309,9 +308,10 @@ impl ListChunked {
            + DoubleEndedIterator
            + TrustedLen {
         // we know that we only iterate over length == self.len()
+        let inner_type = self.inner_dtype();
         unsafe {
             self.downcast_iter()
-                .flat_map(ListIterNoNull::new)
+                .flat_map(move |arr| ListIterNoNull::new(arr, inner_type.clone()))
                 .trust_my_length(self.len())
         }
     }
@@ -333,6 +333,7 @@ where
 #[cfg(feature = "object")]
 impl<T: PolarsObject> ObjectChunked<T> {
     #[allow(clippy::wrong_self_convention)]
+    #[doc(hidden)]
     pub fn into_no_null_iter(
         &self,
     ) -> impl Iterator<Item = &T> + '_ + Send + Sync + ExactSizeIterator + DoubleEndedIterator + TrustedLen
@@ -346,13 +347,46 @@ impl<T: PolarsObject> ObjectChunked<T> {
     }
 }
 
-/// Trait for ChunkedArrays that don't have null values.
-/// The result is the most efficient implementation `Iterator`, according to the number of chunks.
-pub trait IntoNoNullIterator {
-    type Item;
-    type IntoIter: Iterator<Item = Self::Item>;
+// Make sure to call `rechunk` first!
+#[cfg(feature = "dtype-struct")]
+impl<'a> IntoIterator for &'a StructChunked {
+    type Item = &'a [AnyValue<'a>];
+    type IntoIter = StructIter<'a>;
 
-    fn into_no_null_iter(self) -> Self::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        let field_iter = self.fields().iter().map(|s| s.iter()).collect();
+
+        StructIter {
+            field_iter,
+            buf: vec![],
+        }
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+pub struct StructIter<'a> {
+    field_iter: Vec<SeriesIter<'a>>,
+    buf: Vec<AnyValue<'a>>,
+}
+
+#[cfg(feature = "dtype-struct")]
+impl<'a> Iterator for StructIter<'a> {
+    type Item = &'a [AnyValue<'a>];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.buf.clear();
+
+        for it in &mut self.field_iter {
+            self.buf.push(it.next()?);
+        }
+        // Safety:
+        // Lifetime is bound to struct, we just cannot set the lifetime for the iterator trait
+        unsafe {
+            Some(std::mem::transmute::<&'_ [AnyValue], &'a [AnyValue]>(
+                &self.buf,
+            ))
+        }
+    }
 }
 
 /// Wrapper struct to convert an iterator of type `T` into one of type `Option<T>`.  It is useful to make the
@@ -387,30 +421,14 @@ where
 
 impl<I> ExactSizeIterator for SomeIterator<I> where I: ExactSizeIterator {}
 
-#[cfg(feature = "dtype-categorical")]
-impl CategoricalChunked {
-    #[allow(clippy::wrong_self_convention)]
-    pub fn into_no_null_iter(
-        &self,
-    ) -> impl Iterator<Item = u32>
-           + '_
-           + Send
-           + Sync
-           + ExactSizeIterator
-           + DoubleEndedIterator
-           + TrustedLen {
-        self.deref().into_no_null_iter()
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
 
     #[test]
     fn out_of_bounds() {
-        let mut a = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
-        let b = UInt32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let mut a = UInt32Chunked::from_slice("a", &[1, 2, 3]);
+        let b = UInt32Chunked::from_slice("a", &[1, 2, 3]);
         a.append(&b);
 
         let v = a.into_iter().collect::<Vec<_>>();
@@ -435,7 +453,7 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
 
                 // normal iterator
                 let mut it = a.into_iter();
@@ -575,8 +593,8 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new_from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
+                let a_b = <$ca_type>::from_slice("", &[$third_val]);
                 a.append(&a_b);
 
                 // normal iterator
@@ -719,7 +737,7 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val, $third_val]);
+                let a = <$ca_type>::from_slice("test", &[$first_val, $second_val, $third_val]);
 
                 // normal iterator
                 let mut it = a.into_no_null_iter();
@@ -792,8 +810,8 @@ mod test {
         ($test_name:ident, $ca_type:ty, $first_val:expr, $second_val:expr, $third_val:expr) => {
             #[test]
             fn $test_name() {
-                let mut a = <$ca_type>::new_from_slice("test", &[$first_val, $second_val]);
-                let a_b = <$ca_type>::new_from_slice("", &[$third_val]);
+                let mut a = <$ca_type>::from_slice("test", &[$first_val, $second_val]);
+                let a_b = <$ca_type>::from_slice("", &[$third_val]);
                 a.append(&a_b);
 
                 // normal iterator
@@ -899,7 +917,7 @@ mod test {
     }
 
     impl_test_iter_skip!(utf8_iter_single_chunk_skip, 8, Some("0"), Some("9"), {
-        Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
+        Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(
@@ -911,8 +929,8 @@ mod test {
     );
 
     impl_test_iter_skip!(utf8_iter_many_chunk_skip, 18, Some("0"), Some("9"), {
-        let mut a = Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
-        let a_b = Utf8Chunked::new_from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let mut a = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
+        let a_b = Utf8Chunked::from_slice("test", &generate_utf8_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });
@@ -940,7 +958,7 @@ mod test {
     }
 
     impl_test_iter_skip!(bool_iter_single_chunk_skip, 8, Some(true), Some(false), {
-        BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE))
+        BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE))
     });
 
     impl_test_iter_skip!(bool_iter_single_chunk_null_check_skip, 8, None, None, {
@@ -948,9 +966,8 @@ mod test {
     });
 
     impl_test_iter_skip!(bool_iter_many_chunk_skip, 18, Some(true), Some(false), {
-        let mut a =
-            BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
-        let a_b = BooleanChunked::new_from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let mut a = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
+        let a_b = BooleanChunked::from_slice("test", &generate_boolean_vec(SKIP_ITERATOR_SIZE));
         a.append(&a_b);
         a
     });

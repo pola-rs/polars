@@ -5,7 +5,6 @@ const R = require("ramda")
 const _ = require("lodash")
 const fs = require("fs")
 const {performance} = require('perf_hooks');
-
 const ints1k = Array.from({length: 1000}, () => chance.integer({min: -1000, max: 1000}));
 const strings1k = Array.from({length: 1000}, () => chance.word());
 const countries1k = Array.from({length: 1000}, () => chance.country());

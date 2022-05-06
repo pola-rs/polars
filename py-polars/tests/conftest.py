@@ -4,20 +4,64 @@ import pytest
 
 import polars as pl
 
+IO_TEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "io"))
+
+EXAMPLES_DIR = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "examples",
+        "datasets",
+    )
+)
+
+FOODS_CSV = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.csv",
+)
+
+FOODS_PARQUET = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.parquet",
+)
+
+FOODS_IPC = os.path.join(
+    EXAMPLES_DIR,
+    "foods1.ipc",
+)
+
+
+@pytest.fixture
+def io_test_dir() -> str:
+    return IO_TEST_DIR
+
+
+@pytest.fixture
+def examples_dir() -> str:
+    return EXAMPLES_DIR
+
 
 @pytest.fixture
 def foods_csv() -> str:
-    return os.path.abspath(
-        os.path.join(
-            os.path.dirname(__file__),
-            "..",
-            "..",
-            "examples",
-            "aggregate_multiple_files_in_chunks",
-            "datasets",
-            "foods1.csv",
-        )
-    )
+    return FOODS_CSV
+
+
+if not os.path.isfile(FOODS_PARQUET):
+    pl.read_csv(FOODS_CSV).to_parquet(FOODS_PARQUET)
+
+if not os.path.isfile(FOODS_IPC):
+    pl.read_csv(FOODS_CSV).to_ipc(FOODS_IPC)
+
+
+@pytest.fixture
+def foods_ipc() -> str:
+    return FOODS_IPC
+
+
+@pytest.fixture
+def foods_parquet() -> str:
+    return FOODS_PARQUET
 
 
 @pytest.fixture
@@ -35,6 +79,9 @@ def df() -> pl.DataFrame:
             "date": [1324, 123, 1234],
             "datetime": [13241324, 12341256, 12341234],
             "time": [13241324, 12341256, 12341234],
+            "list_str": [["a", "b", None], ["a"], ["b"]],
+            "list_bool": [[True, False, None], [None], [True]],
+            "list_int": [[1, None, 3], [None], [1]],
         }
     )
     return df.with_columns(
@@ -45,6 +92,11 @@ def df() -> pl.DataFrame:
             pl.col("time").cast(pl.Time),
         ]
     )
+
+
+@pytest.fixture
+def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(pl.all().exclude(["list_str", "list_int", "list_bool"]))
 
 
 @pytest.fixture

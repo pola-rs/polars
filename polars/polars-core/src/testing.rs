@@ -5,7 +5,7 @@ use std::ops::Deref;
 impl Series {
     /// Check if series are equal. Note that `None == None` evaluates to `false`
     pub fn series_equal(&self, other: &Series) -> bool {
-        if self.null_count() > 0 || other.null_count() > 0 {
+        if self.null_count() > 0 || other.null_count() > 0 || self.dtype() != other.dtype() {
             false
         } else {
             self.series_equal_missing(other)
@@ -18,12 +18,13 @@ impl Series {
         self.len() == other.len()
             && self.name() == other.name()
             && self.null_count() == other.null_count()
-            && self
-                .eq_missing(other)
-                .sum()
-                .map(|s| s as usize)
-                .unwrap_or(0)
-                == self.len()
+            && {
+                let eq = self.eq_missing(other);
+                match eq {
+                    Ok(b) => b.sum().map(|s| s as usize).unwrap_or(0) == self.len(),
+                    Err(_) => false,
+                }
+            }
     }
 
     /// Get a pointer to the underlying data of this Series.
@@ -35,6 +36,7 @@ impl Series {
         // A fat pointer consists of a data ptr and a ptr to the vtable.
         // we specifically check that we only transmute &dyn SeriesTrait e.g.
         // a trait object, therefore this is sound.
+        #[allow(clippy::transmute_undefined_repr)]
         let (data_ptr, _vtable_ptr) =
             unsafe { std::mem::transmute::<&dyn SeriesTrait, (usize, usize)>(object) };
         data_ptr
@@ -48,6 +50,7 @@ impl PartialEq for Series {
             && self.null_count() == other.null_count()
             && self
                 .eq_missing(other)
+                .unwrap()
                 .sum()
                 .map(|s| s as usize)
                 .unwrap_or(0)
@@ -146,12 +149,19 @@ mod test {
 
     #[test]
     fn test_series_equal() {
-        let a = Series::new("a", &[1, 2, 3]);
-        let b = Series::new("a", &[1, 2, 3]);
+        let a = Series::new("a", &[1_u32, 2, 3]);
+        let b = Series::new("a", &[1_u32, 2, 3]);
         assert!(a.series_equal(&b));
 
         let s = Series::new("foo", &[None, Some(1i64)]);
         assert!(s.series_equal_missing(&s));
+    }
+
+    #[test]
+    fn test_series_dtype_noteq() {
+        let s_i32 = Series::new("a", &[1_i32, 2_i32]);
+        let s_i64 = Series::new("a", &[1_i64, 2_i64]);
+        assert!(!s_i32.series_equal(&s_i64));
     }
 
     #[test]

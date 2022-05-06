@@ -73,7 +73,13 @@ impl PhysicalExpr for CastExpr {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
         let s = ac.flat_naive();
         let s = self.finish(s.as_ref())?;
-        ac.with_series(s, false);
+
+        if ac.is_literal() {
+            ac.with_literal(s);
+        } else {
+            ac.with_series(s, false);
+        }
+
         Ok(ac)
     }
 
@@ -82,9 +88,5 @@ impl PhysicalExpr for CastExpr {
             fld.coerce(self.data_type.clone());
             fld
         })
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
     }
 }

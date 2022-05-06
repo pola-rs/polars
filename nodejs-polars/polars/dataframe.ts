@@ -1,17 +1,15 @@
 import pli from "./internals/polars_internal";
 import { arrayToJsDataFrame } from "./internals/construction";
 import {GroupBy} from "./groupby";
-import {LazyDataFrame} from "./lazy/dataframe";
+import {LazyDataFrame, _LazyDataFrame} from "./lazy/dataframe";
 import {concat} from "./functions";
 import {Expr} from "./lazy/expr";
-import {Series, seriesWrapper} from "./series/series";
+import {Series, _Series} from "./series/series";
 import {Stream, Writable} from "stream";
-import {isExternal} from "util/types";
 
 import {
   DataType,
   JoinBaseOptions,
-  JsDataFrame
 } from "./datatypes";
 
 import {
@@ -25,7 +23,7 @@ import {
   ExprOrString
 } from "./utils";
 
-import {Arithmetic} from "./shared_traits";
+import {Arithmetic, Deserialize, Sample, Serialize} from "./shared_traits";
 import {col} from "./lazy/functions";
 
 const inspect = Symbol.for("nodejs.util.inspect.custom");
@@ -48,6 +46,105 @@ type WriteIPCOptions = {
   compression?: "uncompressed" | "lz4" | "zstd"
 };
 
+type WriteAvroOptions = {
+  compression?: "uncompressed" | "snappy" | "deflate"
+};
+
+interface WriteMethods {
+  /**
+   * __Write DataFrame to comma-separated values file (csv).__
+   *
+   * If no options are specified, it will return a new string containing the contents
+   * ___
+   * @param dest file or stream to write to
+   * @param options
+   * @param options.hasHeader - Whether or not to include header in the CSV output.
+   * @param options.sep - Separate CSV fields with this symbol. _defaults to `,`_
+   * @example
+   * ```
+   * >>> df = pl.DataFrame({
+   * >>>   "foo": [1, 2, 3],
+   * >>>   "bar": [6, 7, 8],
+   * >>>   "ham": ['a', 'b', 'c']
+   * >>> })
+   * >>> df.writeCSV()
+   * foo,bar,ham
+   * 1,6,a
+   * 2,7,b
+   * 3,8,c
+   *
+   * // using a file path
+   * >>> df.head(1).writeCSV("./foo.csv")
+   * // foo.csv
+   * foo,bar,ham
+   * 1,6,a
+   *
+   * // using a write stream
+   * >>> const writeStream = new Stream.Writable({
+   * >>>   write(chunk, encoding, callback) {
+   * >>>     console.log("writeStream: %O', chunk.toString());
+   * >>>     callback(null);
+   * >>>   }
+   * >>> });
+   * >>> df.head(1).writeCSV(writeStream, {hasHeader: false})
+   * writeStream: '1,6,a'
+   * ```
+   */
+  writeCSV(): Buffer;
+  writeCSV(options: WriteCsvOptions): Buffer;
+  writeCSV(dest: string | Writable, options?: WriteCsvOptions): void;
+  /**
+   * Write Dataframe to JSON string, file, or write stream
+   * @param destination file or write stream
+   * @param options
+   * @param options.format - json | lines
+   * @example
+   * ```
+   * >>> const df = pl.DataFrame({
+   * >>>   foo: [1,2,3],
+   * >>>   bar: ['a','b','c']
+   * >>> })
+   *
+   *
+   * >>> df.writeJSON({format:"json"})
+   * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
+   *
+   * >>> df.writeJSON({format:"lines"})
+   * `{"foo":1.0,"bar":"a"}
+   * {"foo":2.0,"bar":"b"}
+   * {"foo":3.0,"bar":"c"}`
+   *
+   * // writing to a file
+   * >>> df.writeJSON("/path/to/file.json", {format:'lines'})
+   * ```
+   */
+  writeJSON(options?: {format: "lines" | "json"}): Buffer
+  writeJSON(destination: string | Writable, options?: {format: "lines" | "json"}): void
+  /**
+   * Write to Arrow IPC binary stream, or a feather file.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  writeIPC(options?: WriteIPCOptions): Buffer
+  writeIPC(destination: string | Writable, options?: WriteIPCOptions): void
+
+  /**
+   * Write the DataFrame disk in parquet format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   * */
+  writeParquet(options?: WriteParquetOptions): Buffer
+  writeParquet(destination: string | Writable, options?: WriteParquetOptions): void
+
+  /**
+   * Write the DataFrame disk in avro format.
+   * @param file File path to which the file should be written.
+   * @param options.compression Compression method *defaults to "uncompressed"*
+   *
+   */
+  writeAvro(options?: WriteAvroOptions): Buffer
+  writeAvro(destination: string | Writable, options?: WriteAvroOptions): void
+}
 
 /**
  *
@@ -125,9 +222,9 @@ type WriteIPCOptions = {
   ╰─────┴─────┴─────╯
   ```
  */
-export interface DataFrame extends Arithmetic<DataFrame> {
+export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, WriteMethods, Serialize {
   /** @ignore */
-  _df: JsDataFrame
+  _df: any
   dtypes: DataType[]
   height: number
   shape: {height: number, width: number}
@@ -172,16 +269,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   describe(): DataFrame
-
-  /**
-   * Drop duplicate rows from this DataFrame.
-   * Note that this fails if there is a column of type `List` in the DataFrame.
-   * @param maintainOrder
-   * @param subset - subset to drop duplicates for
-   * @param keep "first" | "last"
-   */
-  distinct(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
-  distinct(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
+  /** @deprecated *since 0.4.0* use {@link unique} */
+  distinct(maintainOrder?, subset?, keep?): DataFrame
   /**
    * __Remove column from DataFrame and return as new.__
    * ___
@@ -214,17 +303,6 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   drop(name: string): DataFrame
   drop(names: string[]): DataFrame
   drop(name: string, ...names: string[]): DataFrame
-  /**
-   * __Drop duplicate rows from this DataFrame.__
-   *
-   * Note that this fails if there is a column of type `List` in the DataFrame.
-   * @param maintainOrder
-   * @param subset - subset to drop duplicates for
-   * @deprecated @since 0.2.1 @use {@link distinct}
-   */
-  dropDuplicates(maintainOrder?: boolean, subset?: ColumnSelection): DataFrame
-  /** @deprecated @since 0.2.1 @use {@link distinct} ==*/
-  dropDuplicates(opts: {maintainOrder?: boolean, subset?: ColumnSelection}): DataFrame
   /**
    * __Return a new DataFrame where the null values are dropped.__
    *
@@ -314,6 +392,28 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   explode(column: ExprOrString): DataFrame
   explode(columns: ExprOrString[]): DataFrame
   explode(column: ExprOrString, ...columns: ExprOrString[]): DataFrame
+  /**
+   *
+   *
+   * __Extend the memory backed by this `DataFrame` with the values from `other`.__
+   * ___
+
+    Different from `vstack` which adds the chunks from `other` to the chunks of this `DataFrame`
+    `extent` appends the data from `other` to the underlying memory locations and thus may cause a reallocation.
+
+    If this does not cause a reallocation, the resulting data structure will not have any extra chunks
+    and thus will yield faster queries.
+
+    Prefer `extend` over `vstack` when you want to do a query after a single append. For instance during
+    online operations where you add `n` rows and rerun a query.
+
+    Prefer `vstack` over `extend` when you want to append many times before doing a query. For instance
+    when you read in multiple files and when to store them in a single `DataFrame`.
+    In the latter case, finish the sequence of `vstack` operations with a `rechunk`.
+
+   * @param other DataFrame to vertically add.
+   */
+  extend(other: DataFrame): DataFrame
   /**
    * Fill null/missing values by a filling strategy
    *
@@ -439,7 +539,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ]
    * ```
    */
-  fold<T, U, V>(operation: (s1: Series<T>, s2: Series<U>) => Series<V>): Series<V>
+  fold(operation: (s1: Series, s2: Series) => Series): Series
   /**
    * Check if DataFrame is equal to other.
    * ___
@@ -469,11 +569,11 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   /**
    * Get a single column as Series by name.
    */
-  getColumn(name: string): Series<any>
+  getColumn(name: string): Series
   /**
    * Get the DataFrame as an Array of Series.
    */
-  getColumns(): Array<Series<any>>
+  getColumns(): Array<Series>
   /**
    * Start a groupby operation.
    * ___
@@ -487,8 +587,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * @param k2 - seed parameter
    * @param k3 - seed parameter
    */
-  hashRows(k0?: number, k1?: number, k2?: number, k3?: number): Series<bigint>
-  hashRows(options: {k0?: number, k1?: number, k2?: number, k3?: number}): Series<bigint>
+  hashRows(k0?: number, k1?: number, k2?: number, k3?: number): Series
+  hashRows(options: {k0?: number, k1?: number, k2?: number, k3?: number}): Series
   /**
    * Get first N rows as DataFrame.
    * ___
@@ -543,14 +643,14 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ╰─────┴─────┴─────┴───────╯
    * ```
    */
-  hstack(columns: Array<Series<any>> | DataFrame): DataFrame
-  hstack(columns: Array<Series<any>> | DataFrame, inPlace?: boolean): void
+  hstack(columns: Array<Series> | DataFrame): DataFrame
+  hstack(columns: Array<Series> | DataFrame, inPlace?: boolean): void
   /**
    * Insert a Series at a certain column index. This operation is in place.
    * @param index - Column position to insert the new `Series` column.
    * @param series - `Series` to insert
    */
-  insertAtIdx(index: number, series: Series<any>): void
+  insertAtIdx(index: number, series: Series): void
   /**
    * Interpolate intermediate values. The interpolation method is linear.
    */
@@ -558,7 +658,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   /**
    * Get a mask of all duplicated rows in this DataFrame.
    */
-  isDuplicated(): Series<boolean>
+  isDuplicated(): Series
   /**
    * Check if the dataframe is empty
    */
@@ -566,7 +666,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   /**
    * Get a mask of all unique rows in this DataFrame.
    */
-  isUnique(): Series<boolean>
+  isUnique(): Series
   /**
    *  __SQL like joins.__
    * @param df - DataFrame to join with.
@@ -609,7 +709,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * @see {@link head}
    */
   limit(length?: number): DataFrame
-  map<T>(func: (...args: any[]) => T): T[]
+  map(func: (...args: any[]) => any): any[]
 
   /**
    * Aggregate the columns of this DataFrame to their maximum value.
@@ -635,7 +735,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   max(): DataFrame
   max(axis: 0): DataFrame
-  max(axis: 1): Series<any>
+  max(axis: 1): Series
   /**
    * Aggregate the columns of this DataFrame to their mean value.
    * ___
@@ -645,8 +745,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   mean(): DataFrame
   mean(axis: 0): DataFrame
-  mean(axis: 1): Series<any>
-  mean(axis: 1, nullStrategy?: "ignore" | "propagate"): Series<any>
+  mean(axis: 1): Series
+  mean(axis: 1, nullStrategy?: "ignore" | "propagate"): Series
   /**
    * Aggregate the columns of this DataFrame to their median value.
    * ___
@@ -701,7 +801,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   min(): DataFrame
   min(axis: 0): DataFrame
-  min(axis: 1): Series<any>
+  min(axis: 1): Series
   /**
    * Get number of chunks used by the ChunkedArrays of this DataFrame.
    */
@@ -728,11 +828,13 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   nullCount(): DataFrame
+  partitionBy(cols: string | string[], stable?: boolean): DataFrame[]
+  partitionBy<T>(cols: string | string[], stable: boolean, mapFn: (df: DataFrame) => T): T[]
   // TODO!
   // /**
   //  * Apply a function on Self.
   //  */
-  // pipe<T>(func: (...args: any[]) => T, ...args: any[]): T
+  // pipe(func: (...args: any[]) => T, ...args: any[]): T
   /**
    * Aggregate the columns of this DataFrame to their quantile value.
    * @example
@@ -815,7 +917,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ╰───────┴─────┴─────╯
    * ```
    */
-  replaceAtIdx(index: number, newColumn: Series<any>): void
+  replaceAtIdx(index: number, newColumn: Series): void
   /**
    * Get a row as Array
    * @param index - row index
@@ -835,35 +937,7 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * Convert columnar data to rows as arrays
    */
   rows(): Array<Array<any>>
-  /**
-   * Sample from this DataFrame by setting either `n` or `frac`.
-   * @param n - Number of samples < self.len() .
-   * @param frac - Fraction between 0.0 and 1.0 .
-   * @param withReplacement - Sample with replacement.
-   * @example
-   * ```
-   * >>> df = pl.DataFrame({
-   * >>>   "foo": [1, 2, 3],
-   * >>>   "bar": [6, 7, 8],
-   * >>>   "ham": ['a', 'b', 'c']
-   * >>> })
-   * >>> df.sample({n: 2})
-   * shape: (2, 3)
-   * ╭─────┬─────┬─────╮
-   * │ foo ┆ bar ┆ ham │
-   * │ --- ┆ --- ┆ --- │
-   * │ i64 ┆ i64 ┆ str │
-   * ╞═════╪═════╪═════╡
-   * │ 1   ┆ 6   ┆ "a" │
-   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
-   * │ 3   ┆ 8   ┆ "c" │
-   * ╰─────┴─────┴─────╯
-   * ```
-   */
-  sample(opts: {n: number, withReplacement?: boolean}): DataFrame
-  sample(opts: {frac: number, withReplacement?: boolean}): DataFrame
-  sample(n?: number, frac?: number, withReplacement?: boolean): DataFrame
-  schema(): Record<string, string>
+  get schema(): Record<string, DataType>
   /**
    * Select columns from this DataFrame.
    * ___
@@ -1037,8 +1111,8 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    */
   sum(): DataFrame
   sum(axis: 0): DataFrame
-  sum(axis: 1): Series<any>
-  sum(axis: 1, nullStrategy?: "ignore" | "propagate"): Series<any>
+  sum(axis: 1): Series
+  sum(axis: 1, nullStrategy?: "ignore" | "propagate"): Series
   /**
    *
    * @example
@@ -1089,156 +1163,66 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * ```
    */
   tail(length?: number): DataFrame
+  /** @deprecated *since 0.4.0* use {@link writeCSV} */
+  toCSV(destOrOptions?, options?);
   /**
-   * __Write DataFrame to comma-separated values file (csv).__
-   *
-   * If no options are specified, it will return a new string containing the contents
-   * ___
-   * @param dest file or stream to write to
-   * @param options
-   * @param options.hasHeader - Whether or not to include header in the CSV output.
-   * @param options.sep - Separate CSV fields with this symbol. _defaults to `,`_
+   * Converts dataframe object into row oriented javascript objects
    * @example
    * ```
-   * >>> df = pl.DataFrame({
-   * >>>   "foo": [1, 2, 3],
-   * >>>   "bar": [6, 7, 8],
-   * >>>   "ham": ['a', 'b', 'c']
-   * >>> })
-   * >>> df.toCSV()
-   * foo,bar,ham
-   * 1,6,a
-   * 2,7,b
-   * 3,8,c
-   *
-   * // using a file path
-   * >>> df.head(1).toCSV("./foo.csv")
-   * // foo.csv
-   * foo,bar,ham
-   * 1,6,a
-   *
-   * // using a write stream
-   * >>> const writeStream = new Stream.Writable({
-   * >>>   write(chunk, encoding, callback) {
-   * >>>     console.log("writeStream: %O', chunk.toString());
-   * >>>     callback(null);
-   * >>>   }
-   * >>> });
-   * >>> df.head(1).toCSV(writeStream, {hasHeader: false})
-   * writeStream: '1,6,a'
-   * ```
-   */
-  toCSV(): string;
-  toCSV(options: WriteCsvOptions): string;
-  toCSV(dest: string | Writable, options?: WriteCsvOptions): void;
-  /**
-   * Converts dataframe object into javascript object
-   * Same logic applies for `toJSON` except this will use js values instead of a json string
-   * @param options
-   * @param options.orient - col|row|dataframe
-   *
-   * @example
-   * ```
-   * >>> const df = pl.DataFrame({
-   * >>>   foo: [1,2,3],
-   * >>>   bar: ['a','b','c']
-   * >>> })
-   *
-   * // defaults to 'dataframe' orientation
-   * >>> df.toObject()
-   * {
-   *   "columns":[
-   *     {
-   *       "name":"foo",
-   *       "datatype":"Float64",
-   *       "values":[1,2,3]
-   *     },
-   *     {
-   *       "name":"bar",
-   *       "datatype":"Utf8",
-   *       "values":["a","b","c"]
-   *     }
-   *   ]
-   * }
-   *
-   * // row oriented
-   * >>> df.toObject({orient:"row"})
+   * >>> df.toRecords()
    * [
    *   {"foo":1.0,"bar":"a"},
    *   {"foo":2.0,"bar":"b"},
    *   {"foo":3.0,"bar":"c"}
    * ]
-   *
-   * // column oriented
-   * >>> df.toObject({orient: "col"})
+   * ```
+   */
+  toRecords(): Record<string, any>[]
+
+  /** compat with `JSON.stringify`  */
+  toJSON(): string
+
+  /**
+   * Converts dataframe object into column oriented javascript objects
+   * @example
+   * ```
+   * >>> df.toObject()
    * {
-   *   "foo":[1,2,3],
-   *   "bar":["a","b","c"]
+   *  "foo": [1,2,3],
+   *  "bar": ["a", "b", "c"]
    * }
    * ```
    */
-  toObject(): object
-  toObject(options: {orient: "row" | "col" | "dataframe"}): object
+  toObject(): Record<string, any[]>
 
-  /**
-   * Write Dataframe to JSON string, file, or write stream
-   * @param destination file or write stream
-   * @param options
-   * @param options.orient - col|row|dataframe
-   *  - col will write to a column oriented object
-   *
-   * @example
-   * ```
-   * >>> const df = pl.DataFrame({
-   * >>>   foo: [1,2,3],
-   * >>>   bar: ['a','b','c']
-   * >>> })
-   *
-   * // defaults to 'dataframe' orientation
-   * >>> df.toJSON()
-   * `{"columns":[ {"name":"foo","datatype":"Float64","values":[1,2,3]}, {"name":"bar","datatype":"Utf8","values":["a","b","c"]}]}`
-   *
-   * // this will produce the same results as 'df.toJSON()'
-   * >>> JSON.stringify(df)
-   *
-   * // row oriented
-   * >>> df.toJSON({orient:"row"})
-   * `[ {"foo":1.0,"bar":"a"}, {"foo":2.0,"bar":"b"}, {"foo":3.0,"bar":"c"}]`
-   *
-   * // column oriented
-   * >>> df.toJSON({orient: "col"})
-   * `{"foo":[1,2,3],"bar":["a","b","c"]}`
-   *
-   * // multiline (will always be row oriented)
-   * >>> df.toJSON({multiline: true})
-   * `{"foo":1.0,"bar":"a"}
-   * {"foo":2.0,"bar":"b"}
-   * {"foo":3.0,"bar":"c"}`
-   *
-   * // writing to a file
-   * >>> df.toJSON("/path/to/file.json", {multiline:true})
-   * ```
-   */
-  toJSON(options?: WriteJsonOptions): string
-  toJSON(destination: string | Writable, options?: WriteJsonOptions): void
-
-  /**
-   * Write to Arrow IPC binary stream, or a feather file.
-   * @param file File path to which the file should be written.
-   * @param options.compression Compression method *defaults to "uncompressed"*
-   * */
-   toIPC(options?: WriteIPCOptions): Buffer
-   toIPC(destination: string | Writable, options?: WriteIPCOptions): void
-
-  /**
-   * Write the DataFrame disk in parquet format.
-   * @param file File path to which the file should be written.
-   * @param options.compression Compression method *defaults to "uncompressed"*
-   * */
-  toParquet(options?: WriteParquetOptions): Buffer
-  toParquet(destination: string | Writable, options?: WriteParquetOptions): void
-  toSeries(index: number): Series<any>
+  /** @deprecated *since 0.4.0* use {@link writeIPC} */
+  toIPC(destination?, options?)
+  /** @deprecated *since 0.4.0* use {@link writeParquet} */
+  toParquet(destination?, options?)
+  toSeries(index?: number): Series
   toString(): string
+  /**
+    Convert a ``DataFrame`` to a ``Series`` of type ``Struct``
+    @param name Name for the struct Series
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "a": [1, 2, 3, 4, 5],
+    ...   "b": ["one", "two", "three", "four", "five"],
+    ... })
+    >>> df.toStruct("nums")
+    shape: (5,)
+    Series: 'nums' [struct[2]{'a': i64, 'b': str}]
+    [
+            {1,"one"}
+            {2,"two"}
+            {3,"three"}
+            {4,"four"}
+            {5,"five"}
+    ]
+    ```
+   */
+  toStruct(name: string): Series
   /**
    * Transpose a DataFrame over the diagonal.
    *
@@ -1312,6 +1296,54 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * └─────────────┴─────────────┴─────────────┘
    */
   transpose(options?: {includeHeader?: boolean, headerName?: string, columnNames?: Iterable<string>})
+  /**
+   * Drop duplicate rows from this DataFrame.
+   * Note that this fails if there is a column of type `List` in the DataFrame.
+   * @param maintainOrder
+   * @param subset - subset to drop duplicates for
+   * @param keep "first" | "last"
+   */
+  unique(maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"): DataFrame
+  unique(opts: {maintainOrder?: boolean, subset?: ColumnSelection, keep?: "first"| "last"}): DataFrame
+  /**
+    Decompose a struct into its fields. The fields will be inserted in to the `DataFrame` on the
+    location of the `struct` type.
+    @param names Names of the struct columns that will be decomposed by its fields
+    @example
+    ```
+    >>> df = pl.DataFrame({
+    ...   "int": [1, 2],
+    ...   "str": ["a", "b"],
+    ...   "bool": [true, null],
+    ...   "list": [[1, 2], [3]],
+    ... })
+    ...  .toStruct("my_struct")
+    ...  .toFrame()
+    >>> df
+    shape: (2, 1)
+    ┌─────────────────────────────┐
+    │ my_struct                   │
+    │ ---                         │
+    │ struct[4]{'int',...,'list'} │
+    ╞═════════════════════════════╡
+    │ {1,"a",true,[1, 2]}         │
+    ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ {2,"b",null,[3]}            │
+    └─────────────────────────────┘
+    >>> df.unnest("my_struct")
+    shape: (2, 4)
+    ┌─────┬─────┬──────┬────────────┐
+    │ int ┆ str ┆ bool ┆ list       │
+    │ --- ┆ --- ┆ ---  ┆ ---        │
+    │ i64 ┆ str ┆ bool ┆ list [i64] │
+    ╞═════╪═════╪══════╪════════════╡
+    │ 1   ┆ a   ┆ true ┆ [1, 2]     │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 2   ┆ b   ┆ null ┆ [3]        │
+    └─────┴─────┴──────┴────────────┘
+    ```
+   */
+  unnest(names: string | string[]): DataFrame
    /**
    * Aggregate the columns of this DataFrame to their variance value.
    * @example
@@ -1370,9 +1402,9 @@ export interface DataFrame extends Arithmetic<DataFrame> {
    * Return a new DataFrame with the column added or replaced.
    * @param column - Series, where the name of the Series refers to the column in the DataFrame.
    */
-  withColumn(column: Series<any> | Expr): DataFrame
-  withColumn(column: Series<any> | Expr): DataFrame
-  withColumns(column: Series<any> | Expr, ...columns: Expr[] | Series<any>[] ): DataFrame
+  withColumn(column: Series | Expr): DataFrame
+  withColumn(column: Series | Expr): DataFrame
+  withColumns(column: Series | Expr, ...columns: Expr[] | Series[]): DataFrame
   /**
    * Return a new DataFrame with the column renamed.
    * @param existingName
@@ -1389,16 +1421,16 @@ export interface DataFrame extends Arithmetic<DataFrame> {
   where(predicate: any): DataFrame
 }
 
-function prepareOtherArg<T>(anyValue: T | Series<T>): Series<T> {
+function prepareOtherArg(anyValue: any): Series {
   if(Series.isSeries(anyValue)) {
 
     return anyValue;
   } else {
-    return Series([anyValue]) as Series<T>;
+    return Series([anyValue]) as Series;
   }
 }
 
-function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
+function map(df: DataFrame, fn: (...args: any[]) => any[]) {
 
   return df.rows().map(fn);
 }
@@ -1406,72 +1438,20 @@ function map<T>(df: DataFrame, fn: (...args: any[]) => T[]) {
 /**
  * @ignore
  */
-export const dfWrapper = (_df: JsDataFrame): DataFrame => {
-  const unwrap = <U>(method: string, args?: object, df=_df): U => {
-
-    return pli.df[method]({_df: df, ...args });
+export const _DataFrame = (_df: any): DataFrame => {
+  const unwrap = (method: string, ...args: any[]) => {
+    return _df[method as any](...args);
   };
-  const wrap = (method, args?, df=_df): DataFrame => {
-    return dfWrapper(unwrap(method, args, df));
-  };
-  const noArgWrap = (method: string) => () => wrap(method);
-  const noArgUnwrap = <U>(method: string) => () => unwrap<U>(method);
-
-  const writeToStreamOrString = (dest, format: "csv" | "json", options)  => {
-    if(dest instanceof Writable) {
-      unwrap(`write_${format}_stream`, {writeStream: dest, ...options});
-
-      dest.end("");
-
-    } else if (typeof dest === "string") {
-      unwrap(`write_${format}_path`, {path: dest, ...options});
-
-    } else {
-      let body = "";
-      const writeStream = new Stream.Writable({
-        write(chunk, _encoding, callback) {
-          body += chunk;
-          callback(null);
-        }
-      });
-
-      unwrap(`write_${format}_stream`, {writeStream, ...options, ...dest});
-      writeStream.end("");
-
-      return body;
-    }
+  const wrap = (method, ...args): DataFrame => {
+    return _DataFrame(unwrap(method, ...args));
   };
 
-  const writeToBufferOrStream = (dest, format: "ipc" | "parquet", options) => {
-    if(dest instanceof Writable) {
-      unwrap(`write_${format}_stream`, {writeStream: dest, ...options});
 
-      dest.end("");
-
-
-    } else if (typeof dest === "string") {
-      return unwrap(`write_${format}_path`, {path: dest, ...options});
-
-    } else {
-      let buffers: Buffer[] = [];
-      const writeStream = new Stream.Writable({
-        write(chunk, _encoding, callback) {
-          buffers.push(chunk);
-          callback(null);
-        }
-      });
-
-      unwrap(`write_${format}_stream`, {writeStream, ...options, ...dest});
-      writeStream.end("");
-
-      return Buffer.concat(buffers);
-    }
-  };
   const df = {
     /** @ignore */
     _df,
     [inspect]() {
-      return unwrap<Buffer>("as_str").toString();
+      return _df.toString();
     },
     *[Symbol.iterator]() {
 
@@ -1484,25 +1464,38 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         yield s;
       }
     },
+    get [Symbol.toStringTag]() {
+      return "DataFrame";
+    },
     get dtypes() {
-      return unwrap<DataType[]>("dtypes");
+      return _df.dtypes();
+
     },
     get height() {
-      return unwrap<number>("height");
+      return _df.height;
     },
     get width() {
-      return unwrap<number>("width");
+      return _df.width;
     },
     get shape() {
-      return {height: this.height, width: this.width};
+      return _df.shape;
     },
     get columns() {
-      return unwrap<string[]>("columns");
+      return _df.columns;
     },
     set columns(names) {
-      unwrap<string[]>("set_column_names", {names});
+      _df.columns = names;
     },
-    clone: noArgWrap("clone"),
+    get schema() {
+      return this.getColumns().reduce((acc, curr) => {
+        acc[curr.name] = curr.dtype;
+
+        return acc;
+      }, {});
+    },
+    clone() {
+      return wrap("clone");
+    },
     describe() {
       const describeCast = (df: DataFrame) => {
         return DataFrame(df.getColumns().map(s => {
@@ -1531,52 +1524,57 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return summary;
     },
+    inner() {
+      return _df;
+    },
     drop(...names) {
       if(!Array.isArray(names[0]) && names.length === 1) {
-        return wrap("drop", {name: names[0]});
+        return wrap("drop", names[0]);
       }
 
-      const df = this.clone();
+      const df: any = this.clone();
 
       names.flat(2).forEach((name) => {
-        unwrap("drop_in_place", {name}, df._df);
+        df.inner().dropInPlace(name);
       });
 
       return df;
-
-
     },
     dropNulls(...subset) {
       if(subset.length) {
-        return wrap("drop_nulls", {subset: subset.flat(2)});
+        return wrap("dropNulls", subset.flat(2));
       } else {
-        return wrap("drop_nulls");
+        return wrap("dropNulls");
       }
     },
     distinct(opts: any = false, subset?, keep = "first") {
+      return this.unique(opts, subset);
+    },
+    unique(opts: any = false, subset?, keep = "first") {
       const defaultOptions = {
         maintainOrder: false,
         keep,
       };
 
       if(typeof opts === "boolean") {
-        return wrap("distinct", {...defaultOptions, maintainOrder: opts, subset, keep});
+        return wrap("unique", opts,  subset, keep);
       }
 
       if(opts.subset) {
         opts.subset = [opts.subset].flat(3);
       }
+      const o = {...defaultOptions, ...opts};
 
-      return wrap("distinct", {...defaultOptions, ...opts});
-    },
-    dropDuplicates(opts: any=false, subset?) {
-      return this.distinct(opts, subset);
+      return wrap("unique", o.maintainOrder, o.subset, o.keep);
     },
     explode(...columns)  {
-      return dfWrapper(_df)
+      return _DataFrame(_df)
         .lazy()
         .explode(columns)
         .collectSync({noOptimization:true});
+    },
+    extend(other) {
+      return wrap("extend", (other as any).inner());
     },
     filter(predicate)  {
       return this
@@ -1584,9 +1582,13 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         .filter(predicate)
         .collectSync();
     },
-    fillNull: (strategy) => wrap("fill_null", {strategy}),
-    findIdxByName: (name) => unwrap("find_idx_by_name", {name}),
-    fold(fn: (s1, s2) => Series<any>) {
+    fillNull(strategy) {
+      return wrap("fillNull", strategy);
+    },
+    findIdxByName(name) {
+      return unwrap("findIdxByName", name);
+    },
+    fold(fn: (s1, s2) => Series) {
       if(this.width === 1) {
         return this.toSeries(0);
       }
@@ -1595,41 +1597,53 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
     },
     frameEqual(other, nullEqual=true) {
-      return unwrap<boolean>("frame_equal", {other: other._df, nullEqual});
+      return unwrap("frameEqual", other._df, nullEqual);
     },
     getColumn(name) {
-      return seriesWrapper(unwrap<any[]>("column", {name}));
+      return _Series(_df.column(name)) as any;
     },
     getColumns() {
-      return unwrap<any[]>("get_columns").map(s => seriesWrapper(s));
+      return _df.getColumns().map(_Series) as any;
     },
-    groupBy: (...by) => GroupBy(_df, columnOrColumnsStrict(by)),
-    hashRows(obj: any = 0, k1=1, k2=2, k3=3) {
-      if(typeof obj === "number" || typeof obj === "bigint") {
-        return seriesWrapper(unwrap("hash_rows", { k0: obj, k1: k1, k2: k2, k3: k3 })) as any;
-      }
+    groupBy(...by) {
 
-      return seriesWrapper(unwrap("hash_rows", { k0: 0, k1, k2, k3, ...obj })) as any;
+      return GroupBy(_df as any, columnOrColumnsStrict(by));
     },
-    head: (length=5) => wrap("head", {length}),
-    hstack(columns) {
+    hashRows(obj: any = 0n, k1=1n, k2=2n, k3=3n) {
+      if (typeof obj === "number" || typeof obj === "bigint") {
+        return _Series(_df.hashRows(BigInt(obj), BigInt(k1), BigInt(k2), BigInt(k3)));
+      }
+      const o = { k0: obj, k1: k1, k2: k2, k3: k3, ...obj};
+
+      return _Series(_df.hashRows(
+        BigInt(o.k0),
+        BigInt(o.k1),
+        BigInt(o.k2),
+        BigInt(o.k3)
+      )) as any;
+    },
+    head(length = 5) {
+      return wrap("head", length);
+    },
+    hstack(columns, inPlace = false) {
       if(!Array.isArray(columns)) {
         columns = columns.getColumns();
       }
+      const method = inPlace ? "hstackMut" : "hstack";
 
-      return wrap("hstack", {
-        columns: columns.map(col => col._series),
-        in_place: false
-      });
+      return wrap(method, columns.map(col => col.inner()));
     },
-    insertAtIdx: (index, s) => unwrap("insert_at_idx", {index, new_col: s._series}),
+    insertAtIdx(idx, series) {
+      _df.insertAtIdx(idx, series.inner());
+    },
     interpolate() {
+
       return this.select(col("*").interpolate());
     },
-    isDuplicated: () => seriesWrapper(unwrap("is_duplicated")),
-    isEmpty: () => unwrap("height") === 0,
-    isUnique: () => seriesWrapper(unwrap("is_unique")),
-    join(df: DataFrame, options): DataFrame  {
+    isDuplicated: () => _Series(_df.isDuplicated()) as any,
+    isEmpty: () => _df.height === 0,
+    isUnique: () => _Series(_df.isUnique()) as any,
+    join(other: DataFrame, options): DataFrame  {
       options =  {how: "inner", suffix: "right", ...options};
       const on = columnOrColumns(options.on);
       const how = options.how;
@@ -1646,122 +1660,149 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         throw new TypeError("You should pass the column to join on as an argument.");
       }
 
-      return wrap("join", {
-        other: df._df,
-        on,
+      return wrap("join",
+        other._df,
+        leftOn,
+        rightOn,
         how,
-        left_on: leftOn,
-        right_on: rightOn,
         suffix,
-      });
+      );
     },
-    lazy: () => LazyDataFrame(unwrap("lazy")),
-    limit: (length=5) => wrap("head", {length}),
+    lazy: () => _LazyDataFrame(_df.lazy()),
+    limit: (length=5) => wrap("head", length),
     max(axis=0) {
       if(axis === 1) {
-        return seriesWrapper(unwrap("hmax")) as any;
+        return _Series((_df.hmax() as any)) as any;
       } else {
         return wrap("max");
       }
     },
     mean(axis=0, nullStrategy="ignore") {
       if(axis === 1) {
-        return seriesWrapper(unwrap("hmean", {nullStrategy})) as any;
+        return _Series(_df.hmean(nullStrategy) as any) as any;
       }
 
       return wrap("mean");
     },
-    median: noArgWrap("median"),
+    median() {
+      return wrap("median");
+    },
     melt(ids, values) {
-      return wrap("melt", {
-        idVars: columnOrColumns(ids),
-        valueVars: columnOrColumns(values)
-      });
+      return wrap("melt",
+        columnOrColumns(ids),
+        columnOrColumns(values)
+      );
     },
     min(axis=0) {
       if(axis === 1) {
-        return seriesWrapper(unwrap("hmin")) as any;
+        return _Series(_df.hmin() as any) as any;
       } else {
         return wrap("min");
       }
     },
-    nChunks: noArgUnwrap("n_chunks"),
-    nullCount: noArgWrap("null_count"),
-    quantile: (quantile) => wrap("quantile", {quantile}),
-    rechunk: noArgWrap("rechunk"),
+    nChunks() {
+      return _df.nChunks();
+    },
+    nullCount() {
+      return wrap("nullCount");
+    },
+    partitionBy(by, strict = false, mapFn = df => df) {
+
+      by = Array.isArray(by) ? by : [by];
+
+      return  _df.partitionBy(by, strict).map(d => mapFn(_DataFrame(d)));
+    },
+    quantile(quantile, interpolation = "nearest") {
+      return wrap("quantile", quantile, interpolation);
+    },
+    rechunk() { return wrap("rechunk");},
     rename(mapping)  {
       const df = this.clone();
       Object.entries(mapping).forEach(([column, new_col]) => {
-        unwrap("rename", {column, new_col}, df._df);
+        (df as any).inner().rename(column, new_col);
       });
 
       return df;
     },
     replaceAtIdx(index, newColumn) {
-      unwrap("replace_at_idx", {
+      _df.replaceAtIdx(
         index,
-        newColumn: newColumn._series
-      });
+        newColumn.inner()
+      );
 
       return this;
     },
-    rows: noArgUnwrap("to_rows"),
-    sample(opts?, frac?, withReplacement = false) {
+    rows(callback?: any) {
+      if(callback) {
+        return _df.toRowsCb(callback);
+      }
+
+      return _df.toRows();
+    },
+    sample(opts?, frac?, withReplacement = false, seed?) {
+      if(arguments.length === 0) {
+        return wrap("sampleN",
+          1,
+          withReplacement,
+          seed
+        );
+      }
       if(opts?.n  !== undefined || opts?.frac  !== undefined) {
-        return this.sample(opts.n, opts.frac, opts.withReplacement);
+        return this.sample(opts.n, opts.frac, opts.withReplacement, seed);
       }
       if (typeof opts === "number") {
-        return wrap("sample_n", {
-          n: opts,
-          withReplacement
-        });
+        return wrap("sampleN",
+          opts,
+          withReplacement,
+          seed
+        );
       }
       if(typeof frac === "number") {
-        return wrap("sample_frac", {
+        return wrap("sampleFrac",
           frac,
           withReplacement,
-        });
+          seed
+        );
       }
       else {
         throw new TypeError("must specify either 'frac' or 'n'");
       }
     },
-    schema: noArgUnwrap("schema"),
+
     select(...selection) {
       const hasExpr = selection.flat().some(s => Expr.isExpr(s));
       if(hasExpr) {
-        return dfWrapper(_df)
+        return _DataFrame(_df)
           .lazy()
           .select(selection)
           .collectSync();
       } else {
-
-        return wrap("select", {selection: columnOrColumnsStrict(selection as any)});
+        return wrap("select", columnOrColumnsStrict(selection as any));
       }
     },
-    shift: (opt) => wrap("shift", {periods: opt?.periods ?? opt }),
+    shift: (opt) => wrap("shift", opt?.periods ?? opt ),
     shiftAndFill(periods: any, fillValue?)  {
-      return dfWrapper(_df)
+      return _DataFrame(_df)
         .lazy()
         .shiftAndFill(periods, fillValue)
         .collectSync();
     },
     shrinkToFit(inPlace: any=false): any {
       if(inPlace) {
-        unwrap("shrink_to_fit");
+        _df.shrinkToFit();
       } else {
-        const d = this.clone();
-        unwrap("shrink_to_fit", {}, d._df);
+        const d = this.clone() as any;
+        d.inner().shrinkToFit();
 
         return d;
       }
     },
     slice(opts, length?) {
       if(typeof opts === "number") {
-        return wrap("slice", {offset: opts, length});
+        return wrap("slice", opts, length);
       }
 
-      return wrap("slice", opts);
+      return wrap("slice", opts.offset, opts.length);
     },
     sort(arg,  reverse=false)  {
 
@@ -1769,99 +1810,154 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return this.sort(arg.by, arg.reverse);
       }
       if(Array.isArray(arg) || Expr.isExpr(arg)) {
-        return dfWrapper(_df).lazy()
+        return _DataFrame(_df).lazy()
           .sort(arg, reverse)
           .collectSync({noOptimization: true, stringCache: false});
 
       }
 
-      return wrap("sort", {by: [arg].flat(), reverse});
+      return wrap("sort", arg, reverse, true);
 
     },
-    std: noArgWrap("std"),
+    std() {
+      return wrap("std");
+    },
     sum(axis=0, nullStrategy="ignore") {
       if(axis === 1) {
-        return seriesWrapper(unwrap("hsum", {nullStrategy})) as any;
+        return _Series(_df.hsum(nullStrategy) as any) as any;
       }
 
       return wrap("sum");
     },
-    tail: (length=5) => wrap("tail", {length}),
-    toCSV(dest?, options?) {
-      options = { hasHeader:true, sep: ",", ...options};
-      // toCSV(options)
-      if(dest?.hasHeader !== undefined || dest?.sep !== undefined) {
-        return writeToStreamOrString(null, "csv", {...options, ...dest});
-
-      } else {
-        // toCSV()
-        // toCSV("path/to/some/file", options)
-        // toCSV(writeStream, options)
-        return writeToStreamOrString(dest, "csv", options);
-      }
+    tail: (length=5) => wrap("tail", length),
+    serialize(format) {
+      return _df.serialize(format);
     },
-    toObject(options?) {
-      if(options?.orient === "row") {
-        return unwrap("to_row_objects");
-
-      }
-      if(options?.orient === "col") {
-        return this.getColumns().reduce((acc, curr: Series<any>) => ({
-          ...acc,
-          [curr.name]: curr.toArray()
-        }), {});
-      }
-
-      return unwrap("to_js");
+    toCSV(...args) {
+      return this.writeCSV(...args);
     },
-    toJSON(arg0?, options?): any {
-      // JSON.stringify(df)
-      // passes `""` by default then stringifies the JS output
-      if(arg0 === "") {
-        return unwrap("to_js");
+    writeCSV(dest?, options={}) {
+      if(dest instanceof Writable || typeof dest === "string") {
+        return _df.writeCsv(dest, options) as any;
+      }
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
+      _df.writeCsv((writeStream as any), dest ?? options);
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
+    },
+    toRecords() {
+      return _df.toObjects();
+    },
+    toJSON(...args: any[]) {
+      // this is passed by `JSON.stringify` when calling `toJSON()`
+      if(args[0] === "") {
+        return _df.toJs();
       }
 
-      // df.toJSON();
-      // same thing as to_js except skips serializing to JS & returns a json buffer
-      if(arg0 === undefined) {
-        return unwrap<any>("to_json").toString();
-      }
+      return _df.serialize("json").toString();
+    },
+    toObject() {
+      return this.getColumns().reduce((acc, curr) => {
+        acc[curr.name] = curr.toArray();
 
-      // toJSON(options)
-      if(arg0?.orient === "row" || arg0?.multiline) {
-        return writeToStreamOrString(null, "json", arg0);
+        return acc;
+      }, {});
+    },
+    writeJSON(dest?, options={format:"lines"}) {
+      if(dest instanceof Writable || typeof dest === "string") {
+        return _df.writeJson(dest, options) as any;
+      }
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
 
-      // toJSON({orient:"col"})
-      } else if(arg0?.orient === "col") {
-        // TODO!
-        // do this on the rust side for better performance
-        return JSON.stringify(this.toObject({orient: "col"}));
-      }
-      else {
-        // toJSON("path/to/some/file", options)
-        // toJSON(writeStream, options)
-        return writeToStreamOrString(arg0, "json", options);
-      }
+
+      _df.writeJson(writeStream, {...options, ...dest});
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
     },
-    toParquet(dest?, options = {compression: "uncompressed"}) {
-      if(dest?.compression !== undefined) {
-        return writeToBufferOrStream(null, "parquet", dest);
-      } else {
-        return writeToBufferOrStream(dest, "parquet", options);
-      }
+    toParquet(dest?, options?) {
+      return this.writeParquet(dest, options);
     },
-    toIPC(dest?, options = {compression: "uncompressed"}) {
-      if(dest?.compression !== undefined) {
-        return writeToBufferOrStream(null, "ipc", dest);
-      } else {
-        return writeToBufferOrStream(dest, "ipc", options);
+    writeParquet(dest?, options = {compression: "uncompressed"}) {
+      if(dest instanceof Writable || typeof dest === "string") {
+        return _df.writeParquet(dest, options.compression) as any;
       }
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
+
+      _df.writeParquet(writeStream, dest?.compression ?? options?.compression);
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
+
     },
-    toSeries: (index) => seriesWrapper(unwrap("select_at_idx", {index})),
-    toString: () => noArgUnwrap<any>("as_str")().toString(),
+    writeAvro(dest?, options = {compression: "uncompressed"}) {
+      if(dest instanceof Writable || typeof dest === "string") {
+        return _df.writeAvro(dest, options.compression) as any;
+      }
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
+
+      _df.writeAvro(writeStream, dest?.compression ?? options?.compression);
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
+
+    },
+    toIPC(dest?, options?) {
+      return this.writeIPC(dest, options);
+    },
+    writeIPC(dest?, options = {compression: "uncompressed"}) {
+      if(dest instanceof Writable || typeof dest === "string") {
+        return _df.writeIpc(dest, options.compression) as any;
+      }
+      let buffers: Buffer[] = [];
+      const writeStream = new Stream.Writable({
+        write(chunk, _encoding, callback) {
+          buffers.push(chunk);
+          callback(null);
+        }
+      });
+
+      _df.writeIpc(writeStream, dest?.compression ?? options?.compression);
+      writeStream.end("");
+
+      return Buffer.concat(buffers);
+
+    },
+    toSeries: (index = 0) => _Series(_df.selectAtIdx(index) as any) as any,
+    toStruct(name) {
+      return _Series(_df.toStruct(name));
+    },
+    toString() {
+      return _df.toString();
+    },
     transpose(options?) {
 
-      let df = wrap("transpose", options);
+      let df = wrap("transpose", options?.includeHeader ?? false, options?.headerName);
       if(options?.columnNames) {
 
         function *namesIter() {
@@ -1886,29 +1982,37 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
 
       return df;
     },
-    var: noArgWrap("var"),
-    map: (fn) => map(dfWrapper(_df), fn as any) as any,
-    row: (index) => unwrap("to_row", {idx: index}),
-    vstack: (other) => wrap("vstack", {other: other._df}),
-    withColumn(column: Series<any> | Expr) {
+    unnest(names) {
+      names = Array.isArray(names) ? names : [names];
+
+      return _DataFrame(_df.unnest(names));
+    },
+    var() {
+      return wrap("var");
+    },
+    map: (fn) => map(_DataFrame(_df), fn as any) as any,
+    row(idx) {
+      return _df.toRow(idx);
+    },
+    vstack: (other) => wrap("vstack", (other as any).inner()),
+    withColumn(column: Series | Expr) {
       if(Series.isSeries(column)) {
-        return wrap("with_column", {_series: column._series});
+        return wrap("withColumn", column.inner());
       } else {
         return this.withColumns(column);
       }
     },
-    withColumns(column, ...columns: Expr[] | Series<any>[]) {
+    withColumns(column, ...columns: Expr[] | Series[]) {
       columns.unshift(column as any);
 
       if(isSeriesArray(columns)) {
-        return columns.reduce((acc, curr) => acc.withColumn(curr), dfWrapper(_df));
+        return columns.reduce((acc, curr) => acc.withColumn(curr), _DataFrame(_df));
       } else {
         return this
           .lazy()
           .withColumns(columns)
           .collectSync({noOptimization: true, stringCache: false});
       }
-
     },
     withColumnRenamed(opt, replacement?) {
       if(typeof opt === "string") {
@@ -1917,21 +2021,23 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
         return this.rename({[opt.existing]: opt.replacement});
       }
     },
-    withRowCount: (name="row_nr") => wrap("with_row_count", {name}),
+    withRowCount(name="row_nr") {
+      return wrap("withRowCount", name);
+    },
     where(predicate) {
       return this.filter(predicate);
     },
 
-    add: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
-    sub: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
-    div: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
-    mul: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
-    rem: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
-    plus: (other) =>  wrap("add", {other: prepareOtherArg(other)._series}),
-    minus: (other) =>  wrap("sub", {other: prepareOtherArg(other)._series}),
-    divideBy: (other) =>  wrap("div", {other: prepareOtherArg(other)._series}),
-    multiplyBy: (other) =>  wrap("mul", {other: prepareOtherArg(other)._series}),
-    modulo: (other) =>  wrap("rem", {other: prepareOtherArg(other)._series}),
+    add: (other) =>  wrap("add", prepareOtherArg(other).inner()),
+    sub: (other) =>  wrap("sub", prepareOtherArg(other).inner()),
+    div: (other) =>  wrap("div", prepareOtherArg(other).inner()),
+    mul: (other) =>  wrap("mul", prepareOtherArg(other).inner()),
+    rem: (other) =>  wrap("rem", prepareOtherArg(other).inner()),
+    plus: (other) =>  wrap("add", prepareOtherArg(other).inner()),
+    minus: (other) =>  wrap("sub", prepareOtherArg(other).inner()),
+    divideBy: (other) =>  wrap("div", prepareOtherArg(other).inner()),
+    multiplyBy: (other) =>  wrap("mul", prepareOtherArg(other).inner()),
+    modulo: (other) =>  wrap("rem", prepareOtherArg(other).inner()),
   } as DataFrame;
 
   return new Proxy(df, {
@@ -1975,44 +2081,48 @@ export const dfWrapper = (_df: JsDataFrame): DataFrame => {
       };
     }
   });
-
 };
 
-export interface DataFrameConstructor {
+export interface DataFrameConstructor extends Deserialize<DataFrame> {
   (): DataFrame
-  (data: Record<string, any>[]): DataFrame
-  (data: Series<any>[]): DataFrame
-  (data: any): DataFrame
-  (data: any[][], options: {columns?: any[], orient?: "row" | "col"}): DataFrame
+  (data: any, options?: {
+    columns?: any[],
+    orient?: "row" | "col",
+    schema?: Record<string, string | DataType>,
+    inferSchemaLength?: number,
+  }): DataFrame
   isDataFrame(arg: any): arg is DataFrame;
 }
 function DataFrameConstructor(data?, options?): DataFrame {
 
   if(!data) {
-    return dfWrapper(objToDF({}));
+    return _DataFrame(objToDF({}));
   }
 
   if (Array.isArray(data)) {
-    return dfWrapper(arrayToJsDataFrame(data, options?.columns, options?.orient));
+    return _DataFrame(arrayToJsDataFrame(data, options));
   }
 
-  return dfWrapper(objToDF(data as any));
+  return _DataFrame(objToDF(data as any));
 }
 
 function objToDF(obj: Record<string, Array<any>>): any {
   const columns =  Object.entries(obj).map(([name, values]) => {
     if(Series.isSeries(values)) {
-      return values.rename(name)._series;
+      return values.rename(name).inner();
     }
 
-    return Series(name, values)._series;
+    return Series(name, values).inner();
   });
 
-  return pli.df.read_columns({columns});
+  return new pli.JsDataFrame(columns);
 }
-const isDataFrame = (ty: any): ty is DataFrame => isExternal(ty?._df);
-export namespace pl {
-  export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
-}
+const isDataFrame = (anyVal: any): anyVal is DataFrame => anyVal?.[Symbol.toStringTag] === "DataFrame";
 
-export const DataFrame: DataFrameConstructor = Object.assign(DataFrameConstructor, {isDataFrame});
+
+export const DataFrame: DataFrameConstructor = Object.assign(
+  DataFrameConstructor, {
+    isDataFrame,
+    deserialize: (buf, fmt) => _DataFrame(pli.JsDataFrame.deserialize(buf, fmt))
+  }
+);

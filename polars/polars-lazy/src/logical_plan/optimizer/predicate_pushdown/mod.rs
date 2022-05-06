@@ -81,17 +81,16 @@ impl PredicatePushDown {
             let new_inputs = inputs
                 .iter()
                 .map(|&node| {
-                    // first we check if we are able to push down the predicate pass this node
+                    // first we check if we are able to push down the predicate passed this node
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates = optimizer::init_hashmap();
-                    for &predicate in acc_predicates.values() {
+                    for (name, &predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate, input_schema, expr_arena) {
-                            let name = get_insertion_name(expr_arena, predicate, input_schema);
                             insert_and_combine_predicate(
                                 &mut pushdown_predicates,
-                                name,
+                                name.clone(),
                                 predicate,
                                 expr_arena,
                             )
@@ -186,16 +185,18 @@ impl PredicatePushDown {
 
             Melt {
                 input,
-                id_vars,
-                value_vars,
+                args,
                 schema,
             } => {
+                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                let value_name = args.value_name.as_deref().unwrap_or("value_name");
+
                 // predicates that will be done at this level
                 let condition = |name: Arc<str>| {
                     let name = &*name;
-                    name == "variable"
-                        || name == "value"
-                        || value_vars.iter().any(|s| s.as_str() == name)
+                    name == variable_name
+                        || name == value_name
+                        || args.value_vars.iter().any(|s| s.as_str() == name)
                 };
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
@@ -204,8 +205,7 @@ impl PredicatePushDown {
 
                 let lp = ALogicalPlan::Melt {
                     input,
-                    id_vars,
-                    value_vars,
+                    args,
                     schema,
                 };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
@@ -290,13 +290,13 @@ impl PredicatePushDown {
                 };
                 Ok(lp)
             }
-            Explode { input, columns } => {
+            Explode { input, columns, schema } => {
                 let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
                 let local_predicates =
                     transfer_to_local(expr_arena, &mut acc_predicates, condition);
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                let lp = Explode { input, columns };
+                let lp = Explode { input, columns, schema };
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             }
             Distinct {
@@ -348,7 +348,12 @@ impl PredicatePushDown {
                     // unique and duplicated can be caused by joins
                     let matches =
                         |e: &AExpr| matches!(e, AExpr::IsUnique(_) | AExpr::Duplicated(_));
-                    if has_aexpr(predicate, expr_arena, matches) {
+
+                    let checks_nulls =
+                        |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
+                    if has_aexpr(predicate, expr_arena, matches)
+                        // join might create null values.
+                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -377,7 +382,7 @@ impl PredicatePushDown {
                         );
                         filter_right = true;
                     }
-                    match (filter_left, filter_right, options.how) {
+                    match (filter_left, filter_right, &options.how) {
                         // if not pushed down on of the tables we have to do it locally.
                         (false, false, _) |
                         // if left join and predicate only available in right table,

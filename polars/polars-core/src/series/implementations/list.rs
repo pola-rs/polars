@@ -2,20 +2,14 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::{
-    ops::{
-        compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
-        explode::ExplodeByOffsets,
-    },
-    AsSinglePtr, ChunkIdIter,
-};
+use crate::chunked_array::{ops::explode::ExplodeByOffsets, AsSinglePtr};
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
-use ahash::RandomState;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
+use std::any::Any;
 use std::borrow::Cow;
 
 impl IntoSeries for ListChunked {
@@ -47,22 +41,8 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> Result<Series> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
-    fn into_partial_eq_inner<'a>(&'a self) -> Box<dyn PartialEqInner + 'a> {
-        (&self.0).into_partial_eq_inner()
-    }
-    fn into_partial_ord_inner<'a>(&'a self) -> Box<dyn PartialOrdInner + 'a> {
-        (&self.0).into_partial_ord_inner()
-    }
 
-    fn vec_hash(&self, random_state: RandomState) -> Vec<u64> {
-        self.0.vec_hash(random_state)
-    }
-
-    fn vec_hash_combine(&self, build_hasher: RandomState, hashes: &mut [u64]) {
-        self.0.vec_hash_combine(build_hasher, hashes)
-    }
-
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -109,7 +89,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            // todo! add object
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
@@ -118,12 +97,32 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
             ))
         }
     }
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
+            ))
+        }
+    }
 
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -144,7 +143,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {
@@ -183,6 +182,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
     }
@@ -228,9 +228,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
     }
-    fn mean_as_series(&self) -> Series {
-        ChunkAggSeries::mean_as_series(&self.0)
-    }
     fn median_as_series(&self) -> Series {
         QuantileAggSeries::median_as_series(&self.0)
     }
@@ -253,5 +250,14 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
+    }
+    fn as_any(&self) -> &dyn Any {
+        &self.0
+    }
+
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
     }
 }

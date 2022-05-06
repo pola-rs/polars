@@ -6,20 +6,17 @@
 //! [See the AnyValue variants](enum.AnyValue.html#variants) for the data types that
 //! are currently supported.
 //!
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
 pub use crate::chunked_array::logical::*;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ops::sort::PlIsNan;
 use crate::prelude::*;
 use crate::utils::Wrap;
 use ahash::RandomState;
 use arrow::compute::arithmetics::basic::NativeArithmetics;
 use arrow::compute::comparison::Simd8;
+#[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::error::ArrowError;
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
@@ -34,8 +31,6 @@ pub struct Utf8Type {}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
-
-pub struct CategoricalType {}
 
 pub trait PolarsDataType: Send + Sync {
     fn get_dtype() -> DataType
@@ -68,6 +63,7 @@ impl_polars_datatype!(Float64Type, Float64, f64);
 impl_polars_datatype!(DateType, Date, i32);
 impl_polars_datatype!(DatetimeType, Unknown, i64);
 impl_polars_datatype!(DurationType, Unknown, i64);
+impl_polars_datatype!(CategoricalType, Unknown, u32);
 impl_polars_datatype!(TimeType, Time, i64);
 
 impl PolarsDataType for Utf8Type {
@@ -88,12 +84,6 @@ impl PolarsDataType for ListType {
     fn get_dtype() -> DataType {
         // null as we cannot no anything without self.
         DataType::List(Box::new(DataType::Null))
-    }
-}
-
-impl PolarsDataType for CategoricalType {
-    fn get_dtype() -> DataType {
-        DataType::Categorical
     }
 }
 
@@ -131,7 +121,6 @@ pub type Int64Chunked = ChunkedArray<Int64Type>;
 pub type Float32Chunked = ChunkedArray<Float32Type>;
 pub type Float64Chunked = ChunkedArray<Float64Type>;
 pub type Utf8Chunked = ChunkedArray<Utf8Type>;
-pub type CategoricalChunked = ChunkedArray<CategoricalType>;
 
 pub trait NumericNative:
     PartialOrd
@@ -150,7 +139,6 @@ pub trait NumericNative:
     + AddAssign
     + Bounded
     + FromPrimitive
-    + PlIsNan
     + NativeArithmetics
 {
 }
@@ -214,6 +202,7 @@ impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AnyValue<'a> {
     Null,
     /// A binary true or false.
@@ -247,20 +236,60 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
-    // A 64-bit integer representing difference between date-times in nanoseconds or milliseconds
+    // A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
     Duration(i64, TimeUnit),
     /// A 64-bit time representing the elapsed time since midnight in nanoseconds
     #[cfg(feature = "dtype-time")]
     Time(i64),
     #[cfg(feature = "dtype-categorical")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    #[cfg_attr(feature = "serde", serde(skip))]
     Object(&'a dyn PolarsObjectSafe),
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Struct(Vec<AnyValue<'a>>, &'a [Field]),
+    #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
+    StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
+    /// A UTF8 encoded string type.
+    Utf8Owned(String),
+}
+
+impl<'a> AnyValue<'a> {
+    /// Extract a numerical value from the AnyValue
+    #[doc(hidden)]
+    #[cfg(feature = "private")]
+    pub fn extract<T: NumCast>(&self) -> Option<T> {
+        use AnyValue::*;
+        match self {
+            Null => None,
+            Int8(v) => NumCast::from(*v),
+            Int16(v) => NumCast::from(*v),
+            Int32(v) => NumCast::from(*v),
+            Int64(v) => NumCast::from(*v),
+            UInt8(v) => NumCast::from(*v),
+            UInt16(v) => NumCast::from(*v),
+            UInt32(v) => NumCast::from(*v),
+            UInt64(v) => NumCast::from(*v),
+            Float32(v) => NumCast::from(*v),
+            Float64(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-date")]
+            Date(v) => NumCast::from(*v),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(v, _, _) => NumCast::from(*v),
+            #[cfg(feature = "dtype-duration")]
+            Duration(v, _) => NumCast::from(*v),
+            _ => unimplemented!(),
+        }
+    }
 }
 
 impl<'a> Hash for AnyValue<'a> {
@@ -405,26 +434,27 @@ impl<'a> AnyValue<'a> {
 
     /// Try to coerce to an AnyValue with static lifetime.
     /// This can be done if it does not borrow any values.
-    pub fn to_static(&self) -> Result<AnyValue<'static>> {
+    pub fn into_static(self) -> Result<AnyValue<'static>> {
         use AnyValue::*;
         let av = match self {
             Null => AnyValue::Null,
-            Int8(v) => AnyValue::Int8(*v),
-            Int16(v) => AnyValue::Int16(*v),
-            Int32(v) => AnyValue::Int32(*v),
-            Int64(v) => AnyValue::Int64(*v),
-            UInt8(v) => AnyValue::UInt8(*v),
-            UInt16(v) => AnyValue::UInt16(*v),
-            UInt32(v) => AnyValue::UInt32(*v),
-            UInt64(v) => AnyValue::UInt64(*v),
-            Boolean(v) => AnyValue::Boolean(*v),
-            Float32(v) => AnyValue::Float32(*v),
-            Float64(v) => AnyValue::Float64(*v),
+            Int8(v) => AnyValue::Int8(v),
+            Int16(v) => AnyValue::Int16(v),
+            Int32(v) => AnyValue::Int32(v),
+            Int64(v) => AnyValue::Int64(v),
+            UInt8(v) => AnyValue::UInt8(v),
+            UInt16(v) => AnyValue::UInt16(v),
+            UInt32(v) => AnyValue::UInt32(v),
+            UInt64(v) => AnyValue::UInt64(v),
+            Boolean(v) => AnyValue::Boolean(v),
+            Float32(v) => AnyValue::Float32(v),
+            Float64(v) => AnyValue::Float64(v),
             #[cfg(feature = "dtype-date")]
-            Date(v) => AnyValue::Date(*v),
+            Date(v) => AnyValue::Date(v),
             #[cfg(feature = "dtype-time")]
-            Time(v) => AnyValue::Time(*v),
-            List(v) => AnyValue::List(v.clone()),
+            Time(v) => AnyValue::Time(v),
+            List(v) => AnyValue::List(v),
+            Utf8(s) => AnyValue::Utf8Owned(s.to_string()),
             dt => {
                 return Err(PolarsError::ComputeError(
                     format!("cannot get static AnyValue from {}", dt).into(),
@@ -477,7 +507,46 @@ impl Display for DataType {
             DataType::List(tp) => return write!(f, "list [{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
-            DataType::Categorical => "cat",
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => "cat",
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => {
+                return match fields.len() {
+                    1 => {
+                        write!(f, "struct{{{}: {}}}", fields[0].name(), fields[0].dtype)
+                    }
+                    2 => {
+                        write!(
+                            f,
+                            "struct[{}]{{'{}': {}, '{}': {}}}",
+                            fields.len(),
+                            fields[0].name(),
+                            fields[0].dtype,
+                            fields[1].name(),
+                            fields[1].dtype
+                        )
+                    }
+                    3 => {
+                        write!(
+                            f,
+                            "struct[{}]{{'{}', '{}', '{}'}}",
+                            fields.len(),
+                            fields[0].name(),
+                            fields[1].name(),
+                            fields[2].name()
+                        )
+                    }
+                    _ => {
+                        write!(
+                            f,
+                            "struct[{}]{{'{}',...,'{}'}}",
+                            fields.len(),
+                            fields[0].name(),
+                            fields[fields.len() - 1].name()
+                        )
+                    }
+                }
+            }
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
@@ -550,18 +619,19 @@ impl PartialOrd for AnyValue<'_> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum TimeUnit {
     Nanoseconds,
+    Microseconds,
     Milliseconds,
 }
 
 impl From<&ArrowTimeUnit> for TimeUnit {
     fn from(tu: &ArrowTimeUnit) -> Self {
         match tu {
-            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
             ArrowTimeUnit::Nanosecond => TimeUnit::Nanoseconds,
-            // will be cast
-            ArrowTimeUnit::Microsecond => TimeUnit::Nanoseconds,
+            ArrowTimeUnit::Microsecond => TimeUnit::Microseconds,
+            ArrowTimeUnit::Millisecond => TimeUnit::Milliseconds,
             // will be cast
             ArrowTimeUnit::Second => TimeUnit::Milliseconds,
         }
@@ -574,6 +644,9 @@ impl Display for TimeUnit {
             TimeUnit::Nanoseconds => {
                 write!(f, "ns")
             }
+            TimeUnit::Microseconds => {
+                write!(f, "μs")
+            }
             TimeUnit::Milliseconds => {
                 write!(f, "ms")
             }
@@ -585,6 +658,7 @@ impl TimeUnit {
     pub fn to_arrow(self) -> ArrowTimeUnit {
         match self {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
+            TimeUnit::Microseconds => ArrowTimeUnit::Microsecond,
             TimeUnit::Milliseconds => ArrowTimeUnit::Millisecond,
         }
     }
@@ -592,7 +666,8 @@ impl TimeUnit {
 
 pub type TimeZone = String;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub enum DataType {
     Boolean,
     UInt8,
@@ -621,12 +696,43 @@ pub enum DataType {
     #[cfg(feature = "object")]
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
+    // how to deserialize a static?
     Object(&'static str),
     Null,
-    Categorical,
+    #[cfg(feature = "dtype-categorical")]
+    // The RevMapping has the internal state.
+    // This is ignored with casts, comparisons, hashing etc.
+    #[cfg_attr(feature = "serde-lazy", serde(skip))]
+    Categorical(Option<Arc<RevMapping>>),
+    #[cfg(feature = "dtype-struct")]
+    Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
 }
+
+impl Hash for DataType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(self).hash(state)
+    }
+}
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        use DataType::*;
+        {
+            match (self, other) {
+                // Don't include rev maps in comparisons
+                #[cfg(feature = "dtype-categorical")]
+                (Categorical(_), Categorical(_)) => true,
+                (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
+                _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+            }
+        }
+    }
+}
+
+impl Eq for DataType {}
 
 impl DataType {
     pub fn inner_dtype(&self) -> Option<&DataType> {
@@ -646,14 +752,35 @@ impl DataType {
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
-            Categorical => UInt32,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => UInt32,
             _ => self.clone(),
         }
     }
 
-    /// Check if this dtype is a logical type
+    /// Check if this [`DataType`] is a logical type
     pub fn is_logical(&self) -> bool {
         self != &self.to_physical()
+    }
+
+    /// Check if this [`DataType`] is a numeric type
+    pub fn is_numeric(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            DataType::Utf8
+            | DataType::List(_)
+            | DataType::Date
+            | DataType::Datetime(_, _)
+            | DataType::Duration(_)
+            | DataType::Boolean
+            | DataType::Null => false,
+            #[cfg(feature = "object")]
+            DataType::Object(_) => false,
+            #[cfg(feature = "dtype-categorical")]
+            DataType::Categorical(_) => false,
+            _ => true,
+        }
     }
 
     /// Convert to an Arrow data type.
@@ -677,14 +804,24 @@ impl DataType {
             Duration(unit) => ArrowDataType::Duration(unit.to_arrow()),
             Time => ArrowDataType::Time64(ArrowTimeUnit::Nanosecond),
             List(dt) => ArrowDataType::LargeList(Box::new(arrow::datatypes::Field::new(
-                "",
+                "item",
                 dt.to_arrow(),
                 true,
             ))),
             Null => ArrowDataType::Null,
             #[cfg(feature = "object")]
             Object(_) => panic!("cannot convert object to arrow"),
-            Categorical => ArrowDataType::UInt32,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_) => ArrowDataType::Dictionary(
+                IntegerType::UInt32,
+                Box::new(ArrowDataType::LargeUtf8),
+                false,
+            ),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => {
+                let fields = fields.iter().map(|fld| fld.to_arrow()).collect();
+                ArrowDataType::Struct(fields)
+            }
             Unknown => unreachable!(),
         }
     }
@@ -698,10 +835,14 @@ impl PartialEq<ArrowDataType> for DataType {
 }
 
 /// Characterizes the name and the [`DataType`] of a column.
-#[derive(Clone, Debug, PartialEq, Hash)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+// see: https://github.com/serde-rs/serde/issues/1712
+// we need this because `DataType` has a `&'static`
+#[cfg_attr(feature = "serde-lazy", serde(bound(deserialize = "'de: 'static")))]
 pub struct Field {
     name: String,
-    data_type: DataType,
+    dtype: DataType,
 }
 
 impl Field {
@@ -715,11 +856,16 @@ impl Field {
     /// let f2 = Field::new("Lawful", DataType::Boolean);
     /// let f2 = Field::new("Departure", DataType::Time);
     /// ```
-    pub fn new(name: &str, data_type: DataType) -> Self {
+    #[inline]
+    pub fn new(name: &str, dtype: DataType) -> Self {
         Field {
             name: name.to_string(),
-            data_type,
+            dtype,
         }
+    }
+
+    pub fn from_owned(name: String, dtype: DataType) -> Self {
+        Field { name, dtype }
     }
 
     /// Returns a reference to the `Field` name.
@@ -732,6 +878,7 @@ impl Field {
     ///
     /// assert_eq!(f.name(), "Year");
     /// ```
+    #[inline]
     pub fn name(&self) -> &String {
         &self.name
     }
@@ -746,8 +893,9 @@ impl Field {
     ///
     /// assert_eq!(f.data_type(), &DataType::Date);
     /// ```
+    #[inline]
     pub fn data_type(&self) -> &DataType {
-        &self.data_type
+        &self.dtype
     }
 
     /// Sets the `Field` datatype.
@@ -762,7 +910,7 @@ impl Field {
     /// assert_eq!(f, Field::new("Temperature", DataType::Float32));
     /// ```
     pub fn coerce(&mut self, dtype: DataType) {
-        self.data_type = dtype;
+        self.dtype = dtype;
     }
 
     /// Sets the `Field` name.
@@ -792,170 +940,9 @@ impl Field {
     /// assert_eq!(f.to_arrow(), af);
     /// ```
     pub fn to_arrow(&self) -> ArrowField {
-        ArrowField::new(&self.name, self.data_type.to_arrow(), true)
+        ArrowField::new(&self.name, self.dtype.to_arrow(), true)
     }
 }
-
-#[cfg(feature = "private")]
-pub trait IndexOfSchema {
-    fn index_of(&self, name: &str) -> arrow::error::Result<usize>;
-}
-
-impl IndexOfSchema for ArrowSchema {
-    fn index_of(&self, name: &str) -> arrow::error::Result<usize> {
-        self.fields
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| {
-                let valid_fields: Vec<String> =
-                    self.fields.iter().map(|f| f.name.clone()).collect();
-                ArrowError::InvalidArgumentError(format!(
-                    "Unable to get field named \"{}\". Valid fields: {:?}",
-                    name, valid_fields
-                ))
-            })
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Hash, Default)]
-pub struct Schema {
-    fields: Vec<Field>,
-}
-
-impl Schema {
-    pub fn rename<I, J, T, S>(&self, old_names: I, new_names: J) -> Result<Schema>
-    where
-        I: IntoIterator<Item = T>,
-        J: IntoIterator<Item = S>,
-        T: AsRef<str>,
-        S: AsRef<str>,
-    {
-        let idx = old_names
-            .into_iter()
-            .map(|name| self.index_of(name.as_ref()))
-            .collect::<Result<Vec<_>>>()?;
-        let mut new_fields = self.fields.clone();
-
-        for (i, name) in idx.into_iter().zip(new_names) {
-            let dt = new_fields[i].data_type.clone();
-            new_fields[i] = Field::new(name.as_ref(), dt)
-        }
-        Ok(Self::new(new_fields))
-    }
-
-    pub fn new(fields: Vec<Field>) -> Self {
-        Schema { fields }
-    }
-
-    pub fn len(&self) -> usize {
-        self.fields.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.fields.is_empty()
-    }
-
-    /// Returns an immutable reference of the vector of `Field` instances
-    pub fn fields(&self) -> &Vec<Field> {
-        &self.fields
-    }
-
-    /// Returns a mutable reference of the vector of `Field` instances
-    pub fn fields_mut(&mut self) -> &mut Vec<Field> {
-        &mut self.fields
-    }
-
-    /// Returns an immutable reference of a specific `Field` instance selected using an
-    /// offset within the internal `fields` vector
-    pub fn field(&self, i: usize) -> Option<&Field> {
-        self.fields.get(i)
-    }
-
-    /// Returns an immutable reference of a specific `Field` instance selected by name
-    pub fn field_with_name(&self, name: &str) -> Result<&Field> {
-        Ok(&self.fields[self.index_of(name)?])
-    }
-
-    /// Find the index of the column with the given name
-    pub fn index_of(&self, name: &str) -> Result<usize> {
-        self.fields
-            .iter()
-            .position(|f| f.name == name)
-            .ok_or_else(|| {
-                let valid_fields: Vec<String> =
-                    self.fields.iter().map(|f| f.name.clone()).collect();
-                PolarsError::NotFound(format!(
-                    "Unable to get field named \"{}\". Valid fields: {:?}",
-                    name, valid_fields
-                ))
-            })
-    }
-
-    pub fn to_arrow(&self) -> ArrowSchema {
-        let fields: Vec<ArrowField> = self
-            .fields
-            .iter()
-            .map(|f| {
-                match f.data_type() {
-                    // we must call this item, because the arrow crate names this item when creating a
-                    // schema from record batches
-                    DataType::List(dt) => ArrowField::new(
-                        f.name(),
-                        ArrowDataType::LargeList(Box::new(ArrowField::new(
-                            "item",
-                            dt.to_arrow(),
-                            true,
-                        ))),
-                        true,
-                    ),
-                    DataType::Categorical => ArrowField::new(
-                        f.name(),
-                        ArrowDataType::Dictionary(
-                            IntegerType::UInt32,
-                            Box::new(ArrowDataType::LargeUtf8),
-                            false,
-                        ),
-                        true,
-                    ),
-                    _ => f.to_arrow(),
-                }
-            })
-            .collect();
-        ArrowSchema::from(fields)
-    }
-
-    pub fn try_merge(schemas: &[Self]) -> Result<Self> {
-        let mut merged = Self::default();
-
-        for schema in schemas {
-            // merge fields
-            for field in &schema.fields {
-                let mut new_field = true;
-                for merged_field in &mut merged.fields {
-                    if field.name != merged_field.name {
-                        continue;
-                    }
-                    new_field = false;
-                }
-                // found a new field, add to field list
-                if new_field {
-                    merged.fields.push(field.clone());
-                }
-            }
-        }
-
-        Ok(merged)
-    }
-
-    pub fn column_with_name(&self, name: &str) -> Option<(usize, &Field)> {
-        self.fields
-            .iter()
-            .enumerate()
-            .find(|&(_, c)| c.name == name)
-    }
-}
-
-pub type SchemaRef = Arc<Schema>;
 
 impl From<&ArrowDataType> for DataType {
     fn from(dt: &ArrowDataType) -> Self {
@@ -981,7 +968,13 @@ impl From<&ArrowDataType> for DataType {
             ArrowDataType::LargeUtf8 => DataType::Utf8,
             ArrowDataType::Utf8 => DataType::Utf8,
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical,
+            #[cfg(feature = "dtype-categorical")]
+            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None),
+            #[cfg(feature = "dtype-struct")]
+            ArrowDataType::Struct(fields) => {
+                let fields: Vec<Field> = fields.iter().map(|fld| fld.into()).collect();
+                DataType::Struct(fields)
+            }
             ArrowDataType::Extension(name, _, _) if name == "POLARS_EXTENSION_TYPE" => {
                 #[cfg(feature = "object")]
                 {
@@ -1002,33 +995,35 @@ impl From<&ArrowField> for Field {
         Field::new(&f.name, f.data_type().into())
     }
 }
-impl From<&ArrowSchema> for Schema {
-    fn from(a_schema: &ArrowSchema) -> Self {
-        Schema::new(
-            a_schema
-                .fields
-                .iter()
-                .map(|arrow_f| arrow_f.into())
-                .collect(),
-        )
-    }
-}
-impl From<ArrowSchema> for Schema {
-    fn from(a_schema: ArrowSchema) -> Self {
-        (&a_schema).into()
-    }
-}
-
 #[cfg(feature = "private")]
 pub type PlHashMap<K, V> = hashbrown::HashMap<K, V, RandomState>;
 #[cfg(feature = "private")]
 pub type PlHashSet<V> = hashbrown::HashSet<V, RandomState>;
+#[cfg(feature = "private")]
+pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, RandomState>;
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxCa = UInt32Chunked;
+#[cfg(feature = "bigidx")]
+pub type IdxCa = UInt64Chunked;
+pub use polars_arrow::index::{IdxArr, IdxSize};
+
+#[cfg(not(feature = "bigidx"))]
+pub const IDX_DTYPE: DataType = DataType::UInt32;
+#[cfg(feature = "bigidx")]
+pub const IDX_DTYPE: DataType = DataType::UInt64;
+
+#[cfg(not(feature = "bigidx"))]
+pub type IdxType = UInt32Type;
+#[cfg(feature = "bigidx")]
+pub type IdxType = UInt64Type;
 
 #[cfg(test)]
 mod test {
     use super::*;
 
     #[test]
+    #[cfg(feature = "dtype-categorical")]
     fn test_arrow_dtypes_to_polars() {
         let dtypes = [
             (
@@ -1049,7 +1044,7 @@ mod test {
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Microsecond, None),
-                DataType::Datetime(TimeUnit::Nanoseconds, None),
+                DataType::Datetime(TimeUnit::Microseconds, None),
             ),
             (
                 ArrowDataType::Timestamp(ArrowTimeUnit::Millisecond, None),
@@ -1109,7 +1104,7 @@ mod test {
             ),
             (
                 ArrowDataType::Dictionary(IntegerType::UInt32, ArrowDataType::Utf8.into(), false),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1117,7 +1112,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
             (
                 ArrowDataType::Dictionary(
@@ -1125,7 +1120,7 @@ mod test {
                     ArrowDataType::LargeUtf8.into(),
                     false,
                 ),
-                DataType::Categorical,
+                DataType::Categorical(None),
             ),
         ];
 

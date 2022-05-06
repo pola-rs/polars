@@ -1,4 +1,13 @@
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Union, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Mapping,
+    Optional,
+    Sequence,
+    Union,
+    overload,
+)
 
 import numpy as np
 
@@ -19,7 +28,7 @@ else:
 
 
 def from_dict(
-    data: Dict[str, Sequence[Any]],
+    data: Mapping[str, Union[Sequence, Mapping]],
     columns: Optional[Sequence[str]] = None,
 ) -> DataFrame:
     """
@@ -56,7 +65,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    return DataFrame._from_dict(data=data, columns=columns)
+    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore
 
 
 def from_records(
@@ -144,6 +153,7 @@ def from_dicts(dicts: Sequence[Dict[str, Any]]) -> DataFrame:
     return DataFrame._from_dicts(dicts)
 
 
+# Note that we cannot overload because pyarrow has no stubs :(
 def from_arrow(
     a: Union["pa.Table", "pa.Array", "pa.ChunkedArray"], rechunk: bool = True
 ) -> Union[DataFrame, Series]:

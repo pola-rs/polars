@@ -1,15 +1,18 @@
 //! Traits that indicate the allowed arguments in a ChunkedArray::take operation.
 use crate::frame::groupby::GroupsProxyIter;
 use crate::prelude::*;
-use arrow::array::UInt32Array;
 use polars_arrow::array::PolarsArray;
 
 // Utility traits
 pub trait TakeIterator: Iterator<Item = usize> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
+    // a sort of clone
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_>;
 }
 pub trait TakeIteratorNulls: Iterator<Item = Option<usize>> + TrustedLen {
     fn check_bounds(&self, bound: usize) -> Result<()>;
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_>;
 }
 
 unsafe impl TrustedLen for &mut dyn TakeIterator {}
@@ -21,10 +24,18 @@ impl TakeIterator for &mut dyn TakeIterator {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         (**self).check_bounds(bound)
     }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_> {
+        (**self).boxed_clone()
+    }
 }
 impl TakeIteratorNulls for &mut dyn TakeIteratorNulls {
     fn check_bounds(&self, bound: usize) -> Result<()> {
         (**self).check_bounds(bound)
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_> {
+        (**self).boxed_clone()
     }
 }
 
@@ -47,10 +58,14 @@ where
         if inbounds {
             Ok(())
         } else {
-            Err(PolarsError::OutOfBounds(
+            Err(PolarsError::ComputeError(
                 "take indices are out of bounds".into(),
             ))
         }
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIterator + '_> {
+        Box::new(self.clone())
     }
 }
 impl<I> TakeIteratorNulls for I
@@ -71,10 +86,14 @@ where
         if inbounds {
             Ok(())
         } else {
-            Err(PolarsError::OutOfBounds(
+            Err(PolarsError::ComputeError(
                 "take indices are out of bounds".into(),
             ))
         }
+    }
+
+    fn boxed_clone(&self) -> Box<dyn TakeIteratorNulls + '_> {
+        Box::new(self.clone())
     }
 }
 
@@ -84,7 +103,7 @@ where
     I: TakeIterator,
     INulls: TakeIteratorNulls,
 {
-    Array(&'a UInt32Array),
+    Array(&'a IdxArr),
     Iter(I),
     // will return a null where None
     IterNulls(INulls),
@@ -101,7 +120,7 @@ where
             TakeIdx::IterNulls(i) => i.check_bounds(bound),
             TakeIdx::Array(arr) => {
                 let mut inbounds = true;
-                let len = bound as u32;
+                let len = bound as IdxSize;
                 if !arr.has_validity() {
                     for &i in arr.values().as_slice() {
                         if i >= len {
@@ -123,7 +142,7 @@ where
                 if inbounds {
                     Ok(())
                 } else {
-                    Err(PolarsError::OutOfBounds(
+                    Err(PolarsError::ComputeError(
                         "take indices are out of bounds".into(),
                     ))
                 }
@@ -145,8 +164,8 @@ pub type Dummy<T> = std::iter::Once<T>;
 // Unchecked conversions
 
 /// Conversion from UInt32Chunked to Unchecked TakeIdx
-impl<'a> From<&'a UInt32Chunked> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
-    fn from(ca: &'a UInt32Chunked) -> Self {
+impl<'a> From<&'a IdxCa> for TakeIdx<'a, Dummy<usize>, Dummy<Option<usize>>> {
+    fn from(ca: &'a IdxCa) -> Self {
         if ca.chunks.len() == 1 {
             TakeIdx::Array(ca.downcast_iter().next().unwrap())
         } else {
@@ -172,5 +191,36 @@ where
 {
     fn from(iter: I) -> Self {
         TakeIdx::IterNulls(iter)
+    }
+}
+
+#[inline]
+fn to_usize(idx: &IdxSize) -> usize {
+    *idx as usize
+}
+
+/// Conversion from `&[IdxSize]` to Unchecked TakeIdx
+impl<'a> From<&'a [IdxSize]>
+    for TakeIdx<
+        'a,
+        std::iter::Map<std::slice::Iter<'a, IdxSize>, fn(&IdxSize) -> usize>,
+        Dummy<Option<usize>>,
+    >
+{
+    fn from(slice: &'a [IdxSize]) -> Self {
+        TakeIdx::Iter(slice.iter().map(to_usize))
+    }
+}
+
+/// Conversion from `&[IdxSize]` to Unchecked TakeIdx
+impl<'a> From<&'a Vec<IdxSize>>
+    for TakeIdx<
+        'a,
+        std::iter::Map<std::slice::Iter<'a, IdxSize>, fn(&IdxSize) -> usize>,
+        Dummy<Option<usize>>,
+    >
+{
+    fn from(slice: &'a Vec<IdxSize>) -> Self {
+        (&**slice).into()
     }
 }

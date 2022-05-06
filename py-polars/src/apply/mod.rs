@@ -1,9 +1,14 @@
 pub mod dataframe;
 pub mod series;
+
 use crate::prelude::ObjectValue;
+use crate::{PySeries, Wrap};
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
+use polars_core::{export::rayon::prelude::*, POOL};
+use pyo3::types::PyDict;
+use pyo3::{PyAny, PyResult};
 
 pub trait PyArrowPrimitiveType: PolarsNumericType {}
 
@@ -17,6 +22,81 @@ impl PyArrowPrimitiveType for Int32Type {}
 impl PyArrowPrimitiveType for Int64Type {}
 impl PyArrowPrimitiveType for Float32Type {}
 impl PyArrowPrimitiveType for Float64Type {}
+
+fn iterator_to_struct<'a>(
+    it: impl Iterator<Item = Option<&'a PyAny>>,
+    init_null_count: usize,
+    first_value: AnyValue<'a>,
+    name: &str,
+    capacity: usize,
+) -> PyResult<PySeries> {
+    let (vals, flds) = match &first_value {
+        AnyValue::Struct(vals, flds) => (&**vals, *flds),
+        AnyValue::StructOwned(payload) => (&*payload.0, &*payload.1),
+        _ => {
+            return Err(crate::error::ComputeError::new_err(format!(
+                "expected struct got {:?}",
+                first_value
+            )))
+        }
+    };
+
+    let struct_width = vals.len();
+
+    // every item in the struct is kept as its own buffer of anyvalues
+    // so as struct with 2 items: {a, b}
+    // will have
+    // [
+    //      [ a values ]
+    //      [ b values ]
+    // ]
+    let mut items = Vec::with_capacity(vals.len());
+    for item in vals {
+        let mut buf = Vec::with_capacity(capacity);
+        for _ in 0..init_null_count {
+            buf.push(AnyValue::Null);
+        }
+        buf.push(item.clone());
+        items.push(buf);
+    }
+
+    for dict in it {
+        match dict {
+            None => {
+                for field_items in &mut items {
+                    field_items.push(AnyValue::Null);
+                }
+            }
+            Some(dict) => {
+                let dict = dict.downcast::<PyDict>()?;
+                if dict.len() != struct_width {
+                    return Err(crate::error::ComputeError::new_err(
+                        "all tuples must have equal size",
+                    ));
+                }
+                // we ignore the keys of the rest of the dicts
+                // the first item determines the output name
+                for ((_, val), field_items) in dict.iter().zip(&mut items) {
+                    let item = val.extract::<Wrap<AnyValue>>()?;
+                    field_items.push(item.0)
+                }
+            }
+        }
+    }
+
+    let fields = POOL.install(|| {
+        items
+            .par_iter()
+            .zip(flds)
+            .map(|(av, fld)| Series::new(fld.name(), av))
+            .collect::<Vec<_>>()
+    });
+
+    Ok(StructChunked::new(name, &fields)
+        .unwrap()
+        .into_series()
+        .into())
+}
 
 fn iterator_to_primitive<T>(
     it: impl Iterator<Item = Option<T::Native>>,

@@ -1,6 +1,8 @@
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
 use crate::ArrowSchema;
 use dirs::home_dir;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::*;
 use std::path::{Path, PathBuf};
 
 // used by python polars
@@ -15,7 +17,7 @@ pub fn resolve_homedir(path: &Path) -> PathBuf {
     path.into()
 }
 
-#[cfg(any(feature = "ipc", feature = "parquet"))]
+#[cfg(any(feature = "ipc", feature = "parquet", feature = "avro"))]
 pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> ArrowSchema {
     let fields = &schema.fields;
     let fields = projection
@@ -23,6 +25,59 @@ pub(crate) fn apply_projection(schema: &ArrowSchema, projection: &[usize]) -> Ar
         .map(|idx| fields[*idx].clone())
         .collect::<Vec<_>>();
     ArrowSchema::from(fields)
+}
+
+#[cfg(any(feature = "ipc", feature = "avro", feature = "parquet"))]
+pub(crate) fn columns_to_projection(
+    columns: Vec<String>,
+    schema: &ArrowSchema,
+) -> Result<Vec<usize>> {
+    use ahash::AHashMap;
+
+    let err = |column: &str| {
+        let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
+        PolarsError::NotFound(format!(
+            "Unable to get field named \"{}\". Valid fields: {:?}",
+            column, valid_fields
+        ))
+    };
+
+    let mut prj = Vec::with_capacity(columns.len());
+    if columns.len() > 100 {
+        let mut column_names = AHashMap::with_capacity(schema.fields.len());
+        schema.fields.iter().enumerate().for_each(|(i, c)| {
+            column_names.insert(c.name.as_str(), i);
+        });
+
+        for column in columns.iter() {
+            if let Some(&i) = column_names.get(column.as_str()) {
+                prj.push(i)
+            } else {
+                return Err(err(column));
+            }
+        }
+    } else {
+        for column in columns.iter() {
+            let i = schema.try_index_of(column)?;
+            prj.push(i);
+        }
+    }
+
+    Ok(prj)
+}
+
+/// Because of threading every row starts from `0` or from `offset`.
+/// We must correct that so that they are monotonically increasing.
+pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
+    if !dfs.is_empty() {
+        let mut previous = dfs[0].1;
+        for (df, n_read) in &mut dfs[1..] {
+            if let Some(s) = df.get_columns_mut().get_mut(0) {
+                *s = &*s + previous;
+            }
+            previous = *n_read;
+        }
+    }
 }
 
 #[cfg(test)]

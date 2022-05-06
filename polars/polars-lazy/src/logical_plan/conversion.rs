@@ -95,15 +95,24 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
                 falsy: f,
             }
         }
-        Expr::Function {
+        Expr::AnonymousFunction {
             input,
             function,
             output_type,
             options,
-        } => AExpr::Function {
+        } => AExpr::AnonymousFunction {
             input: to_aexprs(input, arena),
             function,
             output_type,
+            options,
+        },
+        Expr::Function {
+            input,
+            function,
+            options,
+        } => AExpr::Function {
+            input: to_aexprs(input, arena),
+            function,
             options,
         },
         Expr::Shift { input, periods } => AExpr::Shift {
@@ -127,13 +136,15 @@ pub(crate) fn to_aexpr(expr: Expr, arena: &mut Arena<AExpr>) -> Node {
             length,
         } => AExpr::Slice {
             input: to_aexpr(*input, arena),
-            offset,
-            length,
+            offset: to_aexpr(*offset, arena),
+            length: to_aexpr(*length, arena),
         },
         Expr::Wildcard => AExpr::Wildcard,
+        Expr::Count => AExpr::Count,
+        Expr::Nth(i) => AExpr::Nth(i),
         Expr::KeepName(_) => panic!("no keep_name expected at this point"),
         Expr::Exclude(_, _) => panic!("no exclude expected at this point"),
-        Expr::SufPreFix { .. } => panic!("no `suffix/prefix` expected at this point"),
+        Expr::RenameAlias { .. } => panic!("no `rename_alias` expected at this point"),
         Expr::Columns { .. } => panic!("no `columns` expected at this point"),
         Expr::DtypeColumn { .. } => panic!("no `dtype-columns` expected at this point"),
     };
@@ -144,17 +155,17 @@ pub(crate) fn to_alp(
     lp: LogicalPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<ALogicalPlan>,
-) -> Node {
+) -> Result<Node> {
     let v = match lp {
         LogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
                 .map(|lp| to_alp(lp, expr_arena, lp_arena))
-                .collect();
+                .collect::<Result<_>>()?;
             ALogicalPlan::Union { inputs, options }
         }
         LogicalPlan::Selection { input, predicate } => {
-            let i = to_alp(*input, expr_arena, lp_arena);
+            let i = to_alp(*input, expr_arena, lp_arena)?;
             let p = to_aexpr(predicate, expr_arena);
             ALogicalPlan::Selection {
                 input: i,
@@ -162,20 +173,18 @@ pub(crate) fn to_alp(
             }
         }
         LogicalPlan::Slice { input, offset, len } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Slice { input, offset, len }
         }
         LogicalPlan::Melt {
             input,
-            id_vars,
-            value_vars,
+            args,
             schema,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Melt {
                 input,
-                id_vars,
-                value_vars,
+                args,
                 schema,
             }
         }
@@ -251,7 +260,7 @@ pub(crate) fn to_alp(
             schema,
         } => {
             let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
-            let i = to_alp(*input, expr_arena, lp_arena);
+            let i = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Projection {
                 expr: exp,
                 input: i,
@@ -264,7 +273,7 @@ pub(crate) fn to_alp(
             schema,
         } => {
             let exp = expr.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
-            let i = to_alp(*input, expr_arena, lp_arena);
+            let i = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::LocalProjection {
                 expr: exp,
                 input: i,
@@ -274,9 +283,9 @@ pub(crate) fn to_alp(
         LogicalPlan::Sort {
             input,
             by_column,
-            reverse,
+            args,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             let by_column = by_column
                 .into_iter()
                 .map(|x| to_aexpr(x, expr_arena))
@@ -284,15 +293,23 @@ pub(crate) fn to_alp(
             ALogicalPlan::Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             }
         }
-        LogicalPlan::Explode { input, columns } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::Explode { input, columns }
+        LogicalPlan::Explode {
+            input,
+            columns,
+            schema,
+        } => {
+            let input = to_alp(*input, expr_arena, lp_arena)?;
+            ALogicalPlan::Explode {
+                input,
+                columns,
+                schema,
+            }
         }
         LogicalPlan::Cache { input } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Cache { input }
         }
         LogicalPlan::Aggregate {
@@ -304,7 +321,7 @@ pub(crate) fn to_alp(
             maintain_order,
             options,
         } => {
-            let i = to_alp(*input, expr_arena, lp_arena);
+            let i = to_alp(*input, expr_arena, lp_arena)?;
             let aggs_new = aggs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
             let keys_new = keys
                 .iter()
@@ -329,8 +346,8 @@ pub(crate) fn to_alp(
             right_on,
             options,
         } => {
-            let i_l = to_alp(*input_left, expr_arena, lp_arena);
-            let i_r = to_alp(*input_right, expr_arena, lp_arena);
+            let input_left = to_alp(*input_left, expr_arena, lp_arena)?;
+            let input_right = to_alp(*input_right, expr_arena, lp_arena)?;
 
             let l_on = left_on
                 .into_iter()
@@ -342,8 +359,8 @@ pub(crate) fn to_alp(
                 .collect();
 
             ALogicalPlan::Join {
-                input_left: i_l,
-                input_right: i_r,
+                input_left,
+                input_right,
                 schema,
                 left_on: l_on,
                 right_on: r_on,
@@ -356,16 +373,16 @@ pub(crate) fn to_alp(
             schema,
         } => {
             let exp = exprs.into_iter().map(|x| to_aexpr(x, expr_arena)).collect();
-            let i = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::HStack {
-                input: i,
+                input,
                 exprs: exp,
                 schema,
             }
         }
         LogicalPlan::Distinct { input, options } => {
-            let i = to_alp(*input, expr_arena, lp_arena);
-            ALogicalPlan::Distinct { input: i, options }
+            let input = to_alp(*input, expr_arena, lp_arena)?;
+            ALogicalPlan::Distinct { input, options }
         }
         LogicalPlan::Udf {
             input,
@@ -373,7 +390,7 @@ pub(crate) fn to_alp(
             options,
             schema,
         } => {
-            let input = to_alp(*input, expr_arena, lp_arena);
+            let input = to_alp(*input, expr_arena, lp_arena)?;
             ALogicalPlan::Udf {
                 input,
                 function,
@@ -381,8 +398,14 @@ pub(crate) fn to_alp(
                 schema,
             }
         }
+        LogicalPlan::Error { err, .. } => {
+            // We just take the error. The LogicalPlan should not be used anymore once this
+            // is taken.
+            let mut err = err.lock();
+            return Err(err.take().unwrap());
+        }
     };
-    lp_arena.add(v)
+    Ok(lp_arena.add(v))
 }
 
 pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
@@ -557,15 +580,24 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 falsy: Box::new(f),
             }
         }
-        AExpr::Function {
+        AExpr::AnonymousFunction {
             input,
             function,
             output_type,
             options,
-        } => Expr::Function {
+        } => Expr::AnonymousFunction {
             input: nodes_to_exprs(&input, expr_arena),
             function,
             output_type,
+            options,
+        },
+        AExpr::Function {
+            input,
+            function,
+            options,
+        } => Expr::Function {
+            input: nodes_to_exprs(&input, expr_arena),
+            function,
             options,
         },
         AExpr::Window {
@@ -590,9 +622,11 @@ pub(crate) fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
             length,
         } => Expr::Slice {
             input: Box::new(node_to_expr(input, expr_arena)),
-            offset,
-            length,
+            offset: Box::new(node_to_expr(offset, expr_arena)),
+            length: Box::new(node_to_expr(length, expr_arena)),
         },
+        AExpr::Count => Expr::Count,
+        AExpr::Nth(i) => Expr::Nth(i),
         AExpr::Wildcard => Expr::Wildcard,
     }
 }
@@ -720,18 +754,26 @@ pub(crate) fn node_to_lp(
         ALogicalPlan::Sort {
             input,
             by_column,
-            reverse,
+            args,
         } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
             LogicalPlan::Sort {
                 input,
                 by_column: nodes_to_exprs(&by_column, expr_arena),
-                reverse,
+                args,
             }
         }
-        ALogicalPlan::Explode { input, columns } => {
+        ALogicalPlan::Explode {
+            input,
+            columns,
+            schema,
+        } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
-            LogicalPlan::Explode { input, columns }
+            LogicalPlan::Explode {
+                input,
+                columns,
+                schema,
+            }
         }
         ALogicalPlan::Cache { input } => {
             let input = Box::new(node_to_lp(input, expr_arena, lp_arena));
@@ -800,15 +842,13 @@ pub(crate) fn node_to_lp(
         }
         ALogicalPlan::Melt {
             input,
-            id_vars,
-            value_vars,
+            args,
             schema,
         } => {
             let input = node_to_lp(input, expr_arena, lp_arena);
             LogicalPlan::Melt {
                 input: Box::new(input),
-                id_vars,
-                value_vars,
+                args,
                 schema,
             }
         }

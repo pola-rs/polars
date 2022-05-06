@@ -17,7 +17,7 @@ impl fmt::Debug for LogicalPlan {
                 options,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -39,7 +39,7 @@ impl fmt::Debug for LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -67,7 +67,7 @@ impl fmt::Debug for LogicalPlan {
                 predicate,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = &options.with_columns {
                     n_columns = format!("{}", columns.len());
@@ -87,7 +87,7 @@ impl fmt::Debug for LogicalPlan {
                 selection,
                 ..
             } => {
-                let total_columns = schema.fields().len();
+                let total_columns = schema.len();
                 let mut n_columns = "*".to_string();
                 if let Some(columns) = projection {
                     n_columns = format!("{}", columns.len());
@@ -101,12 +101,7 @@ impl fmt::Debug for LogicalPlan {
                     f,
                     "DATAFRAME(in-memory): {:?};\n\tproject {}/{} columns\t|\tdetails: {:?};\n\
                     \tselection: {:?}\n\n",
-                    schema
-                        .fields()
-                        .iter()
-                        .map(|f| f.name())
-                        .take(4)
-                        .collect::<Vec<_>>(),
+                    schema.iter_names().take(4).collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
                     projection,
@@ -160,6 +155,7 @@ FROM
                 write!(f, "{:?}\nSLICE[offset: {}, len: {}]", input, offset, len)
             }
             Udf { input, options, .. } => write!(f, "{} \n{:?}", options.fmt_str, input),
+            Error { input, err } => write!(f, "{:?}\n{:?}", err, input),
         }
     }
 }
@@ -173,6 +169,8 @@ impl fmt::Debug for Expr {
                 partition_by,
                 ..
             } => write!(f, "{:?}.over({:?})", function, partition_by),
+            Nth(i) => write!(f, "nth({})", i),
+            Count => write!(f, "count()"),
             IsUnique(expr) => write!(f, "{:?}.unique()", expr),
             Explode(expr) => write!(f, "{:?}.explode()", expr),
             Duplicated(expr) => write!(f, "{:?}.is_duplicate()", expr),
@@ -242,7 +240,7 @@ impl fmt::Debug for Expr {
                 "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
-            Function { input, options, .. } => {
+            AnonymousFunction { input, options, .. } | Function { input, options, .. } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
                 } else {
@@ -254,11 +252,15 @@ impl fmt::Debug for Expr {
                 input,
                 offset,
                 length,
-            } => write!(f, "SLICE {:?} offset: {} len: {}", input, offset, length),
+            } => write!(
+                f,
+                "{:?}.slice(offset={:?}, length={:?})",
+                input, offset, length
+            ),
             Wildcard => write!(f, "*"),
             Exclude(column, names) => write!(f, "{:?}, EXCEPT {:?}", column, names),
             KeepName(e) => write!(f, "KEEP NAME {:?}", e),
-            SufPreFix { expr, .. } => write!(f, "SUF-PREFIX {:?}", expr),
+            RenameAlias { expr, .. } => write!(f, "RENAME_ALIAS {:?}", expr),
             Columns(names) => write!(f, "COLUMNS({:?})", names),
             DtypeColumn(dt) => write!(f, "COLUMN OF DTYPE: {:?}", dt),
         }
@@ -279,7 +281,6 @@ impl Debug for Operator {
             Minus => "-",
             Multiply => "*",
             Divide => "//",
-            #[cfg(feature = "true_div")]
             TrueDivide => "/",
             Modulus => "%",
             And => "&",

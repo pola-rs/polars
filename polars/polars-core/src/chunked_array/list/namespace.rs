@@ -1,8 +1,10 @@
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use crate::series::ops::NullBehavior;
 use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use std::convert::TryFrom;
+use std::fmt::Write;
 
 fn cast_rhs(
     other: &mut [Series],
@@ -51,6 +53,50 @@ fn cast_rhs(
 }
 
 impl ListChunked {
+    /// In case the inner dtype [`DataType::Utf8`], the individual items will be joined into a
+    /// single string separated by `separator`.
+    pub fn lst_join(&self, separator: &str) -> Result<Utf8Chunked> {
+        match self.inner_dtype() {
+            DataType::Utf8 => {
+                // used to amortize heap allocs
+                let mut buf = String::with_capacity(128);
+
+                let mut builder = Utf8ChunkedBuilder::new(
+                    self.name(),
+                    self.len(),
+                    self.get_values_size() + separator.len() * self.len(),
+                );
+
+                self.amortized_iter().for_each(|opt_s| {
+                    let opt_val = opt_s.map(|s| {
+                        // make sure that we don't write values of previous iteration
+                        buf.clear();
+                        let ca = s.as_ref().utf8().unwrap();
+                        let iter = ca.into_iter().map(|opt_v| opt_v.unwrap_or("null"));
+
+                        for val in iter {
+                            buf.write_str(val).unwrap();
+                            buf.write_str(separator).unwrap();
+                        }
+                        // last value should not have a separator, so slice that off
+                        // saturating sub because there might have been nothing written.
+                        &buf[..buf.len().saturating_sub(separator.len())]
+                    });
+                    builder.append_option(opt_val)
+                });
+                Ok(builder.finish())
+            }
+            dt => Err(PolarsError::SchemaMisMatch(
+                format!(
+                    "cannot call lst.join on Series with dtype {:?}.\
+                Inner type must be Utf8",
+                    dt
+                )
+                .into(),
+            )),
+        }
+    }
+
     pub fn lst_max(&self) -> Series {
         self.apply_amortized(|s| s.as_ref().max_as_series())
             .explode()
@@ -92,6 +138,38 @@ impl ListChunked {
         self.try_apply_amortized(|s| s.as_ref().unique())
     }
 
+    pub fn lst_arg_min(&self) -> IdxCa {
+        let mut out: IdxCa = self
+            .amortized_iter()
+            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_min().map(|idx| idx as IdxSize)))
+            .collect_trusted();
+        out.rename(self.name());
+        out
+    }
+
+    pub fn lst_arg_max(&self) -> IdxCa {
+        let mut out: IdxCa = self
+            .amortized_iter()
+            .map(|opt_s| opt_s.and_then(|s| s.as_ref().arg_max().map(|idx| idx as IdxSize)))
+            .collect_trusted();
+        out.rename(self.name());
+        out
+    }
+
+    #[cfg(feature = "diff")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "diff")))]
+    pub fn lst_diff(&self, n: usize, null_behavior: NullBehavior) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().diff(n, null_behavior))
+    }
+
+    pub fn lst_shift(&self, periods: i64) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().shift(periods))
+    }
+
+    pub fn lst_slice(&self, offset: i64, length: usize) -> ListChunked {
+        self.apply_amortized(|s| s.as_ref().slice(offset, length))
+    }
+
     pub fn lst_lengths(&self) -> UInt32Chunked {
         let mut lengths = Vec::with_capacity(self.len());
         self.downcast_iter().for_each(|arr| {
@@ -102,7 +180,7 @@ impl ListChunked {
                 last = *o;
             }
         });
-        UInt32Chunked::new_from_aligned_vec(self.name(), lengths)
+        UInt32Chunked::from_vec(self.name(), lengths)
     }
 
     /// Get the value by index in the sublists.

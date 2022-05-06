@@ -24,10 +24,6 @@ pub trait ChunkAggSeries {
     fn min_as_series(&self) -> Series {
         unimplemented!()
     }
-    /// Get the mean of the ChunkedArray as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        unimplemented!()
-    }
     /// Get the product of the ChunkedArray as a new Series of length 1.
     fn prod_as_series(&self) -> Series {
         unimplemented!()
@@ -167,13 +163,14 @@ fn linear_interpol<T: Float>(bounds: &[Option<T>], idx: i64, float_idx: f64) -> 
 impl<T> ChunkQuantile<f64> for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -243,7 +240,7 @@ where
 impl ChunkQuantile<f32> for Float32Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f32>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -313,7 +310,7 @@ impl ChunkQuantile<f32> for Float32Chunked {
 impl ChunkQuantile<f64> for Float64Chunked {
     fn quantile(&self, quantile: f64, interpol: QuantileInterpolOptions) -> Result<Option<f64>> {
         if !(0.0..=1.0).contains(&quantile) {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "quantile should be between 0.0 and 1.0".into(),
             ));
         }
@@ -382,8 +379,6 @@ impl ChunkQuantile<f64> for Float64Chunked {
 
 impl ChunkQuantile<String> for Utf8Chunked {}
 impl ChunkQuantile<Series> for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkQuantile<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkQuantile<Series> for ObjectChunked<T> {}
 impl ChunkQuantile<bool> for BooleanChunked {}
@@ -440,8 +435,6 @@ impl ChunkVar<f64> for Float64Chunked {
 
 impl ChunkVar<String> for Utf8Chunked {}
 impl ChunkVar<Series> for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkVar<u32> for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> ChunkVar<Series> for ObjectChunked<T> {}
 impl ChunkVar<bool> for BooleanChunked {}
@@ -522,10 +515,6 @@ where
         ca.rename(self.name());
         ca.into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        let val = [self.mean()];
-        Series::new(self.name(), val)
-    }
 
     fn prod_as_series(&self) -> Series {
         let mut prod = None;
@@ -536,7 +525,7 @@ where
                 (Some(p), Some(v)) => prod = Some(p * v),
             }
         }
-        Self::new_from_opt_slice(self.name(), &[prod]).into_series()
+        Self::from_slice_options(self.name(), &[prod]).into_series()
     }
 }
 
@@ -594,16 +583,6 @@ impl VarAggSeries for BooleanChunked {
         Self::full_null(self.name(), 1).into_series()
     }
 }
-#[cfg(feature = "dtype-categorical")]
-impl VarAggSeries for CategoricalChunked {
-    fn var_as_series(&self) -> Series {
-        unimplemented!()
-    }
-
-    fn std_as_series(&self) -> Series {
-        unimplemented!()
-    }
-}
 impl VarAggSeries for ListChunked {
     fn var_as_series(&self) -> Series {
         Self::full_null(self.name(), 1).into_series()
@@ -645,6 +624,7 @@ macro_rules! impl_quantile_as_series {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
+    T::Native: Ord,
     <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
         + compute::aggregate::Sum<T::Native>
         + compute::aggregate::SimdOrd<T::Native>,
@@ -701,20 +681,6 @@ impl QuantileAggSeries for BooleanChunked {
 
     fn median_as_series(&self) -> Series {
         Self::full_null(self.name(), 1).into_series()
-    }
-}
-#[cfg(feature = "dtype-categorical")]
-impl QuantileAggSeries for CategoricalChunked {
-    fn quantile_as_series(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> Result<Series> {
-        unimplemented!()
-    }
-
-    fn median_as_series(&self) -> Series {
-        unimplemented!()
     }
 }
 impl QuantileAggSeries for ListChunked {
@@ -777,9 +743,6 @@ impl ChunkAggSeries for BooleanChunked {
         ca.rename(self.name());
         ca.into_series()
     }
-    fn mean_as_series(&self) -> Series {
-        BooleanChunked::full_null(self.name(), 1).into_series()
-    }
 }
 
 macro_rules! one_null_utf8 {
@@ -800,17 +763,11 @@ impl ChunkAggSeries for Utf8Chunked {
     fn min_as_series(&self) -> Series {
         one_null_utf8!(self)
     }
-    fn mean_as_series(&self) -> Series {
-        one_null_utf8!(self)
-    }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkAggSeries for CategoricalChunked {}
-
 macro_rules! one_null_list {
-    ($self:ident) => {{
-        let mut builder = get_list_builder(&DataType::Null, 0, 1, $self.name());
+    ($self:ident, $dtype: expr) => {{
+        let mut builder = get_list_builder(&$dtype, 0, 1, $self.name());
         builder.append_opt_series(None);
         builder.finish().into_series()
     }};
@@ -818,16 +775,13 @@ macro_rules! one_null_list {
 
 impl ChunkAggSeries for ListChunked {
     fn sum_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn max_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn min_as_series(&self) -> Series {
-        one_null_list!(self)
-    }
-    fn mean_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
 }
 
@@ -853,8 +807,6 @@ where
 }
 
 impl ArgAgg for BooleanChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ArgAgg for CategoricalChunked {}
 impl ArgAgg for Utf8Chunked {}
 impl ArgAgg for ListChunked {}
 
@@ -899,7 +851,7 @@ mod test {
         let ca2 = Float32Chunked::new("b", &[f32::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         let ca1 = Float64Chunked::new("a", &[1.0, f64::NAN]);
-        let ca2 = Float64Chunked::new_from_slice("b", &[f64::NAN, 1.0]);
+        let ca2 = Float64Chunked::from_slice("b", &[f64::NAN, 1.0]);
         assert_eq!(ca1.min(), ca2.min());
         println!("{:?}", (ca1.min(), ca2.min()))
     }
@@ -928,7 +880,7 @@ mod test {
         );
         assert_eq!(ca.median(), Some(4.0));
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,
@@ -969,19 +921,30 @@ mod test {
         let ca = Float32Chunked::new("", &[Some(1.0), Some(2.0), None]);
         assert_eq!(ca.mean().unwrap(), 1.5);
         // all mean_as_series are cast to f64.
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0).unwrap(), 1.5);
+        assert_eq!(
+            ca.into_series()
+                .mean_as_series()
+                .f64()
+                .unwrap()
+                .get(0)
+                .unwrap(),
+            1.5
+        );
         // all null values case
         let ca = Float32Chunked::full_null("", 3);
         assert_eq!(ca.mean(), None);
-        assert_eq!(ca.mean_as_series().f64().unwrap().get(0), None);
+        assert_eq!(
+            ca.into_series().mean_as_series().f64().unwrap().get(0),
+            None
+        );
     }
 
     #[test]
     fn test_quantile_all_null() {
-        let test_f32 = Float32Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_i32 = Int32Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_f64 = Float64Chunked::new_from_opt_slice("", &[None, None, None]);
-        let test_i64 = Int64Chunked::new_from_opt_slice("", &[None, None, None]);
+        let test_f32 = Float32Chunked::from_slice_options("", &[None, None, None]);
+        let test_i32 = Int32Chunked::from_slice_options("", &[None, None, None]);
+        let test_f64 = Float64Chunked::from_slice_options("", &[None, None, None]);
+        let test_i64 = Int64Chunked::from_slice_options("", &[None, None, None]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -1001,10 +964,10 @@ mod test {
 
     #[test]
     fn test_quantile_single_value() {
-        let test_f32 = Float32Chunked::new_from_opt_slice("", &[Some(1.0)]);
-        let test_i32 = Int32Chunked::new_from_opt_slice("", &[Some(1)]);
-        let test_f64 = Float64Chunked::new_from_opt_slice("", &[Some(1.0)]);
-        let test_i64 = Int64Chunked::new_from_opt_slice("", &[Some(1)]);
+        let test_f32 = Float32Chunked::from_slice_options("", &[Some(1.0)]);
+        let test_i32 = Int32Chunked::from_slice_options("", &[Some(1)]);
+        let test_f64 = Float64Chunked::from_slice_options("", &[Some(1.0)]);
+        let test_i64 = Int64Chunked::from_slice_options("", &[Some(1)]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -1025,13 +988,13 @@ mod test {
     #[test]
     fn test_quantile_min_max() {
         let test_f32 =
-            Float32Chunked::new_from_opt_slice("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
+            Float32Chunked::from_slice_options("", &[None, Some(1f32), Some(5f32), Some(1f32)]);
         let test_i32 =
-            Int32Chunked::new_from_opt_slice("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
+            Int32Chunked::from_slice_options("", &[None, Some(1i32), Some(5i32), Some(1i32)]);
         let test_f64 =
-            Float64Chunked::new_from_opt_slice("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
+            Float64Chunked::from_slice_options("", &[None, Some(1f64), Some(5f64), Some(1f64)]);
         let test_i64 =
-            Int64Chunked::new_from_opt_slice("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
+            Int64Chunked::from_slice_options("", &[None, Some(1i64), Some(5i64), Some(1i64)]);
 
         let interpol_options = vec![
             QuantileInterpolOptions::Nearest,
@@ -1226,7 +1189,7 @@ mod test {
             Some(4.6)
         );
 
-        let ca = Float32Chunked::new_from_slice(
+        let ca = Float32Chunked::from_slice(
             "",
             &[
                 0.166189,

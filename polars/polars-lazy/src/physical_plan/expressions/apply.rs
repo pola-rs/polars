@@ -1,9 +1,9 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -23,26 +23,43 @@ impl ApplyExpr {
         groups: &'a GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Vec<AggregationContext<'a>>> {
-        self.inputs
-            .par_iter()
-            .map(|e| e.evaluate_on_groups(df, groups, state))
-            .collect()
+        POOL.install(|| {
+            self.inputs
+                .par_iter()
+                .map(|e| e.evaluate_on_groups(df, groups, state))
+                .collect()
+        })
     }
 
     fn finish_apply_groups<'a>(
         &self,
         mut ac: AggregationContext<'a>,
         ca: ListChunked,
-        all_unit_len: bool,
     ) -> AggregationContext<'a> {
+        let all_unit_len = all_unit_length(&ca);
         if all_unit_len && self.auto_explode {
             ac.with_series(ca.explode().unwrap().into_series(), true);
+            ac.update_groups = UpdateGroups::No;
         } else {
             ac.with_series(ca.into_series(), true);
+            ac.with_update_groups(UpdateGroups::WithSeriesLen);
         }
-        ac.with_all_unit_len(all_unit_len);
-        ac.with_update_groups(UpdateGroups::WithSeriesLen);
         ac
+    }
+}
+
+fn all_unit_length(ca: &ListChunked) -> bool {
+    assert_eq!(ca.chunks().len(), 1);
+    let list_arr = ca.downcast_iter().next().unwrap();
+    let offset = list_arr.offsets().as_slice();
+    (offset[offset.len() - 1] as usize) == list_arr.len() as usize
+}
+
+fn check_map_output_len(input_len: usize, output_len: usize) -> Result<()> {
+    if input_len != output_len {
+        Err(PolarsError::ComputeError("A 'map' functions output length must be equal to that of the input length. Consider using 'apply' in favor of 'map'.".into()))
+    } else {
+        Ok(())
     }
 }
 
@@ -74,51 +91,38 @@ impl PhysicalExpr for ApplyExpr {
         if self.inputs.len() == 1 {
             let mut ac = self.inputs[0].evaluate_on_groups(df, groups, state)?;
 
-            // a unique or a sort
-            let mut update_group_tuples = false;
-
             match self.collect_groups {
                 ApplyOptions::ApplyGroups => {
-                    let mut container = [Default::default()];
                     let name = ac.series().name().to_string();
-
-                    let mut all_unit_len = true;
 
                     let mut ca: ListChunked = ac
                         .aggregated()
                         .list()
                         .unwrap()
-                        .into_iter()
+                        .par_iter()
                         .map(|opt_s| {
                             opt_s.and_then(|s| {
-                                let in_len = s.len();
-                                container[0] = s;
-                                self.function.call_udf(&mut container).ok().map(|s| {
-                                    let len = s.len();
-                                    if len != in_len {
-                                        update_group_tuples = true;
-                                    };
-                                    if len != 1 {
-                                        all_unit_len = false;
-                                    }
-
-                                    s
-                                })
+                                let mut container = [s];
+                                self.function.call_udf(&mut container).ok()
                             })
                         })
                         .collect();
 
                     ca.rename(&name);
-                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
+                    let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
-                    let s = self
-                        .function
-                        .call_udf(&mut [ac.flat_naive().into_owned()])?;
-                    if ac.is_aggregated() {
-                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    // make sure the groups are updated because we are about to throw away
+                    // the series length information
+                    if let UpdateGroups::WithSeriesLen = ac.update_groups {
+                        ac.groups();
                     }
+                    let input = ac.flat_naive().into_owned();
+                    let input_len = input.len();
+                    let s = self.function.call_udf(&mut [input])?;
+
+                    check_map_output_len(input_len, s.len())?;
                     ac.with_series(s, false);
                     Ok(ac)
                 }
@@ -137,11 +141,14 @@ impl PhysicalExpr for ApplyExpr {
                     let name = acs[0].series().name().to_string();
 
                     // aggregate representation of the aggregation contexts
-                    // then unpack the lists and finaly create iterators from this list chunked arrays.
+                    // then unpack the lists and finally create iterators from this list chunked arrays.
                     let lists = acs
                         .iter_mut()
                         .map(|ac| {
-                            let s = ac.aggregated();
+                            let s = match ac.agg_state() {
+                                AggState::AggregatedFlat(s) => s.reshape(&[-1, 1]).unwrap(),
+                                _ => ac.aggregated(),
+                            };
                             s.list().unwrap().clone()
                         })
                         .collect::<Vec<_>>();
@@ -149,7 +156,6 @@ impl PhysicalExpr for ApplyExpr {
 
                     // length of the items to iterate over
                     let len = lists[0].len();
-                    let mut all_unit_len = true;
 
                     let mut ca: ListChunked = (0..len)
                         .map(|_| {
@@ -160,17 +166,12 @@ impl PhysicalExpr for ApplyExpr {
                                     Some(s) => container.push(s),
                                 }
                             }
-                            self.function.call_udf(&mut container).ok().map(|s| {
-                                if s.len() != 1 {
-                                    all_unit_len = false;
-                                }
-                                s
-                            })
+                            self.function.call_udf(&mut container).ok()
                         })
                         .collect_trusted();
                     ca.rename(&name);
                     let ac = acs.pop().unwrap();
-                    let ac = self.finish_apply_groups(ac, ca, all_unit_len);
+                    let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
@@ -179,9 +180,14 @@ impl PhysicalExpr for ApplyExpr {
                         .map(|ac| ac.flat_naive().into_owned())
                         .collect::<Vec<_>>();
 
+                    let input_len = s.iter().map(|s| s.len()).max().unwrap();
                     let s = self.function.call_udf(&mut s)?;
+                    check_map_output_len(input_len, s.len())?;
+
                     let mut ac = acs.pop().unwrap();
-                    ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    if ac.is_aggregated() {
+                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
+                    }
                     ac.with_series(s, false);
                     Ok(ac)
                 }
@@ -198,22 +204,5 @@ impl PhysicalExpr for ApplyExpr {
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.inputs[0].to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for ApplyExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(Some(s))
     }
 }

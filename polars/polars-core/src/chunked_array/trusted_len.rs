@@ -2,9 +2,8 @@ use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 use arrow::bitmap::MutableBitmap;
-use arrow::buffer::Buffer;
 use polars_arrow::bit_util::unset_bit_raw;
-use polars_arrow::trusted_len::FromIteratorReversed;
+use polars_arrow::trusted_len::{FromIteratorReversed, PushUnchecked};
 use std::borrow::Borrow;
 
 impl<T> FromTrustedLenIterator<Option<T::Native>> for ChunkedArray<T>
@@ -17,7 +16,7 @@ where
         let arr = unsafe {
             PrimitiveArray::from_trusted_len_iter_unchecked(iter).to(T::get_dtype().to_arrow())
         };
-        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -30,10 +29,10 @@ where
     // know we don't have null values.
     fn from_iter_trusted_length<I: IntoIterator<Item = T::Native>>(iter: I) -> Self {
         let iter = iter.into_iter();
-        let values = unsafe { Buffer::from_trusted_len_iter_unchecked(iter) };
+        let values = unsafe { Vec::from_trusted_len_iter_unchecked(iter) }.into();
         let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), values, None);
 
-        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+        NoNull::new(ChunkedArray::from_chunks("", vec![Arc::new(arr)]))
     }
 }
 
@@ -73,7 +72,7 @@ where
             vals.into(),
             Some(validity.into()),
         );
-        ChunkedArray::new_from_chunks("", vec![Arc::new(arr)])
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -96,7 +95,7 @@ where
             vals.set_len(size)
         }
         let arr = PrimitiveArray::from_data(T::get_dtype().to_arrow(), vals.into(), None);
-        NoNull::new(ChunkedArray::new_from_chunks("", vec![Arc::new(arr)]))
+        NoNull::new(ChunkedArray::from_chunks("", vec![Arc::new(arr)]))
     }
 }
 
@@ -110,11 +109,8 @@ where
     }
 }
 
-impl<Ptr> FromTrustedLenIterator<Option<Ptr>> for ListChunked
-where
-    Ptr: Borrow<Series>,
-{
-    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Ptr>>>(iter: I) -> Self {
+impl FromTrustedLenIterator<Option<Series>> for ListChunked {
+    fn from_iter_trusted_length<I: IntoIterator<Item = Option<Series>>>(iter: I) -> Self {
         let iter = iter.into_iter();
         iter.collect()
     }
@@ -128,7 +124,7 @@ impl FromTrustedLenIterator<Option<bool>> for ChunkedArray<BooleanType> {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
 
-        Self::new_from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Arc::new(arr)])
     }
 }
 
@@ -140,7 +136,7 @@ impl FromTrustedLenIterator<bool> for BooleanChunked {
         let iter = iter.into_iter();
         let arr: BooleanArray = iter.collect_trusted();
 
-        Self::new_from_chunks("", vec![Arc::new(arr)])
+        Self::from_chunks("", vec![Arc::new(arr)])
     }
 }
 

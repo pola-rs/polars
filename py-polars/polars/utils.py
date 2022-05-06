@@ -1,6 +1,8 @@
 import ctypes
+import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
@@ -63,13 +65,13 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
     """
     if tu == "ns":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
+    elif tu == "us":
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     elif tu == "ms":
         return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
     if tu is None:
-        if in_nanoseconds_window(dt):
-            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e9)
-        else:
-            return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e3)
+        # python has us precision
+        return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1e6)
     else:
         raise ValueError("expected on of {'ns', 'ms'}")
 
@@ -77,6 +79,8 @@ def _datetime_to_pl_timestamp(dt: datetime, tu: Optional[str]) -> int:
 def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
     if tu == "ns":
         return int(td.total_seconds() * 1e9)
+    elif tu == "us":
+        return int(td.total_seconds() * 1e6)
     elif tu == "ms":
         return int(td.total_seconds() * 1e3)
     if tu is None:
@@ -85,7 +89,7 @@ def _timedelta_to_pl_timedelta(td: timedelta, tu: Optional[str] = None) -> int:
         else:
             return int(td.total_seconds() * 1e3)
     else:
-        raise ValueError("expected one of {'ns', 'ms'}")
+        raise ValueError("expected one of {'ns', 'us, 'ms'}")
 
 
 def _date_to_pl_date(d: date) -> int:
@@ -138,15 +142,43 @@ def handle_projection_columns(
     return projection, columns  # type: ignore
 
 
+def _to_python_time(value: int) -> time:
+    value = value // 1_000
+    microsecond = value
+    seconds = (microsecond // 1000_000) % 60
+    minutes = (microsecond // (1000_000 * 60)) % 60
+    hours = (microsecond // (1000_000 * 60 * 60)) % 24
+
+    microsecond = microsecond % seconds * 1000_000
+
+    return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
+
+
 def _to_python_timedelta(
     value: Union[int, float], tu: Optional[str] = "ns"
 ) -> timedelta:
     if tu == "ns":
         return timedelta(microseconds=value // 1e3)
+    elif tu == "us":
+        return timedelta(microseconds=value)
     elif tu == "ms":
         return timedelta(milliseconds=value)
     else:
         raise ValueError(f"time unit: {tu} not expected")
+
+
+def _prepare_row_count_args(
+    row_count_name: Optional[str] = None,
+    row_count_offset: int = 0,
+) -> Optional[Tuple[str, int]]:
+
+    if row_count_name is not None:
+        return (row_count_name, row_count_offset)
+    else:
+        return None
+
+
+EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 
 def _to_python_datetime(
@@ -160,7 +192,9 @@ def _to_python_datetime(
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
-            return datetime.utcfromtimestamp(value / 1_000_000_000)
+            return EPOCH + timedelta(microseconds=value / 1000)
+        if tu == "us":
+            return EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
             return datetime.utcfromtimestamp(value / 1_000)
@@ -181,3 +215,10 @@ def _in_notebook() -> bool:
     except AttributeError:
         return False
     return True
+
+
+def format_path(path: Union[str, Path]) -> str:
+    """
+    Returns a string path, expanding the home directory if present.
+    """
+    return os.path.expanduser(path)

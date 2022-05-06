@@ -1,6 +1,10 @@
 use crate::logical_plan::Context;
+use crate::prelude::iterator::ArenaExprIter;
 use crate::prelude::*;
-use crate::utils::{aexpr_to_root_names, aexpr_to_root_nodes, check_input_node, has_aexpr};
+use crate::utils::{
+    aexpr_assign_renamed_root, aexpr_to_root_names, aexpr_to_root_nodes, check_input_node,
+    has_aexpr,
+};
 use polars_core::{datatypes::PlHashSet, prelude::*};
 
 fn init_vec() -> Vec<Node> {
@@ -40,7 +44,7 @@ fn split_acc_projections(
     expr_arena: &mut Arena<AExpr>,
 ) -> (Vec<Node>, Vec<Node>, PlHashSet<Arc<str>>) {
     // If node above has as many columns as the projection there is nothing to pushdown.
-    if down_schema.fields().len() == acc_projections.len() {
+    if down_schema.len() == acc_projections.len() {
         let local_projections = acc_projections;
         (vec![], local_projections, PlHashSet::new())
     } else {
@@ -90,15 +94,28 @@ fn update_scan_schema(
     acc_projections: &[Node],
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
-) -> Result<Schema> {
-    let mut new_fields = Vec::with_capacity(acc_projections.len());
+    // this is only needed for parsers that sort the projections
+    // currently these are:
+    // sorting parsers: csv and ipc,
+    // non-sorting: parquet
+    sort_projections: bool,
+) -> Schema {
+    let mut new_schema = Schema::with_capacity(acc_projections.len());
+    let mut new_cols = Vec::with_capacity(acc_projections.len());
     for node in acc_projections.iter() {
         for name in aexpr_to_root_names(*node, expr_arena) {
-            let field = schema.field_with_name(&*name)?;
-            new_fields.push(field.clone())
+            let item = schema.get_full(&*name).unwrap();
+            new_cols.push(item);
         }
     }
-    Ok(Schema::new(new_fields))
+    // make sure that the projections are sorted by the schema.
+    if sort_projections {
+        new_cols.sort_unstable_by_key(|item| item.0);
+    }
+    for item in new_cols {
+        new_schema.with_column(item.1.clone(), item.2.clone())
+    }
+    new_schema
 }
 
 pub(crate) struct ProjectionPushDown {}
@@ -150,7 +167,7 @@ impl ProjectionPushDown {
         pushed_at_least_one
     }
 
-    /// Helper method. This pushes down current node and assigns the result to this node.
+    /// This pushes down current node and assigns the result to this node.
     fn pushdown_and_assign(
         &self,
         input: Node,
@@ -171,6 +188,34 @@ impl ProjectionPushDown {
         )?;
         lp_arena.replace(input, lp);
         Ok(())
+    }
+
+    /// This pushes down the projection that are validated
+    /// that they can be done successful at the schema above
+    /// The result is assigned to this node.
+    fn pushdown_and_assign_check_schema(
+        &self,
+        input: Node,
+        acc_projections: Vec<Node>,
+        projections_seen: usize,
+        lp_arena: &mut Arena<ALogicalPlan>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> Result<Vec<Node>> {
+        let alp = lp_arena.take(input);
+        let down_schema = alp.schema(lp_arena);
+        let (acc_projections, local_projections, names) =
+            split_acc_projections(acc_projections, down_schema, expr_arena);
+
+        let lp = self.push_down(
+            alp,
+            acc_projections,
+            names,
+            projections_seen,
+            lp_arena,
+            expr_arena,
+        )?;
+        lp_arena.replace(input, lp);
+        Ok(local_projections)
     }
 
     /// Projection pushdown optimizer
@@ -211,14 +256,16 @@ impl ProjectionPushDown {
                     //
                     // In this query, bar cannot pass this projection, as it would not exist in DF.
                     if !acc_projections.is_empty() {
-                        if let AExpr::Alias(_, name) = expr_arena.get(*e) {
-                            if projected_names.remove(name) {
-                                acc_projections = acc_projections
-                                    .into_iter()
-                                    .filter(|expr| {
-                                        !aexpr_to_root_names(*expr, expr_arena).contains(name)
-                                    })
-                                    .collect();
+                        for (_, ae) in (&*expr_arena).iter(*e) {
+                            if let AExpr::Alias(_, name) = ae {
+                                if projected_names.remove(name) {
+                                    acc_projections = acc_projections
+                                        .into_iter()
+                                        .filter(|expr| {
+                                            !aexpr_to_root_names(*expr, expr_arena).contains(name)
+                                        })
+                                        .collect();
+                                }
                             }
                         }
                     }
@@ -246,15 +293,15 @@ impl ProjectionPushDown {
                 // the projections should all be done at the latest projection node to keep the same schema order
                 if projections_seen == 0 {
                     let schema = lp.schema(lp_arena);
-                    for expr in expr {
+                    for node in expr {
                         // Due to the pushdown, a lot of projections cannot be done anymore at the final
                         // node and should be skipped
                         if expr_arena
-                            .get(expr)
+                            .get(node)
                             .to_field(schema, Context::Default, expr_arena)
                             .is_ok()
                         {
-                            local_projection.push(expr);
+                            local_projection.push(node);
                         }
                     }
                     // only aliases should be projected locally in the rest of the projections.
@@ -299,7 +346,12 @@ impl ProjectionPushDown {
             } => {
                 let mut projection = None;
                 if !acc_projections.is_empty() {
-                    schema = Arc::new(update_scan_schema(&acc_projections, expr_arena, &*schema)?);
+                    schema = Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                        false,
+                    ));
                     projection = Some(acc_projections);
                 }
                 let lp = DataFrameScan {
@@ -327,7 +379,8 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                        true,
+                    )))
                 };
                 options.with_columns = with_columns;
 
@@ -359,7 +412,8 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                        false,
+                    )))
                 };
                 options.with_columns = with_columns;
 
@@ -391,7 +445,8 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                    )?))
+                        true,
+                    )))
                 };
 
                 let lp = CsvScan {
@@ -407,7 +462,7 @@ impl ProjectionPushDown {
             Sort {
                 input,
                 by_column,
-                reverse,
+                args,
             } => {
                 if !acc_projections.is_empty() {
                     // Make sure that the column(s) used for the sort is projected
@@ -436,10 +491,14 @@ impl ProjectionPushDown {
                 Ok(Sort {
                     input,
                     by_column,
-                    reverse,
+                    args,
                 })
             }
-            Explode { input, columns } => {
+            Explode {
+                input,
+                columns,
+                schema,
+            } => {
                 columns.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
@@ -456,7 +515,11 @@ impl ProjectionPushDown {
                     lp_arena,
                     expr_arena,
                 )?;
-                Ok(Explode { input, columns })
+                Ok(Explode {
+                    input,
+                    columns,
+                    schema,
+                })
             }
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
@@ -501,12 +564,7 @@ impl ProjectionPushDown {
                 )?;
                 Ok(Selection { predicate, input })
             }
-            Melt {
-                input,
-                id_vars,
-                value_vars,
-                ..
-            } => {
+            Melt { input, args, .. } => {
                 let (mut acc_projections, mut local_projections, names) = split_acc_projections(
                     acc_projections,
                     lp_arena.get(input).schema(lp_arena),
@@ -518,7 +576,7 @@ impl ProjectionPushDown {
                 }
 
                 // make sure that the requested columns are projected
-                id_vars.iter().for_each(|name| {
+                args.id_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -526,7 +584,7 @@ impl ProjectionPushDown {
                         expr_arena,
                     )
                 });
-                value_vars.iter().for_each(|name| {
+                args.value_vars.iter().for_each(|name| {
                     add_str_to_accumulated(
                         name,
                         &mut acc_projections,
@@ -544,8 +602,7 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder =
-                    ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(id_vars, value_vars);
+                let builder = ALogicalPlanBuilder::new(input, expr_arena, lp_arena).melt(args);
                 Ok(self.finish_node(local_projections, builder))
             }
             Aggregate {
@@ -718,13 +775,7 @@ impl ProjectionPushDown {
                                 if names_right.insert(Arc::from(downwards_name)) {
                                     pushdown_right.push(downwards_name_column);
                                 }
-
-                                // locally we project and alias
-                                let projection = expr_arena.add(AExpr::Alias(
-                                    downwards_name_column,
-                                    Arc::from(format!("{}{}", downwards_name, suffix)),
-                                ));
-                                local_projection.push(projection);
+                                local_projection.push(proj);
                             }
                         } else if add_local {
                             // always also do the projection locally, because the join columns may not be
@@ -758,12 +809,42 @@ impl ProjectionPushDown {
                     expr_arena,
                 )?;
 
-                let builder = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena).join(
-                    input_right,
-                    left_on,
-                    right_on,
-                    options,
-                );
+                // Because we do a projection pushdown
+                // We may influence the suffixes.
+                // For instance if a join would have created a schema
+                //
+                // "foo", "foo_right"
+                //
+                // but we only project the "foo_right" column, the join will not produce
+                // a "name_right" because we did not project its left name duplicate "foo"
+                //
+                // The code below checks if can do the suffixed projections on the schema that
+                // we have after the join. If we cannot then we modify the projection:
+                //
+                // col("foo_right")  to col("foo").alias("foo_right")
+                let suffix = options.suffix.clone();
+
+                let alp = ALogicalPlanBuilder::new(input_left, expr_arena, lp_arena)
+                    .join(input_right, left_on, right_on, options)
+                    .build();
+                let schema_after_join = alp.schema(lp_arena);
+
+                for proj in &mut local_projection {
+                    for name in aexpr_to_root_names(*proj, expr_arena) {
+                        if name.contains(suffix.as_ref()) && schema_after_join.get(&*name).is_none()
+                        {
+                            let new_name = &name.as_ref()[..name.len() - suffix.len()];
+
+                            let renamed =
+                                aexpr_assign_renamed_root(*proj, expr_arena, &*name, new_name);
+
+                            let aliased = expr_arena.add(AExpr::Alias(renamed, name));
+                            *proj = aliased;
+                        }
+                    }
+                }
+                let root = lp_arena.add(alp);
+                let builder = ALogicalPlanBuilder::new(root, expr_arena, lp_arena);
                 Ok(self.finish_node(local_projection, builder))
             }
             HStack { input, exprs, .. } => {
@@ -805,22 +886,39 @@ impl ProjectionPushDown {
                 options,
                 schema,
             } => {
-                if options.projection_pd {
-                    self.pushdown_and_assign(
-                        input,
-                        acc_projections,
-                        projected_names,
-                        projections_seen,
-                        lp_arena,
-                        expr_arena,
-                    )?;
-                }
-                Ok(Udf {
+                let lp = Udf {
                     input,
                     function,
                     options,
                     schema,
-                })
+                };
+                if options.projection_pd {
+                    let acc_projection_len = acc_projections.len();
+                    let local_projections = self.pushdown_and_assign_check_schema(
+                        input,
+                        acc_projections,
+                        projections_seen,
+                        lp_arena,
+                        expr_arena,
+                    )?;
+                    if local_projections.is_empty() {
+                        Ok(lp)
+                    } else {
+                        // if we would project, we would remove pushed down predicates
+                        if local_projections.len() < acc_projection_len {
+                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                                .with_columns(local_projections)
+                                .build())
+                        // all projections are local
+                        } else {
+                            Ok(ALogicalPlanBuilder::from_lp(lp, expr_arena, lp_arena)
+                                .project(local_projections)
+                                .build())
+                        }
+                    }
+                } else {
+                    Ok(lp)
+                }
             }
             // Slice and Cache have only inputs and exprs, so we can use same logic.
             lp @ Slice { .. } | lp @ Cache { .. } | lp @ Union { .. } => {

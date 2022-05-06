@@ -67,9 +67,9 @@ where
         let mut offset = 0;
         self.downcast_iter().for_each(|arr| {
             if let Some(validity) = arr.validity() {
-                let slice = validity.as_slice().0;
+                let (slice, byte_offset, _) = validity.as_slice();
                 (0..validity.len())
-                    .map(|i| unsafe { get_bit_unchecked(slice, i) })
+                    .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
                     .zip(&mut hashes[offset..])
                     .for_each(|(valid, h)| {
                         *h = [null_h, *h][valid as usize];
@@ -98,9 +98,9 @@ where
                     }),
                 _ => {
                     let validity = arr.validity().unwrap();
-                    let slice = validity.as_slice().0;
+                    let (slice, byte_offset, _) = validity.as_slice();
                     (0..validity.len())
-                        .map(|i| unsafe { get_bit_unchecked(slice, i) })
+                        .map(|i| unsafe { get_bit_unchecked(slice, i + byte_offset) })
                         .zip(&mut hashes[offset..])
                         .zip(arr.values().as_slice())
                         .for_each(|((valid, h), l)| {
@@ -109,19 +109,6 @@ where
                                 *h,
                             )
                         });
-
-                    // arr
-                    //     .iter()
-                    //     .zip(&mut hashes[offset..])
-                    //     .for_each(|(opt_v, h)| match opt_v {
-                    //         Some(v) => {
-                    //             let l = T::Native::get_hash(v, &random_state);
-                    //             *h = boost_hash_combine(l, *h)
-                    //         }
-                    //         None => {
-                    //             *h = boost_hash_combine(null_h, *h);
-                    //         }
-                    //     })
                 }
             }
             offset += arr.len();
@@ -200,8 +187,6 @@ impl VecHash for Float64Chunked {
     }
 }
 
-impl VecHash for ListChunked {}
-
 #[cfg(feature = "object")]
 impl<T> VecHash for ObjectChunked<T>
 where
@@ -246,18 +231,36 @@ pub(crate) trait AsU64 {
 }
 
 impl AsU64 for u32 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self as u64
     }
 }
 
 impl AsU64 for u64 {
+    #[inline]
     fn as_u64(self) -> u64 {
         self
     }
 }
 
+impl AsU64 for i32 {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        let asu32: u32 = unsafe { std::mem::transmute(self) };
+        asu32 as u64
+    }
+}
+
+impl AsU64 for i64 {
+    #[inline]
+    fn as_u64(self) -> u64 {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl AsU64 for Option<u32> {
+    #[inline]
     fn as_u64(self) -> u64 {
         match self {
             Some(v) => v as u64,
@@ -268,12 +271,14 @@ impl AsU64 for Option<u32> {
 }
 
 impl AsU64 for Option<u64> {
+    #[inline]
     fn as_u64(self) -> u64 {
         self.unwrap_or(u64::MAX >> 2)
     }
 }
 
 impl AsU64 for [u8; 9] {
+    #[inline]
     fn as_u64(self) -> u64 {
         // the last byte includes the null information.
         // that one is skipped. Worst thing that could happen is unbalanced partition.
@@ -282,12 +287,14 @@ impl AsU64 for [u8; 9] {
 }
 const BUILD_HASHER: RandomState = RandomState::with_seeds(0, 0, 0, 0);
 impl AsU64 for [u8; 17] {
+    #[inline]
     fn as_u64(self) -> u64 {
         <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
 }
 
 impl AsU64 for [u8; 13] {
+    #[inline]
     fn as_u64(self) -> u64 {
         <[u8]>::get_hash(&self, &BUILD_HASHER)
     }
@@ -336,7 +343,7 @@ pub type IdBuildHasher = BuildHasherDefault<IdHasher>;
 /// accidental quadratic behavior. So do not use an Identity function!
 pub(crate) struct IdxHash {
     // idx in row of Series, DataFrame
-    pub(crate) idx: u32,
+    pub(crate) idx: IdxSize,
     // precomputed hash of T
     hash: u64,
 }
@@ -349,7 +356,7 @@ impl Hash for IdxHash {
 
 impl IdxHash {
     #[inline]
-    pub(crate) fn new(idx: u32, hash: u64) -> Self {
+    pub(crate) fn new(idx: IdxSize, hash: u64) -> Self {
         IdxHash { idx, hash }
     }
 }
@@ -396,7 +403,7 @@ pub(crate) fn this_partition(h: u64, thread_no: u64, n_partitions: u64) -> bool 
 
 pub(crate) fn prepare_hashed_relation_threaded<T, I>(
     iters: Vec<I>,
-) -> Vec<HashMap<T, (bool, Vec<u32>), RandomState>>
+) -> Vec<HashMap<T, (bool, Vec<IdxSize>), RandomState>>
 where
     I: Iterator<Item = T> + Send + TrustedLen,
     T: Send + Hash + Eq + Sync + Copy,
@@ -414,7 +421,7 @@ where
             let build_hasher = build_hasher.clone();
             let hashes_and_keys = &hashes_and_keys;
             let partition_no = partition_no as u64;
-            let mut hash_tbl: HashMap<T, (bool, Vec<u32>), RandomState> =
+            let mut hash_tbl: HashMap<T, (bool, Vec<IdxSize>), RandomState> =
                 HashMap::with_hasher(build_hasher);
 
             let n_threads = n_partitions as u64;
@@ -425,7 +432,7 @@ where
                     .iter()
                     .enumerate()
                     .for_each(|(idx, (h, k))| {
-                        let idx = idx as u32;
+                        let idx = idx as IdxSize;
                         // partition hashes by thread no.
                         // So only a part of the hashes go to this hashmap
                         if this_partition(*h, partition_no, n_threads) {
@@ -447,7 +454,7 @@ where
                         }
                     });
 
-                offset += len as u32;
+                offset += len as IdxSize;
             }
             hash_tbl
         })
@@ -527,5 +534,5 @@ pub(crate) fn df_rows_to_hashes(
         hashes.into(),
         None,
     )) as ArrayRef];
-    (UInt64Chunked::new_from_chunks("", chunks), build_hasher)
+    (UInt64Chunked::from_chunks("", chunks), build_hasher)
 }

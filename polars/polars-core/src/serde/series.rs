@@ -25,32 +25,37 @@ impl Serialize for Series {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.f64() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.date() {
-            ca.serialize(serializer)
-        } else if let Ok(ca) = self.datetime() {
-            let ca = ca
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                .unwrap();
-            let ca = ca.datetime().unwrap();
-            ca.serialize(serializer)
         } else if let Ok(ca) = self.utf8() {
             ca.serialize(serializer)
         } else if let Ok(ca) = self.bool() {
             ca.serialize(serializer)
-        } else if let Ok(ca) = self.categorical() {
-            #[cfg(feature = "dtype-categorical")]
-            {
-                ca.serialize(serializer)
-            }
-            #[cfg(not(feature = "dtype-categorical"))]
-            {
-                panic!("activate dtype-categorical");
-            }
         } else if let Ok(ca) = self.list() {
             ca.serialize(serializer)
         } else {
-            // cast small integers to i32
-            self.cast(&DataType::Int32).unwrap().serialize(serializer)
+            match self.dtype() {
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => {
+                    let ca = self.date().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-datetime")]
+                DataType::Datetime(_, _) => {
+                    let s = self
+                        .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
+                        .unwrap();
+                    let ca = s.datetime().unwrap();
+                    ca.serialize(serializer)
+                }
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(_) => {
+                    let ca = self.categorical().unwrap();
+                    ca.serialize(serializer)
+                }
+                _ => {
+                    // cast small integers to i32
+                    self.cast(&DataType::Int32).unwrap().serialize(serializer)
+                }
+            }
         }
     }
 }
@@ -147,7 +152,7 @@ impl<'de> Deserialize<'de> for Series {
                     DeDataType::Datetime => {
                         let values: Vec<Option<i64>> = map.next_value()?;
                         Ok(Series::new(&name, values)
-                            .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                            .cast(&DataType::Datetime(TimeUnit::Microseconds, None))
                             .unwrap())
                     }
                     DeDataType::Boolean => {

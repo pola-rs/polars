@@ -4,8 +4,6 @@ use crate::prelude::*;
 use arrow::array::*;
 use polars_arrow::is_valid::IsValid;
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 use std::sync::Arc;
 
 macro_rules! impl_take_random_get {
@@ -93,19 +91,6 @@ impl TakeRandom for BooleanChunked {
         // Safety:
         // Out of bounds is checked and downcast is of correct type
         unsafe { impl_take_random_get!(self, index, BooleanArray) }
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl TakeRandom for CategoricalChunked {
-    type Item = u32;
-
-    fn get(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get(index)
-    }
-
-    unsafe fn get_unchecked(&self, index: usize) -> Option<Self::Item> {
-        self.deref().get_unchecked(index)
     }
 }
 

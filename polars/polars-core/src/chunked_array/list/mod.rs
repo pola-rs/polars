@@ -1,6 +1,7 @@
 //! Special list utility methods
 mod iterator;
 #[cfg(feature = "list")]
+#[cfg_attr(docsrs, doc(cfg(feature = "list")))]
 pub mod namespace;
 
 use crate::prelude::*;

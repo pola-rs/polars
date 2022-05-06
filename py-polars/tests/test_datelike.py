@@ -1,6 +1,9 @@
-from datetime import date, datetime, timedelta
+import io
+import typing
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
+import pandas as pd
 import pyarrow as pa
 import pytest
 from test_series import verify_series_and_expr_api
@@ -78,14 +81,14 @@ def test_diff_datetime() -> None:
             [
                 pl.col("timestamp").str.strptime(pl.Date, fmt="%Y-%m-%d"),
             ]
-        ).with_columns([pl.col("timestamp").diff().over("char")])
+        ).with_columns([pl.col("timestamp").diff().list().over("char")])
     )["timestamp"]
     assert out[0] == out[1]
 
 
 def test_timestamp() -> None:
     a = pl.Series("a", [a * 1000_000 for a in [10000, 20000, 30000]], dtype=pl.Datetime)
-    assert a.dt.timestamp() == [10000, 20000, 30000]
+    assert a.dt.timestamp("ms") == [10000, 20000, 30000]
     out = a.dt.to_python_datetime()
     assert isinstance(out[0], datetime)
     assert a.dt.min() == out[0]
@@ -170,7 +173,7 @@ def test_to_list() -> None:
         pl.Datetime
     )
     out = s.to_list()
-    assert out[0] == datetime(1970, 1, 1, 0, 2, 3, 543000)
+    assert out[0] == datetime(1970, 1, 2, 10, 19, 3)
 
 
 def test_rows() -> None:
@@ -198,7 +201,7 @@ def test_to_numpy() -> None:
     assert str(s0.to_numpy()) == "['2308-04-02' '2746-02-20' '1973-05-28']"
     assert (
         str(s1.to_numpy()[:2])
-        == "['2021-01-02T03:04:05.000000000' '2021-02-03T04:05:06.000000000']"
+        == "['2021-01-02T03:04:05.000000' '2021-02-03T04:05:06.000000']"
     )
     assert (
         str(s2.to_numpy()[:2])
@@ -479,3 +482,394 @@ def test_upsample() -> None:
     )
 
     assert up.frame_equal(expected)
+
+
+def test_microseconds_accuracy() -> None:
+    timestamps = [
+        datetime(2600, 1, 1, 0, 0, 0, 123456),
+        datetime(2800, 1, 1, 0, 0, 0, 456789),
+    ]
+    a = pa.Table.from_arrays(
+        arrays=[timestamps, [128, 256]],
+        schema=pa.schema(
+            [
+                ("timestamp", pa.timestamp("us")),
+                ("value", pa.int16()),
+            ]
+        ),
+    )
+
+    assert pl.from_arrow(a)["timestamp"].to_list() == timestamps  # type: ignore
+
+
+def test_cast_time_units() -> None:
+    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+    dates_in_ns = np.array([978307200000000000, 981022089000000000])
+
+    assert dates.dt.cast_time_unit("ns").cast(int).to_list() == list(dates_in_ns)
+    assert dates.dt.cast_time_unit("us").cast(int).to_list() == list(
+        dates_in_ns // 1_000
+    )
+    assert dates.dt.cast_time_unit("ms").cast(int).to_list() == list(
+        dates_in_ns // 1_000_000
+    )
+
+
+def test_read_utc_times_parquet() -> None:
+    df = pd.DataFrame(
+        data={
+            "Timestamp": pd.date_range(
+                "2022-01-01T00:00+00:00", "2022-01-01T10:00+00:00", freq="H"
+            )
+        }
+    )
+    f = io.BytesIO()
+    df.to_parquet(f)
+    f.seek(0)
+    df_in = pl.read_parquet(f)
+    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
+
+
+def test_epoch() -> None:
+    dates = pl.Series("dates", [datetime(2001, 1, 1), datetime(2001, 2, 1, 10, 8, 9)])
+
+    for unit in ["ns", "us", "ms"]:
+        assert dates.dt.epoch(unit).series_equal(dates.dt.timestamp(unit))
+
+    assert dates.dt.epoch("s").series_equal(dates.dt.timestamp("ms") // 1000)
+    assert dates.dt.epoch("d").series_equal(
+        (dates.dt.timestamp("ms") // (1000 * 3600 * 24)).cast(pl.Int32)
+    )
+
+
+def test_default_negative_every_offset_dynamic_groupby() -> None:
+    # 2791
+    dts = [
+        datetime(2020, 1, 1),
+        datetime(2020, 1, 2),
+        datetime(2020, 2, 1),
+        datetime(2020, 3, 1),
+    ]
+    df = pl.DataFrame({"dt": dts, "idx": range(len(dts))})
+    out = df.groupby_dynamic(index_column="dt", every="1mo", closed="right").agg(
+        pl.col("idx")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "dt": [
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 1, 1, 0, 0),
+                datetime(2020, 3, 1, 0, 0),
+            ],
+            "idx": [[0], [1, 2], [3]],
+        }
+    )
+    assert out.frame_equal(expected)
+
+
+def test_strptime_dates_datetimes() -> None:
+    s = pl.Series("date", ["2021-04-22", "2022-01-04 00:00:00"])
+    assert s.str.strptime(pl.Datetime).to_list() == [
+        datetime(2021, 4, 22, 0, 0),
+        datetime(2022, 1, 4, 0, 0),
+    ]
+
+
+def test_asof_join_tolerance_grouper() -> None:
+    from datetime import date
+
+    df1 = pl.DataFrame({"date": [date(2020, 1, 5), date(2020, 1, 10)], "by": [1, 1]})
+    df2 = pl.DataFrame(
+        {
+            "date": [date(2020, 1, 5), date(2020, 1, 6)],
+            "by": [1, 1],
+            "values": [100, 200],
+        }
+    )
+
+    out = df1.join_asof(df2, by="by", on="date", tolerance="3d")
+
+    expected = pl.DataFrame(
+        {
+            "date": [date(2020, 1, 5), date(2020, 1, 10)],
+            "by": [1, 1],
+            "values": [100, None],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+
+def test_duration_function() -> None:
+    df = pl.DataFrame(
+        {
+            "datetime": [datetime(2022, 1, 1), datetime(2022, 1, 2)],
+            "add": [1, 2],
+        }
+    )
+
+    out = df.select(
+        [
+            (pl.col("datetime") + pl.duration(weeks="add")).alias("add_weeks"),
+            (pl.col("datetime") + pl.duration(days="add")).alias("add_days"),
+            (pl.col("datetime") + pl.duration(seconds="add")).alias("add_seconds"),
+            (pl.col("datetime") + pl.duration(milliseconds="add")).alias(
+                "add_milliseconds"
+            ),
+            (pl.col("datetime") + pl.duration(hours="add")).alias("add_hours"),
+        ]
+    )
+
+    expected = pl.DataFrame(
+        {
+            "add_weeks": [datetime(2022, 1, 8), datetime(2022, 1, 16)],
+            "add_days": [datetime(2022, 1, 2), datetime(2022, 1, 4)],
+            "add_seconds": [
+                datetime(2022, 1, 1, second=1),
+                datetime(2022, 1, 2, second=2),
+            ],
+            "add_milliseconds": [
+                datetime(2022, 1, 1, microsecond=1000),
+                datetime(2022, 1, 2, microsecond=2000),
+            ],
+            "add_hours": [datetime(2022, 1, 1, hour=1), datetime(2022, 1, 2, hour=2)],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+
+def test_rolling_groupby_by_argument() -> None:
+    df = pl.DataFrame({"times": range(10), "groups": [1] * 4 + [2] * 6})
+
+    out = df.groupby_rolling("times", "5i", by=["groups"]).agg(
+        pl.col("times").list().alias("agg_list")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "groups": [1, 1, 1, 1, 2, 2, 2, 2, 2, 2],
+            "times": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "agg_list": [
+                [0],
+                [0, 1],
+                [0, 1, 2],
+                [0, 1, 2, 3],
+                [4],
+                [4, 5],
+                [4, 5, 6],
+                [4, 5, 6, 7],
+                [4, 5, 6, 7, 8],
+                [5, 6, 7, 8, 9],
+            ],
+        }
+    )
+
+    assert out.frame_equal(expected)
+
+
+def test_groupby_rolling_mean_3020() -> None:
+    df = pl.DataFrame(
+        {
+            "Date": [
+                "1998-04-12",
+                "1998-04-19",
+                "1998-04-26",
+                "1998-05-03",
+                "1998-05-10",
+                "1998-05-17",
+                "1998-05-24",
+            ],
+            "val": range(7),
+        }
+    ).with_column(pl.col("Date").str.strptime(pl.Date))
+    assert (
+        df.groupby_rolling(index_column="Date", period="1w")
+        .agg(pl.col("val").mean().alias("val_mean"))
+        .frame_equal(
+            pl.DataFrame(
+                {
+                    "Date": [
+                        date(1998, 4, 12),
+                        date(1998, 4, 19),
+                        date(1998, 4, 26),
+                        date(1998, 5, 3),
+                        date(1998, 5, 10),
+                        date(1998, 5, 17),
+                        date(1998, 5, 24),
+                    ],
+                    "val_mean": [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+                }
+            )
+        )
+    )
+
+
+def test_asof_join() -> None:
+    fmt = "%F %T%.3f"
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.023
+2016-05-25 13:30:00.030
+2016-05-25 13:30:00.041
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.049
+2016-05-25 13:30:00.072
+2016-05-25 13:30:00.075""".split(
+        "\n"
+    )
+
+    ticker = """GOOG
+MSFT
+MSFT
+MSFT
+GOOG
+AAPL
+GOOG
+MSFT""".split(
+        "\n"
+    )
+
+    quotes = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [720.5, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+        }
+    )
+
+    dates = """2016-05-25 13:30:00.023
+2016-05-25 13:30:00.038
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048
+2016-05-25 13:30:00.048""".split(
+        "\n"
+    )
+
+    ticker = """MSFT
+MSFT
+GOOG
+GOOG
+AAPL""".split(
+        "\n"
+    )
+
+    trades = pl.DataFrame(
+        {
+            "dates": pl.Series(dates).str.strptime(pl.Datetime, fmt=fmt),
+            "ticker": ticker,
+            "bid": [51.95, 51.95, 720.77, 720.92, 98.0],
+        }
+    )
+
+    out = trades.join_asof(quotes, on="dates", strategy="backward")
+    assert out.columns == ["dates", "ticker", "bid", "ticker_right", "bid_right"]
+    assert (out["dates"].cast(int) / 1000).to_list() == [
+        1464183000023,
+        1464183000038,
+        1464183000048,
+        1464183000048,
+        1464183000048,
+    ]
+    assert trades.join_asof(quotes, on="dates", strategy="forward")[
+        "bid_right"
+    ].to_list() == [720.5, 51.99, 720.5, 720.5, 720.5]
+
+    out = trades.join_asof(quotes, on="dates", by="ticker")
+    assert out["bid_right"].to_list() == [51.95, 51.97, 720.5, 720.5, None]
+
+    out = quotes.join_asof(trades, on="dates", by="ticker")
+    assert out["bid_right"].to_list() == [
+        None,
+        51.95,
+        51.95,
+        51.95,
+        720.92,
+        98.0,
+        720.92,
+        51.95,
+    ]
+    assert quotes.join_asof(trades, on="dates", strategy="backward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, 51.95, 98.0, 98.0, None, None]
+    assert quotes.join_asof(trades, on="dates", strategy="forward", tolerance="5ms")[
+        "bid_right"
+    ].to_list() == [51.95, 51.95, None, None, 720.77, None, None, None]
+
+
+def test_lambda_with_python_datetime_return_type() -> None:
+    df = pl.DataFrame({"timestamp": [1284286794, 1234567890]})
+
+    assert df.with_column(
+        pl.col("timestamp").apply(lambda x: datetime(2010, 9, 12)).alias("my_date_time")
+    )["my_date_time"].to_list() == [
+        datetime(2010, 9, 12),
+        datetime(2010, 9, 12),
+    ]
+
+
+def test_timelike_init() -> None:
+    durations = [timedelta(days=1), timedelta(days=2)]
+    dates = [date(2022, 1, 1), date(2022, 1, 2)]
+    datetimes = [datetime(2022, 1, 1), datetime(2022, 1, 2)]
+
+    for ts in [durations, dates, datetimes]:
+        s = pl.Series(ts)
+        assert s.to_list() == ts
+
+
+def test_duration_filter() -> None:
+    date_df = pl.DataFrame(
+        {
+            "start_date": [date(2022, 1, 1), date(2022, 1, 1), date(2022, 1, 1)],
+            "end_date": [date(2022, 1, 7), date(2022, 2, 20), date(2023, 1, 1)],
+        }
+    ).with_column((pl.col("end_date") - pl.col("start_date")).alias("time_passed"))
+
+    assert date_df.filter(pl.col("time_passed") < timedelta(days=30)).shape[0] == 1
+    assert date_df.filter(pl.col("time_passed") >= timedelta(days=30)).shape[0] == 2
+
+
+def test_agg_logical() -> None:
+    dates = [date(2001, 1, 1), date(2002, 1, 1)]
+    s = pl.Series(dates)
+    assert s.max() == dates[1]
+    assert s.min() == dates[0]
+
+
+@typing.no_type_check
+def test_from_time_arrow() -> None:
+    times = pa.array([10, 20, 30], type=pa.time32("s"))
+    times_table = pa.table([times], names=["times"])
+
+    assert pl.from_arrow(times_table).to_series().to_list() == [
+        time(0, 0, 10),
+        time(0, 0, 20),
+        time(0, 0, 30),
+    ]
+
+
+def test_datetime_strptime_patterns() -> None:
+    # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "09-05-2019" "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 1
+    assert s[0] is None

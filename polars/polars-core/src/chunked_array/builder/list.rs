@@ -197,8 +197,10 @@ impl ListUtf8ChunkedBuilder {
         }
     }
 
-    #[inline]
-    pub fn append_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_trusted_len_iter<'a, I: Iterator<Item = Option<&'a str>> + TrustedLen>(
+        &mut self,
+        iter: I,
+    ) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -210,7 +212,16 @@ impl ListUtf8ChunkedBuilder {
         self.builder.try_push_valid().unwrap();
     }
 
-    #[inline]
+    pub fn append_values_iter<'a, I: Iterator<Item = &'a str>>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        values.extend_values(iter);
+        self.builder.try_push_valid().unwrap();
+    }
+
     pub(crate) fn append(&mut self, ca: &Utf8Chunked) {
         let value_builder = self.builder.mut_values();
         value_builder.try_extend(ca).unwrap();
@@ -234,7 +245,6 @@ impl ListBuilderTrait for ListUtf8ChunkedBuilder {
         self.builder.push_null();
     }
 
-    #[inline]
     fn append_series(&mut self, s: &Series) {
         if s.is_empty() {
             self.fast_explode = false;
@@ -360,13 +370,15 @@ pub fn get_list_builder(
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
+    pub dtype: DataType,
 }
 
 impl<'a> AnonymousListBuilder<'a> {
-    pub fn new(name: &str, capacity: usize) -> Self {
+    pub fn new(name: &str, capacity: usize, dtype: DataType) -> Self {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
+            dtype,
         }
     }
 
@@ -379,17 +391,44 @@ impl<'a> AnonymousListBuilder<'a> {
         }
     }
 
+    pub fn append_opt_array(&mut self, opt_s: Option<&'a dyn Array>) {
+        match opt_s {
+            Some(s) => self.append_array(s),
+            None => {
+                self.append_null();
+            }
+        }
+    }
+
+    pub fn append_array(&mut self, arr: &'a dyn Array) {
+        self.builder.push(arr)
+    }
+
     pub fn append_null(&mut self) {
         self.builder.push_null();
     }
 
     pub fn append_series(&mut self, s: &'a Series) {
-        assert_eq!(s.chunks().len(), 1);
-        self.builder.push(s.chunks()[0].as_ref())
+        match s.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => self.builder.push(&**s.array_ref(0)),
+            _ => {
+                self.builder.push_multiple(s.chunks());
+            }
+        }
     }
 
     pub fn finish(self) -> ListChunked {
-        let arr = self.builder.finish().unwrap();
-        ListChunked::new_from_chunks(&self.name, vec![Arc::new(arr)])
+        if self.builder.is_empty() {
+            ListChunked::full_null_with_dtype(&self.name, 0, &self.dtype)
+        } else {
+            let arr = self
+                .builder
+                .finish(Some(&self.dtype.to_physical().to_arrow()))
+                .unwrap();
+            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+            ca.field = Arc::new(Field::new(&self.name, DataType::List(Box::new(self.dtype))));
+            ca
+        }
     }
 }

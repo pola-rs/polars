@@ -1,14 +1,27 @@
 use crate::prelude::*;
+use arrow::bitmap::Bitmap;
 use arrow::{array::*, bitmap::MutableBitmap, buffer::Buffer};
 use polars_arrow::array::PolarsArray;
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::prelude::{FromDataUtf8, ValueSize};
 use std::convert::TryFrom;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 pub(crate) trait ExplodeByOffsets {
     fn explode_by_offsets(&self, offsets: &[i64]) -> Series;
+}
+
+unsafe fn unset_nulls(
+    start: usize,
+    last: usize,
+    validity_values: &Bitmap,
+    nulls: &mut Vec<usize>,
+    empty_row_idx: &[usize],
+) {
+    for i in start..last {
+        if !validity_values.get_bit_unchecked(i) {
+            nulls.push(i + empty_row_idx.len());
+        }
+    }
 }
 
 impl<T> ExplodeByOffsets for ChunkedArray<T>
@@ -26,6 +39,7 @@ where
 
         let mut start = offsets[0] as usize;
         let mut last = start;
+
         // we check all the offsets and in the case a consecutive offset is the same,
         // e.g. 0, 1, 4, 4, 6
         // the 4 4, means that that is an empty row.
@@ -45,7 +59,12 @@ where
                 let o = o as usize;
                 if o == last {
                     if start != last {
-                        new_values.extend_from_slice(&values[start..last])
+                        new_values.extend_from_slice(&values[start..last]);
+                        // Safety:
+                        // we are in bounds
+                        unsafe {
+                            unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx)
+                        }
                     }
 
                     empty_row_idx.push(o + empty_row_idx.len());
@@ -54,12 +73,11 @@ where
                 }
                 last = o;
             }
+
             // final null check
-            for i in start..last {
-                if unsafe { !validity_values.get_bit_unchecked(i) } {
-                    nulls.push(i + empty_row_idx.len());
-                }
-            }
+            // Safety:
+            // we are in bounds
+            unsafe { unset_nulls(start, last, validity_values, &mut nulls, &empty_row_idx) }
         } else {
             for &o in &offsets[1..] {
                 let o = o as usize;
@@ -180,29 +198,17 @@ impl ExplodeByOffsets for Utf8Chunked {
         builder.finish().into()
     }
 }
-#[cfg(feature = "dtype-categorical")]
-impl ExplodeByOffsets for CategoricalChunked {
-    #[inline(never)]
-    fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
-        let ca: CategoricalChunked = self
-            .deref()
-            .explode_by_offsets(offsets)
-            .cast(&DataType::Categorical)
-            .unwrap()
-            .categorical()
-            .unwrap()
-            .clone();
-        ca.set_state(self).into()
-    }
-}
 
 /// Convert Arrow array offsets to indexes of the original list
-pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<u32> {
+pub(crate) fn offsets_to_indexes(offsets: &[i64], capacity: usize) -> Vec<IdxSize> {
+    if offsets.is_empty() {
+        return vec![];
+    }
     let mut idx = Vec::with_capacity(capacity);
 
     let mut count = 0;
     let mut last_idx = 0;
-    for &offset in offsets.iter().skip(1) {
+    for &offset in &offsets[1..] {
         while count < offset {
             count += 1;
             idx.push(last_idx)
@@ -228,6 +234,22 @@ impl ChunkExplode for ListChunked {
         let offsets_buf = listarr.offsets().clone();
         let offsets = listarr.offsets().as_slice();
         let mut values = listarr.values().clone();
+
+        // all empty
+        if offsets[offsets.len() - 1] == 0 {
+            // Safety: empty dtype is correct
+            return unsafe {
+                Ok((
+                    Series::from_chunks_and_dtype_unchecked(
+                        self.name(),
+                        vec![values],
+                        &self.inner_dtype(),
+                    ),
+                    Buffer::from_slice(&[]),
+                ))
+            };
+        }
+
         if !offsets.is_empty() {
             let offset = offsets[0];
             values = Arc::from(values.slice(offset as usize, offsets[offsets.len() - 1] as usize));
@@ -260,11 +282,9 @@ impl ChunkExplode for ListChunked {
         // make sure we restore the logical type
         match self.inner_dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
-                let ca = s.u32().unwrap();
-                let mut ca = ca.clone();
-                ca.categorical_map = self.categorical_map.clone();
-                s = ca.cast(&DataType::Categorical)?;
+            DataType::Categorical(rev_map) => {
+                let cats = s.u32().unwrap().clone();
+                s = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.unwrap()).into_series();
             }
             #[cfg(feature = "dtype-date")]
             DataType::Date => s = s.into_date(),
@@ -372,11 +392,54 @@ mod test {
     }
 
     #[test]
+    fn test_explode_list_nulls() -> Result<()> {
+        let ca = Int32Chunked::from_slice_options("", &[None, Some(1), Some(2)]);
+        let offsets = &[0, 3, 3];
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.i32().unwrap()),
+            &[None, Some(1), Some(2), None]
+        );
+
+        let ca = BooleanChunked::from_slice_options("", &[None, Some(true), Some(false)]);
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.bool().unwrap()),
+            &[None, Some(true), Some(false), None]
+        );
+
+        let ca = Utf8Chunked::from_slice_options("", &[None, Some("b"), Some("c")]);
+        let out = ca.explode_by_offsets(offsets);
+        assert_eq!(
+            Vec::from(out.utf8().unwrap()),
+            &[None, Some("b"), Some("c"), None]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_explode_empty_list() -> Result<()> {
+        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a");
+
+        let vals: [i32; 0] = [];
+
+        builder.append_series(&Series::new("", &vals));
+        let ca = builder.finish();
+
+        // normal explode
+        let exploded = ca.explode()?;
+        assert_eq!(exploded.len(), 0);
+        assert_eq!(exploded.dtype(), &DataType::Int32);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_explode_empty_list_slot() -> Result<()> {
         // primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
         builder.append_series(&Series::new("", &[1i32, 2]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[3i32]));
 
         let ca = builder.finish();
@@ -389,9 +452,9 @@ mod test {
         // more primitive
         let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
         builder.append_series(&Series::new("", &[1i32]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[2i32]));
-        builder.append_series(&Int32Chunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[3, 4i32]));
 
         let ca = builder.finish();
@@ -405,18 +468,15 @@ mod test {
         let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a");
         builder.append_series(&Series::new("", &["abc"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["de"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
         builder.append_series(&Series::new("", &["fg"]));
         builder.append_series(
-            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::new_from_slice("", &[])
-                .into_series(),
+            &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
         );
 
         let ca = builder.finish();
@@ -429,9 +489,9 @@ mod test {
         // boolean
         let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a");
         builder.append_series(&Series::new("", &[true]));
-        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[false]));
-        builder.append_series(&BooleanChunked::new_from_slice("", &[]).into_series());
+        builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[true, true]));
 
         let ca = builder.finish();

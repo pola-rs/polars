@@ -18,7 +18,7 @@ fn f_regex_extract<'a>(reg: &Regex, input: &'a str, group_index: usize) -> Optio
 impl Utf8Chunked {
     /// Get the length of the string values.
     pub fn str_lengths(&self) -> UInt32Chunked {
-        self.apply_kernel_cast(string_lengths)
+        self.apply_kernel_cast(&string_lengths)
     }
 
     /// Check if strings contain a regex pattern
@@ -81,6 +81,6 @@ impl Utf8Chunked {
             .map(|c| Ok(substring(c, start, &length)?.into()))
             .collect::<arrow::error::Result<_>>()?;
 
-        Ok(Self::new_from_chunks(self.name(), chunks))
+        Ok(Self::from_chunks(self.name(), chunks))
     }
 }

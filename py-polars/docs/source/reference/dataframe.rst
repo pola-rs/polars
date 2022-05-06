@@ -29,6 +29,7 @@ Conversion
    :toctree: api/
 
     DataFrame.to_arrow
+    DataFrame.to_avro
     DataFrame.to_json
     DataFrame.to_pandas
     DataFrame.to_csv
@@ -36,6 +37,8 @@ Conversion
     DataFrame.to_parquet
     DataFrame.to_numpy
     DataFrame.to_dict
+    DataFrame.to_dicts
+    DataFrame.to_struct
 
 Aggregation
 -----------
@@ -58,6 +61,7 @@ Descriptive stats
    :toctree: api/
 
     DataFrame.describe
+    DataFrame.estimated_size
     DataFrame.is_duplicated
     DataFrame.is_unique
     DataFrame.n_chunks
@@ -107,25 +111,28 @@ Manipulation/ selection
     DataFrame.with_column
     DataFrame.hstack
     DataFrame.vstack
+    DataFrame.extend
     DataFrame.groupby
     DataFrame.groupby_dynamic
     DataFrame.groupby_rolling
     DataFrame.select
     DataFrame.with_columns
-    DataFrame.with_column_renamed
     DataFrame.sample
     DataFrame.row
     DataFrame.rows
     DataFrame.to_dummies
-    DataFrame.drop_duplicates
     DataFrame.distinct
+    DataFrame.unique
     DataFrame.shrink_to_fit
     DataFrame.rechunk
     DataFrame.pipe
     DataFrame.join
+    DataFrame.join_asof
     DataFrame.interpolate
     DataFrame.transpose
+    DataFrame.partition_by
     DataFrame.upsample
+    DataFrame.unnest
 
 Apply
 -----
@@ -173,6 +180,8 @@ This namespace comes available by calling `DataFrame.groupby(..)`.
 Pivot
 -----
 This namespace comes available by calling `DataFrame.groupby(..).pivot`
+
+*Note that this API is deprecated in favor of `DataFrame.pivot`*
 
 .. currentmodule:: polars.internals.frame
 

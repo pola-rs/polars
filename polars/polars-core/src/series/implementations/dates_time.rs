@@ -11,10 +11,10 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
+use super::*;
 use crate::chunked_array::{
-    comparison::*,
     ops::{explode::ExplodeByOffsets, ToBitRepr},
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
@@ -57,23 +57,8 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            #[cfg(feature = "asof_join")]
-            fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                let other = other.to_physical_repr();
-                self.0.deref().join_asof(&other)
-            }
-
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.deref_mut().set_sorted(reverse)
-            }
-
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
             }
 
             #[cfg(feature = "zip_with")]
@@ -92,44 +77,20 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
+            fn agg_min(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_min(groups).$into_logical().into_series()
             }
 
-            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_min(groups)
-                    .map(|ca| ca.$into_logical().into_series())
+            fn agg_max(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_max(groups).$into_logical().into_series()
             }
 
-            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_max(groups)
-                    .map(|ca| ca.$into_logical().into_series())
-            }
-
-            fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
-                self.0.agg_list(groups).map(|s| {
-                    s.cast(&DataType::List(Box::new(self.dtype().clone())))
-                        .unwrap()
-                })
+                self.0
+                    .agg_list(groups)
+                    .cast(&DataType::List(Box::new(self.dtype().clone())))
+                    .unwrap()
             }
 
             fn agg_quantile(
@@ -137,34 +98,21 @@ macro_rules! impl_dyn_series {
                 groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> Option<Series> {
+            ) -> Series {
                 self.0
                     .agg_quantile(groups, quantile, interpol)
-                    .map(|s| s.$into_logical().into_series())
+                    .$into_logical()
+                    .into_series()
             }
 
-            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_median(groups)
-                    .map(|s| s.$into_logical().into_series())
+            fn agg_median(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_median(groups).$into_logical().into_series()
             }
 
-            fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_inner(&other.as_ref().as_ref())
-            }
-            fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_left(&other.as_ref().as_ref())
-            }
-            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-                let other = other.to_physical_repr().into_owned();
-                self.0.hash_join_outer(&other.as_ref().as_ref())
-            }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<u32>, Option<u32>)],
+                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
             ) -> Series {
                 let right_column = right_column.to_physical_repr().into_owned();
                 self.0
@@ -220,12 +168,22 @@ macro_rules! impl_dyn_series {
                 self.0.group_tuples(multithreaded, sorted)
             }
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
                 self.0.deref().argsort_multiple(by, reverse)
             }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
+            fn is_sorted(&self) -> IsSorted {
+                if self.0.is_sorted() {
+                    IsSorted::Ascending
+                } else if self.0.is_sorted_reverse() {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Not
+                }
+            }
+
             #[cfg(feature = "interpolate")]
             fn interpolate(&self) -> Series {
                 self.0.interpolate().$into_logical().into_series()
@@ -250,6 +208,7 @@ macro_rules! impl_dyn_series {
                 self.0.shrink_to_fit()
             }
 
+            #[cfg(feature = "dtype-time")]
             fn time(&self) -> Result<&TimeChunked> {
                 if matches!(self.0.dtype(), DataType::Time) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const TimeChunked)) }
@@ -265,6 +224,7 @@ macro_rules! impl_dyn_series {
                 }
             }
 
+            #[cfg(feature = "dtype-date")]
             fn date(&self) -> Result<&DateChunked> {
                 if matches!(self.0.dtype(), DataType::Date) {
                     unsafe { Ok(&*(self as *const dyn SeriesTrait as *const DateChunked)) }
@@ -298,12 +258,31 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
-                    let other = other.to_physical_repr().into_owned();
-                    self.0.append(other.as_ref().as_ref());
+                    let other = other.to_physical_repr();
+                    // 3 refs
+                    // ref Cow
+                    // ref SeriesTrait
+                    // ref ChunkedArray
+                    self.0.append(other.as_ref().as_ref().as_ref());
                     Ok(())
                 } else {
                     Err(PolarsError::SchemaMisMatch(
                         "cannot append Series; data types don't match".into(),
+                    ))
+                }
+            }
+            fn extend(&mut self, other: &Series) -> Result<()> {
+                if self.0.dtype() == other.dtype() {
+                    // 3 refs
+                    // ref Cow
+                    // ref SeriesTrait
+                    // ref ChunkedArray
+                    let other = other.to_physical_repr();
+                    self.0.extend(other.as_ref().as_ref().as_ref());
+                    Ok(())
+                } else {
+                    Err(PolarsError::SchemaMisMatch(
+                        "cannot extend Series; data types don't match".into(),
                     ))
                 }
             }
@@ -314,7 +293,19 @@ macro_rules! impl_dyn_series {
                     .map(|ca| ca.$into_logical().into_series())
             }
 
-            fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                let ca = self.0.deref().take_chunked_unchecked(by);
+                ca.$into_logical().into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                let ca = self.0.deref().take_opt_chunked_unchecked(by);
+                ca.$into_logical().into_series()
+            }
+
+            fn take(&self, indices: &IdxCa) -> Result<Series> {
                 ChunkTake::take(self.0.deref(), indices.into())
                     .map(|ca| ca.$into_logical().into_series())
             }
@@ -334,7 +325,7 @@ macro_rules! impl_dyn_series {
                     .into_series()
             }
 
-            unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+            unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
                 Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
                     .$into_logical()
                     .into_series())
@@ -368,38 +359,17 @@ macro_rules! impl_dyn_series {
             }
 
             fn cast(&self, data_type: &DataType) -> Result<Series> {
-                const NS_IN_DAY: i64 = 86400000_000_000;
-                const MS_IN_DAY: i64 = 86400000;
-                use DataType::*;
-                let ca = match (self.dtype(), data_type) {
-                    #[cfg(feature = "dtype-datetime")]
-                    (Date, Datetime(tu, tz)) => {
-                        let casted = self.0.cast(data_type)?;
-                        let casted = casted.datetime().unwrap();
-                        match tu {
-                            TimeUnit::Nanoseconds => {
-                                return Ok((casted.deref() * NS_IN_DAY)
-                                    .into_datetime(*tu, tz.clone())
-                                    .into_series());
-                            }
-                            TimeUnit::Milliseconds => {
-                                return Ok((casted.deref() * MS_IN_DAY)
-                                    .into_datetime(*tu, tz.clone())
-                                    .into_series());
-                            }
-                        }
-                    }
-                    _ => Cow::Borrowed(self.0.deref()),
-                };
-                ca.cast(data_type)
-            }
-
-            fn to_dummies(&self) -> Result<DataFrame> {
-                self.0.to_dummies()
-            }
-
-            fn value_counts(&self) -> Result<DataFrame> {
-                self.0.value_counts()
+                match (self.dtype(), data_type) {
+                    (DataType::Date, DataType::Utf8) => Ok(self
+                        .0
+                        .clone()
+                        .into_series()
+                        .date()
+                        .unwrap()
+                        .strftime("%Y-%m-%d")
+                        .into_series()),
+                    _ => self.0.cast(data_type),
+                }
             }
 
             fn get(&self, index: usize) -> AnyValue {
@@ -407,6 +377,7 @@ macro_rules! impl_dyn_series {
             }
 
             #[inline]
+            #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index).$into_logical()
             }
@@ -415,8 +386,8 @@ macro_rules! impl_dyn_series {
                 self.0.sort_with(options).$into_logical().into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> UInt32Chunked {
-                self.0.argsort(reverse)
+            fn argsort(&self, options: SortOptions) -> IdxCa {
+                self.0.argsort(options)
             }
 
             fn null_count(&self) -> usize {
@@ -435,7 +406,7 @@ macro_rules! impl_dyn_series {
                 self.0.n_unique()
             }
 
-            fn arg_unique(&self) -> Result<UInt32Chunked> {
+            fn arg_unique(&self) -> Result<IdxCa> {
                 self.0.arg_unique()
             }
 
@@ -493,12 +464,6 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> Series {
                 self.0.min_as_series().$into_logical()
             }
-            fn mean_as_series(&self) -> Series {
-                Int32Chunked::full_null(self.name(), 1)
-                    .cast(self.dtype())
-                    .unwrap()
-                    .into()
-            }
             fn median_as_series(&self) -> Series {
                 Int32Chunked::full_null(self.name(), 1)
                     .cast(self.dtype())
@@ -554,7 +519,7 @@ macro_rules! impl_dyn_series {
                 self.0.is_in(other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
                 match self.0.dtype() {
                     DataType::Date => self
                         .0
@@ -628,9 +593,7 @@ mod test {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-        let l = s
-            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into()))
-            .unwrap();
+        let l = s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into()));
 
         match l.dtype() {
             DataType::List(inner) => {
@@ -676,7 +639,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(all(feature = "dtype-datetime", feature = "dtype-duration"))]
     fn test_datelike_methods() -> Result<()> {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
@@ -695,7 +658,7 @@ mod test {
     }
 
     #[test]
-    #[cfg(feature = "dtype-datetime")]
+    #[cfg(all(feature = "dtype-datetime", feature = "dtype-duration"))]
     fn test_arithmetic_dispatch() {
         let s = Int64Chunked::new("", &[1, 2, 3])
             .into_datetime(TimeUnit::Nanoseconds, None)

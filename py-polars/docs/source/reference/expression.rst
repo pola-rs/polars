@@ -40,6 +40,7 @@ These functions can be used as expression and sometimes also in eager contexts.
    groups
    quantile
    arange
+   repeat
    argsort_by
    concat_str
    concat_list
@@ -47,7 +48,9 @@ These functions can be used as expression and sometimes also in eager contexts.
    when
    exclude
    datetime
+   duration
    date
+   struct
 
 Constructor
 -----------
@@ -65,6 +68,7 @@ Attributes
    Expr.arr
    Expr.dt
    Expr.str
+   Expr.cat
 
 
 Aggregation
@@ -148,6 +152,7 @@ Computations
     Expr.pct_change
     Expr.skew
     Expr.kurtosis
+    Expr.entropy
     Expr.sqrt
     Expr.sin
     Expr.cos
@@ -158,6 +163,10 @@ Computations
     Expr.log
     Expr.log10
     Expr.exp
+    Expr.sign
+    Expr.unique_counts
+    Expr.value_counts
+    Expr.null_count
 
 Manipulation/ selection
 -----------------------
@@ -176,6 +185,7 @@ Manipulation/ selection
     Expr.cast
     Expr.sort
     Expr.arg_sort
+    Expr.argsort
     Expr.sort_by
     Expr.take
     Expr.shift
@@ -191,15 +201,17 @@ Manipulation/ selection
     Expr.tail
     Expr.reinterpret
     Expr.drop_nulls
+    Expr.drop_nans
     Expr.interpolate
-    Expr.argsort
+    Expr.arg_sort
     Expr.clip
     Expr.lower_bound
     Expr.upper_bound
     Expr.reshape
     Expr.to_physical
     Expr.shuffle
-    Expr.extend
+    Expr.sample
+    Expr.extend_constant
 
 Column names
 ------------
@@ -207,7 +219,7 @@ Column names
 
    A wildcard `col("*")`/`pl.all()` selects all columns in a DataFrame.
 
-   >>> df.select(col("*"))
+   >>> df.select(pl.all())
 
 .. autosummary::
    :toctree: api/
@@ -216,6 +228,7 @@ Column names
     Expr.keep_name
     Expr.prefix
     Expr.suffix
+    Expr.map_alias
     Expr.exclude
 
 Apply
@@ -256,13 +269,17 @@ The following methods are available under the `expr.dt` attribute.
     ExprDateTimeNameSpace.to_python_datetime
     ExprDateTimeNameSpace.timestamp
     ExprDateTimeNameSpace.truncate
+    ExprDateTimeNameSpace.epoch
     ExprDateTimeNameSpace.epoch_days
     ExprDateTimeNameSpace.epoch_milliseconds
     ExprDateTimeNameSpace.epoch_seconds
     ExprDateTimeNameSpace.and_time_unit
     ExprDateTimeNameSpace.and_time_zone
+    ExprDateTimeNameSpace.with_time_unit
+    ExprDateTimeNameSpace.cast_time_unit
     ExprDateTimeNameSpace.days
     ExprDateTimeNameSpace.hours
+    ExprDateTimeNameSpace.minutes
     ExprDateTimeNameSpace.seconds
     ExprDateTimeNameSpace.milliseconds
     ExprDateTimeNameSpace.nanoseconds
@@ -288,6 +305,8 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
+    ExprStringNameSpace.split
+    ExprStringNameSpace.split_exact
     ExprStringNameSpace.replace
     ExprStringNameSpace.replace_all
     ExprStringNameSpace.slice
@@ -305,7 +324,6 @@ The following methods are available under the `expr.arr` attribute.
 
     ExprListNameSpace.concat
     ExprListNameSpace.lengths
-    ExprListNameSpace.lengths
     ExprListNameSpace.sum
     ExprListNameSpace.min
     ExprListNameSpace.max
@@ -317,3 +335,35 @@ The following methods are available under the `expr.arr` attribute.
     ExprListNameSpace.first
     ExprListNameSpace.last
     ExprListNameSpace.contains
+    ExprListNameSpace.join
+    ExprListNameSpace.arg_min
+    ExprListNameSpace.arg_max
+    ExprListNameSpace.diff
+    ExprListNameSpace.shift
+    ExprListNameSpace.slice
+    ExprListNameSpace.head
+    ExprListNameSpace.tail
+    ExprListNameSpace.eval
+
+Categories
+----------
+The following methods are available under the `expr.cat` attribute.
+
+.. currentmodule:: polars.internals.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprCatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `expr.struct` attribute.
+
+.. currentmodule:: polars.internals.expr
+
+.. autosummary::
+   :toctree: api/
+
+    ExprStructNameSpace.field
+    ExprStructNameSpace.rename_fields

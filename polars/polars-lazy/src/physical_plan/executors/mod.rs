@@ -1,19 +1,26 @@
-pub(crate) mod cache;
-pub(crate) mod drop_duplicates;
-pub(crate) mod explode;
-pub(crate) mod filter;
-pub(crate) mod groupby;
-pub(crate) mod groupby_dynamic;
-pub(crate) mod groupby_rolling;
-pub(crate) mod join;
-pub(crate) mod melt;
-pub(crate) mod projection;
-pub(crate) mod scan;
-pub(crate) mod slice;
-pub(crate) mod sort;
-pub(crate) mod stack;
-pub(crate) mod udf;
-pub(crate) mod union;
+mod cache;
+mod drop_duplicates;
+mod explode;
+mod filter;
+mod groupby;
+mod groupby_dynamic;
+mod groupby_partitioned;
+mod groupby_rolling;
+mod join;
+mod melt;
+mod projection;
+mod scan;
+mod slice;
+mod sort;
+mod stack;
+mod udf;
+mod union;
+
+pub(super) use self::{
+    cache::*, drop_duplicates::*, explode::*, filter::*, groupby::*, groupby_dynamic::*,
+    groupby_partitioned::*, groupby_rolling::*, join::*, melt::*, projection::*, scan::*, slice::*,
+    sort::*, stack::*, udf::*, union::*,
+};
 
 use super::*;
 use crate::logical_plan::FETCH_ROWS;
@@ -44,7 +51,11 @@ fn execute_projection_cached_window_fns(
     // the partitioning messes with column order, so we also store the idx
     // and use those to restore the original projection order
     #[allow(clippy::type_complexity)]
-    let mut windows: Vec<(String, Vec<(u32, Arc<dyn PhysicalExpr>)>)> = vec![];
+    // String: partion_name,
+    // u32: index,
+    // bool: flatten (we must run those first because they need a sorted group tuples.
+    //       if we cache the group tuples we must ensure we cast the sorted onces.
+    let mut windows: Vec<(String, Vec<(u32, bool, Arc<dyn PhysicalExpr>)>)> = vec![];
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -56,13 +67,17 @@ fn execute_projection_cached_window_fns(
 
         let mut is_window = false;
         for e in e.into_iter() {
-            if let Expr::Window { partition_by, .. } = e {
+            if let Expr::Window {
+                partition_by,
+                options,
+                ..
+            } = e
+            {
                 let groupby = format!("{:?}", partition_by.as_slice());
-                // *windows.entry(groupby).or_insert(0) += 1;
                 if let Some(tpl) = windows.iter_mut().find(|tpl| tpl.0 == groupby) {
-                    tpl.1.push((index, phys.clone()))
+                    tpl.1.push((index, options.explode, phys.clone()))
                 } else {
-                    windows.push((groupby, vec![(index, phys.clone())]))
+                    windows.push((groupby, vec![(index, options.explode, phys.clone())]))
                 }
                 is_window = true;
                 break;
@@ -80,7 +95,7 @@ fn execute_projection_cached_window_fns(
             .collect::<Result<Vec<_>>>()
     })?;
 
-    for partition in windows {
+    for mut partition in windows {
         // clear the cache for every partitioned group
         let mut state = state.clone();
         state.clear_expr_cache();
@@ -92,7 +107,13 @@ fn execute_projection_cached_window_fns(
             state.cache_window = true;
         }
 
-        for (index, e) in partition.1 {
+        partition.1.sort_unstable_by_key(|(_idx, explode, _)| {
+            // negate as `false` will be first and we want the exploded
+            // e.g. the sorted groups cd to be the first to fill the cache.
+            !explode
+        });
+
+        for (index, _, e) in partition.1 {
             // caching more than one window expression is a complicated topic for another day
             // see issue #2523
             state.cache_window = e
@@ -129,6 +150,7 @@ pub(crate) fn evaluate_physical_expressions(
                 .collect::<Result<_>>()
         })?
     };
+    state.clear_schema_cache();
 
     check_expand_literals(selected_columns, zero_length)
 }

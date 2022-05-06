@@ -4,14 +4,14 @@ use crate::lazy::map_single;
 use crate::lazy::utils::py_exprs_to_exprs;
 use crate::prelude::{parse_strategy, str_to_rankmethod};
 use crate::series::PySeries;
-use crate::utils::{reinterpret, str_to_polarstype};
+use crate::utils::reinterpret;
 use polars::lazy::dsl;
 use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
+use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyFloat, PyInt, PyString};
-use pyo3::{class::basic::CompareOp, PyNumberProtocol, PyObjectProtocol};
+use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
 
 #[pyclass]
@@ -34,31 +34,9 @@ impl ToExprs for Vec<PyExpr> {
     }
 }
 
-#[pyproto]
-impl PyNumberProtocol for PyExpr {
-    fn __add__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Plus, rhs.inner).into())
-    }
-    fn __sub__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Minus, rhs.inner).into())
-    }
-    fn __mul__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Multiply, rhs.inner).into())
-    }
-    fn __truediv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::TrueDivide, rhs.inner).into())
-    }
-    fn __mod__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Modulus, rhs.inner).into())
-    }
-    fn __floordiv__(lhs: Self, rhs: Self) -> PyResult<PyExpr> {
-        Ok(dsl::binary_expr(lhs.inner, Operator::Divide, rhs.inner).into())
-    }
-}
-
-#[pyproto]
-impl<'p> PyObjectProtocol<'p> for PyExpr {
-    fn __richcmp__(&'p self, other: PyExpr, op: CompareOp) -> PyExpr {
+#[pymethods]
+impl PyExpr {
+    fn __richcmp__(&self, other: Self, op: CompareOp) -> PyExpr {
         match op {
             CompareOp::Eq => self.eq(other),
             CompareOp::Ne => self.neq(other),
@@ -68,10 +46,29 @@ impl<'p> PyObjectProtocol<'p> for PyExpr {
             CompareOp::Le => self.lt_eq(other),
         }
     }
-}
 
-#[pymethods]
-impl PyExpr {
+    fn __add__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Plus, rhs.inner).into())
+    }
+    fn __sub__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Minus, rhs.inner).into())
+    }
+    fn __mul__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Multiply, rhs.inner).into())
+    }
+    fn __truediv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::TrueDivide, rhs.inner).into())
+    }
+    fn __mod__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Modulus, rhs.inner).into())
+    }
+    fn __floordiv__(&self, rhs: Self) -> PyResult<PyExpr> {
+        Ok(dsl::binary_expr(self.inner.clone(), Operator::Divide, rhs.inner).into())
+    }
+
+    pub fn to_str(&self) -> String {
+        format!("{:?}", self.inner)
+    }
     pub fn eq(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.eq(other.inner).into()
     }
@@ -90,6 +87,31 @@ impl PyExpr {
     pub fn lt(&self, other: PyExpr) -> PyExpr {
         self.clone().inner.lt(other.inner).into()
     }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        // Used in pickle/pickling
+        Ok(PyBytes::new(py, &bincode::serialize(&self.inner).unwrap()).to_object(py))
+    }
+
+    pub fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        // Used in pickle/pickling
+        match state.extract::<&PyBytes>(py) {
+            Ok(s) => {
+                // Safety
+                // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+                // so we actually don't have a lifetime at all when serializing.
+
+                // PyBytes still has a lifetime. Bit its ok, because we drop it immediately
+                // in this scope
+                let s = unsafe { std::mem::transmute::<&'_ PyBytes, &'static PyBytes>(s) };
+
+                self.inner = bincode::deserialize(s.as_bytes()).unwrap();
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn alias(&self, name: &str) -> PyExpr {
         self.clone().inner.alias(name).into()
     }
@@ -143,6 +165,9 @@ impl PyExpr {
     pub fn unique(&self) -> PyExpr {
         self.clone().inner.unique().into()
     }
+    pub fn unique_stable(&self) -> PyExpr {
+        self.clone().inner.unique_stable().into()
+    }
     pub fn first(&self) -> PyExpr {
         self.clone().inner.first().into()
     }
@@ -169,9 +194,17 @@ impl PyExpr {
     pub fn count(&self) -> PyExpr {
         self.clone().inner.count().into()
     }
-    pub fn cast(&self, data_type: &PyAny, strict: bool) -> PyExpr {
-        let str_repr = data_type.str().unwrap().to_str().unwrap();
-        let dt = str_to_polarstype(str_repr);
+    pub fn value_counts(&self, multithreaded: bool) -> PyExpr {
+        self.inner.clone().value_counts(multithreaded).into()
+    }
+    pub fn unique_counts(&self) -> PyExpr {
+        self.inner.clone().unique_counts().into()
+    }
+    pub fn null_count(&self) -> PyExpr {
+        self.inner.clone().null_count().into()
+    }
+    pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
+        let dt = data_type.0;
         let expr = if strict {
             self.inner.clone().strict_cast(dt)
         } else {
@@ -231,15 +264,23 @@ impl PyExpr {
 
     pub fn fill_null_with_strategy(&self, strategy: &str) -> PyExpr {
         let strat = parse_strategy(strategy);
-        self.clone()
-            .inner
+        self.inner
+            .clone()
             .apply(move |s| s.fill_null(strat), GetOutput::same_type())
             .with_fmt("fill_null")
             .into()
     }
 
     pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {
-        self.clone().inner.fill_nan(expr.inner).into()
+        self.inner.clone().fill_nan(expr.inner).into()
+    }
+
+    pub fn drop_nulls(&self) -> PyExpr {
+        self.inner.clone().drop_nulls().into()
+    }
+
+    pub fn drop_nans(&self) -> PyExpr {
+        self.inner.clone().drop_nans().into()
     }
 
     pub fn filter(&self, predicate: PyExpr) -> PyExpr {
@@ -281,8 +322,8 @@ impl PyExpr {
         self.clone().inner.head(n).into()
     }
 
-    pub fn slice(&self, offset: i64, length: usize) -> PyExpr {
-        self.clone().inner.slice(offset, length).into()
+    pub fn slice(&self, offset: PyExpr, length: PyExpr) -> PyExpr {
+        self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
     pub fn round(&self, decimals: u32) -> PyExpr {
@@ -377,7 +418,7 @@ impl PyExpr {
             .clone()
             .str()
             .strptime(StrpTimeOptions {
-                date_dtype: DataType::Datetime(TimeUnit::Milliseconds, None),
+                date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
                 fmt,
                 strict,
                 exact,
@@ -579,48 +620,53 @@ impl PyExpr {
     pub fn strftime(&self, fmt: &str) -> PyExpr {
         self.inner.clone().dt().strftime(fmt).into()
     }
+    pub fn str_split(&self, by: &str) -> PyExpr {
+        self.inner.clone().str().split(by).into()
+    }
+    pub fn str_split_inclusive(&self, by: &str) -> PyExpr {
+        self.inner.clone().str().split_inclusive(by).into()
+    }
+
+    pub fn str_split_exact(&self, by: &str, n: usize) -> PyExpr {
+        self.inner.clone().str().split_exact(by, n).into()
+    }
+    pub fn str_split_exact_inclusive(&self, by: &str, n: usize) -> PyExpr {
+        self.inner.clone().str().split_exact_inclusive(by, n).into()
+    }
 
     pub fn arr_lengths(&self) -> PyExpr {
-        let function = |s: Series| {
-            let ca = s.list()?;
-            Ok(ca.lst_lengths().into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt32))
-            .with_fmt("arr.len")
-            .into()
+        self.inner.clone().arr().lengths().into()
     }
 
     pub fn year(&self) -> PyExpr {
-        self.clone().inner.year().into()
+        self.clone().inner.dt().year().into()
     }
     pub fn month(&self) -> PyExpr {
-        self.clone().inner.month().into()
+        self.clone().inner.dt().month().into()
     }
     pub fn week(&self) -> PyExpr {
-        self.clone().inner.week().into()
+        self.clone().inner.dt().week().into()
     }
     pub fn weekday(&self) -> PyExpr {
-        self.clone().inner.weekday().into()
+        self.clone().inner.dt().weekday().into()
     }
     pub fn day(&self) -> PyExpr {
-        self.clone().inner.day().into()
+        self.clone().inner.dt().day().into()
     }
     pub fn ordinal_day(&self) -> PyExpr {
-        self.clone().inner.ordinal_day().into()
+        self.clone().inner.dt().ordinal_day().into()
     }
     pub fn hour(&self) -> PyExpr {
-        self.clone().inner.hour().into()
+        self.clone().inner.dt().hour().into()
     }
     pub fn minute(&self) -> PyExpr {
-        self.clone().inner.minute().into()
+        self.clone().inner.dt().minute().into()
     }
     pub fn second(&self) -> PyExpr {
-        self.clone().inner.second().into()
+        self.clone().inner.dt().second().into()
     }
     pub fn nanosecond(&self) -> PyExpr {
-        self.clone().inner.nanosecond().into()
+        self.clone().inner.dt().nanosecond().into()
     }
     pub fn duration_days(&self) -> PyExpr {
         self.inner
@@ -640,6 +686,17 @@ impl PyExpr {
             )
             .into()
     }
+
+    pub fn duration_minutes(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(
+                |s| Ok(s.duration()?.minutes().into_series()),
+                GetOutput::from_type(DataType::Int64),
+            )
+            .into()
+    }
+
     pub fn duration_seconds(&self) -> PyExpr {
         self.inner
             .clone()
@@ -667,24 +724,28 @@ impl PyExpr {
             )
             .into()
     }
-    pub fn timestamp(&self) -> PyExpr {
-        self.clone()
-            .inner
-            .map(
-                |s| s.timestamp().map(|ca| ca.into_series()),
-                GetOutput::from_type(DataType::Int64),
-            )
-            .with_fmt("timestamp")
-            .into()
+    pub fn timestamp(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().timestamp(tu.0).into()
     }
     pub fn dt_epoch_seconds(&self) -> PyExpr {
         self.clone()
             .inner
             .map(
-                |s| s.timestamp().map(|ca| (ca / 1000).into_series()),
+                |s| {
+                    s.timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| (ca / 1000).into_series())
+                },
                 GetOutput::from_type(DataType::Int64),
             )
             .into()
+    }
+
+    pub fn dt_with_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().with_time_unit(tu.0).into()
+    }
+
+    pub fn dt_cast_time_unit(&self, tu: Wrap<TimeUnit>) -> PyExpr {
+        self.inner.clone().dt().cast_time_unit(tu.0).into()
     }
 
     pub fn rolling_apply(
@@ -718,7 +779,7 @@ impl PyExpr {
                 }
                 Err(_) => {
                     let obj = out;
-                    let is_float = obj.as_ref(py).is_instance::<PyFloat>().unwrap();
+                    let is_float = obj.as_ref(py).is_instance_of::<PyFloat>().unwrap();
 
                     let dtype = s.dtype();
 
@@ -727,81 +788,81 @@ impl PyExpr {
                         UInt8 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt8Chunked::new_from_slice("", &[v as u8]).into_series())
+                                Ok(UInt8Chunked::from_slice("", &[v as u8]).into_series())
                             } else {
                                 obj.extract::<u8>(py)
-                                    .map(|v| UInt8Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt8Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt16 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt16Chunked::new_from_slice("", &[v as u16]).into_series())
+                                Ok(UInt16Chunked::from_slice("", &[v as u16]).into_series())
                             } else {
                                 obj.extract::<u16>(py)
-                                    .map(|v| UInt16Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt16Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt32 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt32Chunked::new_from_slice("", &[v as u32]).into_series())
+                                Ok(UInt32Chunked::from_slice("", &[v as u32]).into_series())
                             } else {
                                 obj.extract::<u32>(py)
-                                    .map(|v| UInt32Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt32Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         UInt64 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(UInt64Chunked::new_from_slice("", &[v as u64]).into_series())
+                                Ok(UInt64Chunked::from_slice("", &[v as u64]).into_series())
                             } else {
                                 obj.extract::<u64>(py)
-                                    .map(|v| UInt64Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| UInt64Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int8 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int8Chunked::new_from_slice("", &[v as i8]).into_series())
+                                Ok(Int8Chunked::from_slice("", &[v as i8]).into_series())
                             } else {
                                 obj.extract::<i8>(py)
-                                    .map(|v| Int8Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int8Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int16 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int16Chunked::new_from_slice("", &[v as i16]).into_series())
+                                Ok(Int16Chunked::from_slice("", &[v as i16]).into_series())
                             } else {
                                 obj.extract::<i16>(py)
-                                    .map(|v| Int16Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int16Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int32 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int32Chunked::new_from_slice("", &[v as i32]).into_series())
+                                Ok(Int32Chunked::from_slice("", &[v as i32]).into_series())
                             } else {
                                 obj.extract::<i32>(py)
-                                    .map(|v| Int32Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int32Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Int64 => {
                             if is_float {
                                 let v = obj.extract::<f64>(py).unwrap();
-                                Ok(Int64Chunked::new_from_slice("", &[v as i64]).into_series())
+                                Ok(Int64Chunked::from_slice("", &[v as i64]).into_series())
                             } else {
                                 obj.extract::<i64>(py)
-                                    .map(|v| Int64Chunked::new_from_slice("", &[v]).into_series())
+                                    .map(|v| Int64Chunked::from_slice("", &[v]).into_series())
                             }
                         }
                         Float32 => obj
                             .extract::<f32>(py)
-                            .map(|v| Float32Chunked::new_from_slice("", &[v]).into_series()),
+                            .map(|v| Float32Chunked::from_slice("", &[v]).into_series()),
                         Float64 => obj
                             .extract::<f64>(py)
-                            .map(|v| Float64Chunked::new_from_slice("", &[v]).into_series()),
+                            .map(|v| Float64Chunked::from_slice("", &[v]).into_series()),
                         dt => panic!("{:?} not implemented", dt),
                     };
 
@@ -862,6 +923,17 @@ impl PyExpr {
     }
     pub fn suffix(&self, suffix: &str) -> PyExpr {
         self.inner.clone().suffix(suffix).into()
+    }
+    pub fn map_alias(&self, lambda: PyObject) -> PyExpr {
+        self.inner
+            .clone()
+            .map_alias(move |name| {
+                let gil = Python::acquire_gil();
+                let py = gil.python();
+                let out = lambda.call1(py, (name,)).unwrap();
+                out.to_string()
+            })
+            .into()
     }
     pub fn exclude(&self, columns: Vec<String>) -> PyExpr {
         self.inner.clone().exclude(&columns).into()
@@ -1037,77 +1109,26 @@ impl PyExpr {
     }
 
     fn lst_max(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_max()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.max")
-            .into()
+        self.inner.clone().arr().max().into()
     }
 
     fn lst_min(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_min()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.min")
-            .into()
+        self.inner.clone().arr().min().into()
     }
 
     fn lst_sum(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_sum()),
-                GetOutput::map_field(|f| {
-                    if let DataType::List(adt) = f.data_type() {
-                        Field::new(f.name(), *adt.clone())
-                    } else {
-                        // inner type
-                        f.clone()
-                    }
-                }),
-            )
-            .with_fmt("arr.sum")
-            .into()
+        self.inner.clone().arr().sum().with_fmt("arr.sum").into()
     }
 
     fn lst_mean(&self) -> Self {
-        self.inner
-            .clone()
-            .map(
-                |s| Ok(s.list()?.lst_mean().into_series()),
-                GetOutput::from_type(DataType::Float64),
-            )
-            .with_fmt("arr.mean")
-            .into()
+        self.inner.clone().arr().mean().with_fmt("arr.mean").into()
     }
 
     fn lst_sort(&self, reverse: bool) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_sort(reverse).into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .sort(reverse)
             .with_fmt("arr.sort")
             .into()
     }
@@ -1115,10 +1136,8 @@ impl PyExpr {
     fn lst_reverse(&self) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_reverse().into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .reverse()
             .with_fmt("arr.reverse")
             .into()
     }
@@ -1126,25 +1145,43 @@ impl PyExpr {
     fn lst_unique(&self) -> Self {
         self.inner
             .clone()
-            .map(
-                move |s| Ok(s.list()?.lst_unique()?.into_series()),
-                GetOutput::same_type(),
-            )
+            .arr()
+            .unique()
             .with_fmt("arr.unique")
             .into()
     }
 
     fn lst_get(&self, index: i64) -> Self {
-        self.inner
-            .clone()
-            .map(
-                move |s| s.list()?.lst_get(index),
-                GetOutput::map_field(|field| match field.data_type() {
-                    DataType::List(inner) => Field::new(field.name(), *inner.clone()),
-                    _ => panic!("should be a list type"),
-                }),
-            )
-            .into()
+        self.inner.clone().arr().get(index).into()
+    }
+
+    fn lst_join(&self, separator: &str) -> Self {
+        self.inner.clone().arr().join(separator).into()
+    }
+
+    fn lst_arg_min(&self) -> Self {
+        self.inner.clone().arr().arg_min().into()
+    }
+
+    fn lst_arg_max(&self) -> Self {
+        self.inner.clone().arr().arg_max().into()
+    }
+
+    fn lst_diff(&self, n: usize, null_behavior: &str) -> PyResult<Self> {
+        let null_behavior = str_to_null_behavior(null_behavior)?;
+        Ok(self.inner.clone().arr().diff(n, null_behavior).into())
+    }
+
+    fn lst_shift(&self, periods: i64) -> Self {
+        self.inner.clone().arr().shift(periods).into()
+    }
+
+    fn lst_slice(&self, offset: i64, length: usize) -> Self {
+        self.inner.clone().arr().slice(offset, length).into()
+    }
+
+    fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
+        self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
     fn rank(&self, method: &str, reverse: bool) -> Self {
@@ -1173,6 +1210,16 @@ impl PyExpr {
     }
     fn str_concat(&self, delimiter: &str) -> Self {
         self.inner.clone().str().concat(delimiter).into()
+    }
+
+    fn cat_set_ordering(&self, ordering: &str) -> Self {
+        let ordering = match ordering {
+            "physical" => CategoricalOrdering::Physical,
+            "lexical" => CategoricalOrdering::Lexical,
+            _ => panic!("expected one of {{'physical', 'lexical'}}"),
+        };
+
+        self.inner.clone().cat().set_ordering(ordering).into()
     }
 
     fn date_truncate(&self, every: &str, offset: &str) -> Self {
@@ -1219,6 +1266,19 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
+        self.inner
+            .clone()
+            .sample_frac(frac, with_replacement, shuffle, seed)
+            .into()
+    }
+
     pub fn ewm_mean(&self, alpha: f64, adjust: bool, min_periods: usize) -> Self {
         let options = EWMOptions {
             alpha,
@@ -1243,7 +1303,7 @@ impl PyExpr {
         };
         self.inner.clone().ewm_var(options).into()
     }
-    pub fn extend(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
+    pub fn extend_constant(&self, py: Python, value: Wrap<AnyValue>, n: usize) -> Self {
         let value = value.into_py(py);
         self.inner
             .clone()
@@ -1252,7 +1312,7 @@ impl PyExpr {
                     let gil = Python::acquire_gil();
                     let py = gil.python();
                     let value = value.extract::<Wrap<AnyValue>>(py).unwrap().0;
-                    s.extend(value, n)
+                    s.extend_constant(value, n)
                 },
                 GetOutput::same_type(),
             )
@@ -1265,6 +1325,22 @@ impl PyExpr {
 
     pub fn all(&self) -> Self {
         self.inner.clone().all().into()
+    }
+
+    pub fn struct_field_by_name(&self, name: &str) -> PyExpr {
+        self.inner.clone().struct_().field_by_name(name).into()
+    }
+
+    pub fn struct_rename_fields(&self, names: Vec<String>) -> PyExpr {
+        self.inner.clone().struct_().rename_fields(names).into()
+    }
+
+    pub fn log(&self, base: f64) -> Self {
+        self.inner.clone().log(base).into()
+    }
+
+    pub fn entropy(&self, base: f64) -> Self {
+        self.inner.clone().entropy(base).into()
     }
 }
 
@@ -1347,6 +1423,18 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+pub fn count() -> PyExpr {
+    dsl::count().into()
+}
+
+pub fn first() -> PyExpr {
+    dsl::first().into()
+}
+
+pub fn last() -> PyExpr {
+    dsl::last().into()
+}
+
 pub fn cols(names: Vec<String>) -> PyExpr {
     dsl::cols(names).into()
 }
@@ -1387,7 +1475,7 @@ pub fn fold(acc: PyExpr, lambda: PyObject, exprs: Vec<PyExpr>) -> PyExpr {
 }
 
 pub fn lit(value: &PyAny) -> PyExpr {
-    if let Ok(true) = value.is_instance::<PyBool>() {
+    if let Ok(true) = value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>().unwrap();
         dsl::lit(val).into()
     } else if let Ok(int) = value.downcast::<PyInt>() {
@@ -1417,10 +1505,8 @@ pub fn lit(value: &PyAny) -> PyExpr {
     }
 }
 
-pub fn range(low: i64, high: i64, dtype: &PyAny) -> PyExpr {
-    let str_repr = dtype.str().unwrap().to_str().unwrap();
-    let dtype = str_to_polarstype(str_repr);
-    match dtype {
+pub fn range(low: i64, high: i64, dtype: Wrap<DataType>) -> PyExpr {
+    match dtype.0 {
         DataType::Int32 => dsl::range(low as i32, high as i32).into(),
         DataType::UInt32 => dsl::range(low as u32, high as u32).into(),
         _ => dsl::range(low, high).into(),

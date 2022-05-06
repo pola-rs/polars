@@ -8,10 +8,41 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 
 pub struct TernaryExpr {
-    pub predicate: Arc<dyn PhysicalExpr>,
-    pub truthy: Arc<dyn PhysicalExpr>,
-    pub falsy: Arc<dyn PhysicalExpr>,
-    pub expr: Expr,
+    predicate: Arc<dyn PhysicalExpr>,
+    truthy: Arc<dyn PhysicalExpr>,
+    falsy: Arc<dyn PhysicalExpr>,
+    expr: Expr,
+}
+
+impl TernaryExpr {
+    pub fn new(
+        predicate: Arc<dyn PhysicalExpr>,
+        truthy: Arc<dyn PhysicalExpr>,
+        falsy: Arc<dyn PhysicalExpr>,
+        expr: Expr,
+    ) -> Self {
+        Self {
+            predicate,
+            truthy,
+            falsy,
+            expr,
+        }
+    }
+}
+
+fn expand_lengths(truthy: &mut Series, falsy: &mut Series, mask: &mut BooleanChunked) {
+    let len = std::cmp::max(std::cmp::max(truthy.len(), falsy.len()), mask.len());
+    if len > 1 {
+        if falsy.len() == 1 {
+            *falsy = falsy.expand_at_index(0, len);
+        }
+        if truthy.len() == 1 {
+            *truthy = truthy.expand_at_index(0, len);
+        }
+        if mask.len() == 1 {
+            *mask = mask.expand_at_index(0, len);
+        }
+    }
 }
 
 impl PhysicalExpr for TernaryExpr {
@@ -20,10 +51,17 @@ impl PhysicalExpr for TernaryExpr {
     }
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let mask_series = self.predicate.evaluate(df, state)?;
-        let mask = mask_series.bool()?;
-        let truthy = self.truthy.evaluate(df, state)?;
-        let falsy = self.falsy.evaluate(df, state)?;
-        truthy.zip_with(mask, &falsy)
+        let mut mask = mask_series.bool()?.clone();
+
+        let op_truthy = || self.truthy.evaluate(df, state);
+        let op_falsy = || self.falsy.evaluate(df, state);
+
+        let (truthy, falsy) = POOL.install(|| rayon::join(op_truthy, op_falsy));
+        let mut truthy = truthy?;
+        let mut falsy = falsy?;
+        expand_lengths(&mut truthy, &mut falsy, &mut mask);
+
+        truthy.zip_with(&mask, &falsy)
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.truthy.to_field(input_schema)
@@ -51,14 +89,6 @@ impl PhysicalExpr for TernaryExpr {
         let mask_s = ac_mask.flat_naive();
 
         assert!(
-            (mask_s.len() == required_height),
-            "The predicate is of a different length than the groups.\
-The predicate produced {} values. Where the original DataFrame has {} values",
-            mask_s.len(),
-            required_height
-        );
-
-        assert!(
             ac_truthy.can_combine(&ac_falsy),
             "cannot combine this ternary expression, the groups do not match"
         );
@@ -69,7 +99,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
-                let truthy = ac_truthy.aggregated();
+                let truthy = ac_truthy.aggregated_arity_operation();
                 let truthy = truthy.as_ref();
                 let arr_truthy = &truthy.chunks()[0];
                 assert_eq!(truthy.len(), groups.len());
@@ -81,11 +111,11 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
-                let falsy = ac_falsy.aggregated();
+                let falsy = ac_falsy.aggregated_arity_operation();
                 let falsy = falsy.as_ref();
                 let falsy = falsy.list().unwrap();
 
-                let mask = ac_mask.aggregated();
+                let mask = ac_mask.aggregated_arity_operation();
                 let mask = mask.as_ref();
                 let mask = mask.list()?;
                 if !matches!(mask.inner_dtype(), DataType::Boolean) {
@@ -123,17 +153,35 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 ac_truthy.with_series(ca.into_series(), true);
                 Ok(ac_truthy)
             }
+            // all aggregated or literal
+            // simply align lengths and zip
+            (
+                AggState::Literal(truthy) | AggState::AggregatedFlat(truthy),
+                AggState::AggregatedFlat(falsy) | AggState::Literal(falsy),
+            )
+            | (AggState::AggregatedList(truthy), AggState::AggregatedList(falsy))
+                if matches!(ac_mask.agg_state(), AggState::AggregatedFlat(_)) =>
+            {
+                let mut truthy = truthy.clone();
+                let mut falsy = falsy.clone();
+                let mut mask = ac_mask.series().bool()?.clone();
+                expand_lengths(&mut truthy, &mut falsy, &mut mask);
+                let mut out = truthy.zip_with(&mask, &falsy).unwrap();
+                out.rename(truthy.name());
+                ac_truthy.with_series(out, true);
+                Ok(ac_truthy)
+            }
             // if the groups_len == df.len we can just apply all flat.
             (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
                 if s.len() != df.height() =>
             {
                 // this is now a list
-                let truthy = ac_truthy.aggregated();
+                let truthy = ac_truthy.aggregated_arity_operation();
                 let truthy = truthy.as_ref();
                 let truthy = truthy.list().unwrap();
 
                 // this is a flat series of len eq to group tuples
-                let falsy = ac_falsy.aggregated();
+                let falsy = ac_falsy.aggregated_arity_operation();
                 assert_eq!(falsy.len(), groups.len());
                 let falsy = falsy.as_ref();
                 let arr_falsy = &falsy.chunks()[0];
@@ -144,7 +192,7 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 let dummy = Series::try_from(("dummy", vec![arr_falsy.clone()])).unwrap();
                 let mut us = UnstableSeries::new(&dummy);
 
-                let mask = ac_mask.aggregated();
+                let mask = ac_mask.aggregated_arity_operation();
                 let mask = mask.as_ref();
                 let mask = mask.list()?;
                 if !matches!(mask.inner_dtype(), DataType::Boolean) {
@@ -182,7 +230,8 @@ The predicate produced {} values. Where the original DataFrame has {} values",
                 ac_truthy.with_series(ca.into_series(), true);
                 Ok(ac_truthy)
             }
-            // Both are or a flat series or aggreagated into a list
+
+            // Both are or a flat series or aggregated into a list
             // so we can flatten the Series an apply the operators
             _ => {
                 let mask = mask_s.bool()?;

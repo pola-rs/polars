@@ -1,14 +1,13 @@
 #[cfg(feature = "ipc")]
-use crate::logical_plan::LpScanOptions;
+use crate::logical_plan::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use crate::logical_plan::ParquetOptions;
 use crate::logical_plan::{det_melt_schema, Context, CsvParserOptions};
 use crate::prelude::*;
 use crate::utils::{aexprs_to_schema, PushNode};
-use ahash::RandomState;
+use polars_core::frame::explode::MeltArgs;
 use polars_core::prelude::*;
 use polars_utils::arena::{Arena, Node};
-use std::collections::HashSet;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -18,14 +17,13 @@ use std::sync::Arc;
 pub enum ALogicalPlan {
     Melt {
         input: Node,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
+        args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
     Slice {
         input: Node,
         offset: i64,
-        len: u32,
+        len: IdxSize,
     },
     Selection {
         input: Node,
@@ -48,7 +46,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         // schema of the projected file
         output_schema: Option<SchemaRef>,
-        options: LpScanOptions,
+        options: IpcScanOptions,
         predicate: Option<Node>,
         aggregate: Vec<Node>,
     },
@@ -82,11 +80,12 @@ pub enum ALogicalPlan {
     Sort {
         input: Node,
         by_column: Vec<Node>,
-        reverse: Vec<bool>,
+        args: SortArguments,
     },
     Explode {
         input: Node,
         columns: Vec<String>,
+        schema: SchemaRef,
     },
     Cache {
         input: Node,
@@ -147,7 +146,7 @@ impl ALogicalPlan {
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
-            Explode { input, .. } => arena.get(*input).schema(arena),
+            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan {
                 schema,
@@ -194,15 +193,9 @@ impl ALogicalPlan {
                 inputs,
                 options: *options,
             },
-            Melt {
-                id_vars,
-                value_vars,
-                schema,
-                ..
-            } => Melt {
+            Melt { args, schema, .. } => Melt {
                 input: inputs[0],
-                id_vars: id_vars.clone(),
-                value_vars: value_vars.clone(),
+                args: args.clone(),
                 schema: schema.clone(),
             },
             Slice { offset, len, .. } => Slice {
@@ -254,15 +247,18 @@ impl ALogicalPlan {
                 options: options.clone(),
             },
             Sort {
-                by_column, reverse, ..
+                by_column, args, ..
             } => Sort {
                 input: inputs[0],
                 by_column: by_column.clone(),
-                reverse: reverse.clone(),
+                args: args.clone(),
             },
-            Explode { columns, .. } => Explode {
+            Explode {
+                columns, schema, ..
+            } => Explode {
                 input: inputs[0],
                 columns: columns.clone(),
+                schema: schema.clone(),
             },
             Cache { .. } => Cache { input: inputs[0] },
             Distinct { options, .. } => Distinct {
@@ -533,13 +529,25 @@ impl<'a> ALogicalPlanBuilder<'a> {
         }
     }
 
-    pub fn melt(self, id_vars: Arc<Vec<String>>, value_vars: Arc<Vec<String>>) -> Self {
-        let schema = det_melt_schema(&value_vars, self.schema());
+    pub(crate) fn from_lp(
+        lp: ALogicalPlan,
+        expr_arena: &'a mut Arena<AExpr>,
+        lp_arena: &'a mut Arena<ALogicalPlan>,
+    ) -> Self {
+        let root = lp_arena.add(lp);
+        ALogicalPlanBuilder {
+            root,
+            expr_arena,
+            lp_arena,
+        }
+    }
+
+    pub fn melt(self, args: Arc<MeltArgs>) -> Self {
+        let schema = det_melt_schema(&args, self.schema());
 
         let lp = ALogicalPlan::Melt {
             input: self.root,
-            id_vars,
-            value_vars,
+            args,
             schema,
         };
         let node = self.lp_arena.add(lp);
@@ -549,17 +557,13 @@ impl<'a> ALogicalPlanBuilder<'a> {
     pub fn project_local(self, exprs: Vec<Node>) -> Self {
         let input_schema = self.lp_arena.get(self.root).schema(self.lp_arena);
         let schema = aexprs_to_schema(&exprs, input_schema, Context::Default, self.expr_arena);
-        if !exprs.is_empty() {
-            let lp = ALogicalPlan::LocalProjection {
-                expr: exprs,
-                input: self.root,
-                schema: Arc::new(schema),
-            };
-            let node = self.lp_arena.add(lp);
-            ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
-        } else {
-            self
-        }
+        let lp = ALogicalPlan::LocalProjection {
+            expr: exprs,
+            input: self.root,
+            schema: Arc::new(schema),
+        };
+        let node = self.lp_arena.add(lp);
+        ALogicalPlanBuilder::new(node, self.expr_arena, self.lp_arena)
     }
 
     pub fn project(self, exprs: Vec<Node>) -> Self {
@@ -593,10 +597,8 @@ impl<'a> ALogicalPlanBuilder<'a> {
     }
 
     pub(crate) fn with_columns(self, exprs: Vec<Node>) -> Self {
-        // current schema
         let schema = self.schema();
-
-        let mut new_fields = schema.fields().clone();
+        let mut new_schema = (*schema).clone();
 
         for e in &exprs {
             let field = self
@@ -604,15 +606,9 @@ impl<'a> ALogicalPlanBuilder<'a> {
                 .get(*e)
                 .to_field(schema, Context::Default, self.expr_arena)
                 .unwrap();
-            match schema.index_of(field.name()) {
-                Ok(idx) => {
-                    new_fields[idx] = field;
-                }
-                Err(_) => new_fields.push(field),
-            }
-        }
 
-        let new_schema = Schema::new(new_fields);
+            new_schema.with_column(field.name().clone(), field.data_type().clone());
+        }
 
         let lp = ALogicalPlan::HStack {
             input: self.root,
@@ -631,16 +627,28 @@ impl<'a> ALogicalPlanBuilder<'a> {
         maintain_order: bool,
         options: GroupbyOptions,
     ) -> Self {
-        debug_assert!(!(keys.is_empty() && options.dynamic.is_none()));
         let current_schema = self.schema();
         // TODO! add this line if LogicalPlan is dropped in favor of ALogicalPlan
         // let aggs = rewrite_projections(aggs, current_schema);
 
-        let schema1 = aexprs_to_schema(&keys, current_schema, Context::Default, self.expr_arena);
-        let schema2 =
-            aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
+        let mut schema = aexprs_to_schema(&keys, current_schema, Context::Default, self.expr_arena);
+        let other = aexprs_to_schema(&aggs, current_schema, Context::Aggregation, self.expr_arena);
+        schema.merge(other);
 
-        let schema = Schema::try_merge(&[schema1, schema2]).unwrap();
+        let index_columns = &[
+            options
+                .rolling
+                .as_ref()
+                .map(|options| &options.index_column),
+            options
+                .dynamic
+                .as_ref()
+                .map(|options| &options.index_column),
+        ];
+        for &name in index_columns.iter().flatten() {
+            let dtype = current_schema.get(name).unwrap();
+            schema.with_column(name.clone(), dtype.clone());
+        }
 
         let lp = ALogicalPlan::Aggregate {
             input: self.root,
@@ -666,19 +674,16 @@ impl<'a> ALogicalPlanBuilder<'a> {
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
 
         // column names of left table
-        let mut names: HashSet<&str, RandomState> = HashSet::with_capacity_and_hasher(
-            schema_left.len() + schema_right.len(),
-            Default::default(),
-        );
-        // fields of new schema
-        let mut fields = Vec::with_capacity(schema_left.len() + schema_right.len());
+        let mut names: PlHashSet<&str> =
+            PlHashSet::with_capacity(schema_left.len() + schema_right.len());
+        let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
 
-        for f in schema_left.fields() {
-            names.insert(f.name().as_ref());
-            fields.push(f.clone());
+        for (name, dtype) in schema_left.iter() {
+            names.insert(name.as_str());
+            new_schema.with_column(name.to_string(), dtype.clone())
         }
 
-        let right_names: HashSet<_, RandomState> = right_on
+        let right_names: PlHashSet<_> = right_on
             .iter()
             .map(|e| match self.expr_arena.get(*e) {
                 AExpr::Alias(_, name) => name.clone(),
@@ -687,20 +692,18 @@ impl<'a> ALogicalPlanBuilder<'a> {
             })
             .collect();
 
-        for f in schema_right.fields() {
-            let name = f.name();
+        for (name, dtype) in schema_right.iter() {
             if !right_names.contains(name.as_str()) {
                 if names.contains(name.as_str()) {
                     let new_name = format!("{}{}", name, options.suffix.as_ref());
-                    let field = Field::new(&new_name, f.data_type().clone());
-                    fields.push(field)
+                    new_schema.with_column(new_name, dtype.clone());
                 } else {
-                    fields.push(f.clone())
+                    new_schema.with_column(name.to_string(), dtype.clone());
                 }
             }
         }
 
-        let schema = Arc::new(Schema::new(fields));
+        let schema = Arc::new(new_schema);
 
         let lp = ALogicalPlan::Join {
             input_left: self.root,
@@ -710,6 +713,7 @@ impl<'a> ALogicalPlanBuilder<'a> {
             right_on,
             options,
         };
+        drop(names);
         let root = self.lp_arena.add(lp);
         Self::new(root, self.expr_arena, self.lp_arena)
     }

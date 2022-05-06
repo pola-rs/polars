@@ -1,5 +1,7 @@
 from typing import List, Union
 
+import pytest
+
 import polars as pl
 
 
@@ -57,7 +59,8 @@ def test_sort_by() -> None:
 
 def test_sort_in_place() -> None:
     df = pl.DataFrame({"a": [1, 3, 2, 4, 5]})
-    ret = df.sort("a", in_place=True)
+    with pytest.deprecated_call():
+        ret = df.sort("a", in_place=True)
     result = df["a"].to_list()
     expected = [1, 2, 3, 4, 5]
     assert result == expected
@@ -70,3 +73,40 @@ def test_sort_by_exprs() -> None:
     out = df.sort(pl.col("a").abs()).to_series()
 
     assert out.to_list() == [1, -1, 2, -2]
+
+
+def test_argsort_nulls() -> None:
+    a = pl.Series("a", [1.0, 2.0, 3.0, None, None])
+    assert a.argsort(nulls_last=True).to_list() == [0, 1, 2, 4, 3]
+    assert a.argsort(nulls_last=False).to_list() == [3, 4, 0, 1, 2]
+
+    assert a.to_frame().sort(by="a", nulls_last=False).to_series().to_list() == [
+        None,
+        None,
+        1.0,
+        2.0,
+        3.0,
+    ]
+    assert a.to_frame().sort(by="a", nulls_last=True).to_series().to_list() == [
+        1.0,
+        2.0,
+        3.0,
+        None,
+        None,
+    ]
+    with pytest.raises(ValueError):
+        a.to_frame().sort(by=["a", "b"], nulls_last=True)
+
+
+def test_argsort_window_functions() -> None:
+    df = pl.DataFrame({"Id": [1, 1, 2, 2, 3, 3], "Age": [1, 2, 3, 4, 5, 6]})
+    out = df.select(
+        [
+            pl.col("Age").arg_sort().over("Id").alias("arg_sort"),
+            pl.argsort_by("Age").over("Id").alias("argsort_by"),
+        ]
+    )
+
+    assert (
+        out["arg_sort"].to_list() == out["argsort_by"].to_list() == [0, 1, 0, 1, 0, 1]
+    )

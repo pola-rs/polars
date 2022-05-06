@@ -10,16 +10,30 @@ use crate::{datatypes::PlHashMap, utils::split_df};
 use ahash::CallHasher;
 use hashbrown::hash_map::Entry;
 use hashbrown::{hash_map::RawEntryMut, HashMap};
+use polars_utils::flatten;
 use rayon::prelude::*;
 use std::hash::{BuildHasher, Hash};
 
-fn finish_group_order(out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
+fn finish_group_order(mut out: Vec<Vec<IdxItem>>, sorted: bool) -> GroupsProxy {
     if sorted {
-        let mut out = out.into_iter().flatten().collect::<Vec<_>>();
+        // we can just take the first value, no need to flatten
+        let mut out = if out.len() == 1 {
+            out.pop().unwrap()
+        } else {
+            flatten(&out, None)
+        };
         out.sort_unstable_by_key(|g| g.0);
-        GroupsProxy::Idx(GroupsIdx::from_iter(out.into_iter()))
+        let mut idx = GroupsIdx::from_iter(out.into_iter());
+        idx.sorted = true;
+        GroupsProxy::Idx(idx)
     } else {
-        GroupsProxy::Idx(GroupsIdx::from(out))
+        // we can just take the first value, no need to flatten
+        if out.len() == 1 {
+            GroupsProxy::Idx(GroupsIdx::from(out.pop().unwrap()))
+        } else {
+            // flattens
+            GroupsProxy::Idx(GroupsIdx::from(out))
+        }
     }
 }
 
@@ -31,7 +45,8 @@ pub(crate) fn groupby<T>(a: impl Iterator<Item = T>, sorted: bool) -> GroupsProx
 where
     T: Hash + Eq,
 {
-    let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
+    let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
+        PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
     let mut cnt = 0;
     a.for_each(|k| {
         let idx = cnt;
@@ -54,9 +69,11 @@ where
             .map(|(_k, v)| v)
             .collect_trusted::<Vec<_>>();
         groups.sort_unstable_by_key(|g| g.0);
-        GroupsProxy::Idx(groups.into_iter().collect())
+        let mut idx: GroupsIdx = groups.into_iter().collect();
+        idx.sorted = true;
+        GroupsProxy::Idx(idx)
     } else {
-        GroupsProxy::Idx(hash_tbl.into_iter().map(|(_k, v)| v).collect())
+        GroupsProxy::Idx(hash_tbl.into_values().collect())
     }
 }
 
@@ -85,13 +102,13 @@ where
             (0..n_partitions).into_par_iter().map(|thread_no| {
                 let thread_no = thread_no as u64;
 
-                let mut hash_tbl: PlHashMap<T, (u32, Vec<u32>)> =
+                let mut hash_tbl: PlHashMap<T, (IdxSize, Vec<IdxSize>)> =
                     PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
 
                 let mut offset = 0;
                 for keys in &keys {
                     let keys = keys.as_ref();
-                    let len = keys.len() as u32;
+                    let len = keys.len() as IdxSize;
                     let hasher = hash_tbl.hasher().clone();
 
                     let mut cnt = 0;
@@ -156,7 +173,7 @@ pub(crate) unsafe fn compare_df_rows(keys: &DataFrame, idx_a: usize, idx_b: usiz
 pub(crate) fn populate_multiple_key_hashmap<V, H, F, G>(
     hash_tbl: &mut HashMap<IdxHash, V, H>,
     // row index
-    idx: u32,
+    idx: IdxSize,
     // hash
     original_h: u64,
     // keys of the hash table (will not be inserted, the indexes will be used)
@@ -214,7 +231,7 @@ pub(crate) unsafe fn compare_keys<'a>(
 pub(crate) fn populate_multiple_key_hashmap2<'a, V, H, F, G>(
     hash_tbl: &mut HashMap<IdxHash, V, H>,
     // row index
-    idx: u32,
+    idx: IdxSize,
     // hash
     original_h: u64,
     // keys of the hash table (will not be inserted, the indexes will be used)
@@ -277,12 +294,12 @@ pub(crate) fn groupby_threaded_multiple_keys_flat(
                 let hashes = &hashes;
                 let thread_no = thread_no as u64;
 
-                let mut hash_tbl: HashMap<IdxHash, (u32, Vec<u32>), IdBuildHasher> =
+                let mut hash_tbl: HashMap<IdxHash, (IdxSize, Vec<IdxSize>), IdBuildHasher> =
                     HashMap::with_capacity_and_hasher(HASHMAP_INIT_SIZE, Default::default());
 
                 let mut offset = 0;
                 for hashes in hashes {
-                    let len = hashes.len() as u32;
+                    let len = hashes.len() as IdxSize;
 
                     let mut idx = 0;
                     for hashes_chunk in hashes.data_views() {

@@ -1,7 +1,6 @@
 use crate::lazy::dsl::PyExpr;
 use crate::prelude::PyDataType;
 use crate::series::PySeries;
-use crate::utils::str_to_polarstype;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
@@ -16,12 +15,20 @@ impl ToSeries for PyObject {
             Ok(s) => s,
             // the lambda did not return a series, we try to create a new python Series
             _ => {
-                let python_s = py_polars_module
+                let res = py_polars_module
                     .getattr(py, "Series")
                     .unwrap()
-                    .call1(py, (name, PyList::new(py, [self])))
-                    .unwrap();
-                python_s.getattr(py, "_s").unwrap()
+                    .call1(py, (name, PyList::new(py, [self])));
+
+                match res {
+                    Ok(python_s) => python_s.getattr(py, "_s").unwrap(),
+                    Err(_) => {
+                        panic!(
+                            "expected a something that could convert to a `Series` but got: {}",
+                            self.as_ref(py).get_type()
+                        )
+                    }
+                }
             }
         };
         let pyseries = py_pyseries.extract::<PySeries>(py).unwrap();
@@ -56,7 +63,7 @@ pub(crate) fn call_lambda_with_series(
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (python_series_wrapper,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.pvalue(py)),
+        Err(e) => panic!("python apply failed: {}", e.value(py)),
     }
 }
 
@@ -86,7 +93,7 @@ pub(crate) fn binary_lambda(lambda: &PyObject, a: Series, b: Series) -> Result<S
     let result_series_wrapper =
         match lambda.call1(py, (python_series_wrapper_a, python_series_wrapper_b)) {
             Ok(pyobj) => pyobj,
-            Err(e) => panic!("custom python function failed: {}", e.pvalue(py)),
+            Err(e) => panic!("custom python function failed: {}", e.value(py)),
         };
     let pyseries = if let Ok(expr) = result_series_wrapper.getattr(py, "_pyexpr") {
         let pyexpr = expr.extract::<PyExpr>(py).unwrap();
@@ -114,18 +121,14 @@ pub fn binary_function(
     input_a: PyExpr,
     input_b: PyExpr,
     lambda: PyObject,
-    output_type: &PyAny,
+    output_type: Option<DataType>,
 ) -> PyExpr {
     let input_a = input_a.inner;
     let input_b = input_b.inner;
 
-    let output_field = match output_type.is_none() {
-        true => Field::new("binary_function", DataType::Null),
-        false => {
-            let str_repr = output_type.str().unwrap().to_str().unwrap();
-            let data_type = str_to_polarstype(str_repr);
-            Field::new("binary_function", data_type)
-        }
+    let output_field = match output_type {
+        None => Field::new("binary_function", DataType::Null),
+        Some(dt) => Field::new("binary_function", dt),
     };
 
     let func = move |a: Series, b: Series| binary_lambda(&lambda, a, b);
@@ -194,7 +197,7 @@ pub(crate) fn call_lambda_with_series_slice(
     // call the lambda and get a python side Series wrapper
     match lambda.call1(py, (wrapped_s,)) {
         Ok(pyobj) => pyobj,
-        Err(e) => panic!("python apply failed: {}", e.pvalue(py)),
+        Err(e) => panic!("python apply failed: {}", e.value(py)),
     }
 }
 
@@ -233,8 +236,8 @@ pub fn map_mul(
         None => fld.clone(),
     });
     if apply_groups {
-        polars::lazy::dsl::apply_mul(function, exprs, output_map).into()
+        polars::lazy::dsl::apply_multiple(function, exprs, output_map).into()
     } else {
-        polars::lazy::dsl::map_mul(function, exprs, output_map).into()
+        polars::lazy::dsl::map_multiple(function, exprs, output_map).into()
     }
 }

@@ -1,16 +1,20 @@
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "object")]
 use std::any::Any;
 use std::borrow::Cow;
 #[cfg(feature = "temporal")]
-use std::ops::Deref;
 use std::sync::Arc;
+
+#[derive(Debug, Copy, Clone)]
+pub enum IsSorted {
+    Ascending,
+    Descending,
+    Not,
+}
 
 macro_rules! invalid_operation {
     ($s:expr) => {
@@ -138,11 +142,6 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        #[cfg(feature = "asof_join")]
-        fn join_asof(&self, _other: &Series) -> Result<Vec<Option<u32>>> {
-            invalid_operation!(self)
-        }
-
         fn set_sorted(&mut self, _reverse: bool) {
             invalid_operation_panic!(self)
         }
@@ -169,54 +168,41 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
-        }
-        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_std(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_var(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn agg_quantile(
             &self,
-            _groups: &GroupsProxy,
+            groups: &GroupsProxy,
             _quantile: f64,
             _interpol: QuantileInterpolOptions,
-        ) -> Option<Series> {
-            None
+        ) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
-        }
-
-        fn hash_join_inner(&self, _other: &Series) -> Vec<(u32, u32)> {
-            invalid_operation_panic!(self)
-        }
-        fn hash_join_left(&self, _other: &Series) -> Vec<(u32, Option<u32>)> {
-            invalid_operation_panic!(self)
-        }
-        fn hash_join_outer(&self, _other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-            invalid_operation_panic!(self)
+        fn agg_median(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn zip_outer_join_column(
             &self,
             _right_column: &Series,
-            _opt_join_tuples: &[(Option<u32>, Option<u32>)],
+            _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
         ) -> Series {
             invalid_operation_panic!(self)
         }
@@ -243,7 +229,7 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
         #[cfg(feature = "sort_multiple")]
-        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
+        fn argsort_multiple(&self, _by: &[Series], _reverse: &[bool]) -> Result<IdxCa> {
             Err(PolarsError::InvalidOperation(
                 "argsort_multiple is not implemented for this Series".into(),
             ))
@@ -254,6 +240,11 @@ pub(crate) mod private {
 pub trait SeriesTrait:
     Send + Sync + private::PrivateSeries + private::PrivateSeriesNumeric
 {
+    /// Check if [`Series`] is sorted.
+    fn is_sorted(&self) -> IsSorted {
+        IsSorted::Not
+    }
+
     #[cfg(feature = "interpolate")]
     #[cfg_attr(docsrs, doc(cfg(feature = "interpolate")))]
     fn interpolate(&self) -> Series;
@@ -414,6 +405,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype Time
+    #[cfg(feature = "dtype-time")]
     fn time(&self) -> Result<&TimeChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != Time", self.dtype()).into(),
@@ -421,6 +413,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype Date
+    #[cfg(feature = "dtype-date")]
     fn date(&self) -> Result<&DateChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!(" Series dtype {:?} != Date", self.dtype()).into(),
@@ -428,6 +421,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype datetime
+    #[cfg(feature = "dtype-datetime")]
     fn datetime(&self) -> Result<&DatetimeChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != datetime", self.dtype()).into(),
@@ -435,6 +429,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype duration
+    #[cfg(feature = "dtype-duration")]
     fn duration(&self) -> Result<&DurationChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != duration", self.dtype()).into(),
@@ -449,6 +444,7 @@ pub trait SeriesTrait:
     }
 
     /// Unpack to ChunkedArray of dtype categorical
+    #[cfg(feature = "dtype-categorical")]
     fn categorical(&self) -> Result<&CategoricalChunked> {
         Err(PolarsError::SchemaMisMatch(
             format!("Series dtype {:?} != categorical", self.dtype()).into(),
@@ -473,8 +469,13 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Append a Series of the same type in place.
+    #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> Result<()> {
+        invalid_operation_panic!(self)
+    }
+
+    #[doc(hidden)]
+    fn extend(&mut self, _other: &Series) -> Result<()> {
         invalid_operation_panic!(self)
     }
 
@@ -483,10 +484,16 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
+    #[doc(hidden)]
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series;
+
+    #[doc(hidden)]
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series;
+
     /// Take by index from an iterator. This operation clones the data.
-    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn take_iter(&self, _iter: &mut dyn TakeIterator) -> Result<Series>;
 
     /// Take by index from an iterator. This operation clones the data.
     ///
@@ -494,17 +501,13 @@ pub trait SeriesTrait:
     ///
     /// - This doesn't check any bounds.
     /// - Iterator must be TrustedLen
-    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_iter_unchecked(&self, _iter: &mut dyn TakeIterator) -> Series;
 
     /// Take by index if ChunkedArray contains a single chunk.
     ///
     /// # Safety
     /// This doesn't check any bounds.
-    unsafe fn take_unchecked(&self, _idx: &UInt32Chunked) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Result<Series>;
 
     /// Take by index from an iterator. This operation clones the data.
     ///
@@ -512,11 +515,10 @@ pub trait SeriesTrait:
     ///
     /// - This doesn't check any bounds.
     /// - Iterator must be TrustedLen
-    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series {
-        invalid_operation_panic!(self)
-    }
+    unsafe fn take_opt_iter_unchecked(&self, _iter: &mut dyn TakeIteratorNulls) -> Series;
 
     /// Take by index from an iterator. This operation clones the data.
+    /// todo! remove?
     #[cfg(feature = "take_opt_iter")]
     #[cfg_attr(docsrs, doc(cfg(feature = "take_opt_iter")))]
     fn take_opt_iter(&self, _iter: &mut dyn TakeIteratorNulls) -> Result<Series> {
@@ -524,14 +526,10 @@ pub trait SeriesTrait:
     }
 
     /// Take by index. This operation is clone.
-    fn take(&self, _indices: &UInt32Chunked) -> Result<Series> {
-        invalid_operation_panic!(self)
-    }
+    fn take(&self, _indices: &IdxCa) -> Result<Series>;
 
     /// Get length of series.
-    fn len(&self) -> usize {
-        invalid_operation_panic!(self)
-    }
+    fn len(&self) -> usize;
 
     /// Check if Series is empty.
     fn is_empty(&self) -> bool {
@@ -585,15 +583,6 @@ pub trait SeriesTrait:
         invalid_operation_panic!(self)
     }
 
-    /// Create dummy variables. See [DataFrame](DataFrame::to_dummies)
-    fn to_dummies(&self) -> Result<DataFrame> {
-        invalid_operation_panic!(self)
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        invalid_operation_panic!(self)
-    }
-
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     fn get(&self, _index: usize) -> AnyValue {
@@ -603,8 +592,11 @@ pub trait SeriesTrait:
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
     ///
+    /// This may refer to physical types
+    ///
     /// # Safety
     /// Does not do any bounds checking
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
         invalid_operation_panic!(self)
     }
@@ -614,7 +606,8 @@ pub trait SeriesTrait:
     }
 
     /// Retrieve the indexes needed for a sort.
-    fn argsort(&self, _reverse: bool) -> UInt32Chunked {
+    #[allow(unused)]
+    fn argsort(&self, options: SortOptions) -> IdxCa {
         invalid_operation_panic!(self)
     }
 
@@ -638,7 +631,7 @@ pub trait SeriesTrait:
     }
 
     /// Get first indexes of unique values.
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         invalid_operation_panic!(self)
     }
 
@@ -653,7 +646,7 @@ pub trait SeriesTrait:
     }
 
     /// Get indexes that evaluate true
-    fn arg_true(&self) -> Result<UInt32Chunked> {
+    fn arg_true(&self) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "arg_true can only be called for boolean dtype".into(),
         ))
@@ -777,10 +770,6 @@ pub trait SeriesTrait:
     fn min_as_series(&self) -> Series {
         invalid_operation_panic!(self)
     }
-    /// Get the mean of the Series as a new Series of length 1.
-    fn mean_as_series(&self) -> Series {
-        invalid_operation_panic!(self)
-    }
     /// Get the median of the Series as a new Series of length 1.
     fn median_as_series(&self) -> Series {
         invalid_operation_panic!(self)
@@ -806,210 +795,6 @@ pub trait SeriesTrait:
         "fmt implemented".into()
     }
 
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract hour from underlying NaiveDateTime representation.
-    /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.hour()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => self.time().map(|ca| ca.hour()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract minute from underlying NaiveDateTime representation.
-    /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.minute()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => self.time().map(|ca| ca.minute()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract second from underlying NaiveDateTime representation.
-    /// Returns the second number from 0 to 59.
-    fn second(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.second()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => self.time().map(|ca| ca.second()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Returns the number of nanoseconds since the whole non-leap second.
-    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    fn nanosecond(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.nanosecond()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => self.time().map(|ca| ca.nanosecond()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract day from underlying NaiveDateTime representation.
-    /// Returns the day of month starting from 1.
-    ///
-    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.day()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.day()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Returns the weekday number where monday = 0 and sunday = 6
-    fn weekday(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.weekday()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.weekday()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Returns the ISO week number starting from 1.
-    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.week()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.week()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Returns the day of year starting from 1.
-    ///
-    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal_day(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.ordinal()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.ordinal()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the month number starting from 1.
-    ///
-    /// The return value ranges from 1 to 12.
-    fn month(&self) -> Result<UInt32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.month()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.month()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the year number in the calendar date.
-    fn year(&self) -> Result<Int32Chunked> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.year()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.year()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Format Date/Datetimewith a `fmt` rule. See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
-    fn strftime(&self, fmt: &str) -> Result<Series> {
-        match self.dtype() {
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => self.date().map(|ca| ca.strftime(fmt).into_series()),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => self.datetime().map(|ca| ca.strftime(fmt).into_series()),
-            #[cfg(feature = "dtype-time")]
-            DataType::Time => self.time().map(|ca| ca.strftime(fmt).into_series()),
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
-    #[cfg(feature = "temporal")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "temporal")))]
-    /// Convert date(time) object to timestamp in ms.
-    fn timestamp(&self) -> Result<Int64Chunked> {
-        match self.dtype() {
-            DataType::Date => self
-                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
-                .unwrap()
-                .datetime()
-                .map(|ca| (ca.deref().clone())),
-            DataType::Datetime(tu, tz) => {
-                use TimeUnit::*;
-                match (tu, tz) {
-                    (Nanoseconds, None) => self.datetime().map(|ca| ca.deref().clone() / 1_000_000),
-                    (Milliseconds, None) => self.datetime().map(|ca| ca.deref().clone()),
-                    _ => todo!(),
-                }
-            }
-            _ => Err(PolarsError::InvalidOperation(
-                format!("operation not supported on dtype {:?}", self.dtype()).into(),
-            )),
-        }
-    }
-
     /// Clone inner ChunkedArray and wrap in a new Arc
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         invalid_operation_panic!(self)
@@ -1024,9 +809,13 @@ pub trait SeriesTrait:
 
     /// Get a hold to self as `Any` trait reference.
     /// Only implemented for ObjectType
-    #[cfg(feature = "object")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
     fn as_any(&self) -> &dyn Any {
+        invalid_operation_panic!(self)
+    }
+
+    /// Get a hold to self as `Any` trait reference.
+    /// Only implemented for ObjectType
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         invalid_operation_panic!(self)
     }
 
@@ -1055,7 +844,7 @@ pub trait SeriesTrait:
     }
     #[cfg(feature = "repeat_by")]
     #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
-    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
         invalid_operation_panic!(self)
     }
     #[cfg(feature = "checked_arithmetic")]

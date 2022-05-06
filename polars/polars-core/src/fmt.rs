@@ -7,16 +7,15 @@ use std::{
     fmt,
     fmt::{Debug, Display, Formatter},
 };
+
 const LIMIT: usize = 25;
 
-use arrow::temporal_conversions::timestamp_ms_to_datetime;
-#[cfg(feature = "pretty_fmt")]
+use arrow::temporal_conversions::{timestamp_ms_to_datetime, timestamp_us_to_datetime};
+#[cfg(feature = "fmt")]
 use comfy_table::presets::{ASCII_FULL, UTF8_FULL};
-#[cfg(feature = "pretty_fmt")]
+#[cfg(feature = "fmt")]
 use comfy_table::*;
-#[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
-use prettytable::{Cell, Row, Table};
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 use std::borrow::Cow;
 
 macro_rules! format_array {
@@ -140,14 +139,6 @@ impl Debug for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl Debug for CategoricalChunked {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let limit = set_limit!(self);
-        format_array!(limit, f, self, "cat", self.name(), "ChunkedArray")
-    }
-}
-
 #[cfg(feature = "object")]
 impl<T> Debug for ObjectChunked<T>
 where
@@ -237,6 +228,7 @@ impl Debug for Series {
             DataType::Float64 => {
                 format_array!(limit, f, self.f64().unwrap(), "f64", self.name(), "Series")
             }
+            #[cfg(feature = "dtype-date")]
             DataType::Date => format_array!(
                 limit,
                 f,
@@ -245,6 +237,7 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
+            #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(
@@ -256,6 +249,7 @@ impl Debug for Series {
                     "Series"
                 )
             }
+            #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());
                 format_array!(
@@ -278,11 +272,20 @@ impl Debug for Series {
             #[cfg(feature = "object")]
             DataType::Object(_) => format_object_array(limit, f, self, self.name(), "Series"),
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => format_array!(
+            DataType::Categorical(_) => format_array!(
                 limit,
                 f,
                 self.categorical().unwrap(),
                 "cat",
+                self.name(),
+                "Series"
+            ),
+            #[cfg(feature = "dtype-struct")]
+            dt @ DataType::Struct(_) => format_array!(
+                limit,
+                f,
+                self.struct_().unwrap(),
+                format!("{}", dt),
                 self.name(),
                 "Series"
             ),
@@ -302,7 +305,7 @@ impl Debug for DataFrame {
         Display::fmt(self, f)
     }
 }
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 fn make_str_val(v: &str) -> String {
     let string_limit = 32;
     let v_trunc = &v[..v
@@ -318,7 +321,7 @@ fn make_str_val(v: &str) -> String {
     }
 }
 
-#[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
+#[cfg(feature = "fmt")]
 fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<String> {
     let reduce_columns = n_first + n_last < row.len();
     let mut row_str = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
@@ -336,56 +339,39 @@ fn prepare_row(row: Vec<Cow<'_, str>>, n_first: usize, n_last: usize) -> Vec<Str
 
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let height = self.height();
-        assert!(
-            self.columns.iter().all(|s| s.len() == height),
-            "The columns lengths in the DataFrame are not equal."
-        );
+        #[cfg(feature = "fmt")]
+        {
+            let height = self.height();
+            assert!(
+                self.columns.iter().all(|s| s.len() == height),
+                "The columns lengths in the DataFrame are not equal."
+            );
 
-        let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
-            .unwrap_or_else(|_| "8".to_string())
-            .parse()
-            .unwrap_or(8);
-
-        #[cfg(any(feature = "plain_fmt", feature = "pretty_fmt"))]
-        let max_n_rows = {
-            let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+            let max_n_cols = std::env::var("POLARS_FMT_MAX_COLS")
                 .unwrap_or_else(|_| "8".to_string())
                 .parse()
                 .unwrap_or(8);
-            if max_n_rows < 2 {
-                2
+
+            let max_n_rows = {
+                let max_n_rows = std::env::var("POLARS_FMT_MAX_ROWS")
+                    .unwrap_or_else(|_| "8".to_string())
+                    .parse()
+                    .unwrap_or(8);
+                if max_n_rows < 2 {
+                    2
+                } else {
+                    max_n_rows
+                }
+            };
+            let (n_first, n_last) = if self.width() > max_n_cols {
+                ((max_n_cols + 1) / 2, max_n_cols / 2)
             } else {
-                max_n_rows
-            }
-        };
-        let (n_first, n_last) = if self.width() > max_n_cols {
-            ((max_n_cols + 1) / 2, max_n_cols / 2)
-        } else {
-            (self.width(), 0)
-        };
-        let reduce_columns = n_first + n_last < self.width();
+                (self.width(), 0)
+            };
+            let reduce_columns = n_first + n_last < self.width();
 
-        let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
+            let mut names = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
 
-        #[cfg(not(feature = "pretty_fmt"))]
-        {
-            let field_to_str = |f: &Field| format!("{}\n---\n{}", f.name(), f.data_type());
-            let schema = self.schema();
-            let fields = schema.fields();
-            for field in fields[0..n_first].iter() {
-                names.push(field_to_str(field));
-            }
-            if reduce_columns {
-                names.push("...".into());
-            }
-            for field in fields[self.width() - n_last..].iter() {
-                names.push(field_to_str(field));
-            }
-        }
-
-        #[cfg(feature = "pretty_fmt")]
-        {
             let field_to_str = |f: &Field| {
                 let name = make_str_val(f.name());
                 let lower_bounds = std::cmp::max(5, std::cmp::min(12, name.len()));
@@ -396,8 +382,7 @@ impl Display for DataFrame {
                 comfy_table::ColumnConstraint::LowerBoundary(comfy_table::Width::Fixed(l as u16))
             };
             let mut constraints = Vec::with_capacity(n_first + n_last + reduce_columns as usize);
-            let schema = self.schema();
-            let fields = schema.fields();
+            let fields = self.fields();
             for field in fields[0..n_first].iter() {
                 let (s, l) = field_to_str(field);
                 names.push(s);
@@ -472,51 +457,14 @@ impl Display for DataFrame {
 
             write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
-        #[cfg(not(any(feature = "plain_fmt", feature = "pretty_fmt")))]
+
+        #[cfg(not(feature = "fmt"))]
         {
             write!(
                 f,
                 "shape: {:?}\nto see more, compile with 'plain_fmt' or 'pretty_fmt' feature",
                 self.shape()
             )?;
-        }
-
-        #[cfg(all(feature = "plain_fmt", not(feature = "pretty_fmt")))]
-        {
-            let mut table = Table::new();
-            table.set_titles(Row::new(names.into_iter().map(|s| Cell::new(&s)).collect()));
-            let mut rows = Vec::with_capacity(max_n_rows);
-            if self.height() > max_n_rows {
-                for i in 0..(max_n_rows / 2) {
-                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
-                }
-                let dots = rows[0].iter().map(|_| "...".to_string()).collect();
-                rows.push(dots);
-                for i in (self.height() - (max_n_rows + 1) / 2)..self.height() {
-                    let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                    rows.push(prepare_row(row, n_first, n_last));
-                }
-                for row in rows {
-                    table.add_row(Row::new(row.into_iter().map(|s| Cell::new(&s)).collect()));
-                }
-            } else {
-                for i in 0..self.height() {
-                    if self.width() > 0 {
-                        let row = self.columns.iter().map(|s| s.str_value(i)).collect();
-                        table.add_row(Row::new(
-                            prepare_row(row, n_first, n_last)
-                                .into_iter()
-                                .map(|s| Cell::new(&s))
-                                .collect(),
-                        ));
-                    } else {
-                        break;
-                    }
-                }
-            }
-
-            write!(f, "shape: {:?}\n{}", self.shape(), table)?;
         }
 
         Ok(())
@@ -580,6 +528,7 @@ const SIZES_NS: [i64; 4] = [
     1_000_000_000,
 ];
 const NAMES: [&str; 4] = ["day", "hour", "minute", "second"];
+const SIZES_US: [i64; 4] = [86_400_000_000, 3_600_000_000, 60_000_000, 1_000_000];
 const SIZES_MS: [i64; 4] = [86_400_000, 3_600_000, 60_000, 1_000];
 
 fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
@@ -592,6 +541,19 @@ fn fmt_duration_ns(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
     } else if v % 1_000_000 != 0 {
         write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
     } else if v % 1_000_000_000 != 0 {
+        write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
+    }
+    Ok(())
+}
+
+fn fmt_duration_us(f: &mut Formatter<'_>, v: i64) -> fmt::Result {
+    if v == 0 {
+        return write!(f, "0 µs");
+    }
+    format_duration(f, v, SIZES_US.as_slice(), NAMES.as_slice())?;
+    if v % 1000 != 0 {
+        write!(f, "{} µs", (v % 1_000_000_000) / 1000)?;
+    } else if v % 1_000_000 != 0 {
         write!(f, "{} ms", (v % 1_000_000_000) / 1_000_000)?;
     }
     Ok(())
@@ -645,16 +607,19 @@ impl Display for AnyValue<'_> {
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
             AnyValue::Utf8(v) => write!(f, "{}", format_args!("\"{}\"", v)),
+            AnyValue::Utf8Owned(v) => write!(f, "{}", format_args!("\"{}\"", v)),
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(v, tu, _) => match tu {
                 TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
+                TimeUnit::Microseconds => write!(f, "{}", timestamp_us_to_datetime(*v)),
                 TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
             },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
+                TimeUnit::Microseconds => fmt_duration_us(f, *v),
                 TimeUnit::Milliseconds => fmt_duration_ms(f, *v),
             },
             #[cfg(feature = "dtype-time")]
@@ -670,8 +635,25 @@ impl Display for AnyValue<'_> {
             AnyValue::List(s) => write!(f, "{}", s.fmt_list()),
             #[cfg(feature = "object")]
             AnyValue::Object(v) => write!(f, "{}", v),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::Struct(vals, _) => fmt_struct(f, vals),
+            #[cfg(feature = "dtype-struct")]
+            AnyValue::StructOwned(payload) => fmt_struct(f, &payload.0),
         }
     }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn fmt_struct(f: &mut Formatter<'_>, vals: &[AnyValue]) -> fmt::Result {
+    write!(f, "{{")?;
+    if !vals.is_empty() {
+        for v in &vals[..vals.len() - 1] {
+            write!(f, "{},", v)?;
+        }
+        // last value has no trailing comma
+        write!(f, "{}", vals[vals.len() - 1])?;
+    }
+    write!(f, "}}")
 }
 
 macro_rules! impl_fmt_list {
@@ -758,6 +740,13 @@ impl FmtList for DurationChunked {
 
 #[cfg(feature = "dtype-time")]
 impl FmtList for TimeChunked {
+    fn fmt_list(&self) -> String {
+        impl_fmt_list!(self)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+impl FmtList for StructChunked {
     fn fmt_list(&self) -> String {
         impl_fmt_list!(self)
     }

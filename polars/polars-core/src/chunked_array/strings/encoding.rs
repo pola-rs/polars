@@ -17,7 +17,7 @@ impl Utf8Chunked {
         });
 
         if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
-            Err(PolarsError::ValueError("Unable to decode inputs".into()))
+            Err(PolarsError::ComputeError("Unable to decode inputs".into()))
         } else {
             Ok(ca)
         }
@@ -41,7 +41,7 @@ impl Utf8Chunked {
         });
 
         if strict.unwrap_or(false) && (ca.null_count() != self.null_count()) {
-            Err(PolarsError::ValueError("Unable to decode inputs".into()))
+            Err(PolarsError::ComputeError("Unable to decode inputs".into()))
         } else {
             Ok(ca)
         }

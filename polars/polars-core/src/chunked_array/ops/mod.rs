@@ -9,14 +9,12 @@ use crate::chunked_array::object::ObjectType;
 use crate::prelude::*;
 use arrow::buffer::Buffer;
 use polars_arrow::prelude::QuantileInterpolOptions;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 #[cfg(feature = "abs")]
 mod abs;
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
-mod append;
+pub(crate) mod append;
 mod apply;
 mod bit_repr;
 pub(crate) mod chunkops;
@@ -27,6 +25,7 @@ mod concat_str;
 mod cum_agg;
 pub(crate) mod downcast;
 pub(crate) mod explode;
+mod extend;
 mod fill_null;
 mod filter;
 pub mod full;
@@ -47,6 +46,9 @@ pub(crate) mod take;
 pub(crate) mod unique;
 #[cfg(feature = "zip_with")]
 pub mod zip;
+
+#[cfg(feature = "serde-lazy")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "to_list")]
 pub trait ToList<T: PolarsDataType> {
@@ -428,32 +430,34 @@ pub trait ChunkVar<T> {
 /// fn filter_all_ones(df: &DataFrame) -> Result<DataFrame> {
 ///     let mask = df
 ///     .column("column_a")?
-///     .equal(1);
+///     .equal(1)?;
 ///
 ///     df.filter(&mask)
 /// }
 /// ```
 pub trait ChunkCompare<Rhs> {
+    type Item;
+
     /// Check for equality and regard missing values as equal.
-    fn eq_missing(&self, rhs: Rhs) -> BooleanChunked;
+    fn eq_missing(&self, rhs: Rhs) -> Self::Item;
 
     /// Check for equality.
-    fn equal(&self, rhs: Rhs) -> BooleanChunked;
+    fn equal(&self, rhs: Rhs) -> Self::Item;
 
     /// Check for inequality.
-    fn not_equal(&self, rhs: Rhs) -> BooleanChunked;
+    fn not_equal(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than comparison.
-    fn gt(&self, rhs: Rhs) -> BooleanChunked;
+    fn gt(&self, rhs: Rhs) -> Self::Item;
 
     /// Greater than or equal comparison.
-    fn gt_eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn gt_eq(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than comparison.
-    fn lt(&self, rhs: Rhs) -> BooleanChunked;
+    fn lt(&self, rhs: Rhs) -> Self::Item;
 
     /// Less than or equal comparison
-    fn lt_eq(&self, rhs: Rhs) -> BooleanChunked;
+    fn lt_eq(&self, rhs: Rhs) -> Self::Item;
 }
 
 /// Get unique values in a `ChunkedArray`
@@ -464,7 +468,7 @@ pub trait ChunkUnique<T> {
 
     /// Get first index of the unique values in a `ChunkedArray`.
     /// This Vec is sorted.
-    fn arg_unique(&self) -> Result<UInt32Chunked>;
+    fn arg_unique(&self) -> Result<IdxCa>;
 
     /// Number of unique values in the `ChunkedArray`
     fn n_unique(&self) -> Result<usize> {
@@ -485,13 +489,6 @@ pub trait ChunkUnique<T> {
         ))
     }
 
-    /// Count the unique values.
-    fn value_counts(&self) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-
     /// The most occurring value(s). Can return multiple Values
     #[cfg(feature = "mode")]
     #[cfg_attr(docsrs, doc(cfg(feature = "mode")))]
@@ -502,15 +499,8 @@ pub trait ChunkUnique<T> {
     }
 }
 
-pub trait ToDummies<T>: ChunkUnique<T> {
-    fn to_dummies(&self) -> Result<DataFrame> {
-        Err(PolarsError::InvalidOperation(
-            "is_duplicated is not implemented for this dtype".into(),
-        ))
-    }
-}
-
 #[derive(Default, Copy, Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
 pub struct SortOptions {
     pub descending: bool,
     pub nulls_last: bool,
@@ -525,10 +515,10 @@ pub trait ChunkSort<T> {
     fn sort(&self, reverse: bool) -> ChunkedArray<T>;
 
     /// Retrieve the indexes needed to sort this array.
-    fn argsort(&self, reverse: bool) -> UInt32Chunked;
+    fn argsort(&self, options: SortOptions) -> IdxCa;
 
     /// Retrieve the indexes need to sort this and the other arrays.
-    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, _other: &[Series], _reverse: &[bool]) -> Result<IdxCa> {
         Err(PolarsError::InvalidOperation(
             "argsort_multiple not implemented for this dtype".into(),
         ))
@@ -652,14 +642,6 @@ impl ChunkExpandAtIndex<Utf8Type> for Utf8Chunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkExpandAtIndex<CategoricalType> for CategoricalChunked {
-    fn expand_at_index(&self, index: usize, length: usize) -> CategoricalChunked {
-        let ca: CategoricalChunked = self.deref().expand_at_index(index, length).into();
-        ca.set_state(self)
-    }
-}
-
 impl ChunkExpandAtIndex<ListType> for ListChunked {
     fn expand_at_index(&self, index: usize, length: usize) -> ListChunked {
         let opt_val = self.get(index);
@@ -703,14 +685,11 @@ pub trait ChunkZip<T> {
 pub trait ChunkApplyKernel<A: Array> {
     /// Apply kernel and return result as a new ChunkedArray.
     #[must_use]
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&A) -> ArrayRef;
+    fn apply_kernel(&self, f: &dyn Fn(&A) -> ArrayRef) -> Self;
 
     /// Apply a kernel that outputs an array of different type.
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&A) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&A) -> ArrayRef,
         S: PolarsDataType;
 }
 
@@ -754,7 +733,7 @@ pub trait ArgAgg {
 #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
 pub trait RepeatBy {
     /// Repeat the values `n` times, where `n` is determined by the values in `by`.
-    fn repeat_by(&self, _by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, _by: &IdxCa) -> ListChunked {
         unimplemented!()
     }
 }

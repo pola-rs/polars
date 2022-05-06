@@ -1,4 +1,4 @@
-use crate::utils::str_to_polarstype;
+use crate::Wrap;
 use polars::prelude::*;
 use pyo3::{FromPyObject, PyAny, PyResult};
 
@@ -24,6 +24,7 @@ pub(crate) enum PyDataType {
     Time,
     Object,
     Categorical,
+    Struct,
 }
 
 impl From<&DataType> for PyDataType {
@@ -48,7 +49,8 @@ impl From<&DataType> for PyDataType {
             DataType::Duration(tu) => Duration(*tu),
             DataType::Time => Time,
             DataType::Object(_) => Object,
-            DataType::Categorical => Categorical,
+            DataType::Categorical(_) => Categorical,
+            DataType::Struct(_) => Struct,
             DataType::Null | DataType::Unknown => {
                 panic!("null or unknown not expected here")
             }
@@ -84,15 +86,16 @@ impl Into<DataType> for PyDataType {
             PyDataType::Duration(tu) => Duration(tu),
             PyDataType::Time => Time,
             PyDataType::Object => Object("object"),
-            PyDataType::Categorical => Categorical,
+            PyDataType::Categorical => Categorical(None),
+            PyDataType::Struct => Struct(vec![]),
         }
     }
 }
 
 impl FromPyObject<'_> for PyDataType {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let str_repr = ob.str().unwrap().to_str().unwrap();
-        Ok(str_to_polarstype(str_repr).into())
+        let dt = ob.extract::<Wrap<DataType>>()?;
+        Ok(dt.0.into())
     }
 }
 

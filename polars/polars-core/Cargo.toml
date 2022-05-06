@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.19.1"
+version = "0.21.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -15,7 +15,7 @@ avx512 = []
 docs = []
 temporal = ["regex", "chrono"]
 random = ["rand", "rand_distr"]
-default = ["docs", "temporal", "performant", "private"]
+default = ["docs", "temporal", "private"]
 lazy = ["sort_multiple"]
 
 # ~40% faster collect, needed until trustedlength iter stabilizes
@@ -27,9 +27,7 @@ string_encoding = ["base64", "hex"]
 # support for ObjectChunked<T> (downcastable Series of any type)
 object = ["serde_json"]
 
-# Cannot have mutually exclusive types. User should choose one of:
-pretty_fmt = ["comfy-table"]
-plain_fmt = ["prettytable-rs"]
+fmt = ["comfy-table"]
 
 # opt-in features
 # sort by multiple columns
@@ -73,9 +71,14 @@ moment = []
 diagonal_concat = []
 horizontal_concat = []
 abs = []
-ewma = ["polars-utils"]
+ewma = []
 dataframe_arithmetic = []
 product = []
+unique_counts = []
+log = []
+partition_by = []
+semi_anti_join = []
+chunked_ids = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -89,8 +92,14 @@ dtype-i16 = []
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
+dtype-struct = []
 
 parquet = ["arrow/io_parquet"]
+
+# scale to terrabytes?
+bigidx = ["polars-arrow/bigidx"]
+
+serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
 
 docs-selection = [
   "ndarray",
@@ -130,6 +139,8 @@ docs-selection = [
   "dataframe_arithmetic",
   "string_encoding",
   "product",
+  "unique_counts",
+  "log",
 ]
 
 [dependencies]
@@ -140,31 +151,29 @@ chrono = { version = "0.4", optional = true }
 comfy-table = { version = "5.0", optional = true }
 hashbrown = { version = "0.12", features = ["rayon"] }
 hex = { version = "0.4", optional = true }
+indexmap = { version = "1", features = ["std"] }
 jsonpath_lib = { version = "0.3.0", optional = true, git = "https://github.com/ritchie46/jsonpath", branch = "improve_compiled" }
 lazy_static = "1.4"
 ndarray = { version = "0.15", optional = true, default_features = false }
 num = "^0.4"
-num_cpus = "1"
-polars-arrow = { version = "0.19.1", path = "../polars-arrow", features = ["compute"] }
-polars-utils = { version = "0.1.0", path = "../polars-utils", optional = true }
-prettytable-rs = { version = "0.8.0", optional = true }
-rand = { version = "0.8", optional = true }
+polars-arrow = { version = "0.21.1", path = "../polars-arrow", features = ["compute"] }
+polars-utils = { version = "0.21.1", path = "../polars-utils" }
+rand = { version = "0.8", optional = true, features = ["small_rng", "std"] }
 rand_distr = { version = "0.4", optional = true }
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1.0", optional = true }
+serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
-unsafe_unwrap = "^0.1.0"
 
 [dependencies.arrow]
 package = "arrow2"
 git = "https://github.com/jorgecarleitao/arrow2"
 # git = "https://github.com/ritchie46/arrow2"
-rev = "086c54d00aee7b26ba3c8d0c5c683c531e2c75c1"
-# branch = "offset_pub"
-# version = "0.9"
+rev = "d0359641dbe6f9c6c50ab2f069b00a3b4d2cb5da"
+# branch = "polars"
+# version = "0.11"
 default-features = false
 features = [
   "compute_aggregate",

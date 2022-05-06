@@ -1,6 +1,6 @@
 [package]
 name = "polars-utils"
-version = "0.1.0"
+version = "0.21.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -9,4 +9,8 @@ description = "private utils for the polars dataframe library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-parking_lot = "0.11"
+parking_lot = "0.12"
+rayon = "1.5"
+
+[features]
+bigidx = []

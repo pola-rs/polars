@@ -24,7 +24,7 @@ where
 {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(T::get_dtype().to_arrow(), length).into();
-        ChunkedArray::new_from_chunks(name, vec![arr])
+        ChunkedArray::from_chunks(name, vec![arr])
     }
 }
 impl ChunkFull<bool> for BooleanChunked {
@@ -38,7 +38,7 @@ impl ChunkFull<bool> for BooleanChunked {
 impl ChunkFullNull for BooleanChunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Boolean.to_arrow(), length).into();
-        BooleanChunked::new_from_chunks(name, vec![arr])
+        BooleanChunked::from_chunks(name, vec![arr])
     }
 }
 
@@ -56,7 +56,7 @@ impl<'a> ChunkFull<&'a str> for Utf8Chunked {
 impl ChunkFullNull for Utf8Chunked {
     fn full_null(name: &str, length: usize) -> Self {
         let arr = new_null_array(DataType::Utf8.to_arrow(), length).into();
-        Utf8Chunked::new_from_chunks(name, vec![arr])
+        Utf8Chunked::from_chunks(name, vec![arr])
     }
 }
 
@@ -76,17 +76,6 @@ impl ChunkFullNull for ListChunked {
     }
 }
 
-#[cfg(feature = "dtype-categorical")]
-impl ChunkFullNull for CategoricalChunked {
-    fn full_null(name: &str, length: usize) -> CategoricalChunked {
-        use crate::chunked_array::categorical::CategoricalChunkedBuilder;
-        let mut builder = CategoricalChunkedBuilder::new(name, length);
-        let iter = (0..length).map(|_| None);
-        builder.drain_iter(iter);
-        builder.finish()
-    }
-}
-
 impl ListChunked {
     pub(crate) fn full_null_with_dtype(
         name: &str,
@@ -102,7 +91,7 @@ impl ListChunked {
             length,
         )
         .into();
-        ListChunked::new_from_chunks(name, vec![arr])
+        ListChunked::from_chunks(name, vec![arr])
     }
 }
 

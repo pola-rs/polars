@@ -6,6 +6,39 @@ fn get_arenas() -> (Arena<AExpr>, Arena<ALogicalPlan>) {
     (expr_arena, lp_arena)
 }
 
+pub(crate) fn row_count_at_scan(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    (&lp_arena).iter(lp).any(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            CsvScan {
+                options:
+                    CsvParserOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
+            }
+            | ParquetScan {
+                options:
+                    ParquetOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
+            }
+            | IpcScan {
+                options:
+                    IpcScanOptions {
+                        row_count: Some(_), ..
+                    },
+                ..
+            } => true,
+            _ => false,
+        }
+    })
+}
+
 pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
@@ -30,7 +63,9 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     })
 }
 
-fn slice_at_scan(lp_arena: &Arena<ALogicalPlan>, lp: Node) -> bool {
+fn slice_at_scan(q: LazyFrame) -> bool {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use ALogicalPlan::*;
         match lp {
@@ -110,20 +145,101 @@ fn test_no_left_join_pass() -> Result<()> {
 #[test]
 pub fn test_simple_slice() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
-    let (mut expr_arena, mut lp_arena) = get_arenas();
     let q = scan_foods_parquet(false).limit(3);
 
-    let root = q.clone().optimize(&mut lp_arena, &mut expr_arena)?;
-    assert!(slice_at_scan(&lp_arena, root));
+    assert!(slice_at_scan(q.clone()));
     let out = q.collect()?;
     assert_eq!(out.height(), 3);
 
     let q = scan_foods_parquet(false)
         .select([col("category"), col("calories").alias("bar")])
         .limit(3);
-    assert!(slice_at_scan(&lp_arena, root));
+    assert!(slice_at_scan(q.clone()));
     let out = q.collect()?;
     assert_eq!(out.height(), 3);
+
+    Ok(())
+}
+
+#[test]
+pub fn test_slice_pushdown_join() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    let q1 = scan_foods_parquet(false).limit(3);
+    let q2 = scan_foods_parquet(false);
+
+    let q = q1
+        .join(q2, [col("category")], [col("category")], JoinType::Left)
+        .slice(1, 3);
+    // test if optimization continued beyond the join node
+    assert!(slice_at_scan(q.clone()));
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            Join { options, .. } => options.slice == Some((1, 3)),
+            Slice { .. } => false,
+            _ => true,
+        }
+    }));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 7));
+
+    Ok(())
+}
+
+#[test]
+pub fn test_slice_pushdown_groupby() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    let q = scan_foods_parquet(false).limit(100);
+
+    let q = q
+        .groupby([col("category")])
+        .agg([col("calories").sum()])
+        .slice(1, 3);
+
+    // test if optimization continued beyond the groupby node
+    assert!(slice_at_scan(q.clone()));
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            Aggregate { options, .. } => options.slice == Some((1, 3)),
+            Slice { .. } => false,
+            _ => true,
+        }
+    }));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 2));
+
+    Ok(())
+}
+
+#[test]
+pub fn test_slice_pushdown_sort() -> Result<()> {
+    let _guard = SINGLE_LOCK.lock().unwrap();
+    let q = scan_foods_parquet(false).limit(100);
+
+    let q = q.sort("category", SortOptions::default()).slice(1, 3);
+
+    // test if optimization continued beyond the sort node
+    assert!(slice_at_scan(q.clone()));
+
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.clone().optimize(&mut lp_arena, &mut expr_arena).unwrap();
+    assert!((&lp_arena).iter(lp).all(|(_, lp)| {
+        use ALogicalPlan::*;
+        match lp {
+            Sort { args, .. } => args.slice == Some((1, 3)),
+            Slice { .. } => false,
+            _ => true,
+        }
+    }));
+    let out = q.collect()?;
+    assert_eq!(out.shape(), (3, 4));
 
     Ok(())
 }
@@ -164,7 +280,7 @@ fn test_lazy_filter_and_rename() {
         .lazy()
         .rename(["a"], ["x"])
         .filter(col("x").map(
-            |s: Series| Ok(s.gt(3).into_series()),
+            |s: Series| Ok(s.gt(3)?.into_series()),
             GetOutput::from_type(DataType::Boolean),
         ))
         .select([col("x")]);
@@ -177,11 +293,87 @@ fn test_lazy_filter_and_rename() {
 
     // now we check if the column is rename or added when we don't select
     let lf = df.lazy().rename(["a"], ["x"]).filter(col("x").map(
-        |s: Series| Ok(s.gt(3).into_series()),
+        |s: Series| Ok(s.gt(3)?.into_series()),
         GetOutput::from_type(DataType::Boolean),
     ));
     // the rename function should not interfere with the predicate pushdown
     assert!(predicate_at_scan(lf.clone()));
 
     assert_eq!(lf.collect().unwrap().get_column_names(), &["x", "b", "c"]);
+}
+
+#[test]
+fn test_with_row_count_opts() -> Result<()> {
+    let df = df![
+        "a" => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .tail(5)
+        .collect()?;
+    let expected = df![
+        "row_nr" => [5 as IdxSize, 6, 7, 8, 9],
+        "a" => [5, 6, 7, 8, 9],
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .slice(1, 2)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .idx()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[1, 2]
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .with_row_count("row_nr", None)
+        .filter(col("a").eq(lit(3i32)))
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .idx()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[3]
+    );
+
+    let out = df
+        .clone()
+        .lazy()
+        .slice(1, 2)
+        .with_row_count("row_nr", None)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .idx()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[0, 1]
+    );
+
+    let out = df
+        .lazy()
+        .filter(col("a").eq(lit(3i32)))
+        .with_row_count("row_nr", None)
+        .collect()?;
+    assert_eq!(
+        out.column("row_nr")?
+            .idx()?
+            .into_no_null_iter()
+            .collect::<Vec<_>>(),
+        &[0]
+    );
+
+    Ok(())
 }

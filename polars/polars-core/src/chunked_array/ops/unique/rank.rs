@@ -1,9 +1,10 @@
 use crate::prelude::*;
 
+use polars_arrow::prelude::FromData;
 #[cfg(feature = "random")]
 use rand::prelude::SliceRandom;
 #[cfg(feature = "random")]
-use rand::thread_rng;
+use rand::{rngs::SmallRng, thread_rng, SeedableRng};
 
 #[derive(Copy, Clone)]
 pub enum RankMethod {
@@ -37,13 +38,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
         1 => {
             return match method {
                 Average => Series::new(s.name(), &[1.0f32]),
-                _ => Series::new(s.name(), &[1u32]),
+                _ => Series::new(s.name(), &[1 as IdxSize]),
             };
         }
         0 => {
             return match method {
-                Average => Float32Chunked::new_from_slice(s.name(), &[]).into_series(),
-                _ => UInt32Chunked::new_from_slice(s.name(), &[]).into_series(),
+                Average => Float32Chunked::from_slice(s.name(), &[]).into_series(),
+                _ => IdxCa::from_slice(s.name(), &[]).into_series(),
             };
         }
         _ => {}
@@ -66,10 +67,13 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     let len = s.len();
     let null_count = s.null_count();
-    let sort_idx_ca = s.argsort(reverse);
+    let sort_idx_ca = s.argsort(SortOptions {
+        descending: reverse,
+        ..Default::default()
+    });
     let sort_idx = sort_idx_ca.downcast_iter().next().unwrap().values();
 
-    let mut inv: Vec<u32> = Vec::with_capacity(len);
+    let mut inv: Vec<IdxSize> = Vec::with_capacity(len);
     // Safety:
     // Values will be filled next and there is only primitive data
     #[allow(clippy::uninit_vec)]
@@ -80,14 +84,14 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
     #[cfg(feature = "random")]
     let mut count = if let RankMethod::Ordinal | RankMethod::Random = method {
-        1u32
+        1 as IdxSize
     } else {
         0
     };
 
     #[cfg(not(feature = "random"))]
     let mut count = if let RankMethod::Ordinal = method {
-        1u32
+        1 as IdxSize
     } else {
         0
     };
@@ -104,7 +108,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
     use RankMethod::*;
     match method {
         Ordinal => {
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = IdxCa::from_vec(s.name(), inv);
             inv_ca.into_series()
         }
         #[cfg(feature = "random")]
@@ -114,6 +118,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
             let not_consecutive_same = (&arr.slice(1, len - 1))
                 .not_equal(&arr.slice(0, len - 1))
+                .unwrap()
                 .rechunk();
             let obs = not_consecutive_same.downcast_iter().next().unwrap();
 
@@ -135,7 +140,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
 
             let mut sort_idx = sort_idx.to_vec();
 
-            let rng = &mut thread_rng();
+            let mut thread_rng = thread_rng();
+            let rng = &mut SmallRng::from_rng(&mut thread_rng).unwrap();
 
             // Shuffle sort_idx positions which point to ties in the original series.
             for i in 0..(ties_indices.len() - 1) as usize {
@@ -147,7 +153,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             }
 
             // Recreate inv_ca (where ties are randomly shuffled compared with Ordinal).
-            let mut count = 1u32;
+            let mut count = 1 as IdxSize;
             unsafe {
                 sort_idx.iter().for_each(|&i| {
                     *inv_values.get_unchecked_mut(i as usize) = count;
@@ -155,17 +161,18 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
                 });
             }
 
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = IdxCa::from_vec(s.name(), inv);
             inv_ca.into_series()
         }
         _ => {
-            let inv_ca = UInt32Chunked::new_from_aligned_vec(s.name(), inv);
+            let inv_ca = IdxCa::from_vec(s.name(), inv);
             // Safety:
             // in bounds
             let arr = unsafe { s.take_unchecked(&sort_idx_ca).unwrap() };
             let validity = arr.chunks()[0].validity().cloned();
             let not_consecutive_same = (&arr.slice(1, len - 1))
                 .not_equal(&arr.slice(0, len - 1))
+                .unwrap()
                 .rechunk();
             // this obs is shorter than that of scipy stats, because we can just start the cumsum by 1
             // instead of 0
@@ -178,7 +185,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             //     if method == 'min':
             //         return count[dense - 1] + 1
             // ```
-            let mut cumsum: u32 = if let RankMethod::Min = method { 0 } else { 1 };
+            let mut cumsum: IdxSize = if let RankMethod::Min = method { 0 } else { 1 };
 
             dense.push(cumsum);
             obs.values_iter().for_each(|b| {
@@ -187,9 +194,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
                 }
                 dense.push(cumsum)
             });
-            let arr =
-                PrimitiveArray::from_data(DataType::UInt32.to_arrow(), dense.into(), validity);
-            let dense: UInt32Chunked = (s.name(), arr).into();
+            let arr = IdxArr::from_data_default(dense.into(), validity);
+            let dense: IdxCa = (s.name(), arr).into();
             // Safety:
             // in bounds
             let dense = unsafe { dense.take_unchecked((&inv_ca).into()) };
@@ -201,7 +207,7 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
             let bitmap = obs.values();
             let cap = bitmap.len() - bitmap.null_count();
             let mut count = Vec::with_capacity(cap + 1);
-            let mut cnt = 0u32;
+            let mut cnt: IdxSize = 0;
             count.push(cnt);
 
             if null_count > 0 {
@@ -222,8 +228,8 @@ pub(crate) fn rank(s: &Series, method: RankMethod, reverse: bool) -> Series {
                 });
             }
 
-            count.push((len - null_count) as u32);
-            let count = UInt32Chunked::new_from_aligned_vec(s.name(), count);
+            count.push((len - null_count) as IdxSize);
+            let count = IdxCa::from_vec(s.name(), count);
 
             match method {
                 Max => {
@@ -266,15 +272,15 @@ mod test {
         let s = Series::new("a", &[1, 2, 3, 2, 2, 3, 0]);
 
         let out = rank(&s, RankMethod::Ordinal, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[2, 3, 6, 4, 5, 7, 1]);
+        assert_eq!(out, &[2 as IdxSize, 3, 6, 4, 5, 7, 1]);
 
         #[cfg(feature = "random")]
         {
             let out = rank(&s, RankMethod::Random, false)
-                .u32()?
+                .idx()?
                 .into_no_null_iter()
                 .collect::<Vec<_>>();
             assert_eq!(out[0], 2);
@@ -287,19 +293,19 @@ mod test {
         }
 
         let out = rank(&s, RankMethod::Dense, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 4, 3, 3, 4, 1]);
 
         let out = rank(&s, RankMethod::Max, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 5, 7, 5, 5, 7, 1]);
 
         let out = rank(&s, RankMethod::Min, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[2, 3, 6, 3, 3, 6, 1]);
@@ -346,7 +352,7 @@ mod test {
             ],
         );
         let out = rank(&s, RankMethod::Max, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[5, 6, 4, 1, 8, 4, 2, 7]);
@@ -363,7 +369,7 @@ mod test {
             .collect::<Vec<_>>();
         assert_eq!(out, &[2.0f32, 2.0, 2.0]);
         let out = rank(&s, RankMethod::Dense, false)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[1, 1, 1]);
@@ -372,21 +378,21 @@ mod test {
 
     #[test]
     fn test_rank_empty() {
-        let s = UInt32Chunked::new_from_slice("", &[]).into_series();
+        let s = UInt32Chunked::from_slice("", &[]).into_series();
         let out = rank(&s, RankMethod::Average, false);
         assert_eq!(out.dtype(), &DataType::Float32);
         let out = rank(&s, RankMethod::Max, false);
-        assert_eq!(out.dtype(), &DataType::UInt32);
+        assert_eq!(out.dtype(), &IDX_DTYPE);
     }
 
     #[test]
     fn test_rank_reverse() -> Result<()> {
         let s = Series::new("", &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true)
-            .u32()?
+            .idx()?
             .into_no_null_iter()
             .collect::<Vec<_>>();
-        assert_eq!(out, &[1, 3, 3, 2, 1]);
+        assert_eq!(out, &[1 as IdxSize, 3, 3, 2, 1]);
 
         Ok(())
     }

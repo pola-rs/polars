@@ -14,8 +14,8 @@ pub struct TakeExpr {
 
 impl TakeExpr {
     fn finish(&self, df: &DataFrame, state: &ExecutionState, series: Series) -> Result<Series> {
-        let idx = self.idx.evaluate(df, state)?.cast(&DataType::UInt32)?;
-        let idx_ca = idx.u32()?;
+        let idx = self.idx.evaluate(df, state)?.cast(&IDX_DTYPE)?;
+        let idx_ca = idx.idx()?;
 
         series.take(idx_ca)
     }
@@ -44,8 +44,8 @@ impl PhysicalExpr for TakeExpr {
         let idx =
             match idx.state {
                 AggState::AggregatedFlat(s) => {
-                    let idx = s.cast(&DataType::UInt32)?;
-                    let idx = idx.u32().unwrap();
+                    let idx = s.cast(&IDX_DTYPE)?;
+                    let idx = idx.idx().unwrap();
 
                     // The indexes are AggregatedFlat, meaning they are a single values pointing into
                     // a group.
@@ -59,13 +59,13 @@ impl PhysicalExpr for TakeExpr {
                     let groups = ac.groups();
 
                     // Determine the take indices
-                    let idx: UInt32Chunked =
+                    let idx: IdxCa =
                         match groups.as_ref() {
                             GroupsProxy::Idx(groups) => {
                                 if groups.all().iter().zip(idx.into_iter()).any(
                                     |(g, idx)| match idx {
                                         None => true,
-                                        Some(idx) => idx >= g.len() as u32,
+                                        Some(idx) => idx >= g.len() as IdxSize,
                                     },
                                 ) {
                                     return Err(PolarsError::ComputeError("out of bounds".into()));
@@ -106,12 +106,12 @@ impl PhysicalExpr for TakeExpr {
                     s.list().unwrap().clone()
                 }
                 AggState::Literal(s) => {
-                    let idx = s.cast(&DataType::UInt32)?;
-                    let idx = idx.u32().unwrap();
+                    let idx = s.cast(&IDX_DTYPE)?;
+                    let idx = idx.idx().unwrap();
 
                     return if idx.len() == 1 {
                         match idx.get(0) {
-                            None => Err(PolarsError::ValueError("cannot take by a null".into())),
+                            None => Err(PolarsError::ComputeError("cannot take by a null".into())),
                             Some(idx) => {
                                 if idx != 0 {
                                     // We must make sure that the column we take from is sorted by
@@ -122,9 +122,9 @@ impl PhysicalExpr for TakeExpr {
                                 let groups = ac.groups();
 
                                 // we offset the groups first by idx;
-                                let idx: NoNull<UInt32Chunked> = match groups.as_ref() {
+                                let idx: NoNull<IdxCa> = match groups.as_ref() {
                                     GroupsProxy::Idx(groups) => {
-                                        if groups.all().iter().any(|g| idx >= g.len() as u32) {
+                                        if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
                                             return Err(PolarsError::ComputeError(
                                                 "out of bounds".into(),
                                             ));
@@ -162,7 +162,7 @@ impl PhysicalExpr for TakeExpr {
                 }
             };
 
-        let s = idx.cast(&DataType::List(Box::new(DataType::UInt32)))?;
+        let s = idx.cast(&DataType::List(Box::new(IDX_DTYPE)))?;
         let idx = s.list().unwrap();
 
         let taken = ac
@@ -174,7 +174,7 @@ impl PhysicalExpr for TakeExpr {
             .map(|(s, idx)| {
                 s.and_then(|s| {
                     idx.map(|idx| {
-                        let idx = idx.as_ref().u32().unwrap();
+                        let idx = idx.as_ref().idx().unwrap();
                         s.as_ref().take(idx)
                     })
                 })
@@ -189,23 +189,5 @@ impl PhysicalExpr for TakeExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.phys_expr.to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for TakeExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        return self
-            .evaluate_on_groups(df, groups, state)
-            .map(|mut s| Some(s.aggregated()));
     }
 }

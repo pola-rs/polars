@@ -11,7 +11,10 @@
 ### Importing
 
 ```js
+// esm
 import pl from 'nodejs-polars';
+
+// require
 const pl = require('nodejs-polars'); 
 ```
 
@@ -110,10 +113,11 @@ $ npm i -s nodejs-polars # npm
 
 Releases happen quite often (weekly / every few days) at the moment, so updating polars regularly to get the latest bugfixes / features might not be a bad idea.
 
-___
-#### Rust version
+### Minimum Requirements
+- Node version `>=16`
+- Rust version `>=1.59` - *Only needed for development*
 
-Required Rust version `>=1.52`
+___
 
 ## Documentation
 

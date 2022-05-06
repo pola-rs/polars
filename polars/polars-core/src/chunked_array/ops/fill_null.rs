@@ -115,7 +115,7 @@ where
     T: PolarsNumericType,
 {
     fn fill_null_with_values(&self, value: T::Native) -> Result<Self> {
-        Ok(self.apply_kernel(|arr| Arc::new(set_at_nulls(arr, value))))
+        Ok(self.apply_kernel(&|arr| Arc::new(set_at_nulls(arr, value))))
     }
 }
 
@@ -198,15 +198,6 @@ impl ChunkFillNull for ListChunked {
     fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
         Err(PolarsError::InvalidOperation(
             "fill_null not supported for List type".into(),
-        ))
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkFillNull for CategoricalChunked {
-    fn fill_null(&self, _strategy: FillNullStrategy) -> Result<Self> {
-        Err(PolarsError::InvalidOperation(
-            "fill_null not supported for Categorical type".into(),
         ))
     }
 }

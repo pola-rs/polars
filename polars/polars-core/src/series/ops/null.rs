@@ -2,6 +2,11 @@ use crate::prelude::*;
 
 impl Series {
     pub fn full_null(name: &str, size: usize, dtype: &DataType) -> Self {
+        if let DataType::List(dtype) = dtype {
+            let val = Series::full_null("", 0, dtype);
+            let avs = [AnyValue::List(val)];
+            return Series::new(name, avs.as_ref());
+        }
         if dtype == &dtype.to_physical() {
             macro_rules! primitive {
                 ($type:ty) => {{
@@ -23,7 +28,7 @@ impl Series {
             // match the logical types and create them
             match dtype {
                 #[cfg(feature = "dtype-categorical")]
-                DataType::Categorical => CategoricalChunked::full_null(name, size).into_series(),
+                DataType::Categorical(_) => CategoricalChunked::full_null(name, size).into_series(),
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => Int32Chunked::full_null(name, size)
                     .into_date()

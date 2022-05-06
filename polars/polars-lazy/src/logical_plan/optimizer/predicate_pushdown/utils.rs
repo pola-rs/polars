@@ -114,11 +114,13 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
             AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
-            // everything that works on groups likely changes to order of elements w/r/t the other columns
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
-            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyList, .. }, ..}
+            // Apply groups can be something like shift, sort, or an aggregation like skew
+            // both need all values
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::BinaryExpr {..}
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
+            // cast may create nulls
+            | AExpr::Cast {strict: false, ..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
@@ -142,9 +144,13 @@ pub(super) fn predicate_column_is_pushdown_boundary(node: Node, expr_arena: &Are
             | AExpr::Agg(_) // an aggregation needs all rows
             | AExpr::Reverse(_)
             // everything that works on groups likely changes to order of elements w/r/t the other columns
+            | AExpr::AnonymousFunction {..}
             | AExpr::Function {..}
             | AExpr::BinaryExpr {..}
-            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
+            // cast may change precision.
+            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64 | DataType::Utf8 | DataType::Boolean, ..}
+            // cast may create nulls
+            | AExpr::Cast {strict: false, ..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
@@ -170,21 +176,30 @@ pub(super) fn rewrite_projection_node(
 where
 {
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
+    let input_schema = lp_arena.get(input).schema(lp_arena);
 
     // maybe update predicate name if a projection is an alias
     // aliases change the column names and because we push the predicates downwards
     // this may be problematic as the aliased column may not yet exist.
     for projection_node in &projections {
-        let projection_is_boundary =
+        // only if a predicate refers to this projection's output column.
+        let projection_maybe_boundary =
             predicate_column_is_pushdown_boundary(*projection_node, expr_arena);
+
+        let projection_expr = expr_arena.get(*projection_node);
+        let output_field = projection_expr
+            .to_field(input_schema, Context::Default, expr_arena)
+            .unwrap();
         let projection_roots = aexpr_to_root_names(*projection_node, expr_arena);
+
         {
             let projection_aexpr = expr_arena.get(*projection_node);
             if let AExpr::Alias(_, name) = projection_aexpr {
                 // if this alias refers to one of the predicates in the upper nodes
                 // we rename the column of the predicate before we push it downwards.
+
                 if let Some(predicate) = acc_predicates.remove(&*name) {
-                    if projection_is_boundary {
+                    if projection_maybe_boundary {
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -208,8 +223,6 @@ where
             }
         }
 
-        let input_schema = lp_arena.get(input).schema(lp_arena);
-
         // we check if predicates can be done on the input above
         // this can only be done if the current projection is not a projection boundary
         let is_boundary = other_column_is_pushdown_boundary(*projection_node, expr_arena);
@@ -228,7 +241,7 @@ where
                 // checks 1.
                 if check_input_node(*predicate, input_schema, expr_arena)
                 // checks 2.
-                && !(projection_roots.contains(name) && projection_is_boundary)
+                && !(output_field.name().as_str() == &**name && projection_maybe_boundary)
                 // checks 3.
                 && !is_boundary
                 {

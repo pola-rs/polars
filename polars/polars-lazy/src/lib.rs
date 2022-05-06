@@ -108,7 +108,7 @@
 //!         col("rain").sum(),
 //!         col("rain").quantile(0.5, QuantileInterpolOptions::Nearest).alias("median_rain"),
 //!     ])
-//!     .sort("date", false)
+//!     .sort("date", Default::default())
 //!     .collect()
 //!
 //! }
@@ -186,6 +186,8 @@
 //! }
 //! ```
 #![cfg_attr(docsrs, feature(doc_cfg))]
+extern crate core;
+
 #[cfg(all(feature = "dot_diagram", feature = "compile"))]
 mod dot;
 #[cfg(feature = "compile")]
@@ -196,8 +198,6 @@ mod dummies;
 pub mod frame;
 #[cfg(feature = "compile")]
 mod from;
-#[cfg(feature = "compile")]
-pub mod functions;
 #[cfg(feature = "compile")]
 pub mod logical_plan;
 #[cfg(feature = "compile")]

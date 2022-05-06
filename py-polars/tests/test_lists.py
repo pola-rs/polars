@@ -1,3 +1,6 @@
+import pandas as pd
+from test_series import verify_series_and_expr_api
+
 import polars as pl
 from polars import testing
 
@@ -71,7 +74,7 @@ def test_categorical() -> None:
 def test_list_concat_rolling_window() -> None:
     # inspired by: https://stackoverflow.com/questions/70377100/use-the-rolling-function-of-polars-to-get-a-list-of-all-values-in-the-rolling-wi
     # this tests if it works without specifically creating list dtype upfront.
-    # note that the given answer is prefered over this snippet as that reuses the list array when shifting
+    # note that the given answer is preferred over this snippet as that reuses the list array when shifting
     df = pl.DataFrame(
         {
             "A": [1.0, 2.0, 9.0, 2.0, 13.0],
@@ -119,3 +122,95 @@ def test_list_append() -> None:
 
     out_s = df["a"].arr.concat(([4, 1]))
     assert out_s[0].to_list() == [1, 2, 4, 1]
+
+
+def test_list_arr_empty() -> None:
+    df = pl.DataFrame({"cars": [[1, 2, 3], [2, 3], [4], []]})
+
+    out = df.select(
+        [
+            pl.col("cars").arr.first().alias("cars_first"),
+            pl.when(pl.col("cars").arr.first() == 2)
+            .then(1)
+            .when(pl.col("cars").arr.contains(2))
+            .then(2)
+            .otherwise(3)
+            .alias("cars_literal"),
+        ]
+    )
+    expected = pl.DataFrame(
+        {"cars_first": [1, 2, 4, None], "cars_literal": [2, 1, 3, 3]}
+    )
+    assert out.frame_equal(expected)
+
+
+def test_list_argminmax() -> None:
+    s = pl.Series("a", [[1, 2], [3, 2, 1]])
+    expected = pl.Series("a", [0, 2], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "arr.arg_min")
+    expected = pl.Series("a", [1, 0], dtype=pl.UInt32)
+    verify_series_and_expr_api(s, expected, "arr.arg_max")
+
+
+def test_list_shift() -> None:
+    s = pl.Series("a", [[1, 2], [3, 2, 1]])
+    expected = pl.Series("a", [[None, 1], [None, 3, 2]])
+    assert s.arr.shift().to_list() == expected.to_list()
+
+
+def test_list_diff() -> None:
+    s = pl.Series("a", [[1, 2], [10, 2, 1]])
+    expected = pl.Series("a", [[None, 1], [None, -8, -1]])
+    assert s.arr.diff().to_list() == expected.to_list()
+
+
+def test_slice() -> None:
+    vals = [[1, 2, 3, 4], [10, 2, 1]]
+    s = pl.Series("a", vals)
+    assert s.arr.head(2).to_list() == [[1, 2], [10, 2]]
+    assert s.arr.tail(2).to_list() == [[3, 4], [2, 1]]
+    assert s.arr.tail(200).to_list() == vals
+    assert s.arr.head(200).to_list() == vals
+    assert s.arr.slice(1, 2).to_list() == [[2, 3], [2, 1]]
+
+
+def test_cast_inner() -> None:
+    a = pl.Series([[1, 2]])
+    for t in [bool, pl.Boolean]:
+        b = a.cast(pl.List(t))
+        assert b.dtype == pl.List(pl.Boolean)
+        assert b.to_list() == [[True, True]]
+
+    # this creates an inner null type
+    df = pl.from_pandas(pd.DataFrame(data=[[[]], [[]]], columns=["A"]))
+    assert df["A"].cast(pl.List(int)).dtype.inner == pl.Int64  # type: ignore
+
+
+def test_list_eval_dtype_inference() -> None:
+    grades = pl.DataFrame(
+        {
+            "student": ["bas", "laura", "tim", "jenny"],
+            "arithmetic": [10, 5, 6, 8],
+            "biology": [4, 6, 2, 7],
+            "geography": [8, 4, 9, 7],
+        }
+    )
+
+    rank_pct = pl.col("").rank(reverse=True) / pl.col("").count()
+
+    # the .arr.first() would fail if .arr.eval did not correctly infer the output type
+    assert grades.with_column(
+        pl.concat_list(pl.all().exclude("student")).alias("all_grades")
+    ).select(
+        [
+            pl.col("all_grades")
+            .arr.eval(rank_pct, parallel=True)
+            .alias("grades_rank")
+            .arr.first()
+        ]
+    ).to_series().to_list() == [
+        0.3333333432674408,
+        0.6666666865348816,
+        0.6666666865348816,
+        0.3333333432674408,
+    ]

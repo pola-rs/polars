@@ -33,7 +33,7 @@
   "typedocOptions": {
     "excludePrivate": true,
     "entryPoints": [
-      "polars/series.ts",
+      "polars/series/series.ts",
       "polars/dataframe.ts",
       "polars/groupby.ts",
       "polars/io.ts",

@@ -1,12 +1,37 @@
 pub(crate) mod multiple_keys;
+mod single_keys;
+mod single_keys_dispatch;
+mod single_keys_inner;
+mod single_keys_left;
+mod single_keys_outer;
+#[cfg(feature = "semi_anti_join")]
+mod single_keys_semi_anti;
+
+#[cfg(feature = "chunked_ids")]
+use arrow::Either;
+#[cfg(feature = "chunked_ids")]
+use std::borrow::Cow;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+use single_keys::*;
+use single_keys_inner::*;
+use single_keys_left::*;
+use single_keys_outer::*;
+#[cfg(feature = "semi_anti_join")]
+use single_keys_semi_anti::*;
 
 use polars_arrow::utils::CustomIterTools;
 
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
+
+#[cfg(feature = "semi_anti_join")]
+use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
+
 use crate::prelude::*;
-use crate::utils::{set_partition_size, split_ca};
+use crate::utils::{set_partition_size, slice_slice, split_ca};
 use crate::vector_hasher::{
     create_hash_and_keys_threaded_vectorized, prepare_hashed_relation_threaded, this_partition,
     AsU64, StrHash,
@@ -16,29 +41,42 @@ use ahash::RandomState;
 use hashbrown::hash_map::{Entry, RawEntryMut};
 use hashbrown::HashMap;
 use rayon::prelude::*;
-use std::collections::HashSet;
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash, Hasher};
-use std::ops::Deref;
-use unsafe_unwrap::UnsafeUnwrap;
 
 #[cfg(feature = "private")]
 pub use self::multiple_keys::private_left_join_multiple_keys;
 use crate::frame::groupby::hashing::HASHMAP_INIT_SIZE;
-use crate::utils::series::to_physical;
+use crate::utils::series::to_physical_and_bit_repr;
+#[cfg(feature = "asof_join")]
+pub(crate) use single_keys::create_probe_table;
+#[cfg(feature = "asof_join")]
+pub(crate) use single_keys_dispatch::prepare_strs;
 
-/// If Categorical types are created without a global string cache or under
-/// a different global string cache the mapping will be incorrect.
-#[cfg(feature = "dtype-categorical")]
-pub(crate) fn check_categorical_src(l: &Series, r: &Series) -> Result<()> {
-    if let (Ok(l), Ok(r)) = (l.categorical(), r.categorical()) {
-        let l = l.categorical_map.as_ref().unwrap();
-        let r = r.categorical_map.as_ref().unwrap();
-        if !l.same_src(&*r) {
-            return Err(PolarsError::ValueError("joins on categorical dtypes can only happen if they are created under the same global string cache".into()));
-        }
+pub type LeftJoinIds = (JoinIds, JoinOptIds);
+
+#[cfg(feature = "chunked_ids")]
+pub(super) type JoinIds = Either<Vec<IdxSize>, Vec<ChunkId>>;
+#[cfg(feature = "chunked_ids")]
+pub type JoinOptIds = Either<Vec<Option<IdxSize>>, Vec<Option<ChunkId>>>;
+
+#[cfg(not(feature = "chunked_ids"))]
+pub type JoinOptIds = Vec<Option<IdxSize>>;
+
+#[cfg(not(feature = "chunked_ids"))]
+pub type JoinIds = Vec<IdxSize>;
+
+pub type ChunkId = [IdxSize; 2];
+
+pub fn default_join_ids() -> JoinOptIds {
+    #[cfg(feature = "chunked_ids")]
+    {
+        Either::Left(vec![])
     }
-    Ok(())
+    #[cfg(not(feature = "chunked_ids"))]
+    {
+        vec![]
+    }
 }
 
 macro_rules! det_hash_prone_order {
@@ -59,22 +97,44 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) use det_hash_prone_order;
+
+/// If Categorical types are created without a global string cache or under
+/// a different global string cache the mapping will be incorrect.
+#[cfg(feature = "dtype-categorical")]
+pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
+    match (l, r) {
+        (DataType::Categorical(Some(l)), DataType::Categorical(Some(r))) => {
+            if !l.same_src(&*r) {
+                return Err(PolarsError::ComputeError("joins/or comparisons on categorical dtypes can only happen if they are created under the same global string cache".into()));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
-    AsOf,
-    #[cfg(feature = "cross_join")]
+    #[cfg_attr(feature = "serde", serde(skip))]
+    AsOf(AsOfOptions),
     Cross,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
 }
 
-pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
+pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<Item>(
     h: u64,
-    hash_tables: &[HashMap<T, Vec<u32>, H>],
+    hash_tables: &[Item],
     len: u64,
-) -> &HashMap<T, Vec<u32>, H> {
+) -> &Item {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -89,9 +149,9 @@ pub(crate) unsafe fn get_hash_tbl_threaded_join_partitioned<T, H>(
 #[allow(clippy::type_complexity)]
 unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     h: u64,
-    hash_tables: &mut [HashMap<T, (bool, Vec<u32>), H>],
+    hash_tables: &mut [HashMap<T, (bool, Vec<IdxSize>), H>],
     len: u64,
-) -> &mut HashMap<T, (bool, Vec<u32>), H> {
+) -> &mut HashMap<T, (bool, Vec<IdxSize>), H> {
     let mut idx = 0;
     for i in 0..len {
         // can only be done for powers of two.
@@ -103,816 +163,11 @@ unsafe fn get_hash_tbl_threaded_join_mut_partitioned<T, H>(
     hash_tables.get_unchecked_mut(idx)
 }
 
-/// Probe the build table and add tuples to the results (inner join)
-fn probe_inner<T, F>(
-    probe: &[T],
-    hash_tbls: &[PlHashMap<T, Vec<u32>>],
-    results: &mut Vec<(u32, u32)>,
-    local_offset: usize,
-    n_tables: u64,
-    swap_fn: F,
-) where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-    F: Fn(u32, u32) -> (u32, u32),
-{
-    assert!(hash_tbls.len().is_power_of_two());
-    probe.iter().enumerate().for_each(|(idx_a, k)| {
-        let idx_a = (idx_a + local_offset) as u32;
-        // probe table that contains the hashed value
-        let current_probe_table =
-            unsafe { get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables) };
-
-        let value = current_probe_table.get(k);
-
-        if let Some(indexes_b) = value {
-            let tuples = indexes_b.iter().map(|&idx_b| swap_fn(idx_a, idx_b));
-            results.extend(tuples);
-        }
-    });
-}
-
-pub(crate) fn create_probe_table<T, IntoSlice>(keys: Vec<IntoSlice>) -> Vec<PlHashMap<T, Vec<u32>>>
-where
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-    IntoSlice: AsRef<[T]> + Send + Sync,
-{
-    let n_partitions = set_partition_size();
-
-    // We will create a hashtable in every thread.
-    // We use the hash to partition the keys to the matching hashtable.
-    // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
-        (0..n_partitions).into_par_iter().map(|partition_no| {
-            let partition_no = partition_no as u64;
-
-            let mut hash_tbl: PlHashMap<T, Vec<u32>> = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
-
-            let n_partitions = n_partitions as u64;
-            let mut offset = 0;
-            for keys in &keys {
-                let keys = keys.as_ref();
-                let len = keys.len() as u32;
-
-                let mut cnt = 0;
-                keys.iter().for_each(|k| {
-                    let idx = cnt + offset;
-                    cnt += 1;
-
-                    if this_partition(k.as_u64(), partition_no, n_partitions) {
-                        let entry = hash_tbl.entry(*k);
-
-                        match entry {
-                            Entry::Vacant(entry) => {
-                                entry.insert(vec![idx]);
-                            }
-                            Entry::Occupied(mut entry) => {
-                                let v = entry.get_mut();
-                                v.push(idx);
-                            }
-                        }
-                    }
-                });
-                offset += len;
-            }
-            hash_tbl
-        })
-    })
-    .collect()
-}
-
-fn hash_join_tuples_inner<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
-    // Because b should be the shorter relation we could need to swap to keep left left and right right.
-    swap: bool,
-) -> Vec<(u32, u32)>
-where
-    IntoSlice: AsRef<[T]> + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-{
-    // NOTE: see the left join for more elaborate comments
-
-    // first we hash one relation
-    let hash_tbls = create_probe_table(build);
-
-    let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
-    let offsets = probe
-        .iter()
-        .map(|ph| ph.as_ref().len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect::<Vec<_>>();
-    // next we probe the other relation
-    // code duplication is because we want to only do the swap check once
-    POOL.install(|| {
-        probe
-            .into_par_iter()
-            .zip(offsets)
-            .map(|(probe, offset)| {
-                let probe = probe.as_ref();
-                // local reference
-                let hash_tbls = &hash_tbls;
-                let mut results = Vec::with_capacity(probe.len());
-                let local_offset = offset;
-
-                // branch is to hoist swap out of the inner loop.
-                if swap {
-                    probe_inner(
-                        probe,
-                        hash_tbls,
-                        &mut results,
-                        local_offset,
-                        n_tables,
-                        |idx_a, idx_b| (idx_b, idx_a),
-                    )
-                } else {
-                    probe_inner(
-                        probe,
-                        hash_tbls,
-                        &mut results,
-                        local_offset,
-                        n_tables,
-                        |idx_a, idx_b| (idx_a, idx_b),
-                    )
-                }
-
-                results
-            })
-            .flatten()
-            .collect()
-    })
-}
-
-fn hash_join_tuples_left<T, IntoSlice>(
-    probe: Vec<IntoSlice>,
-    build: Vec<IntoSlice>,
-) -> Vec<(u32, Option<u32>)>
-where
-    IntoSlice: AsRef<[T]> + Send + Sync,
-    T: Send + Hash + Eq + Sync + Copy + AsU64,
-{
-    // first we hash one relation
-    let hash_tbls = create_probe_table(build);
-
-    // we determine the offset so that we later know which index to store in the join tuples
-    let offsets = probe
-        .iter()
-        .map(|ph| ph.as_ref().len())
-        .scan(0, |state, val| {
-            let out = *state;
-            *state += val;
-            Some(out)
-        })
-        .collect::<Vec<_>>();
-
-    let n_tables = hash_tbls.len() as u64;
-    debug_assert!(n_tables.is_power_of_two());
-
-    // next we probe the other relation
-    POOL.install(|| {
-        probe
-            .into_par_iter()
-            .zip(offsets)
-            // probes_hashes: Vec<u64> processed by this thread
-            // offset: offset index
-            .map(|(probe, offset)| {
-                // local reference
-                let hash_tbls = &hash_tbls;
-                let probe = probe.as_ref();
-
-                // assume the result tuples equal lenght of the no. of hashes processed by this thread.
-                let mut results = Vec::with_capacity(probe.len());
-
-                probe.iter().enumerate().for_each(|(idx_a, k)| {
-                    let idx_a = (idx_a + offset) as u32;
-                    // probe table that contains the hashed value
-                    let current_probe_table = unsafe {
-                        get_hash_tbl_threaded_join_partitioned(k.as_u64(), hash_tbls, n_tables)
-                    };
-
-                    // we already hashed, so we don't have to hash again.
-                    let value = current_probe_table.get(k);
-
-                    match value {
-                        // left and right matches
-                        Some(indexes_b) => {
-                            results.extend(indexes_b.iter().map(|&idx_b| (idx_a, Some(idx_b))))
-                        }
-                        // only left values, right = null
-                        None => results.push((idx_a, None)),
-                    }
-                });
-                results
-            })
-            .flatten()
-            .collect()
-    })
-}
-
-/// Probe the build table and add tuples to the results (inner join)
-fn probe_outer<T, F, G, H>(
-    probe_hashes: &[Vec<(u64, T)>],
-    hash_tbls: &mut [PlHashMap<T, (bool, Vec<u32>)>],
-    results: &mut Vec<(Option<u32>, Option<u32>)>,
-    n_tables: u64,
-    // Function that get index_a, index_b when there is a match and pushes to result
-    swap_fn_match: F,
-    // Function that get index_a when there is no match and pushes to result
-    swap_fn_no_match: G,
-    // Function that get index_b from the build table that did not match any in A and pushes to result
-    swap_fn_drain: H,
-) where
-    T: Send + Hash + Eq + Sync + Copy,
-    // idx_a, idx_b -> ...
-    F: Fn(u32, u32) -> (Option<u32>, Option<u32>),
-    // idx_a -> ...
-    G: Fn(u32) -> (Option<u32>, Option<u32>),
-    // idx_b -> ...
-    H: Fn(u32) -> (Option<u32>, Option<u32>),
-{
-    // needed for the partition shift instead of modulo to make sense
-    assert!(n_tables.is_power_of_two());
-    let mut idx_a = 0;
-    for probe_hashes in probe_hashes {
-        for (h, key) in probe_hashes {
-            let h = *h;
-            // probe table that contains the hashed value
-            let current_probe_table =
-                unsafe { get_hash_tbl_threaded_join_mut_partitioned(h, hash_tbls, n_tables) };
-
-            let entry = current_probe_table
-                .raw_entry_mut()
-                .from_key_hashed_nocheck(h, key);
-
-            match entry {
-                // match and remove
-                RawEntryMut::Occupied(mut occupied) => {
-                    let (tracker, indexes_b) = occupied.get_mut();
-                    *tracker = true;
-                    results.extend(indexes_b.iter().map(|&idx_b| swap_fn_match(idx_a, idx_b)))
-                }
-                // no match
-                RawEntryMut::Vacant(_) => results.push(swap_fn_no_match(idx_a)),
-            }
-            idx_a += 1;
-        }
-    }
-
-    for hash_tbl in hash_tbls {
-        hash_tbl.iter().for_each(|(_k, (tracker, indexes_b))| {
-            // remaining joined values from the right table
-            if !*tracker {
-                results.extend(indexes_b.iter().map(|&idx_b| swap_fn_drain(idx_b)))
-            }
-        });
-    }
-}
-
-/// Hash join outer. Both left and right can have no match so Options
-fn hash_join_tuples_outer<T, I, J>(
-    a: Vec<I>,
-    b: Vec<J>,
-    swap: bool,
-) -> Vec<(Option<u32>, Option<u32>)>
-where
-    I: Iterator<Item = T> + Send + TrustedLen,
-    J: Iterator<Item = T> + Send + TrustedLen,
-    T: Hash + Eq + Copy + Sync + Send,
-{
-    // This function is partially multi-threaded.
-    // Parts that are done in parallel:
-    //  - creation of the probe tables
-    //  - creation of the hashes
-
-    // during the probe phase values are removed from the tables, that's done single threaded to
-    // keep it lock free.
-
-    let size = a.iter().map(|a| a.size_hint().0).sum::<usize>()
-        + b.iter().map(|b| b.size_hint().0).sum::<usize>();
-    let mut results = Vec::with_capacity(size);
-
-    // prepare hash table
-    let mut hash_tbls = prepare_hashed_relation_threaded(b);
-    let random_state = hash_tbls[0].hasher().clone();
-
-    // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(a, Some(random_state));
-
-    let n_tables = hash_tbls.len() as u64;
-
-    // probe the hash table.
-    // Note: indexes from b that are not matched will be None, Some(idx_b)
-    // Therefore we remove the matches and the remaining will be joined from the right
-
-    // branch is because we want to only do the swap check once
-    if swap {
-        probe_outer(
-            &probe_hashes,
-            &mut hash_tbls,
-            &mut results,
-            n_tables,
-            |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
-            |idx_a| (None, Some(idx_a)),
-            |idx_b| (Some(idx_b), None),
-        )
-    } else {
-        probe_outer(
-            &probe_hashes,
-            &mut hash_tbls,
-            &mut results,
-            n_tables,
-            |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
-            |idx_a| (Some(idx_a), None),
-            |idx_b| (None, Some(idx_b)),
-        )
-    }
-    results
-}
-
-pub(crate) trait HashJoin<T> {
-    fn hash_join_inner(&self, _other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
-        unimplemented!()
-    }
-    fn hash_join_left(&self, _other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
-        unimplemented!()
-    }
-    fn hash_join_outer(&self, _other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
-        unimplemented!()
-    }
-}
-
-impl HashJoin<Float32Type> for Float32Chunked {
-    fn hash_join_inner(&self, other: &Float32Chunked) -> Vec<(u32, u32)> {
-        let ca = self.bit_repr_small();
-        let other = other.bit_repr_small();
-        ca.hash_join_inner(&other)
-    }
-    fn hash_join_left(&self, other: &Float32Chunked) -> Vec<(u32, Option<u32>)> {
-        let ca = self.bit_repr_small();
-        let other = other.bit_repr_small();
-        ca.hash_join_left(&other)
-    }
-    fn hash_join_outer(&self, other: &Float32Chunked) -> Vec<(Option<u32>, Option<u32>)> {
-        let ca = self.bit_repr_small();
-        let other = other.bit_repr_small();
-        ca.hash_join_outer(&other)
-    }
-}
-
-impl HashJoin<Float64Type> for Float64Chunked {
-    fn hash_join_inner(&self, other: &Float64Chunked) -> Vec<(u32, u32)> {
-        let ca = self.bit_repr_large();
-        let other = other.bit_repr_large();
-        ca.hash_join_inner(&other)
-    }
-    fn hash_join_left(&self, other: &Float64Chunked) -> Vec<(u32, Option<u32>)> {
-        let ca = self.bit_repr_large();
-        let other = other.bit_repr_large();
-        ca.hash_join_left(&other)
-    }
-    fn hash_join_outer(&self, other: &Float64Chunked) -> Vec<(Option<u32>, Option<u32>)> {
-        let ca = self.bit_repr_large();
-        let other = other.bit_repr_large();
-        ca.hash_join_outer(&other)
-    }
-}
-
-impl HashJoin<CategoricalType> for CategoricalChunked {
-    fn hash_join_inner(&self, other: &CategoricalChunked) -> Vec<(u32, u32)> {
-        self.deref().hash_join_inner(other.deref())
-    }
-    fn hash_join_left(&self, other: &CategoricalChunked) -> Vec<(u32, Option<u32>)> {
-        self.deref().hash_join_left(other.deref())
-    }
-    fn hash_join_outer(&self, other: &CategoricalChunked) -> Vec<(Option<u32>, Option<u32>)> {
-        self.deref().hash_join_outer(other.deref())
-    }
-}
-
-fn num_group_join_inner<T>(left: &ChunkedArray<T>, right: &ChunkedArray<T>) -> Vec<(u32, u32)>
-where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64 + Copy,
-    Option<T::Native>: AsU64,
-{
-    let n_threads = POOL.current_num_threads();
-    let (a, b, swap) = det_hash_prone_order!(left, right);
-    let splitted_a = split_ca(a, n_threads).unwrap();
-    let splitted_b = split_ca(b, n_threads).unwrap();
-    match (
-        left.null_count() == 0,
-        right.null_count() == 0,
-        left.chunks.len(),
-        right.chunks.len(),
-    ) {
-        (true, true, 1, 1) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.cont_slice().unwrap())
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| ca.cont_slice().unwrap())
-                .collect::<Vec<_>>();
-            hash_join_tuples_inner(keys_a, keys_b, swap)
-        }
-        (true, true, _, _) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| ca.into_no_null_iter().collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            hash_join_tuples_inner(keys_a, keys_b, swap)
-        }
-        (_, _, 1, 1) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| {
-                    ca.downcast_iter()
-                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| {
-                    ca.downcast_iter()
-                        .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                        .collect::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            hash_join_tuples_inner(keys_a, keys_b, swap)
-        }
-        _ => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| ca.into_iter().map(|v| v.as_u64()).collect::<Vec<_>>())
-                .collect::<Vec<_>>();
-            hash_join_tuples_inner(keys_a, keys_b, swap)
-        }
-    }
-}
-
-fn num_group_join_left<T>(
-    left: &ChunkedArray<T>,
-    right: &ChunkedArray<T>,
-) -> Vec<(u32, Option<u32>)>
-where
-    T: PolarsIntegerType,
-    T::Native: Hash + Eq + Send + AsU64,
-    Option<T::Native>: AsU64,
-{
-    let n_threads = POOL.current_num_threads();
-    let splitted_a = split_ca(left, n_threads).unwrap();
-    let splitted_b = split_ca(right, n_threads).unwrap();
-    match (
-        left.null_count(),
-        right.null_count(),
-        left.chunks.len(),
-        right.chunks.len(),
-    ) {
-        (0, 0, 1, 1) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.cont_slice().unwrap())
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| ca.cont_slice().unwrap())
-                .collect::<Vec<_>>();
-            hash_join_tuples_left(keys_a, keys_b)
-        }
-        (0, 0, _, _) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| ca.into_no_null_iter().collect_trusted::<Vec<_>>())
-                .collect::<Vec<_>>();
-            hash_join_tuples_left(keys_a, keys_b)
-        }
-        (_, _, 1, 1) => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| {
-                    // we know that we only iterate over length == self.len()
-                    unsafe {
-                        ca.downcast_iter()
-                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                            .trust_my_length(ca.len())
-                            .collect_trusted::<Vec<_>>()
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| {
-                    // we know that we only iterate over length == self.len()
-                    unsafe {
-                        ca.downcast_iter()
-                            .flat_map(|v| v.into_iter().map(|v| v.copied().as_u64()))
-                            .trust_my_length(ca.len())
-                            .collect_trusted::<Vec<_>>()
-                    }
-                })
-                .collect::<Vec<_>>();
-            hash_join_tuples_left(keys_a, keys_b)
-        }
-        _ => {
-            let keys_a = splitted_a
-                .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.as_u64())
-                        .collect_trusted::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            let keys_b = splitted_b
-                .iter()
-                .map(|ca| {
-                    ca.into_iter()
-                        .map(|v| v.as_u64())
-                        .collect_trusted::<Vec<_>>()
-                })
-                .collect::<Vec<_>>();
-            hash_join_tuples_left(keys_a, keys_b)
-        }
-    }
-}
-
-impl<T> HashJoin<T> for ChunkedArray<T>
-where
-    T: PolarsIntegerType + Sync,
-    T::Native: Eq + Hash + num::NumCast,
-{
-    fn hash_join_inner(&self, other: &ChunkedArray<T>) -> Vec<(u32, u32)> {
-        match self.dtype() {
-            DataType::UInt64 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                let other: &UInt64Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                num_group_join_inner(ca, other)
-            }
-            DataType::UInt32 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt32Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                let other: &UInt32Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                num_group_join_inner(ca, other)
-            }
-            DataType::Int64 | DataType::Float64 => {
-                let ca = self.bit_repr_large();
-                let other = other.bit_repr_large();
-                num_group_join_inner(&ca, &other)
-            }
-            DataType::Int32 | DataType::Float32 => {
-                let ca = self.bit_repr_small();
-                let other = other.bit_repr_small();
-                num_group_join_inner(&ca, &other)
-            }
-            _ => {
-                let ca = self.cast(&DataType::UInt32).unwrap();
-                let ca = ca.u32().unwrap();
-                let other = other.cast(&DataType::UInt32).unwrap();
-                let other = other.u32().unwrap();
-                num_group_join_inner(ca, other)
-            }
-        }
-    }
-
-    fn hash_join_left(&self, other: &ChunkedArray<T>) -> Vec<(u32, Option<u32>)> {
-        match self.dtype() {
-            DataType::UInt64 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt64Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                let other: &UInt64Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt64Type>)
-                };
-                num_group_join_left(ca, other)
-            }
-            DataType::UInt32 => {
-                // convince the compiler that we are this type.
-                let ca: &UInt32Chunked = unsafe {
-                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                let other: &UInt32Chunked = unsafe {
-                    &*(other as *const ChunkedArray<T> as *const ChunkedArray<UInt32Type>)
-                };
-                num_group_join_left(ca, other)
-            }
-            DataType::Int64 | DataType::Float64 => {
-                let ca = self.bit_repr_large();
-                let other = other.bit_repr_large();
-                num_group_join_left(&ca, &other)
-            }
-            DataType::Int32 | DataType::Float32 => {
-                let ca = self.bit_repr_small();
-                let other = other.bit_repr_small();
-                num_group_join_left(&ca, &other)
-            }
-            _ => {
-                let ca = self.cast(&DataType::UInt32).unwrap();
-                let ca = ca.u32().unwrap();
-                let other = other.cast(&DataType::UInt32).unwrap();
-                let other = other.u32().unwrap();
-                num_group_join_left(ca, other)
-            }
-        }
-    }
-
-    fn hash_join_outer(&self, other: &ChunkedArray<T>) -> Vec<(Option<u32>, Option<u32>)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let n_partitions = set_partition_size();
-        let splitted_a = split_ca(a, n_partitions).unwrap();
-        let splitted_b = split_ca(b, n_partitions).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-            _ => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-        }
-    }
-}
-
-impl HashJoin<BooleanType> for BooleanChunked {
-    fn hash_join_inner(&self, other: &BooleanChunked) -> Vec<(u32, u32)> {
-        let ca = self.cast(&DataType::UInt32).unwrap();
-        let ca = ca.u32().unwrap();
-        let other = other.cast(&DataType::UInt32).unwrap();
-        let other = other.u32().unwrap();
-        ca.hash_join_inner(other)
-    }
-
-    fn hash_join_left(&self, other: &BooleanChunked) -> Vec<(u32, Option<u32>)> {
-        let ca = self.cast(&DataType::UInt32).unwrap();
-        let ca = ca.u32().unwrap();
-        let other = other.cast(&DataType::UInt32).unwrap();
-        let other = other.u32().unwrap();
-        ca.hash_join_left(other)
-    }
-
-    fn hash_join_outer(&self, other: &BooleanChunked) -> Vec<(Option<u32>, Option<u32>)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let n_partitions = set_partition_size();
-        let splitted_a = split_ca(a, n_partitions).unwrap();
-        let splitted_b = split_ca(b, n_partitions).unwrap();
-
-        match (a.null_count(), b.null_count()) {
-            (0, 0) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-            _ => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-        }
-    }
-}
-
-fn prepare_strs<'a>(been_split: &'a [Utf8Chunked], hb: &RandomState) -> Vec<Vec<StrHash<'a>>> {
-    POOL.install(|| {
-        been_split
-            .par_iter()
-            .map(|ca| {
-                ca.into_iter()
-                    .map(|opt_s| {
-                        let mut state = hb.build_hasher();
-                        opt_s.hash(&mut state);
-                        let hash = state.finish();
-                        StrHash::new(opt_s, hash)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect()
-    })
-}
-
-impl HashJoin<Utf8Type> for Utf8Chunked {
-    fn hash_join_inner(&self, other: &Utf8Chunked) -> Vec<(u32, u32)> {
-        let n_threads = POOL.current_num_threads();
-
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let hb = RandomState::default();
-        let splitted_a = split_ca(a, n_threads).unwrap();
-        let splitted_b = split_ca(b, n_threads).unwrap();
-
-        let str_hashes_a = prepare_strs(&splitted_a, &hb);
-        let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_inner(str_hashes_a, str_hashes_b, swap)
-    }
-
-    fn hash_join_left(&self, other: &Utf8Chunked) -> Vec<(u32, Option<u32>)> {
-        let n_threads = POOL.current_num_threads();
-
-        let hb = RandomState::default();
-        let splitted_a = split_ca(self, n_threads).unwrap();
-        let splitted_b = split_ca(other, n_threads).unwrap();
-
-        let str_hashes_a = prepare_strs(&splitted_a, &hb);
-        let str_hashes_b = prepare_strs(&splitted_b, &hb);
-        hash_join_tuples_left(str_hashes_a, str_hashes_b)
-    }
-
-    fn hash_join_outer(&self, other: &Utf8Chunked) -> Vec<(Option<u32>, Option<u32>)> {
-        let (a, b, swap) = det_hash_prone_order!(self, other);
-
-        let n_partitions = set_partition_size();
-        let splitted_a = split_ca(a, n_partitions).unwrap();
-        let splitted_b = split_ca(b, n_partitions).unwrap();
-
-        match (a.has_validity(), b.has_validity()) {
-            (false, false) => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_no_null_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-            _ => {
-                let iters_a = splitted_a
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                let iters_b = splitted_b
-                    .iter()
-                    .map(|ca| ca.into_iter())
-                    .collect::<Vec<_>>();
-                hash_join_tuples_outer(iters_a, iters_b, swap)
-            }
-        }
-    }
-}
-
 pub trait ZipOuterJoinColumn {
     fn zip_outer_join_column(
         &self,
         _right_column: &Series,
-        _opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        _opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         unimplemented!()
     }
@@ -926,7 +181,7 @@ where
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -940,7 +195,7 @@ where
                     unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                 } else {
                     unsafe {
-                        let right_idx = opt_right_idx.unsafe_unwrap();
+                        let right_idx = opt_right_idx.unwrap_unchecked();
                         right_rand_access.get_unchecked(right_idx as usize)
                     }
                 }
@@ -956,7 +211,7 @@ macro_rules! impl_zip_outer_join {
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<u32>, Option<u32>)],
+                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
             ) -> Series {
                 let right_ca = self.unpack_series_matching_type(right_column).unwrap();
 
@@ -970,7 +225,7 @@ macro_rules! impl_zip_outer_join {
                             unsafe { left_rand_access.get_unchecked(*left_idx as usize) }
                         } else {
                             unsafe {
-                                let right_idx = opt_right_idx.unsafe_unwrap();
+                                let right_idx = opt_right_idx.unwrap_unchecked();
                                 right_rand_access.get_unchecked(right_idx as usize)
                             }
                         }
@@ -988,7 +243,7 @@ impl ZipOuterJoinColumn for Float32Chunked {
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         self.apply_as_ints(|s| {
             s.zip_outer_join_column(
@@ -1003,7 +258,7 @@ impl ZipOuterJoinColumn for Float64Chunked {
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         self.apply_as_ints(|s| {
             s.zip_outer_join_column(
@@ -1022,7 +277,7 @@ impl DataFrame {
         mut df_right: DataFrame,
         suffix: Option<String>,
     ) -> Result<DataFrame> {
-        let mut left_names = HashSet::with_capacity_and_hasher(df_left.width(), RandomState::new());
+        let mut left_names = PlHashSet::with_capacity(df_left.width());
 
         df_left.columns.iter().for_each(|series| {
             left_names.insert(series.name());
@@ -1041,30 +296,97 @@ impl DataFrame {
             df_right.rename(&name, &format!("{}{}", name, suffix))?;
         }
 
+        drop(left_names);
         df_left.hstack_mut(&df_right.columns)?;
         Ok(df_left)
     }
 
-    fn create_left_df<B: Sync>(&self, join_tuples: &[(u32, B)], left_join: bool) -> DataFrame {
-        if left_join && join_tuples.len() == self.height() {
+    /// # Safety
+    /// Join tuples must be in bounds
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn create_left_df_chunked(&self, chunk_ids: &[ChunkId], left_join: bool) -> DataFrame {
+        if left_join && chunk_ids.len() == self.height() {
             self.clone()
         } else {
-            unsafe {
-                self.take_iter_unchecked(join_tuples.iter().map(|(left, _right)| *left as usize))
-            }
+            self.take_chunked_unchecked(chunk_ids)
         }
     }
 
-    fn join_impl(
+    /// # Safety
+    /// Join tuples must be in bounds
+    unsafe fn create_left_df_from_slice(
+        &self,
+        join_tuples: &[IdxSize],
+        left_join: bool,
+    ) -> DataFrame {
+        if left_join && join_tuples.len() == self.height() {
+            self.clone()
+        } else {
+            self.take_unchecked_slice(join_tuples)
+        }
+    }
+
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments)]
+    pub fn _join_impl(
         &self,
         other: &DataFrame,
         selected_left: Vec<Series>,
         selected_right: Vec<Series>,
         how: JoinType,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+        _check_rechunk: bool,
+        _verbose: bool,
     ) -> Result<DataFrame> {
+        #[cfg(feature = "cross_join")]
+        if let JoinType::Cross = how {
+            let out = self.cross_join(other, suffix)?;
+            return Ok(if let Some((offset, len)) = slice {
+                // todo! don't materialize whole frame before slicing.
+                out.slice(offset, len)
+            } else {
+                out
+            });
+        }
+
+        #[cfg(feature = "chunked_ids")]
+        {
+            if _check_rechunk {
+                let mut left = Cow::Borrowed(self);
+                let mut right = Cow::Borrowed(other);
+                if self.should_rechunk() {
+                    if _verbose {
+                        eprintln!("join triggered a rechunk of the left dataframe: {} columns are affected", self.width());
+                    }
+
+                    let mut tmp_left = self.clone();
+                    tmp_left.as_single_chunk_par();
+                    left = Cow::Owned(tmp_left);
+                }
+                if other.should_rechunk() {
+                    if _verbose {
+                        eprintln!("join triggered a rechunk of the right dataframe: {} columns are affected", other.width());
+                    }
+                    let mut tmp_right = other.clone();
+                    tmp_right.as_single_chunk_par();
+                    right = Cow::Owned(tmp_right);
+                }
+                return left._join_impl(
+                    &right,
+                    selected_left,
+                    selected_right,
+                    how,
+                    suffix,
+                    slice,
+                    false,
+                    false,
+                );
+            }
+        }
+
         if selected_right.len() != selected_left.len() {
-            return Err(PolarsError::ValueError(
+            return Err(PolarsError::ComputeError(
                 "the number of columns given as join key should be equal".into(),
             ));
         }
@@ -1073,12 +395,12 @@ impl DataFrame {
             .zip(&selected_right)
             .any(|(l, r)| l.dtype() != r.dtype())
         {
-            return Err(PolarsError::ValueError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
+            return Err(PolarsError::ComputeError("the dtype of the join keys don't match. first cast your columns to the correct dtype".into()));
         }
 
         #[cfg(feature = "dtype-categorical")]
         for (l, r) in selected_left.iter().zip(&selected_right) {
-            check_categorical_src(l, r)?
+            check_categorical_src(l.dtype(), r.dtype())?
         }
 
         // Single keys
@@ -1086,14 +408,47 @@ impl DataFrame {
             let s_left = self.column(selected_left[0].name())?;
             let s_right = other.column(selected_right[0].name())?;
             return match how {
-                JoinType::Inner => self.inner_join_from_series(other, s_left, s_right, suffix),
-                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix),
-                JoinType::Outer => self.outer_join_from_series(other, s_left, s_right, suffix),
-                #[cfg(feature = "asof_join")]
-                JoinType::AsOf => {
-                    self.join_asof(other, selected_left[0].name(), selected_right[0].name())
+                JoinType::Inner => {
+                    self.inner_join_from_series(other, s_left, s_right, suffix, slice)
                 }
-                #[cfg(feature = "cross_join")]
+                JoinType::Left => self.left_join_from_series(other, s_left, s_right, suffix, slice),
+                JoinType::Outer => {
+                    self.outer_join_from_series(other, s_left, s_right, suffix, slice)
+                }
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Anti => self.semi_anti_join_from_series(s_left, s_right, slice, true),
+                #[cfg(feature = "semi_anti_join")]
+                JoinType::Semi => self.semi_anti_join_from_series(s_left, s_right, slice, false),
+                #[cfg(feature = "asof_join")]
+                JoinType::AsOf(options) => {
+                    let left_on = selected_left[0].name();
+                    let right_on = selected_right[0].name();
+
+                    match (options.left_by, options.right_by) {
+                        (Some(left_by), Some(right_by)) => self._join_asof_by(
+                            other,
+                            left_on,
+                            right_on,
+                            left_by,
+                            right_by,
+                            options.strategy,
+                            options.tolerance,
+                            slice,
+                        ),
+                        (None, None) => self._join_asof(
+                            other,
+                            left_on,
+                            right_on,
+                            options.strategy,
+                            options.tolerance,
+                            suffix,
+                            slice,
+                        ),
+                        _ => {
+                            panic!("expected by arguments on both sides")
+                        }
+                    }
+                }
                 JoinType::Cross => {
                     unreachable!()
                 }
@@ -1119,8 +474,8 @@ impl DataFrame {
         }
         // make sure that we don't have logical types.
         // we don't overwrite the original selected as that might be used to create a column in the new df
-        let selected_left_physical = to_physical(&selected_left);
-        let selected_right_physical = to_physical(&selected_right);
+        let selected_left_physical = to_physical_and_bit_repr(&selected_left);
+        let selected_right_physical = to_physical_and_bit_repr(&selected_right);
 
         // multiple keys
         match how {
@@ -1128,15 +483,21 @@ impl DataFrame {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
                 let (left, right, swap) = det_hash_prone_order!(left, right);
-                let join_tuples = inner_join_multiple_keys(&left, &right, swap);
+                let (join_idx_left, join_idx_right) = inner_join_multiple_keys(&left, &right, swap);
+                let mut join_idx_left = &*join_idx_left;
+                let mut join_idx_right = &*join_idx_right;
+
+                if let Some((offset, len)) = slice {
+                    join_idx_left = slice_slice(join_idx_left, offset, len);
+                    join_idx_right = slice_slice(join_idx_right, offset, len);
+                }
 
                 let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples, false),
+                    // safety: join indices are known to be in bounds
+                    || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_iter_unchecked(
-                            join_tuples.iter().map(|(_left, right)| *right as usize),
-                        )
+                        remove_selected(other, &selected_right).take_unchecked_slice(join_idx_right)
                     },
                 );
                 self.finish_join(df_left, df_right, suffix)
@@ -1144,20 +505,9 @@ impl DataFrame {
             JoinType::Left => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
                 let right = DataFrame::new_no_checks(selected_right_physical);
-                let join_tuples = left_join_multiple_keys(&left, &right);
+                let ids = left_join_multiple_keys(&left, &right, None, None);
 
-                let (df_left, df_right) = POOL.join(
-                    || self.create_left_df(&join_tuples, true),
-                    || unsafe {
-                        // remove join columns
-                        remove_selected(other, &selected_right).take_opt_iter_unchecked(
-                            join_tuples
-                                .iter()
-                                .map(|(_left, right)| right.map(|i| i as usize)),
-                        )
-                    },
-                );
-                self.finish_join(df_left, df_right, suffix)
+                self.finish_left_join(ids, &remove_selected(other, &selected_right), suffix, slice)
             }
             JoinType::Outer => {
                 let left = DataFrame::new_no_checks(selected_left_physical);
@@ -1166,8 +516,14 @@ impl DataFrame {
                 let (left, right, swap) = det_hash_prone_order!(left, right);
                 let opt_join_tuples = outer_join_multiple_keys(&left, &right, swap);
 
+                let mut opt_join_tuples = &*opt_join_tuples;
+
+                if let Some((offset, len)) = slice {
+                    opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+                }
+
                 // Take the left and right dataframes by join tuples
-                let (mut df_left, df_right) = POOL.join(
+                let (df_left, df_right) = POOL.join(
                     || unsafe {
                         remove_selected(self, &selected_left).take_opt_iter_unchecked(
                             opt_join_tuples
@@ -1183,18 +539,35 @@ impl DataFrame {
                         )
                     },
                 );
+                // Allocate a new vec for df_left so that the keys are left and then other values.
+                let mut keys = Vec::with_capacity(selected_left.len() + df_left.width());
                 for (s_left, s_right) in selected_left.iter().zip(&selected_right) {
-                    let mut s = s_left.zip_outer_join_column(s_right, &opt_join_tuples);
+                    let mut s = s_left.zip_outer_join_column(s_right, opt_join_tuples);
                     s.rename(s_left.name());
-                    df_left.with_column(s)?;
+                    keys.push(s)
                 }
+                keys.extend_from_slice(df_left.get_columns());
+                let df_left = DataFrame::new_no_checks(keys);
                 self.finish_join(df_left, df_right, suffix)
             }
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf => Err(PolarsError::ValueError(
+            JoinType::AsOf(_) => Err(PolarsError::ComputeError(
                 "asof join not supported for join on multiple keys".into(),
             )),
-            #[cfg(feature = "cross_join")]
+            #[cfg(feature = "semi_anti_join")]
+            JoinType::Anti | JoinType::Semi => {
+                let left = DataFrame::new_no_checks(selected_left_physical);
+                let right = DataFrame::new_no_checks(selected_right_physical);
+
+                let idx = if matches!(how, JoinType::Anti) {
+                    left_anti_multiple_keys(&left, &right)
+                } else {
+                    left_semi_multiple_keys(&left, &right)
+                };
+                // Safety:
+                // indices are in bounds
+                Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
+            }
             JoinType::Cross => {
                 unreachable!()
             }
@@ -1248,14 +621,20 @@ impl DataFrame {
     {
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = how {
-            return self.cross_join(other);
+            return self.cross_join(other, suffix);
         }
-
-        #[allow(unused_mut)]
-        let mut selected_left = self.select_series(left_on)?;
-        #[allow(unused_mut)]
-        let mut selected_right = other.select_series(right_on)?;
-        self.join_impl(other, selected_left, selected_right, how, suffix)
+        let selected_left = self.select_series(left_on)?;
+        let selected_right = other.select_series(right_on)?;
+        self._join_impl(
+            other,
+            selected_left,
+            selected_right,
+            how,
+            suffix,
+            None,
+            true,
+            false,
+        )
     }
 
     /// Perform an inner join on two DataFrames.
@@ -1282,18 +661,28 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
-        let join_tuples = s_left.hash_join_inner(s_right);
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
+
+        let (join_tuples_left, join_tuples_right) = s_left.hash_join_inner(s_right);
+        let mut join_tuples_left = &*join_tuples_left;
+        let mut join_tuples_right = &*join_tuples_right;
+
+        if let Some((offset, len)) = slice {
+            join_tuples_left = slice_slice(join_tuples_left, offset, len);
+            join_tuples_right = slice_slice(join_tuples_right, offset, len);
+        }
 
         let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&join_tuples, false),
+            // safety: join indices are known to be in bounds
+            || unsafe { self.create_left_df_from_slice(join_tuples_left, false) },
             || unsafe {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_iter_unchecked(join_tuples.iter().map(|(_left, right)| *right as usize))
+                    .take_unchecked_slice(join_tuples_right)
             },
         );
         self.finish_join(df_left, df_right, suffix)
@@ -1341,28 +730,134 @@ impl DataFrame {
         self.join(other, left_on, right_on, JoinType::Left, None)
     }
 
+    #[cfg(not(feature = "chunked_ids"))]
+    fn finish_left_join(
+        &self,
+        ids: LeftJoinIds,
+        other: &DataFrame,
+        suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+    ) -> Result<DataFrame> {
+        let (left_idx, right_idx) = ids;
+        let materialize_left = || {
+            let mut left_idx = &*left_idx;
+            if let Some((offset, len)) = slice {
+                left_idx = slice_slice(left_idx, offset, len);
+            }
+            unsafe { self.create_left_df_from_slice(left_idx, true) }
+        };
+
+        let materialize_right = || {
+            let mut right_idx = &*right_idx;
+            if let Some((offset, len)) = slice {
+                right_idx = slice_slice(right_idx, offset, len);
+            }
+            unsafe {
+                other.take_opt_iter_unchecked(
+                    right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
+                )
+            }
+        };
+        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
+
+        self.finish_join(df_left, df_right, suffix)
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    fn finish_left_join(
+        &self,
+        ids: LeftJoinIds,
+        other: &DataFrame,
+        suffix: Option<String>,
+        slice: Option<(i64, usize)>,
+    ) -> Result<DataFrame> {
+        let (left_idx, right_idx) = ids;
+        let materialize_left = || match left_idx {
+            JoinIds::Left(left_idx) => {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
+                unsafe { self.create_left_df_from_slice(left_idx, true) }
+            }
+            JoinIds::Right(left_idx) => {
+                let mut left_idx = &*left_idx;
+                if let Some((offset, len)) = slice {
+                    left_idx = slice_slice(left_idx, offset, len);
+                }
+                unsafe { self.create_left_df_chunked(left_idx, true) }
+            }
+        };
+
+        let materialize_right = || match right_idx {
+            JoinOptIds::Left(right_idx) => {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
+                unsafe {
+                    other.take_opt_iter_unchecked(
+                        right_idx.iter().map(|opt_i| opt_i.map(|i| i as usize)),
+                    )
+                }
+            }
+            JoinOptIds::Right(right_idx) => {
+                let mut right_idx = &*right_idx;
+                if let Some((offset, len)) = slice {
+                    right_idx = slice_slice(right_idx, offset, len);
+                }
+                unsafe { other.take_opt_chunked_unchecked(right_idx) }
+            }
+        };
+        let (df_left, df_right) = POOL.join(materialize_left, materialize_right);
+
+        self.finish_join(df_left, df_right, suffix)
+    }
+
     pub(crate) fn left_join_from_series(
         &self,
         other: &DataFrame,
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
-        let opt_join_tuples = s_left.hash_join_left(s_right);
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let (df_left, df_right) = POOL.join(
-            || self.create_left_df(&opt_join_tuples, true),
-            || unsafe {
-                other.drop(s_right.name()).unwrap().take_opt_iter_unchecked(
-                    opt_join_tuples
-                        .iter()
-                        .map(|(_left, right)| right.map(|i| i as usize)),
-                )
-            },
-        );
-        self.finish_join(df_left, df_right, suffix)
+        let ids = s_left.hash_join_left(s_right);
+        self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    /// # Safety:
+    /// `idx` must be in bounds
+    unsafe fn finish_anti_semi_join(
+        &self,
+        mut idx: &[IdxSize],
+        slice: Option<(i64, usize)>,
+    ) -> DataFrame {
+        if let Some((offset, len)) = slice {
+            idx = slice_slice(idx, offset, len);
+        }
+        self.take_unchecked_slice(idx)
+    }
+
+    #[cfg(feature = "semi_anti_join")]
+    pub(crate) fn semi_anti_join_from_series(
+        &self,
+        s_left: &Series,
+        s_right: &Series,
+        slice: Option<(i64, usize)>,
+        anti: bool,
+    ) -> Result<DataFrame> {
+        #[cfg(feature = "dtype-categorical")]
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
+
+        let idx = s_left.hash_join_semi_anti(s_right, anti);
+        // Safety:
+        // indices are in bounds
+        Ok(unsafe { self.finish_anti_semi_join(&idx, slice) })
     }
 
     /// Perform an outer join on two DataFrames
@@ -1387,11 +882,21 @@ impl DataFrame {
         s_left: &Series,
         s_right: &Series,
         suffix: Option<String>,
+        slice: Option<(i64, usize)>,
     ) -> Result<DataFrame> {
         #[cfg(feature = "dtype-categorical")]
-        check_categorical_src(s_left, s_right)?;
+        check_categorical_src(s_left.dtype(), s_right.dtype())?;
+
+        // store this so that we can keep original column order.
+        let join_column_index = self.iter().position(|s| s.name() == s_left.name()).unwrap();
+
         // Get the indexes of the joined relations
         let opt_join_tuples = s_left.hash_join_outer(s_right);
+        let mut opt_join_tuples = &*opt_join_tuples;
+
+        if let Some((offset, len)) = slice {
+            opt_join_tuples = slice_slice(opt_join_tuples, offset, len);
+        }
 
         // Take the left and right dataframes by join tuples
         let (mut df_left, df_right) = POOL.join(
@@ -1410,18 +915,18 @@ impl DataFrame {
                 )
             },
         );
+
         let mut s = s_left
             .to_physical_repr()
-            .zip_outer_join_column(&s_right.to_physical_repr(), &opt_join_tuples);
+            .zip_outer_join_column(&s_right.to_physical_repr(), opt_join_tuples);
         s.rename(s_left.name());
         let s = match s_left.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
-                let ca_or = s_left.categorical().unwrap();
-                let ca_new = s.cast(&DataType::Categorical).unwrap();
-                let mut ca_new = ca_new.categorical().unwrap().clone();
-                ca_new.categorical_map = ca_or.categorical_map.clone();
-                ca_new.into_series()
+            DataType::Categorical(_) => {
+                let ca_left = s_left.categorical().unwrap();
+                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap());
+                let logical = s.u32().unwrap().clone();
+                CategoricalChunked::from_cats_and_rev_map(logical, new_rev_map).into_series()
             }
             dt @ DataType::Datetime(_, _)
             | dt @ DataType::Time
@@ -1430,7 +935,7 @@ impl DataFrame {
             _ => s,
         };
 
-        df_left.hstack_mut(&[s])?;
+        df_left.get_columns_mut().insert(join_column_index, s);
         self.finish_join(df_left, df_right, suffix)
     }
 }
@@ -1667,9 +1172,9 @@ mod test {
 
         let (mut df_a, mut df_b) = get_dfs();
 
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
 
         let out = df_a
@@ -1693,18 +1198,18 @@ mod test {
         for jt in [JoinType::Left, JoinType::Inner, JoinType::Outer] {
             let out = df_a.join(&df_b, ["b"], ["bar"], jt, None).unwrap();
             let out = out.column("b").unwrap();
-            assert_eq!(out.dtype(), &DataType::Categorical);
+            assert_eq!(out.dtype(), &DataType::Categorical(None));
         }
 
         // Test error when joining on different string cache
         let (mut df_a, mut df_b) = get_dfs();
-        df_a.try_apply("b", |s| s.cast(&DataType::Categorical))
+        df_a.try_apply("b", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         // create a new cache
         toggle_string_cache(false);
         toggle_string_cache(true);
 
-        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical))
+        df_b.try_apply("bar", |s| s.cast(&DataType::Categorical(None)))
             .unwrap();
         let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left, None);
         assert!(out.is_err());
@@ -1848,6 +1353,11 @@ mod test {
             .outer_join(&df_right, ["col1"], ["join_col1"])
             .unwrap();
 
+        // ensure the column names don't get swapped by the drop we do
+        assert_eq!(
+            df_outer_join.get_column_names(),
+            &["col1", "int_col", "dbl_col"]
+        );
         assert_eq!(df_outer_join.height(), 12);
         assert_eq!(df_outer_join.column("col1")?.null_count(), 0);
         assert_eq!(df_outer_join.column("int_col")?.null_count(), 1);
@@ -1964,9 +1474,9 @@ mod test {
         assert_eq!(
             out.dtypes(),
             &[
+                DataType::Float64,
+                DataType::Float64,
                 DataType::Utf8,
-                DataType::Float64,
-                DataType::Float64,
                 DataType::Utf8
             ]
         );
@@ -1986,6 +1496,36 @@ mod test {
         let out = a.inner_join(&b, ["a"], ["a"])?;
 
         assert_eq!(out.shape(), (9, 1));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_4_threads_bit_offset() -> Result<()> {
+        // run this locally with a thread pool size of 4
+        // this was an obscure bug caused by not taking the offset of a bit into account.
+        let n = 8i64;
+        let mut left_a = (0..n).map(Some).collect::<Int64Chunked>();
+        let mut left_b = (0..n)
+            .map(|i| if i % 2 == 0 { None } else { Some(0) })
+            .collect::<Int64Chunked>();
+        left_a.rename("a");
+        left_b.rename("b");
+        let left_df = DataFrame::new(vec![left_a.into_series(), left_b.into_series()])?;
+
+        let i = 1;
+        let len = 8;
+        let range = i..i + len;
+        let mut right_a = range.clone().map(Some).collect::<Int64Chunked>();
+        let mut right_b = range
+            .map(|i| if i % 3 == 0 { None } else { Some(1) })
+            .collect::<Int64Chunked>();
+        right_a.rename("a");
+        right_b.rename("b");
+
+        let right_df = DataFrame::new(vec![right_a.into_series(), right_b.into_series()])?;
+        let out = left_df.join(&right_df, ["a", "b"], ["a", "b"], JoinType::Inner, None)?;
+        assert_eq!(out.shape(), (1, 2));
         Ok(())
     }
 }

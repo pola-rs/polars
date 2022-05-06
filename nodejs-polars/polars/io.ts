@@ -1,87 +1,96 @@
-import {NullValues} from "./datatypes";
+import {DataType} from "./datatypes";
 import pli from "./internals/polars_internal";
-import {DataFrame, dfWrapper} from "./dataframe";
+import {DataFrame, _DataFrame} from "./dataframe";
 import {isPath} from "./utils";
-import {LazyDataFrame} from "./lazy/dataframe";
+import {LazyDataFrame, _LazyDataFrame} from "./lazy/dataframe";
 import {Readable, Stream} from "stream";
 import {concat} from "./functions";
 
 
-type ScanIPCOptions = {
-  numRows?: number;
-  cache?: boolean;
-  rechunk?: boolean;
-}
-
-type ScanParquetOptions = {
-  numRows?: number;
-  parallel?: boolean;
-  cache?: boolean;
-  rechunk?: boolean;
-}
-
-type ReadCsvOptions = {
-  batchSize?: number;
-  columns?: Array<string>;
-  commentChar?: string;
-  encoding?: "utf8" | "utf8-lossy";
-  endRows?: number;
-  hasHeader?: boolean;
-  ignoreErrors?: boolean;
-  inferSchemaLength?: number;
-  lowMemory?: boolean;
-  nullValues?: NullValues;
-  numThreads?: number;
-  parseDates?: boolean;
-  projection?: Array<number>;
-  quoteChar?: string;
-  rechunk?: boolean;
-  sep?: string;
-  startRows?: number;
-};
-
-type ReadJsonOptions = {
-  inferSchemaLength?: number;
-  batchSize?: number;
-};
-
-type ReadParquetOptions = {
-  columns?: string[];
-  projection?: number[];
-  numRows?: number;
-  parallel?: boolean;
-  rechunk?: boolean;
-}
-
-type ReadIPCOptions = {
-  columns?: string[];
-  projection?: number[];
-  numRows?: number;
-}
-
-
-const readCsvDefaultOptions: Partial<ReadCsvOptions> = {
-  inferSchemaLength: 50,
-  batchSize: 10000,
-  ignoreErrors: true,
+const readCsvDefaultOptions = {
+  inferSchemaLength: 100,
   hasHeader: true,
+  ignoreErrors: true,
+  chunkSize: 10000,
+  skipRows: 0,
   sep: ",",
   rechunk: false,
-  startRows: 0,
   encoding: "utf8",
   lowMemory: false,
-  parseDates: true,
+  parseDates: false,
+  skipRowsAfterHeader: 0
 };
 
-const readJsonDefaultOptions: Partial<ReadJsonOptions> = {
+const readJsonDefaultOptions = {
   batchSize: 10000,
-  inferSchemaLength: 50
+  inferSchemaLength: 50,
+  format: "lines"
 };
 
-// type definitions
-namespace io {
 
-  /**
+// utility to read streams as lines.
+class LineBatcher extends Stream.Transform {
+
+  #lines: Buffer[];
+  #accumulatedLines: number;
+  #batchSize: number;
+
+  constructor(options) {
+    super(options);
+    this.#lines = [];
+    this.#accumulatedLines = 0;
+    this.#batchSize = options.batchSize;
+  }
+
+  _transform(chunk, _encoding, done) {
+
+    var begin = 0;
+    var position = 0;
+
+    let i = 0;
+    while (i < chunk.length) {
+      if (chunk[i] === 10) { // '\n'
+        this.#accumulatedLines++;
+        if (this.#accumulatedLines == this.#batchSize) {
+          this.#lines.push(chunk.subarray(begin, i + 1));
+          this.push(Buffer.concat(this.#lines));
+          this.#lines = [];
+          this.#accumulatedLines = 0;
+          begin = i + 1;
+        }
+      }
+      i++;
+    }
+
+    this.#lines.push(chunk.subarray(begin));
+
+    done();
+  }
+  _flush(done) {
+    this.push(Buffer.concat(this.#lines));
+
+    done();
+  }
+}
+
+// helper functions
+
+function readCSVBuffer(buff, options) {
+  return _DataFrame(pli.readCsv(buff, {...readCsvDefaultOptions, ...options}));
+}
+
+export function readRecords(records: Record<string, any>[], options?: {schema: Record<string, DataType>}): DataFrame;
+export function readRecords(records: Record<string, any>[], options?: {inferSchemaLength?: number}): DataFrame;
+export function readRecords(records: Record<string, any>[], options): DataFrame {
+
+  if(options?.schema) {
+    return _DataFrame(pli.fromRows(records, options.schema));
+  } else {
+    return _DataFrame(pli.fromRows(records, undefined, options?.inferSchemaLength));
+  }
+}
+
+/**
    * __Read a CSV file or string into a Dataframe.__
    * ___
    * @param pathOrBody - path or buffer or string
@@ -115,9 +124,43 @@ namespace io {
    * @param options.parseDates -Whether to attempt to parse dates or not
    * @returns DataFrame
    */
-  export interface readCSV{(pathOrBody: string | Buffer, options?: Partial<ReadCsvOptions>): DataFrame;}
+export function readCSV(pathOrBody: string | Buffer, options?: any): DataFrame;
+export function readCSV(pathOrBody, options?) {
+  const extensions = [".tsv", ".csv"];
 
-  /**
+  if (Buffer.isBuffer(pathOrBody)) {
+    return _DataFrame(pli.readCsv(pathOrBody, {...readCsvDefaultOptions, ...options}));
+  }
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, extensions);
+    if (inline) {
+      const buf = Buffer.from(pathOrBody, "utf-8");
+
+      return _DataFrame(pli.readCsv(buf, {...readCsvDefaultOptions, ...options}));
+    } else {
+      return _DataFrame(pli.readCsv(pathOrBody, {...readCsvDefaultOptions, ...options}));
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+
+
+const scanCsvDefaultOptions = {
+  inferSchemaLength: 100,
+  cache: true,
+  hasHeader: true,
+  ignoreErrors: true,
+  skipRows: 0,
+  sep: ",",
+  rechunk: false,
+  encoding: "utf8",
+  lowMemory: false,
+  parseDates: false,
+  skipRowsAfterHeader: 0
+};
+
+/**
    * __Lazily read from a CSV file or multiple files via glob patterns.__
    *
    * This allows the query optimizer to push down predicates and
@@ -129,8 +172,8 @@ namespace io {
    *     `x` being an enumeration over every column in the dataset.
    * @param options.sep -Character to use as delimiter in the file.
    * @param options.commentChar - character that indicates the start of a comment line, for instance '#'.
-   * @param options.quotChar -character that is used for csv quoting, default = ''. Set to null to turn special handling and escaping of quotes off.
-   * @param options.startRows -Start reading after `startRows` position.
+   * @param options.quoteChar -character that is used for csv quoting, default = ''. Set to null to turn special handling and escaping of quotes off.
+   * @param options.skipRows -Start reading after `skipRows` position.
    * @param options.nullValues - Values to interpret as null values. You can provide a
    *     - `string` -> all values encountered equal to this string will be null
    *     - `Array<string>` -> A null value per column.
@@ -139,8 +182,7 @@ namespace io {
    * @param options.cache Cache the result after reading.
    * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
    *     If set to `null`, a full table scan will be done (slow).
-   * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
-   * @param options.endRows -After n rows are read from the CSV, it stops reading.
+   * @param options.n_rows -After n rows are read from the CSV, it stops reading.
    *     During multi-threaded parsing, an upper bound of `n` rows
    *     cannot be guaranteed.
    * @param options.rechunk -Make sure that all columns are contiguous in memory by aggregating the chunks into a single array.
@@ -148,9 +190,13 @@ namespace io {
    * ___
    *
    */
-  export interface scanCSV {(path: string, options?: Partial<ReadCsvOptions>): LazyDataFrame}
+export function scanCSV(path: string, options?: any): LazyDataFrame
+export function scanCSV(path, options?) {
+  options = {...scanCsvDefaultOptions, ...options};
 
-  /**
+  return _LazyDataFrame(pli.scanCsv(path, options));
+}
+/**
    * __Read a JSON file or string into a DataFrame.__
    *
    * _Note: Currently only newline delimited JSON is supported_
@@ -160,6 +206,7 @@ namespace io {
    * @param options
    * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
    *    If set to `null`, a full table scan will be done (slow).
+   * @param options.jsonFormat - Either "lines" or "json"
    * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
    * @returns ({@link DataFrame})
    * @example
@@ -182,33 +229,99 @@ namespace io {
    * ╰─────┴─────┴─────╯
    * ```
    */
-  export interface readJSON {(pathOrBody: string | Buffer, options?: Partial<ReadJsonOptions>): DataFrame}
+export function readJSON(pathOrBody: string | Buffer, options?: any): DataFrame
+export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
+  options = {...readJsonDefaultOptions, ...options};
+  const extensions = [".ndjson", ".json", ".jsonl"];
+  if (Buffer.isBuffer(pathOrBody)) {
+    return _DataFrame(pli.readJson(pathOrBody, options));
+  }
 
-  /**
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, extensions);
+    if (inline) {
+      return _DataFrame(pli.readJson(Buffer.from(pathOrBody, "utf-8"), options));
+    } else {
+      return _DataFrame(pli.readJson(pathOrBody, options));
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+
+/**
    * Read into a DataFrame from a parquet file.
    * @param pathOrBuffer
    * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
    * as partition aware scan.
    * @param options.columns Columns to select. Accepts a list of column names.
+   * @param options.projection -Indices of columns to select. Note that column indices start at zero.
    * @param options.numRows  Stop reading from parquet file after reading ``n_rows``.
    * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
+   * @param options.rowCount Add row count as column
    */
-  export interface readParquet{(pathOrBody: string | Buffer, options?: ReadParquetOptions): DataFrame}
+export function readParquet(pathOrBody: string | Buffer, options?: any): DataFrame
+export function readParquet(pathOrBody, options = {}) {
+  if (Buffer.isBuffer(pathOrBody)) {
+    return _DataFrame(pli.readParquet(pathOrBody, options));
+  }
 
-  /**
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".parquet"]);
+    if (inline) {
+      return _DataFrame(pli.readParquet(Buffer.from(pathOrBody), options));
+    } else {
+      return _DataFrame(pli.readParquet(pathOrBody, options));
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+
+/**
+ * Read into a DataFrame from an avro file.
+ * @param pathOrBuffer
+ * Path to a file, list of files, or a file like object. If the path is a directory, that directory will be used
+ * as partition aware scan.
+ * @param options.columns Columns to select. Accepts a list of column names.
+ * @param options.projection -Indices of columns to select. Note that column indices start at zero.
+ * @param options.nRows  Stop reading from avro file after reading ``n_rows``.
+ */
+export function readAvro(pathOrBody: string | Buffer, options?: any): DataFrame
+export function readAvro(pathOrBody, options = {}) {
+  if (Buffer.isBuffer(pathOrBody)) {
+    return _DataFrame(pli.readAvro(pathOrBody, options));
+  }
+
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".avro"]);
+    if (inline) {
+      return _DataFrame(pli.readAvro(Buffer.from(pathOrBody), options));
+    } else {
+      return _DataFrame(pli.readAvro(pathOrBody, options));
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+
+/**
    * __Lazily read from a parquet file or multiple files via glob patterns.__
    * ___
    * This allows the query optimizer to push down predicates and projections to the scan level,
    * thereby potentially reducing memory overhead.
    * @param path Path to a file or or glob pattern
-   * @param options.numRows Stop reading from parquet file after reading ``n_rows``.
+   * @param options.nRows Stop reading from parquet file after reading ``n_rows``.
    * @param options.cache Cache the result after reading.
    * @param options.parallel Read the parquet file in parallel. The single threaded reader consumes less memory.
    * @param options.rechunk In case of reading multiple files via a glob pattern rechunk the final DataFrame into contiguous memory chunks.
    */
-  export interface scanParquet{(path: string, options?: ScanParquetOptions): LazyDataFrame}
+export function scanParquet(path: string, options?: any): LazyDataFrame
+export function scanParquet(path, options = {}) {
+  return _LazyDataFrame(pli.scanParquet(path, options));
+}
 
-  /**
+/**
    * __Read into a DataFrame from Arrow IPC (Feather v2) file.__
    * ___
    * @param pathOrBody - path or buffer or string
@@ -217,9 +330,25 @@ namespace io {
    * @param options.columns Columns to select. Accepts a list of column names.
    * @param options.numRows Stop reading from parquet file after reading ``n_rows``.
    */
-  export interface readIPC{(pathOrBody: string | Buffer, options?: ReadIPCOptions): DataFrame }
+export function readIPC(pathOrBody: string | Buffer, options?: any): DataFrame
+export function readIPC(pathOrBody, options = {}) {
+  if (Buffer.isBuffer(pathOrBody)) {
+    return _DataFrame(pli.readIpc(pathOrBody, options));
+  }
 
-  /**
+  if (typeof pathOrBody === "string") {
+    const inline = !isPath(pathOrBody, [".ipc"]);
+    if (inline) {
+      return _DataFrame(pli.readIpc(Buffer.from(pathOrBody, "utf-8"), options));
+    } else {
+      return _DataFrame(pli.readIpc(pathOrBody, options));
+    }
+  } else {
+    throw new Error("must supply either a path or body");
+  }
+}
+
+/**
    * __Lazily read from an Arrow IPC (Feather v2) file or multiple files via glob patterns.__
    * ___
    * @param path Path to a IPC file.
@@ -227,9 +356,13 @@ namespace io {
    * @param options.cache Cache the result after reading.
    * @param options.rechunk Reallocate to contiguous memory when all chunks/ files are parsed.
    */
-  export interface scanIPC{(path: string, options?: ScanIPCOptions): LazyDataFrame}
+export function scanIPC(path: string, options?: any): LazyDataFrame
+export function scanIPC(path, options = {}) {
 
-  /**
+  return _LazyDataFrame(pli.scanIpc(path, options));
+}
+
+/**
    * __Read a stream into a Dataframe.__
    *
    * **Warning:** this is much slower than `scanCSV` or `readCSV`
@@ -294,9 +427,36 @@ namespace io {
    * └─────┴─────┘
    * ```
    */
-  export interface readCSVStream{(stream: Readable, options?: ReadCsvOptions): Promise<DataFrame>}
+export function readCSVStream(stream: Readable, options?: any): Promise<DataFrame>
+export function readCSVStream(stream, options?) {
+  let batchSize = options?.batchSize ?? 10000;
+  let count = 0;
+  let end = options?.endRows ?? Number.POSITIVE_INFINITY;
 
-  /**
+  return new Promise((resolve, reject) => {
+    const s = stream.pipe(new LineBatcher({batchSize}));
+    const chunks: any[] = [];
+
+    s.on("data", (chunk) => {
+      // early abort if 'end rows' is specified
+      if (count <= end) {
+        chunks.push(chunk);
+      } else {
+        s.end();
+      }
+      count += batchSize;
+    }).on("end", () => {
+      try {
+        let buff = Buffer.concat(chunks);
+        const df = readCSVBuffer(buff, options);
+        resolve(df);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+/**
    * __Read a newline delimited JSON stream into a DataFrame.__
    *
    * @param stream - readable stream containing json data
@@ -331,228 +491,31 @@ namespace io {
    * └─────┴─────┘
    * ```
    */
-  export interface readJSONStream{(stream: Readable, options?: ReadJsonOptions): Promise<DataFrame>}
-}
+export function readJSONStream(stream: Readable, options?: any): Promise<DataFrame>
+export function readJSONStream(stream, options=readJsonDefaultOptions) {
+  options = {...readJsonDefaultOptions, ...options};
 
+  return new Promise((resolve, reject) => {
+    const chunks: any[] = [];
 
-// Implementation
-namespace io {
-
-  export function readCSV(pathOrBody, options?) {
-    const extensions = [".tsv", ".csv"];
-
-    if (Buffer.isBuffer(pathOrBody)) {
-      return readCSVBuffer(pathOrBody, options);
-    }
-
-    if (typeof pathOrBody === "string") {
-      const inline = !isPath(pathOrBody, extensions);
-      if (inline) {
-        return readCSVBuffer(Buffer.from(pathOrBody, "utf-8"), options);
-      } else {
-        return readCSVPath(pathOrBody, options);
-      }
-    } else {
-      throw new Error("must supply either a path or body");
-    }
-  }
-
-  export function scanCSV(path, options?) {
-    options = {...readCsvDefaultOptions, ...options};
-
-    return LazyDataFrame(pli.ldf.scanCSV({path, ...options}));
-  }
-
-  export function readJSON(pathOrBody, options?) {
-    const extensions = [".ndjson", ".json", ".jsonl"];
-    if (Buffer.isBuffer(pathOrBody)) {
-      return readJSONBuffer(pathOrBody, options);
-    }
-
-    if (typeof pathOrBody === "string") {
-      const inline = !isPath(pathOrBody, extensions);
-      if (inline) {
-        return readJSONBuffer(Buffer.from(pathOrBody, "utf-8"), options);
-      } else {
-        return readJSONPath(pathOrBody, options);
-      }
-    } else {
-      throw new Error("must supply either a path or body");
-    }
-  }
-
-  export function readParquet(pathOrBody, options?) {
-    if (Buffer.isBuffer(pathOrBody)) {
-      return readParquetBuffer(pathOrBody, options);
-    }
-
-    if (typeof pathOrBody === "string") {
-      const inline = !isPath(pathOrBody, [".parquet"]);
-      if (inline) {
-        return readParquetBuffer(Buffer.from(pathOrBody, "utf-8"), options);
-      } else {
-        return readParquetPath(pathOrBody, options);
-      }
-    } else {
-      throw new Error("must supply either a path or body");
-    }
-  }
-
-  export function scanParquet(path, options?) {
-    return LazyDataFrame(pli.ldf.scanParquet({path, ...options}));
-  }
-
-  export function readIPC(pathOrBody, options?) {
-    if (Buffer.isBuffer(pathOrBody)) {
-      return readIPCBuffer(pathOrBody, options);
-    }
-
-    if (typeof pathOrBody === "string") {
-      const inline = !isPath(pathOrBody, [".ipc"]);
-      if (inline) {
-        return readIPCBuffer(Buffer.from(pathOrBody, "utf-8"), options);
-      } else {
-        return readIPCPath(pathOrBody, options);
-      }
-    } else {
-      throw new Error("must supply either a path or body");
-    }
-  }
-
-  export function scanIPC(path, options?) {
-    return LazyDataFrame(pli.ldf.scanIPC({path, ...options}));
-  }
-
-  export function readCSVStream(stream, options?) {
-    let batchSize = options?.batchSize ?? 10000;
-    let count = 0;
-    let end = options?.endRows ?? Number.POSITIVE_INFINITY;
-
-    return new Promise((resolve, reject) => {
-      const s = stream.pipe(new LineBatcher({batchSize}));
-      const chunks: any[] = [];
-
-      s.on("data", (chunk) => {
-        // early abort if 'end rows' is specified
-        if (count <= end) {
-          chunks.push(chunk);
-        } else {
-          s.end();
-        }
-        count += batchSize;
-      }).on("end", () => {
+    stream
+      .pipe(new LineBatcher({batchSize: options.batchSize}))
+      .on("data", (chunk) => {
         try {
-          let buff = Buffer.concat(chunks);
-          const df = readCSVBuffer(buff, options);
+          const df = _DataFrame(pli.readJson(chunk, options));
+          chunks.push(df);
+        } catch (err) {
+          reject(err);
+        }
+      })
+      .on("end", () => {
+        try {
+          const df = concat(chunks);
           resolve(df);
         } catch (err) {
           reject(err);
         }
       });
-    });
-  }
 
-  export function readJSONStream(stream, options?) {
-    let batchSize = options?.batchSize ?? 10000;
-
-    return new Promise((resolve, reject) => {
-      const chunks: any[] = [];
-
-      stream
-        .pipe(new LineBatcher({batchSize}))
-        .on("data", (chunk) => {
-          try {
-            const df = readJSONBuffer(chunk, options);
-            chunks.push(df);
-          } catch (err) {
-            reject(err);
-          }
-        })
-        .on("end", () => {
-          try {
-            const df = concat(chunks);
-            resolve(df);
-          } catch (err) {
-            reject(err);
-          }
-        });
-
-    });
-  }
+  });
 }
-
-
-// utility to read streams as lines.
-class LineBatcher extends Stream.Transform {
-
-  #lines: Buffer[];
-  #accumulatedLines: number;
-  #batchSize: number;
-
-  constructor(options) {
-    super(options);
-    this.#lines = [];
-    this.#accumulatedLines = 0;
-    this.#batchSize = options.batchSize;
-  }
-
-  _transform(chunk, _encoding, done) {
-
-    var begin = 0;
-    var position = 0;
-
-    let i = 0;
-    while (i < chunk.length) {
-      if (chunk[i] === 10) { // '\n'
-        this.#accumulatedLines++;
-        if (this.#accumulatedLines == this.#batchSize) {
-          this.#lines.push(chunk.subarray(begin, i + 1));
-          this.push(Buffer.concat(this.#lines));
-          this.#lines = [];
-          this.#accumulatedLines = 0;
-          begin = i + 1;
-        }
-      }
-      i++;
-    }
-
-    this.#lines.push(chunk.subarray(begin));
-
-    done();
-  }
-  _flush(done) {
-    this.push(Buffer.concat(this.#lines));
-
-    done();
-  }
-}
-
-// helper functions
-
-function readCSVBuffer(buff, options) {
-  return dfWrapper(pli.df.readCSVBuffer({...readCsvDefaultOptions, ...options, buff}));
-}
-function readCSVPath(path, options) {
-  return dfWrapper(pli.df.readCSVPath({...readCsvDefaultOptions, ...options, path}));
-}
-function readJSONBuffer(buff, options) {
-  return dfWrapper(pli.df.readJSONBuffer({...readJsonDefaultOptions, ...options, buff}));
-}
-function readJSONPath(path, options) {
-  return dfWrapper(pli.df.readJSONPath({...readJsonDefaultOptions, ...options, path}));
-}
-function readParquetBuffer(buff, options) {
-  return dfWrapper(pli.df.readParquetBuffer({...options, buff}));
-}
-function readParquetPath(path, options) {
-  return dfWrapper(pli.df.readParquetPath({...options, path}));
-}
-function readIPCBuffer(buff, options) {
-  return dfWrapper(pli.df.readIPCBuffer({...options, buff}));
-}
-function readIPCPath(path, options) {
-  return dfWrapper(pli.df.readIPCPath({...options, path}));
-}
-
-
-export = io;

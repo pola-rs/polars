@@ -243,7 +243,7 @@ where
 
     fn div(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::div_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Arc::new(basic::div_scalar(arr, &rhs)))
     }
 }
 
@@ -269,7 +269,7 @@ where
 
     fn rem(self, rhs: N) -> Self::Output {
         let rhs: T::Native = NumCast::from(rhs).expect("could not cast");
-        self.apply_kernel(|arr| Arc::new(basic::rem_scalar(arr, &rhs)))
+        self.apply_kernel(&|arr| Arc::new(basic::rem_scalar(arr, &rhs)))
     }
 }
 
@@ -419,7 +419,7 @@ where
 {
     fn pow_f32(&self, exp: f32) -> Float32Chunked {
         let s = self.cast(&DataType::Float32).unwrap();
-        s.f32().unwrap().apply_kernel(|arr| {
+        s.f32().unwrap().apply_kernel(&|arr| {
             Arc::new(compute::arity::unary(
                 arr,
                 |x| x.powf(exp),
@@ -430,7 +430,7 @@ where
 
     fn pow_f64(&self, exp: f64) -> Float64Chunked {
         let s = self.cast(&DataType::Float64).unwrap();
-        s.f64().unwrap().apply_kernel(|arr| {
+        s.f64().unwrap().apply_kernel(&|arr| {
             Arc::new(compute::arity::unary(
                 arr,
                 |x| x.powf(exp),

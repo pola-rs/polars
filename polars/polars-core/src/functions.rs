@@ -11,13 +11,13 @@ use crate::utils::concat_df;
 use ahash::AHashSet;
 use arrow::compute;
 use arrow::types::simd::Simd;
-use num::{Float, NumCast};
+use num::{Float, NumCast, ToPrimitive};
 #[cfg(feature = "concat_str")]
 use polars_arrow::prelude::ValueSize;
 use std::ops::Add;
 
 /// Compute the covariance between two columns.
-pub fn cov<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
+pub fn cov_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -34,8 +34,44 @@ where
     }
 }
 
+/// Compute the covariance between two columns.
+pub fn cov_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
+where
+    T: PolarsIntegerType,
+    T::Native: ToPrimitive,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+{
+    if a.len() != b.len() {
+        None
+    } else {
+        let a_mean = a.mean()?;
+        let b_mean = b.mean()?;
+        let a = a.apply_cast_numeric::<_, Float64Type>(|a| a.to_f64().unwrap() - a_mean);
+        let b = b.apply_cast_numeric(|b| b.to_f64().unwrap() - b_mean);
+
+        let tmp = a * b;
+        let n = tmp.len() - tmp.null_count();
+        Some(tmp.sum()? / (n - 1) as f64)
+    }
+}
+
 /// Compute the pearson correlation between two columns.
-pub fn pearson_corr<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
+pub fn pearson_corr_i<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<f64>
+where
+    T: PolarsIntegerType,
+    T::Native: ToPrimitive,
+    <T::Native as Simd>::Simd: Add<Output = <T::Native as Simd>::Simd>
+        + compute::aggregate::Sum<T::Native>
+        + compute::aggregate::SimdOrd<T::Native>,
+    ChunkedArray<T>: ChunkVar<f64>,
+{
+    Some(cov_i(a, b)? / (a.std()? * b.std()?))
+}
+
+/// Compute the pearson correlation between two columns.
+pub fn pearson_corr_f<T>(a: &ChunkedArray<T>, b: &ChunkedArray<T>) -> Option<T::Native>
 where
     T: PolarsFloatType,
     T::Native: Float,
@@ -44,7 +80,7 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: ChunkVar<T::Native>,
 {
-    Some(cov(a, b)? / (a.std()? * b.std()?))
+    Some(cov_f(a, b)? / (a.std()? * b.std()?))
 }
 
 #[cfg(feature = "sort_multiple")]
@@ -52,9 +88,9 @@ where
 /// That means that the first `Series` will be used to determine the ordering
 /// until duplicates are found. Once duplicates are found, the next `Series` will
 /// be used and so on.
-pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+pub fn argsort_by(by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
     if by.len() != reverse.len() {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             format!(
                 "The amount of ordering booleans: {} does not match amount of Series: {}",
                 reverse.len(),
@@ -113,7 +149,7 @@ pub fn concat_str(s: &[Series], delimiter: &str) -> Result<Utf8Chunked> {
         .collect::<Result<Vec<_>>>()?;
 
     if !s.iter().all(|s| s.len() == 1 || s.len() == len) {
-        return Err(PolarsError::ValueError(
+        return Err(PolarsError::ComputeError(
             "all series in concat_str function should have equal length or unit length".into(),
         ));
     }
@@ -182,7 +218,7 @@ pub fn hor_concat_df(dfs: &[DataFrame]) -> Result<DataFrame> {
                     let diff = max_len - df.height();
                     df.columns
                         .iter_mut()
-                        .for_each(|s| *s = s.extend(AnyValue::Null, diff).unwrap());
+                        .for_each(|s| *s = s.extend_constant(AnyValue::Null, diff).unwrap());
                 }
                 df
             })
@@ -242,11 +278,23 @@ mod test {
     use super::*;
 
     #[test]
+    fn test_cov() {
+        let a = Series::new("a", &[1.0f32, 2.0, 5.0]);
+        let b = Series::new("b", &[1.0f32, 2.0, -3.0]);
+        let out = cov_f(a.f32().unwrap(), b.f32().unwrap());
+        assert_eq!(out, Some(-5.0));
+        let a = a.cast(&DataType::Int32).unwrap();
+        let b = b.cast(&DataType::Int32).unwrap();
+        let out = cov_i(a.i32().unwrap(), b.i32().unwrap());
+        assert_eq!(out, Some(-5.0));
+    }
+
+    #[test]
     fn test_pearson_corr() {
         let a = Series::new("a", &[1.0f32, 2.0]);
         let b = Series::new("b", &[1.0f32, 2.0]);
-        assert!((cov(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
-        assert!((pearson_corr(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
+        assert!((cov_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 0.5).abs() < 0.001);
+        assert!((pearson_corr_f(a.f32().unwrap(), b.f32().unwrap()).unwrap() - 1.0).abs() < 0.001);
     }
 
     #[test]

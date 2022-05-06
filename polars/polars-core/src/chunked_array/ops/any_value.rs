@@ -1,7 +1,3 @@
-#[cfg(feature = "dtype-categorical")]
-use crate::chunked_array::categorical::RevMapping;
-#[cfg(not(feature = "dtype-categorical"))]
-use crate::chunked_array::RevMapping;
 use crate::prelude::*;
 use std::convert::TryFrom;
 
@@ -10,7 +6,6 @@ use std::convert::TryFrom;
 pub(crate) unsafe fn arr_to_any_value<'a>(
     arr: &'a dyn Array,
     idx: usize,
-    categorical_map: &'a Option<Arc<RevMapping>>,
     dtype: &'a DataType,
 ) -> AnyValue<'a> {
     if arr.is_null(idx) {
@@ -20,7 +15,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     macro_rules! downcast_and_pack {
         ($casttype:ident, $variant:ident) => {{
             let arr = &*(arr as *const dyn Array as *const $casttype);
-            let v = arr.value(idx);
+            let v = arr.value_unchecked(idx);
             AnyValue::$variant(v)
         }};
     }
@@ -44,28 +39,16 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
-        #[cfg(feature = "dtype-date")]
-        DataType::Date => downcast_and_pack!(Int32Array, Date),
-        #[cfg(feature = "dtype-datetime")]
-        DataType::Datetime(tu, tz) => {
-            let ts: i64 = downcast!(Int64Array);
-            AnyValue::Datetime(ts, *tu, tz)
-        }
-        #[cfg(feature = "dtype-duration")]
-        DataType::Duration(tu) => {
-            let delta: i64 = downcast!(Int64Array);
-            AnyValue::Duration(delta, *tu)
-        }
         DataType::List(dt) => {
             let v: ArrayRef = downcast!(LargeListArray).into();
             let mut s = Series::try_from(("", v)).unwrap();
 
-            match **dt {
-                DataType::Categorical => {
-                    let mut s_new = s.cast(&DataType::Categorical).unwrap();
-                    let ca: &mut CategoricalChunked = s_new.get_inner_mut().as_mut();
-                    ca.categorical_map = categorical_map.clone();
-                    s = s_new;
+            match &**dt {
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Categorical(Some(rev_map)) => {
+                    let cats = s.u32().unwrap().clone();
+                    let out = CategoricalChunked::from_cats_and_rev_map(cats, rev_map.clone());
+                    s = out.into_series();
                 }
                 DataType::Date
                 | DataType::Datetime(_, _)
@@ -77,14 +60,49 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             AnyValue::List(s)
         }
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical => {
-            let idx = downcast!(UInt32Array);
-            let rev_map = &**categorical_map.as_ref().unwrap();
-            AnyValue::Categorical(idx, rev_map)
+        DataType::Categorical(rev_map) => {
+            let arr = &*(arr as *const dyn Array as *const UInt32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref())
+        }
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(flds) => {
+            let arr = &*(arr as *const dyn Array as *const StructArray);
+            let vals = arr
+                .values()
+                .iter()
+                .zip(flds)
+                .map(|(arr, fld)| arr_to_any_value(&**arr, idx, fld.data_type()))
+                .collect();
+            AnyValue::Struct(vals, flds)
+        }
+        #[cfg(feature = "dtype-datetime")]
+        DataType::Datetime(tu, tz) => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Datetime(v, *tu, tz)
+        }
+        #[cfg(feature = "dtype-date")]
+        DataType::Date => {
+            let arr = &*(arr as *const dyn Array as *const Int32Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Date(v)
+        }
+        #[cfg(feature = "dtype-duration")]
+        DataType::Duration(tu) => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Duration(v, *tu)
+        }
+        #[cfg(feature = "dtype-time")]
+        DataType::Time => {
+            let arr = &*(arr as *const dyn Array as *const Int64Array);
+            let v = arr.value_unchecked(idx);
+            AnyValue::Time(v)
         }
         #[cfg(feature = "object")]
         DataType::Object(_) => panic!("should not be here"),
-        _ => unimplemented!(),
+        dt => panic!("not implemented for {:?}", dt),
     }
 }
 
@@ -94,7 +112,7 @@ macro_rules! get_any_value_unchecked {
         debug_assert!(chunk_idx < $self.chunks.len());
         let arr = &**$self.chunks.get_unchecked(chunk_idx);
         debug_assert!(idx < arr.len());
-        arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype())
+        arr_to_any_value(arr, idx, $self.dtype())
     }};
 }
 
@@ -105,7 +123,7 @@ macro_rules! get_any_value {
         assert!(idx < arr.len());
         // SAFETY
         // bounds are checked
-        unsafe { arr_to_any_value(arr, idx, &$self.categorical_map, $self.dtype()) }
+        unsafe { arr_to_any_value(arr, idx, $self.dtype()) }
     }};
 }
 
@@ -153,26 +171,6 @@ impl ChunkAnyValue for ListChunked {
 
     fn get_any_value(&self, index: usize) -> AnyValue {
         get_any_value!(self, index)
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkAnyValue for CategoricalChunked {
-    #[inline]
-    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        debug_assert!(idx < arr.len());
-        arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical)
-    }
-
-    fn get_any_value(&self, index: usize) -> AnyValue {
-        let (chunk_idx, idx) = self.index_to_chunked_index(index);
-        let arr = &self.chunks[chunk_idx];
-        assert!(idx < arr.len());
-        // SAFETY
-        // bounds are checked
-        unsafe { arr_to_any_value(&**arr, idx, &self.categorical_map, &DataType::Categorical) }
     }
 }
 

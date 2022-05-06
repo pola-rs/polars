@@ -8,19 +8,30 @@ use crate::prelude::*;
 use polars_arrow::compute::cast::cast;
 
 impl Series {
+    /// Returns a reference to the Arrow ArrayRef
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        match self.dtype() {
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => {
+                let ca = self.struct_().unwrap();
+                ca.arrow_array()
+            }
+            _ => &self.chunks()[chunk_idx] as &ArrayRef,
+        }
+    }
+
     /// Convert a chunk in the Series to the correct Arrow type.
     /// This conversion is needed because polars doesn't use a
     /// 1 on 1 mapping for logical/ categoricals, etc.
     pub fn to_arrow(&self, chunk_idx: usize) -> ArrayRef {
         match self.dtype() {
             #[cfg(feature = "dtype-categorical")]
-            DataType::Categorical => {
+            DataType::Categorical(_) => {
                 let ca = self.categorical().unwrap();
-                let mut new = CategoricalChunked::new_from_chunks(
-                    ca.name(),
-                    vec![ca.chunks()[chunk_idx].clone()],
-                );
-                new.set_categorical_map(ca.get_categorical_map().cloned().unwrap());
+                let arr = ca.logical().chunks()[chunk_idx].clone();
+                let cats = UInt32Chunked::from_chunks("", vec![arr]);
+
+                let new = CategoricalChunked::from_cats_and_rev_map(cats, ca.get_rev_map().clone());
 
                 let arr: DictionaryArray<u32> = (&new).into();
                 Arc::new(arr) as ArrayRef
@@ -45,7 +56,9 @@ impl Series {
                 let arr = cast(&*self.chunks()[chunk_idx], &DataType::Time.to_arrow()).unwrap();
                 Arc::from(arr)
             }
-            _ => self.chunks()[chunk_idx].clone(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(_) => self.array_ref(chunk_idx).clone(),
+            _ => self.array_ref(chunk_idx).clone(),
         }
     }
 }

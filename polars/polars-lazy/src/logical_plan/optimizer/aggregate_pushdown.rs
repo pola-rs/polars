@@ -94,7 +94,7 @@ impl OptimizationRule for AggregatePushdown {
                     let input_schema = lp_arena.get(new_node).schema(lp_arena);
 
                     let nodes: Vec<_> = self.process_nodes();
-                    let fields = self
+                    let fields: Vec<_> = self
                         .accumulated_projections
                         .iter()
                         .map(|n| {
@@ -108,7 +108,7 @@ impl OptimizationRule for AggregatePushdown {
                     Some(ALogicalPlan::Projection {
                         expr: nodes,
                         input: new_node,
-                        schema: Arc::new(Schema::new(fields)),
+                        schema: Arc::new(Schema::from(fields)),
                     })
                 }
             }

@@ -27,9 +27,7 @@ def test_apply() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = df.lazy().with_column(col("a").map(lambda s: s * 2).alias("foo")).collect()
 
-    expected = df.clone()
-    expected["foo"] = expected["a"] * 2
-
+    expected = df.clone().with_column((pl.col("a") * 2).alias("foo"))
     assert new.frame_equal(expected)
 
 
@@ -100,7 +98,7 @@ def test_binary_function() -> None:
         )
         .collect()
     )
-    assert out["binary_function"] == (out.a + out.b)
+    assert out["binary_function"] == (out["a"] + out["b"])
 
     # we can also avoid pl.col and insert column names directly
     out = (
@@ -108,7 +106,7 @@ def test_binary_function() -> None:
         .with_column(map_binary("a", "b", lambda a, b: a + b).alias("binary_function"))
         .collect()
     )
-    assert out["binary_function"] == (out.a + out.b)
+    assert out["binary_function"] == (out["a"] + out["b"])
 
 
 def test_filter_str() -> None:
@@ -149,7 +147,7 @@ def test_apply_custom_function() -> None:
             [
                 pl.col("cars").apply(lambda groups: groups.len()).alias("custom_1"),
                 pl.col("cars").apply(lambda groups: groups.len()).alias("custom_2"),
-                pl.count("cars"),
+                pl.count("cars").alias("cars_count"),
             ]
         )
         .sort("custom_1", reverse=True)
@@ -162,14 +160,14 @@ def test_apply_custom_function() -> None:
             "cars_count": [3, 2],
         }
     )
-    expected["cars_count"] = expected["cars_count"].cast(pl.UInt32)
+    expected = expected.with_column(pl.col("cars_count").cast(pl.UInt32))
     assert a.frame_equal(expected)
 
 
 def test_groupby() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0, 4.0], "groups": ["a", "a", "b", "b"]})
 
-    expected = pl.DataFrame({"groups": ["a", "b"], "a_mean": [1.0, 3.5]})
+    expected = pl.DataFrame({"groups": ["a", "b"], "a": [1.0, 3.5]})
 
     out = df.lazy().groupby("groups").agg(pl.mean("a")).collect()
     assert out.sort(by="groups").frame_equal(expected)
@@ -224,7 +222,8 @@ def test_arange() -> None:
 
 def test_arg_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df[col("a").arg_unique()]["a"].series_equal(pl.Series("a", [0, 1]))
+    col_a_unique = df[col("a").arg_unique()]["a"]
+    assert col_a_unique.series_equal(pl.Series("a", [0, 1]).cast(pl.UInt32))
 
 
 def test_is_unique() -> None:
@@ -471,14 +470,14 @@ def test_cum_agg() -> None:
 
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    assert df.select(pl.col("a").floor())["a"].series_equal(pl.Series("a", [1, 1, 3]))
+    col_a_floor = df.select(pl.col("a").floor())["a"]
+    assert col_a_floor.series_equal(pl.Series("a", [1, 1, 3]).cast(pl.Float64))
 
 
 def test_round() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    assert df.select(pl.col("a").round(decimals=0))["a"].series_equal(
-        pl.Series("a", [2, 1, 3])
-    )
+    col_a_rounded = df.select(pl.col("a").round(decimals=0))["a"]
+    assert col_a_rounded.series_equal(pl.Series("a", [2, 1, 3]).cast(pl.Float64))
 
 
 def test_dot() -> None:
@@ -506,7 +505,7 @@ def test_all_expr() -> None:
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
-    assert fruits_cars.select(pl.any("A"))[0, 0]
+    assert fruits_cars.with_column(pl.col("A").cast(bool)).select(pl.any("A"))[0, 0]
     assert fruits_cars.select(pl.any([pl.col("A"), pl.col("B")]))[0, 0]
 
 
@@ -587,16 +586,15 @@ def test_fill_null() -> None:
 
 def test_backward_fill() -> None:
     df = pl.DataFrame({"a": [1.0, None, 3.0]})
-    assert df.select([pl.col("a").backward_fill()])["a"].series_equal(
-        pl.Series("a", [1, 3, 3])
-    )
+    col_a_backward_fill = df.select([pl.col("a").backward_fill()])["a"]
+    assert col_a_backward_fill.series_equal(pl.Series("a", [1, 3, 3]).cast(pl.Float64))
 
 
 def test_take(fruits_cars: pl.DataFrame) -> None:
     df = fruits_cars
 
     # out of bounds error
-    with pytest.raises(RuntimeError):
+    with pytest.raises(pl.ComputeError):
         (
             df.sort("fruits").select(
                 [col("B").reverse().take([1, 2]).list().over("fruits"), "fruits"]
@@ -758,14 +756,14 @@ def test_arr_namespace(fruits_cars: pl.DataFrame) -> None:
     out = df.select(
         [
             "fruits",
-            col("B").over("fruits").arr.min().alias("B_by_fruits_min1"),
-            col("B").min().over("fruits").alias("B_by_fruits_min2"),
-            col("B").over("fruits").arr.max().alias("B_by_fruits_max1"),
-            col("B").max().over("fruits").alias("B_by_fruits_max2"),
-            col("B").over("fruits").arr.sum().alias("B_by_fruits_sum1"),
-            col("B").sum().over("fruits").alias("B_by_fruits_sum2"),
-            col("B").over("fruits").arr.mean().alias("B_by_fruits_mean1"),
-            col("B").mean().over("fruits").alias("B_by_fruits_mean2"),
+            pl.col("B").list().over("fruits").arr.min().alias("B_by_fruits_min1"),
+            pl.col("B").min().list().over("fruits").alias("B_by_fruits_min2"),
+            pl.col("B").list().over("fruits").arr.max().alias("B_by_fruits_max1"),
+            pl.col("B").max().list().over("fruits").alias("B_by_fruits_max2"),
+            pl.col("B").list().over("fruits").arr.sum().alias("B_by_fruits_sum1"),
+            pl.col("B").sum().list().over("fruits").alias("B_by_fruits_sum2"),
+            pl.col("B").list().over("fruits").arr.mean().alias("B_by_fruits_mean1"),
+            pl.col("B").mean().list().over("fruits").alias("B_by_fruits_mean2"),
         ]
     )
     expected = pl.DataFrame(
@@ -899,7 +897,7 @@ def test_drop_columns() -> None:
 
 
 def test_with_column_renamed(fruits_cars: pl.DataFrame) -> None:
-    res = fruits_cars.lazy().with_column_renamed("A", "C").collect()
+    res = fruits_cars.lazy().rename({"A": "C"}).collect()
     assert res.columns[0] == "C"
 
 
@@ -1093,18 +1091,16 @@ def test_is_between(fruits_cars: pl.DataFrame) -> None:
     )
 
 
-def test_drop_duplicates() -> None:
+def test_distinct() -> None:
     df = pl.DataFrame({"a": [1, 2, 2], "b": [3, 3, 3]})
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3, 3]})
-    assert (
-        df.lazy().drop_duplicates(maintain_order=True).collect().frame_equal(expected)
-    )
+    assert df.lazy().distinct(maintain_order=True).collect().frame_equal(expected)
 
     expected = pl.DataFrame({"a": [1], "b": [3]})
     assert (
         df.lazy()
-        .drop_duplicates(subset="b", maintain_order=True)
+        .distinct(subset="b", maintain_order=True)
         .collect()
         .frame_equal(expected)
     )
@@ -1114,7 +1110,7 @@ def test_lazy_concat(df: pl.DataFrame) -> None:
     shape = df.shape
     shape = (shape[0] * 2, shape[1])
 
-    out = pl.concat([df.lazy(), df.lazy()]).collect()  # type: ignore
+    out = pl.concat([df.lazy(), df.lazy()]).collect()
     assert out.shape == shape
     assert out.frame_equal(df.vstack(df.clone()), null_equal=True)
 
@@ -1153,3 +1149,112 @@ def test_nested_min_max() -> None:
     out = df.with_column(pl.max([pl.min(["a", "b"]), pl.min(["c", "d"])]).alias("t"))
     assert out.shape == (1, 5)
     assert out["t"][0] == 3
+
+
+def test_self_join() -> None:
+    # 2720
+    df = pl.from_dict(
+        data={
+            "employee_id": [100, 101, 102],
+            "employee_name": ["James", "Alice", "Bob"],
+            "manager_id": [None, 100, 101],
+        }
+    ).lazy()
+
+    out = (
+        df.join(ldf=df, left_on="manager_id", right_on="employee_id", how="left")
+        .select(
+            exprs=[
+                pl.col("employee_id"),
+                pl.col("employee_name"),
+                pl.col("employee_name_right").alias("manager_name"),
+            ]
+        )
+        .fetch()
+    )
+    assert set(out.rows()) == {
+        (100, "James", None),
+        (101, "Alice", "James"),
+        (102, "Bob", "Alice"),
+    }
+
+
+def test_preservation_of_subclasses() -> None:
+    """Tests for LazyFrame inheritance."""
+
+    # We should be able to inherit from polars.LazyFrame
+    class SubClassedLazyFrame(pl.LazyFrame):
+        pass
+
+    # The constructor creates an object which is an instance of both the
+    # superclass and subclass
+    ldf = pl.DataFrame({"column_1": [1, 2, 3]}).lazy()
+    ldf.__class__ = SubClassedLazyFrame
+    extended_ldf = ldf.with_column(pl.lit(1).alias("column_2"))
+    assert isinstance(extended_ldf, pl.LazyFrame)
+    assert isinstance(extended_ldf, SubClassedLazyFrame)
+
+
+def test_group_lengths() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": ["1", "1", "2", "3", "4", "3", "5"],
+        }
+    )
+
+    assert (
+        df.groupby(["group"], maintain_order=True)
+        .agg(
+            [
+                (pl.col("id").unique_counts() / pl.col("id").len())
+                .sum()
+                .alias("unique_counts_sum"),
+                pl.col("id").unique().len().alias("unique_len"),
+            ]
+        )
+        .frame_equal(
+            pl.DataFrame(
+                {
+                    "group": ["A", "B"],
+                    "unique_counts_sum": [1.0, 1.0],
+                    "unique_len": [2, 3],
+                }
+            )
+        )
+    )
+
+
+def test_quantile_filtered_agg() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "group": [0, 0, 0, 0, 1, 1, 1, 1],
+                "value": [1, 2, 3, 4, 1, 2, 3, 4],
+            }
+        )
+        .groupby("group")
+        .agg(pl.col("value").filter(pl.col("value") < 2).quantile(0.5))["value"]
+        .to_list()
+        == [1.0, 1.0]
+    )
+
+
+def test_lazy_schema() -> None:
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    ).lazy()
+    assert lf.schema == {"foo": pl.Int64, "bar": pl.Float64, "ham": pl.Utf8}
+
+    lf = pl.DataFrame(
+        {
+            "foo": [1, 2, 3],
+            "bar": [6.0, 7.0, 8.0],
+            "ham": ["a", "b", "c"],
+        }
+    ).lazy()
+    assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]

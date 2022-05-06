@@ -2,6 +2,7 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
+use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "rolling_window")]
 use crate::chunked_array::ops::rolling_window::RollingOptions;
@@ -11,11 +12,11 @@ use crate::chunked_array::{
         compare_inner::{IntoPartialEqInner, IntoPartialOrdInner, PartialEqInner, PartialOrdInner},
         explode::ExplodeByOffsets,
     },
-    AsSinglePtr, ChunkIdIter,
+    AsSinglePtr,
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
+use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 #[cfg(feature = "checked_arithmetic")]
 use crate::series::arithmetic::checked::NumOpsDispatchChecked;
@@ -94,11 +95,6 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).into_series()
             }
 
-            #[cfg(feature = "asof_join")]
-            fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-                self.0.join_asof(other)
-            }
-
             fn set_sorted(&mut self, reverse: bool) {
                 self.0.set_sorted(reverse)
             }
@@ -132,31 +128,27 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_mean(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.agg_mean(groups)
-            }
-
-            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_min(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_min(groups)
             }
 
-            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_max(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_max(groups)
             }
 
-            fn agg_sum(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_sum(groups)
             }
 
-            fn agg_std(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_std(&self, groups: &GroupsProxy) -> Series {
                 self.agg_std(groups)
             }
 
-            fn agg_var(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_var(&self, groups: &GroupsProxy) -> Series {
                 self.agg_var(groups)
             }
 
-            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
             }
 
@@ -165,26 +157,17 @@ macro_rules! impl_dyn_series {
                 groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> Option<Series> {
+            ) -> Series {
                 self.agg_quantile(groups, quantile, interpol)
             }
 
-            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_median(&self, groups: &GroupsProxy) -> Series {
                 self.agg_median(groups)
-            }
-            fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-                HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-            }
-            fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-                HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
-            }
-            fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-                HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
             }
             fn zip_outer_join_column(
                 &self,
                 right_column: &Series,
-                opt_join_tuples: &[(Option<u32>, Option<u32>)],
+                opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
             ) -> Series {
                 ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
             }
@@ -208,12 +191,22 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "sort_multiple")]
-            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+            fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
                 self.0.argsort_multiple(by, reverse)
             }
         }
 
         impl SeriesTrait for SeriesWrap<$ca> {
+            fn is_sorted(&self) -> IsSorted {
+                if self.0.is_sorted() {
+                    IsSorted::Ascending
+                } else if self.0.is_sorted_reverse() {
+                    IsSorted::Descending
+                } else {
+                    IsSorted::Not
+                }
+            }
+
             #[cfg(feature = "rolling_window")]
             fn rolling_apply(
                 &self,
@@ -316,12 +309,22 @@ macro_rules! impl_dyn_series {
 
             fn append(&mut self, other: &Series) -> Result<()> {
                 if self.0.dtype() == other.dtype() {
-                    // todo! add object
                     self.0.append(other.as_ref().as_ref());
                     Ok(())
                 } else {
                     Err(PolarsError::SchemaMisMatch(
                         "cannot append Series; data types don't match".into(),
+                    ))
+                }
+            }
+
+            fn extend(&mut self, other: &Series) -> Result<()> {
+                if self.0.dtype() == other.dtype() {
+                    self.0.extend(other.as_ref().as_ref());
+                    Ok(())
+                } else {
+                    Err(PolarsError::SchemaMisMatch(
+                        "cannot extend Series; data types don't match".into(),
                     ))
                 }
             }
@@ -338,7 +341,17 @@ macro_rules! impl_dyn_series {
                 self.0.median().map(|v| v as f64)
             }
 
-            fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+                self.0.take_chunked_unchecked(by).into_series()
+            }
+
+            #[cfg(feature = "chunked_ids")]
+            unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+                self.0.take_opt_chunked_unchecked(by).into_series()
+            }
+
+            fn take(&self, indices: &IdxCa) -> Result<Series> {
                 let indices = if indices.chunks.len() > 1 {
                     Cow::Owned(indices.rechunk())
                 } else {
@@ -359,7 +372,7 @@ macro_rules! impl_dyn_series {
                 ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
             }
 
-            unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+            unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
                 let idx = if idx.chunks.len() > 1 {
                     Cow::Owned(idx.rechunk())
                 } else {
@@ -393,19 +406,12 @@ macro_rules! impl_dyn_series {
                 self.0.cast(data_type)
             }
 
-            fn to_dummies(&self) -> Result<DataFrame> {
-                ToDummies::to_dummies(&self.0)
-            }
-
-            fn value_counts(&self) -> Result<DataFrame> {
-                ChunkUnique::value_counts(&self.0)
-            }
-
             fn get(&self, index: usize) -> AnyValue {
                 self.0.get_any_value(index)
             }
 
             #[inline]
+            #[cfg(feature = "private")]
             unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
                 self.0.get_any_value_unchecked(index)
             }
@@ -414,8 +420,8 @@ macro_rules! impl_dyn_series {
                 ChunkSort::sort_with(&self.0, options).into_series()
             }
 
-            fn argsort(&self, reverse: bool) -> UInt32Chunked {
-                ChunkSort::argsort(&self.0, reverse)
+            fn argsort(&self, options: SortOptions) -> IdxCa {
+                ChunkSort::argsort(&self.0, options)
             }
 
             fn null_count(&self) -> usize {
@@ -434,7 +440,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::n_unique(&self.0)
             }
 
-            fn arg_unique(&self) -> Result<UInt32Chunked> {
+            fn arg_unique(&self) -> Result<IdxCa> {
                 ChunkUnique::arg_unique(&self.0)
             }
 
@@ -487,9 +493,6 @@ macro_rules! impl_dyn_series {
             fn min_as_series(&self) -> Series {
                 ChunkAggSeries::min_as_series(&self.0)
             }
-            fn mean_as_series(&self) -> Series {
-                ChunkAggSeries::mean_as_series(&self.0)
-            }
             fn median_as_series(&self) -> Series {
                 QuantileAggSeries::median_as_series(&self.0)
             }
@@ -541,7 +544,7 @@ macro_rules! impl_dyn_series {
                 IsIn::is_in(&self.0, other)
             }
             #[cfg(feature = "repeat_by")]
-            fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+            fn repeat_by(&self, by: &IdxCa) -> ListChunked {
                 RepeatBy::repeat_by(&self.0, by)
             }
 

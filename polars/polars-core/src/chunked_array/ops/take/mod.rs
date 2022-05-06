@@ -3,8 +3,6 @@
 //! IntoTakeRandom provides structs that implement the TakeRandom trait.
 //! There are several structs that implement the fastest path for random access.
 //!
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 use arrow::array::ArrayRef;
 use arrow::compute::take::take;
@@ -20,10 +18,13 @@ use std::borrow::Cow;
 pub use take_random::*;
 pub use traits::*;
 
+mod take_chunked;
 mod take_every;
 pub(crate) mod take_random;
 pub(crate) mod take_single;
 mod traits;
+#[cfg(feature = "chunked_ids")]
+pub(crate) use take_chunked::*;
 
 macro_rules! take_iter_n_chunks {
     ($ca:expr, $indices:expr) => {{
@@ -374,7 +375,7 @@ impl ChunkTake for ListChunked {
             // todo! fast path for single chunk
             TakeIdx::Iter(iter) => {
                 if ca_self.chunks.len() == 1 {
-                    let idx: NoNull<UInt32Chunked> = iter.map(|v| v as u32).collect();
+                    let idx: NoNull<IdxCa> = iter.map(|v| v as IdxSize).collect();
                     ca_self.take_unchecked((&idx.into_inner()).into())
                 } else {
                     let mut ca: ListChunked = take_iter_n_chunks_unchecked!(ca_self.as_ref(), iter);
@@ -384,7 +385,7 @@ impl ChunkTake for ListChunked {
             }
             TakeIdx::IterNulls(iter) => {
                 if ca_self.chunks.len() == 1 {
-                    let idx: UInt32Chunked = iter.map(|v| v.map(|v| v as u32)).collect();
+                    let idx: IdxCa = iter.map(|v| v.map(|v| v as IdxSize)).collect();
                     ca_self.take_unchecked((&idx).into())
                 } else {
                     let mut ca: ListChunked =
@@ -406,29 +407,6 @@ impl ChunkTake for ListChunked {
         // Safety:
         // just checked bounds
         Ok(unsafe { self.take_unchecked(indices) })
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkTake for CategoricalChunked {
-    unsafe fn take_unchecked<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Self
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        let ca: CategoricalChunked = self.deref().take_unchecked(indices).into();
-        ca.set_state(self)
-    }
-
-    fn take<I, INulls>(&self, indices: TakeIdx<I, INulls>) -> Result<Self>
-    where
-        Self: std::marker::Sized,
-        I: TakeIterator,
-        INulls: TakeIteratorNulls,
-    {
-        let ca: CategoricalChunked = self.deref().take(indices)?.into();
-        Ok(ca.set_state(self))
     }
 }
 
@@ -533,12 +511,12 @@ mod test {
 
     #[test]
     fn test_take_random() {
-        let ca = Int32Chunked::new_from_slice("a", &[1, 2, 3]);
+        let ca = Int32Chunked::from_slice("a", &[1, 2, 3]);
         assert_eq!(ca.get(0), Some(1));
         assert_eq!(ca.get(1), Some(2));
         assert_eq!(ca.get(2), Some(3));
 
-        let ca = Utf8Chunked::new_from_slice("a", &["a", "b", "c"]);
+        let ca = Utf8Chunked::from_slice("a", &["a", "b", "c"]);
         assert_eq!(ca.get(0), Some("a"));
         assert_eq!(ca.get(1), Some("b"));
         assert_eq!(ca.get(2), Some("c"));

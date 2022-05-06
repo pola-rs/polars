@@ -4,9 +4,13 @@ use crate::csv_core::utils::*;
 use crate::csv_core::{buffer::*, parser::*};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
+use crate::utils::update_row_counts;
+use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
+use polars_time::prelude::*;
+use polars_utils::flatten;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use std::borrow::Cow;
@@ -14,7 +18,7 @@ use std::fmt;
 use std::sync::atomic::Ordering;
 use std::sync::{atomic::AtomicUsize, Arc};
 
-pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[&Field], parallel: bool) -> Result<()> {
+pub(crate) fn cast_columns(df: &mut DataFrame, to_cast: &[Field], parallel: bool) -> Result<()> {
     use DataType::*;
 
     let cast_fn = |s: &Series, fld: &Field| match (s.dtype(), fld.data_type()) {
@@ -75,7 +79,8 @@ pub(crate) struct CoreReader<'a> {
     null_values: Option<Vec<String>>,
     predicate: Option<Arc<dyn PhysicalIoExpr>>,
     aggregate: Option<&'a [ScanAggregation]>,
-    to_cast: &'a [&'a Field],
+    to_cast: &'a [Field],
+    row_count: Option<RowCount>,
 }
 
 impl<'a> fmt::Debug for CoreReader<'a> {
@@ -161,8 +166,10 @@ impl<'a> CoreReader<'a> {
         null_values: Option<NullValues>,
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         aggregate: Option<&'a [ScanAggregation]>,
-        to_cast: &'a [&'a Field],
+        to_cast: &'a [Field],
         skip_rows_after_header: usize,
+        row_count: Option<RowCount>,
+        parse_dates: bool,
     ) -> Result<CoreReader<'a>> {
         #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
         let mut reader_bytes = reader_bytes;
@@ -183,7 +190,7 @@ impl<'a> CoreReader<'a> {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
-                    if let Some(b) = decompress(&reader_bytes) {
+                    if let Some(b) = decompress(&reader_bytes, n_rows, delimiter, quote_char) {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
@@ -197,6 +204,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        parse_dates,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -212,6 +220,7 @@ impl<'a> CoreReader<'a> {
                         comment_char,
                         quote_char,
                         null_values.as_ref(),
+                        parse_dates,
                     )?;
                     Cow::Owned(inferred_schema)
                 }
@@ -220,21 +229,29 @@ impl<'a> CoreReader<'a> {
         skip_rows += skip_rows_after_header;
         if let Some(dtypes) = dtype_overwrite {
             let mut s = schema.into_owned();
-            let fields = s.fields_mut();
-            for (dt, field) in dtypes.iter().zip(fields) {
-                *field = Field::new(field.name(), dt.clone())
+            for (index, dt) in dtypes.iter().enumerate() {
+                s.coerce_by_index(index, dt.clone()).unwrap();
             }
             schema = Cow::Owned(s);
         }
 
-        let null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
+        // create a null value for every column
+        let mut null_values = null_values.map(|nv| nv.process(&schema)).transpose()?;
 
         if let Some(cols) = columns {
             let mut prj = Vec::with_capacity(cols.len());
             for col in cols {
-                let i = schema.index_of(&col)?;
+                let i = schema.try_index_of(&col)?;
                 prj.push(i);
             }
+
+            // update null values with projection
+            null_values = null_values.map(|mut nv| {
+                prj.iter()
+                    .map(|i| std::mem::take(&mut nv[*i]))
+                    .collect::<Vec<_>>()
+            });
+
             projection = Some(prj);
         }
 
@@ -259,12 +276,18 @@ impl<'a> CoreReader<'a> {
             predicate,
             aggregate,
             to_cast,
+            row_count,
         })
     }
 
     fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<&'b [u8]> {
         // Skip all leading white space and the occasional utf8-bom
-        bytes = skip_line_ending(skip_whitespace(skip_bom(bytes)).0).0;
+        bytes = skip_whitespace(skip_bom(bytes));
+        // \n\n can be a empty string row of a single column
+        // in other cases we skip it.
+        if self.schema.len() > 1 {
+            bytes = skip_line_ending(bytes)
+        }
 
         // If there is a header we skip it.
         if self.has_header {
@@ -308,7 +331,7 @@ impl<'a> CoreReader<'a> {
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
 
             // if we only need to parse n_rows,
-            // we first try to use the line statistics the total bytes we need to process
+            // we first try to use the line statistics to estimate the total bytes we need to process
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
 
@@ -318,7 +341,7 @@ impl<'a> CoreReader<'a> {
                 if n_bytes < bytes.len() {
                     if let Some(pos) = next_line_position(
                         &bytes[n_bytes..],
-                        self.schema.fields().len(),
+                        self.schema.len(),
                         self.delimiter,
                         self.quote_char,
                     ) {
@@ -347,7 +370,7 @@ impl<'a> CoreReader<'a> {
                 v.sort_unstable();
                 v
             })
-            .unwrap_or_else(|| (0..self.schema.fields().len()).collect());
+            .unwrap_or_else(|| (0..self.schema.len()).collect());
 
         let chunk_size = std::cmp::min(self.chunk_size, total_rows);
         let n_chunks = total_rows / chunk_size;
@@ -364,13 +387,13 @@ impl<'a> CoreReader<'a> {
         // pushdown)
         let mut str_columns = Vec::with_capacity(projection.len());
         for i in &projection {
-            let fld = self.schema.field(*i).ok_or_else(||
-                PolarsError::ValueError(
+            let (name, dtype) = self.schema.get_index(*i).ok_or_else(||
+                PolarsError::ComputeError(
                     format!("the given projection index: {} is out of bounds for csv schema with {} columns", i, self.schema.len()).into())
                 )?;
 
-            if fld.data_type() == &DataType::Utf8 {
-                str_columns.push(fld.name())
+            if dtype == &DataType::Utf8 {
+                str_columns.push(name)
             }
         }
 
@@ -379,7 +402,7 @@ impl<'a> CoreReader<'a> {
         let file_chunks = get_file_chunks(
             bytes,
             n_threads,
-            self.schema.fields().len(),
+            self.schema.len(),
             self.delimiter,
             self.quote_char,
         );
@@ -441,7 +464,7 @@ impl<'a> CoreReader<'a> {
                         let projection = &projection;
 
                         let mut read = bytes_offset_thread;
-                        let mut df: Option<DataFrame> = None;
+                        let mut dfs = Vec::with_capacity(256);
 
                         let mut last_read = usize::MAX;
                         loop {
@@ -473,6 +496,7 @@ impl<'a> CoreReader<'a> {
                                 &mut buffers,
                                 ignore_parser_errors,
                                 chunk_size,
+                                self.schema.len(),
                             )?;
 
                             let mut local_df = DataFrame::new_no_checks(
@@ -481,6 +505,11 @@ impl<'a> CoreReader<'a> {
                                     .map(|buf| buf.into_series())
                                     .collect::<Result<_>>()?,
                             );
+                            let current_row_count = local_df.height() as IdxSize;
+                            if let Some(rc) = &self.row_count {
+                                local_df.with_row_count_mut(&rc.name, Some(rc.offset));
+                            };
+
                             if let Some(predicate) = predicate {
                                 let s = predicate.evaluate(&local_df)?;
                                 let mask =
@@ -514,23 +543,18 @@ impl<'a> CoreReader<'a> {
                                     }
                                 }
                             }
-                            match &mut df {
-                                None => df = Some(local_df),
-                                Some(df) => {
-                                    df.vstack_mut(&local_df).unwrap();
-                                }
-                            }
+                            cast_columns(&mut local_df, self.to_cast, false)?;
+                            dfs.push((local_df, current_row_count));
                         }
-
-                        df.map(|mut df| {
-                            cast_columns(&mut df, self.to_cast, false)?;
-                            Ok(df)
-                        })
-                        .transpose()
+                        Ok(dfs)
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            accumulate_dataframes_vertical(dfs.into_iter().flatten())
+            let mut dfs = flatten(&dfs, None);
+            if self.row_count.is_some() {
+                update_row_counts(&mut dfs)
+            }
+            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
         } else {
             // let exponential growth solve the needed size. This leads to less memory overhead
             // in the later rechunk. Because we have large chunks they are easier reused for the
@@ -550,7 +574,7 @@ impl<'a> CoreReader<'a> {
                 .map(|_| RunningSize::new(init_str_bytes))
                 .collect();
 
-            let dfs = pool.install(|| {
+            let mut dfs = pool.install(|| {
                 file_chunks
                     .into_par_iter()
                     .map(|(bytes_offset_thread, stop_at_nbytes)| {
@@ -591,6 +615,7 @@ impl<'a> CoreReader<'a> {
                                 // chunk size doesn't really matter anymore,
                                 // less calls if we increase the size
                                 usize::MAX,
+                                self.schema.len(),
                             )?;
                         }
 
@@ -602,11 +627,18 @@ impl<'a> CoreReader<'a> {
                         );
 
                         cast_columns(&mut df, self.to_cast, false)?;
-                        Ok(df)
+                        if let Some(rc) = &self.row_count {
+                            df.with_row_count_mut(&rc.name, Some(rc.offset));
+                        }
+                        let n_read = df.height() as IdxSize;
+                        Ok((df, n_read))
                     })
                     .collect::<Result<Vec<_>>>()
             })?;
-            accumulate_dataframes_vertical(dfs.into_iter())
+            if self.row_count.is_some() {
+                update_row_counts(&mut dfs)
+            }
+            accumulate_dataframes_vertical(dfs.into_iter().map(|t| t.0))
         }
     }
 

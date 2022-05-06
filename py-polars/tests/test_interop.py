@@ -1,4 +1,6 @@
-import datetime
+import typing
+from datetime import datetime
+from typing import Dict, Sequence, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -8,8 +10,130 @@ import pytest
 import polars as pl
 
 
+def test_from_numpy() -> None:
+    df = pl.DataFrame(
+        {
+            "int8": np.array([1, 3, 2], dtype=np.int8),
+            "int16": np.array([1, 3, 2], dtype=np.int16),
+            "int32": np.array([1, 3, 2], dtype=np.int32),
+            "int64": np.array([1, 3, 2], dtype=np.int64),
+            "uint8": np.array([1, 3, 2], dtype=np.uint8),
+            "uint16": np.array([1, 3, 2], dtype=np.uint16),
+            "uint32": np.array([1, 3, 2], dtype=np.uint32),
+            "uint64": np.array([1, 3, 2], dtype=np.uint64),
+            "float16": np.array([21.7, 21.8, 21], dtype=np.float16),
+            "float32": np.array([21.7, 21.8, 21], dtype=np.float32),
+            "float64": np.array([21.7, 21.8, 21], dtype=np.float64),
+            "str": np.array(["string1", "string2", "string3"], dtype=np.str_),
+            "bytes": np.array(
+                ["byte_string1", "byte_string2", "byte_string3"], dtype=np.bytes_
+            ),
+        }
+    )
+    out = [
+        pl.datatypes.Int8,
+        pl.datatypes.Int16,
+        pl.datatypes.Int32,
+        pl.datatypes.Int64,
+        pl.datatypes.UInt8,
+        pl.datatypes.UInt16,
+        pl.datatypes.UInt32,
+        pl.datatypes.UInt64,
+        pl.datatypes.Float32,  # np.float16 gets converted to float32 as Rust does not support float16.
+        pl.datatypes.Float32,
+        pl.datatypes.Float64,
+        pl.datatypes.Utf8,
+        pl.datatypes.Object,
+    ]
+    assert out == df.dtypes
+
+
+def test_to_numpy() -> None:
+    def test_series_to_numpy(
+        name: str,
+        values: list,
+        pl_dtype: Type[pl.DataType],
+        np_dtype: Union[
+            Type[np.signedinteger],
+            Type[np.unsignedinteger],
+            Type[np.floating],
+            Type[np.object_],
+        ],
+    ) -> None:
+        pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
+        numpy_array = np.array(values, dtype=np_dtype)
+        assert pl_series_to_numpy_array.dtype == numpy_array.dtype
+        assert np.all(pl_series_to_numpy_array == numpy_array) == np.bool_(True)
+
+    test_series_to_numpy("int8", [1, 3, 2], pl.Int8, np.int8)
+    test_series_to_numpy("int16", [1, 3, 2], pl.Int16, np.int16)
+    test_series_to_numpy("int32", [1, 3, 2], pl.Int32, np.int32)
+    test_series_to_numpy("int64", [1, 3, 2], pl.Int64, np.int64)
+
+    test_series_to_numpy("uint8", [1, 3, 2], pl.UInt8, np.uint8)
+    test_series_to_numpy("uint16", [1, 3, 2], pl.UInt16, np.uint16)
+    test_series_to_numpy("uint32", [1, 3, 2], pl.UInt32, np.uint32)
+    test_series_to_numpy("uint64", [1, 3, 2], pl.UInt64, np.uint64)
+
+    test_series_to_numpy("float32", [21.7, 21.8, 21], pl.Float32, np.float32)
+    test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
+
+    test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
+    # test_series_to_numpy("bytes", ["byte_string1", "byte_string2", "byte_string3"], pl.Object, np.bytes_)
+
+
+def test_from_pandas() -> None:
+    df = pd.DataFrame(
+        {
+            "bools": [False, True, False],
+            "bools_nulls": [None, True, False],
+            "int": [1, 2, 3],
+            "int_nulls": [1, None, 3],
+            "floats": [1.0, 2.0, 3.0],
+            "floats_nulls": [1.0, None, 3.0],
+            "strings": ["foo", "bar", "ham"],
+            "strings_nulls": ["foo", None, "ham"],
+            "strings-cat": ["foo", "bar", "ham"],
+        }
+    )
+    df["strings-cat"] = df["strings-cat"].astype("category")
+
+    out = pl.from_pandas(df)
+    assert out.shape == (3, 9)
+
+
+def test_from_pandas_nan_to_none() -> None:
+    from pyarrow import ArrowInvalid
+
+    df = pd.DataFrame(
+        {
+            "bools_nulls": [None, True, False],
+            "int_nulls": [1, None, 3],
+            "floats_nulls": [1.0, None, 3.0],
+            "strings_nulls": ["foo", None, "ham"],
+            "nulls": [None, np.nan, np.nan],
+        }
+    )
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
+    df.loc[2, "nulls"] = pd.NA
+    assert all(val is None for val in out_true["nulls"])
+    assert all(np.isnan(val) for val in out_false["nulls"][1:])
+    with pytest.raises(ArrowInvalid, match="Could not convert"):
+        pl.from_pandas(df, nan_to_none=False)
+
+    df = pd.Series([2, np.nan, None], name="pd")  # type: ignore
+    out_true = pl.from_pandas(df)
+    out_false = pl.from_pandas(df, nan_to_none=False)
+    df.loc[2] = pd.NA
+    assert [val is None for val in out_true]
+    assert [np.isnan(val) for val in out_false[1:]]
+    with pytest.raises(ArrowInvalid, match="Could not convert"):
+        pl.from_pandas(df, nan_to_none=False)
+
+
 def test_from_pandas_datetime() -> None:
-    ts = datetime.datetime(2021, 1, 1, 20, 20, 20, 20)
+    ts = datetime(2021, 1, 1, 20, 20, 20, 20)
     pl_s = pd.Series([ts, ts])
     tmp = pl.from_pandas(pl_s.to_frame("a"))
     s = tmp["a"]
@@ -21,8 +145,8 @@ def test_from_pandas_datetime() -> None:
         "2021-06-24 00:00:00", "2021-06-24 10:00:00", freq="1H", closed="left"
     )
     s = pl.from_pandas(date_times)
-    assert s[0] == datetime.datetime(2021, 6, 24, 0, 0)
-    assert s[-1] == datetime.datetime(2021, 6, 24, 9, 0)
+    assert s[0] == datetime(2021, 6, 24, 0, 0)
+    assert s[-1] == datetime(2021, 6, 24, 9, 0)
 
     df = pd.DataFrame({"datetime": ["2021-01-01", "2021-01-02"], "foo": [1, 2]})
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -85,14 +209,34 @@ def test_from_pandas_categorical_none() -> None:
 
 def test_from_dict() -> None:
     data = {"a": [1, 2], "b": [3, 4]}
-    df = pl.from_dict(data)  # type: ignore
+    df = pl.from_dict(data)
     assert df.shape == (2, 2)
+
+
+def test_from_dict_struct() -> None:
+    data: Dict[str, Union[Dict, Sequence]] = {
+        "a": {"b": [1, 3], "c": [2, 4]},
+        "d": [5, 6],
+    }
+    df = pl.from_dict(data)
+    assert df.shape == (2, 2)
+    assert df["a"][0] == {"b": 1, "c": 2}
+    assert df["a"][1] == {"b": 3, "c": 4}
 
 
 def test_from_dicts() -> None:
     data = [{"a": 1, "b": 4}, {"a": 2, "b": 5}, {"a": 3, "b": 6}]
     df = pl.from_dicts(data)
     assert df.shape == (3, 2)
+
+
+@pytest.mark.skip("not implemented yet")
+def test_from_dicts_struct() -> None:
+    data = [{"a": {"b": 1, "c": 2}, "d": 5}, {"a": {"b": 3, "c": 4}, "d": 6}]
+    df = pl.from_dicts(data)
+    assert df.shape == (2, 2)
+    assert df["a"][0] == (1, 2)
+    assert df["a"][1] == (3, 4)
 
 
 def test_from_records() -> None:
@@ -125,19 +269,6 @@ def test_from_pandas_series() -> None:
     pd_series = pd.Series([1, 2, 3], name="pd")
     df = pl.from_pandas(pd_series)
     assert df.shape == (3,)
-
-
-def test_from_pandas_nan_to_none() -> None:
-    from pyarrow import ArrowInvalid
-
-    df = pd.Series([2, np.nan, None], name="pd")
-    out_true = pl.from_pandas(df)
-    out_false = pl.from_pandas(df, nan_to_none=False)
-    df.loc[2] = pd.NA
-    assert [val is None for val in out_true]
-    assert [np.isnan(val) for val in out_false[1:]]
-    with pytest.raises(ArrowInvalid, match="Could not convert"):
-        pl.from_pandas(df, nan_to_none=False)
 
 
 def test_upcast_pyarrow_dicts() -> None:
@@ -192,3 +323,57 @@ def test_from_empty_pandas() -> None:
     polars_df = pl.from_pandas(pandas_df)
     assert polars_df.columns == ["A", "fruits"]
     assert polars_df.dtypes == [pl.Float64, pl.Float64]
+
+
+def test_from_empty_pandas_strings() -> None:
+    df = pd.DataFrame(columns=["a", "b"])
+    df["a"] = df["a"].astype(str)
+    df["b"] = df["b"].astype(float)
+    df_pl = pl.from_pandas(df)
+    assert df_pl.dtypes == [pl.Utf8, pl.Float64]
+
+
+def test_from_empty_arrow() -> None:
+    df = pl.from_arrow(pa.table(pd.DataFrame({"a": [], "b": []})))
+    assert df.columns == ["a", "b"]  # type: ignore
+    assert df.dtypes == [pl.Float64, pl.Float64]  # type: ignore
+
+    # 2705
+    df1 = pd.DataFrame(columns=["b"], dtype=float)
+    tbl = pa.Table.from_pandas(df1)
+    out = pl.from_arrow(tbl)
+    assert out.columns == ["b", "__index_level_0__"]  # type: ignore
+    assert out.dtypes == [pl.Float64, pl.Utf8]  # type: ignore
+    tbl = pa.Table.from_pandas(df1, preserve_index=False)
+    out = pl.from_arrow(tbl)
+    assert out.columns == ["b"]  # type: ignore
+    assert out.dtypes == [pl.Float64]  # type: ignore
+
+
+def test_from_null_column() -> None:
+    assert pl.from_pandas(pd.DataFrame(data=[pd.NA, pd.NA])).shape == (2, 1)
+
+
+def test_to_pandas_series() -> None:
+    assert (pl.Series("a", [1, 2, 3]).to_pandas() == pd.Series([1, 2, 3])).all()
+
+
+def test_respect_dtype_with_series_from_numpy() -> None:
+    assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32
+
+
+def test_from_pandas_ns_resolution() -> None:
+    df = pd.DataFrame(
+        [pd.Timestamp(year=2021, month=1, day=1, hour=1, second=1, nanosecond=1)],
+        columns=["date"],
+    )
+    assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)
+
+
+@typing.no_type_check
+def test_pandas_string_none_conversion_3298() -> None:
+    data = {"col_1": ["a", "b", "c", "d"]}
+    data["col_1"][0] = None
+    df_pd = pd.DataFrame(data)
+    df_pl = pl.DataFrame(df_pd)
+    assert df_pl.to_series().to_list() == [None, "b", "c", "d"]

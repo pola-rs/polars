@@ -45,6 +45,7 @@
 //!     - [ChunkedArray](#chunkedarray)
 //! * [SIMD](#simd)
 //! * [API](#api)
+//! * [Expressions](#expressions)
 //! * [Compile times](#compile-times)
 //! * [Performance](#performance-and-string-data)
 //!     - [Custom allocator](#custom-allocator)
@@ -64,9 +65,7 @@
 //! ### DataFrame
 //! A `DataFrame` is a 2 dimensional data structure that is backed by a `Series`, and it could be
 //! seen as an abstraction on `Vec<Series>`. Operations that can be executed on `DataFrame`s are very
-//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc. The
-//! closest arrow equivalent to a `DataFrame` is a [RecordBatch](https://docs.rs/arrow/4.0.0/arrow/record_batch/struct.RecordBatch.html),
-//! and Polars provides zero copy coercion.
+//! similar to what is done in a `SQL` like query. You can `GROUP`, `JOIN`, `PIVOT` etc.
 //!
 //! ### Series
 //! `Series` are the type agnostic columnar data representation of Polars. They provide many
@@ -90,6 +89,42 @@
 //! Polars supports an eager and a lazy API. The eager API directly yields results, but is overall
 //! more verbose and less capable of building elegant composite queries. We recommend to use the Lazy API
 //! whenever you can.
+//!
+//! ## Expressions
+//! Polars has a powerful concept called expressions.
+//! Polars expressions can be used in various contexts and are a functional mapping of
+//! `Fn(Series) -> Series`, meaning that they have Series as input and Series as output.
+//! By looking at this functional definition, we can see that the output of an `Expr` also can serve
+//! as the input of an `Expr`.
+//!
+//! That may sound a bit strange, so lets give an example. The following is an expression:
+//!
+//! `col("foo").sort().head(2)`
+//!
+//! The snippet above says select column `"foo"` then sort this column and then take first 2 values
+//! of the sorted output.
+//! The power of expressions is that every expression produces a new expression and that they can
+//! be piped together.
+//! You can run an expression by passing them on one of polars execution contexts.
+//! Here we run two expressions in the **select** context:
+//!
+//! ```no_run
+//! # use polars::prelude::*;
+//! # let df = DataFrame::default();
+//!   df.lazy()
+//!    .select([
+//!        col("foo").sort(Default::default()).head(None),
+//!        col("bar").filter(col("foo").eq(lit(1))).sum(),
+//!    ])
+//!    .collect()?;
+//! ```
+//! All expressions are ran in parallel, meaning that separate polars expressions are embarrassingly parallel.
+//! (Note that within an expression there may be more parallelization going on).
+//!
+//! Understanding polars expressions is most important when starting with the polars library. Read more
+//! about them in the [User Guide](https://pola-rs.github.io/polars-book/user-guide/dsl/intro.html).
+//! Though the examples given there are in python. The expressions API is almost identical and the
+//! the read should certainly be valuable to rust users as well.
 //!
 //! ### Eager
 //! Read more in the pages of the following data structures /traits.
@@ -118,6 +153,7 @@
 //! ## Compile times and opt-in features
 //! The opt-in features are (not including dtype features):
 //!
+//! * `performant` - Longer compile times more fast paths.
 //! * `lazy` - Lazy API
 //!     - `lazy_regex` - Use regexes in [column selection](crate::lazy::dsl::col)
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
@@ -129,9 +165,14 @@
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `simd` - SIMD operations _(nightly only)_
-//!     - `performant` - ~40% faster chunkedarray creation but may lead to unexpected panic if iterator incorrectly sets a size_hint
+//!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This has not been needed by anyone.
+//!                  This allows polars to scale up way beyond that by using `u64` as an index.
+//!                  Polars will be a bit slower with this feature activated as many data structures
+//!                  are less cache efficient.
 //! * IO related:
 //!     - `serde` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
+//!                 Can be used for JSON and more serde supported serialization formats.
+//!     - `serde-lazy` - Support for [serde](https://crates.io/crates/serde) serialization and deserialization.
 //!                 Can be used for JSON and more serde supported serialization formats.
 //!     - `parquet` - Read Apache Parquet format
 //!     - `json` - JSON serialization
@@ -143,17 +184,19 @@
 //!
 //! * `DataFrame` operations:
 //!     - `dynamic_groupby` - Groupby based on a time window instead of predefined keys.
-//!     - `pivot` - [pivot operation](crate::frame::groupby::GroupBy::pivot) on `DataFrame`s
+//!                           Also activates rolling window group by operations.
 //!     - `sort_multiple` - Allow sorting a `DataFrame` on multiple columns
 //!     - `rows` - Create `DataFrame` from rows and extract rows from `DataFrames`.
 //!                And activates `pivot` and `transpose` operations
-//!     - `asof_join` - Join as of, to join on nearest keys instead of exact equality match.
+//!     - `asof_join` - Join ASOF, to join on nearest keys instead of exact equality match.
 //!     - `cross_join` - Create the cartesian product of two DataFrames.
+//!     - `semi_anti_join` - SEMI and ANTI joins.
 //!     - `groupby_list` - Allow groupby operation on keys of type List.
 //!     - `row_hash` - Utility to hash DataFrame rows to UInt64Chunked
 //!     - `diagonal_concat` - Concat diagonally thereby combining different schemas.
 //!     - `horizontal_concat` - Concat horizontally and extend with null values if lengths don't match
 //!     - `dataframe_arithmetic` - Arithmetic on (Dataframe and DataFrames) and (DataFrame on Series)
+//!     - `partition_by` - Split into multiple DataFrames partitioned by groups.
 //! * `Series` operations:
 //!     - `is_in` - [Check for membership in `Series`](crate::chunked_array::ops::IsIn)
 //!     - `zip_with` - [Zip two Series/ ChunkedArrays](crate::chunked_array::ops::ChunkZip)
@@ -178,9 +221,12 @@
 //!     - `abs` - Get absolute values of Series
 //!     - `arange` - Range operation on Series
 //!     - `product` - Compute the product of a Series.
-//! * `DataFrame` pretty printing (Choose one or none, but not both):
-//!     - `plain_fmt` - no overflowing (less compilation times)
-//!     - `pretty_fmt` - cell overflow (increased compilation times)
+//!     - `diff` - `diff` operation.
+//!     - `pct_change` - Compute change percentages.
+//!     - `unique_counts` - Count unique values in expressions.
+//!     - `log` - Logarithms for `Series`.
+//! * `DataFrame` pretty printing
+//!     - `fmt` - Activate DataFrame formatting
 //!
 //! ## Compile times and opt-in data types
 //! As mentioned above, Polars `Series` are wrappers around
@@ -204,6 +250,7 @@
 //! | UInt8                   | dtype-u8          |
 //! | UInt16                  | dtype-u16         |
 //! | Categorical             | dtype-categorical |
+//! | Struct                  | dtype-struct      |
 //!
 //!
 //! Or you can choose on of the preconfigured pre-sets.
@@ -217,7 +264,9 @@
 //!
 //! ### Custom allocator
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
-//! allocator. [Mimalloc](https://docs.rs/mimalloc/0.1.25/mimalloc/) for instance, shows a significant
+//! allocator.
+//! [Mimalloc](https://crates.io/crates/mimalloc) and
+//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Usage
@@ -245,8 +294,9 @@
 //!                            cardinality. Setting this env var will turn partitioned groupby's off
 //! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
 //!                                     defaults to `0.001`
-//! * `POLARS_PARTITION_CARDINALITY_FRAC` -> at which (estimated) cardinality a partitioned groupby should run.
-//!                                          defaults to `0.005`, any higher cardinality will run default groupby.
+//! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
+//!                                          defaults to `1000`, any higher cardinality will run default groupby.
+//! * `POLARS_FORCE_PARTITION` -> Force partitioned groupby if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
@@ -265,6 +315,7 @@
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
 pub mod docs;
+pub mod export;
 pub mod prelude;
 
 #[cfg(feature = "dtype-categorical")]

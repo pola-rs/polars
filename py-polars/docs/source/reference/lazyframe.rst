@@ -3,6 +3,16 @@ LazyFrame
 =========
 .. currentmodule:: polars
 
+Attributes
+----------
+
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.columns
+    LazyFrame.dtypes
+    LazyFrame.schema
+
 Aggregation
 -----------
 .. autosummary::
@@ -39,9 +49,9 @@ Manipulation/ selection
     LazyFrame.groupby_dynamic
     LazyFrame.groupby_rolling
     LazyFrame.join
+    DataFrame.join_asof
     LazyFrame.with_columns
     LazyFrame.with_column
-    LazyFrame.with_column_renamed
     LazyFrame.drop
     LazyFrame.rename
     LazyFrame.reverse
@@ -56,12 +66,22 @@ Manipulation/ selection
     LazyFrame.fill_null
     LazyFrame.fill_nan
     LazyFrame.explode
-    LazyFrame.drop_duplicates
     LazyFrame.distinct
+    LazyFrame.unique
     LazyFrame.drop_nulls
     LazyFrame.sort
     LazyFrame.melt
     LazyFrame.interpolate
+    LazyFrame.unnest
+
+Conversion
+----------
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.write_json
+    LazyFrame.read_json
+    LazyFrame.from_json
 
 Apply
 -----

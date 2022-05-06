@@ -1,4 +1,3 @@
-use crate::physical_plan::expressions::utils::as_aggregated;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
@@ -19,9 +18,9 @@ impl AliasExpr {
             expr,
         }
     }
-    fn finish(&self, mut input: Series) -> Result<Series> {
+    fn finish(&self, mut input: Series) -> Series {
         input.rename(&self.name);
-        Ok(input)
+        input
     }
 }
 
@@ -32,7 +31,7 @@ impl PhysicalExpr for AliasExpr {
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> Result<Series> {
         let series = self.physical_expr.evaluate(df, state)?;
-        self.finish(series)
+        Ok(self.finish(series))
     }
 
     #[allow(clippy::ptr_arg)]
@@ -43,10 +42,14 @@ impl PhysicalExpr for AliasExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let mut s = ac.take();
-        s.rename(&self.name);
+        let s = ac.take();
+        let s = self.finish(s);
 
-        ac.with_series(self.finish(s)?, ac.is_aggregated());
+        if ac.is_literal() {
+            ac.with_literal(s);
+        } else {
+            ac.with_series(s, ac.is_aggregated());
+        }
         Ok(ac)
     }
 
@@ -60,22 +63,35 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
+    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
         Ok(self)
     }
 }
 
-impl PhysicalAggregation for AliasExpr {
-    fn aggregate(
+impl PartitionedAggregation for AliasExpr {
+    fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let opt_agg = as_aggregated(self.physical_expr.as_ref(), df, groups, state)?;
-        Ok(opt_agg.map(|mut agg| {
-            agg.rename(&self.name);
-            agg
-        }))
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.evaluate_partitioned(df, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
+    }
+
+    fn finalize(
+        &self,
+        partitioned: &Series,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.finalize(partitioned, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
     }
 }

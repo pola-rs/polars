@@ -1,9 +1,7 @@
 use crate::logical_plan::iterator::{ArenaExprIter, ArenaLpIter};
 use crate::logical_plan::Context;
 use crate::prelude::*;
-use ahash::RandomState;
 use polars_core::prelude::*;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -85,6 +83,7 @@ where
 }
 
 /// Check if root expression is a literal
+#[cfg(feature = "is_in")]
 pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
     matches!(e.into_iter().last(), Some(Expr::Literal(_)))
 }
@@ -92,6 +91,10 @@ pub(crate) fn has_root_literal_expr(e: &Expr) -> bool {
 // this one is used so much that it has its own function, to reduce inlining
 pub(crate) fn has_wildcard(current_expr: &Expr) -> bool {
     has_expr(current_expr, |e| matches!(e, Expr::Wildcard))
+}
+
+pub(crate) fn has_nth(current_expr: &Expr) -> bool {
+    has_expr(current_expr, |e| matches!(e, Expr::Nth(_)))
 }
 
 /// output name of expr
@@ -112,10 +115,6 @@ pub(crate) fn expr_output_name(expr: &Expr) -> Result<Arc<str>> {
         )
         .into(),
     ))
-}
-
-pub(crate) fn rename_field(field: &Field, name: &str) -> Field {
-    Field::new(name, field.data_type().clone())
 }
 
 /// This function should be used to find the name of the start of an expression
@@ -193,6 +192,27 @@ pub(crate) fn rename_aexpr_root_names(node: Node, arena: &mut Arena<AExpr>, new_
     }
 }
 
+/// Rename the root of the expression from `current` to `new` and assign to new node in arena.
+/// Returns `Node` on first sucessful rename.
+pub(crate) fn aexpr_assign_renamed_root(
+    node: Node,
+    arena: &mut Arena<AExpr>,
+    current: &str,
+    new_name: &str,
+) -> Node {
+    let roots = aexpr_to_root_nodes(node, arena);
+
+    for node in roots {
+        match arena.get(node) {
+            AExpr::Column(name) if &**name == current => {
+                return arena.add(AExpr::Column(Arc::from(new_name)))
+            }
+            _ => {}
+        }
+    }
+    panic!("should be a root column that is renamed");
+}
+
 /// Get all root column expressions in the expression tree.
 pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
     let mut out = vec![];
@@ -206,19 +226,19 @@ pub(crate) fn expr_to_root_column_exprs(expr: &Expr) -> Vec<Expr> {
 }
 
 /// Take a list of expressions and a schema and determine the output schema.
-pub(crate) fn expressions_to_schema(expr: &[Expr], schema: &Schema, ctxt: Context) -> Schema {
-    let fields = expr
-        .iter()
-        .map(|expr| expr.to_field(schema, ctxt))
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    Schema::new(fields)
+pub(crate) fn expressions_to_schema(
+    expr: &[Expr],
+    schema: &Schema,
+    ctxt: Context,
+) -> Result<Schema> {
+    let fields = expr.iter().map(|expr| expr.to_field(schema, ctxt));
+    Schema::try_from_fallible(fields)
 }
 
 /// Get a set of the data source paths in this LogicalPlan
 pub(crate) fn agg_source_paths(
     root_lp: Node,
-    paths: &mut HashSet<PathBuf, RandomState>,
+    paths: &mut PlHashSet<PathBuf>,
     lp_arena: &Arena<ALogicalPlan>,
 ) {
     lp_arena.iter(root_lp).for_each(|(_, lp)| {
@@ -280,7 +300,7 @@ pub(crate) fn check_input_node(
 ) -> bool {
     aexpr_to_root_names(node, expr_arena)
         .iter()
-        .all(|name| input_schema.index_of(name).is_ok())
+        .all(|name| input_schema.index_of(name).is_some())
 }
 
 pub(crate) fn aexprs_to_schema(
@@ -291,10 +311,8 @@ pub(crate) fn aexprs_to_schema(
 ) -> Schema {
     let fields = expr
         .iter()
-        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena))
-        .collect::<Result<Vec<_>>>()
-        .unwrap();
-    Schema::new(fields)
+        .map(|expr| arena.get(*expr).to_field(schema, ctxt, arena).unwrap());
+    Schema::from(fields)
 }
 
 pub(crate) fn combine_predicates_expr<I>(iter: I) -> Expr
@@ -321,7 +339,7 @@ pub(crate) mod test {
         // initialize arena's
         let mut expr_arena = Arena::with_capacity(64);
         let mut lp_arena = Arena::with_capacity(32);
-        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
         let opt = StackOptimizer {};
         let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);
@@ -351,7 +369,7 @@ pub(crate) mod test {
             schema,
         };
 
-        let root = to_alp(lp, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(lp, &mut expr_arena, &mut lp_arena).unwrap();
 
         let opt = StackOptimizer {};
         let lp_top = opt.optimize_loop(rules, &mut expr_arena, &mut lp_arena, root);

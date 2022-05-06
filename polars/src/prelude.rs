@@ -7,4 +7,6 @@ pub use polars_io::prelude::*;
 pub use polars_lazy::prelude::*;
 
 #[cfg(feature = "temporal")]
-pub use polars_time::*;
+pub use polars_time::prelude::*;
+
+pub use polars_ops::prelude::*;

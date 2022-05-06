@@ -1,11 +1,11 @@
 use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
-
-pub type GroupsIdx = Vec<(u32, Vec<u32>)>;
-pub type GroupsSlice = Vec<[u32; 2]>;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ClosedWindow {
     Left,
     Right,
@@ -42,8 +42,9 @@ pub fn groupby_windows(
 
     let size = if include_boundaries {
         match tu {
-            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
             TimeUnit::Nanoseconds => window.estimate_overlapping_bounds_ns(boundary),
+            TimeUnit::Microseconds => window.estimate_overlapping_bounds_us(boundary),
+            TimeUnit::Milliseconds => window.estimate_overlapping_bounds_ms(boundary),
         }
     } else {
         0
@@ -54,6 +55,9 @@ pub fn groupby_windows(
     let mut groups = match tu {
         TimeUnit::Nanoseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ns(boundary))
+        }
+        TimeUnit::Microseconds => {
+            Vec::with_capacity(window.estimate_overlapping_bounds_us(boundary))
         }
         TimeUnit::Milliseconds => {
             Vec::with_capacity(window.estimate_overlapping_bounds_ms(boundary))
@@ -66,7 +70,7 @@ pub fn groupby_windows(
         // find starting point of window
         while start_offset < time.len() {
             let t = time[start_offset];
-            if bi.is_future(t) {
+            if bi.is_future(t, closed_window) {
                 // the window is behind the time values.
                 skip_window = true;
                 break;
@@ -86,6 +90,9 @@ pub fn groupby_windows(
 
         // find members of this window
         let mut i = start_offset;
+        // start next iteration 1 index back because of boundary conditions.
+        // e.g. "closed left" could match the next iteration, but did not this one.
+        start_offset = start_offset.saturating_sub(1);
 
         // last value
         if i == time.len() - 1 {
@@ -95,21 +102,21 @@ pub fn groupby_windows(
                     lower_bound.push(bi.start);
                     upper_bound.push(bi.stop);
                 }
-                groups.push([i as u32, 1])
+                groups.push([i as IdxSize, 1])
             }
             continue;
         }
 
-        let first = start_offset as u32;
+        let first = i as IdxSize;
 
         while i < time.len() {
             let t = time[i];
             if !bi.is_member(t, closed_window) {
                 break;
             }
-            i += 1
+            i += 1;
         }
-        let len = (i as u32) - first;
+        let len = (i as IdxSize) - first;
 
         if include_boundaries {
             lower_bound.push(bi.start);
@@ -144,6 +151,7 @@ pub fn groupby_values(
 ) -> GroupsSlice {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
@@ -167,7 +175,7 @@ pub fn groupby_values(
             let slice = &time[lagging_offset..];
             let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
 
-            [lagging_offset as u32, len as u32]
+            [lagging_offset as IdxSize, len as IdxSize]
         })
         .collect_trusted()
 }

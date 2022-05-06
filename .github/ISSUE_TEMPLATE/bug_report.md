@@ -1,18 +1,25 @@
 ---
 name: Bug report
-about: An issue with rust polars or python polars
+about: An issue with rust polars, python polars or nodejs polars
 title: ''
-labels: ''
+labels: 'bug'
 assignees: ''
 ---
 
-#### Are you using Python or Rust?
+#### What language are you using?
 
-Replace this text with the **Rust** or **Python**.
+Replace this text with the **Rust**, **Python**, or **Node.js**.
 
 #### Which feature gates did you use?
 
-This can be ignored by Python users.
+This can be ignored by Python & JS users.
+
+#### Have you tried latest version of polars?
+
+- [yes]
+- [no]
+
+If the problem was resolved, please update polars. :)
 
 #### What version of polars are you using?
 
@@ -22,13 +29,16 @@ Replace this text with the version.
 
 Replace this text with your operating system and version.
 
+#### What language version are you using
+ex: python 3.8, node 16, etc.. 
+
 #### Describe your bug.
 
 Give a high level description of the bug.
 
 #### What are the steps to reproduce the behavior?
 
-If possible, please include a minimal example on a dataset that is create through code:
+If possible, please include a **minimal simple** example on a dataset that is created through code:
 
 Please use code instead of images, we don't like typing.
 
@@ -57,6 +67,13 @@ pl.DataFrame({
 ```
 
 If we cannot reproduce the bug, it is unlikely that we will be able fix it.
+
+Please remove clutter from your examples. Only include the bare minimum to produce the result.
+So please:
+
+* strip unused columns
+* use short distinguishable names
+* don't include unneeded computations
 
 #### What is the actual behavior?
 

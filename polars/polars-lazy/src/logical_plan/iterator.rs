@@ -4,7 +4,7 @@ macro_rules! push_expr {
     ($current_expr:expr, $push:ident, $iter:ident) => {{
         use Expr::*;
         match $current_expr {
-            Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Columns(_) | DtypeColumn(_) | Count => {}
             Alias(e, _) => $push(e),
             Not(e) => $push(e),
             BinaryExpr { left, op: _, right } => {
@@ -57,6 +57,7 @@ macro_rules! push_expr {
                 $push(falsy);
                 $push(predicate)
             }
+            AnonymousFunction { input, .. } => input.$iter().for_each(|e| $push(e)),
             Function { input, .. } => input.$iter().for_each(|e| $push(e)),
             Shift { input, .. } => $push(input),
             Reverse(e) => $push(e),
@@ -77,10 +78,18 @@ macro_rules! push_expr {
                     $push(e);
                 }
             }
-            Slice { input, .. } => $push(input),
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                $push(input);
+                $push(offset);
+                $push(length);
+            }
             Exclude(e, _) => $push(e),
             KeepName(e) => $push(e),
-            SufPreFix { expr, .. } => $push(expr),
+            RenameAlias { expr, .. } => $push(expr),
         }
     }};
 }
@@ -155,7 +164,7 @@ impl AExpr {
         use AExpr::*;
 
         match self {
-            Column(_) | Literal(_) | Wildcard => {}
+            Nth(_) | Column(_) | Literal(_) | Wildcard | Count => {}
             Alias(e, _) => push(e),
             Not(e) => push(e),
             BinaryExpr { left, op: _, right } => {
@@ -208,7 +217,7 @@ impl AExpr {
                 push(falsy);
                 push(predicate)
             }
-            Function { input, .. } => input.iter().for_each(push),
+            AnonymousFunction { input, .. } | Function { input, .. } => input.iter().for_each(push),
             Shift { input, .. } => push(input),
             Reverse(e) => push(e),
             Duplicated(e) => push(e),
@@ -228,7 +237,15 @@ impl AExpr {
                     push(e);
                 }
             }
-            Slice { input, .. } => push(input),
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                push(input);
+                push(offset);
+                push(length);
+            }
         }
     }
 }
@@ -311,7 +328,7 @@ mod test {
 
         let (root, lp_arena, _expr_arena) = df
             .lazy()
-            .sort("a", false)
+            .sort("a", Default::default())
             .groupby([col("a")])
             .agg([col("a").first()])
             .logical_plan

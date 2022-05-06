@@ -82,7 +82,7 @@ where
     idx.into_iter().try_for_each::<_, Result<_>>(|idx| {
         let val = mut_slice
             .get_mut(idx)
-            .ok_or_else(|| PolarsError::OutOfBounds("idx is out of bounds".into()))?;
+            .ok_or_else(|| PolarsError::ComputeError("idx is out of bounds".into()))?;
         *val = set_value;
         Ok(())
     })?;

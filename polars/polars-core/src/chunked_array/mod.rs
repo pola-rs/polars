@@ -19,8 +19,6 @@ pub mod kernels;
 mod ndarray;
 
 mod bitwise;
-#[cfg(feature = "dtype-categorical")]
-pub(crate) mod categorical;
 #[cfg(feature = "object")]
 mod drop;
 pub(crate) mod list;
@@ -134,15 +132,15 @@ pub type ChunkIdIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&Ar
 /// To be able to append data, Polars uses chunks to append new memory locations, hence the `ChunkedArray<T>` data structure.
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
 ///
-/// However, multiple chunks in a `ChunkArray` will slow down the Iterators, arithmetic and other operations.
+/// However, multiple chunks in a `ChunkArray` will slow down many operations that need random access because we have an extra indirection
+/// and indexes need to be mapped to the proper chunk. Arithmetic may also be slowed down by this.
 /// When multiplying two `ChunkArray'`s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
-/// However, when chunk size don't match, Iterators will be used to do the operation (instead of arrows upstream implementation, which may utilize SIMD) and
-/// the result will be a single chunked array.
 ///
-/// **The key takeaway is that by applying operations on a `ChunkArray` of multiple chunks, the results will converge to
-/// a `ChunkArray` of a single chunk!** It is recommended to leave them as is. If you want to have predictable performance
+/// If you want to have predictable performance
 /// (no unexpected re-allocation of memory), it is advised to call the [rechunk](chunked_array/chunkops/trait.ChunkOps.html) after
 /// multiple append operations.
+///
+/// See also [`ChunkedArray::extend`] for appends within a chunk.
 pub struct ChunkedArray<T> {
     pub(crate) field: Arc<Field>,
     pub(crate) chunks: Vec<ArrayRef>,
@@ -154,8 +152,6 @@ pub struct ChunkedArray<T> {
     /// third bit dtype list: fast_explode
     ///     - unset: unknown or not all arrays have at least one value
     ///     - set: all list arrays are filled (this allows for cheap explode)
-    /// fourth bit: original local categorical
-    ///             meaning that n_unique is the same as the cat map length
     pub(crate) bit_settings: u8,
 }
 
@@ -299,11 +295,6 @@ impl<T> ChunkedArray<T> {
     /// assert_eq!(Vec::from(&array), [Some(1), Some(2), Some(3)])
     /// ```
     pub fn append_array(&mut self, other: ArrayRef) -> Result<()> {
-        if matches!(self.dtype(), DataType::Categorical) {
-            return Err(PolarsError::InvalidOperation(
-                "append_array not supported for categorical type".into(),
-            ));
-        }
         if self.field.data_type() == other.data_type() {
             self.chunks.push(other);
             Ok(())
@@ -346,7 +337,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 
     /// Get a mask of the valid values.
@@ -365,7 +356,7 @@ impl<T> ChunkedArray<T> {
                 Arc::new(BooleanArray::from_data_default(bitmap, None)) as ArrayRef
             })
             .collect::<Vec<_>>();
-        BooleanChunked::new_from_chunks(self.name(), chunks)
+        BooleanChunked::from_chunks(self.name(), chunks)
     }
 
     /// Get data type of ChunkedArray.
@@ -415,7 +406,7 @@ where
                 })
                 .collect();
 
-            Self::new_from_chunks(self.name(), chunks)
+            Self::from_chunks(self.name(), chunks)
         };
 
         if self.chunks.len() != 1 {
@@ -432,7 +423,7 @@ where
     T: PolarsDataType,
 {
     /// Create a new ChunkedArray from existing chunks.
-    pub fn new_from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
+    pub fn from_chunks(name: &str, chunks: Vec<ArrayRef>) -> Self {
         // prevent List<Null> if the inner list type is known.
         let datatype = if matches!(T::get_dtype(), DataType::List(_)) {
             if let Some(arr) = chunks.get(0) {
@@ -459,9 +450,9 @@ where
     T: PolarsNumericType,
 {
     /// Create a new ChunkedArray by taking ownership of the Vec. This operation is zero copy.
-    pub fn new_from_aligned_vec(name: &str, v: Vec<T::Native>) -> Self {
+    pub fn from_vec(name: &str, v: Vec<T::Native>) -> Self {
         let arr = to_array::<T>(v, None);
-        Self::new_from_chunks(name, vec![arr])
+        Self::from_chunks(name, vec![arr])
     }
 
     /// Nullify values in slice with an existing null bitmap
@@ -506,7 +497,6 @@ where
 impl AsSinglePtr for BooleanChunked {}
 impl AsSinglePtr for ListChunked {}
 impl AsSinglePtr for Utf8Chunked {}
-impl AsSinglePtr for CategoricalChunked {}
 #[cfg(feature = "object")]
 impl<T> AsSinglePtr for ObjectChunked<T> {}
 
@@ -516,10 +506,10 @@ where
 {
     /// Contiguous slice
     pub fn cont_slice(&self) -> Result<&[T::Native]> {
-        if self.chunks.len() == 1 && !self.chunks[0].has_validity() {
+        if self.chunks.len() == 1 && self.chunks[0].null_count() == 0 {
             Ok(self.downcast_iter().next().map(|arr| arr.values()).unwrap())
         } else {
-            Err(PolarsError::NoSlice)
+            Err(PolarsError::ComputeError("cannot take slice".into()))
         }
     }
 
@@ -594,6 +584,12 @@ impl ListChunked {
             _ => unreachable!(),
         }
     }
+
+    pub(crate) fn with_inner_type(&mut self, dtype: DataType) {
+        assert_eq!(dtype.to_physical(), self.inner_dtype());
+        let field = Arc::make_mut(&mut self.field);
+        field.coerce(DataType::List(Box::new(dtype)));
+    }
 }
 
 pub(crate) fn to_primitive<T: PolarsNumericType>(
@@ -612,7 +608,7 @@ pub(crate) fn to_array<T: PolarsNumericType>(
 
 impl<T: PolarsNumericType> From<PrimitiveArray<T::Native>> for ChunkedArray<T> {
     fn from(a: PrimitiveArray<T::Native>) -> Self {
-        ChunkedArray::new_from_chunks("", vec![Arc::new(a)])
+        ChunkedArray::from_chunks("", vec![Arc::new(a)])
     }
 }
 
@@ -799,9 +795,9 @@ pub(crate) mod test {
         let _lock = SINGLE_LOCK.lock();
         reset_string_cache();
         let ca = Utf8Chunked::new("", &[Some("foo"), None, Some("bar"), Some("ham")]);
-        let ca = ca.cast(&DataType::Categorical).unwrap();
+        let ca = ca.cast(&DataType::Categorical(None)).unwrap();
         let ca = ca.categorical().unwrap();
-        let v: Vec<_> = ca.into_iter().collect();
+        let v: Vec<_> = ca.logical().into_iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

@@ -31,7 +31,9 @@ from polars.datatypes import (
     Int32,
     Int64,
     List,
+    Null,
     Object,
+    Struct,
     Time,
     UInt8,
     UInt16,
@@ -39,18 +41,20 @@ from polars.datatypes import (
     UInt64,
     Utf8,
 )
+from polars.exceptions import (
+    ArrowError,
+    ComputeError,
+    NoDataError,
+    NotFoundError,
+    SchemaError,
+    ShapeError,
+)
 from polars.internals.expr import Expr
 from polars.internals.frame import (  # flake8: noqa # TODO: remove need for wrap_df
     DataFrame,
     wrap_df,
 )
-from polars.internals.functions import (
-    arg_where,
-    concat,
-    date_range,
-    get_dummies,
-    repeat,
-)
+from polars.internals.functions import arg_where, concat, date_range, get_dummies
 from polars.internals.lazy_frame import LazyFrame
 from polars.internals.lazy_functions import _date as date
 from polars.internals.lazy_functions import _datetime as datetime
@@ -67,6 +71,7 @@ from polars.internals.lazy_functions import (
     concat_str,
     count,
     cov,
+    duration,
     exclude,
     first,
     fold,
@@ -84,9 +89,11 @@ from polars.internals.lazy_functions import (
     n_unique,
     pearson_corr,
     quantile,
+    repeat,
     select,
     spearman_rank_corr,
     std,
+    struct,
     sum,
     tail,
 )
@@ -98,6 +105,7 @@ from polars.internals.series import (  # flake8: noqa # TODO: remove need for wr
 )
 from polars.internals.whenthen import when
 from polars.io import (
+    read_avro,
     read_csv,
     read_ipc,
     read_ipc_schema,
@@ -111,6 +119,13 @@ from polars.io import (
 from polars.string_cache import StringCache
 
 __all__ = [
+    "exceptions",
+    "NotFoundError",
+    "ShapeError",
+    "SchemaError",
+    "ArrowError",
+    "ComputeError",
+    "NoDataError",
     "DataFrame",
     "Series",
     "LazyFrame",
@@ -134,6 +149,7 @@ __all__ = [
     "Time",
     "Object",
     "Categorical",
+    "Struct",
     # polars.io
     "read_csv",
     "read_parquet",
@@ -144,6 +160,7 @@ __all__ = [
     "scan_ipc",
     "scan_parquet",
     "read_ipc_schema",
+    "read_avro",
     # polars.stringcache
     "StringCache",
     # polars.config

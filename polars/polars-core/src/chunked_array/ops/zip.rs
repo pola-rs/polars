@@ -2,8 +2,6 @@ use crate::prelude::*;
 use crate::utils::{align_chunks_ternary, CustomIterTools};
 use arrow::compute::if_then_else::if_then_else;
 use polars_arrow::array::default_arrays::FromData;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
     if predicate {
@@ -15,15 +13,15 @@ fn ternary_apply<T>(predicate: bool, truthy: T, falsy: T) -> T {
 
 fn prepare_mask(mask: &BooleanArray) -> BooleanArray {
     // make sure that zip works same as master branch
-    // that is that null are ignored from mask and that we take from the left array
+    // that is that null are ignored from mask and that we take from the right array
 
     match mask.validity() {
-        // nulls are set to true meaning we take from the left in the zip/ if_then_else kernel
-        Some(validity) => {
-            let mask = mask.values() | &(!validity);
+        // nulls are set to true meaning we take from the right in the zip/ if_then_else kernel
+        Some(validity) if validity.null_count() != 0 => {
+            let mask = mask.values() & validity;
             BooleanArray::from_data_default(mask, None)
         }
-        None => mask.clone(),
+        _ => mask.clone(),
     }
 }
 
@@ -88,7 +86,7 @@ where
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -110,7 +108,7 @@ impl ChunkZip<BooleanType> for BooleanChunked {
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -131,7 +129,7 @@ impl ChunkZip<Utf8Type> for Utf8Chunked {
                     Ok(arr)
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+            Ok(ChunkedArray::from_chunks(self.name(), chunks))
         }
     }
 }
@@ -152,35 +150,7 @@ impl ChunkZip<ListType> for ListChunked {
                 Ok(arr)
             })
             .collect::<Result<Vec<_>>>()?;
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkZip<CategoricalType> for CategoricalChunked {
-    fn zip_with(
-        &self,
-        mask: &BooleanChunked,
-        other: &ChunkedArray<CategoricalType>,
-    ) -> Result<ChunkedArray<CategoricalType>> {
-        let ca: CategoricalChunked = match self.categorical_map.as_deref() {
-            Some(crate::chunked_array::categorical::RevMapping::Local(_)) => {
-                // the logic for merging the rev maps will concatenate utf8 arrays
-                // to make sure the indexes still make sense we need to offset the right hand side
-                self.deref()
-                    .zip_with(mask, &(other.deref() + self.len() as u32))?
-                    .into()
-            }
-            _ => self.deref().zip_with(mask, other.deref())?.into(),
-        };
-
-        // first set old state
-        let mut ca = ca.set_state(self);
-        // then merge state
-        let state = ca.merge_categorical_map(other);
-        // and set this new state
-        ca.categorical_map = Some(state);
-        Ok(ca)
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 

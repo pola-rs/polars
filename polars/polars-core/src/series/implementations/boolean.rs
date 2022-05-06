@@ -1,6 +1,7 @@
 use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
+use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::{
     ops::{
@@ -11,7 +12,7 @@ use crate::chunked_array::{
 };
 use crate::fmt::FmtList;
 use crate::frame::groupby::*;
-use crate::frame::hash_join::{HashJoin, ZipOuterJoinColumn};
+use crate::frame::hash_join::ZipOuterJoinColumn;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
 use ahash::RandomState;
@@ -65,34 +66,26 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_min(groups)
     }
 
-    fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_max(groups)
     }
 
-    fn agg_sum(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_sum(groups)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
-    fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-        HashJoin::hash_join_inner(&self.0, other.as_ref().as_ref())
-    }
-    fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-        HashJoin::hash_join_left(&self.0, other.as_ref().as_ref())
-    }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-        HashJoin::hash_join_outer(&self.0, other.as_ref().as_ref())
-    }
+
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         ZipOuterJoinColumn::zip_outer_join_column(&self.0, right_column, opt_join_tuples)
     }
@@ -101,12 +94,22 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         self.0.argsort_multiple(by, reverse)
     }
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
+    fn is_sorted(&self) -> IsSorted {
+        if self.0.is_sorted() {
+            IsSorted::Ascending
+        } else if self.0.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0.clone().into_series()
@@ -159,12 +162,22 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn append(&mut self, other: &Series) -> Result<()> {
         if self.0.dtype() == other.dtype() {
-            // todo! add object
             self.0.append(other.as_ref().as_ref());
             Ok(())
         } else {
             Err(PolarsError::SchemaMisMatch(
                 "cannot append Series; data types don't match".into(),
+            ))
+        }
+    }
+
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            self.0.extend(other.as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
             ))
         }
     }
@@ -177,7 +190,17 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.mean()
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         let indices = if indices.chunks.len() > 1 {
             Cow::Owned(indices.rechunk())
         } else {
@@ -198,7 +221,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {
@@ -237,6 +260,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0.get_any_value_unchecked(index)
     }
@@ -245,8 +269,8 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkSort::sort_with(&self.0, options).into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        ChunkSort::argsort(&self.0, reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        ChunkSort::argsort(&self.0, options)
     }
 
     fn null_count(&self) -> usize {
@@ -265,7 +289,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkUnique::n_unique(&self.0)
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }
 
@@ -277,7 +301,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ArgAgg::arg_max(&self.0)
     }
 
-    fn arg_true(&self) -> Result<UInt32Chunked> {
+    fn arg_true(&self) -> Result<IdxCa> {
         let ca: &BooleanChunked = self.bool()?;
         Ok(ca.arg_true())
     }
@@ -323,9 +347,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     fn min_as_series(&self) -> Series {
         ChunkAggSeries::min_as_series(&self.0)
     }
-    fn mean_as_series(&self) -> Series {
-        ChunkAggSeries::mean_as_series(&self.0)
-    }
     fn median_as_series(&self) -> Series {
         QuantileAggSeries::median_as_series(&self.0)
     }
@@ -355,7 +376,7 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         IsIn::is_in(&self.0, other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         RepeatBy::repeat_by(&self.0, by)
     }
 

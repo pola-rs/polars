@@ -15,6 +15,7 @@ impl PolarsTruncate for DatetimeChunked {
 
         let func = match self.time_unit() {
             TimeUnit::Nanoseconds => Window::truncate_ns,
+            TimeUnit::Microseconds => Window::truncate_us,
             TimeUnit::Milliseconds => Window::truncate_ms,
         };
 

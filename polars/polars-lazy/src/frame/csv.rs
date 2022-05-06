@@ -1,9 +1,9 @@
-use crate::functions::concat;
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::csv::NullValues;
+use polars_io::csv::{CsvEncoding, NullValues};
 use polars_io::csv_core::utils::get_reader_bytes;
 use polars_io::csv_core::utils::infer_file_schema;
+use polars_io::RowCount;
 
 #[derive(Clone)]
 #[cfg(feature = "csv-file")]
@@ -24,10 +24,12 @@ pub struct LazyCsvReader<'a> {
     infer_schema_length: Option<usize>,
     rechunk: bool,
     skip_rows_after_header: usize,
+    encoding: CsvEncoding,
+    row_count: Option<RowCount>,
+    parse_dates: bool,
 }
 
 #[cfg(feature = "csv-file")]
-#[must_use]
 impl<'a> LazyCsvReader<'a> {
     pub fn new(path: String) -> Self {
         LazyCsvReader {
@@ -47,6 +49,9 @@ impl<'a> LazyCsvReader<'a> {
             infer_schema_length: Some(100),
             rechunk: true,
             skip_rows_after_header: 0,
+            encoding: CsvEncoding::Utf8,
+            row_count: None,
+            parse_dates: false,
         }
     }
 
@@ -54,6 +59,13 @@ impl<'a> LazyCsvReader<'a> {
     #[must_use]
     pub fn with_skip_rows_after_header(mut self, offset: usize) -> Self {
         self.skip_rows_after_header = offset;
+        self
+    }
+
+    /// Add a `row_count` column.
+    #[must_use]
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
         self
     }
 
@@ -159,6 +171,20 @@ impl<'a> LazyCsvReader<'a> {
         self
     }
 
+    /// Set  [`CsvEncoding`]
+    #[must_use]
+    pub fn with_encoding(mut self, enc: CsvEncoding) -> Self {
+        self.encoding = enc;
+        self
+    }
+
+    /// Automatically try to parse dates/ datetimes and time. If parsing fails, columns remain of dtype `[DataType::Utf8]`.
+    #[cfg(feature = "temporal")]
+    pub fn with_parse_dates(mut self, toggle: bool) -> Self {
+        self.parse_dates = toggle;
+        self
+    }
+
     /// Modify a schema before we run the lazy scanning.
     ///
     /// Important! Run this function latest in the builder!
@@ -175,13 +201,23 @@ impl<'a> LazyCsvReader<'a> {
             self.delimiter,
             self.infer_schema_length,
             self.has_header,
-            self.schema_overwrite,
+            // we set it to None and modify them after the schema is updated
+            None,
             &mut skip_rows,
             self.comment_char,
             self.quote_char,
             None,
+            self.parse_dates,
         )?;
-        let schema = f(schema)?;
+        let mut schema = f(schema)?;
+
+        // the dtypes set may be for the new names, so update again
+        if let Some(overwrite_schema) = self.schema_overwrite {
+            for (name, dtype) in overwrite_schema.iter() {
+                schema.with_column(name.clone(), dtype.clone())
+            }
+        }
+
         Ok(self.with_schema(Arc::new(schema)))
     }
 
@@ -203,6 +239,9 @@ impl<'a> LazyCsvReader<'a> {
             self.infer_schema_length,
             self.rechunk,
             self.skip_rows_after_header,
+            self.encoding,
+            self.row_count,
+            self.parse_dates,
         )?
         .build()
         .into();
@@ -213,7 +252,7 @@ impl<'a> LazyCsvReader<'a> {
     pub fn finish(self) -> Result<LazyFrame> {
         if self.path.contains('*') {
             let paths = glob::glob(&self.path)
-                .map_err(|_| PolarsError::ValueError("invalid glob pattern given".into()))?;
+                .map_err(|_| PolarsError::ComputeError("invalid glob pattern given".into()))?;
 
             let lfs = paths
                 .map(|r| {
@@ -234,7 +273,7 @@ impl<'a> LazyCsvReader<'a> {
                 .map_err(|_| PolarsError::ComputeError("no matching files found".into()))
                 .map(|lf| {
                     if self.skip_rows != 0 || self.n_rows.is_some() {
-                        lf.slice(self.skip_rows as i64, self.n_rows.unwrap() as u32)
+                        lf.slice(self.skip_rows as i64, self.n_rows.unwrap() as IdxSize)
                     } else {
                         lf
                     }

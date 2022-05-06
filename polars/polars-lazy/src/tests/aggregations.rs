@@ -31,7 +31,7 @@ fn test_agg_unique_first() -> Result<()> {
         .lazy()
         .groupby_stable([col("g")])
         .agg([
-            col("v").unique().first(),
+            col("v").unique().first().alias("v_first"),
             col("v").unique().sort(false).first().alias("true_first"),
             col("v").unique().list(),
         ])
@@ -107,7 +107,7 @@ fn test_cumsum_agg_as_key() -> Result<()> {
             .cumsum(false)
             .alias("key")])
         .agg([col("depth").max().keep_name()])
-        .sort("depth", false)
+        .sort("depth", SortOptions::default())
         .collect()?;
 
     assert_eq!(
@@ -118,6 +118,27 @@ fn test_cumsum_agg_as_key() -> Result<()> {
         Vec::from(out.column("depth")?.i32()?),
         &[Some(2), Some(5), Some(7), Some(9)]
     );
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "moment")]
+fn test_auto_skew_kurtosis_agg() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("fruits")])
+        .agg([
+            col("B").skew(false).alias("bskew"),
+            col("B").kurtosis(false, false).alias("bkurt"),
+        ])
+        .collect()?;
+
+    assert!(matches!(out.column("bskew")?.dtype(), DataType::Float64));
+    assert!(matches!(out.column("bkurt")?.dtype(), DataType::Float64));
 
     Ok(())
 }
@@ -173,7 +194,13 @@ fn test_power_in_agg_list1() -> Result<()> {
             })
             .pow(2.0)
             .alias("foo")])
-        .sort("fruits", true)
+        .sort(
+            "fruits",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .collect()?;
 
     let agg = out.column("foo")?.list()?;
@@ -202,7 +229,13 @@ fn test_power_in_agg_list2() -> Result<()> {
             .pow(2.0)
             .sum()
             .alias("foo")])
-        .sort("fruits", true)
+        .sort(
+            "fruits",
+            SortOptions {
+                descending: true,
+                ..Default::default()
+            },
+        )
         .collect()?;
 
     let agg = out.column("foo")?.f64()?;
@@ -222,8 +255,8 @@ fn test_binary_agg_context_0() -> Result<()> {
         .lazy()
         .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(lit("a"))
-            .otherwise(lit("b"))
+            .then(repeat("a", count()))
+            .otherwise(repeat("b", count()))
             .alias("foo")])
         .collect()
         .unwrap();
@@ -380,7 +413,7 @@ fn test_shift_elementwise_issue_2509() -> Result<()> {
         // Don't use maintain order here! That hides the bug
         .groupby([col("x")])
         .agg(&[(col("y").shift(-1) + col("x")).list().alias("sum")])
-        .sort("x", false)
+        .sort("x", Default::default())
         .collect()?;
 
     let out = out.explode(["sum"])?;
@@ -408,7 +441,7 @@ fn take_aggregations() -> Result<()> {
         .lazy()
         .groupby([col("user")])
         .agg([col("book").take(col("count").arg_max()).alias("fav_book")])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
 
     let s = out.column("fav_book")?;
@@ -426,7 +459,7 @@ fn take_aggregations() -> Result<()> {
                 .take(col("count").arg_sort(true).head(Some(2)))
                 .alias("ordered"),
         ])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
     let s = out.column("ordered")?;
     let flat = s.explode()?;
@@ -438,7 +471,7 @@ fn take_aggregations() -> Result<()> {
         .lazy()
         .groupby([col("user")])
         .agg([col("book").take(lit(0)).alias("take_lit")])
-        .sort("user", false)
+        .sort("user", Default::default())
         .collect()?;
 
     let taken = out.column("take_lit")?;
@@ -457,7 +490,9 @@ fn test_take_consistency() -> Result<()> {
         .select([col("A").arg_sort(true).take(lit(0))])
         .collect()?;
 
-    assert_eq!(out.column("A")?.get(0), AnyValue::UInt32(4));
+    let a = out.column("A")?;
+    let a = a.idx()?;
+    assert_eq!(a.get(0), Some(4));
 
     let out = df
         .clone()
@@ -467,7 +502,7 @@ fn test_take_consistency() -> Result<()> {
         .collect()?;
 
     let out = out.column("A")?;
-    let out = out.u32()?;
+    let out = out.idx()?;
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     let out_df = df
@@ -488,7 +523,7 @@ fn test_take_consistency() -> Result<()> {
     assert_eq!(Vec::from(out), &[Some(5), Some(2)]);
 
     let out = out_df.column("1")?;
-    let out = out.u32()?;
+    let out = out.idx()?;
     assert_eq!(Vec::from(out), &[Some(3), Some(0)]);
 
     Ok(())
@@ -500,7 +535,7 @@ fn test_take_in_groups() -> Result<()> {
 
     let out = df
         .lazy()
-        .sort("fruits", false)
+        .sort("fruits", Default::default())
         .select([col("B")
             .take(lit(Series::new("", &[0u32])))
             .over([col("fruits")])

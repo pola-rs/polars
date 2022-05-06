@@ -23,6 +23,7 @@ Attributes
    Series.arr
    Series.dt
    Series.str
+   Series.cat
    Series.time_unit
 
 Conversion
@@ -34,7 +35,7 @@ Conversion
    Series.to_list
    Series.to_numpy
    Series.to_arrow
-   Series.to_numpy
+   Series.to_pandas
 
 
 Aggregation
@@ -61,6 +62,8 @@ Descriptive stats
    :toctree: api/
 
     Series.describe
+    Series.estimated_size
+    Series.unique_counts
     Series.value_counts
     Series.chunk_lengths
     Series.n_chunks
@@ -127,6 +130,7 @@ Computations
     Series.pct_change
     Series.skew
     Series.kurtosis
+    Series.entropy
     Series.sqrt
     Series.sin
     Series.cos
@@ -137,6 +141,7 @@ Computations
     Series.log
     Series.log10
     Series.exp
+    Series.sign
 
 Manipulation/ selection
 -----------------------
@@ -164,6 +169,7 @@ Manipulation/ selection
     Series.shift
     Series.shift_and_fill
     Series.drop_nulls
+    Series.drop_nans
     Series.rechunk
     Series.cast
     Series.round
@@ -178,7 +184,7 @@ Manipulation/ selection
     Series.reshape
     Series.to_dummies
     Series.shuffle
-    Series.extend
+    Series.extend_constant
 
 Various
 --------
@@ -219,13 +225,17 @@ The following methods are available under the `Series.dt` attribute.
     DateTimeNameSpace.median
     DateTimeNameSpace.mean
     DateTimeNameSpace.truncate
+    DateTimeNameSpace.epoch
     DateTimeNameSpace.epoch_days
     DateTimeNameSpace.epoch_milliseconds
     DateTimeNameSpace.epoch_seconds
     DateTimeNameSpace.and_time_unit
     DateTimeNameSpace.and_time_zone
+    DateTimeNameSpace.with_time_unit
+    DateTimeNameSpace.cast_time_unit
     DateTimeNameSpace.days
     DateTimeNameSpace.hours
+    DateTimeNameSpace.minutes
     DateTimeNameSpace.seconds
     DateTimeNameSpace.milliseconds
     DateTimeNameSpace.nanoseconds
@@ -247,6 +257,8 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.contains
     StringNameSpace.json_path_match
     StringNameSpace.extract
+    StringNameSpace.split
+    StringNameSpace.split_exact
     StringNameSpace.replace
     StringNameSpace.replace_all
     StringNameSpace.to_lowercase
@@ -281,3 +293,37 @@ The following methods are available under the `Series.arr` attribute.
     ListNameSpace.first
     ListNameSpace.last
     ListNameSpace.contains
+    ListNameSpace.join
+    ListNameSpace.arg_min
+    ListNameSpace.arg_max
+    ListNameSpace.diff
+    ListNameSpace.shift
+    ListNameSpace.slice
+    ListNameSpace.head
+    ListNameSpace.tail
+    ListNameSpace.eval
+
+Categories
+----------
+The following methods are available under the `Series.cat` attribute.
+
+.. currentmodule:: polars.internals.series
+
+.. autosummary::
+   :toctree: api/
+
+    CatNameSpace.set_ordering
+
+Struct
+------
+The following methods are available under the `Series.struct` attribute.
+
+.. currentmodule:: polars.internals.series
+
+.. autosummary::
+   :toctree: api/
+
+    StructNameSpace.to_frame
+    StructNameSpace.field
+    StructNameSpace.fields
+    StructNameSpace.rename_fields

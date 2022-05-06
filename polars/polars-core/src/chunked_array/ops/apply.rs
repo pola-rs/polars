@@ -51,6 +51,60 @@ macro_rules! apply_enumerate {
     }};
 }
 
+fn apply_in_place_impl<S, F>(name: &str, chunks: Vec<ArrayRef>, f: F) -> ChunkedArray<S>
+where
+    F: Fn(S::Native) -> S::Native + Copy,
+    S: PolarsNumericType,
+{
+    use arrow::Either::*;
+    let chunks = chunks
+        .into_iter()
+        .map(|arr| {
+            let owned_arr = arr
+                .as_any()
+                .downcast_ref::<PrimitiveArray<S::Native>>()
+                .unwrap()
+                .clone();
+            // make sure we have a single ref count coming in.
+            drop(arr);
+
+            match owned_arr.into_mut() {
+                Left(immutable) => Arc::new(arrow::compute::arity::unary(
+                    &immutable,
+                    f,
+                    S::get_dtype().to_arrow(),
+                )),
+                Right(mut mutable) => {
+                    let vals = mutable.values_mut_slice();
+                    vals.iter_mut().for_each(|v| *v = f(*v));
+                    mutable.into_arc()
+                }
+            }
+        })
+        .collect();
+    ChunkedArray::<S>::from_chunks(name, chunks)
+}
+
+impl<T: PolarsNumericType> ChunkedArray<T> {
+    /// Cast a numeric array to another numeric data type and apply a function in place.
+    /// This saves an allocation.
+    pub fn cast_and_apply_in_place<F, S>(&self, f: F) -> ChunkedArray<S>
+    where
+        F: Fn(S::Native) -> S::Native + Copy,
+        S: PolarsNumericType,
+    {
+        // if we cast, we create a new arrow buffer
+        // then we clone the arrays and drop the casted arrays
+        // this will ensure we have a single ref count
+        // and we can mutate in place
+        let chunks = {
+            let s = self.cast(&S::get_dtype()).unwrap();
+            s.chunks().clone()
+        };
+        apply_in_place_impl(self.name(), chunks, f)
+    }
+}
+
 impl<'a, T> ChunkApply<'a, T::Native, T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -68,7 +122,7 @@ where
                 to_array::<S>(values, validity.cloned())
             })
             .collect();
-        ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
+        ChunkedArray::<S>::from_chunks(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -89,7 +143,7 @@ where
                 to_array::<S>(values, None)
             })
             .collect();
-        ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
+        ChunkedArray::<S>::from_chunks(self.name(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -106,7 +160,7 @@ where
                 to_array::<T>(values, validity.cloned())
             })
             .collect();
-        ChunkedArray::<T>::new_from_chunks(self.name(), chunks)
+        ChunkedArray::<T>::from_chunks(self.name(), chunks)
     }
 
     fn try_apply<F>(&'a self, f: F) -> Result<Self>
@@ -139,7 +193,7 @@ where
                 Arc::new(arr) as ArrayRef
             })
             .collect();
-        Self::new_from_chunks(self.name(), chunks)
+        Self::from_chunks(self.name(), chunks)
     }
 
     fn apply_with_idx<F>(&'a self, f: F) -> Self
@@ -205,12 +259,14 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn(bool) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        self.apply_kernel_cast(|array| {
+        let f = |array: &BooleanArray| {
             let values = array.values().iter().map(f);
             let values = Vec::<_>::from_trusted_len_iter(values);
             let validity = array.validity().cloned();
             to_array::<S>(values, validity)
-        })
+        };
+
+        self.apply_kernel_cast(&f)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -218,7 +274,7 @@ impl<'a> ChunkApply<'a, bool, bool> for BooleanChunked {
         F: Fn(Option<bool>) -> S::Native + Copy,
         S: PolarsNumericType,
     {
-        self.apply_kernel_cast(|array| {
+        self.apply_kernel_cast(&|array: &BooleanArray| {
             let values = Vec::<_>::from_trusted_len_iter(array.into_iter().map(f));
             to_array::<S>(values, None)
         })
@@ -293,7 +349,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&'a self, f: F) -> ChunkedArray<S>
@@ -310,7 +366,7 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
                 to_array::<S>(values, array.validity().cloned())
             })
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 
     fn apply<F>(&'a self, f: F) -> Self
@@ -372,21 +428,17 @@ impl<'a> ChunkApply<'a, &'a str, Cow<'a, str>> for Utf8Chunked {
 }
 
 impl ChunkApplyKernel<BooleanArray> for BooleanChunked {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&BooleanArray) -> ArrayRef,
-    {
+    fn apply_kernel(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> Self {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
-        Self::new_from_chunks(self.name(), chunks)
+        Self::from_chunks(self.name(), chunks)
     }
 
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&BooleanArray) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&BooleanArray) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::<S>::new_from_chunks(self.name(), chunks)
+        ChunkedArray::<S>::from_chunks(self.name(), chunks)
     }
 }
 
@@ -394,37 +446,32 @@ impl<T> ChunkApplyKernel<PrimitiveArray<T::Native>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
-    {
-        self.apply_kernel_cast(f)
+    fn apply_kernel(&self, f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef) -> Self {
+        self.apply_kernel_cast(&f)
     }
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(
+        &self,
+        f: &dyn Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
+    ) -> ChunkedArray<S>
     where
-        F: Fn(&PrimitiveArray<T::Native>) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
 impl ChunkApplyKernel<LargeStringArray> for Utf8Chunked {
-    fn apply_kernel<F>(&self, f: F) -> Self
-    where
-        F: Fn(&LargeStringArray) -> ArrayRef,
-    {
-        self.apply_kernel_cast(f)
+    fn apply_kernel(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> Self {
+        self.apply_kernel_cast(&f)
     }
 
-    fn apply_kernel_cast<F, S>(&self, f: F) -> ChunkedArray<S>
+    fn apply_kernel_cast<S>(&self, f: &dyn Fn(&LargeStringArray) -> ArrayRef) -> ChunkedArray<S>
     where
-        F: Fn(&LargeStringArray) -> ArrayRef,
         S: PolarsDataType,
     {
         let chunks = self.downcast_iter().into_iter().map(f).collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -434,21 +481,32 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn(Series) -> S::Native + Copy,
         S: PolarsNumericType,
     {
+        let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
             .into_iter()
             .map(|array| {
-                let values: Vec<_> = (0..array.len())
-                    .map(|idx| {
-                        let arrayref: ArrayRef = unsafe { array.value_unchecked(idx) }.into();
-                        let series = Series::try_from(("", arrayref)).unwrap();
-                        f(series)
-                    })
-                    .collect_trusted();
-                to_array::<S>(values, array.validity().cloned())
+                unsafe {
+                    let values = array
+                        .values_iter()
+                        .map(|array| {
+                            // safety
+                            // reported dtype is correct
+                            let series = Series::from_chunks_and_dtype_unchecked(
+                                "",
+                                vec![array.into()],
+                                &dtype,
+                            );
+                            f(series)
+                        })
+                        .trust_my_length(self.len())
+                        .collect_trusted::<Vec<_>>();
+
+                    to_array::<S>(values, array.validity().cloned())
+                }
             })
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 
     fn branch_apply_cast_numeric_no_null<F, S>(&self, f: F) -> ChunkedArray<S>
@@ -456,6 +514,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
         F: Fn(Option<Series>) -> S::Native + Copy,
         S: PolarsNumericType,
     {
+        let dtype = self.inner_dtype();
         let chunks = self
             .downcast_iter()
             .into_iter()
@@ -463,7 +522,9 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                 let values = array.iter().map(|x| {
                     let x = x.map(|x| {
                         let x: ArrayRef = x.into();
-                        Series::try_from(("", x)).unwrap()
+                        // safety
+                        // reported dtype is correct
+                        unsafe { Series::from_chunks_and_dtype_unchecked("", vec![x], &dtype) }
                     });
                     f(x)
                 });
@@ -476,7 +537,7 @@ impl<'a> ChunkApply<'a, Series, Series> for ListChunked {
                 }
             })
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 
     /// Apply a closure `F` elementwise.

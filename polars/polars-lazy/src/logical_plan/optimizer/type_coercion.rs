@@ -9,7 +9,7 @@ use crate::utils::is_scan;
 pub struct TypeCoercionRule {}
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
-/// it would be wasteful to cast the column instead of the unsigned integer literal.
+/// it would be wasteful to cast the column instead of the literal.
 fn use_supertype(
     mut st: DataType,
     left: &AExpr,
@@ -17,25 +17,37 @@ fn use_supertype(
     type_left: &DataType,
     type_right: &DataType,
 ) -> DataType {
-    match (left, right) {
-        // do nothing and use supertype
-        (AExpr::Literal(_), AExpr::Literal(_))
-        // always make sure that we cast to floats if one of the operands is float
-        |(AExpr::Literal(LiteralValue::Float32(_)), _)
-        |(AExpr::Literal(LiteralValue::Float64(_)), _)
-        |(_, AExpr::Literal(LiteralValue::Float32(_)))
-        |(_, AExpr::Literal(LiteralValue::Float64(_)))
-        => {}
-        // cast literal to right type
-        (AExpr::Literal(_), _) => {
-            st = type_right.clone();
+    // only interesting on numerical types
+    // other types will always use the supertype.
+    if type_left.is_numeric() && type_right.is_numeric() {
+        match (left, right) {
+            // don't let the literal f64 coerce the f32 column
+            (AExpr::Literal(LiteralValue::Float64(_)), _) if matches!(type_right, DataType::Float32) => {
+                st = DataType::Float32
+            }
+            (_, AExpr::Literal(LiteralValue::Float64(_))) if matches!(type_left, DataType::Float32) => {
+                st = DataType::Float32
+            }
+
+            // do nothing and use supertype
+            (AExpr::Literal(_), AExpr::Literal(_))
+            // always make sure that we cast to floats if one of the operands is float
+            // and the left type is integer
+            |(AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)), _)
+            |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
+            => {}
+
+            // cast literal to right type
+            (AExpr::Literal(_), _) => {
+                st = type_right.clone();
+            }
+            // cast literal to left type
+            (_, AExpr::Literal(_)) => {
+                st = type_left.clone();
+            }
+            // do nothing
+            _ => {}
         }
-        // cast literal to left type
-        (_, AExpr::Literal(_)) => {
-            st = type_left.clone();
-        }
-        // do nothing
-        _ => {}
     }
     st
 }
@@ -138,22 +150,47 @@ impl OptimizationRule for TypeCoercionRule {
 
                     let type_left = left
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
                     let type_right = right
                         .get_type(input_schema, Context::Default, expr_arena)
-                        .expect("could not get dtype");
+                        .ok()?;
 
-                    let compare_cat_to_string = matches!(
-                        op,
-                        Operator::Eq
-                            | Operator::NotEq
-                            | Operator::Gt
-                            | Operator::Lt
-                            | Operator::GtEq
-                            | Operator::LtEq
-                    ) && ((type_left == DataType::Categorical
-                        && type_right == DataType::Utf8)
-                        || (type_left == DataType::Utf8 && type_right == DataType::Categorical));
+                    // don't coerce string with number comparisons. They must error
+                    match (&type_left, &type_right, op) {
+                        #[cfg(not(feature = "dtype-categorical"))]
+                        (DataType::Utf8, dt, op) | (dt, DataType::Utf8, op)
+                            if op.is_comparison() && dt.is_numeric() =>
+                        {
+                            return None
+                        }
+                        #[cfg(feature = "dtype-categorical")]
+                        (DataType::Utf8 | DataType::Categorical(_), dt, op)
+                        | (dt, DataType::Utf8 | DataType::Categorical(_), op)
+                            if op.is_comparison() && dt.is_numeric() =>
+                        {
+                            return None
+                        }
+                        _ => {}
+                    }
+
+                    #[allow(unused_mut, unused_assignments)]
+                    let mut compare_cat_to_string = false;
+                    #[cfg(feature = "dtype-categorical")]
+                    {
+                        compare_cat_to_string =
+                            matches!(
+                                op,
+                                Operator::Eq
+                                    | Operator::NotEq
+                                    | Operator::Gt
+                                    | Operator::Lt
+                                    | Operator::GtEq
+                                    | Operator::LtEq
+                            ) && (matches!(type_left, DataType::Categorical(_))
+                                && type_right == DataType::Utf8)
+                                || (type_left == DataType::Utf8
+                                    && matches!(type_right, DataType::Categorical(_)));
+                    }
 
                     let datetime_arithmetic = matches!(op, Operator::Minus | Operator::Plus)
                         && matches!(
@@ -164,6 +201,53 @@ impl OptimizationRule for TypeCoercionRule {
                                 | (DataType::Duration(_), DataType::Date)
                         );
 
+                    let list_arithmetic = op.is_arithmetic()
+                        && matches!(
+                            (&type_left, &type_right),
+                            (DataType::List(_), _) | (_, DataType::List(_))
+                        );
+
+                    // Special path for list arithmetic
+                    if list_arithmetic {
+                        match (&type_left, &type_right) {
+                            (DataType::List(inner), _) => {
+                                return if type_right != **inner {
+                                    let new_node_right = expr_arena.add(AExpr::Cast {
+                                        expr: node_right,
+                                        data_type: *inner.clone(),
+                                        strict: false,
+                                    });
+
+                                    Some(AExpr::BinaryExpr {
+                                        left: node_left,
+                                        op,
+                                        right: new_node_right,
+                                    })
+                                } else {
+                                    None
+                                };
+                            }
+                            (_, DataType::List(inner)) => {
+                                return if type_left != **inner {
+                                    let new_node_left = expr_arena.add(AExpr::Cast {
+                                        expr: node_left,
+                                        data_type: *inner.clone(),
+                                        strict: false,
+                                    });
+
+                                    Some(AExpr::BinaryExpr {
+                                        left: new_node_left,
+                                        op,
+                                        right: node_right,
+                                    })
+                                } else {
+                                    None
+                                };
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+
                     if type_left == type_right || compare_cat_to_string || datetime_arithmetic {
                         None
                     } else {
@@ -172,9 +256,17 @@ impl OptimizationRule for TypeCoercionRule {
 
                         let mut st = use_supertype(st, left, right, &type_left, &type_right);
 
-                        let cat_str_arithmetic = (type_left == DataType::Categorical
-                            && type_right == DataType::Utf8)
-                            || (type_left == DataType::Utf8 && type_right == DataType::Categorical);
+                        #[allow(unused_mut, unused_assignments)]
+                        let mut cat_str_arithmetic = false;
+
+                        #[cfg(feature = "dtype-categorical")]
+                        {
+                            cat_str_arithmetic = (matches!(type_left, DataType::Categorical(_))
+                                && type_right == DataType::Utf8)
+                                || (type_left == DataType::Utf8
+                                    && matches!(type_right, DataType::Categorical(_)));
+                        }
+
                         if cat_str_arithmetic {
                             st = DataType::Utf8
                         }
@@ -227,7 +319,7 @@ mod test {
     #[test]
     fn test_categorical_utf8() {
         let mut rules: Vec<Box<dyn OptimizationRule>> = vec![Box::new(TypeCoercionRule {})];
-        let schema = Schema::new(vec![Field::new("fruits", DataType::Categorical)]);
+        let schema = Schema::from(vec![Field::new("fruits", DataType::Categorical(None))]);
 
         let expr = col("fruits").eq(lit("somestr"));
         let out = optimize_expr(expr.clone(), schema.clone(), &mut rules);

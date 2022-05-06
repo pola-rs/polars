@@ -39,7 +39,7 @@ fn test_issue_2472() -> Result<()> {
     ]?;
     let base = df
         .lazy()
-        .with_column(col("group").cast(DataType::Categorical));
+        .with_column(col("group").cast(DataType::Categorical(None)));
 
     let extract = col("group")
         .cast(DataType::Utf8)
@@ -139,5 +139,101 @@ fn test_strptime_block_predicate() -> Result<()> {
     let df = q.collect()?;
     assert_eq!(df.shape(), (1, 1));
 
+    Ok(())
+}
+
+#[test]
+fn test_strict_cast_predicate_pushdown() -> Result<()> {
+    let df = df![
+        "a" => ["a", "b", "c"]
+    ]?;
+
+    let lf = df
+        .lazy()
+        .with_column(col("a").cast(DataType::Int32))
+        .filter(col("a").is_null());
+
+    assert!(!predicate_at_scan(lf.clone()));
+    let out = lf.collect()?;
+    assert_eq!(out.shape(), (3, 1));
+    Ok(())
+}
+
+#[test]
+fn test_filter_nulls_created_by_join() -> Result<()> {
+    // #2602
+    let a = df![
+        "key" => ["foo", "bar"],
+        "bar" => [1, 2]
+    ]?;
+
+    let b = df![
+        "key"=> ["bar"]
+    ]?
+    .lazy()
+    .with_column(lit(true).alias("flag"));
+
+    let out = a
+        .clone()
+        .lazy()
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .filter(col("flag").is_null())
+        .collect()?;
+    let expected = df![
+        "key" => ["foo"],
+        "bar" => [1],
+        "flag" => &[None, Some(true)][0..1]
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+
+    let out = a
+        .lazy()
+        .join(b.clone(), [col("key")], [col("key")], JoinType::Left)
+        .filter(col("flag").eq(lit(NULL)))
+        .with_predicate_pushdown(false)
+        .collect()?;
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_filter_null_creation_by_cast() -> Result<()> {
+    let df = df![
+        "int" => [1, 2, 3],
+        "empty" => ["", "", ""]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_column(col("empty").cast(DataType::Int32).alias("empty"))
+        .filter(col("empty").is_null().and(col("int").eq(lit(3i32))))
+        .collect()?;
+
+    let expected = df![
+        "int" => [3],
+        "empty" => &[None, Some(1i32)][..1]
+    ]?;
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_predicate_pd_apply() -> Result<()> {
+    let q = df![
+        "a" => [1, 2, 3],
+    ]?
+    .lazy()
+    .select([
+        // map_list is use in python `col().apply`
+        col("a"),
+        col("a")
+            .map_list(|s| Ok(s), GetOutput::same_type())
+            .alias("a_applied"),
+    ])
+    .filter(col("a").lt(lit(3)));
+
+    assert!(predicate_at_scan(q.clone()));
     Ok(())
 }

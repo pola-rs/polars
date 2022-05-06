@@ -1,11 +1,18 @@
+#[cfg(feature = "test")]
 mod aggregations;
+#[cfg(feature = "test")]
 mod arity;
 #[cfg(feature = "parquet")]
 mod io;
+#[cfg(feature = "test")]
 mod logical;
+#[cfg(feature = "test")]
 mod optimization_checks;
+#[cfg(feature = "test")]
 mod predicate_queries;
+#[cfg(feature = "test")]
 mod projection_queries;
+#[cfg(feature = "test")]
 mod queries;
 
 fn load_df() -> DataFrame {
@@ -23,7 +30,7 @@ use polars_core::prelude::*;
 use polars_io::prelude::*;
 use std::io::Cursor;
 
-use crate::functions::{argsort_by, pearson_corr};
+use crate::dsl::{argsort_by, pearson_corr};
 use crate::logical_plan::iterator::ArenaLpIter;
 use crate::logical_plan::optimizer::simplify_expr::SimplifyExprRule;
 use crate::logical_plan::optimizer::stack_opt::{OptimizationRule, StackOptimizer};
@@ -35,13 +42,12 @@ use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::export::lazy_static::lazy_static;
 use std::iter::FromIterator;
 
-static GLOB_PARQUET: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.parquet";
-static GLOB_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.csv";
-static GLOB_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/*.ipc";
-static FOODS_CSV: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv";
-static FOODS_IPC: &str = "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.ipc";
-static FOODS_PARQUET: &str =
-    "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.parquet";
+static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
+static GLOB_CSV: &str = "../../examples/datasets/*.csv";
+static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
+static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
+static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
+static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
 
 lazy_static! {
     // needed prevent race conditions during test execution
@@ -60,8 +66,8 @@ fn scan_foods_ipc() -> LazyFrame {
 
 fn init_files() {
     for path in &[
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods1.csv",
-        "../../examples/aggregate_multiple_files_in_chunks/datasets/foods2.csv",
+        "../../examples/datasets/foods1.csv",
+        "../../examples/datasets/foods2.csv",
     ] {
         let out_path1 = path.replace(".csv", ".parquet");
         let out_path2 = path.replace(".csv", ".ipc");
@@ -74,7 +80,7 @@ fn init_files() {
                     let f = std::fs::File::create(&out_path).unwrap();
                     ParquetWriter::new(f)
                         .with_statistics(true)
-                        .finish(&df)
+                        .finish(&mut df)
                         .unwrap();
                 } else {
                     let f = std::fs::File::create(&out_path).unwrap();
@@ -95,6 +101,7 @@ fn scan_foods_parquet(parallel: bool) -> LazyFrame {
         cache: false,
         parallel,
         rechunk: true,
+        row_count: None,
     };
     LazyFrame::scan_parquet(out_path, args).unwrap()
 }
@@ -108,8 +115,6 @@ pub(crate) fn fruits_cars() -> DataFrame {
     )
     .unwrap()
 }
-
-// physical plan see: datafusion/physical_plan/planner.rs.html#61-63
 
 pub(crate) fn get_df() -> DataFrame {
     let s = r#"

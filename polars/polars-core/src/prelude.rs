@@ -1,6 +1,6 @@
 //! Everything you need to get started with Polars.
-pub(crate) use crate::chunked_array::to_array;
-pub(crate) use crate::frame::groupby::aggregations::*;
+pub(crate) use crate::chunked_array::{to_array, ChunkIdIter};
+pub(crate) use crate::frame::{groupby::aggregations::*, hash_join::*};
 pub(crate) use crate::utils::CustomIterTools;
 pub use crate::{
     chunked_array::{
@@ -10,7 +10,7 @@ pub use crate::{
             ListPrimitiveChunkedBuilder, ListUtf8ChunkedBuilder, NewChunkedArray,
             PrimitiveChunkedBuilder, Utf8ChunkedBuilder,
         },
-        iterator::{IntoNoNullIterator, PolarsIterator},
+        iterator::PolarsIterator,
         ops::{aggregate::*, *},
         ChunkedArray,
     },
@@ -18,8 +18,14 @@ pub use crate::{
     datatypes::*,
     df,
     error::{PolarsError, Result},
-    frame::{groupby::GroupsProxy, hash_join::JoinType, *},
-    named_from::NamedFrom,
+    frame::{
+        explode::MeltArgs,
+        groupby::{GroupsIdx, GroupsProxy, GroupsSlice},
+        hash_join::JoinType,
+        *,
+    },
+    named_from::{NamedFrom, NamedFromOwned},
+    schema::*,
     series::{
         arithmetic::{LhsNumOps, NumOpsDispatch},
         IntoSeries, Series, SeriesTrait,
@@ -30,7 +36,6 @@ pub use crate::{
 };
 pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
-pub use polars_arrow::prelude::{LargeListArray, LargeStringArray, QuantileInterpolOptions};
 pub(crate) use polars_arrow::trusted_len::TrustedLen;
 pub use std::sync::Arc;
 
@@ -51,3 +56,10 @@ pub use crate::chunked_array::ops::rolling_window::RollingOptions;
 pub use polars_arrow::kernels::ewm::EWMOptions;
 
 pub(crate) use polars_arrow::export::*;
+pub use polars_arrow::prelude::*;
+
+#[cfg(feature = "dtype-categorical")]
+pub use crate::chunked_array::logical::categorical::*;
+
+#[cfg(feature = "asof_join")]
+pub use crate::frame::asof_join::*;

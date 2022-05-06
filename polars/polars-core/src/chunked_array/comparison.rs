@@ -7,10 +7,9 @@ use arrow::{
     compute::comparison,
 };
 use num::{NumCast, ToPrimitive};
+use polars_arrow::prelude::FromData;
 use std::ops::Not;
 use std::sync::Arc;
-
-type LargeStringArray = Utf8Array<i64>;
 
 impl<T> ChunkedArray<T>
 where
@@ -32,7 +31,7 @@ where
             })
             .collect::<Vec<_>>();
 
-        ChunkedArray::new_from_chunks("", chunks)
+        ChunkedArray::from_chunks("", chunks)
     }
 }
 
@@ -57,6 +56,8 @@ impl<T> ChunkCompare<&ChunkedArray<T>> for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &ChunkedArray<T>) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -81,7 +82,7 @@ where
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::eq(x, y))
+                lhs.comparison(&rhs, |x, y| comparison::eq_and_validity(x, y))
             }
         }
     }
@@ -106,7 +107,7 @@ where
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                lhs.comparison(&rhs, |x, y| comparison::neq(x, y))
+                lhs.comparison(&rhs, |x, y| comparison::neq_and_validity(x, y))
             }
         }
     }
@@ -223,10 +224,12 @@ fn compare_bools(
         .map(|(l, r)| Arc::new(f(l, r)) as ArrayRef)
         .collect();
 
-    BooleanChunked::new_from_chunks(lhs.name(), chunks)
+    BooleanChunked::from_chunks(lhs.name(), chunks)
 }
 
 impl ChunkCompare<&BooleanChunked> for BooleanChunked {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &BooleanChunked) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -237,27 +240,56 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
                     match value {
-                        true => self.clone(),
-                        false => self.not(),
+                        true => {
+                            if self.null_count() == 0 {
+                                self.clone()
+                            } else {
+                                let chunks = self
+                                    .downcast_iter()
+                                    .map(|arr| {
+                                        if let Some(validity) = arr.validity() {
+                                            Arc::new(BooleanArray::from_data_default(
+                                                arr.values() & validity,
+                                                None,
+                                            ))
+                                                as ArrayRef
+                                        } else {
+                                            Arc::new(arr.clone())
+                                        }
+                                    })
+                                    .collect();
+                                BooleanChunked::from_chunks("", chunks)
+                            }
+                        }
+                        false => {
+                            if self.null_count() == 0 {
+                                self.not()
+                            } else {
+                                let chunks = self
+                                    .downcast_iter()
+                                    .map(|arr| {
+                                        let bitmap = if let Some(validity) = arr.validity() {
+                                            arr.values() ^ validity
+                                        } else {
+                                            arr.values().not()
+                                        };
+                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                            as ArrayRef
+                                    })
+                                    .collect();
+                                BooleanChunked::from_chunks("", chunks)
+                            }
+                        }
                     }
                 } else {
                     BooleanChunked::full("", false, self.len())
                 }
             }
-            (1, _) => {
-                if let Some(value) = self.get(0) {
-                    match value {
-                        true => rhs.clone(),
-                        false => rhs.not(),
-                    }
-                } else {
-                    BooleanChunked::full("", false, rhs.len())
-                }
-            }
+            (1, _) => rhs.equal(self),
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq(lhs, rhs))
+                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::eq_and_validity(lhs, rhs))
             }
         }
     }
@@ -268,27 +300,56 @@ impl ChunkCompare<&BooleanChunked> for BooleanChunked {
             (_, 1) => {
                 if let Some(value) = rhs.get(0) {
                     match value {
-                        true => self.not(),
-                        false => self.clone(),
+                        true => {
+                            if self.null_count() == 0 {
+                                self.not()
+                            } else {
+                                let chunks = self
+                                    .downcast_iter()
+                                    .map(|arr| {
+                                        let bitmap = if let Some(validity) = arr.validity() {
+                                            (arr.values() & validity).not()
+                                        } else {
+                                            arr.values().not()
+                                        };
+                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                            as ArrayRef
+                                    })
+                                    .collect();
+                                BooleanChunked::from_chunks("", chunks)
+                            }
+                        }
+                        false => {
+                            if self.null_count() == 0 {
+                                self.clone()
+                            } else {
+                                let chunks = self
+                                    .downcast_iter()
+                                    .map(|arr| {
+                                        let bitmap = if let Some(validity) = arr.validity() {
+                                            (arr.values() ^ validity).not()
+                                        } else {
+                                            arr.values().clone()
+                                        };
+                                        Arc::new(BooleanArray::from_data_default(bitmap, None))
+                                            as ArrayRef
+                                    })
+                                    .collect();
+                                BooleanChunked::from_chunks("", chunks)
+                            }
+                        }
                     }
                 } else {
                     BooleanChunked::full("", false, self.len())
                 }
             }
-            (1, _) => {
-                if let Some(value) = self.get(0) {
-                    match value {
-                        true => rhs.not(),
-                        false => rhs.clone(),
-                    }
-                } else {
-                    BooleanChunked::full("", false, rhs.len())
-                }
-            }
+            (1, _) => rhs.not_equal(self),
             _ => {
                 // same length
                 let (lhs, rhs) = align_chunks_binary(self, rhs);
-                compare_bools(&lhs, &rhs, |lhs, rhs| comparison::neq(lhs, rhs))
+                compare_bools(&lhs, &rhs, |lhs, rhs| {
+                    comparison::neq_and_validity(lhs, rhs)
+                })
             }
         }
     }
@@ -425,28 +486,20 @@ impl Utf8Chunked {
         f: impl Fn(&Utf8Array<i64>, &Utf8Array<i64>) -> BooleanArray,
     ) -> BooleanChunked {
         let chunks = self
-            .chunks
-            .iter()
-            .zip(&rhs.chunks)
+            .downcast_iter()
+            .zip(rhs.downcast_iter())
             .map(|(left, right)| {
-                let left = left
-                    .as_any()
-                    .downcast_ref::<LargeStringArray>()
-                    .expect("could not downcast one of the chunks");
-                let right = right
-                    .as_any()
-                    .downcast_ref::<LargeStringArray>()
-                    .expect("could not downcast one of the chunks");
                 let arr = f(left, right);
                 Arc::new(arr) as ArrayRef
             })
-            .collect::<Vec<_>>();
-
-        ChunkedArray::new_from_chunks("", chunks)
+            .collect();
+        BooleanChunked::from_chunks("", chunks)
     }
 }
 
 impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
+    type Item = BooleanChunked;
+
     fn eq_missing(&self, rhs: &Utf8Chunked) -> BooleanChunked {
         impl_eq_missing!(self, rhs)
     }
@@ -465,12 +518,9 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::eq(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, ==)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::utf8::eq_and_validity)
         }
     }
 
@@ -488,12 +538,9 @@ impl ChunkCompare<&Utf8Chunked> for Utf8Chunked {
             } else {
                 BooleanChunked::full("", false, self.len())
             }
-        }
-        // same length
-        else if self.chunk_id().zip(rhs.chunk_id()).all(|(l, r)| l == r) {
-            self.comparison(rhs, |l, r| comparison::neq(l, r))
         } else {
-            apply_operand_on_chunkedarray_by_iter!(self, rhs, !=)
+            let (lhs, rhs) = align_chunks_binary(self, rhs);
+            lhs.comparison(&rhs, comparison::utf8::neq_and_validity)
         }
     }
 
@@ -602,7 +649,7 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying chunkedarray type");
         let scalar = PrimitiveScalar::new(T::get_dtype().to_arrow(), Some(rhs));
-        self.apply_kernel_cast(|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
     }
 }
 
@@ -611,16 +658,17 @@ where
     T: PolarsNumericType,
     Rhs: ToPrimitive,
 {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: Rhs) -> BooleanChunked {
         self.equal(rhs)
     }
 
     fn equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
 
     fn not_equal(&self, rhs: Rhs) -> BooleanChunked {
-        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        self.primitive_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 
     fn gt(&self, rhs: Rhs) -> BooleanChunked {
@@ -647,20 +695,21 @@ impl Utf8Chunked {
         f: impl Fn(&Utf8Array<i64>, &dyn Scalar) -> BooleanArray,
     ) -> BooleanChunked {
         let scalar = Utf8Scalar::<i64>::new(Some(rhs));
-        self.apply_kernel_cast(|arr| Arc::new(f(arr, &scalar)))
+        self.apply_kernel_cast(&|arr| Arc::new(f(arr, &scalar)))
     }
 }
 
 impl ChunkCompare<&str> for Utf8Chunked {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: &str) -> BooleanChunked {
         self.equal(rhs)
     }
 
     fn equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar(l, rhs))
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::eq_scalar_and_validity(l, rhs))
     }
     fn not_equal(&self, rhs: &str) -> BooleanChunked {
-        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar(l, rhs))
+        self.utf8_compare_scalar(rhs, |l, rhs| comparison::neq_scalar_and_validity(l, rhs))
     }
 
     fn gt(&self, rhs: &str) -> BooleanChunked {
@@ -713,6 +762,7 @@ macro_rules! impl_cmp_list {
 }
 
 impl ChunkCompare<&ListChunked> for ListChunked {
+    type Item = BooleanChunked;
     fn eq_missing(&self, rhs: &ListChunked) -> BooleanChunked {
         match (self.has_validity(), rhs.has_validity()) {
             (false, false) => self
@@ -780,7 +830,7 @@ impl Not for &BooleanChunked {
                 Arc::new(arr) as ArrayRef
             })
             .collect::<Vec<_>>();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }
 
@@ -806,6 +856,7 @@ impl BooleanChunked {
 
 // private
 pub(crate) trait ChunkEqualElement {
+    /// Only meant for physical types.
     /// Check if element in self is equal to element in other, assumes same dtypes
     ///
     /// # Safety
@@ -848,13 +899,51 @@ impl ChunkEqualElement for Utf8Chunked {
 }
 
 impl ChunkEqualElement for ListChunked {}
-#[cfg(feature = "dtype-categorical")]
-impl ChunkEqualElement for CategoricalChunked {
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let ca_other = other.as_ref().as_ref();
-        debug_assert!(self.dtype() == other.dtype());
-        let ca_other = &*(ca_other as *const CategoricalChunked);
-        self.get(idx_self) == ca_other.get(idx_other)
+
+#[cfg(feature = "dtype-struct")]
+impl ChunkCompare<&StructChunked> for StructChunked {
+    type Item = BooleanChunked;
+    fn eq_missing(&self, rhs: &StructChunked) -> BooleanChunked {
+        self.equal(rhs)
+    }
+
+    fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
+        if self.len() != rhs.len() {
+            BooleanChunked::full("", false, self.len())
+        } else {
+            let equal_count: usize = self
+                .fields()
+                .iter()
+                .zip(rhs.fields().iter())
+                .map(|(l, r)| l.series_equal(r) as usize)
+                .sum();
+            if equal_count == self.fields().len() {
+                BooleanChunked::full("", true, self.len())
+            } else {
+                BooleanChunked::full("", false, self.len())
+            }
+        }
+    }
+
+    fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
+        self.equal(rhs).not()
+    }
+
+    // following are not implemented because gt, lt comparison of series don't make sense
+    fn gt(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn gt_eq(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
+    }
+
+    fn lt_eq(&self, _rhs: &StructChunked) -> BooleanChunked {
+        unimplemented!()
     }
 }
 
@@ -1074,8 +1163,8 @@ mod test {
     #[test]
     fn test_kleene() {
         let a = BooleanChunked::new("", &[Some(true), Some(false), None]);
-        let trues = BooleanChunked::new_from_slice("", &[true, true, true]);
-        let falses = BooleanChunked::new_from_slice("", &[false, false, false]);
+        let trues = BooleanChunked::from_slice("", &[true, true, true]);
+        let falses = BooleanChunked::from_slice("", &[false, false, false]);
 
         let c = &a | &trues;
         assert_eq!(Vec::from(&c), &[Some(true), Some(true), Some(true)]);
@@ -1086,9 +1175,9 @@ mod test {
 
     #[test]
     fn test_broadcasting_bools() {
-        let a = BooleanChunked::new_from_slice("", &[true, false, true]);
-        let true_ = BooleanChunked::new_from_slice("", &[true]);
-        let false_ = BooleanChunked::new_from_slice("", &[false]);
+        let a = BooleanChunked::from_slice("", &[true, false, true]);
+        let true_ = BooleanChunked::from_slice("", &[true]);
+        let false_ = BooleanChunked::from_slice("", &[false]);
 
         let out = a.equal(&true_);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
@@ -1143,13 +1232,34 @@ mod test {
         assert_eq!(Vec::from(&out), &[Some(false), Some(false), Some(false)]);
         let out = false_.lt_eq(&a);
         assert_eq!(Vec::from(&out), &[Some(true), Some(true), Some(true)]);
+
+        let a = BooleanChunked::from_slice_options("", &[Some(true), Some(false), None]);
+        let all_true = BooleanChunked::from_slice("", &[true, true, true]);
+        let all_false = BooleanChunked::from_slice("", &[false, false, false]);
+        let out = a.equal(&true_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.not_equal(&true_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+
+        let out = a.equal(&all_true);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);
+        let out = a.not_equal(&all_true);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(true)]);
+        let out = a.equal(&false_);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = a.not_equal(&false_);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
+        let out = a.equal(&all_false);
+        assert_eq!(Vec::from(&out), &[Some(false), Some(true), Some(false)]);
+        let out = a.not_equal(&all_false);
+        assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(true)]);
     }
 
     #[test]
     fn test_broadcasting_numeric() {
-        let a = Int32Chunked::new_from_slice("", &[1, 2, 3]);
-        let one = Int32Chunked::new_from_slice("", &[1]);
-        let three = Int32Chunked::new_from_slice("", &[3]);
+        let a = Int32Chunked::from_slice("", &[1, 2, 3]);
+        let one = Int32Chunked::from_slice("", &[1]);
+        let three = Int32Chunked::from_slice("", &[3]);
 
         let out = a.equal(&one);
         assert_eq!(Vec::from(&out), &[Some(true), Some(false), Some(false)]);

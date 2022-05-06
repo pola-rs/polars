@@ -1,4 +1,4 @@
-name: Create macOs universal2 python release
+name: Create macOs universal2/aarch64-apple-darwin python release
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-01-01
+          toolchain: nightly-2022-04-01
           override: true
           components: rustfmt, clippy
       - name: Setup universal2 targets for Rust
@@ -35,7 +35,7 @@ jobs:
           rm py-polars/README.md
           cp README.md py-polars/README.md
           cd py-polars
-          rustup override set nightly-2022-01-01
+          rustup override set nightly-2022-04-01
       - name: maturin publish
         uses: messense/maturin-action@v1
         env:
@@ -43,4 +43,9 @@ jobs:
         with:
           maturin-version: 0.12.1
           command: publish
-          args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
+          args: -m py-polars/Cargo.toml --target aarch64-apple-darwin --no-sdist -o wheels -i python -u ritchie46
+           # uncomment to build a universal2 wheel
+           # we don't run it because it is twice as big and not needed because we build
+           # for both architectures separately
+#          args: -m py-polars/Cargo.toml --no-sdist --universal2 -o wheels -i python -u ritchie46
+

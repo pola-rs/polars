@@ -2,7 +2,6 @@ use super::RepeatBy;
 use crate::prelude::*;
 use arrow::array::ListArray;
 use polars_arrow::array::ListFromIter;
-use std::ops::Deref;
 
 type LargeListArray = ListArray<i64>;
 
@@ -10,7 +9,7 @@ impl<T> RepeatBy for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -18,7 +17,7 @@ where
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::new_from_chunks(
+        ListChunked::from_chunks(
             self.name(),
             vec![Arc::new(unsafe {
                 LargeListArray::from_iter_primitive_trusted_len::<T::Native, _, _>(
@@ -30,7 +29,7 @@ where
     }
 }
 impl RepeatBy for BooleanChunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -38,7 +37,7 @@ impl RepeatBy for BooleanChunked {
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::new_from_chunks(
+        ListChunked::from_chunks(
             self.name(),
             vec![Arc::new(unsafe {
                 LargeListArray::from_iter_bool_trusted_len(iter)
@@ -47,7 +46,7 @@ impl RepeatBy for BooleanChunked {
     }
 }
 impl RepeatBy for Utf8Chunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         let iter = self
             .into_iter()
             .zip(by.into_iter())
@@ -55,20 +54,11 @@ impl RepeatBy for Utf8Chunked {
 
         // Safety:
         // Length of iter is trusted
-        ListChunked::new_from_chunks(
+        ListChunked::from_chunks(
             self.name(),
             vec![Arc::new(unsafe {
                 LargeListArray::from_iter_utf8_trusted_len(iter, self.len())
             })],
         )
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl RepeatBy for CategoricalChunked {
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
-        let mut ca = self.deref().repeat_by(by);
-        ca.categorical_map = self.categorical_map.clone();
-        ca
     }
 }

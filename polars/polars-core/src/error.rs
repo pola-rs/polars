@@ -1,3 +1,4 @@
+use anyhow::Error;
 use std::borrow::Cow;
 use thiserror::Error as ThisError;
 
@@ -6,9 +7,7 @@ type ErrString = Cow<'static, str>;
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
-    PolarsArrowError(#[from] polars_arrow::error::PolarsError),
-    #[error(transparent)]
-    ArrowError(#[from] arrow::error::ArrowError),
+    ArrowError(Box<ArrowError>),
     #[error("Invalid operation {0}")]
     InvalidOperation(ErrString),
     #[error("Data types don't match: {0}")]
@@ -19,34 +18,37 @@ pub enum PolarsError {
     ShapeMisMatch(ErrString),
     #[error("{0}")]
     ComputeError(ErrString),
-    #[error("Out of bounds: {0}")]
-    OutOfBounds(ErrString),
-    #[error("Not contiguous or null values")]
-    NoSlice,
     #[error("Such empty...: {0}")]
     NoData(ErrString),
-    #[error("Invalid value: {0}")]
-    ValueError(ErrString),
-    #[error("Memory should be 64 byte aligned")]
-    MemoryNotAligned,
-    #[cfg(feature = "random")]
-    #[error("{0}")]
-    RandError(String),
-    #[error("This operation requires data without Null values")]
-    HasNullValues(ErrString),
-    #[error("{0}")]
-    UnknownSchema(ErrString),
-    #[error(transparent)]
-    Various(#[from] anyhow::Error),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    #[cfg(any(feature = "strings", feature = "temporal"))]
-    Regex(#[from] regex::Error),
     #[error("DuplicateError: {0}")]
     Duplicate(ErrString),
-    #[error("implementation error; this should not have happened.")]
-    ImplementationError,
+}
+
+impl From<ArrowError> for PolarsError {
+    fn from(err: ArrowError) -> Self {
+        Self::ArrowError(Box::new(err))
+    }
+}
+
+impl From<anyhow::Error> for PolarsError {
+    fn from(err: Error) -> Self {
+        PolarsError::ComputeError(format!("{:?}", err).into())
+    }
+}
+
+impl From<polars_arrow::error::PolarsError> for PolarsError {
+    fn from(err: polars_arrow::error::PolarsError) -> Self {
+        PolarsError::ComputeError(format!("{:?}", err).into())
+    }
+}
+
+#[cfg(any(feature = "strings", feature = "temporal"))]
+impl From<regex::Error> for PolarsError {
+    fn from(err: regex::Error) -> Self {
+        PolarsError::ComputeError(format!("regex error: {:?}", err).into())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;

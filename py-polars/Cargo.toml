@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.12.20"
+version = "0.13.29"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -15,29 +15,33 @@ description = "Blazingly fast DataFrame library"
 [workspace]
 # prevents package from thinking it's in the workspace
 
+[target.'cfg(not(target_os="linux"))'.dependencies]
+mimalloc = { version = "*", default-features = false }
+
+[target.'cfg(target_os="linux")'.dependencies]
+tikv-jemallocator = { version = "0.4", features = ["disable_initial_exec_tls"] }
+
 [dependencies]
 ahash = "0.7"
 bincode = "1.3"
 libc = "0.2"
-mimalloc = { version = "*", default-features = false }
 ndarray = "0.15"
-numpy = "0.15"
+numpy = "0.16"
+once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
-pyo3 = { version = "0.15", features = ["abi3-py36", "extension-module", "multiple-pymethods"] }
+pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
 
-[patch.crates-io]
-pyo3 = { git = "https://github.com/ghuls/pyo3", branch = "polars_pypy_hasattr" }
-
 # features are only there to enable building a slim binary for the benchmark in CI
 [features]
+avro = ["polars/avro"]
 parquet = ["polars/parquet"]
 ipc = ["polars/ipc"]
 is_in = ["polars/is_in"]
 json = ["polars/serde", "serde_json"]
 
-default = ["json", "parquet", "ipc", "is_in", "json", "polars/repeat_by"]
+default = ["json", "parquet", "ipc", "avro", "is_in", "json", "polars/repeat_by"]
 
 [dependencies.polars]
 path = "../polars"
@@ -52,7 +56,7 @@ features = [
   "random",
   "object",
   "csv-file",
-  "pretty_fmt",
+  "fmt",
   "performant",
   "dtype-full",
   "rows",
@@ -90,6 +94,13 @@ features = [
   "string_encoding",
   "product",
   "ndarray",
+  "unique_counts",
+  "log",
+  "serde-lazy",
+  "partition_by",
+  "semi_anti_join",
+  "list_eval",
+  "to_dummies",
 ]
 
 # [patch.crates-io]
@@ -100,9 +111,10 @@ name = "polars"
 crate-type = ["cdylib"]
 
 [profile.release]
+strip = true
 codegen-units = 1
+lto = "fat"
 
 # This is ignored here; would be set in .cargo/config.toml.
 # Should not be used when packaging
 # target-cpu = "native"
-lto = "fat"

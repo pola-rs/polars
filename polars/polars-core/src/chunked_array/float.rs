@@ -9,16 +9,16 @@ where
     T::Native: Float,
 {
     pub fn is_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_nan::<T::Native>)
+        self.apply_kernel_cast(&is_nan::<T::Native>)
     }
     pub fn is_not_nan(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_not_nan::<T::Native>)
+        self.apply_kernel_cast(&is_not_nan::<T::Native>)
     }
     pub fn is_finite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_finite)
+        self.apply_kernel_cast(&is_finite)
     }
     pub fn is_infinite(&self) -> BooleanChunked {
-        self.apply_kernel_cast(is_infinite)
+        self.apply_kernel_cast(&is_infinite)
     }
 
     #[must_use]
@@ -28,6 +28,6 @@ where
             .downcast_iter()
             .map(|arr| Arc::new(set_at_nulls(arr, T::Native::nan())) as ArrayRef)
             .collect();
-        ChunkedArray::new_from_chunks(self.name(), chunks)
+        ChunkedArray::from_chunks(self.name(), chunks)
     }
 }

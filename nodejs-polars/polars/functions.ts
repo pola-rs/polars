@@ -1,7 +1,7 @@
 /* eslint-disable no-redeclare */
 import {jsTypeToPolarsType} from "./internals/construction";
-import {Series, seriesWrapper} from "./series/series";
-import {DataFrame, dfWrapper} from "./dataframe";
+import {Series, _Series} from "./series/series";
+import {DataFrame, _DataFrame} from "./dataframe";
 import pli from "./internals/polars_internal";
 import {isDataFrameArray, isSeriesArray} from "./utils";
 
@@ -22,11 +22,11 @@ type ConcatOptions = {rechunk?: boolean, how?: "vertical" | "horizontal"}
  *
  * ```
  */
-export function repeat<V>(value: V, n: number, name= ""): Series<V>{
+export function repeat<V>(value: V, n: number, name= ""): Series {
   const dtype = jsTypeToPolarsType(value);
-  const s = pli.repeat({name, value, dtype, n});
+  const s = pli.JsSeries.repeat(name, value, n, dtype);
 
-  return seriesWrapper(s);
+  return _Series(s) as any;
 }
 
 /**
@@ -53,7 +53,7 @@ export function repeat<V>(value: V, n: number, name= ""): Series<V>{
  * └─────┴─────┘
  */
 export function concat(items: Array<DataFrame>, options?: ConcatOptions): DataFrame;
-export function concat<T>(items: Array<Series<T>>, options?: {rechunk: boolean}): Series<T>;
+export function concat<T>(items: Array<Series>, options?: {rechunk: boolean}): Series;
 export function concat<T>(items, options: ConcatOptions =  {rechunk: true, how: "vertical"}) {
   const {rechunk, how} = options;
 
@@ -67,7 +67,7 @@ export function concat<T>(items, options: ConcatOptions =  {rechunk: true, how: 
       df =  items.reduce((acc, curr) => acc.vstack(curr));
 
     } else {
-      df = dfWrapper(pli.horizontalConcatDF({items: items.map(i => i._df)}));
+      df = _DataFrame(pli.horizontalConcat(items.map((i: any) => i.inner())));
     }
 
     return rechunk ? df.rechunk() : df;

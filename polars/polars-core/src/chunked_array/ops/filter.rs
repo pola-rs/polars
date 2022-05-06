@@ -5,8 +5,6 @@ use crate::utils::align_chunks_binary;
 #[cfg(feature = "object")]
 use arrow::array::Array;
 use arrow::compute::filter::filter as filter_fn;
-#[cfg(feature = "dtype-categorical")]
-use std::ops::Deref;
 
 macro_rules! check_filter_len {
     ($self:expr, $filter:expr) => {{
@@ -36,7 +34,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);
@@ -47,7 +45,7 @@ where
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -57,7 +55,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ChunkedArray::new_from_slice(self.name(), &[])),
+                _ => Ok(ChunkedArray::from_slice(self.name(), &[])),
             };
         }
         check_filter_len!(self, filter);
@@ -68,7 +66,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -89,18 +87,7 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::new_from_chunks(self.name(), chunks))
-    }
-}
-
-#[cfg(feature = "dtype-categorical")]
-impl ChunkFilter<CategoricalType> for CategoricalChunked {
-    fn filter(&self, filter: &BooleanChunked) -> Result<ChunkedArray<CategoricalType>>
-    where
-        Self: Sized,
-    {
-        let ca: CategoricalChunked = self.deref().filter(filter)?.into();
-        Ok(ca.set_state(self))
+        Ok(ChunkedArray::from_chunks(self.name(), chunks))
     }
 }
 
@@ -141,7 +128,7 @@ where
         if filter.len() == 1 {
             return match filter.get(0) {
                 Some(true) => Ok(self.clone()),
-                _ => Ok(ObjectChunked::new_from_chunks(self.name(), vec![])),
+                _ => Ok(ObjectChunked::from_chunks(self.name(), vec![])),
             };
         }
         if self.is_empty() {

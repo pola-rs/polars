@@ -1,6 +1,5 @@
 use crate::chunked_array::object::compare_inner::{IntoPartialEqInner, PartialEqInner};
 use crate::chunked_array::object::PolarsObjectSafe;
-use crate::chunked_array::ChunkIdIter;
 use crate::fmt::FmtList;
 use crate::frame::groupby::{GroupsProxy, IntoGroupsProxy};
 use crate::prelude::*;
@@ -11,7 +10,6 @@ use arrow::array::ArrayRef;
 use std::any::Any;
 use std::borrow::Cow;
 
-#[cfg(feature = "object")]
 impl<T> IntoSeries for ObjectChunked<T>
 where
     T: PolarsObject,
@@ -21,12 +19,8 @@ where
     }
 }
 
-#[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeriesNumeric for SeriesWrap<ObjectChunked<T>> {}
 
-#[cfg(feature = "object")]
-#[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> PrivateSeries for SeriesWrap<ObjectChunked<T>>
 where
     T: PolarsObject,
@@ -44,7 +38,7 @@ where
         Cow::Borrowed(self.0.ref_field())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -64,7 +58,6 @@ where
         IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
     }
 }
-#[cfg(feature = "object")]
 #[cfg_attr(docsrs, doc(cfg(feature = "object")))]
 impl<T> SeriesTrait for SeriesWrap<ObjectChunked<T>>
 where
@@ -114,8 +107,26 @@ where
         }
     }
 
+    fn extend(&mut self, _other: &Series) -> Result<()> {
+        panic!("extend not implemented for Object dtypes")
+    }
+
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         ChunkFilter::filter(&self.0, filter).map(|ca| ca.into_series())
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        self.0.take_chunked_unchecked(by).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        self.0.take_opt_chunked_unchecked(by).into_series()
+    }
+
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
+        Ok(ChunkTake::take(&self.0, indices.into())?.into_series())
     }
 
     fn take_iter(&self, iter: &mut dyn TakeIterator) -> Result<Series> {
@@ -126,7 +137,7 @@ where
         ChunkTake::take_unchecked(&self.0, iter.into()).into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         let idx = if idx.chunks.len() > 1 {
             Cow::Owned(idx.rechunk())
         } else {
@@ -166,10 +177,6 @@ where
         ))
     }
 
-    fn value_counts(&self) -> Result<DataFrame> {
-        ChunkUnique::value_counts(&self.0)
-    }
-
     fn get(&self, index: usize) -> AnyValue {
         ObjectChunked::get_any_value(&self.0, index)
     }
@@ -189,7 +196,7 @@ where
         ChunkUnique::n_unique(&self.0)
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
     }
 
@@ -244,9 +251,6 @@ where
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
     fn min_as_series(&self) -> Series {
-        ObjectChunked::<T>::full_null(self.name(), 1).into_series()
-    }
-    fn mean_as_series(&self) -> Series {
         ObjectChunked::<T>::full_null(self.name(), 1).into_series()
     }
     fn median_as_series(&self) -> Series {

@@ -1,50 +1,30 @@
-use crate::chunked_array::iterator::{
-    ListIterManyChunk, ListIterManyChunkNullCheck, ListIterSingleChunk,
-    ListIterSingleChunkNullCheck, SomeIterator,
-};
 use crate::prelude::*;
-use arrow::array::Array;
-use rayon::iter::plumbing::*;
-use rayon::iter::plumbing::{Consumer, ProducerCallback};
 use rayon::prelude::*;
 
-// Implement the parallel iterators for Seriesº. It also implement the trait `IntoParallelIterator`
-// for `&'a ListChunked` and `NoNull<&'a ListChunked>`, which use static dispatcher to use
-// the best implementation of parallel iterators depending on the number of chunks and the
-// existence of null values.
-impl_all_parallel_iterators!(
-    // Chunked array.
-    &'a ListChunked,
+unsafe fn idx_to_array(idx: usize, arr: &ListArray<i64>, dtype: &DataType) -> Option<Series> {
+    if arr.is_valid(idx) {
+        Some(Arc::from(arr.value_unchecked(idx)))
+            .map(|arr: ArrayRef| Series::from_chunks_and_dtype_unchecked("", vec![arr], dtype))
+    } else {
+        None
+    }
+}
 
-    // Sequential iterators.
-    ListIterSingleChunk<'a>,
-    ListIterSingleChunkNullCheck<'a>,
-    ListIterManyChunk<'a>,
-    ListIterManyChunkNullCheck<'a>,
-
-    // Parallel iterators.
-    ListParIterSingleChunkReturnOption,
-    ListParIterSingleChunkNullCheckReturnOption,
-    ListParIterManyChunkReturnOption,
-    ListParIterManyChunkNullCheckReturnOption,
-    ListParIterSingleChunkReturnUnwrapped,
-    ListParIterManyChunkReturnUnwrapped,
-
-    // Producers.
-    ListProducerSingleChunkReturnOption,
-    ListProducerSingleChunkNullCheckReturnOption,
-    ListProducerManyChunkReturnOption,
-    ListProducerManyChunkNullCheckReturnOption,
-    ListProducerSingleChunkReturnUnwrapped,
-    ListProducerManyChunkReturnUnwrapped,
-
-    // Dispatchers.
-    ListParIterDispatcher,
-    ListNoNullParIterDispatcher,
-
-    // Iter item.
-    Series,
-
-    // Lifetime.
-    lifetime = 'a
-);
+impl ListChunked {
+    // Get a parallel iterator over the [`Series`] in this [`ListChunked`].
+    pub fn par_iter(&self) -> impl ParallelIterator<Item = Option<Series>> + '_ {
+        self.chunks
+            .par_iter()
+            .map(move |arr| {
+                let dtype = self.inner_dtype();
+                // Safety:
+                // guarded by the type system
+                let arr = &**arr;
+                let arr = unsafe { &*(arr as *const dyn Array as *const ListArray<i64>) };
+                (0..arr.len())
+                    .into_par_iter()
+                    .map(move |idx| unsafe { idx_to_array(idx, arr, &dtype) })
+            })
+            .flatten()
+    }
+}

@@ -22,7 +22,7 @@ impl SortExpr {
 }
 
 /// Map argsort result back to the indices on the `GroupIdx`
-pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &UInt32Chunked, idx: &[u32]) -> Vec<u32> {
+pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &IdxCa, idx: &[IdxSize]) -> Vec<IdxSize> {
     sorted_idx
         .cont_slice()
         .unwrap()
@@ -35,9 +35,9 @@ pub(crate) fn map_sorted_indices_to_group_idx(sorted_idx: &UInt32Chunked, idx: &
 }
 
 pub(crate) fn map_sorted_indices_to_group_slice(
-    sorted_idx: &UInt32Chunked,
-    first: u32,
-) -> Vec<u32> {
+    sorted_idx: &IdxCa,
+    first: IdxSize,
+) -> Vec<IdxSize> {
     sorted_idx
         .cont_slice()
         .unwrap()
@@ -70,16 +70,16 @@ impl PhysicalExpr for SortExpr {
             GroupsProxy::Idx(groups) => {
                 groups
                     .iter()
-                    .map(|(_first, idx)| {
+                    .map(|(first, idx)| {
                         // Safety:
                         // Group tuples are always in bounds
                         let group = unsafe {
                             series.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize))
                         };
 
-                        let sorted_idx = group.argsort(self.options.descending);
+                        let sorted_idx = group.argsort(self.options);
                         let new_idx = map_sorted_indices_to_group_idx(&sorted_idx, idx);
-                        (new_idx[0], new_idx)
+                        (new_idx.get(0).copied().unwrap_or(first), new_idx)
                     })
                     .collect()
             }
@@ -87,9 +87,9 @@ impl PhysicalExpr for SortExpr {
                 .iter()
                 .map(|&[first, len]| {
                     let group = series.slice(first as i64, len as usize);
-                    let sorted_idx = group.argsort(self.options.descending);
+                    let sorted_idx = group.argsort(self.options);
                     let new_idx = map_sorted_indices_to_group_slice(&sorted_idx, first);
-                    (new_idx[0], new_idx)
+                    (new_idx.get(0).copied().unwrap_or(first), new_idx)
                 })
                 .collect(),
         };
@@ -102,27 +102,5 @@ impl PhysicalExpr for SortExpr {
 
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.physical_expr.to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-impl PhysicalAggregation for SortExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let agg_s = ac.aggregated();
-        let agg_s = agg_s
-            .list()
-            .unwrap()
-            .apply_amortized(|s| s.as_ref().sort_with(self.options))
-            .into_series();
-        Ok(Some(agg_s))
     }
 }

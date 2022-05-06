@@ -2,9 +2,8 @@ use super::private;
 use super::IntoSeries;
 use super::SeriesTrait;
 use super::SeriesWrap;
-use crate::chunked_array::{
-    comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr, ChunkIdIter,
-};
+use super::*;
+use crate::chunked_array::{comparison::*, ops::explode::ExplodeByOffsets, AsSinglePtr};
 use crate::fmt::FmtList;
 use crate::frame::{groupby::*, hash_join::*};
 use crate::prelude::*;
@@ -58,12 +57,6 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    #[cfg(feature = "asof_join")]
-    fn join_asof(&self, other: &Series) -> Result<Vec<Option<u32>>> {
-        let other = other.to_physical_repr();
-        self.0.deref().join_asof(&other)
-    }
-
     fn set_sorted(&mut self, reverse: bool) {
         self.0.deref_mut().set_sorted(reverse)
     }
@@ -88,44 +81,26 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_mean(&self, _groups: &GroupsProxy) -> Option<Series> {
-        // does not make sense on logical
-        None
-    }
-
-    fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_min(groups)
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_max(groups)
-            .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-        // does not make sense on logical
-        None
-    }
-
-    fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-        // does not make sense on logical
-        None
-    }
-
-    fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-        // does not make sense on logical
-        None
-    }
-
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0.agg_list(groups).map(|s| {
-            s.cast(&DataType::List(Box::new(self.dtype().clone())))
-                .unwrap()
-        })
+        self.0
+            .agg_list(groups)
+            .cast(&DataType::List(Box::new(self.dtype().clone())))
+            .unwrap()
     }
 
     fn agg_quantile(
@@ -133,34 +108,24 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         groups: &GroupsProxy,
         quantile: f64,
         interpol: QuantileInterpolOptions,
-    ) -> Option<Series> {
+    ) -> Series {
         self.0
             .agg_quantile(groups, quantile, interpol)
-            .map(|s| s.into_duration(self.0.time_unit()).into_series())
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_median(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_median(groups)
-            .map(|s| s.into_duration(self.0.time_unit()).into_series())
+            .into_duration(self.0.time_unit())
+            .into_series()
     }
 
-    fn hash_join_inner(&self, other: &Series) -> Vec<(u32, u32)> {
-        let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_inner(other.as_ref().as_ref())
-    }
-    fn hash_join_left(&self, other: &Series) -> Vec<(u32, Option<u32>)> {
-        let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_left(other.as_ref().as_ref())
-    }
-    fn hash_join_outer(&self, other: &Series) -> Vec<(Option<u32>, Option<u32>)> {
-        let other = other.to_physical_repr().into_owned();
-        self.0.hash_join_outer(other.as_ref().as_ref())
-    }
     fn zip_outer_join_column(
         &self,
         right_column: &Series,
-        opt_join_tuples: &[(Option<u32>, Option<u32>)],
+        opt_join_tuples: &[(Option<IdxSize>, Option<IdxSize>)],
     ) -> Series {
         let right_column = right_column.to_physical_repr().into_owned();
         self.0
@@ -230,12 +195,22 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.group_tuples(multithreaded, sorted)
     }
     #[cfg(feature = "sort_multiple")]
-    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<UInt32Chunked> {
+    fn argsort_multiple(&self, by: &[Series], reverse: &[bool]) -> Result<IdxCa> {
         self.0.deref().argsort_multiple(by, reverse)
     }
 }
 
 impl SeriesTrait for SeriesWrap<DurationChunked> {
+    fn is_sorted(&self) -> IsSorted {
+        if self.0.is_sorted() {
+            IsSorted::Ascending
+        } else if self.0.is_sorted_reverse() {
+            IsSorted::Descending
+        } else {
+            IsSorted::Not
+        }
+    }
+
     #[cfg(feature = "interpolate")]
     fn interpolate(&self) -> Series {
         self.0
@@ -298,13 +273,37 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         }
     }
 
+    fn extend(&mut self, other: &Series) -> Result<()> {
+        if self.0.dtype() == other.dtype() {
+            let other = other.to_physical_repr();
+            self.0.extend(other.as_ref().as_ref().as_ref());
+            Ok(())
+        } else {
+            Err(PolarsError::SchemaMisMatch(
+                "cannot extend Series; data types don't match".into(),
+            ))
+        }
+    }
+
     fn filter(&self, filter: &BooleanChunked) -> Result<Series> {
         self.0
             .filter(filter)
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
 
-    fn take(&self, indices: &UInt32Chunked) -> Result<Series> {
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+        let ca = self.0.deref().take_chunked_unchecked(by);
+        ca.into_duration(self.0.time_unit()).into_series()
+    }
+
+    #[cfg(feature = "chunked_ids")]
+    unsafe fn _take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Series {
+        let ca = self.0.deref().take_opt_chunked_unchecked(by);
+        ca.into_duration(self.0.time_unit()).into_series()
+    }
+
+    fn take(&self, indices: &IdxCa) -> Result<Series> {
         ChunkTake::take(self.0.deref(), indices.into())
             .map(|ca| ca.into_duration(self.0.time_unit()).into_series())
     }
@@ -327,7 +326,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    unsafe fn take_unchecked(&self, idx: &UInt32Chunked) -> Result<Series> {
+    unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
         Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
             .into_duration(self.0.time_unit())
             .into_series())
@@ -364,29 +363,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     fn cast(&self, data_type: &DataType) -> Result<Series> {
-        use DataType::*;
-        let ca = match (self.dtype(), data_type) {
-            (Duration(TimeUnit::Milliseconds), Duration(TimeUnit::Nanoseconds)) => {
-                return Ok((self.0.as_ref() * 1_000_000i64)
-                    .into_duration(TimeUnit::Nanoseconds)
-                    .into_series())
-            }
-            (Duration(TimeUnit::Nanoseconds), Duration(TimeUnit::Milliseconds)) => {
-                return Ok((self.0.as_ref() / 1_000_000i64)
-                    .into_duration(TimeUnit::Milliseconds)
-                    .into_series())
-            }
-            _ => Cow::Borrowed(self.0.deref()),
-        };
-        ca.cast(data_type)
-    }
-
-    fn to_dummies(&self) -> Result<DataFrame> {
-        self.0.to_dummies()
-    }
-
-    fn value_counts(&self) -> Result<DataFrame> {
-        self.0.value_counts()
+        self.0.cast(data_type)
     }
 
     fn get(&self, index: usize) -> AnyValue {
@@ -394,6 +371,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     }
 
     #[inline]
+    #[cfg(feature = "private")]
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         self.0
             .get_any_value_unchecked(index)
@@ -407,8 +385,8 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn argsort(&self, reverse: bool) -> UInt32Chunked {
-        self.0.argsort(reverse)
+    fn argsort(&self, options: SortOptions) -> IdxCa {
+        self.0.argsort(options)
     }
 
     fn null_count(&self) -> usize {
@@ -429,7 +407,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.n_unique()
     }
 
-    fn arg_unique(&self) -> Result<UInt32Chunked> {
+    fn arg_unique(&self) -> Result<IdxCa> {
         self.0.arg_unique()
     }
 
@@ -492,11 +470,6 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn min_as_series(&self) -> Series {
         self.0.min_as_series().into_duration(self.0.time_unit())
     }
-    fn mean_as_series(&self) -> Series {
-        Int32Chunked::full_null(self.name(), 1)
-            .cast(self.dtype())
-            .unwrap()
-    }
     fn median_as_series(&self) -> Series {
         Int32Chunked::full_null(self.name(), 1)
             .cast(self.dtype())
@@ -542,7 +515,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.is_in(other)
     }
     #[cfg(feature = "repeat_by")]
-    fn repeat_by(&self, by: &UInt32Chunked) -> ListChunked {
+    fn repeat_by(&self, by: &IdxCa) -> ListChunked {
         self.0
             .repeat_by(by)
             .cast(&DataType::List(Box::new(DataType::Duration(

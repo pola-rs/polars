@@ -1,3 +1,4 @@
+use parking_lot::Mutex;
 #[cfg(any(feature = "csv-file", feature = "parquet"))]
 use std::path::PathBuf;
 use std::{cell::Cell, fmt::Debug, sync::Arc};
@@ -23,6 +24,10 @@ mod projection;
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
+use polars_core::frame::explode::MeltArgs;
+
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
@@ -37,6 +42,11 @@ pub enum Context {
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub enum LogicalPlan {
     /// Filter on a boolean mask
     Selection {
@@ -71,7 +81,7 @@ pub enum LogicalPlan {
     IpcScan {
         path: PathBuf,
         schema: SchemaRef,
-        options: LpScanOptions,
+        options: IpcScanOptions,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,
     },
@@ -102,6 +112,7 @@ pub enum LogicalPlan {
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: GroupbyOptions,
@@ -130,27 +141,28 @@ pub enum LogicalPlan {
     Sort {
         input: Box<LogicalPlan>,
         by_column: Vec<Expr>,
-        reverse: Vec<bool>,
+        args: SortArguments,
     },
     /// An explode operation
     Explode {
         input: Box<LogicalPlan>,
         columns: Vec<String>,
+        schema: SchemaRef,
     },
     /// Slice the table
     Slice {
         input: Box<LogicalPlan>,
         offset: i64,
-        len: u32,
+        len: IdxSize,
     },
     /// A Melt operation
     Melt {
         input: Box<LogicalPlan>,
-        id_vars: Arc<Vec<String>>,
-        value_vars: Arc<Vec<String>>,
+        args: Arc<MeltArgs>,
         schema: SchemaRef,
     },
     /// A User Defined Function
+    #[cfg_attr(feature = "serde", serde(skip))]
     Udf {
         input: Box<LogicalPlan>,
         function: Arc<dyn DataFrameUdf>,
@@ -160,6 +172,12 @@ pub enum LogicalPlan {
     Union {
         inputs: Vec<LogicalPlan>,
         options: UnionOptions,
+    },
+    /// Catches errors and throws them later
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Error {
+        input: Box<LogicalPlan>,
+        err: Arc<Mutex<Option<PolarsError>>>,
     },
 }
 
@@ -181,7 +199,7 @@ impl LogicalPlan {
     pub(crate) fn into_alp(self) -> (Node, Arena<ALogicalPlan>, Arena<AExpr>) {
         let mut lp_arena = Arena::with_capacity(16);
         let mut expr_arena = Arena::with_capacity(16);
-        let root = to_alp(self, &mut expr_arena, &mut lp_arena);
+        let root = to_alp(self, &mut expr_arena, &mut lp_arena).unwrap();
         (root, lp_arena, expr_arena)
     }
 }
@@ -193,7 +211,7 @@ impl LogicalPlan {
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
-            Explode { input, .. } => input.schema(),
+            Explode { schema, .. } => schema,
             #[cfg(feature = "parquet")]
             ParquetScan { schema, .. } => schema,
             #[cfg(feature = "ipc")]
@@ -214,6 +232,7 @@ impl LogicalPlan {
                 Some(schema) => schema,
                 None => input.schema(),
             },
+            Error { input, .. } => input.schema(),
         }
     }
     pub fn describe(&self) -> String {
@@ -243,7 +262,7 @@ mod test {
         let lf = df
             .lazy()
             .select(&[((col("sepal.width") * lit(100)).alias("super_wide"))])
-            .sort("super_wide", false);
+            .sort("super_wide", SortOptions::default());
 
         print_plans(&lf);
 
@@ -278,16 +297,14 @@ mod test {
             .select(&[col("variety").alias("foo")])
             .logical_plan;
 
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("foo").is_ok());
+        assert!(lp.schema().get("foo").is_some());
 
         let lp = df
             .lazy()
             .groupby([col("variety")])
             .agg([col("sepal.width").min()])
             .logical_plan;
-        println!("{:#?}", lp.schema().fields());
-        assert!(lp.schema().field_with_name("sepal.width_min").is_ok());
+        assert!(lp.schema().get("sepal.width").is_some());
     }
 
     #[test]
@@ -313,8 +330,7 @@ mod test {
 
             print_plans(&lf);
             // implicitly checks logical plan == optimized logical plan
-            let df = lf.collect().unwrap();
-            println!("{:?}", df);
+            let _df = lf.collect().unwrap();
         }
 
         // check if optimization succeeds with selection
@@ -325,9 +341,7 @@ mod test {
                 .left_join(right.clone().lazy(), col("days"), col("days"))
                 .select(&[col("temp")]);
 
-            print_plans(&lf);
-            let df = lf.collect().unwrap();
-            println!("{:?}", df);
+            let _df = lf.collect().unwrap();
         }
 
         // check if optimization succeeds with selection of a renamed column due to the join
@@ -338,8 +352,7 @@ mod test {
                 .select(&[col("temp"), col("rain_right")]);
 
             print_plans(&lf);
-            let df = lf.collect().unwrap();
-            println!("{:?}", df);
+            let _df = lf.collect().unwrap();
         }
     }
 

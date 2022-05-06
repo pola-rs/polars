@@ -35,7 +35,6 @@
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
 use crate::prelude::*;
-use ahash::AHashMap;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
@@ -67,13 +66,14 @@ pub struct IpcReader<R> {
     n_rows: Option<usize>,
     projection: Option<Vec<usize>>,
     columns: Option<Vec<String>>,
+    row_count: Option<RowCount>,
 }
 
 impl<R: Read + Seek> IpcReader<R> {
     /// Get schema of the Ipc File
     pub fn schema(&mut self) -> Result<Schema> {
         let metadata = read::read_file_metadata(&mut self.reader)?;
-        Ok((&metadata.schema).into())
+        Ok((&metadata.schema.fields).into())
     }
 
     /// Get arrow schema of the Ipc File, this is faster than creating a polars schema.
@@ -90,6 +90,12 @@ impl<R: Read + Seek> IpcReader<R> {
     /// Columns to select/ project
     pub fn with_columns(mut self, columns: Option<Vec<String>>) -> Self {
         self.columns = columns;
+        self
+    }
+
+    /// Add a `row_count` column.
+    pub fn with_row_count(mut self, row_count: Option<RowCount>) -> Self {
+        self.row_count = row_count;
         self
     }
 
@@ -124,7 +130,15 @@ impl<R: Read + Seek> IpcReader<R> {
 
         let reader = read::FileReader::new(&mut self.reader, metadata, projection);
 
-        finish_reader(reader, rechunk, self.n_rows, predicate, aggregate, &schema)
+        finish_reader(
+            reader,
+            rechunk,
+            self.n_rows,
+            predicate,
+            aggregate,
+            &schema,
+            self.row_count,
+        )
     }
 }
 
@@ -148,6 +162,7 @@ where
             n_rows: None,
             columns: None,
             projection: None,
+            row_count: None,
         }
     }
 
@@ -161,35 +176,8 @@ where
         let metadata = read::read_file_metadata(&mut self.reader)?;
         let schema = &metadata.schema;
 
-        let err = |column: &str| {
-            let valid_fields: Vec<String> = schema.fields.iter().map(|f| f.name.clone()).collect();
-            PolarsError::NotFound(format!(
-                "Unable to get field named \"{}\". Valid fields: {:?}",
-                column, valid_fields
-            ))
-        };
-
-        if let Some(cols) = self.columns {
-            let mut prj = Vec::with_capacity(cols.len());
-            if cols.len() > 100 {
-                let mut column_names = AHashMap::with_capacity(schema.fields.len());
-                schema.fields.iter().enumerate().for_each(|(i, c)| {
-                    column_names.insert(c.name.as_str(), i);
-                });
-
-                for column in cols.iter() {
-                    if let Some(i) = column_names.get(column.as_str()) {
-                        prj.push(*i);
-                    } else {
-                        return Err(err(column));
-                    }
-                }
-            } else {
-                for column in cols.iter() {
-                    let i = schema.index_of(column)?;
-                    prj.push(i);
-                }
-            }
+        if let Some(columns) = self.columns {
+            let mut prj = columns_to_projection(columns, schema)?;
 
             // Ipc reader panics if the projection is not in increasing order, so sorting is the safer way.
             prj.sort_unstable();
@@ -203,7 +191,15 @@ where
         };
 
         let ipc_reader = read::FileReader::new(&mut self.reader, metadata, self.projection);
-        finish_reader(ipc_reader, rechunk, self.n_rows, None, None, &schema)
+        finish_reader(
+            ipc_reader,
+            rechunk,
+            self.n_rows,
+            None,
+            None,
+            &schema,
+            self.row_count,
+        )
     }
 }
 
@@ -232,6 +228,7 @@ pub struct IpcWriter<W> {
 }
 
 use crate::aggregations::ScanAggregation;
+use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 
@@ -363,5 +360,20 @@ mod test {
                 .expect(&format!("IPC reader: {:?}", compression));
             assert!(df.frame_equal(&df_read));
         }
+    }
+
+    #[test]
+    fn write_and_read_ipc_empty_series() {
+        let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        let chunked_array = Float64Chunked::new("empty", &[0_f64; 0]);
+        let mut df = DataFrame::new(vec![chunked_array.into_series()]).unwrap();
+        IpcWriter::new(&mut buf)
+            .finish(&mut df)
+            .expect("ipc writer");
+
+        buf.set_position(0);
+
+        let df_read = IpcReader::new(buf).finish().unwrap();
+        assert!(df.frame_equal(&df_read));
     }
 }

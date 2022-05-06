@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
@@ -32,17 +31,18 @@ impl BinaryExpr {
 
 pub(crate) fn apply_operator(left: &Series, right: &Series, op: Operator) -> Result<Series> {
     match op {
-        Operator::Gt => Ok(ChunkCompare::<&Series>::gt(left, right).into_series()),
-        Operator::GtEq => Ok(ChunkCompare::<&Series>::gt_eq(left, right).into_series()),
-        Operator::Lt => Ok(ChunkCompare::<&Series>::lt(left, right).into_series()),
-        Operator::LtEq => Ok(ChunkCompare::<&Series>::lt_eq(left, right).into_series()),
-        Operator::Eq => Ok(ChunkCompare::<&Series>::equal(left, right).into_series()),
-        Operator::NotEq => Ok(ChunkCompare::<&Series>::not_equal(left, right).into_series()),
+        Operator::Gt => ChunkCompare::<&Series>::gt(left, right).map(|ca| ca.into_series()),
+        Operator::GtEq => ChunkCompare::<&Series>::gt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Lt => ChunkCompare::<&Series>::lt(left, right).map(|ca| ca.into_series()),
+        Operator::LtEq => ChunkCompare::<&Series>::lt_eq(left, right).map(|ca| ca.into_series()),
+        Operator::Eq => ChunkCompare::<&Series>::equal(left, right).map(|ca| ca.into_series()),
+        Operator::NotEq => {
+            ChunkCompare::<&Series>::not_equal(left, right).map(|ca| ca.into_series())
+        }
         Operator::Plus => Ok(left + right),
         Operator::Minus => Ok(left - right),
         Operator::Multiply => Ok(left * right),
         Operator::Divide => Ok(left / right),
-        #[cfg(feature = "true_div")]
         Operator::TrueDivide => {
             use DataType::*;
             match left.dtype() {
@@ -96,18 +96,60 @@ impl PhysicalExpr for BinaryExpr {
             ));
         }
 
-        match (ac_l.agg_state(), ac_r.agg_state()) {
+        match (ac_l.agg_state(), ac_r.agg_state(), self.op) {
+            // Some aggregations must return boolean masks that fit the group. That's why not all literals can take this path.
+            // only literals that are used in arithmetic
+            (
+                AggState::AggregatedFlat(lhs),
+                AggState::Literal(rhs),
+                Operator::Plus
+                | Operator::Minus
+                | Operator::Divide
+                | Operator::Multiply
+                | Operator::Modulus
+                | Operator::TrueDivide,
+            )
+            | (
+                AggState::Literal(lhs),
+                AggState::AggregatedFlat(rhs),
+                Operator::Plus
+                | Operator::Minus
+                | Operator::Divide
+                | Operator::Multiply
+                | Operator::Modulus
+                | Operator::TrueDivide,
+            ) => {
+                let out = apply_operator(lhs, rhs, self.op)?;
+
+                ac_l.with_series(out, true);
+                Ok(ac_l)
+            }
+            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
+            // the other is a literal value. In that case it is unlikely we want to expand this to the
+            // group sizes.
+            //
+            (AggState::AggregatedFlat(_), AggState::Literal(_), _)
+            | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
+                let l = ac_l.series();
+                let r = ac_r.series();
+                let mut s = apply_operator(l, r, self.op)?;
+                s.rename(l.name());
+
+                ac_l.with_series(s, true);
+                Ok(ac_l)
+            }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_))
+            // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
+            // that's why a literal also takes this branch
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _)
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
-                let l = ac_l.aggregated();
+                let l = ac_l.aggregated_arity_operation();
                 let l = l.as_ref();
                 let arr_l = &l.chunks()[0];
-                assert_eq!(l.len(), groups.len());
 
                 // we create a dummy Series that is not cloned nor moved
                 // so we can swap the ArrayRef during the hot loop
@@ -118,7 +160,7 @@ impl PhysicalExpr for BinaryExpr {
                 let mut us = UnstableSeries::new(&dummy);
 
                 // this is now a list
-                let r = ac_r.aggregated();
+                let r = ac_r.aggregated_arity_operation();
                 let r = r.list().unwrap();
 
                 let mut ca: ListChunked = r
@@ -128,7 +170,7 @@ impl PhysicalExpr for BinaryExpr {
                         opt_s
                             .map(|s| {
                                 let r = s.as_ref();
-                                // TODO: optimize this? Its slow and unsafe.
+                                // TODO: optimize this?
 
                                 // Safety:
                                 // we are in bounds
@@ -145,18 +187,21 @@ impl PhysicalExpr for BinaryExpr {
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
             }
             // if the groups_len == df.len we can just apply all flat.
-            (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedFlat(s))
-                if s.len() != df.height() =>
-            {
+            (
+                AggState::AggregatedList(_) | AggState::NotAggregated(_),
+                AggState::AggregatedFlat(s),
+                _,
+            ) if s.len() != df.height() => {
                 // this is now a list
-                let l = ac_l.aggregated();
+                let l = ac_l.aggregated_arity_operation();
                 let l = l.list().unwrap();
 
                 // this is a flat series of len eq to group tuples
-                let r = ac_r.aggregated();
+                let r = ac_r.aggregated_arity_operation();
                 assert_eq!(l.len(), groups.len());
                 let r = r.as_ref();
                 let arr_r = &r.chunks()[0];
@@ -191,10 +236,19 @@ impl PhysicalExpr for BinaryExpr {
                 ca.rename(l.name());
 
                 ac_l.with_series(ca.into_series(), true);
+                // Todo! maybe always update with groups len here?
+                if matches!(ac_l.update_groups, UpdateGroups::WithSeriesLen)
+                    || matches!(ac_r.update_groups, UpdateGroups::WithSeriesLen)
+                {
+                    ac_l.with_update_groups(UpdateGroups::WithSeriesLen);
+                } else {
+                    ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
+                }
                 Ok(ac_l)
             }
-            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_))
-            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_)) => {
+            (AggState::AggregatedList(_), AggState::NotAggregated(_) | AggState::Literal(_), _)
+            | (AggState::NotAggregated(_) | AggState::Literal(_), AggState::AggregatedList(_), _) =>
+            {
                 ac_l.sort_by_groups();
                 ac_r.sort_by_groups();
 
@@ -209,10 +263,8 @@ impl PhysicalExpr for BinaryExpr {
                 ac_l.with_series(out, false);
                 Ok(ac_l)
             }
-
-            // Both are or a flat series or aggregated into a list
-            // so we can flatten the Series and apply the operators
-            _ => {
+            // flatten the Series and apply the operators
+            (AggState::AggregatedList(_), AggState::AggregatedList(_), _) => {
                 let out = apply_operator(
                     ac_l.flat_naive().as_ref(),
                     ac_r.flat_naive().as_ref(),
@@ -220,54 +272,52 @@ impl PhysicalExpr for BinaryExpr {
                 )?;
 
                 ac_l.combine_groups(ac_r).with_series(out, false);
+                ac_l.with_update_groups(UpdateGroups::WithGroupsLen);
                 Ok(ac_l)
+            }
+            // Both are or a flat series
+            // so we can flatten the Series and apply the operators
+            _ => {
+                // the groups state differs, so we aggregate both and flatten again to make them align
+                if ac_l.update_groups != UpdateGroups::No || ac_r.update_groups != UpdateGroups::No
+                {
+                    // use the aggregated state to determine the new groups
+                    let lhs = ac_l.aggregated();
+                    ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));
+
+                    // we should only explode lists
+                    // not aggregated flat states
+                    let flatten = |s: Series| match s.dtype() {
+                        DataType::List(_) => s.explode(),
+                        _ => Ok(s),
+                    };
+
+                    let out =
+                        apply_operator(&flatten(lhs)?, &flatten(ac_r.aggregated())?, self.op)?;
+                    ac_l.with_series(out, false);
+                    Ok(ac_l)
+                } else {
+                    let out = apply_operator(
+                        ac_l.flat_naive().as_ref(),
+                        ac_r.flat_naive().as_ref(),
+                        self.op,
+                    )?;
+
+                    ac_l.combine_groups(ac_r).with_series(out, false);
+
+                    Ok(ac_l)
+                }
             }
         }
     }
 
-    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        todo!()
+    fn to_field(&self, input_schema: &Schema) -> Result<Field> {
+        self.expr.to_field(input_schema, Context::Default)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
-    }
-}
-
-impl PhysicalAggregation for BinaryExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        match (self.left.as_agg_expr(), self.right.as_agg_expr()) {
-            (Ok(left), Ok(right)) => {
-                let (left_agg, right_agg) = POOL.install(|| {
-                    rayon::join(
-                        || left.aggregate(df, groups, state),
-                        || right.aggregate(df, groups, state),
-                    )
-                });
-                let right_agg = right_agg?;
-                left_agg?
-                    .and_then(|left| right_agg.map(|right| apply_operator(&left, &right, self.op)))
-                    .transpose()
-            }
-            (_, _) => Err(PolarsError::ComputeError(
-                format!(
-                    "this binary expression is not an aggregation: {:?}
-                pherhaps you should add an aggregation like, '.sum()', '.min()', '.mean()', etc.
-                if you really want to collect this binary expression, use `.list()`",
-                    self.expr
-                )
-                .into(),
-            )),
-        }
     }
 }
 
@@ -279,25 +329,49 @@ mod stats {
 
     fn apply_operator_stats_rhs_lit(min_max: &Series, literal: &Series, op: Operator) -> bool {
         match op {
+            // col > lit
+            // e.g.
+            // [min,
+            // max] > 0
+            //
+            // [-1,
+            // 2] > 0
+            //
+            // [false, true] -> true -> read
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt(min_max, literal).all()
+                ChunkCompare::<&Series>::gt(min_max, literal)
+                    .ok()
+                    .map(|s| s.any())
+                    == Some(true)
             }
+            // col >= lit
             Operator::GtEq => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt_eq(min_max, literal).all()
+                ChunkCompare::<&Series>::gt_eq(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
+            // col < lit
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt(min_max, literal).all()
+                ChunkCompare::<&Series>::lt(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
+            // col <= lit
             Operator::LtEq => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt_eq(min_max, literal).all()
+                ChunkCompare::<&Series>::lt_eq(min_max, literal)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // default: read the file
             _ => true,
@@ -309,22 +383,34 @@ mod stats {
             Operator::Gt => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt(literal, min_max).all()
+                ChunkCompare::<&Series>::gt(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::GtEq => {
                 // literal is bigger than max value
                 // selection needs all rows
-                ChunkCompare::<&Series>::gt_eq(literal, min_max).all()
+                ChunkCompare::<&Series>::gt_eq(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::Lt => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt(literal, min_max).all()
+                ChunkCompare::<&Series>::lt(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             Operator::LtEq => {
                 // literal is smaller than min value
                 // selection needs all rows
-                ChunkCompare::<&Series>::lt_eq(literal, min_max).all()
+                ChunkCompare::<&Series>::lt_eq(literal, min_max)
+                    .ok()
+                    .map(|ca| ca.any())
+                    == Some(true)
             }
             // default: read the file
             _ => true,
@@ -337,7 +423,17 @@ mod stats {
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
 
-            assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
+            #[cfg(debug_assertions)]
+            {
+                match (fld_l.data_type(), fld_r.data_type()) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Utf8, DataType::Categorical(_)) => {}
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Categorical(_), DataType::Utf8) => {}
+                    (l, r) if l != r => panic!("implementation error: {:?}, {:?}", l, r),
+                    _ => {}
+                }
+            }
 
             let dummy = DataFrame::new_no_checks(vec![]);
             let state = ExecutionState::new();
@@ -390,12 +486,6 @@ mod stats {
                 (Some(l), Some(r)) => match self.op {
                     Operator::And => Ok(l.should_read(stats)? && r.should_read(stats)?),
                     Operator::Or => Ok(l.should_read(stats)? || r.should_read(stats)?),
-                    _ => Ok(true),
-                },
-                // This branch is probably never hit
-                (Some(other), None) | (None, Some(other)) => match self.op {
-                    Operator::And => Ok(self.should_read(stats)? && other.should_read(stats)?),
-                    Operator::Or => Ok(self.should_read(stats)? || other.should_read(stats)?),
                     _ => Ok(true),
                 },
                 _ => self.impl_should_read(stats),

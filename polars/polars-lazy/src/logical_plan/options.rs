@@ -1,8 +1,12 @@
 use crate::prelude::*;
 use polars_core::prelude::*;
-use polars_io::csv::NullValues;
+use polars_io::csv::{CsvEncoding, NullValues};
+use polars_io::RowCount;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
     pub(crate) comment_char: Option<u8>,
@@ -16,55 +20,71 @@ pub struct CsvParserOptions {
     pub(crate) cache: bool,
     pub(crate) null_values: Option<NullValues>,
     pub(crate) rechunk: bool,
+    pub(crate) encoding: CsvEncoding,
+    pub(crate) row_count: Option<RowCount>,
+    pub(crate) parse_dates: bool,
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
     pub(crate) with_columns: Option<Vec<String>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
+    pub(crate) row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug)]
-pub struct LpScanOptions {
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
     pub with_columns: Option<Vec<String>>,
     pub cache: bool,
+    pub row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
-    pub(crate) slice_len: u32,
+    pub(crate) slice_len: IdxSize,
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
     pub(crate) rolling: Option<RollingGroupOptions>,
+    pub(crate) slice: Option<(i64, usize)>,
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,
     pub(crate) maintain_order: bool,
-    pub(crate) keep_strategy: DistinctKeepStrategy,
+    pub(crate) keep_strategy: UniqueKeepStrategy,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ApplyOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
+    // e.g. [g1, g1, g2] -> [[g1, g2], g2]
     ApplyGroups,
     // collect groups to a list and then apply
+    // e.g. [g1, g1, g2] -> list([g1, g1, g2])
     ApplyList,
     // do not collect before apply
+    // e.g. [g1, g1, g2] -> [g1, g1, g2]
     ApplyFlat,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowOptions {
     /// Explode the aggregated list and just do a hstack instead of a join
     /// this requires the groups to be sorted to make any sense
@@ -72,6 +92,7 @@ pub struct WindowOptions {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
@@ -98,10 +119,10 @@ pub struct FunctionOptions {
     /// We need to know this because we cannot see the difference between
     /// the following functions based on the output type and number of elements:
     ///
-    /// x: [1, 2, 3]
+    /// x: {1, 2, 3}
     ///
-    /// head_1(x) -> [1]
-    /// sum(x) -> [4]
+    /// head_1(x) -> {1}
+    /// sum(x) -> {4}
     pub(crate) auto_explode: bool,
     // used for formatting
     pub(crate) fmt_str: &'static str,
@@ -115,4 +136,13 @@ pub struct LogicalPlanUdfOptions {
     pub(crate) projection_pd: bool,
     // used for formatting
     pub(crate) fmt_str: &'static str,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SortArguments {
+    pub(crate) reverse: Vec<bool>,
+    // Can only be true in case of a single column.
+    pub(crate) nulls_last: bool,
+    pub(crate) slice: Option<(i64, usize)>,
 }

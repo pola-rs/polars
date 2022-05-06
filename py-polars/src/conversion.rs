@@ -1,5 +1,5 @@
 use crate::dataframe::PyDataFrame;
-use crate::error::PyPolarsEr;
+use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
 use crate::series::PySeries;
@@ -18,6 +18,12 @@ use pyo3::types::{PyBool, PyDict, PyList, PySequence};
 use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+
+pub(crate) fn to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
+    // Safety:
+    // Wrap is transparent.
+    unsafe { std::mem::transmute(slice) }
+}
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -74,11 +80,11 @@ impl<'a> FromPyObject<'a> for Wrap<PivotAgg> {
     }
 }
 
-impl<'a> FromPyObject<'a> for Wrap<DistinctKeepStrategy> {
+impl<'a> FromPyObject<'a> for Wrap<UniqueKeepStrategy> {
     fn extract(ob: &'a PyAny) -> PyResult<Self> {
         match ob.extract::<&str>()? {
-            "first" => Ok(Wrap(DistinctKeepStrategy::First)),
-            "last" => Ok(Wrap(DistinctKeepStrategy::Last)),
+            "first" => Ok(Wrap(UniqueKeepStrategy::First)),
+            "last" => Ok(Wrap(UniqueKeepStrategy::Last)),
             s => panic!("keep strategy {} is not supported", s),
         }
     }
@@ -146,11 +152,19 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
             Ok(Wrap(NullValues::Named(s)))
         } else {
             Err(
-                PyPolarsEr::Other("could not extract value from null_values argument".into())
+                PyPolarsErr::Other("could not extract value from null_values argument".into())
                     .into(),
             )
         }
     }
+}
+
+fn struct_dict(py: Python, vals: Vec<AnyValue>, flds: &[Field]) -> PyObject {
+    let dict = PyDict::new(py);
+    for (fld, val) in flds.iter().zip(vals) {
+        dict.set_item(fld.name(), Wrap(val)).unwrap()
+    }
+    dict.into_py(py)
 }
 
 impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
@@ -169,6 +183,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             AnyValue::Null => py.None(),
             AnyValue::Boolean(v) => v.into_py(py),
             AnyValue::Utf8(v) => v.into_py(py),
+            AnyValue::Utf8Owned(v) => v.into_py(py),
             AnyValue::Categorical(idx, rev) => {
                 let s = rev.get(idx);
                 s.into_py(py)
@@ -186,13 +201,16 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                     todo!()
                 }
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert
                         .call1((v, py_datetime_dtype, "ns"))
+                        .unwrap()
+                        .into_py(py),
+                    TimeUnit::Microseconds => convert
+                        .call1((v, py_datetime_dtype, "us"))
                         .unwrap()
                         .into_py(py),
                     TimeUnit::Milliseconds => convert
@@ -203,25 +221,18 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
             }
             AnyValue::Duration(v, tu) => {
                 let pl = PyModule::import(py, "polars").unwrap();
-                let pli = pl.getattr("internals").unwrap();
-                let m_series = pli.getattr("series").unwrap();
-                let convert = m_series.getattr("_to_python_datetime").unwrap();
+                let utils = pl.getattr("utils").unwrap();
+                let convert = utils.getattr("_to_python_timedelta").unwrap();
                 match tu {
                     TimeUnit::Nanoseconds => convert.call1((v, "ns")).unwrap().into_py(py),
+                    TimeUnit::Microseconds => convert.call1((v, "us")).unwrap().into_py(py),
                     TimeUnit::Milliseconds => convert.call1((v, "ms")).unwrap().into_py(py),
                 }
             }
             AnyValue::Time(v) => v.into_py(py),
-            AnyValue::List(v) => {
-                let pypolars = PyModule::import(py, "polars").unwrap();
-                let pyseries = PySeries::new(v);
-                let python_series_wrapper = pypolars
-                    .getattr("wrap_s")
-                    .unwrap()
-                    .call1((pyseries,))
-                    .unwrap();
-                python_series_wrapper.into()
-            }
+            AnyValue::List(v) => PySeries::new(v).to_list(),
+            AnyValue::Struct(vals, flds) => struct_dict(py, vals, flds),
+            AnyValue::StructOwned(payload) => struct_dict(py, payload.0, &payload.1),
             AnyValue::Object(v) => {
                 let s = format!("{}", v);
                 s.into_py(py)
@@ -247,13 +258,26 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Float64 => pl.getattr("Float64").unwrap().into(),
             DataType::Boolean => pl.getattr("Boolean").unwrap().into(),
             DataType::Utf8 => pl.getattr("Utf8").unwrap().into(),
-            DataType::List(_) => pl.getattr("List").unwrap().into(),
+            DataType::List(inner) => {
+                let inner = Wrap(*inner.clone()).to_object(py);
+                let list_class = pl.getattr("List").unwrap();
+                list_class.call1((inner,)).unwrap().into()
+            }
             DataType::Date => pl.getattr("Date").unwrap().into(),
             DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
             DataType::Duration(_) => pl.getattr("Duration").unwrap().into(),
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
-            DataType::Categorical => pl.getattr("Categorical").unwrap().into(),
+            DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
+            DataType::Struct(inners) => {
+                let iter = inners
+                    .iter()
+                    .map(|fld| Wrap(fld.data_type().clone()).to_object(py));
+                let inners = PyList::new(py, iter);
+                let struct_class = pl.getattr("Struct").unwrap();
+                struct_class.call1((inners,)).unwrap().into()
+            }
+            DataType::Null => pl.getattr("Null").unwrap().into(),
             dt => panic!("{} not supported", dt),
         }
     }
@@ -286,32 +310,58 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
+static PREFIX_LEN: usize = "<class 'polars.datatypes.".len();
+
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let dtype = match ob.repr().unwrap().to_str().unwrap() {
-            "<class 'polars.datatypes.UInt8'>" => DataType::UInt8,
-            "<class 'polars.datatypes.UInt16'>" => DataType::UInt16,
-            "<class 'polars.datatypes.UInt32'>" => DataType::UInt32,
-            "<class 'polars.datatypes.UInt64'>" => DataType::UInt64,
-            "<class 'polars.datatypes.Int8'>" => DataType::Int8,
-            "<class 'polars.datatypes.Int16'>" => DataType::Int16,
-            "<class 'polars.datatypes.Int32'>" => DataType::Int32,
-            "<class 'polars.datatypes.Int64'>" => DataType::Int64,
-            "<class 'polars.datatypes.Utf8'>" => DataType::Utf8,
-            "<class 'polars.datatypes.List'>" => DataType::List(Box::new(DataType::Boolean)),
-            "<class 'polars.datatypes.Boolean'>" => DataType::Boolean,
-            "<class 'polars.datatypes.Categorical'>" => DataType::Categorical,
-            "<class 'polars.datatypes.Date'>" => DataType::Date,
-            "<class 'polars.datatypes.Datetime'>" => {
-                DataType::Datetime(TimeUnit::Milliseconds, None)
+        let str_rep = ob.repr().unwrap().to_str().unwrap();
+
+        // slice off unneeded parts
+        let dtype = match &str_rep[PREFIX_LEN..str_rep.len() - 2] {
+            "UInt8" => DataType::UInt8,
+            "UInt16" => DataType::UInt16,
+            "UInt32" => DataType::UInt32,
+            "UInt64" => DataType::UInt64,
+            "Int8" => DataType::Int8,
+            "Int16" => DataType::Int16,
+            "Int32" => DataType::Int32,
+            "Int64" => DataType::Int64,
+            "Utf8" => DataType::Utf8,
+            "Boolean" => DataType::Boolean,
+            "Categorical" => DataType::Categorical(None),
+            "Date" => DataType::Date,
+            "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
+            "Time" => DataType::Time,
+            "Duration" => DataType::Duration(TimeUnit::Microseconds),
+            "Float32" => DataType::Float32,
+            "Float64" => DataType::Float64,
+            "Object" => DataType::Object("unknown"),
+            // just the class, not an object
+            "List" => DataType::List(Box::new(DataType::Boolean)),
+            "Null" => DataType::Null,
+            dt => {
+                let out: PyResult<_> = Python::with_gil(|py| {
+                    let builtins = PyModule::import(py, "builtins")?;
+                    let polars = PyModule::import(py, "polars")?;
+                    let list_class = polars.getattr("List").unwrap();
+                    if builtins
+                        .getattr("isinstance")
+                        .unwrap()
+                        .call1((ob, list_class))?
+                        .extract::<bool>()?
+                    {
+                        let inner = ob.getattr("inner")?;
+                        let inner = inner.extract::<Wrap<DataType>>()?;
+                        Ok(DataType::List(Box::new(inner.0)))
+                    } else {
+                        panic!(
+                            "{} not expected in python dtype to rust dtype conversion",
+                            dt
+                        )
+                    }
+                });
+                out?
             }
-            "<class 'polars.datatypes.Float32'>" => DataType::Float32,
-            "<class 'polars.datatypes.Float64'>" => DataType::Float64,
-            "<class 'polars.datatypes.Object'>" => DataType::Object("unknown"),
-            dt => panic!(
-                "{} not expected in python dtype to rust dtype conversion",
-                dt
-            ),
         };
         Ok(Wrap(dtype))
     }
@@ -323,6 +373,67 @@ impl ToPyObject for Wrap<AnyValue<'_>> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<TimeUnit> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let unit = match ob.str()?.to_str()? {
+            "ns" => TimeUnit::Nanoseconds,
+            "us" => TimeUnit::Microseconds,
+            "ms" => TimeUnit::Milliseconds,
+            _ => return Err(PyValueError::new_err("expected one of {'ns', 'us', 'ms'}")),
+        };
+        Ok(Wrap(unit))
+    }
+}
+
+impl ToPyObject for Wrap<TimeUnit> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let tu = match self.0 {
+            TimeUnit::Nanoseconds => "ns",
+            TimeUnit::Microseconds => "us",
+            TimeUnit::Milliseconds => "ms",
+        };
+        tu.into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&Utf8Chunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let iter = self.0.into_iter();
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&StructChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let s = self.0.clone().into_series();
+        let iter = s.iter().map(|av| {
+            if let AnyValue::Struct(vals, flds) = av {
+                struct_dict(py, vals, flds)
+            } else {
+                unreachable!()
+            }
+        });
+
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&DurationChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pl_utils = pl.getattr("utils").unwrap();
+        let convert = pl_utils.getattr("_to_python_timedelta").unwrap();
+
+        let tu = Wrap(self.0.time_unit()).to_object(py);
+
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, &tu)).unwrap()));
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DatetimeChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
@@ -331,10 +442,25 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
         let convert = m_series.getattr("_to_python_datetime").unwrap();
         let py_date_dtype = pl.getattr("Datetime").unwrap();
 
+        let tu = Wrap(self.0.time_unit()).to_object(py);
+
         let iter = self
             .0
             .into_iter()
-            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype)).unwrap()));
+            .map(|opt_v| opt_v.map(|v| convert.call1((v, py_date_dtype, &tu)).unwrap()));
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
+impl ToPyObject for Wrap<&TimeChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pl_utils = pl.getattr("utils").unwrap();
+        let convert = pl_utils.getattr("_to_python_time").unwrap();
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
         PyList::new(py, iter).into_py(py)
     }
 }
@@ -357,7 +483,7 @@ impl ToPyObject for Wrap<&DateChunked> {
 
 impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
     fn extract(ob: &'s PyAny) -> PyResult<Self> {
-        if ob.is_instance::<PyBool>().unwrap() {
+        if ob.is_instance_of::<PyBool>().unwrap() {
             Ok(AnyValue::Boolean(ob.extract::<bool>().unwrap()).into())
         } else if let Ok(v) = ob.extract::<i64>() {
             Ok(AnyValue::Int64(v).into())
@@ -401,8 +527,49 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
         } else if ob.is_none() {
             Ok(AnyValue::Null.into())
+        } else if ob.is_instance_of::<PyDict>()? {
+            let dict = ob.downcast::<PyDict>().unwrap();
+            let len = dict.len();
+            let mut keys = Vec::with_capacity(len);
+            let mut vals = Vec::with_capacity(len);
+            for (k, v) in dict.into_iter() {
+                let key = k.extract::<&str>()?;
+                let val = v.extract::<Wrap<AnyValue>>()?.0;
+                let dtype = DataType::from(&val);
+                keys.push(Field::new(key, dtype));
+                vals.push(val)
+            }
+            Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
+        } else if ob.is_instance_of::<PyList>()? {
+            let avs = ob.extract::<Wrap<Row>>()?.0;
+            let s = Series::new("", &avs.0);
+            Ok(Wrap(AnyValue::List(s)))
+        } else if ob.hasattr("_s")? {
+            let py_pyseries = ob.getattr("_s").unwrap();
+            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            Ok(Wrap(AnyValue::List(series)))
+        } else if ob.get_type().name()?.contains("date") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let date = py_modules::UTILS
+                .getattr(py, "_date_to_pl_date")
+                .unwrap()
+                .call1(py, (ob,))
+                .unwrap();
+            let v = date.extract::<i32>(py).unwrap();
+            Ok(Wrap(AnyValue::Date(v)))
+        } else if ob.get_type().name()?.contains("timedelta") {
+            let gil = Python::acquire_gil();
+            let py = gil.python();
+            let td = py_modules::UTILS
+                .getattr(py, "_timedelta_to_pl_timedelta")
+                .unwrap()
+                .call1(py, (ob, "us"))
+                .unwrap();
+            let v = td.extract::<i64>(py).unwrap();
+            Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
         } else {
-            Err(PyErr::from(PyPolarsEr::Other(format!(
+            Err(PyErr::from(PyPolarsErr::Other(format!(
                 "row type not supported {:?}",
                 ob
             ))))

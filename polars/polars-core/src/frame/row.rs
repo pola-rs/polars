@@ -1,10 +1,11 @@
-use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
+use crate::utils::get_supertype;
 use crate::POOL;
+
 use arrow::bitmap::Bitmap;
 use rayon::prelude::*;
-use std::fmt::{Debug, Formatter};
-
+use std::borrow::Borrow;
+use std::fmt::Debug;
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Row<'a>(pub Vec<AnyValue<'a>>);
 
@@ -69,26 +70,25 @@ impl DataFrame {
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
-            .fields()
-            .iter()
-            .map(|fld| {
-                let buf: AnyValueBuffer = (fld.data_type(), capacity).into();
+            .iter_dtypes()
+            .map(|dtype| {
+                let buf: AnyValueBuffer = (dtype, capacity).into();
                 buf
             })
             .collect();
 
         rows.try_for_each::<_, Result<()>>(|row| {
             for (value, buf) in row.0.iter().zip(&mut buffers) {
-                buf.add_falible(value.clone())?
+                buf.add_fallible(value)?
             }
             Ok(())
         })?;
         let v = buffers
             .into_iter()
-            .zip(schema.fields())
-            .map(|(b, fld)| {
+            .zip(schema.iter_names())
+            .map(|(b, name)| {
                 let mut s = b.into_series();
-                s.rename(fld.name());
+                s.rename(name);
                 s
             })
             .collect();
@@ -101,11 +101,10 @@ impl DataFrame {
     pub fn from_rows(rows: &[Row]) -> Result<Self> {
         let schema = rows_to_schema(rows);
         let has_nulls = schema
-            .fields()
-            .iter()
-            .any(|fld| matches!(fld.data_type(), DataType::Null));
+            .iter_dtypes()
+            .any(|dtype| matches!(dtype, DataType::Null));
         if has_nulls {
-            return Err(PolarsError::HasNullValues(
+            return Err(PolarsError::ComputeError(
                 "Could not infer row types, because of the null values".into(),
             ));
         }
@@ -139,10 +138,15 @@ impl DataFrame {
                     })
                     .collect::<Vec<_>>();
 
+                let columns = self
+                    .columns
+                    .iter()
+                    .map(|s| s.cast(dtype).unwrap())
+                    .collect::<Vec<_>>();
+
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
-                self.columns.iter().for_each(|s| {
-                    let s = s.cast(dtype).unwrap();
+                columns.iter().for_each(|s| {
                     s.iter().zip(buffers.iter_mut()).for_each(|(av, buf)| {
                         let _out = buf.add(av);
                         debug_assert!(_out.is_some());
@@ -176,6 +180,65 @@ impl DataFrame {
     }
 }
 
+type Tracker = PlHashMap<String, PlHashSet<DataType>>;
+
+pub fn infer_schema(
+    iter: impl Iterator<Item = Vec<(String, impl Into<DataType>)>>,
+    infer_schema_length: usize,
+) -> Schema {
+    let mut values: Tracker = Tracker::new();
+    let len = iter.size_hint().1.unwrap();
+
+    let max_infer = std::cmp::min(len, infer_schema_length);
+    for inner in iter.take(max_infer) {
+        for (key, value) in inner {
+            add_or_insert(&mut values, &key, value.into());
+        }
+    }
+    Schema::from(resolve_fields(values))
+}
+
+fn add_or_insert(values: &mut Tracker, key: &str, data_type: DataType) {
+    if data_type == DataType::Null {
+        return;
+    }
+
+    if values.contains_key(key) {
+        let x = values.get_mut(key).unwrap();
+        x.insert(data_type);
+    } else {
+        // create hashset and add value type
+        let mut hs = PlHashSet::new();
+        hs.insert(data_type);
+        values.insert(key.to_string(), hs);
+    }
+}
+
+fn resolve_fields(spec: Tracker) -> Vec<Field> {
+    spec.iter()
+        .map(|(k, hs)| {
+            let v: Vec<&DataType> = hs.iter().collect();
+            Field::new(k, coerce_data_type(&v))
+        })
+        .collect()
+}
+
+fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+    use DataType::*;
+
+    let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
+
+    if are_all_equal {
+        return datatypes[0].borrow().clone();
+    }
+    if datatypes.len() > 2 {
+        return Utf8;
+    }
+
+    let (lhs, rhs) = (datatypes[0].borrow(), datatypes[1].borrow());
+    get_supertype(lhs, rhs).unwrap_or(Utf8)
+}
+
 /// Infer schema from rows.
 pub fn rows_to_schema(rows: &[Row]) -> Schema {
     // no of rows to use to infer dtype
@@ -187,11 +250,10 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
     for row in rows.iter().take(max_infer).skip(1) {
         // for i in 1..max_infer {
         let nulls: Vec<_> = schema
-            .fields()
-            .iter()
+            .iter_dtypes()
             .enumerate()
-            .filter_map(|(i, f)| {
-                if matches!(f.data_type(), DataType::Null) {
+            .filter_map(|(i, dtype)| {
+                if matches!(dtype, DataType::Null) {
                     Some(i)
                 } else {
                     None
@@ -201,10 +263,9 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
         if nulls.is_empty() {
             break;
         } else {
-            let fields = schema.fields_mut();
-            let local_schema: Schema = row.into();
             for i in nulls {
-                fields[i] = local_schema.fields()[i].clone()
+                let dtype = (&row.0[i]).into();
+                schema.coerce_by_index(i, dtype).unwrap();
             }
         }
     }
@@ -213,46 +274,51 @@ pub fn rows_to_schema(rows: &[Row]) -> Schema {
 
 impl<'a> From<&AnyValue<'a>> for Field {
     fn from(val: &AnyValue<'a>) -> Self {
+        Field::new("", val.into())
+    }
+}
+impl<'a> From<&AnyValue<'a>> for DataType {
+    fn from(val: &AnyValue<'a>) -> Self {
         use AnyValue::*;
         match val {
-            Null => Field::new("", DataType::Null),
-            Boolean(_) => Field::new("", DataType::Boolean),
-            Utf8(_) => Field::new("", DataType::Utf8),
-            UInt32(_) => Field::new("", DataType::UInt32),
-            UInt64(_) => Field::new("", DataType::UInt64),
-            Int32(_) => Field::new("", DataType::Int32),
-            Int64(_) => Field::new("", DataType::Int64),
-            Float32(_) => Field::new("", DataType::Float32),
-            Float64(_) => Field::new("", DataType::Float64),
+            Null => DataType::Null,
+            Boolean(_) => DataType::Boolean,
+            Utf8(_) => DataType::Utf8,
+            Utf8Owned(_) => DataType::Utf8,
+            UInt32(_) => DataType::UInt32,
+            UInt64(_) => DataType::UInt64,
+            Int32(_) => DataType::Int32,
+            Int64(_) => DataType::Int64,
+            Float32(_) => DataType::Float32,
+            Float64(_) => DataType::Float64,
             #[cfg(feature = "dtype-date")]
-            Date(_) => Field::new("", DataType::Date),
+            Date(_) => DataType::Date,
             #[cfg(feature = "dtype-datetime")]
-            Datetime(_, tu, tz) => Field::new("", DataType::Datetime(*tu, (*tz).clone())),
+            Datetime(_, tu, tz) => DataType::Datetime(*tu, (*tz).clone()),
             #[cfg(feature = "dtype-time")]
-            Time(_) => Field::new("", DataType::Time),
-            List(s) => Field::new("", DataType::List(Box::new(s.dtype().clone()))),
-            _ => unimplemented!(),
+            Time(_) => DataType::Time,
+            List(s) => DataType::List(Box::new(s.dtype().clone())),
+            #[cfg(feature = "dtype-struct")]
+            StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
+            #[cfg(feature = "dtype-struct")]
+            Struct(_, fields) => DataType::Struct(fields.to_vec()),
+            av => panic!("{:?} not implemented", av),
         }
     }
 }
 
 impl From<&Row<'_>> for Schema {
     fn from(row: &Row) -> Self {
-        let fields = row
-            .0
-            .iter()
-            .enumerate()
-            .map(|(i, av)| {
-                let field: Field = av.into();
-                Field::new(format!("column_{}", i).as_ref(), field.data_type().clone())
-            })
-            .collect();
+        let fields = row.0.iter().enumerate().map(|(i, av)| {
+            let dtype = av.into();
+            Field::new(format!("column_{}", i).as_ref(), dtype)
+        });
 
-        Schema::new(fields)
+        Schema::from(fields)
     }
 }
 
-pub(crate) enum AnyValueBuffer {
+pub(crate) enum AnyValueBuffer<'a> {
     Boolean(BooleanChunkedBuilder),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
@@ -271,34 +337,11 @@ pub(crate) enum AnyValueBuffer {
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
     Utf8(Utf8ChunkedBuilder),
-    List(Box<dyn ListBuilderTrait>),
+    All(Vec<AnyValue<'a>>),
 }
 
-impl Debug for AnyValueBuffer {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use AnyValueBuffer::*;
-        match self {
-            Boolean(_) => f.write_str("boolean"),
-            Int32(_) => f.write_str("i32"),
-            Int64(_) => f.write_str("i64"),
-            UInt32(_) => f.write_str("u32"),
-            UInt64(_) => f.write_str("u64"),
-            #[cfg(feature = "dtype-date")]
-            Date(_) => f.write_str("Date"),
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(_, _, _) => f.write_str("datetime"),
-            #[cfg(feature = "dtype-time")]
-            Time(_) => f.write_str("time"),
-            Float32(_) => f.write_str("f32"),
-            Float64(_) => f.write_str("f64"),
-            Utf8(_) => f.write_str("utf8"),
-            List(_) => f.write_str("list"),
-        }
-    }
-}
-
-impl AnyValueBuffer {
-    pub(crate) fn add(&mut self, val: AnyValue) -> Option<()> {
+impl<'a> AnyValueBuffer<'a> {
+    pub(crate) fn add(&mut self, val: AnyValue<'a>) -> Option<()> {
         use AnyValueBuffer::*;
         match (self, val) {
             (Boolean(builder), AnyValue::Boolean(v)) => builder.append_value(v),
@@ -329,16 +372,16 @@ impl AnyValueBuffer {
             (Float64(builder), AnyValue::Null) => builder.append_null(),
             (Utf8(builder), AnyValue::Utf8(v)) => builder.append_value(v),
             (Utf8(builder), AnyValue::Null) => builder.append_null(),
-            (List(builder), AnyValue::List(v)) => builder.append_series(&v),
-            (List(builder), AnyValue::Null) => builder.append_null(),
+            // Struct and List can be recursive so use anyvalues for that
+            (All(vals), v) => vals.push(v),
             _ => return None,
         };
         Some(())
     }
 
-    pub(crate) fn add_falible(&mut self, val: AnyValue) -> Result<()> {
+    pub(crate) fn add_fallible(&mut self, val: &AnyValue<'a>) -> Result<()> {
         self.add(val.clone()).ok_or_else(|| {
-            PolarsError::ValueError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
+            PolarsError::ComputeError(format!("Could not append {:?} to builder; make sure that all rows have the same schema.", val).into())
         })
     }
 
@@ -359,13 +402,13 @@ impl AnyValueBuffer {
             Float32(b) => b.finish().into_series(),
             Float64(b) => b.finish().into_series(),
             Utf8(b) => b.finish().into_series(),
-            List(mut b) => b.finish().into_series(),
+            All(vals) => Series::new("", vals),
         }
     }
 }
 
 // datatype and length
-impl From<(&DataType, usize)> for AnyValueBuffer {
+impl From<(&DataType, usize)> for AnyValueBuffer<'_> {
     fn from(a: (&DataType, usize)) -> Self {
         let (dt, len) = a;
         use DataType::*;
@@ -386,8 +429,8 @@ impl From<(&DataType, usize)> for AnyValueBuffer {
             Float32 => AnyValueBuffer::Float32(PrimitiveChunkedBuilder::new("", len)),
             Float64 => AnyValueBuffer::Float64(PrimitiveChunkedBuilder::new("", len)),
             Utf8 => AnyValueBuffer::Utf8(Utf8ChunkedBuilder::new("", len, len * 5)),
-            List(inner) => AnyValueBuffer::List(get_list_builder(inner, len * 10, len, "")),
-            _ => unimplemented!(),
+            // Struct and List can be recursive so use anyvalues for that
+            _ => AnyValueBuffer::All(Vec::with_capacity(len)),
         }
     }
 }
@@ -477,8 +520,7 @@ where
                     validity,
                 );
                 let name = format!("column_{}", i);
-                ChunkedArray::<T>::new_from_chunks(&name, vec![Arc::new(arr) as ArrayRef])
-                    .into_series()
+                ChunkedArray::<T>::from_chunks(&name, vec![Arc::new(arr) as ArrayRef]).into_series()
             })
             .collect()
     });
