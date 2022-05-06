@@ -79,6 +79,9 @@ def df() -> pl.DataFrame:
             "date": [1324, 123, 1234],
             "datetime": [13241324, 12341256, 12341234],
             "time": [13241324, 12341256, 12341234],
+            "list_str": [["a", "b", None], ["a"], ["b"]],
+            "list_bool": [[True, False, None], [None], [True]],
+            "list_int": [[1, None, 3], [None], [1]],
         }
     )
     return df.with_columns(
@@ -89,6 +92,11 @@ def df() -> pl.DataFrame:
             pl.col("time").cast(pl.Time),
         ]
     )
+
+
+@pytest.fixture
+def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(pl.all().exclude(["list_str", "list_int", "list_bool"]))
 
 
 @pytest.fixture

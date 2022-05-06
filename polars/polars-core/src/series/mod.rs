@@ -953,7 +953,7 @@ impl Series {
         let val = [self.mean()];
         let s = Series::new(self.name(), val);
         if !self.dtype().is_numeric() {
-            s.cast(self.dtype()).unwrap()
+            Series::full_null(self.name(), 1, self.dtype())
         } else {
             s
         }

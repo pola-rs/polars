@@ -766,8 +766,8 @@ impl ChunkAggSeries for Utf8Chunked {
 }
 
 macro_rules! one_null_list {
-    ($self:ident) => {{
-        let mut builder = get_list_builder(&DataType::Null, 0, 1, $self.name());
+    ($self:ident, $dtype: expr) => {{
+        let mut builder = get_list_builder(&$dtype, 0, 1, $self.name());
         builder.append_opt_series(None);
         builder.finish().into_series()
     }};
@@ -775,13 +775,13 @@ macro_rules! one_null_list {
 
 impl ChunkAggSeries for ListChunked {
     fn sum_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn max_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn min_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
 }
 

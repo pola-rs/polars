@@ -85,8 +85,9 @@ def test_ipc_schema(compressions: List[str]) -> None:
 
 
 def test_ipc_schema_from_file(
-    io_test_dir: str, df: pl.DataFrame, compressions: List[str]
+    io_test_dir: str, df_no_lists: pl.DataFrame, compressions: List[str]
 ) -> None:
+    df = df_no_lists
     f_ipc = os.path.join(io_test_dir, "small.ipc")
 
     # does not yet work on windows because we hold an mmap?
