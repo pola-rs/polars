@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
+use polars_ops::prelude::*;
 use rayon::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::List`].
@@ -306,5 +307,27 @@ impl ListNameSpace {
                 }),
             )
             .with_fmt("eval")
+    }
+
+    #[cfg(feature = "list_to_struct")]
+    #[allow(clippy::wrong_self_convention)]
+    /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to
+    /// `ListToStructWidthStrategy` and the names of the fields determined by the given `name_generator`.
+    pub fn to_struct(
+        self,
+        n_fields: ListToStructWidthStrategy,
+        name_generator: Option<NameGenerator>,
+    ) -> Expr {
+        self.0
+            .map(
+                move |s| {
+                    s.list()?
+                        .to_struct(n_fields, name_generator.clone())
+                        .map(|s| s.into_series())
+                },
+                // we don't yet know the fields
+                GetOutput::from_type(DataType::Struct(vec![])),
+            )
+            .with_fmt("arr.to_struct")
     }
 }
