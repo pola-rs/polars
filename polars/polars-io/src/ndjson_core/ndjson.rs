@@ -1,18 +1,13 @@
 use crate::csv_core::parser::*;
 use crate::csv_core::utils::*;
-use crate::json_core::buffer::*;
+use crate::ndjson_core::buffer::*;
 use crate::mmap::ReaderBytes;
 use crate::prelude::*;
-use crate::RowCount;
 
-pub use arrow::{
-    array::{StructArray},
-    io::ndjson,
-};
-
+pub use arrow::{array::StructArray, io::ndjson};
 
 use crate::mmap::MmapBytesReader;
-use polars_core::{prelude::*, POOL, utils::accumulate_dataframes_vertical};
+use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::{prelude::*, ThreadPoolBuilder};
 use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
@@ -31,12 +26,12 @@ where
     reader: R,
     rechunk: bool,
     n_rows: Option<usize>,
+    n_threads: Option<usize>,
     infer_schema_len: Option<usize>,
     chunk_size: usize,
     schema: Option<&'a Schema>,
     path: Option<PathBuf>,
     low_memory: bool,
-
 }
 
 impl<'a, R> JsonLineReader<'a, R>
@@ -60,19 +55,25 @@ where
         self.infer_schema_len = infer_schema_len;
         self
     }
+
+    pub fn with_n_threads(mut self, n: Option<usize>) -> Self {
+        self.n_threads = n;
+        self
+    }
+
     pub fn with_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
         self.path = path.map(|p| p.into());
         self
     }
     /// Sets the chunk size used by the parser. This influences performance
     pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
-      self.chunk_size = chunk_size;
-      self
+        self.chunk_size = chunk_size;
+        self
     }
     /// Reduce memory consumption at the expense of performance
     pub fn low_memory(mut self, toggle: bool) -> Self {
-      self.low_memory = toggle;
-      self
+        self.low_memory = toggle;
+        self
     }
 }
 
@@ -94,6 +95,7 @@ where
             reader,
             rechunk: true,
             n_rows: None,
+            n_threads: None,
             infer_schema_len: Some(128),
             schema: None,
             path: None,
@@ -109,10 +111,9 @@ where
             self.n_rows,
             self.schema,
             self.infer_schema_len,
-            None,
-            1024,
+            self.n_threads,
+            1024, // sample size
             self.chunk_size,
-            0,
             self.low_memory,
         )?;
 
@@ -128,12 +129,11 @@ pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     /// Explicit schema for the CSV file
     schema: Cow<'a, Schema>,
-    skip_rows: usize,
     n_rows: Option<usize>,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
-    low_memory: bool
+    low_memory: bool,
 }
 impl<'a> CoreJsonReader<'a> {
     pub(crate) fn new(
@@ -144,7 +144,6 @@ impl<'a> CoreJsonReader<'a> {
         n_threads: Option<usize>,
         sample_size: usize,
         chunk_size: usize,
-        skip_rows: usize,
         low_memory: bool,
     ) -> Result<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
@@ -166,12 +165,10 @@ impl<'a> CoreJsonReader<'a> {
             reader_bytes: Some(reader_bytes),
             schema,
             sample_size,
-            chunk_size,
-            skip_rows,
             n_rows,
             n_threads,
-            low_memory
-
+            chunk_size,
+            low_memory,
         })
     }
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
@@ -215,35 +212,34 @@ impl<'a> CoreJsonReader<'a> {
         };
 
         let dfs = pool.install(|| {
-          file_chunks
-            .into_par_iter()
-            .map(|(bytes_offset_thread, stop_at_nbytes)| {
-                let mut read = bytes_offset_thread;
+            file_chunks
+                .into_par_iter()
+                .map(|(bytes_offset_thread, stop_at_nbytes)| {
+                    let mut read = bytes_offset_thread;
 
-                let mut last_read = usize::MAX;
+                    let mut last_read = usize::MAX;
 
-                let mut buffers = init_buffers(&self.schema, capacity)?;
+                    let mut buffers = init_buffers(&self.schema, capacity)?;
 
-                loop {
-                    if read >= stop_at_nbytes || read == last_read {
-                        break;
+                    loop {
+                        if read >= stop_at_nbytes || read == last_read {
+                            break;
+                        }
+                        let local_bytes = &bytes[read..stop_at_nbytes];
+
+                        last_read = read;
+                        read += parse_lines(local_bytes, &mut buffers)?;
                     }
-                    let local_bytes = &bytes[read..stop_at_nbytes];
-
-                    last_read = read;
-                    read += parse_lines(local_bytes, &mut buffers)?;
-                }
-                let df = DataFrame::new_no_checks(
-                    buffers
-                        .into_values()
-                        .map(|buf| buf.into_series())
-                        .collect::<Result<_>>()?,
-                );
-                Ok(df)
-            })
-            .collect::<Result<Vec<_>>>()
+                    let df = DataFrame::new_no_checks(
+                        buffers
+                            .into_values()
+                            .map(|buf| buf.into_series())
+                            .collect::<Result<_>>()?,
+                    );
+                    Ok(df)
+                })
+                .collect::<Result<Vec<_>>>()
         })?;
-
 
         accumulate_dataframes_vertical(dfs)
     }

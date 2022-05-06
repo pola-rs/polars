@@ -7,7 +7,7 @@ pub use crate::ipc::*;
 #[cfg(feature = "json")]
 pub use crate::json::*;
 #[cfg(feature = "json")]
-pub use crate::json_core::json::*;
+pub use crate::ndjson_core::ndjson::*;
 #[cfg(feature = "parquet")]
 pub use crate::parquet::*;
 
