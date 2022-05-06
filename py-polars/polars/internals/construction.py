@@ -374,18 +374,23 @@ def dict_to_pydf(
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
-    columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
-    if not data and dtypes:
-        data_series = [
-            pli.Series(name, [], dtypes.get(name)).inner() for name in columns
-        ]
-    else:
-        data_series = [
-            pli.Series(name, values, dtypes.get(name)).inner()
-            for name, values in data.items()
-        ]
-    data_series = _handle_columns_arg(data_series, columns=columns)
-    return PyDataFrame(data_series)
+    if columns is not None:
+        # the columns arg may also set the dtype of the series
+        columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
+
+        if not data and dtypes:
+            data_series = [
+                pli.Series(name, [], dtypes.get(name)).inner() for name in columns
+            ]
+        else:
+            data_series = [
+                pli.Series(name, values, dtypes.get(name)).inner()
+                for name, values in data.items()
+            ]
+        data_series = _handle_columns_arg(data_series, columns=columns)
+        return PyDataFrame(data_series)
+    # fast path
+    return PyDataFrame.read_dict(data)
 
 
 def numpy_to_pydf(
