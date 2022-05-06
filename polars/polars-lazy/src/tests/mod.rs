@@ -39,7 +39,7 @@ use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
 #[cfg(feature = "temporal")]
 use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars_core::export::lazy_static::lazy_static;
+pub(crate) use polars_core::SINGLE_LOCK;
 use std::iter::FromIterator;
 
 static GLOB_PARQUET: &str = "../../examples/datasets/*.parquet";
@@ -48,13 +48,6 @@ static GLOB_IPC: &str = "../../examples/datasets/*.ipc";
 static FOODS_CSV: &str = "../../examples/datasets/foods1.csv";
 static FOODS_IPC: &str = "../../examples/datasets/foods1.ipc";
 static FOODS_PARQUET: &str = "../../examples/datasets/foods1.parquet";
-
-lazy_static! {
-    // needed prevent race conditions during test execution
-    // for example with env vars set for tests
-    // or global string cache resets.
-    pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
-}
 
 fn scan_foods_csv() -> LazyFrame {
     LazyCsvReader::new(FOODS_CSV.to_string()).finish().unwrap()
