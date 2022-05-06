@@ -34,7 +34,6 @@ where
     infer_schema_len: Option<usize>,
     chunk_size: usize,
     schema: Option<&'a Schema>,
-    row_count: Option<RowCount>,
     path: Option<PathBuf>,
     low_memory: bool,
 
@@ -44,11 +43,6 @@ impl<'a, R> JsonLineReader<'a, R>
 where
     R: 'a + MmapBytesReader,
 {
-    /// Add a `row_count` column.
-    pub fn with_row_count(mut self, rc: Option<RowCount>) -> Self {
-        self.row_count = rc;
-        self
-    }
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
         self
@@ -69,6 +63,11 @@ where
     pub fn with_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
         self.path = path.map(|p| p.into());
         self
+    }
+    /// Sets the chunk size used by the parser. This influences performance
+    pub fn with_chunk_size(mut self, chunk_size: usize) -> Self {
+      self.chunk_size = chunk_size;
+      self
     }
     /// Reduce memory consumption at the expense of performance
     pub fn low_memory(mut self, toggle: bool) -> Self {
@@ -99,7 +98,6 @@ where
             schema: None,
             path: None,
             chunk_size: 1 << 18,
-            row_count: None,
             low_memory: false,
         }
     }
@@ -112,7 +110,6 @@ where
             self.schema,
             self.infer_schema_len,
             None,
-            self.row_count,
             1024,
             self.chunk_size,
             0,
@@ -136,7 +133,6 @@ pub(crate) struct CoreJsonReader<'a> {
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
-    row_count: Option<RowCount>,
     low_memory: bool
 }
 impl<'a> CoreJsonReader<'a> {
@@ -146,7 +142,6 @@ impl<'a> CoreJsonReader<'a> {
         schema: Option<&'a Schema>,
         infer_schema_len: Option<usize>,
         n_threads: Option<usize>,
-        row_count: Option<RowCount>,
         sample_size: usize,
         chunk_size: usize,
         skip_rows: usize,
@@ -175,7 +170,6 @@ impl<'a> CoreJsonReader<'a> {
             skip_rows,
             n_rows,
             n_threads,
-            row_count,
             low_memory
 
         })
