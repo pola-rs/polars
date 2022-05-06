@@ -110,11 +110,11 @@ where
             reader_bytes,
             self.n_rows,
             self.schema,
-            self.infer_schema_len,
             self.n_threads,
             1024, // sample size
             self.chunk_size,
             self.low_memory,
+            self.infer_schema_len,
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
@@ -127,26 +127,25 @@ where
 
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
+    n_rows: Option<usize>,
     /// Explicit schema for the CSV file
     schema: Cow<'a, Schema>,
-    n_rows: Option<usize>,
     n_threads: Option<usize>,
     sample_size: usize,
     chunk_size: usize,
     low_memory: bool,
 }
 impl<'a> CoreJsonReader<'a> {
-
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         reader_bytes: ReaderBytes<'a>,
         n_rows: Option<usize>,
         schema: Option<&'a Schema>,
-        infer_schema_len: Option<usize>,
         n_threads: Option<usize>,
         sample_size: usize,
         chunk_size: usize,
         low_memory: bool,
+        infer_schema_len: Option<usize>,
     ) -> Result<CoreJsonReader<'a>> {
         let reader_bytes = reader_bytes;
 
