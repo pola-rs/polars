@@ -6,3 +6,6 @@ pub(crate) static POLARS: Lazy<PyObject> =
 
 pub(crate) static UTILS: Lazy<PyObject> =
     Lazy::new(|| Python::with_gil(|py| POLARS.getattr(py, "utils").unwrap()));
+
+pub(crate) static SERIES: Lazy<PyObject> =
+    Lazy::new(|| Python::with_gil(|py| POLARS.getattr(py, "Series").unwrap()));
