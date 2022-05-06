@@ -1,5 +1,5 @@
 use numpy::IntoPyArray;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::{BufReader, BufWriter, Cursor, Read};
 
@@ -18,6 +18,7 @@ use crate::{
     arrow_interop,
     error::PyPolarsErr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
+    py_modules,
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
@@ -372,6 +373,31 @@ impl PyDataFrame {
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
         Ok(pydf)
+    }
+
+    #[staticmethod]
+    pub fn read_dict(py: Python, dict: &PyDict) -> PyResult<Self> {
+        let cols = dict
+            .into_iter()
+            .map(|(key, val)| {
+                let name = key.extract::<&str>()?;
+
+                let s = if val.is_instance_of::<PyDict>()? {
+                    let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
+                    df.df.into_struct(name).into_series()
+                } else {
+                    let obj = py_modules::SERIES.call1(py, (name, val))?;
+
+                    let pyseries_obj = obj.getattr(py, "_s")?;
+                    let pyseries = pyseries_obj.extract::<PySeries>(py)?;
+                    pyseries.series
+                };
+                Ok(s)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+
+        let df = DataFrame::new(cols).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
     }
 
     pub fn to_csv(
