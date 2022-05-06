@@ -35,7 +35,7 @@ def test_to_from_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
             df.write_parquet(buf, compression=compression)
             buf.seek(0)
             read_df = pl.read_parquet(buf)
-            assert df.frame_equal(read_df)
+            assert df.frame_equal(read_df, null_equal=True)
 
 
 def test_to_from_file(

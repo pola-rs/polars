@@ -13,7 +13,8 @@ import polars as pl
 from polars import DataType
 
 
-def test_to_from_buffer(df: pl.DataFrame) -> None:
+def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists
     buf = io.BytesIO()
     df.write_csv(buf)
     buf.seek(0)
@@ -26,7 +27,8 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
     assert df.frame_equal(read_df)
 
 
-def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
+def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists
     df = df.drop("strings_nulls")
 
     f = os.path.join(io_test_dir, "small.csv")
