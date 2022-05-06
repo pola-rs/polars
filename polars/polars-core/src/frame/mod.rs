@@ -2275,6 +2275,8 @@ impl DataFrame {
     ///
     /// let df2: DataFrame = df1.describe(None);
     /// assert_eq!(df2.shape(), (8, 4));
+    /// println!("{}", df2);
+    /// # Ok::<(), PolarsError>(())
     /// ```
     ///
     /// Output:
@@ -2302,7 +2304,7 @@ impl DataFrame {
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
     /// │ max      ┆ null        ┆ 3.0     ┆ null   │
     /// └──────────┴─────────────┴─────────┴────────┘
-    ///
+    /// ```
     #[must_use]
     pub fn describe(&self, percentiles: Option<&[f64]>) -> Self {
         fn is_numeric(s: &Series) -> bool {
