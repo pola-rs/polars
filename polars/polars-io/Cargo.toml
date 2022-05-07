@@ -28,6 +28,7 @@ fmt = ["polars-core/fmt"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng-compat"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
+partition = ["uuid"]
 # don't use this
 private = ["polars-time/private"]
 
@@ -54,6 +55,7 @@ regex = "1.5"
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 simdutf8 = "0.1"
+uuid = { version = "1.0.0", features = ["v4"], optional = true }
 
 [package.metadata.docs.rs]
 all-features = true
