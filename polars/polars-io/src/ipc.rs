@@ -493,9 +493,13 @@ mod test {
     fn test_partition() -> Result<()> {
         use std::{io::BufReader, path::PathBuf};
 
+        use tempdir::TempDir;
+
+        let tempdir = TempDir::new("ipc-partition")?;
+
         let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
         let by = ["a", "b"];
-        let rootdir = format!("tmp-{}", uuid::Uuid::new_v4().to_string());
+        let rootdir = tempdir.path();
         PartitionIpcWriter::new(&rootdir, by).finish(&df)?;
 
         let expected_dfs = [
@@ -507,7 +511,7 @@ mod test {
         let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
             .into_iter()
             .zip(expected_dfs.into_iter())
-            .map(|(p, df)| (PathBuf::from(format!("{}/{}", &rootdir, p)), df))
+            .map(|(p, df)| (PathBuf::from(rootdir.join(p)), df))
             .collect();
 
         for (expected_dir, expected_df) in expected.iter() {
