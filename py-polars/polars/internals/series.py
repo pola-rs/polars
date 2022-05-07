@@ -1109,14 +1109,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [3, 5, 1])
         >>> s.cummax()
         shape: (3,)
         Series: 'a' [i64]
         [
-            1
-            2
             3
+            5
+            5
         ]
 
         """
