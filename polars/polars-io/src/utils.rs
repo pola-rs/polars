@@ -80,6 +80,26 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
     }
 }
 
+#[cfg(feature = "partition")]
+pub(crate) fn resolve_partition_dir<I, S>(
+    rootdir: &Path,
+    by: I,
+    partition_df: &DataFrame,
+) -> PathBuf
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut path = PathBuf::new();
+    path.push(resolve_homedir(rootdir));
+
+    for key in by.into_iter() {
+        let value = partition_df[key.as_ref()].get(0).to_string();
+        path.push(format!("{}={}", key.as_ref(), value))
+    }
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::resolve_homedir;
