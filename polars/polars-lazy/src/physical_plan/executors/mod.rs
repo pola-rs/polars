@@ -15,6 +15,10 @@ mod sort;
 mod stack;
 mod udf;
 mod union;
+#[cfg(feature = "python")]
+mod python_scan;
+#[cfg(feature = "python")]
+pub(super) use self::python_scan::*;
 
 pub(super) use self::{
     cache::*, drop_duplicates::*, explode::*, filter::*, groupby::*, groupby_dynamic::*,
