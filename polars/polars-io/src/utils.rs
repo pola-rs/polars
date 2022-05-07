@@ -81,6 +81,7 @@ pub(crate) fn update_row_counts(dfs: &mut [(DataFrame, IdxSize)]) {
 }
 
 #[cfg(feature = "partition")]
+/// partition_df must be created by the same way of partition_by
 pub(crate) fn resolve_partition_dir<I, S>(
     rootdir: &Path,
     by: I,

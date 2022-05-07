@@ -277,6 +277,24 @@ where
 
 #[must_use]
 #[cfg(feature = "partition")]
+/// Write a DataFrame to partitioned Arrow's IPC format
+/// # Example
+///
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_core::df;
+/// use polars_io::ipc::PartitionIpcWriter;
+///
+/// let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
+/// let by = ["a", "b"];
+/// fn example(df: &DataFrame) -> Result<()> {
+///     let mut file = File::create("file.ipc").expect("could not create file");
+///
+///     PartitionIpcWriter::new("./tmp_dir", by)
+///         .finish(&df)
+/// }
+///
+/// ```
 pub struct PartitionIpcWriter<P, I, S> {
     rootdir: P,
     by: I,
@@ -302,11 +320,13 @@ where
         }
     }
 
+    /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
         self.compression = compression;
         self
     }
 
+    /// Write the ipc file in parallel (default). The single threaded writer consumes less memory.
     pub fn write_parallel(mut self, parallel: bool) -> Self {
         self.parallel = parallel;
         self
@@ -469,7 +489,7 @@ mod test {
 
     #[test]
     #[cfg(feature = "partition")]
-    fn test_patition() -> Result<()> {
+    fn test_partition() -> Result<()> {
         use std::{io::BufReader, path::PathBuf};
 
         let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
@@ -483,13 +503,13 @@ mod test {
             df!("a" => [3], "b" => [4], "c" => [5])?,
         ];
 
-        let expected_dirs: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
+        let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
             .into_iter()
             .zip(expected_dfs.into_iter())
             .map(|(p, df)| (PathBuf::from(format!("{}/{}", &rootdir, p)), df))
             .collect();
 
-        for (expected_dir, expected_df) in expected_dirs.iter() {
+        for (expected_dir, expected_df) in expected.iter() {
             assert!(expected_dir.exists());
 
             let ipc_paths = std::fs::read_dir(&expected_dir)?
