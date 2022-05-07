@@ -349,7 +349,7 @@ where
                         let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
                         std::fs::create_dir_all(&path)?;
 
-                        path.push(format!("part-{}.ipc", Uuid::new_v4().to_string()));
+                        path.push(format!("part-{}.ipc", Uuid::new_v4()));
 
                         let mut file = std::fs::File::create(path)?;
                         let writer = BufWriter::new(&mut file);
@@ -367,7 +367,7 @@ where
                 let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
                 std::fs::create_dir_all(&path)?;
 
-                path.push(format!("part-{}.ipc", Uuid::new_v4().to_string()));
+                path.push(format!("part-{}.ipc", Uuid::new_v4()));
 
                 let mut file = std::fs::File::create(path)?;
                 let writer = BufWriter::new(&mut file);
