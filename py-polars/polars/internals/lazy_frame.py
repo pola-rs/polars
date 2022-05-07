@@ -300,6 +300,12 @@ class LazyFrame(Generic[DF]):
             self._ldf.to_json(file)
         return None
 
+    @classmethod
+    def _scan_python_function(cls, schema: "pa.schema", scan_fn: bytes) -> "LazyFrame":
+        self = cls.__new__(cls)
+        self._ldf = PyLazyFrame.scan_from_python_function(list(schema), scan_fn)
+        return self
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.

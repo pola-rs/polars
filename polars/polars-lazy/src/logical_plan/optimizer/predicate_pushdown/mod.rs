@@ -444,10 +444,13 @@ impl PredicatePushDown {
             // NOT Pushed down passed these nodes
             // predicates influence slice sizes
             lp @ Slice { .. }
-            // python node does not yet support predicates
-            | lp @ PythonScan {..}
             // dont push down predicates. An aggregation needs all rows
             | lp @ Aggregate {..} => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            }
+            #[cfg(feature = "python")]
+            // python node does not yet support predicates
+             lp @ PythonScan {..} => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
         }

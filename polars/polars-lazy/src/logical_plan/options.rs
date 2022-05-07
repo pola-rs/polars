@@ -148,7 +148,7 @@ pub struct SortArguments {
 }
 
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(
 all(feature = "serde", feature = "object"),

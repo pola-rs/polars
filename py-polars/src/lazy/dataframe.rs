@@ -18,6 +18,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::io::BufWriter;
+use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 
 #[pyclass]
 #[repr(transparent)]
@@ -254,6 +255,12 @@ impl PyLazyFrame {
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
+    }
+
+    #[staticmethod]
+    pub fn scan_from_python_function(schema: &PyList, scan_fn: Vec<u8>) -> PyResult<Self> {
+        let schema = pyarrow_schema_to_rust(schema)?;
+        Ok(LazyFrame::scan_from_python_function(schema, scan_fn).into())
     }
 
     pub fn describe_plan(&self) -> String {

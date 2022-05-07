@@ -278,3 +278,6 @@ def maybe_cast(
     if not isinstance(el, py_type):
         el = py_type(el)
     return el
+
+
+Schema = Dict[str, Type[DataType]]

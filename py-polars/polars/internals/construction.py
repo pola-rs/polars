@@ -521,8 +521,8 @@ def arrow_to_pydf(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
     original_columns = columns
-    columns, dtypes = _unpack_columns(columns)
     if columns is not None:
+        columns, dtypes = _unpack_columns(columns)
         try:
             data = data.rename_columns(columns)
         except pa.lib.ArrowInvalid as e:
@@ -571,7 +571,7 @@ def arrow_to_pydf(
         df = df[names]
         pydf = df._df
 
-    if dtypes and original_columns:
+    if columns is not None and dtypes and original_columns:
         pydf = _post_apply_columns(pydf, original_columns)
     return pydf
 
