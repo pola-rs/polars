@@ -109,7 +109,7 @@ impl PyDataFrame {
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
         skip_rows_after_header: usize,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
         sample_size: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -189,7 +189,7 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -224,7 +224,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let file = get_file_like(py_f, false)?;
@@ -995,7 +995,7 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> PyResult<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
             .with_row_count(name, offset)
