@@ -144,7 +144,7 @@ impl PyLazyFrame {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: &str,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
         parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -223,7 +223,7 @@ impl PyLazyFrame {
         cache: bool,
         parallel: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
@@ -243,7 +243,7 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
@@ -663,7 +663,7 @@ impl PyLazyFrame {
         ldf.melt(args).into()
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_count(name, offset).into()
     }
