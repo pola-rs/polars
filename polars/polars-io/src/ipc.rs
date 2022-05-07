@@ -38,8 +38,6 @@ use crate::prelude::*;
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
-use polars_core::POOL;
-use rayon::iter::IntoParallelIterator;
 use std::io::{BufWriter, Read, Seek, Write};
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -333,8 +331,11 @@ where
     }
 
     pub fn finish(self, df: &DataFrame) -> Result<()> {
+        use polars_core::POOL;
+        use rayon::iter::IntoParallelIterator;
         use rayon::iter::ParallelIterator;
         use uuid::Uuid;
+
         let rootdir: PathBuf = self.rootdir.into();
         let by: Vec<String> = self.by.into_iter().map(|x| x.as_ref().to_owned()).collect();
         let group = df.groupby(&by)?;
