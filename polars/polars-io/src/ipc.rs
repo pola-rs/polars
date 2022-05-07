@@ -492,7 +492,6 @@ mod test {
     #[cfg(feature = "partition")]
     fn test_partition() -> Result<()> {
         use std::{io::BufReader, path::PathBuf};
-
         use tempdir::TempDir;
 
         let tempdir = TempDir::new("ipc-partition")?;
@@ -529,8 +528,6 @@ mod test {
             let df = IpcReader::new(reader).finish()?;
             assert!(expected_df.frame_equal(&df));
         }
-
-        std::fs::remove_dir_all(&rootdir)?;
 
         Ok(())
     }
