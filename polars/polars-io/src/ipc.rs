@@ -283,15 +283,12 @@ where
 /// use polars_core::df;
 /// use polars_io::ipc::PartitionIpcWriter;
 ///
-/// let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
-/// let by = ["a", "b"];
 /// fn example(df: &DataFrame) -> Result<()> {
-///     let mut file = File::create("file.ipc").expect("could not create file");
-///
+///     let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
+///     let by = ["a", "b"];
 ///     PartitionIpcWriter::new("./tmp_dir", by)
 ///         .finish(&df)
 /// }
-///
 /// ```
 pub struct PartitionIpcWriter<P, I, S> {
     rootdir: P,
@@ -492,6 +489,7 @@ mod test {
     #[cfg(feature = "partition")]
     fn test_partition() -> Result<()> {
         use std::{io::BufReader, path::PathBuf};
+
         use tempdir::TempDir;
 
         let tempdir = TempDir::new("ipc-partition")?;
