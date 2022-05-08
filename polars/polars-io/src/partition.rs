@@ -4,7 +4,6 @@ use rayon::iter::IndexedParallelIterator;
 use std::{
     fs::File,
     io::BufWriter,
-    marker::PhantomData,
     path::{Path, PathBuf},
 };
 
@@ -24,29 +23,53 @@ where
     path
 }
 
-pub struct PartitionedWriter<F, P, I, S> {
+pub struct PartitionedWriter<F> {
     option: F,
-    rootdir: P,
-    by: I,
+    rootdir: PathBuf,
+    by: Vec<String>,
     parallel: bool,
-    phantom: PhantomData<S>,
 }
 
-impl<F, P, I, S> PartitionedWriter<F, P, I, S>
+impl<F> PartitionedWriter<F>
 where
     F: WriterFactory + Send + Sync,
-    P: Into<PathBuf>,
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
 {
-    pub fn new(option: F, rootdir: P, by: I) -> Self {
+    pub fn new<P, I, S>(option: F, rootdir: P, by: I) -> Self
+    where
+        P: Into<PathBuf>,
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         Self {
             option,
-            rootdir,
-            by,
+            rootdir: rootdir.into(),
+            by: by.into_iter().map(|s| s.as_ref().to_string()).collect(),
             parallel: true,
-            phantom: PhantomData,
         }
+    }
+
+    /// Write the parquet file in parallel (default).
+    pub fn with_parallel(mut self, pararell: bool) -> Self {
+        self.parallel = pararell;
+        self
+    }
+
+    fn write_partition_df(&self, partition_df: &mut DataFrame, i: usize) -> Result<()> {
+        let mut path = resolve_partition_dir(&self.rootdir, &self.by, partition_df);
+        std::fs::create_dir_all(&path)?;
+
+        path.push(format!(
+            "data-{:04}.{}",
+            i,
+            self.option.extension().display()
+        ));
+
+        let file = std::fs::File::create(path)?;
+        let writer = BufWriter::new(file);
+
+        self.option
+            .create_writer::<BufWriter<File>>(writer)
+            .finish(partition_df)
     }
 
     pub fn finish(self, df: &DataFrame) -> Result<()> {
@@ -54,57 +77,19 @@ where
         use rayon::iter::IntoParallelIterator;
         use rayon::iter::ParallelIterator;
 
-        let rootdir: PathBuf = self.rootdir.into();
-        let by: Vec<String> = self.by.into_iter().map(|x| x.as_ref().to_owned()).collect();
-        let group = df.groupby(&by)?;
+        let partitioned = df.partition_by(&self.by)?;
 
         if self.parallel {
             POOL.install(|| {
-                group
-                    .get_groups()
-                    .idx_ref()
+                partitioned
                     .into_par_iter()
                     .enumerate()
-                    .map(|(i, t)| {
-                        let mut partition_df =
-                            unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
-                        let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
-                        std::fs::create_dir_all(&path)?;
-
-                        path.push(format!(
-                            "data-{:04}.{}",
-                            i,
-                            self.option.extension().display()
-                        ));
-
-                        let file = std::fs::File::create(path)?;
-                        let writer = BufWriter::new(file);
-
-                        self.option
-                            .create_writer::<BufWriter<File>>(writer)
-                            .finish(&mut partition_df)
-                    })
+                    .map(|(i, mut partition_df)| self.write_partition_df(&mut partition_df, i))
                     .collect::<Result<Vec<_>>>()
             })?;
         } else {
-            for (i, t) in group.get_groups().idx_ref().iter().enumerate() {
-                let mut partition_df =
-                    unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
-                let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
-                std::fs::create_dir_all(&path)?;
-
-                path.push(format!(
-                    "data-{:04}.{}",
-                    i,
-                    self.option.extension().display()
-                ));
-
-                let file = std::fs::File::create(path)?;
-                let writer = BufWriter::new(file);
-
-                self.option
-                    .create_writer::<BufWriter<File>>(writer)
-                    .finish(&mut partition_df)?;
+            for (i, mut partition_df) in partitioned.into_iter().enumerate() {
+                self.write_partition_df(&mut partition_df, i)?;
             }
         }
 
