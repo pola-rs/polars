@@ -110,15 +110,11 @@ where
                 let columns = batch
                     .columns()
                     .par_iter()
-                    .zip(parquet_schema.columns().par_iter())
+                    .zip(parquet_schema.fields().par_iter())
                     .zip(encodings.par_iter())
-                    .map(|((array, descriptor), encoding)| {
-                        let encoded_pages = array_to_pages(
-                            array.as_ref(),
-                            descriptor.descriptor.clone(),
-                            options,
-                            *encoding,
-                        )?;
+                    .map(|((array, tp), encoding)| {
+                        let encoded_pages =
+                            array_to_pages(array.as_ref(), tp.clone(), options, *encoding)?;
                         encoded_pages
                             .map(|page| {
                                 compress(page?, vec![], options.compression).map_err(|x| x.into())
