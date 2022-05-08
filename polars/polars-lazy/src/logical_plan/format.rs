@@ -8,7 +8,7 @@ impl fmt::Debug for LogicalPlan {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan { options } => write!(f, "PYTHON SCAN"),
+            PythonScan { .. } => write!(f, "PYTHON SCAN"),
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
             Cache { input } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]

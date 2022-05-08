@@ -73,6 +73,15 @@ impl From<DataFrame> for PyDataFrame {
     clippy::len_without_is_empty
 )]
 impl PyDataFrame {
+    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
+        // used for polars-lazy python node. This takes the dataframe from underneath of you, so
+        // don't use this anywhere else.
+        let mut df = std::mem::take(&mut self.df);
+        let cols = std::mem::take(df.get_columns_mut());
+        let (ptr, len, cap) = cols.into_raw_parts();
+        (ptr as usize, len, cap)
+    }
+
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = to_series_collection(columns);

@@ -113,6 +113,7 @@ from polars.io import (
     read_parquet,
     read_sql,
     scan_csv,
+    scan_ds,
     scan_ipc,
     scan_parquet,
 )
@@ -158,6 +159,7 @@ __all__ = [
     "read_ipc",
     "scan_csv",
     "scan_ipc",
+    "scan_ds",
     "scan_parquet",
     "read_ipc_schema",
     "read_avro",

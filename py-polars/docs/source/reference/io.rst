@@ -55,3 +55,12 @@ AVRO
 
    read_avro
    DataFrame.write_avro
+
+Datasets
+~~~~~~~~
+Connect to pyarrow datasets.
+
+.. autosummary::
+   :toctree: api/
+
+   scan_ds
