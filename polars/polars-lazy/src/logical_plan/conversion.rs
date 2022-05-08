@@ -158,9 +158,7 @@ pub(crate) fn to_alp(
 ) -> Result<Node> {
     let v = match lp {
         #[cfg(feature = "python")]
-        LogicalPlan::PythonScan {options} => {
-            ALogicalPlan::PythonScan {options}
-        }
+        LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan { options },
         LogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()
@@ -649,9 +647,7 @@ pub(crate) fn node_to_lp(
 
     match lp {
         #[cfg(feature = "python")]
-        ALogicalPlan::PythonScan {options} => {
-            LogicalPlan::PythonScan {options}
-        }
+        ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
         ALogicalPlan::Union { inputs, options } => {
             let inputs = inputs
                 .into_iter()

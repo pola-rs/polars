@@ -147,12 +147,11 @@ pub struct SortArguments {
     pub(crate) slice: Option<(i64, usize)>,
 }
 
-
 #[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(
-all(feature = "serde", feature = "object"),
-serde(bound(deserialize = "'de: 'static"))
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
 )]
 #[cfg(feature = "python")]
 pub struct PythonOptions {

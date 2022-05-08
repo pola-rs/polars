@@ -143,7 +143,7 @@ impl LogicalPlan {
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
             #[cfg(feature = "python")]
-            PythonScan {options} => {
+            PythonScan { options } => {
                 let schema = &options.schema;
                 let total_columns = schema.len();
                 let n_columns = if let Some(columns) = &options.with_columns {
@@ -164,7 +164,6 @@ impl LogicalPlan {
                 } else {
                     self.write_dot(acc_str, prev_node, &current_node, id)
                 }
-
             }
             #[cfg(feature = "csv-file")]
             CsvScan {

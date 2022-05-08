@@ -42,10 +42,11 @@ where
     }
 }
 
-impl<J> FromIterator<J> for Schema where
+impl<J> FromIterator<J> for Schema
+where
     J: Into<Field>,
 {
-    fn from_iter<I: IntoIterator<Item=J>>(iter: I) -> Self {
+    fn from_iter<I: IntoIterator<Item = J>>(iter: I) -> Self {
         Schema::from(iter)
     }
 }

@@ -96,7 +96,6 @@ impl AggScanProjection {
     ) -> ALogicalPlan {
         // if the original projection is less than the new one. Also project locally
         if let Some(mut with_columns) = with_columns {
-
             let agg = self.columns.get(path).unwrap();
             if with_columns.len() < agg.len() {
                 let node = lp_arena.add(lp);

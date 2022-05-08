@@ -17,7 +17,7 @@ use std::sync::Arc;
 pub enum ALogicalPlan {
     #[cfg(feature = "python")]
     PythonScan {
-        options: PythonOptions
+        options: PythonOptions,
     },
     Melt {
         input: Node,
@@ -148,7 +148,7 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan {options} => &options.schema,
+            PythonScan { options } => &options.schema,
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
@@ -196,7 +196,9 @@ impl ALogicalPlan {
 
         match self {
             #[cfg(feature = "python")]
-            PythonScan {options} => PythonScan {options: options.clone()},
+            PythonScan { options } => PythonScan {
+                options: options.clone(),
+            },
             Union { options, .. } => Union {
                 inputs,
                 options: *options,
@@ -455,7 +457,7 @@ impl ALogicalPlan {
                 }
             }
             #[cfg(feature = "python")]
-            PythonScan {..} => {}
+            PythonScan { .. } => {}
         }
     }
 

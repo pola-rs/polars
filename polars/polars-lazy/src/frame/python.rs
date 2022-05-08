@@ -8,7 +8,8 @@ impl LazyFrame {
                 scan_fn,
                 schema: Arc::new(schema),
                 ..Default::default()
-            }
-        }.into()
+            },
+        }
+        .into()
     }
 }

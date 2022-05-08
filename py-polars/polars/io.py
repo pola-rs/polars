@@ -35,6 +35,7 @@ except ImportError:  # pragma: no cover
 from polars.convert import from_arrow
 from polars.datatypes import DataType
 from polars.internals import DataFrame, LazyFrame
+from polars.internals.anonymous_scan import _scan_ds
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
@@ -1006,3 +1007,7 @@ def read_sql(
         raise ImportError(
             "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
         )
+
+
+def scan_ds(ds: "pa.dataset.dataset") -> "LazyFrame":
+    return _scan_ds(ds)

@@ -36,6 +36,7 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import (
@@ -44,6 +45,13 @@ from polars.utils import (
     _process_null_values,
     format_path,
 )
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,

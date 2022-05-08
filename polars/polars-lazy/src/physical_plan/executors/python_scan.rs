@@ -3,7 +3,7 @@ use crate::prelude::*;
 use pyo3::prelude::*;
 
 pub(crate) struct PythonScanExec {
-    pub(crate)  options: PythonOptions
+    pub(crate) options: PythonOptions,
 }
 
 impl Executor for PythonScanExec {

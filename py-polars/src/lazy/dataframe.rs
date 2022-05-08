@@ -1,3 +1,4 @@
+use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -18,7 +19,6 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use std::io::BufWriter;
-use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 
 #[pyclass]
 #[repr(transparent)]

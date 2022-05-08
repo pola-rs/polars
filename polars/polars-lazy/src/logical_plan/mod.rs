@@ -49,9 +49,7 @@ pub enum Context {
 )]
 pub enum LogicalPlan {
     #[cfg(feature = "python")]
-    PythonScan {
-        options: PythonOptions,
-    },
+    PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
     Selection {
         input: Box<LogicalPlan>,
@@ -213,7 +211,7 @@ impl LogicalPlan {
         use LogicalPlan::*;
         match self {
             #[cfg(feature = "python")]
-            PythonScan {options} => &options.schema,
+            PythonScan { options } => &options.schema,
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),
