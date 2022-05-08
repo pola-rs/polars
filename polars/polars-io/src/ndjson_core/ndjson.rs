@@ -8,7 +8,7 @@ pub use arrow::{array::StructArray, io::ndjson};
 
 use crate::mmap::MmapBytesReader;
 use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
-use rayon::{prelude::*, ThreadPoolBuilder};
+use rayon::prelude::*;
 use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
 use std::fs::File;
