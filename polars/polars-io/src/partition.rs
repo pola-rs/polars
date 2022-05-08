@@ -23,6 +23,20 @@ where
     path
 }
 
+/// Write a DataFrame with disk partitioning
+///
+/// # Example
+/// ```
+/// use polars_core::prelude::*;
+/// use polars_io::ipc::IpcWriterOption;
+/// use polars_io::partition::PartitionedWriter;
+///
+/// fn example(df: &mut DataFrame) -> Result<()> {
+///     let option = IpcWriterOption::default();
+///     PartitionedWriter::new(option, "./rootdir", ["a", "b"])
+///         .finish(df)
+/// }
+///
 pub struct PartitionedWriter<F> {
     option: F,
     rootdir: PathBuf,
