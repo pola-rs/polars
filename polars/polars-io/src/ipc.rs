@@ -34,12 +34,13 @@
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
-use crate::prelude::*;
+use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
-use std::io::{BufWriter, Read, Seek, Write};
-use std::marker::PhantomData;
+
+use std::io::{Read, Seek, Write};
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -253,7 +254,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
@@ -273,45 +274,16 @@ where
     }
 }
 
-#[must_use]
-#[cfg(feature = "partition")]
-/// Write a DataFrame to partitioned Arrow's IPC format
-/// # Example
-///
-/// ```
-/// use polars_core::prelude::*;
-/// use polars_core::df;
-/// use polars_io::ipc::PartitionIpcWriter;
-///
-/// fn example(df: &DataFrame) -> Result<()> {
-///     let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
-///     let by = ["a", "b"];
-///     PartitionIpcWriter::new("./tmp_dir", by)
-///         .finish(&df)
-/// }
-/// ```
-pub struct PartitionIpcWriter<P, I, S> {
-    rootdir: P,
-    by: I,
-    parallel: bool,
+pub struct IpcWriterOption {
     compression: Option<write::Compression>,
-    phantom: PhantomData<S>,
+    extension: PathBuf,
 }
 
-#[cfg(feature = "partition")]
-impl<P, I, S> PartitionIpcWriter<P, I, S>
-where
-    P: Into<PathBuf>,
-    I: IntoIterator<Item = S>,
-    S: AsRef<str>,
-{
-    pub fn new(rootdir: P, by: I) -> Self {
+impl IpcWriterOption {
+    pub fn new() -> Self {
         Self {
-            rootdir,
-            by,
-            parallel: true,
             compression: None,
-            phantom: PhantomData,
+            extension: PathBuf::from(".ipc"),
         }
     }
 
@@ -321,64 +293,26 @@ where
         self
     }
 
-    /// Write the ipc file in parallel (default). The single threaded writer consumes less memory.
-    pub fn write_parallel(mut self, parallel: bool) -> Self {
-        self.parallel = parallel;
+    /// Set the extention. Defaults to ".ipc".
+    pub fn with_extension(mut self, extension: PathBuf) -> Self {
+        self.extension = extension;
         self
     }
+}
 
-    pub fn finish(self, df: &DataFrame) -> Result<()> {
-        use polars_core::POOL;
-        use rayon::iter::IntoParallelIterator;
-        use rayon::iter::ParallelIterator;
-        use uuid::Uuid;
+impl Default for IpcWriterOption {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-        let rootdir: PathBuf = self.rootdir.into();
-        let by: Vec<String> = self.by.into_iter().map(|x| x.as_ref().to_owned()).collect();
-        let group = df.groupby(&by)?;
+impl WriterFactory for IpcWriterOption {
+    fn create_writer<W: Write + 'static>(&self, writer: W) -> Box<dyn SerWriter<W>> {
+        Box::new(IpcWriter::new(writer).with_compression(self.compression))
+    }
 
-        if self.parallel {
-            POOL.install(|| {
-                group
-                    .get_groups()
-                    .idx_ref()
-                    .into_par_iter()
-                    .map(|t| {
-                        let mut partition_df =
-                            unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
-                        let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
-                        std::fs::create_dir_all(&path)?;
-
-                        path.push(format!("part-{}.ipc", Uuid::new_v4()));
-
-                        let mut file = std::fs::File::create(path)?;
-                        let writer = BufWriter::new(&mut file);
-
-                        IpcWriter::new(writer)
-                            .with_compression(self.compression)
-                            .finish(&mut partition_df)
-                    })
-                    .collect::<Result<Vec<_>>>()
-            })?;
-        } else {
-            for t in group.get_groups().idx_ref().iter() {
-                let mut partition_df =
-                    unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
-                let mut path = resolve_partition_dir(&rootdir, &by, &partition_df);
-                std::fs::create_dir_all(&path)?;
-
-                path.push(format!("part-{}.ipc", Uuid::new_v4()));
-
-                let mut file = std::fs::File::create(path)?;
-                let writer = BufWriter::new(&mut file);
-
-                IpcWriter::new(writer)
-                    .with_compression(self.compression)
-                    .finish(&mut partition_df)?;
-            }
-        }
-
-        Ok(())
+    fn extension(&self) -> PathBuf {
+        self.extension.to_owned()
     }
 }
 
@@ -483,50 +417,5 @@ mod test {
 
         let df_read = IpcReader::new(buf).finish().unwrap();
         assert!(df.frame_equal(&df_read));
-    }
-
-    #[test]
-    #[cfg(feature = "partition")]
-    fn test_partition() -> Result<()> {
-        use std::{io::BufReader, path::PathBuf};
-
-        use tempdir::TempDir;
-
-        let tempdir = TempDir::new("ipc-partition")?;
-
-        let df = df!("a" => [1, 1, 2, 3], "b" => [2, 2, 3, 4], "c" => [2, 3, 4, 5]).unwrap();
-        let by = ["a", "b"];
-        let rootdir = tempdir.path();
-        PartitionIpcWriter::new(&rootdir, by).finish(&df)?;
-
-        let expected_dfs = [
-            df!("a" => [1, 1], "b" => [2, 2], "c" => [2, 3])?,
-            df!("a" => [2], "b" => [3], "c" => [4])?,
-            df!("a" => [3], "b" => [4], "c" => [5])?,
-        ];
-
-        let expected: Vec<(PathBuf, DataFrame)> = ["a=1/b=2", "a=2/b=3", "a=3/b=4"]
-            .into_iter()
-            .zip(expected_dfs.into_iter())
-            .map(|(p, df)| (PathBuf::from(rootdir.join(p)), df))
-            .collect();
-
-        for (expected_dir, expected_df) in expected.iter() {
-            assert!(expected_dir.exists());
-
-            let ipc_paths = std::fs::read_dir(&expected_dir)?
-                .map(|e| {
-                    let entry = e?;
-                    Ok(entry.path())
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            assert_eq!(ipc_paths.len(), 1);
-            let reader = BufReader::new(std::fs::File::open(&ipc_paths[0])?);
-            let df = IpcReader::new(reader).finish()?;
-            assert!(expected_df.frame_equal(&df));
-        }
-
-        Ok(())
     }
 }
