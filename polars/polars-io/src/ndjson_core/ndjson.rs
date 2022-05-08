@@ -51,7 +51,6 @@ where
         self
     }
     pub fn infer_schema_len(mut self, infer_schema_len: Option<usize>) -> Self {
-        // used by error ignore logic
         self.infer_schema_len = infer_schema_len;
         self
     }
@@ -89,7 +88,7 @@ impl<'a, R> SerReader<R> for JsonLineReader<'a, R>
 where
     R: MmapBytesReader,
 {
-    /// Create a new CsvReader from a file/ stream
+    /// Create a new JsonLineReader from a file/ stream
     fn new(reader: R) -> Self {
         JsonLineReader {
             reader,
@@ -128,7 +127,6 @@ where
 pub(crate) struct CoreJsonReader<'a> {
     reader_bytes: Option<ReaderBytes<'a>>,
     n_rows: Option<usize>,
-    /// Explicit schema for the CSV file
     schema: Cow<'a, Schema>,
     n_threads: Option<usize>,
     sample_size: usize,
@@ -183,8 +181,6 @@ impl<'a> CoreJsonReader<'a> {
             n_threads = 1;
         }
 
-        // let n_chunks = total_rows / self.chunk_size;
-
         let rows_per_thread = total_rows / n_threads;
 
         let max_proxy = bytes.len() / n_threads / 2;
@@ -231,13 +227,12 @@ impl<'a> CoreJsonReader<'a> {
                         last_read = read;
                         read += parse_lines(local_bytes, &mut buffers)?;
                     }
-                    let df = DataFrame::new_no_checks(
+                    DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<Result<_>>()?,
-                    );
-                    Ok(df)
+                    )
                 })
                 .collect::<Result<Vec<_>>>()
         })?;

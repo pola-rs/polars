@@ -47,7 +47,6 @@ pub(crate) enum Buffer {
     UInt64(PrimitiveChunkedBuilder<UInt64Type>),
     Float32(PrimitiveChunkedBuilder<Float32Type>),
     Float64(PrimitiveChunkedBuilder<Float64Type>),
-    /// Stores the Utf8 fields and the total string length seen for that column
     Utf8(Utf8ChunkedBuilder),
     #[cfg(feature = "dtype-datetime")]
     Datetime(PrimitiveChunkedBuilder<Int64Type>),
@@ -73,8 +72,6 @@ impl Buffer {
                 .unwrap(),
             #[cfg(feature = "dtype-date")]
             Buffer::Date(v) => v.finish().into_series().cast(&DataType::Date).unwrap(),
-            // Safety:
-            // We already checked utf8 validity during parsing
             Buffer::Utf8(v) => v.finish().into_series(),
         };
         Ok(s)
