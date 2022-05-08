@@ -193,22 +193,8 @@ impl<'a> CoreJsonReader<'a> {
         let expected_fields = &self.schema.len();
         let file_chunks =
             get_file_chunks(bytes, n_threads, *expected_fields, SEP, Some(QUOTE_CHAR));
-        // If the number of threads given by the user is lower than our global thread pool we create
-        // new one.
-        let owned_pool;
-        let pool = if POOL.current_num_threads() != n_threads {
-            owned_pool = Some(
-                ThreadPoolBuilder::new()
-                    .num_threads(n_threads)
-                    .build()
-                    .unwrap(),
-            );
-            owned_pool.as_ref().unwrap()
-        } else {
-            &POOL
-        };
 
-        let dfs = pool.install(|| {
+        let dfs = POOL.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(bytes_offset_thread, stop_at_nbytes)| {
