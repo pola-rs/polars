@@ -181,7 +181,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         let schema = df.schema().to_arrow();
         let avro_fields = write::to_avro_schema(&schema)?;
 
