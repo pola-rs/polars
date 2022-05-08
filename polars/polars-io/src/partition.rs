@@ -36,6 +36,7 @@ where
 ///     PartitionedWriter::new(option, "./rootdir", ["a", "b"])
 ///         .finish(df)
 /// }
+/// ```
 ///
 pub struct PartitionedWriter<F> {
     option: F,
