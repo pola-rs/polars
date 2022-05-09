@@ -1744,6 +1744,7 @@ export const _DataFrame = (_df: any): DataFrame => {
         return wrap("sampleN",
           1,
           withReplacement,
+          false,
           seed
         );
       }
@@ -1754,6 +1755,7 @@ export const _DataFrame = (_df: any): DataFrame => {
         return wrap("sampleN",
           opts,
           withReplacement,
+          false,
           seed
         );
       }
@@ -1761,6 +1763,7 @@ export const _DataFrame = (_df: any): DataFrame => {
         return wrap("sampleFrac",
           frac,
           withReplacement,
+          false,
           seed
         );
       }
