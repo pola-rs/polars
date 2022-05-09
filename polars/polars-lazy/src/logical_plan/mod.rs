@@ -48,6 +48,8 @@ pub enum Context {
     serde(bound(deserialize = "'de: 'static"))
 )]
 pub enum LogicalPlan {
+    #[cfg(feature = "python")]
+    PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
     Selection {
         input: Box<LogicalPlan>,
@@ -208,6 +210,8 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
+            #[cfg(feature = "python")]
+            PythonScan { options } => &options.schema,
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),

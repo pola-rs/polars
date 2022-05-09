@@ -9,12 +9,16 @@ mod groupby_rolling;
 mod join;
 mod melt;
 mod projection;
+#[cfg(feature = "python")]
+mod python_scan;
 mod scan;
 mod slice;
 mod sort;
 mod stack;
 mod udf;
 mod union;
+#[cfg(feature = "python")]
+pub(super) use self::python_scan::*;
 
 pub(super) use self::{
     cache::*, drop_duplicates::*, explode::*, filter::*, groupby::*, groupby_dynamic::*,

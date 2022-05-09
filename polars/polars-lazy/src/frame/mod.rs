@@ -5,6 +5,8 @@ mod csv;
 mod ipc;
 #[cfg(feature = "parquet")]
 mod parquet;
+#[cfg(feature = "python")]
+mod python;
 
 #[cfg(feature = "csv-file")]
 pub use csv::*;

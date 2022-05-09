@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 fn process_with_columns(
     path: &Path,
-    with_columns: &Option<Vec<String>>,
+    with_columns: &Option<Arc<Vec<String>>>,
     columns: &mut PlHashMap<PathBuf, PlHashSet<(usize, String)>>,
     schema: &Schema,
 ) {
@@ -92,15 +92,15 @@ impl AggScanProjection {
         expr_arena: &mut Arena<AExpr>,
         lp_arena: &mut Arena<ALogicalPlan>,
         path: &Path,
-        with_columns: Option<Vec<String>>,
+        with_columns: Option<Arc<Vec<String>>>,
     ) -> ALogicalPlan {
         // if the original projection is less than the new one. Also project locally
-        if let Some(with_columns) = with_columns {
+        if let Some(mut with_columns) = with_columns {
             let agg = self.columns.get(path).unwrap();
             if with_columns.len() < agg.len() {
                 let node = lp_arena.add(lp);
 
-                let projections = with_columns
+                let projections = std::mem::take(Arc::make_mut(&mut with_columns))
                     .into_iter()
                     .map(|s| expr_arena.add(AExpr::Column(Arc::from(s))))
                     .collect();
@@ -139,7 +139,7 @@ impl OptimizationRule for AggScanProjection {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
                         columns.sort_unstable_by_key(|k| k.0);
-                        columns.into_iter().map(|k| k.1).collect()
+                        Arc::new(columns.into_iter().map(|k| k.1).collect())
                     });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
@@ -185,7 +185,7 @@ impl OptimizationRule for AggScanProjection {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
                         columns.sort_unstable_by_key(|k| k.0);
-                        columns.into_iter().map(|k| k.1).collect()
+                        Arc::new(columns.into_iter().map(|k| k.1).collect())
                     });
                     // prevent infinite loop
                     if options.with_columns == with_columns {
@@ -231,7 +231,7 @@ impl OptimizationRule for AggScanProjection {
                         let mut columns = agg.iter().cloned().collect::<Vec<_>>();
                         // make sure that the columns are sorted because they come from a hashmap
                         columns.sort_unstable_by_key(|k| k.0);
-                        columns.into_iter().map(|k| k.1).collect()
+                        Arc::new(columns.into_iter().map(|k| k.1).collect())
                     });
                     if options.with_columns == with_columns {
                         let lp = ALogicalPlan::CsvScan {
