@@ -158,6 +158,30 @@ pub struct WriteJsonOptions {
 }
 
 #[napi]
+pub fn read_json_lines(
+    path_or_buffer: Either<String, Buffer>,
+    options: ReadJsonOptions,
+) -> napi::Result<JsDataFrame> {
+    let infer_schema_length = options.infer_schema_length.unwrap_or(100) as usize;
+    let batch_size = options.batch_size.unwrap_or(10000) as usize;
+
+    let df = match path_or_buffer {
+        Either::A(path) => JsonLineReader::from_path(path)
+            .expect("unable to read file")
+            .infer_schema_len(Some(infer_schema_length))
+            .finish()
+            .map_err(JsPolarsErr::from)?,
+        Either::B(buf) => {
+            let cursor = Cursor::new(buf.as_ref());
+            JsonLineReader::new(cursor)
+                .infer_schema_len(Some(infer_schema_length))
+                .finish()
+                .map_err(JsPolarsErr::from)?
+        }
+    };
+    Ok(df.into())
+}
+#[napi]
 pub fn read_json(
     path_or_buffer: Either<String, Buffer>,
     options: ReadJsonOptions,
@@ -1013,11 +1037,13 @@ impl JsDataFrame {
         &self,
         n: i64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
+        
         let df = self
             .df
-            .sample_n(n as usize, with_replacement, seed.map(|s| s as u64))
+            .sample_n(n as usize, with_replacement, shuffle, seed.map(|s| s as u64))
             .map_err(JsPolarsErr::from)?;
         Ok(df.into())
     }
@@ -1027,11 +1053,13 @@ impl JsDataFrame {
         &self,
         frac: f64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
+        
         let df = self
             .df
-            .sample_frac(frac, with_replacement, seed.map(|s| s as u64))
+            .sample_frac(frac, with_replacement, shuffle, seed.map(|s| s as u64))
             .map_err(JsPolarsErr::from)?;
         Ok(df.into())
     }

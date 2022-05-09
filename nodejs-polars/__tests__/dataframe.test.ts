@@ -1386,7 +1386,7 @@ describe("io", () => {
       }
     });
     df.writeJSON(writeStream, {format:"lines"});
-    const newDF = pl.readJSON(body);
+    const newDF = pl.readJSON(body).select("foo", "bar");
     expect(newDF).toFrameEqual(df);
     done();
   });
@@ -1396,7 +1396,7 @@ describe("io", () => {
       pl.Series("bar", ["a", "b", "c"])
     ]);
     df.writeJSON("./test.json", {format:"lines"});
-    const newDF = pl.readJSON("./test.json");
+    const newDF = pl.readJSON("./test.json").select("foo", "bar");
     expect(newDF).toFrameEqual(df);
     fs.rmSync("./test.json");
     done();

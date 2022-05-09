@@ -1184,11 +1184,11 @@ impl JsExpr {
     }
 
     #[napi]
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<i64>) -> JsExpr {
+    pub fn sample_frac(&self, frac: f64, with_replacement: bool, shuffle: bool, seed: Option<i64>) -> JsExpr {
         let seed = seed.map(|s| s as u64);
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .into()
     }
     #[napi]
