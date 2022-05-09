@@ -13,7 +13,7 @@ use crate::prelude::*;
 use crate::utils::{get_supertype, split_ca, split_df, NoNull};
 
 #[cfg(feature = "describe")]
-use crate::utils::{concat_df};
+use crate::utils::concat_df;
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2311,7 +2311,6 @@ impl DataFrame {
     #[must_use]
     #[cfg(feature = "describe")]
     pub fn describe(&self, percentiles: Option<&[f64]>) -> Self {
-
         fn describe_cast(df: &DataFrame) -> DataFrame {
             let mut columns: Vec<Series> = vec![];
 
