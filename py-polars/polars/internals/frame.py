@@ -1040,7 +1040,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self, *args: Any, date_as_object: bool = False, **kwargs: Any
     ) -> "pd.DataFrame":  # noqa: F821
         """
-        Cast to a Pandas DataFrame. This requires that Pandas is installed.
+        Cast to a pandas DataFrame.
+        This requires that pandas and pyarrow are installed.
         This operation clones data.
 
         Parameters
@@ -1068,6 +1069,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         <class 'pandas.core.frame.DataFrame'>
 
         """
+        if not _PYARROW_AVAILABLE:
+            raise ImportError(  # pragma: no cover
+                "'pyarrow' is required when using to_pandas()."
+            )
         record_batches = self._df.to_pandas()
         tbl = pa.Table.from_batches(record_batches)
         return tbl.to_pandas(*args, date_as_object=date_as_object, **kwargs)
