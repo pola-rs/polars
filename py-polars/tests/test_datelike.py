@@ -873,3 +873,21 @@ def test_datetime_strptime_patterns() -> None:
     )["parsed"]
     assert s.null_count() == 1
     assert s[0] is None
+
+
+def test_timedelta_from() -> None:
+    as_dict = {
+        "A": [1, 2],
+        "B": [timedelta(seconds=4633), timedelta(seconds=50)],
+    }
+    as_rows = [
+        {
+            "A": 1,
+            "B": timedelta(seconds=4633),
+        },
+        {
+            "A": 2,
+            "B": timedelta(seconds=50),
+        },
+    ]
+    assert pl.DataFrame(as_dict).frame_equal(pl.DataFrame(as_rows))
