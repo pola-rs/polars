@@ -302,7 +302,16 @@ impl<'a> From<&AnyValue<'a>> for DataType {
             StructOwned(payload) => DataType::Struct(payload.1.to_vec()),
             #[cfg(feature = "dtype-struct")]
             Struct(_, fields) => DataType::Struct(fields.to_vec()),
-            av => panic!("{:?} not implemented", av),
+            #[cfg(feature = "dtype-duration")]
+            Duration(_, tu) => DataType::Duration(*tu),
+            UInt8(_) => DataType::UInt8,
+            UInt16(_) => DataType::UInt16,
+            Int8(_) => DataType::Int8,
+            Int16(_) => DataType::Int16,
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(_, _) => DataType::Categorical(None),
+            #[cfg(feature = "object")]
+            Object(o) => DataType::Object(o.type_name()),
         }
     }
 }
