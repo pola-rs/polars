@@ -90,7 +90,7 @@ where
                 Some(value) => self.append_value(value),
                 None => {
                     // try again without whitespace
-                    if is_whitespace(bytes[0]) {
+                    if !bytes.is_empty() && is_whitespace(bytes[0]) {
                         let bytes = skip_whitespace(bytes);
                         return self.parse_bytes(bytes, ignore_errors, needs_escaping);
                     }
