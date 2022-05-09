@@ -225,6 +225,7 @@
 //!     - `pct_change` - Compute change percentages.
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
+//!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!

@@ -108,6 +108,7 @@ list_eval = ["polars-lazy/list_eval"]
 chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
+list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
 describe = []
 
 test = [
@@ -245,7 +246,6 @@ polars-time = { version = "0.21.1", path = "./polars-time", default-features = f
 [dev-dependencies]
 ahash = "0.7"
 criterion = "0.3"
-lazy_static = "1.4"
 rand = "0.8"
 
 # see: https://bheisler.github.io/criterion.rs/book/faq.html

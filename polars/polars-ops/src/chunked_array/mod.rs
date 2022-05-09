@@ -1,3 +1,4 @@
+mod list;
 #[cfg(feature = "to_dummies")]
 mod to_dummies;
 
@@ -8,3 +9,5 @@ use polars_core::prelude::*;
 
 #[cfg(feature = "to_dummies")]
 pub use to_dummies::*;
+
+pub use list::*;

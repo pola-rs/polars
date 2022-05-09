@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "arrow2"
 version = "0.11.2"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=d0359641dbe6f9c6c50ab2f069b00a3b4d2cb5da#d0359641dbe6f9c6c50ab2f069b00a3b4d2cb5da"
+source = "git+https://github.com/jorgecarleitao/arrow2?rev=b9aa8e8da7648559efdc78535085a509a281c55d#b9aa8e8da7648559efdc78535085a509a281c55d"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -1179,9 +1179,9 @@ dependencies = [
  "hex",
  "indexmap",
  "jsonpath_lib",
- "lazy_static",
  "ndarray",
  "num",
+ "once_cell",
  "polars-arrow",
  "polars-utils",
  "rand",
@@ -1203,11 +1203,11 @@ dependencies = [
  "csv-core",
  "dirs",
  "flate2",
- "lazy_static",
  "lexical",
  "memchr",
  "memmap2",
  "num",
+ "once_cell",
  "polars-arrow",
  "polars-core",
  "polars-time",
@@ -1229,8 +1229,10 @@ dependencies = [
  "polars-arrow",
  "polars-core",
  "polars-io",
+ "polars-ops",
  "polars-time",
  "polars-utils",
+ "pyo3",
  "rayon",
  "regex",
  "serde",
@@ -1279,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.13.29"
+version = "0.13.31"
 dependencies = [
  "ahash",
  "bincode",
@@ -1290,6 +1292,7 @@ dependencies = [
  "once_cell",
  "polars",
  "polars-core",
+ "polars-lazy",
  "pyo3",
  "serde_json",
  "thiserror",

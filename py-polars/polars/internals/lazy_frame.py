@@ -36,6 +36,7 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
 from polars.utils import (
@@ -44,6 +45,13 @@ from polars.utils import (
     _process_null_values,
     format_path,
 )
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
@@ -299,6 +307,12 @@ class LazyFrame(Generic[DF]):
         else:
             self._ldf.to_json(file)
         return None
+
+    @classmethod
+    def _scan_python_function(cls, schema: "pa.schema", scan_fn: bytes) -> "LazyFrame":
+        self = cls.__new__(cls)
+        self._ldf = PyLazyFrame.scan_from_python_function(list(schema), scan_fn)
+        return self
 
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """

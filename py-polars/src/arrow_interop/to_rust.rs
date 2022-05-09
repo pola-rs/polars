@@ -6,6 +6,22 @@ use polars_core::utils::arrow::{array::ArrayRef, ffi};
 use polars_core::POOL;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
+
+pub fn field_to_rust(obj: &PyAny) -> PyResult<Field> {
+    let schema = Box::new(ffi::ArrowSchema::empty());
+    let schema_ptr = &*schema as *const ffi::ArrowSchema;
+
+    // make the conversion through PyArrow's private API
+    obj.call_method1("_export_to_c", (schema_ptr as Py_uintptr_t,))?;
+    let field = unsafe { ffi::import_field_from_c(schema.as_ref()).map_err(PyPolarsErr::from)? };
+    Ok(Field::from(&field))
+}
+
+// PyList<Field> which you get by calling `list(schema)`
+pub fn pyarrow_schema_to_rust(obj: &PyList) -> PyResult<Schema> {
+    obj.into_iter().map(|fld| field_to_rust(fld)).collect()
+}
 
 pub fn array_to_rust(obj: &PyAny) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct

@@ -38,11 +38,11 @@ fn sublist_get_indexes(arr: &ListArray<i64>, index: i64) -> IdxArr {
         let a: IdxArr = iter
             .map(|&offset| {
                 let len = offset - previous;
+                previous = offset;
                 // make sure that empty lists don't get accessed
-                if len == 0 {
+                if len == 0 || index >= len {
                     return None;
                 }
-                previous = offset;
 
                 let out = index
                     .negative_to_usize(len as usize)
@@ -87,7 +87,7 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use arrow::array::{Int32Array, PrimitiveArray};
+    use arrow::array::{Array, Int32Array, PrimitiveArray};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
     use std::sync::Arc;
@@ -107,6 +107,8 @@ mod test {
         assert_eq!(out.values().as_slice(), &[0, 3, 5]);
         let out = sublist_get_indexes(&arr, -1);
         assert_eq!(out.values().as_slice(), &[2, 4, 5]);
+        let out = sublist_get_indexes(&arr, 3);
+        assert_eq!(out.null_count(), 3);
     }
 
     #[test]
