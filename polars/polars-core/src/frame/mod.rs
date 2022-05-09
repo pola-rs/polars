@@ -10,7 +10,10 @@ use rayon::prelude::*;
 
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
-use crate::utils::{concat_df, get_supertype, split_ca, split_df, NoNull};
+use crate::utils::{get_supertype, split_ca, split_df, NoNull};
+
+#[cfg(feature = "describe")]
+use crate::utils::{concat_df};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
@@ -2306,40 +2309,21 @@ impl DataFrame {
     /// └──────────┴─────────────┴─────────┴────────┘
     /// ```
     #[must_use]
+    #[cfg(feature = "describe")]
     pub fn describe(&self, percentiles: Option<&[f64]>) -> Self {
-        fn is_numeric(s: &Series) -> bool {
-            let types = [
-                DataType::Int8,
-                DataType::Int16,
-                DataType::Int32,
-                DataType::Int64,
-                DataType::UInt8,
-                DataType::UInt16,
-                DataType::UInt32,
-                DataType::UInt64,
-                DataType::Float32,
-                DataType::Float64,
-            ];
-
-            types.contains(s.dtype())
-        }
 
         fn describe_cast(df: &DataFrame) -> DataFrame {
             let mut columns: Vec<Series> = vec![];
 
             for s in df.columns.iter() {
-                if is_numeric(s) || *s.dtype() == DataType::Boolean {
-                    columns.push(s.cast(&DataType::Float64).expect("cast to float failed"))
-                } else {
-                    columns.push(s.clone())
-                }
+                columns.push(s.cast(&DataType::Float64).expect("cast to float failed"));
             }
 
             DataFrame::new(columns).unwrap()
         }
 
         fn count(df: &DataFrame) -> DataFrame {
-            let columns = df.apply_columns_par(&|s| s.count_as_series());
+            let columns = df.apply_columns_par(&|s| Series::new(s.name(), [s.len() as IdxSize]));
             DataFrame::new_no_checks(columns)
         }
 
@@ -3361,6 +3345,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "describe")]
     fn test_df_describe() -> Result<()> {
         let df1: DataFrame = df!("categorical" => &["d","e","f"],
                                  "numeric" => &[1, 2, 3],

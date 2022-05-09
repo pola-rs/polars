@@ -79,6 +79,7 @@ log = []
 partition_by = []
 semi_anti_join = []
 chunked_ids = []
+describe = []
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -141,6 +142,7 @@ docs-selection = [
   "product",
   "unique_counts",
   "log",
+  "describe",
 ]
 
 [dependencies]

@@ -949,16 +949,6 @@ impl Series {
         self.slice(-(len as i64), len)
     }
 
-    pub fn count_as_series(&self) -> Series {
-        let val = [Some(self.len() as f64)];
-        let s = Series::new(self.name(), val);
-        if !self.dtype().is_numeric() {
-            Series::full_null(self.name(), 1, self.dtype())
-        } else {
-            s
-        }
-    }
-
     pub fn mean_as_series(&self) -> Series {
         let val = [self.mean()];
         let s = Series::new(self.name(), val);
