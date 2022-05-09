@@ -64,6 +64,7 @@ log = ["polars-core/log"]
 list_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
+python = ["pyo3"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
@@ -95,6 +96,7 @@ test = [
 ahash = "0.7"
 glob = "0.3"
 parking_lot = "0.12"
+pyo3 = { version = "0.16", optional = true }
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }

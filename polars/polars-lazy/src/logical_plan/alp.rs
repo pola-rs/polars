@@ -15,6 +15,10 @@ use std::sync::Arc;
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
+    #[cfg(feature = "python")]
+    PythonScan {
+        options: PythonOptions,
+    },
     Melt {
         input: Node,
         args: Arc<MeltArgs>,
@@ -143,6 +147,8 @@ impl ALogicalPlan {
     pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a SchemaRef {
         use ALogicalPlan::*;
         match self {
+            #[cfg(feature = "python")]
+            PythonScan { options } => &options.schema,
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
             Cache { input } => arena.get(*input).schema(arena),
             Sort { input, .. } => arena.get(*input).schema(arena),
@@ -189,6 +195,10 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
+            #[cfg(feature = "python")]
+            PythonScan { options } => PythonScan {
+                options: options.clone(),
+            },
             Union { options, .. } => Union {
                 inputs,
                 options: *options,
@@ -446,6 +456,8 @@ impl ALogicalPlan {
                     container.push(*expr)
                 }
             }
+            #[cfg(feature = "python")]
+            PythonScan { .. } => {}
         }
     }
 
@@ -499,6 +511,8 @@ impl ALogicalPlan {
             #[cfg(feature = "csv-file")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,
+            #[cfg(feature = "python")]
+            PythonScan { .. } => return,
         };
         container.push_node(input)
     }

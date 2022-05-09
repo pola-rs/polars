@@ -71,6 +71,8 @@ impl DefaultPlanner {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
+            #[cfg(feature = "python")]
+            PythonScan { options } => Ok(Box::new(executors::PythonScanExec { options })),
             Union { inputs, options } => {
                 let inputs = inputs
                     .into_iter()

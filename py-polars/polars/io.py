@@ -34,7 +34,7 @@ except ImportError:  # pragma: no cover
 
 from polars.convert import from_arrow
 from polars.datatypes import DataType
-from polars.internals import DataFrame, LazyFrame
+from polars.internals import DataFrame, LazyFrame, _scan_ds
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
@@ -1006,3 +1006,40 @@ def read_sql(
         raise ImportError(
             "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
         )
+
+
+def scan_ds(ds: "pa.dataset.dataset") -> "LazyFrame":
+    """
+    .. warning::
+        This API is experimental and may change without it being considered a breaking change.
+
+    Scan a pyarrow dataset. This can be useful to connect to cloud or partitioned datasets.
+
+    Parameters
+    ----------
+    ds
+     Pyarrow dataset to scan.
+
+    Examples
+    --------
+
+    >>> import pyarrow.dataset as ds
+    >>> dset = ds.dataset("s3://my-partitioned-folder/", format="ipc")  # doctest: +SKIP
+    >>> out = (
+    ...     pl.scan_ds(dset)
+    ...     .filter("bools")
+    ...     .select(["bools", "floats", "date"])
+    ...     .collect()
+    ... )  # doctest: +SKIP
+    shape: (1, 3)
+    ┌───────┬────────┬────────────┐
+    │ bools ┆ floats ┆ date       │
+    │ ---   ┆ ---    ┆ ---        │
+    │ bool  ┆ f64    ┆ date       │
+    ╞═══════╪════════╪════════════╡
+    │ true  ┆ 2.0    ┆ 1970-05-04 │
+    └───────┴────────┴────────────┘
+
+    """
+
+    return _scan_ds(ds)

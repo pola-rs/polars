@@ -19,7 +19,7 @@ fn init_set() -> PlHashSet<Arc<str>> {
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
-) -> Option<Vec<String>> {
+) -> Option<Arc<Vec<String>>> {
     let mut with_columns = None;
     if !acc_projections.is_empty() {
         let mut columns = Vec::with_capacity(acc_projections.len());
@@ -28,7 +28,7 @@ fn get_scan_columns(
                 columns.push((*name).to_owned())
             }
         }
-        with_columns = Some(columns);
+        with_columns = Some(Arc::new(columns));
     }
     with_columns
 }
@@ -426,6 +426,22 @@ impl ProjectionPushDown {
                     options,
                 };
                 Ok(lp)
+            }
+            #[cfg(feature = "python")]
+            PythonScan { mut options } => {
+                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+
+                options.output_schema = if options.with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*options.schema,
+                        true,
+                    )))
+                };
+                Ok(PythonScan { options })
             }
             #[cfg(feature = "csv-file")]
             CsvScan {
