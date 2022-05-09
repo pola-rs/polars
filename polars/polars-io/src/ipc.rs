@@ -34,11 +34,14 @@
 //! ```
 use super::{finish_reader, ArrowReader, ArrowResult};
 use crate::predicates::PhysicalIoExpr;
-use crate::prelude::*;
+use crate::{prelude::*, WriterFactory};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
 use polars_core::prelude::*;
+
 use std::io::{Read, Seek, Write};
+
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Read Arrows IPC format into a DataFrame
@@ -232,10 +235,7 @@ use crate::RowCount;
 use polars_core::frame::ArrowChunk;
 pub use write::Compression as IpcCompression;
 
-impl<W> IpcWriter<W>
-where
-    W: Write,
-{
+impl<W> IpcWriter<W> {
     /// Set the compression used. Defaults to None.
     pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
         self.compression = compression;
@@ -254,7 +254,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             &df.schema().to_arrow(),
@@ -271,6 +271,48 @@ where
         }
         let _ = ipc_writer.finish()?;
         Ok(())
+    }
+}
+
+pub struct IpcWriterOption {
+    compression: Option<write::Compression>,
+    extension: PathBuf,
+}
+
+impl IpcWriterOption {
+    pub fn new() -> Self {
+        Self {
+            compression: None,
+            extension: PathBuf::from(".ipc"),
+        }
+    }
+
+    /// Set the compression used. Defaults to None.
+    pub fn with_compression(mut self, compression: Option<write::Compression>) -> Self {
+        self.compression = compression;
+        self
+    }
+
+    /// Set the extention. Defaults to ".ipc".
+    pub fn with_extension(mut self, extension: PathBuf) -> Self {
+        self.extension = extension;
+        self
+    }
+}
+
+impl Default for IpcWriterOption {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WriterFactory for IpcWriterOption {
+    fn create_writer<W: Write + 'static>(&self, writer: W) -> Box<dyn SerWriter<W>> {
+        Box::new(IpcWriter::new(writer).with_compression(self.compression))
+    }
+
+    fn extension(&self) -> PathBuf {
+        self.extension.to_owned()
     }
 }
 
