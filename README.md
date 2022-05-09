@@ -5,7 +5,6 @@
 [![](https://img.shields.io/crates/v/polars.svg)](https://crates.io/crates/polars)
 [![PyPI Latest Release](https://img.shields.io/pypi/v/polars.svg)](https://pypi.org/project/polars/)
 [![NPM Latest Release](https://img.shields.io/npm/v/nodejs-polars.svg)](https://www.npmjs.com/package/nodejs-polars)
-[![codecov](https://codecov.io/gh/pola-rs/polars/branch/master/graph/badge.svg)](https://codecov.io/gh/pola-rs/polars)
 
 <p align="center">
   <a href="https://pola-rs.github.io/polars/py-polars/html/reference/index.html">Python Documentation</a>
