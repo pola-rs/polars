@@ -42,6 +42,15 @@ where
     }
 }
 
+impl<J> FromIterator<J> for Schema
+where
+    J: Into<Field>,
+{
+    fn from_iter<I: IntoIterator<Item = J>>(iter: I) -> Self {
+        Schema::from(iter)
+    }
+}
+
 impl Schema {
     // could not implement TryFrom
     pub fn try_from_fallible<I>(flds: I) -> Result<Self>

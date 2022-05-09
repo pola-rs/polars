@@ -597,6 +597,23 @@ impl ToSeries for Vec<PySeries> {
     }
 }
 
+impl FromPyObject<'_> for Wrap<Schema> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let dict = ob.extract::<&PyDict>()?;
+
+        Ok(Wrap(
+            dict.iter()
+                .map(|(key, val)| {
+                    let key = key.extract::<&str>()?;
+                    let val = val.extract::<Wrap<DataType>>()?;
+
+                    Ok(Field::new(key, val.0))
+                })
+                .collect::<PyResult<Schema>>()?,
+        ))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ObjectValue {
     pub inner: PyObject,

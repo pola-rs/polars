@@ -14,7 +14,7 @@ pub struct CsvParserOptions {
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
     pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) low_memory: bool,
     pub(crate) ignore_errors: bool,
     pub(crate) cache: bool,
@@ -29,7 +29,7 @@ pub struct CsvParserOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
     pub(crate) row_count: Option<RowCount>,
@@ -39,7 +39,7 @@ pub struct ParquetOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
-    pub with_columns: Option<Vec<String>>,
+    pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
     pub row_count: Option<RowCount>,
 }
@@ -145,4 +145,19 @@ pub struct SortArguments {
     // Can only be true in case of a single column.
     pub(crate) nulls_last: bool,
     pub(crate) slice: Option<(i64, usize)>,
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
+#[cfg(feature = "python")]
+pub struct PythonOptions {
+    // Serialized Fn() -> Result<DataFrame>
+    pub(crate) scan_fn: Vec<u8>,
+    pub(crate) schema: SchemaRef,
+    pub(crate) output_schema: Option<SchemaRef>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
 }

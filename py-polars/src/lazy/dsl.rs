@@ -10,6 +10,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
@@ -1182,6 +1183,34 @@ impl PyExpr {
 
     fn lst_eval(&self, expr: PyExpr, parallel: bool) -> Self {
         self.inner.clone().arr().eval(expr.inner, parallel).into()
+    }
+
+    fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
+        let n_fields = match width_strat {
+            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
+            "max_width" => ListToStructWidthStrategy::MaxWidth,
+            strat => {
+                return Err(PyValueError::new_err(format!(
+                "strategy: {strat} not allowed, choose any of {{ 'first_non_null', 'max_width' }}"
+            )))
+            }
+        };
+
+        let name_gen = name_gen.map(|lambda| {
+            Arc::new(move |idx: usize| {
+                Python::with_gil(|py| {
+                    let out = lambda.call1(py, (idx,)).unwrap();
+                    out.extract::<String>(py).unwrap()
+                })
+            }) as NameGenerator
+        });
+
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .to_struct(n_fields, name_gen)
+            .into())
     }
 
     fn rank(&self, method: &str, reverse: bool) -> Self {

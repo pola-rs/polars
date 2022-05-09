@@ -6,7 +6,7 @@ use crate::csv_core::parser::{
 };
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::NullValues;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_time::chunkedarray::utf8::infer as date_infer;
@@ -75,16 +75,18 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Rea
     }
 }
 
-lazy_static! {
-    static ref FLOAT_RE: Regex =
-        Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$")
-            .unwrap();
-    static ref INTEGER_RE: Regex = Regex::new(r"^\s*-?(\d+)$").unwrap();
-    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^\s*(true)$|^(false)$")
+static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$").unwrap()
+});
+
+static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
+
+static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r"^\s*(true)$|^(false)$")
         .case_insensitive(true)
         .build()
-        .unwrap();
-}
+        .unwrap()
+});
 
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {

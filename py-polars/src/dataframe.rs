@@ -73,6 +73,15 @@ impl From<DataFrame> for PyDataFrame {
     clippy::len_without_is_empty
 )]
 impl PyDataFrame {
+    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
+        // used for polars-lazy python node. This takes the dataframe from underneath of you, so
+        // don't use this anywhere else.
+        let mut df = std::mem::take(&mut self.df);
+        let cols = std::mem::take(df.get_columns_mut());
+        let (ptr, len, cap) = cols.into_raw_parts();
+        (ptr as usize, len, cap)
+    }
+
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = to_series_collection(columns);
@@ -109,7 +118,7 @@ impl PyDataFrame {
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
         skip_rows_after_header: usize,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
         sample_size: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -189,7 +198,7 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -224,7 +233,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let file = get_file_like(py_f, false)?;
@@ -995,7 +1004,7 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> PyResult<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
             .with_row_count(name, offset)

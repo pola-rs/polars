@@ -36,7 +36,7 @@ type Predicate = Option<Arc<dyn PhysicalIoExpr>>;
 fn prepare_scan_args<'a>(
     path: &Path,
     predicate: &Option<Arc<dyn PhysicalExpr>>,
-    with_columns: &mut Option<Vec<String>>,
+    with_columns: &mut Option<Arc<Vec<String>>>,
     schema: &mut SchemaRef,
     n_rows: Option<usize>,
     aggregate: &'a [ScanAggregation],
@@ -224,7 +224,7 @@ impl Executor for CsvExec {
             .with_ignore_parser_errors(self.options.ignore_errors)
             .with_skip_rows(self.options.skip_rows)
             .with_n_rows(n_rows)
-            .with_columns(with_columns)
+            .with_columns(with_columns.map(|mut cols| std::mem::take(Arc::make_mut(&mut cols))))
             .low_memory(self.options.low_memory)
             .with_null_values(std::mem::take(&mut self.options.null_values))
             .with_predicate(predicate)

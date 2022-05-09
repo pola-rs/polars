@@ -63,6 +63,8 @@ unique_counts = ["polars-core/unique_counts"]
 log = ["polars-core/log"]
 list_eval = []
 chunked_ids = []
+list_to_struct = ["polars-ops/list_to_struct"]
+python = ["pyo3"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
@@ -94,6 +96,7 @@ test = [
 ahash = "0.7"
 glob = "0.3"
 parking_lot = "0.12"
+pyo3 = { version = "0.16", optional = true }
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
 serde = { version = "1", features = ["derive"], optional = true }
@@ -101,6 +104,7 @@ serde = { version = "1", features = ["derive"], optional = true }
 polars-arrow = { version = "0.21.1", path = "../polars-arrow" }
 polars-core = { version = "0.21.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }
 polars-io = { version = "0.21.1", path = "../polars-io", features = ["lazy", "csv-file", "private"], default-features = false }
+polars-ops = { version = "0.21.1", path = "../polars-ops", default-features = false }
 polars-time = { version = "0.21.1", path = "../polars-time", optional = true }
 polars-utils = { version = "0.21.1", path = "../polars-utils" }
 

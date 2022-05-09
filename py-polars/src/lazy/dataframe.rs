@@ -1,3 +1,4 @@
+use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -144,7 +145,7 @@ impl PyLazyFrame {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: &str,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
         parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -223,7 +224,7 @@ impl PyLazyFrame {
         cache: bool,
         parallel: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
@@ -243,7 +244,7 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
@@ -254,6 +255,12 @@ impl PyLazyFrame {
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
+    }
+
+    #[staticmethod]
+    pub fn scan_from_python_function(schema: &PyList, scan_fn: Vec<u8>) -> PyResult<Self> {
+        let schema = pyarrow_schema_to_rust(schema)?;
+        Ok(LazyFrame::scan_from_python_function(schema, scan_fn).into())
     }
 
     pub fn describe_plan(&self) -> String {
@@ -663,7 +670,7 @@ impl PyLazyFrame {
         ldf.melt(args).into()
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_count(name, offset).into()
     }
