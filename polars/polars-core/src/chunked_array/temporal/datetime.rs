@@ -156,6 +156,10 @@ impl DatetimeChunked {
     pub fn set_time_zone(&mut self, tz: Option<TimeZone>) {
         self.2 = Some(Datetime(self.time_unit(), tz))
     }
+    pub fn with_time_zone(mut self, tz: Option<TimeZone>) -> Self {
+        self.set_time_zone(tz);
+        self
+    }
 }
 
 #[cfg(test)]

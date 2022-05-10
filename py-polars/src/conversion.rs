@@ -197,27 +197,19 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, tu, tz) => {
-                if tz.is_some() {
-                    todo!()
-                }
                 let pl = PyModule::import(py, "polars").unwrap();
                 let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                match tu {
-                    TimeUnit::Nanoseconds => convert
-                        .call1((v, py_datetime_dtype, "ns"))
-                        .unwrap()
-                        .into_py(py),
-                    TimeUnit::Microseconds => convert
-                        .call1((v, py_datetime_dtype, "us"))
-                        .unwrap()
-                        .into_py(py),
-                    TimeUnit::Milliseconds => convert
-                        .call1((v, py_datetime_dtype, "ms"))
-                        .unwrap()
-                        .into_py(py),
-                }
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => "ns",
+                    TimeUnit::Microseconds => "us",
+                    TimeUnit::Milliseconds => "ms",
+                };
+                convert
+                    .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
+                    .unwrap()
+                    .into_py(py)
             }
             AnyValue::Duration(v, tu) => {
                 let pl = PyModule::import(py, "polars").unwrap();

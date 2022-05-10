@@ -93,6 +93,25 @@ test = [
   "dtype-date",
 ]
 
+test_all = [
+  "panic_on_schema",
+  "private",
+  "rolling_window",
+  "rank",
+  "list",
+  "round_series",
+  "csv-file",
+  "dtype-categorical",
+  "cum_agg",
+  "regex",
+  "polars-core/fmt",
+  "diff",
+  "abs",
+  "parquet",
+  "ipc",
+  "dtype-date",
+]
+
 [dependencies]
 ahash = "0.7"
 glob = "0.3"
