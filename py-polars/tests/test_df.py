@@ -1,5 +1,4 @@
 # flake8: noqa: W191,E101
-import io
 import sys
 import typing
 from builtins import range
@@ -15,8 +14,6 @@ import pytest
 
 import polars as pl
 from polars import testing
-from polars.datatypes import List
-from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -36,19 +33,23 @@ def test_init_only_columns() -> None:
     assert df.frame_equal(truth, null_equal=True)
     assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
 
-    df = pl.DataFrame(
-        columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)]
-    )
-    truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
-        [
-            pl.col("a").cast(pl.Date),
-            pl.col("b").cast(pl.UInt64),
-            pl.col("c").cast(pl.Int8),
-        ]
-    )
-    assert df.shape == (0, 3)
-    assert df.frame_equal(truth, null_equal=True)
-    assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
+    # Validate construction with various flavours of no/empty data
+    no_data: Any
+    for no_data in (None, {}, []):
+        df = pl.DataFrame(
+            data=no_data,
+            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)],
+        )
+        truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
+            [
+                pl.col("a").cast(pl.Date),
+                pl.col("b").cast(pl.UInt64),
+                pl.col("c").cast(pl.Int8),
+            ]
+        )
+        assert df.shape == (0, 3)
+        assert df.frame_equal(truth, null_equal=True)
+        assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
 
 
 def test_init_dict() -> None:
