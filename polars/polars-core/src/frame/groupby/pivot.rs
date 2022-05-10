@@ -222,6 +222,12 @@ impl DataFrame {
         sort_columns: bool,
         stable: bool,
     ) -> Result<DataFrame> {
+        if index.is_empty() {
+            return Err(PolarsError::ComputeError(
+                "index cannot be zero length".into(),
+            ));
+        }
+
         let mut final_cols = vec![];
 
         let mut count = 0;
