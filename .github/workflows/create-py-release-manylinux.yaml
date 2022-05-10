@@ -10,7 +10,7 @@ jobs:
     name: Create Release manylinux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: publish x86_64
         uses: docker://konstin2/maturin:latest
         env:
