@@ -1836,6 +1836,12 @@ impl Expr {
             })
     }
 
+    #[cfg(feature = "row_hash")]
+    /// Compute the hash of every element
+    pub fn hash(self, seed: usize) -> Expr {
+        self.map_private(FunctionExpr::Hash(seed), "hash")
+    }
+
     #[cfg(feature = "strings")]
     pub fn str(self) -> string::StringNameSpace {
         string::StringNameSpace(self)

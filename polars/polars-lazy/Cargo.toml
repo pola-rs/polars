@@ -65,6 +65,7 @@ list_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
 python = ["pyo3"]
+row_hash = ["polars-core/row_hash"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
