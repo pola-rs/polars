@@ -18,7 +18,6 @@ coverage:
 		$(MAKE) -C py-polars venv; \
 		source py-polars/venv/bin/activate; \
 		$(MAKE) -C polars test; \
-		$(MAKE) -C polars integration-tests; \
 		$(MAKE) -C py-polars test-with-cov; \
 		cargo llvm-cov --no-run --lcov --output-path coverage.lcov; \
 		"

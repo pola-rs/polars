@@ -1,12 +1,6 @@
 use arrow::bitmap::MutableBitmap;
 
 pub trait MutableBitmapExtension {
-    /// Initializes a [`MutableBitmap`] with all values set to valid/ true.
-    fn from_len_set(length: usize) -> MutableBitmap {
-        let values = vec![u8::MAX; length.saturating_add(7) / 8];
-        MutableBitmap::from_vec(values, length)
-    }
-
     fn as_slice_mut(&mut self) -> &mut [u8];
 
     /// # Safety
