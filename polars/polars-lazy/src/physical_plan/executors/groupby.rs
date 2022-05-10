@@ -36,7 +36,7 @@ impl GroupByExec {
 }
 
 pub(super) fn groupby_helper(
-    df: DataFrame,
+    mut df: DataFrame,
     keys: Vec<Series>,
     aggs: &[Arc<dyn PhysicalExpr>],
     apply: Option<&Arc<dyn DataFrameUdf>>,
@@ -44,6 +44,7 @@ pub(super) fn groupby_helper(
     maintain_order: bool,
     slice: Option<(i64, usize)>,
 ) -> Result<DataFrame> {
+    df.as_single_chunk_par();
     let gb = df.groupby_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
