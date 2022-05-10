@@ -89,4 +89,29 @@ impl PhysicalExpr for CastExpr {
             fld
         })
     }
+
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+}
+
+impl PartitionedAggregation for CastExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let e = self.input.as_partitioned_aggregator().unwrap();
+        e.evaluate_partitioned(df, groups, state)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
+    }
 }

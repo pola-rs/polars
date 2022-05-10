@@ -63,7 +63,7 @@ fn run_partitions(
                 let agg_columns = phys_aggs
                     .iter()
                     .map(|expr| {
-                        let agg_expr = expr.as_partitioned_aggregator()?;
+                        let agg_expr = expr.as_partitioned_aggregator().unwrap();
                         let agg = agg_expr.evaluate_partitioned(&df, groups, state)?;
                         if agg.len() != groups.len() {
                             Err(PolarsError::ComputeError(
@@ -245,7 +245,7 @@ impl Executor for PartitionGroupByExec {
                 .zip(&df.get_columns()[self.keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr.finalize(partitioned_s, groups, state)
+                    agg_expr.finalize(partitioned_s.clone(), groups, state)
                 })
                 .collect();
 

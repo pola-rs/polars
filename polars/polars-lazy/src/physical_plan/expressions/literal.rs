@@ -129,6 +129,10 @@ impl PhysicalExpr for LiteralExpr {
         Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
 
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         use LiteralValue::*;
         let name = "literal";
@@ -158,5 +162,25 @@ impl PhysicalExpr for LiteralExpr {
             Series(s) => s.field().into_owned(),
         };
         Ok(field)
+    }
+}
+
+impl PartitionedAggregation for LiteralExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        _groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        self.evaluate(df, state)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }
