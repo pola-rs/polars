@@ -7,7 +7,7 @@ jobs:
     name: Test global formatting
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install dependencies
         run: |
           curl -fsSLO https://github.com/dprint/dprint/releases/download/0.18.2/dprint-x86_64-unknown-linux-gnu.zip
