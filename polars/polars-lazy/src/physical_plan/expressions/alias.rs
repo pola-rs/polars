@@ -63,8 +63,8 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
 }
 
@@ -84,7 +84,7 @@ impl PartitionedAggregation for AliasExpr {
 
     fn finalize(
         &self,
-        partitioned: &Series,
+        partitioned: Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Series> {

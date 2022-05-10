@@ -315,6 +315,10 @@ impl PhysicalExpr for BinaryExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
 
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
@@ -491,5 +495,29 @@ mod stats {
                 _ => self.impl_should_read(stats),
             }
         }
+    }
+}
+
+impl PartitionedAggregation for BinaryExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let left = self.left.as_partitioned_aggregator().unwrap();
+        let right = self.right.as_partitioned_aggregator().unwrap();
+        let left = left.evaluate_partitioned(df, groups, state)?;
+        let right = right.evaluate_partitioned(df, groups, state)?;
+        apply_operator(&left, &right, self.op)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

@@ -486,11 +486,8 @@ pub trait PhysicalExpr: Send + Sync {
     fn to_field(&self, input_schema: &Schema) -> Result<Field>;
 
     /// Convert to a partitioned aggregator.
-    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
-        let e = self.as_expression();
-        Err(PolarsError::InvalidOperation(
-            format!("{:?} is not an agg expression", e).into(),
-        ))
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        None
     }
 
     /// Can take &dyn Statistics and determine of a file should be
@@ -540,7 +537,7 @@ pub trait PartitionedAggregation: Send + Sync + PhysicalExpr {
     #[allow(clippy::ptr_arg)]
     fn finalize(
         &self,
-        partitioned: &Series,
+        partitioned: Series,
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Series>;

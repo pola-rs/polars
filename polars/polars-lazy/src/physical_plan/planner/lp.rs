@@ -373,7 +373,11 @@ impl DefaultPlanner {
                                                 | AAggExpr::Count(_)
                                         )
                                     },
-                                    Column(_) | Alias(_, _) | Count => {
+                                    BinaryExpr {left, right, ..} => {
+                                        !has_aexpr(*left, expr_arena, |ae| matches!(ae, AExpr::Agg(_))) && !has_aexpr(*right, expr_arena, |ae| matches!(ae, AExpr::Agg(_)))
+                                    }
+
+                                    Column(_) | Alias(_, _) | Count | Literal(_) | Cast {..} => {
                                         true
                                     }
                                     _ => {
