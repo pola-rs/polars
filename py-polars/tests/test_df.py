@@ -1,5 +1,4 @@
 # flake8: noqa: W191,E101
-import io
 import sys
 import typing
 from builtins import range
@@ -15,8 +14,6 @@ import pytest
 
 import polars as pl
 from polars import testing
-from polars.datatypes import List
-from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -37,6 +34,7 @@ def test_init_only_columns() -> None:
     assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
 
     # Validate construction with various flavours of no/empty data
+    no_data: Any
     for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,

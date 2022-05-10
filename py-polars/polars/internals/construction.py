@@ -506,7 +506,7 @@ def sequence_to_pydf(
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)  # type: ignore[arg-type]
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
