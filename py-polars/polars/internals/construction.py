@@ -463,7 +463,7 @@ def sequence_to_pydf(
     data_series: List["PySeries"]
 
     if len(data) == 0:
-        data_series = []
+        return dict_to_pydf({}, columns=columns)
 
     elif isinstance(data[0], pli.Series):
         series_names = [s.name for s in data]
@@ -506,7 +506,7 @@ def sequence_to_pydf(
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)  # type: ignore[arg-type]
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
