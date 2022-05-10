@@ -37,10 +37,10 @@ def test_init_only_columns() -> None:
     assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
 
     # Validate construction with various flavours of no/empty data
-    for no_data in ( None, {}, [] ):
+    for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,
-            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)]
+            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)],
         )
         truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
             [
