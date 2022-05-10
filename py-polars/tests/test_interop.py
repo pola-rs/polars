@@ -260,7 +260,7 @@ def test_from_pandas_dataframe() -> None:
     df = pl.from_pandas(pd_df)
     assert df.shape == (2, 3)
 
-    # if not a Pandas dataframe, raise a ValueError
+    # if not a pandas dataframe, raise a ValueError
     with pytest.raises(ValueError):
         _ = pl.from_pandas([1, 2])  # type: ignore
 
