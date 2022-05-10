@@ -390,7 +390,9 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.columns = self.apply_columns_par(&|s| s.rechunk());
+        if self.columns.iter().any(|s| s.n_chunks() > 1) {
+            self.columns = self.apply_columns_par(&|s| s.rechunk());
+        }
         self
     }
 
@@ -1677,7 +1679,7 @@ impl DataFrame {
         reverse: impl IntoVec<bool>,
     ) -> Result<&mut Self> {
         // a lot of indirection in both sorting and take
-        self.rechunk();
+        self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.columns = self.sort_impl(by_column, reverse, false, None)?.columns;
@@ -1772,7 +1774,7 @@ impl DataFrame {
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> Result<Self> {
         let mut df = self.clone();
         // a lot of indirection in both sorting and take
-        df.rechunk();
+        df.as_single_chunk_par();
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
