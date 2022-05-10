@@ -163,8 +163,8 @@ impl PhysicalExpr for AggregationExpr {
         self.expr.to_field(input_schema)
     }
 
-    fn as_partitioned_aggregator(&self) -> Result<&dyn PartitionedAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
 }
 
@@ -180,10 +180,11 @@ impl PartitionedAggregation for AggregationExpr {
         groups: &GroupsProxy,
         state: &ExecutionState,
     ) -> Result<Series> {
+        let expr = self.expr.as_partitioned_aggregator().unwrap();
+        let series = expr.evaluate_partitioned(df, groups, state)?;
         match self.agg_type {
             #[cfg(feature = "dtype-struct")]
             GroupByMethod::Mean => {
-                let series = self.expr.evaluate(df, state)?;
                 let new_name = series.name().to_string();
                 let mut agg_s = series.agg_sum(groups);
                 agg_s.rename(&new_name);
@@ -203,19 +204,50 @@ impl PartitionedAggregation for AggregationExpr {
                 }
             }
             GroupByMethod::List => {
-                let series = self.expr.evaluate(df, state)?;
                 let new_name = series.name();
                 let mut agg = series.agg_list(groups);
                 agg.rename(new_name);
                 Ok(agg)
             }
-            _ => Ok(self.evaluate_on_groups(df, groups, state)?.aggregated()),
+            GroupByMethod::First => {
+                let mut agg = series.agg_first(groups);
+                agg.rename(series.name());
+                Ok(agg)
+            }
+            GroupByMethod::Last => {
+                let mut agg = series.agg_last(groups);
+                agg.rename(series.name());
+                Ok(agg)
+            }
+            GroupByMethod::Max => {
+                let mut agg = series.agg_max(groups);
+                agg.rename(series.name());
+                Ok(agg)
+            }
+            GroupByMethod::Min => {
+                let mut agg = series.agg_min(groups);
+                agg.rename(series.name());
+                Ok(agg)
+            }
+            GroupByMethod::Sum => {
+                let mut agg = series.agg_sum(groups);
+                agg.rename(series.name());
+                Ok(agg)
+            }
+            GroupByMethod::Count => {
+                let mut ca = groups.group_count();
+                ca.rename(series.name());
+                Ok(ca.into_series())
+            }
+            _ => {
+                unimplemented!()
+            }
         }
     }
 
     fn finalize(
         &self,
-        partitioned: &Series,
+        partitioned: Series,
         groups: &GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<Series> {
