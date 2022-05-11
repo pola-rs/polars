@@ -6,6 +6,8 @@
 numpy
 pyarrow
 pandas
+pytz
+types-pytz
 
 # Tooling
 maturin==0.12.1

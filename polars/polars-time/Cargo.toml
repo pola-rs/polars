@@ -9,17 +9,18 @@ description = "Time related code for the polars dataframe library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "b9aa8e8da7648559efdc78535085a509a281c55d", default-features = false }
 chrono = "0.4"
 lexical = { version = "6", default-features = false, features = ["std", "parse-floats", "parse-integers"] }
 polars-arrow = { version = "0.21.1", path = "../polars-arrow", features = ["compute"] }
-polars-core = { version = "0.21.1", path = "../polars-core", features = ["temporal", "dtype-date", "dtype-datetime"] }
+polars-core = { version = "0.21.1", path = "../polars-core", default-features = false, features = ["private", "dtype-datetime", "dtype-duration", "dtype-time", "dtype-date"] }
 serde = { version = "1", features = ["derive"], optional = true }
 
 [features]
-dtype-date = []
-dtype-datetime = []
-dtype-time = []
-dtype-duration = []
+dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal", "arrow/compute_temporal"]
+dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 private = []
 
 test = [
