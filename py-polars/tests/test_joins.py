@@ -45,3 +45,16 @@ def test_semi_anti_join() -> None:
         "b": ["c"],
         "payload": [30],
     }
+
+
+def test_join_same_cat_src() -> None:
+    df = pl.DataFrame(
+        data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
+        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+    )
+    df_agg = df.groupby("column").agg(pl.col("more").mean())
+    assert df.join(df_agg, on="column").to_dict(False) == {
+        "column": ["a", "a", "b"],
+        "more": [1, 2, 3],
+        "more_right": [1.5, 1.5, 3.0],
+    }
