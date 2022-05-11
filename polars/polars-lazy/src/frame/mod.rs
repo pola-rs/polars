@@ -312,7 +312,17 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
+    fn rename_impl_swapping(self, mut existing: Vec<String>, mut new: Vec<String>) -> Self {
+        assert_eq!(new.len(), existing.len());
+        for idx in 0..existing.len() {
+            // remove "name" -> "name"
+            // these are no ops.
+            if existing[idx] == new[idx] {
+                existing.swap_remove(idx);
+                new.swap_remove(idx);
+            }
+        }
+
         // schema after renaming
         let mut new_schema = (&*self.schema()).clone();
 
