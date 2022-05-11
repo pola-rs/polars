@@ -616,6 +616,6 @@ mod test {
         let input = "\t  \toh boy !\t \t ";
         let expect = "oh boy !";
         let trimmed = trim(input.as_bytes());
-        assert_eq!(input.as_bytes(), trimmed);
+        assert_eq!(expect.as_bytes(), trimmed);
     }
 }
