@@ -182,7 +182,10 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 
 def _to_python_datetime(
-    value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
+    value: Union[int, float],
+    dtype: Type[DataType],
+    tu: Optional[str] = "ns",
+    tz: Optional["str"] = None,
 ) -> Union[date, datetime]:
     if dtype == Date:
         # days to seconds
@@ -192,14 +195,21 @@ def _to_python_datetime(
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
-            return EPOCH + timedelta(microseconds=value / 1000)
-        if tu == "us":
-            return EPOCH + timedelta(microseconds=value)
+            dt = EPOCH + timedelta(microseconds=value / 1000)
+        elif tu == "us":
+            dt = EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
-            return datetime.utcfromtimestamp(value / 1_000)
+            dt = datetime.utcfromtimestamp(value / 1_000)
         else:
             raise ValueError(f"time unit: {tu} not expected")
+        if tz is not None and len(tz) > 0:
+            import pytz
+
+            timezone = pytz.timezone(tz)
+            return timezone.localize(dt)
+        return dt
+
     else:
         raise NotImplementedError  # pragma: no cover
 

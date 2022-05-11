@@ -93,6 +93,14 @@ impl PyDataFrame {
         self.df.estimated_size()
     }
 
+    pub fn dtype_strings(&self) -> Vec<String> {
+        self.df
+            .get_columns()
+            .iter()
+            .map(|s| format!("{}", s.dtype()))
+            .collect()
+    }
+
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     pub fn read_csv(

@@ -620,11 +620,6 @@ def pandas_to_pydf(
 
 
 def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
-    if isinstance(array, pa.TimestampArray) and array.type.tz is not None:
-        warnings.warn(
-            "Conversion of timezone aware to naive datetimes. TZ information may be lost",
-        )
-
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())
