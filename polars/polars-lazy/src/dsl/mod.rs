@@ -1810,9 +1810,9 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
-    pub fn entropy(self, base: f64) -> Self {
+    pub fn entropy(self, base: f64, normalize: bool) -> Self {
         self.apply(
-            move |s| Ok(Series::new(s.name(), [s.entropy(base)])),
+            move |s| Ok(Series::new(s.name(), [s.entropy(base, normalize)])),
             GetOutput::map_dtype(|dt| {
                 if matches!(dt, DataType::Float32) {
                     DataType::Float32
