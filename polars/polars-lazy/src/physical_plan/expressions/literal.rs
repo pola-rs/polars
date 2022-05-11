@@ -134,34 +134,8 @@ impl PhysicalExpr for LiteralExpr {
     }
 
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        use LiteralValue::*;
-        let name = "literal";
-        let field = match &self.0 {
-            #[cfg(feature = "dtype-i8")]
-            Int8(_) => Field::new(name, DataType::Int8),
-            #[cfg(feature = "dtype-i16")]
-            Int16(_) => Field::new(name, DataType::Int16),
-            Int32(_) => Field::new(name, DataType::Int32),
-            Int64(_) => Field::new(name, DataType::Int64),
-            #[cfg(feature = "dtype-u8")]
-            UInt8(_) => Field::new(name, DataType::UInt8),
-            #[cfg(feature = "dtype-u16")]
-            UInt16(_) => Field::new(name, DataType::UInt16),
-            UInt32(_) => Field::new(name, DataType::UInt32),
-            UInt64(_) => Field::new(name, DataType::UInt64),
-            Float32(_) => Field::new(name, DataType::Float32),
-            Float64(_) => Field::new(name, DataType::Float64),
-            Boolean(_) => Field::new(name, DataType::Boolean),
-            Utf8(_) => Field::new(name, DataType::Utf8),
-            Null => Field::new(name, DataType::Null),
-            Range { data_type, .. } => Field::new(name, data_type.clone()),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(_, tu) => Field::new(name, DataType::Datetime(*tu, None)),
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-            Duration(_, tu) => Field::new(name, DataType::Duration(*tu)),
-            Series(s) => s.field().into_owned(),
-        };
-        Ok(field)
+        let dtype = self.0.get_datatype();
+        Ok(Field::new("literal", dtype))
     }
 }
 
