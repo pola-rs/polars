@@ -947,25 +947,32 @@ class Series:
         """
         return pli.select(pli.lit(self).unique_counts()).to_series()
 
-    def entropy(self, base: float = math.e) -> Optional[float]:
+    def entropy(self, base: float = math.e, normalize: bool = False) -> Optional[float]:
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
 
         This routine will normalize pk if they don’t sum to 1.
 
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        normalize
+            Normalize pk if it doesn't sum to 1.
+
         Examples
         --------
 
         >>> a = pl.Series([0.99, 0.005, 0.005])
-        >>> a.entropy()
+        >>> a.entropy(normalize=True)
         0.06293300616044681
         >>> b = pl.Series([0.65, 0.10, 0.25])
-        >>> b.entropy()
+        >>> b.entropy(normalize=True)
         0.8568409950394724
 
         """
-        return pli.select(pli.lit(self).entropy(base)).to_series()[0]
+        return pli.select(pli.lit(self).entropy(base, normalize)).to_series()[0]
 
     @property
     def name(self) -> str:

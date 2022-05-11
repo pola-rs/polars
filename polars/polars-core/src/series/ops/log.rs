@@ -26,14 +26,19 @@ impl Series {
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
     #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
-    pub fn entropy(&self, base: f64) -> Option<f64> {
+    pub fn entropy(&self, base: f64, normalize: bool) -> Option<f64> {
         match self.dtype() {
             DataType::Float32 | DataType::Float64 => {
                 let pk = self;
-                let sum = pk.sum_as_series();
 
-                let pk = if sum.get(0).extract::<f64>()? != 1.0 {
-                    pk / &sum
+                let pk = if normalize {
+                    let sum = pk.sum_as_series();
+
+                    if sum.get(0).extract::<f64>()? != 1.0 {
+                        pk / &sum
+                    } else {
+                        pk.clone()
+                    }
                 } else {
                     pk.clone()
                 };
@@ -44,7 +49,7 @@ impl Series {
             _ => self
                 .cast(&DataType::Float64)
                 .ok()
-                .and_then(|s| s.entropy(base)),
+                .and_then(|s| s.entropy(base, normalize)),
         }
     }
 }

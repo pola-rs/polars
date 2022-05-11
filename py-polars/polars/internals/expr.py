@@ -2884,19 +2884,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e) -> "Expr":
+    def entropy(self, base: float = math.e, normalize: bool = False) -> "Expr":
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
-
-        This routine will normalize pk if they don’t sum to 1.
 
         Parameters
         ----------
         base
             Given base, defaults to `e`
+        normalize
+            Normalize pk if it doesn't sum to 1.
+
         """
-        return wrap_expr(self._pyexpr.entropy(base))
+        return wrap_expr(self._pyexpr.entropy(base, normalize))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
