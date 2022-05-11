@@ -21,7 +21,7 @@ impl Series {
     /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
     pub fn to_list(&self) -> Result<ListChunked> {
         let s = self.rechunk();
-        let values = &s.chunks()[0];
+        let values = s.array_ref(0);
 
         let offsets = vec![0i64, values.len() as i64];
         let inner_type = self.dtype();
