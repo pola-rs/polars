@@ -100,20 +100,20 @@ pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
 #[inline]
 pub(crate) fn trim(input: &[u8]) -> &[u8] {
     let mut start = 0;
-    let mut end   = input.len();
+    let mut end = input.len();
 
     while start < end {
         if is_whitespace(input[start]) {
             start += 1;
         } else {
-            break
+            break;
         }
     }
     while end > start {
         if is_whitespace(input[end - 1]) {
             end -= 1;
         } else {
-            break
+            break;
         }
     }
 
@@ -486,11 +486,7 @@ pub(crate) fn parse_lines(
                         let mut add_null = false;
 
                         // remove leading and trailing whitespaces if that was requested
-                        let field = if trim_whitespaces {
-                            trim(field)
-                        } else {
-                            field
-                        };
+                        let field = if trim_whitespaces { trim(field) } else { field };
 
                         // if we have null values argument, check if this field equal null value
                         if let Some(null_values) = &null_values {
@@ -593,32 +589,32 @@ mod test {
 
     #[test]
     fn trim_must_yield_empty_slice_when_blank() {
-        // when only blanks 
-        let input   = "     ";
+        // when only blanks
+        let input = "     ";
         let trimmed = trim(input.as_bytes());
         assert!(trimmed.is_empty());
-        
+
         // when only tabs
-        let input   = "\t\t\t\t";
+        let input = "\t\t\t\t";
         let trimmed = trim(input.as_bytes());
         assert!(trimmed.is_empty());
-        
+
         // when both are mixed
-        let input   = "\t  \t  \t  \t";
+        let input = "\t  \t  \t  \t";
         let trimmed = trim(input.as_bytes());
         assert!(trimmed.is_empty())
     }
 
     #[test]
     fn trim_must_not_alter_data_when_no_blank() {
-        let input   = "oh boy !";
+        let input = "oh boy !";
         let trimmed = trim(input.as_bytes());
         assert_eq!(input.as_bytes(), trimmed);
     }
     #[test]
-    fn trim_only_drops_leading_and_trailing_blanks(){
-        let input   = "\t  \toh boy !\t \t ";
-        let expect  = "oh boy !";
+    fn trim_only_drops_leading_and_trailing_blanks() {
+        let input = "\t  \toh boy !\t \t ";
+        let expect = "oh boy !";
         let trimmed = trim(input.as_bytes());
         assert_eq!(input.as_bytes(), trimmed);
     }

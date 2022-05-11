@@ -281,7 +281,7 @@ where
         self.ignore_parser_errors = ignore;
         self
     }
-    /// Should the leading and trailing whitespaces be discarded when parsing data 
+    /// Should the leading and trailing whitespaces be discarded when parsing data
     pub fn with_trim_whitespaces(mut self, trim: bool) -> Self {
         self.trim_whitespaces = trim;
         self
