@@ -11,9 +11,18 @@ except ImportError:  # pragma: no cover
 
 from _ctypes import _SimpleCData  # type: ignore
 
+try:
+    from polars.polars import dtype_str_repr
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
 
 class DataType:
-    pass
+    @classmethod
+    def string_repr(self) -> str:
+        return dtype_str_repr(self)
 
 
 class Int8(DataType):

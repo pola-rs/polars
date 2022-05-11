@@ -133,7 +133,7 @@ fn upsample_single_impl(
 
     use DataType::*;
     match index_column.dtype() {
-        Datetime(tu, _) => {
+        Datetime(tu, tz) => {
             let s = index_column.cast(&DataType::Int64).unwrap();
             let ca = s.i64().unwrap();
             let first = ca.into_iter().flatten().next();
@@ -153,6 +153,7 @@ fn upsample_single_impl(
                         ClosedWindow::Both,
                         *tu,
                     )
+                    .with_time_zone(tz.clone())
                     .into_series()
                     .into_frame();
                     range.join(

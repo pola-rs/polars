@@ -5,7 +5,7 @@ from textwrap import dedent
 from types import TracebackType
 from typing import Dict, Iterable, List, Optional, Type
 
-from polars.datatypes import Object, dtype_to_ffiname
+from polars.datatypes import Object
 
 
 class Tag:
@@ -77,13 +77,13 @@ class HTMLFormatter:
                         else:
                             self.elements.append(columns[c])
             with Tag(self.elements, "tr"):
-                dtypes = self.df.dtypes
+                dtypes = self.df._df.dtype_strings()
                 for c in self.col_idx:
                     with Tag(self.elements, "td"):
                         if c == -1:
                             self.elements.append("...")
                         else:
-                            self.elements.append(dtype_to_ffiname(dtypes[c]))
+                            self.elements.append(dtypes[c])
 
     def write_body(self) -> None:
         """
