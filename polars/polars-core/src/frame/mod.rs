@@ -863,6 +863,11 @@ impl DataFrame {
     /// ```
     pub fn vstack_mut(&mut self, other: &DataFrame) -> Result<&mut Self> {
         if self.width() != other.width() {
+            if self.width() == 0 {
+                self.columns = other.columns.clone();
+                return Ok(self);
+            }
+
             return Err(PolarsError::ShapeMisMatch(
                 format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
             ));
