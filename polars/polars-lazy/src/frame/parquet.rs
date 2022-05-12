@@ -30,9 +30,10 @@ impl LazyFrame {
         cache: bool,
         parallel: bool,
         row_count: Option<RowCount>,
+        rechunk: bool,
     ) -> Result<Self> {
         let mut lf: LazyFrame =
-            LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel, row_count)?
+            LogicalPlanBuilder::scan_parquet(path, n_rows, cache, parallel, row_count, rechunk)?
                 .build()
                 .into();
         lf.opt_state.agg_scan_projection = true;
@@ -49,7 +50,14 @@ impl LazyFrame {
                 .map(|r| {
                     let path = r.map_err(|e| PolarsError::ComputeError(format!("{}", e).into()))?;
                     let path_string = path.to_string_lossy().into_owned();
-                    Self::scan_parquet_impl(path_string, args.n_rows, args.cache, false, None)
+                    Self::scan_parquet_impl(
+                        path_string,
+                        args.n_rows,
+                        args.cache,
+                        false,
+                        None,
+                        args.rechunk,
+                    )
                 })
                 .collect::<Result<Vec<_>>>()?;
 
@@ -66,7 +74,14 @@ impl LazyFrame {
                     lf
                 })
         } else {
-            Self::scan_parquet_impl(path, args.n_rows, args.cache, args.parallel, args.row_count)
+            Self::scan_parquet_impl(
+                path,
+                args.n_rows,
+                args.cache,
+                args.parallel,
+                args.row_count,
+                args.rechunk,
+            )
         }
     }
 }

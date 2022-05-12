@@ -32,6 +32,7 @@ pub struct ParquetOptions {
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
+    pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
 }
 
@@ -42,6 +43,7 @@ pub struct IpcScanOptions {
     pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
     pub row_count: Option<RowCount>,
+    pub rechunk: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default)]
