@@ -3,6 +3,7 @@ use arrow::bitmap::MutableBitmap;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 
+use crate::apply_method_physical_integer;
 use arrow::types::{simd::Simd, NativeType};
 
 #[cfg(feature = "object")]
@@ -173,19 +174,16 @@ impl Series {
     #[doc(hidden)]
     pub fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         use DataType::*;
-        match self.dtype() {
-            // risk of overflow
-            UInt8 | UInt16 | Int8 | Int16 => {
-                self.cast(&DataType::Float64).unwrap().agg_mean(groups)
+        if self.dtype().is_numeric() {
+            match self.dtype() {
+                Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
+                Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
+                _ => {
+                    apply_method_physical_integer!(self, agg_mean, groups)
+                }
             }
-            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
-            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
-            Int32 => self.i32().unwrap().agg_mean(groups),
-            Int64 => self.i64().unwrap().agg_mean(groups),
-            UInt32 => self.u32().unwrap().agg_mean(groups),
-            UInt64 => self.u64().unwrap().agg_mean(groups),
-            // logical types don't have agg_mean
-            _ => Series::full_null(self.name(), groups.len(), self.dtype()),
+        } else {
+            Series::full_null(self.name(), groups.len(), self.dtype())
         }
     }
 
@@ -409,7 +407,7 @@ where
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
                             (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
+                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
@@ -423,8 +421,7 @@ where
                             }),
                             _ => {
                                 let take = unsafe { self.take_unchecked(idx.into()) };
-                                let opt_sum: Option<T::Native> = take.sum();
-                                opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                                take.mean()
                             }
                         }
                     };
@@ -588,28 +585,32 @@ where
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
-                                    T::Native::zero(),
+                                    0.0f64,
                                 )
                             }
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
+                            (_, 1) => {
+                                unsafe {
+                                    take_agg_primitive_iter_unchecked_count_nulls::<
+                                        T::Native,
+                                        f64,
+                                        _,
+                                        _,
+                                    >(
+                                        self.downcast_iter().next().unwrap(),
+                                        idx.iter().map(|i| *i as usize),
+                                        |a, b| a + b,
+                                        0.0,
+                                    )
+                                }
+                                .map(|(sum, null_count)| {
+                                    sum / (idx.len() as f64 - null_count as f64)
+                                })
                             }
-                            .map(|(sum, null_count)| {
-                                sum.to_f64()
-                                    .map(|sum| sum / (idx.len() as f64 - null_count as f64))
-                            })
-                            .unwrap(),
                             _ => {
                                 let take = unsafe { self.take_unchecked(idx.into()) };
-                                let opt_sum: Option<T::Native> = take.sum();
-                                opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                                take.mean()
                             }
                         }
                     }

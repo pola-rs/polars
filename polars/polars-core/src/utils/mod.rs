@@ -340,12 +340,10 @@ macro_rules! apply_method_all_arrow_series {
     }
 }
 
-// doesn't include Bool and Utf8
 #[macro_export]
-macro_rules! apply_method_numeric_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
+macro_rules! apply_method_physical_integer {
+    ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
-
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u16")]
@@ -358,55 +356,21 @@ macro_rules! apply_method_numeric_series {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
-            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => $self.date().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             _ => unimplemented!(),
         }
     }
 }
 
+// doesn't include Bool and Utf8
 #[macro_export]
-macro_rules! static_zip {
-    ($selected_keys:ident, 0) => {
-        $selected_keys[0].as_groupable_iter()?
-    };
-    ($selected_keys:ident, 1) => {
-        static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 2) => {
-        static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 3) => {
-        static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 4) => {
-        static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 5) => {
-        static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 6) => {
-        static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 7) => {
-        static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 8) => {
-        static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 9) => {
-        static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 10) => {
-        static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 11) => {
-        static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
-    };
+macro_rules! apply_method_physical_numeric {
+    ($self:expr, $method:ident, $($args:expr),*) => {
+        match $self.dtype() {
+            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
+            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
+            _ => apply_method_physical_integer!($self, $method, $($args),*),
+        }
+    }
 }
 
 #[macro_export]
