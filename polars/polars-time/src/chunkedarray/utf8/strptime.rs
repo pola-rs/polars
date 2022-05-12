@@ -94,6 +94,8 @@ pub(super) unsafe fn parse(val: &[u8], fmt: &[u8], fmt_len: u16) -> Option<Naive
                     nano *= 1_000_000;
                     break;
                 }
+                // utc can be ignored
+                b'Z' => {}
                 _ => return None,
             }
         }
@@ -122,6 +124,7 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
                 b'H' => cnt += 2,
                 b'M' => cnt += 2,
                 b'S' => cnt += 2,
+                b'Z' => cnt += 1,
                 b'9' => {
                     cnt += 9;
                     debug_assert_eq!(iter.next(), Some(&b'f'));

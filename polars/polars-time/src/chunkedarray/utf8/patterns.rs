@@ -68,6 +68,7 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y%m%d %H:%M:%S",
     // 2019-04-18T02:45:55
     "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
     // 2019-04-18T02:45:55.555000000
     // microseconds
     "%Y-%m-%dT%H:%M:%S.%6f",
