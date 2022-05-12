@@ -352,6 +352,10 @@ impl DefaultPlanner {
                                 }
                             }
 
+                            let has_aggregation = |node: Node| {
+                                has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)))
+                            };
+
                             // check if the aggregation type is partitionable
                             // only simple aggregation like col().sum
                             // that can be divided in to the aggregation of their partitions are allowed
@@ -373,10 +377,15 @@ impl DefaultPlanner {
                                                 | AAggExpr::Count(_)
                                         )
                                     },
-                                    BinaryExpr {left, right, ..} => {
-                                        !has_aexpr(*left, expr_arena, |ae| matches!(ae, AExpr::Agg(_))) && !has_aexpr(*right, expr_arena, |ae| matches!(ae, AExpr::Agg(_)))
+                                    Not(input) | IsNull(input) | IsNotNull(input) => {
+                                        !has_aggregation(*input)
                                     }
-
+                                    BinaryExpr {left, right, ..} => {
+                                        !has_aggregation(*left) && !has_aggregation(*right)
+                                    }
+                                    Ternary {truthy, falsy, predicate,..} => {
+                                        !has_aggregation(*truthy) && !has_aggregation(*falsy) && !has_aggregation(*predicate)
+                                    }
                                     Column(_) | Alias(_, _) | Count | Literal(_) | Cast {..} => {
                                         true
                                     }

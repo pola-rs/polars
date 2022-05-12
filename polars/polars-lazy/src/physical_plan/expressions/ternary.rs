@@ -250,4 +250,37 @@ The expr produced {} values. Where the original DataFrame has {} values",
             }
         }
     }
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+}
+
+impl PartitionedAggregation for TernaryExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let truthy = self.truthy.as_partitioned_aggregator().unwrap();
+        let falsy = self.falsy.as_partitioned_aggregator().unwrap();
+        let mask = self.predicate.as_partitioned_aggregator().unwrap();
+
+        let mut truthy = truthy.evaluate_partitioned(df, groups, state)?;
+        let mut falsy = falsy.evaluate_partitioned(df, groups, state)?;
+        let mask = mask.evaluate_partitioned(df, groups, state)?;
+        let mut mask = mask.bool()?.clone();
+
+        expand_lengths(&mut truthy, &mut falsy, &mut mask);
+        truthy.zip_with(&mask, &falsy)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
+    }
 }
