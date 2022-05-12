@@ -57,6 +57,22 @@ except ImportError:
     _WITH_FSSPEC = False
 
 
+def _check_arg_is_1byte(
+    arg_name: str, arg: Optional[str], can_be_empty: bool = False
+) -> None:
+    if isinstance(arg, str):
+        arg_byte_length = len(arg.encode("utf-8"))
+        if can_be_empty:
+            if arg_byte_length > 1:
+                raise ValueError(
+                    f'{arg_name}="{arg}" should be a single byte character or empty, but is {arg_byte_length} bytes long.'
+                )
+        elif arg_byte_length != 1:
+            raise ValueError(
+                f'{arg_name}="{arg}" should be a single byte character, but is {arg_byte_length} bytes long.'
+            )
+
+
 def _process_http_file(path: str) -> BytesIO:
     with urlopen(path) as f:
         return BytesIO(f.read())
@@ -192,10 +208,10 @@ def read_csv(
         list is shorter than the width of the DataFrame the remaining
         columns will have their original name.
     sep
-        Character to use as delimiter in the file.
+        Single byte character to use as delimiter in the file.
     comment_char
-        Character that indicates the start of a comment line, for
-        instance ``#``.
+        Single byte character that indicates the start of a comment line,
+        for instance ``#``.
     quote_char
         Single byte character used for csv quoting, default = ``"``.
         Set to None to turn off special handling and escaping of quotes.
@@ -271,10 +287,14 @@ def read_csv(
     if columns is None:
         columns = kwargs.pop("projection", None)
 
+    _check_arg_is_1byte("sep", sep, False)
+    _check_arg_is_1byte("comment_char", comment_char, False)
+    _check_arg_is_1byte("quote_char", quote_char, True)
+
     projection, columns = handle_projection_columns(columns)
 
     if isinstance(file, bytes) and len(file) == 0:
-        raise ValueError("Empty bytes data provided")
+        raise ValueError("Empty bytes data provided.")
 
     storage_options = storage_options or {}
 
@@ -469,10 +489,10 @@ def scan_csv(
         following format: ``column_x``, with ``x`` being an
         enumeration over every column in the dataset starting at 1.
     sep
-        Character to use as delimiter in the file.
+        Single byte character to use as delimiter in the file.
     comment_char
-        Character that indicates the start of a comment line, for
-        instance ``#``.
+        Single byte character that indicates the start of a comment line,
+        for instance ``#``.
     quote_char
         Single byte character used for csv quoting, default = ``"``.
         Set to None to turn off special handling and escaping of quotes.
@@ -564,6 +584,10 @@ def scan_csv(
     has_header = kwargs.pop("has_headers", has_header)
     dtypes = kwargs.pop("dtype", dtypes)
     n_rows = kwargs.pop("stop_after_n_rows", n_rows)
+
+    _check_arg_is_1byte("sep", sep, False)
+    _check_arg_is_1byte("comment_char", comment_char, False)
+    _check_arg_is_1byte("quote_char", quote_char, True)
 
     if isinstance(file, (str, Path)):
         file = format_path(file)
