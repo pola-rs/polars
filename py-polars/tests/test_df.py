@@ -2095,6 +2095,16 @@ def test_partition_by() -> None:
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
 
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    assert df.partition_by(["a", "b"], as_dict=True)["one", 1].to_dict(False) == {
+        "a": ["one"],
+        "b": [1],
+    }
+    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(False) == {
+        "a": ["one", "one"],
+        "b": [1, 3],
+    }
+
 
 @typing.no_type_check
 def test_list_of_list_of_struct() -> None:

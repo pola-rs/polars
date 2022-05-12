@@ -2926,22 +2926,30 @@ impl DataFrame {
     }
 
     #[cfg(feature = "partition_by")]
-    fn partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
+    #[doc(hidden)]
+    pub fn _partition_by_impl(
+        &self,
+        cols: &[String],
+        stable: bool,
+    ) -> Result<impl IndexedParallelIterator<Item = DataFrame> + '_> {
         let groups = if stable {
             self.groupby_stable(cols)?.groups
         } else {
             self.groupby(cols)?.groups
         };
 
-        Ok(POOL.install(|| {
-            groups
-                .idx_ref()
-                .into_par_iter()
-                .map(|(_, group)| {
-                    // groups are in bounds
-                    unsafe { self.take_unchecked_slice(group) }
-                })
-                .collect()
+        Ok(POOL.install(move || {
+            match groups {
+                GroupsProxy::Idx(idx) => {
+                    idx.into_par_iter().map(|(_, group)| {
+                        // groups are in bounds
+                        unsafe { self.take_unchecked_slice(&group) }
+                    })
+                }
+                _ => {
+                    unimplemented!()
+                }
+            }
         }))
     }
 
@@ -2950,7 +2958,8 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self.partition_by_impl(&cols, false)
+        self._partition_by_impl(&cols, false)
+            .map(|iter| iter.collect())
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -2959,7 +2968,8 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self.partition_by_impl(&cols, true)
+        self._partition_by_impl(&cols, true)
+            .map(|iter| iter.collect())
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
