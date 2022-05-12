@@ -448,6 +448,8 @@ mod stats {
                     match l.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
+                            // will be incorrect if not
+                            debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.right.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
                         }
@@ -458,6 +460,8 @@ mod stats {
                     match r.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
+                            // will be incorrect if not
+                            debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.left.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
                         }
