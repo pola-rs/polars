@@ -44,6 +44,7 @@ use crate::prelude::{
 };
 
 use crate::logical_plan::FETCH_ROWS;
+use crate::prelude::delay_rechunk::DelayRechunk;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
@@ -567,6 +568,7 @@ impl LazyFrame {
         }
         // make sure its before slice pushdown.
         rules.push(Box::new(FastProjection {}));
+        rules.push(Box::new(DelayRechunk {}));
 
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};

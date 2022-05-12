@@ -136,11 +136,37 @@ pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
+fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
+    df.iter_chunks().map(|chunk| {
+        DataFrame::new_no_checks(
+            df.iter()
+                .zip(chunk.into_arrays())
+                .map(|(s, arr)| {
+                    // Safety:
+                    // datatypes are correct
+                    unsafe {
+                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                    }
+                })
+                .collect(),
+        )
+    })
+}
+
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
     let total_len = df.height();
     let chunk_size = total_len / n;
+
+    if df.n_chunks()? == n
+        && df.get_columns()[0]
+            .chunk_lengths()
+            .all(|len| len.abs_diff(chunk_size) < 100)
+    {
+        return Ok(flatten_df(df).collect());
+    }
+
     let mut out = Vec::with_capacity(n);
 
     for i in 0..n {
@@ -152,25 +178,9 @@ pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
         };
         let df = df.slice((i * chunk_size) as i64, len);
         if df.n_chunks()? > 1 {
-            let iter = df.iter_chunks().map(|chunk| {
-                DataFrame::new_no_checks(
-                    df.iter()
-                        .zip(chunk.into_arrays())
-                        .map(|(s, arr)| {
-                            // Safety:
-                            // datatypes are correct
-                            unsafe {
-                                Series::from_chunks_and_dtype_unchecked(
-                                    s.name(),
-                                    vec![arr],
-                                    s.dtype(),
-                                )
-                            }
-                        })
-                        .collect(),
-                )
-            });
-            out.extend(iter)
+            // we add every chunk as separate dataframe. This make sure that every partition
+            // deals with it.
+            out.extend(flatten_df(&df))
         } else {
             out.push(df)
         }
