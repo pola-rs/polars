@@ -2103,3 +2103,9 @@ def test_list_of_list_of_struct() -> None:
     df = pl.from_arrow(pa_df)
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
+
+
+def test_concat_to_empty() -> None:
+    assert pl.concat([pl.DataFrame([]), pl.DataFrame({"a": [1]})]).to_dict(False) == {
+        "a": [1]
+    }
