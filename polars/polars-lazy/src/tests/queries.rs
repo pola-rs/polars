@@ -2065,3 +2065,30 @@ fn test_partitioned_gb_binary() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_partitioned_gb_ternary() -> Result<()> {
+    // don't move these to integration tests
+    let df = df![
+        "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+        "val" => (0..20).map(|i| Some(i)).collect::<Int32Chunked>().into_series(),
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("col")])
+        .agg([when(col("val").gt(lit(10)))
+            .then(lit(1))
+            .otherwise(lit(0))
+            .sum()
+            .alias("sum")])
+        .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "sum" => [9],
+    ]?));
+
+    Ok(())
+}

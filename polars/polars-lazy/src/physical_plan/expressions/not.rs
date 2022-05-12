@@ -47,4 +47,30 @@ impl PhysicalExpr for NotExpr {
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("not", DataType::Boolean))
     }
+
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+}
+
+impl PartitionedAggregation for NotExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let a = self.0.as_partitioned_aggregator().unwrap();
+        let s = a.evaluate_partitioned(df, groups, state)?;
+        self.finish(s)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
+    }
 }
