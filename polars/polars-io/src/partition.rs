@@ -1,6 +1,6 @@
 use crate::{utils::resolve_homedir, WriterFactory};
 use polars_core::prelude::*;
-use rayon::iter::IndexedParallelIterator;
+use rayon::prelude::*;
 use std::{
     fs::File,
     io::BufWriter,
@@ -88,25 +88,10 @@ where
     }
 
     pub fn finish(self, df: &DataFrame) -> Result<()> {
-        use polars_core::POOL;
-        use rayon::iter::IntoParallelIterator;
-        use rayon::iter::ParallelIterator;
-
-        let partitioned = df.partition_by(&self.by)?;
-
-        if self.parallel {
-            POOL.install(|| {
-                partitioned
-                    .into_par_iter()
-                    .enumerate()
-                    .map(|(i, mut partition_df)| self.write_partition_df(&mut partition_df, i))
-                    .collect::<Result<Vec<_>>>()
-            })?;
-        } else {
-            for (i, mut partition_df) in partitioned.into_iter().enumerate() {
-                self.write_partition_df(&mut partition_df, i)?;
-            }
-        }
+        df._partition_by_impl(&self.by, false)?
+            .enumerate()
+            .map(|(i, mut part_df)| self.write_partition_df(&mut part_df, i))
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(())
     }
