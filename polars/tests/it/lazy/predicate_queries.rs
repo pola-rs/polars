@@ -93,3 +93,25 @@ fn test_many_filters() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_filter_no_combine() -> Result<()> {
+    let df = df![
+        "vals" => [1, 2, 3, 4, 5]
+    ]?;
+
+    let out = df
+        .lazy()
+        .filter(col("vals").gt(lit(1)))
+        // should be > 2
+        // if optimizer would combine predicates this would be flawed
+        .filter(col("vals").gt(col("vals").min()))
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("vals")?.i32()?),
+        &[Some(3), Some(4), Some(5)]
+    );
+
+    Ok(())
+}

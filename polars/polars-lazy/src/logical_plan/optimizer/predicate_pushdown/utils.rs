@@ -101,6 +101,33 @@ pub(super) fn get_insertion_name(
     )
 }
 
+// this checks if a predicate from a node upstream can pass
+// the predicate in this filter
+// Cases where this cannot be the case:
+//
+// .filter(a > 1)           # filter 2
+///.filter(a == min(a))     # filter 1
+///
+/// the min(a) is influenced by filter 2 so min(a) should not pass
+pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+    let matches = |e: &AExpr| {
+        matches!(
+            e,
+            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            | AExpr::Agg(_) // an aggregation needs all rows
+            | AExpr::Reverse(_)
+            // Apply groups can be something like shift, sort, or an aggregation like skew
+            // both need all values
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Explode {..}
+            // A groupby needs all rows for aggregation
+            | AExpr::Window {..}
+        )
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
 /// Some predicates should not pass a projection if they would influence results of other columns.
 /// For instance shifts | sorts results are influenced by a filter so we do all predicates before the shift | sort
 /// The rule of thumb is any operation that changes the order of a column w/r/t other columns should be a
@@ -117,6 +144,7 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::BinaryExpr {..}
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
             // cast may create nulls
