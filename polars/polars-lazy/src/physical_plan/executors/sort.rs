@@ -10,7 +10,8 @@ pub(crate) struct SortExec {
 
 impl Executor for SortExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let df = self.input.execute(state)?;
+        let mut df = self.input.execute(state)?;
+        df.as_single_chunk_par();
 
         let by_columns = self
             .by_column
@@ -28,6 +29,7 @@ impl Executor for SortExec {
                 Ok(s)
             })
             .collect::<Result<Vec<_>>>()?;
+
         df.sort_impl(
             by_columns,
             std::mem::take(&mut self.args.reverse),

@@ -101,13 +101,15 @@ pub(super) fn get_insertion_name(
     )
 }
 
-/// Some predicates should not pass a projection if they would influence results of other columns.
-/// For instance shifts | sorts results are influenced by a filter so we do all predicates before the shift | sort
-/// The rule of thumb is any operation that changes the order of a column w/r/t other columns should be a
-/// predicate pushdown blocker.
+// this checks if a predicate from a node upstream can pass
+// the predicate in this filter
+// Cases where this cannot be the case:
+//
+// .filter(a > 1)           # filter 2
+///.filter(a == min(a))     # filter 1
 ///
-/// This checks the boundary of other columns
-pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+/// the min(a) is influenced by filter 2 so min(a) should not pass
+pub(super) fn predicate_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let matches = |e: &AExpr| {
         matches!(
             e,
@@ -117,6 +119,35 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
             // Apply groups can be something like shift, sort, or an aggregation like skew
             // both need all values
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Explode {..}
+            // A groupby needs all rows for aggregation
+            | AExpr::Window {..}
+        )
+    };
+    has_aexpr(node, expr_arena, matches)
+}
+
+/// Some predicates should not pass a projection if they would influence results of other columns.
+/// For instance shifts | sorts results are influenced by a filter so we do all predicates before the shift | sort
+/// The rule of thumb is any operation that changes the order of a column w/r/t other columns should be a
+/// predicate pushdown blocker.
+///
+/// This checks the boundary of other columns
+pub(super) fn project_other_column_is_predicate_pushdown_boundary(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let matches = |e: &AExpr| {
+        matches!(
+            e,
+            AExpr::Shift { .. } | AExpr::Sort { .. } | AExpr::SortBy { .. }
+            | AExpr::Agg(_) // an aggregation needs all rows
+            | AExpr::Reverse(_)
+            // Apply groups can be something like shift, sort, or an aggregation like skew
+            // both need all values
+            | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
+            | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::BinaryExpr {..}
             | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
             // cast may create nulls
@@ -136,7 +167,10 @@ pub(super) fn other_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<A
 }
 
 /// This checks the boundary of same columns. So that means columns that are referred in the predicate
-pub(super) fn predicate_column_is_pushdown_boundary(node: Node, expr_arena: &Arena<AExpr>) -> bool {
+pub(super) fn projection_column_is_predicate_pushdown_boundary(
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
     let matches = |e: &AExpr| {
         matches!(
             e,
@@ -184,7 +218,7 @@ where
     for projection_node in &projections {
         // only if a predicate refers to this projection's output column.
         let projection_maybe_boundary =
-            predicate_column_is_pushdown_boundary(*projection_node, expr_arena);
+            projection_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
 
         let projection_expr = expr_arena.get(*projection_node);
         let output_field = projection_expr
@@ -225,7 +259,8 @@ where
 
         // we check if predicates can be done on the input above
         // this can only be done if the current projection is not a projection boundary
-        let is_boundary = other_column_is_pushdown_boundary(*projection_node, expr_arena);
+        let is_boundary =
+            project_other_column_is_predicate_pushdown_boundary(*projection_node, expr_arena);
 
         // remove predicates that cannot be done on the input above
         let to_local = acc_predicates
@@ -286,13 +321,13 @@ pub(super) fn no_pushdown_preds<F>(
         let columns = aexpr_to_root_names(node, arena);
 
         let condition = |name: Arc<str>| columns.contains(&name);
-        local_predicates.extend(transfer_to_local(arena, acc_predicates, condition));
+        local_predicates.extend(transfer_to_local_by_name(arena, acc_predicates, condition));
     }
 }
 
 /// Transfer a predicate from `acc_predicates` that will be pushed down
 /// to a local_predicates vec based on a condition.
-pub(super) fn transfer_to_local<F>(
+pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
     acc_predicates: &mut PlHashMap<Arc<str>, Node>,
     mut condition: F,
@@ -309,6 +344,32 @@ where
                 remove_keys.push(key.clone());
                 continue;
             }
+        }
+    }
+    let mut local_predicates = Vec::with_capacity(remove_keys.len());
+    for key in remove_keys {
+        if let Some(pred) = acc_predicates.remove(&*key) {
+            local_predicates.push(pred)
+        }
+    }
+    local_predicates
+}
+
+/// Transfer a predicate from `acc_predicates` that will be pushed down
+/// to a local_predicates vec based on a condition.
+pub(super) fn transfer_to_local_by_node<F>(
+    acc_predicates: &mut PlHashMap<Arc<str>, Node>,
+    mut condition: F,
+) -> Vec<Node>
+where
+    F: FnMut(Node) -> bool,
+{
+    let mut remove_keys = Vec::with_capacity(acc_predicates.len());
+
+    for (key, predicate) in &*acc_predicates {
+        if condition(*predicate) {
+            remove_keys.push(key.clone());
+            continue;
         }
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());

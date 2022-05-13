@@ -124,14 +124,15 @@ impl Series {
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
+                let mut tz = tz.clone();
+                if tz.as_deref() == Some("") {
+                    tz = None;
+                }
                 // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_datetime(tu.into(), None)
+                    .into_datetime(tu.into(), tz)
                     .into_series();
-                if !(tz.is_none() || tz == &Some("".to_string())) {
-                    println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")
-                }
                 Ok(match tu {
                     ArrowTimeUnit::Second => &s * MILLISECONDS,
                     ArrowTimeUnit::Millisecond => s,

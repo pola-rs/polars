@@ -1781,7 +1781,7 @@ class Expr:
                 "include_bounds should be a boolean or [boolean, boolean]."
             )
 
-    def hash(self, k0: int = 0, k1: int = 1, k2: int = 2, k3: int = 3) -> "Expr":
+    def hash(self, seed: int = 0, **kwargs: Any) -> "Expr":
         """
         Hash the Series.
 
@@ -1789,16 +1789,12 @@ class Expr:
 
         Parameters
         ----------
-        k0
-            seed parameter
-        k1
-            seed parameter
-        k2
-            seed parameter
-        k3
+        seed
             seed parameter
         """
-        return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
+        # kwargs is for backward compatibility
+        # can be removed later
+        return wrap_expr(self._pyexpr.hash(seed))
 
     def reinterpret(self, signed: bool) -> "Expr":
         """
@@ -2888,19 +2884,20 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.log(base))
 
-    def entropy(self, base: float = math.e) -> "Expr":
+    def entropy(self, base: float = math.e, normalize: bool = False) -> "Expr":
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
-
-        This routine will normalize pk if they don’t sum to 1.
 
         Parameters
         ----------
         base
             Given base, defaults to `e`
+        normalize
+            Normalize pk if it doesn't sum to 1.
+
         """
-        return wrap_expr(self._pyexpr.entropy(base))
+        return wrap_expr(self._pyexpr.entropy(base, normalize))
 
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"

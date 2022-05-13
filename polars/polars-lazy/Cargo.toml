@@ -65,6 +65,7 @@ list_eval = []
 chunked_ids = []
 list_to_struct = ["polars-ops/list_to_struct"]
 python = ["pyo3"]
+row_hash = ["polars-core/row_hash"]
 
 # no guarantees whatsoever
 private = ["polars-time/private"]
@@ -74,6 +75,25 @@ bigidx = ["polars-arrow/bigidx", "polars-core/bigidx", "polars-utils/bigidx"]
 panic_on_schema = []
 
 test = [
+  "panic_on_schema",
+  "private",
+  "rolling_window",
+  "rank",
+  "list",
+  "round_series",
+  "csv-file",
+  "dtype-categorical",
+  "cum_agg",
+  "regex",
+  "polars-core/fmt",
+  "diff",
+  "abs",
+  "parquet",
+  "ipc",
+  "dtype-date",
+]
+
+test_all = [
   "panic_on_schema",
   "private",
   "rolling_window",

@@ -80,6 +80,7 @@ partition_by = []
 semi_anti_join = []
 chunked_ids = []
 describe = []
+timezones = ["chrono-tz", "arrow/chrono-tz"]
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
 
@@ -143,6 +144,9 @@ docs-selection = [
   "unique_counts",
   "log",
   "describe",
+  "chunked_ids",
+  "semi_anti_join",
+  "partition_by",
 ]
 
 [dependencies]
@@ -150,6 +154,7 @@ ahash = "0.7"
 anyhow = "1.0"
 base64 = { version = "0.13", optional = true }
 chrono = { version = "0.4", optional = true }
+chrono-tz = { version = "0.6", optional = true }
 comfy-table = { version = "5.0", optional = true }
 hashbrown = { version = "0.12", features = ["rayon"] }
 hex = { version = "0.4", optional = true }

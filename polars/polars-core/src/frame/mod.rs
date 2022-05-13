@@ -393,7 +393,9 @@ impl DataFrame {
     /// Aggregate all the chunks in the DataFrame to a single chunk in parallel.
     /// This may lead to more peak memory consumption.
     pub fn as_single_chunk_par(&mut self) -> &mut Self {
-        self.columns = self.apply_columns_par(&|s| s.rechunk());
+        if self.columns.iter().any(|s| s.n_chunks() > 1) {
+            self.columns = self.apply_columns_par(&|s| s.rechunk());
+        }
         self
     }
 
@@ -864,6 +866,11 @@ impl DataFrame {
     /// ```
     pub fn vstack_mut(&mut self, other: &DataFrame) -> Result<&mut Self> {
         if self.width() != other.width() {
+            if self.width() == 0 {
+                self.columns = other.columns.clone();
+                return Ok(self);
+            }
+
             return Err(PolarsError::ShapeMisMatch(
                 format!("Could not vertically stack DataFrame. The DataFrames appended width {} differs from the parent DataFrames width {}", self.width(), other.width()).into()
             ));
@@ -1612,12 +1619,23 @@ impl DataFrame {
     }
 
     pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
-        let cols = POOL.install(|| {
-            self.apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
-                _ => s.take_unchecked(idx).unwrap(),
+        self.take_unchecked_impl(idx, true)
+    }
+
+    unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
+        let cols = if allow_threads {
+            POOL.install(|| {
+                self.apply_columns_par(&|s| match s.dtype() {
+                    DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
+                    _ => s.take_unchecked(idx).unwrap(),
+                })
             })
-        });
+        } else {
+            self.columns
+                .iter()
+                .map(|s| s.take_unchecked(idx).unwrap())
+                .collect()
+        };
         DataFrame::new_no_checks(cols)
     }
 
@@ -1680,7 +1698,7 @@ impl DataFrame {
         reverse: impl IntoVec<bool>,
     ) -> Result<&mut Self> {
         // a lot of indirection in both sorting and take
-        self.rechunk();
+        self.as_single_chunk_par();
         let by_column = self.select_series(by_column)?;
         let reverse = reverse.into_vec();
         self.columns = self.sort_impl(by_column, reverse, false, None)?.columns;
@@ -1775,7 +1793,7 @@ impl DataFrame {
     pub fn sort_with_options(&self, by_column: &str, options: SortOptions) -> Result<Self> {
         let mut df = self.clone();
         // a lot of indirection in both sorting and take
-        df.rechunk();
+        df.as_single_chunk_par();
         let by_column = vec![df.column(by_column)?.clone()];
         let reverse = vec![options.descending];
         df.columns = df
@@ -2999,13 +3017,15 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
+    /// Be careful with allowing threads when calling this in a large hot loop
+    /// every thread split may be on rayon stack and lead to SO
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();
 
         // create a temporary vec. we will not drop it.
         let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
-        let out = self.take_unchecked(&ca);
+        let out = self.take_unchecked_impl(&ca, allow_threads);
 
         // ref count of buffers should be one because we dropped all allocations
         let arr = {
@@ -3022,23 +3042,33 @@ impl DataFrame {
     }
 
     #[cfg(feature = "partition_by")]
-    fn partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
+    #[doc(hidden)]
+    pub fn _partition_by_impl(
+        &self,
+        cols: &[String],
+        stable: bool,
+    ) -> Result<impl IndexedParallelIterator<Item = DataFrame> + '_> {
         let groups = if stable {
             self.groupby_stable(cols)?.groups
         } else {
             self.groupby(cols)?.groups
         };
 
-        Ok(POOL.install(|| {
-            groups
-                .idx_ref()
-                .into_par_iter()
-                .map(|(_, group)| {
-                    // groups are in bounds
-                    unsafe { self.take_unchecked_slice(group) }
-                })
-                .collect()
-        }))
+        // don't parallelize this
+        // there is a lot of parallelization in take and this may easily SO
+        POOL.install(|| {
+            match groups {
+                GroupsProxy::Idx(idx) => {
+                    Ok(idx.into_par_iter().map(|(_, group)| {
+                        // groups are in bounds
+                        unsafe { self.take_unchecked_slice(&group, false) }
+                    }))
+                }
+                _ => {
+                    unimplemented!()
+                }
+            }
+        })
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3046,7 +3076,8 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self.partition_by_impl(&cols, false)
+        self._partition_by_impl(&cols, false)
+            .map(|iter| iter.collect())
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3055,7 +3086,8 @@ impl DataFrame {
     #[cfg_attr(docsrs, doc(cfg(feature = "partition_by")))]
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
-        self.partition_by_impl(&cols, true)
+        self._partition_by_impl(&cols, true)
+            .map(|iter| iter.collect())
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be

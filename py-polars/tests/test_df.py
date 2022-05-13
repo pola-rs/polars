@@ -1,5 +1,4 @@
 # flake8: noqa: W191,E101
-import io
 import sys
 import typing
 from builtins import range
@@ -15,8 +14,6 @@ import pytest
 
 import polars as pl
 from polars import testing
-from polars.datatypes import List
-from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -36,19 +33,23 @@ def test_init_only_columns() -> None:
     assert df.frame_equal(truth, null_equal=True)
     assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
 
-    df = pl.DataFrame(
-        columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)]
-    )
-    truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
-        [
-            pl.col("a").cast(pl.Date),
-            pl.col("b").cast(pl.UInt64),
-            pl.col("c").cast(pl.Int8),
-        ]
-    )
-    assert df.shape == (0, 3)
-    assert df.frame_equal(truth, null_equal=True)
-    assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
+    # Validate construction with various flavours of no/empty data
+    no_data: Any
+    for no_data in (None, {}, []):
+        df = pl.DataFrame(
+            data=no_data,
+            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)],
+        )
+        truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
+            [
+                pl.col("a").cast(pl.Date),
+                pl.col("b").cast(pl.UInt64),
+                pl.col("c").cast(pl.Int8),
+            ]
+        )
+        assert df.shape == (0, 3)
+        assert df.frame_equal(truth, null_equal=True)
+        assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
 
 
 def test_init_dict() -> None:
@@ -1673,6 +1674,18 @@ def test_rename_swap() -> None:
     assert out.frame_equal(expected)
 
 
+def test_rename_same_name() -> None:
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4, 5],
+            "groups": ["A", "A", "B", "C", "B"],
+        }
+    ).lazy()
+    df = df.rename({"groups": "groups"})
+    df = df.select(["groups"])
+    assert df.collect().to_dict(False) == {"groups": ["A", "A", "B", "C", "B"]}
+
+
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -2082,6 +2095,16 @@ def test_partition_by() -> None:
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
 
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    assert df.partition_by(["a", "b"], as_dict=True)["one", 1].to_dict(False) == {
+        "a": ["one"],
+        "b": [1],
+    }
+    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(False) == {
+        "a": ["one", "one"],
+        "b": [1, 3],
+    }
+
 
 @typing.no_type_check
 def test_list_of_list_of_struct() -> None:
@@ -2090,3 +2113,9 @@ def test_list_of_list_of_struct() -> None:
     df = pl.from_arrow(pa_df)
     assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
     assert df.to_dicts() == expected
+
+
+def test_concat_to_empty() -> None:
+    assert pl.concat([pl.DataFrame([]), pl.DataFrame({"a": [1]})]).to_dict(False) == {
+        "a": [1]
+    }

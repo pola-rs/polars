@@ -25,7 +25,7 @@ pub type ArrayBox = Box<dyn Array>;
 
 impl<'a> UnstableSeries<'a> {
     pub fn new(series: &'a Series) -> Self {
-        let inner_chunk = &series.chunks()[0];
+        let inner_chunk = series.array_ref(0);
         UnstableSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),

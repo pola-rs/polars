@@ -1006,3 +1006,17 @@ fn test_duplicate_column_err() {
     let file = Cursor::new(csv);
     assert!(CsvReader::new(file).finish().is_err());
 }
+
+#[test]
+fn test_parse_dates_3380() -> Result<()> {
+    let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
+46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
+46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .with_delimiter(b';')
+        .with_parse_dates(true)
+        .finish()?;
+    assert_eq!(df.column("validdate")?.null_count(), 0);
+    Ok(())
+}

@@ -89,7 +89,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         df.rechunk();
         let names = df.get_column_names();
         let iter = df.iter_chunks();

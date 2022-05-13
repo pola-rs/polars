@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum FunctionExpr {
     NullCount,
     Pow(f64),
+    #[cfg(feature = "row_hash")]
+    Hash(usize),
 }
 
 impl FunctionExpr {
@@ -34,6 +36,8 @@ impl FunctionExpr {
         match self {
             NullCount => with_dtype(IDX_DTYPE),
             Pow(_) => float_dtype(),
+            #[cfg(feature = "row_hash")]
+            Hash(_) => with_dtype(DataType::UInt64),
         }
     }
 }
@@ -59,6 +63,14 @@ impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
                 let f = move |s: &mut [Series]| {
                     let s = &s[0];
                     s.pow(exponent)
+                };
+                wrap!(f)
+            }
+            #[cfg(feature = "row_hash")]
+            Hash(seed) => {
+                let f = move |s: &mut [Series]| {
+                    let s = &s[0];
+                    Ok(s.hash(ahash::RandomState::with_seed(seed)).into_series())
                 };
                 wrap!(f)
             }

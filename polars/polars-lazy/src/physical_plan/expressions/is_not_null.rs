@@ -44,4 +44,30 @@ impl PhysicalExpr for IsNotNullExpr {
     fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
         Ok(Field::new("is_not_null", DataType::Boolean))
     }
+
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+}
+
+impl PartitionedAggregation for IsNotNullExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let input = self.physical_expr.as_partitioned_aggregator().unwrap();
+        let s = input.evaluate_partitioned(df, groups, state)?;
+        Ok(s.is_not_null().into_series())
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
+    }
 }

@@ -14,7 +14,7 @@ jobs:
         os: ["macos-latest", "windows-latest"]
         python-version: ["3.7"]
     steps:
-        - uses: actions/checkout@v2
+        - uses: actions/checkout@v3
         - name: Install latest Rust nightly
           uses: actions-rs/toolchain@v1
           with:
@@ -22,7 +22,7 @@ jobs:
             override: true
             components: rustfmt, clippy
         - name: Set up Python
-          uses: actions/setup-python@v2
+          uses: actions/setup-python@v3
           with:
             python-version: ${{ matrix.python-version }}
         - name: Install dependencies

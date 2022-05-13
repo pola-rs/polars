@@ -1,7 +1,9 @@
 use crate::POOL;
+use arrow::bitmap::MutableBitmap;
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 
+use crate::apply_method_physical_integer;
 use arrow::types::{simd::Simd, NativeType};
 
 #[cfg(feature = "object")]
@@ -172,19 +174,16 @@ impl Series {
     #[doc(hidden)]
     pub fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         use DataType::*;
-        match self.dtype() {
-            // risk of overflow
-            UInt8 | UInt16 | Int8 | Int16 => {
-                self.cast(&DataType::Float64).unwrap().agg_mean(groups)
+        if self.dtype().is_numeric() {
+            match self.dtype() {
+                Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
+                Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
+                _ => {
+                    apply_method_physical_integer!(self, agg_mean, groups)
+                }
             }
-            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
-            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
-            Int32 => self.i32().unwrap().agg_mean(groups),
-            Int64 => self.i64().unwrap().agg_mean(groups),
-            UInt32 => self.u32().unwrap().agg_mean(groups),
-            UInt64 => self.u64().unwrap().agg_mean(groups),
-            // logical types don't have agg_mean
-            _ => Series::full_null(self.name(), groups.len(), self.dtype()),
+        } else {
+            Series::full_null(self.name(), groups.len(), self.dtype())
         }
     }
 
@@ -408,7 +407,7 @@ where
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
                             (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
+                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
@@ -422,8 +421,7 @@ where
                             }),
                             _ => {
                                 let take = unsafe { self.take_unchecked(idx.into()) };
-                                let opt_sum: Option<T::Native> = take.sum();
-                                opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                                take.mean()
                             }
                         }
                     };
@@ -587,28 +585,32 @@ where
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
-                                    T::Native::zero(),
+                                    0.0f64,
                                 )
                             }
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
-                            (_, 1) => unsafe {
-                                take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _>(
-                                    self.downcast_iter().next().unwrap(),
-                                    idx.iter().map(|i| *i as usize),
-                                    |a, b| a + b,
-                                    T::Native::zero(),
-                                )
+                            (_, 1) => {
+                                unsafe {
+                                    take_agg_primitive_iter_unchecked_count_nulls::<
+                                        T::Native,
+                                        f64,
+                                        _,
+                                        _,
+                                    >(
+                                        self.downcast_iter().next().unwrap(),
+                                        idx.iter().map(|i| *i as usize),
+                                        |a, b| a + b,
+                                        0.0,
+                                    )
+                                }
+                                .map(|(sum, null_count)| {
+                                    sum / (idx.len() as f64 - null_count as f64)
+                                })
                             }
-                            .map(|(sum, null_count)| {
-                                sum.to_f64()
-                                    .map(|sum| sum / (idx.len() as f64 - null_count as f64))
-                            })
-                            .unwrap(),
                             _ => {
                                 let take = unsafe { self.take_unchecked(idx.into()) };
-                                let opt_sum: Option<T::Native> = take.sum();
-                                opt_sum.map(|sum| sum.to_f64().unwrap() / idx.len() as f64)
+                                take.mean()
                             }
                         }
                     }
@@ -757,63 +759,67 @@ where
     ChunkedArray<T>: IntoSeries,
 {
     fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        let ca = self.rechunk();
+
         match groups {
             GroupsProxy::Idx(groups) => {
                 let mut can_fast_explode = true;
-                let arr = match self.cont_slice() {
-                    Ok(values) => {
-                        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-                        let mut length_so_far = 0i64;
-                        offsets.push(length_so_far);
 
-                        let mut list_values = Vec::<T::Native>::with_capacity(self.len());
-                        groups.iter().for_each(|(_, idx)| {
-                            let idx_len = idx.len();
-                            if idx_len == 0 {
-                                can_fast_explode = false;
-                            }
+                let arr = ca.downcast_iter().next().unwrap();
+                let values = arr.values();
 
-                            length_so_far += idx_len as i64;
-                            // Safety:
-                            // group tuples are in bounds
-                            unsafe {
-                                list_values.extend(idx.iter().map(|idx| {
-                                    debug_assert!((*idx as usize) < values.len());
-                                    *values.get_unchecked(*idx as usize)
-                                }));
-                                // Safety:
-                                // we know that offsets has allocated enough slots
-                                offsets.push_unchecked(length_so_far);
-                            }
-                        });
-                        let array = PrimitiveArray::from_data(
-                            T::get_dtype().to_arrow(),
-                            list_values.into(),
-                            None,
-                        );
-                        let data_type =
-                            ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                        ListArray::<i64>::from_data(
-                            data_type,
-                            offsets.into(),
-                            Arc::new(array),
-                            None,
-                        )
+                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
+                let mut length_so_far = 0i64;
+                offsets.push(length_so_far);
+
+                let mut list_values = Vec::<T::Native>::with_capacity(self.len());
+                groups.iter().for_each(|(_, idx)| {
+                    let idx_len = idx.len();
+                    if idx_len == 0 {
+                        can_fast_explode = false;
                     }
-                    _ => {
-                        let mut builder = ListPrimitiveChunkedBuilder::<T::Native>::new(
-                            self.name(),
-                            groups.len(),
-                            self.len(),
-                            self.dtype().clone(),
-                        );
-                        for idx in groups.all().iter() {
-                            let s = unsafe { self.take_unchecked(idx.into()).into_series() };
-                            builder.append_series(&s);
+
+                    length_so_far += idx_len as i64;
+                    // Safety:
+                    // group tuples are in bounds
+                    unsafe {
+                        list_values.extend(idx.iter().map(|idx| {
+                            debug_assert!((*idx as usize) < values.len());
+                            *values.get_unchecked(*idx as usize)
+                        }));
+                        // Safety:
+                        // we know that offsets has allocated enough slots
+                        offsets.push_unchecked(length_so_far);
+                    }
+                });
+
+                let validity = if arr.null_count() > 0 {
+                    let old_validity = arr.validity().unwrap();
+                    let mut validity = MutableBitmap::from_len_set(list_values.len());
+
+                    let mut count = 0;
+                    groups.iter().for_each(|(_, idx)| unsafe {
+                        for i in idx {
+                            if !old_validity.get_bit_unchecked(*i as usize) {
+                                validity.set_bit_unchecked(count, false)
+                            }
+                            count += 1;
                         }
-                        return builder.finish().into_series();
-                    }
+                    });
+                    Some(validity.into())
+                } else {
+                    None
                 };
+
+                let array = PrimitiveArray::from_data(
+                    T::get_dtype().to_arrow(),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                let arr =
+                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
+
                 let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
@@ -822,55 +828,54 @@ where
             }
             GroupsProxy::Slice(groups) => {
                 let mut can_fast_explode = true;
-                let arr = match self.cont_slice() {
-                    Ok(values) => {
-                        let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
-                        let mut length_so_far = 0i64;
-                        offsets.push(length_so_far);
+                let arr = ca.downcast_iter().next().unwrap();
+                let values = arr.values();
 
-                        let mut list_values = Vec::<T::Native>::with_capacity(self.len());
-                        groups.iter().for_each(|&[first, len]| {
-                            if len == 0 {
-                                can_fast_explode = false;
-                            }
+                let mut offsets = Vec::<i64>::with_capacity(groups.len() + 1);
+                let mut length_so_far = 0i64;
+                offsets.push(length_so_far);
 
-                            length_so_far += len as i64;
-                            list_values
-                                .extend_from_slice(&values[first as usize..(first + len) as usize]);
-                            unsafe {
-                                // Safety:
-                                // we know that offsets has allocated enough slots
-                                offsets.push_unchecked(length_so_far);
-                            }
-                        });
-                        let array = PrimitiveArray::from_data(
-                            T::get_dtype().to_arrow(),
-                            list_values.into(),
-                            None,
-                        );
-                        let data_type =
-                            ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
-                        ListArray::<i64>::from_data(
-                            data_type,
-                            offsets.into(),
-                            Arc::new(array),
-                            None,
-                        )
+                let mut list_values = Vec::<T::Native>::with_capacity(self.len());
+                groups.iter().for_each(|&[first, len]| {
+                    if len == 0 {
+                        can_fast_explode = false;
                     }
-                    _ => {
-                        let mut builder = ListPrimitiveChunkedBuilder::<T::Native>::new(
-                            self.name(),
-                            groups.len(),
-                            self.len(),
-                            self.dtype().clone(),
-                        );
-                        for &[first, len] in groups {
-                            let s = self.slice(first as i64, len as usize).into_series();
-                            builder.append_series(&s);
+
+                    length_so_far += len as i64;
+                    list_values.extend_from_slice(&values[first as usize..(first + len) as usize]);
+                    unsafe {
+                        // Safety:
+                        // we know that offsets has allocated enough slots
+                        offsets.push_unchecked(length_so_far);
+                    }
+                });
+
+                let validity = if arr.null_count() > 0 {
+                    let old_validity = arr.validity().unwrap();
+                    let mut validity = MutableBitmap::from_len_set(list_values.len());
+
+                    let mut count = 0;
+                    groups.iter().for_each(|[first, len]| unsafe {
+                        for i in *first..(*first + *len) {
+                            if !old_validity.get_bit_unchecked(i as usize) {
+                                validity.set_bit_unchecked(count, false)
+                            }
+                            count += 1;
                         }
-                        return builder.finish().into_series();
-                    }
+                    });
+                    Some(validity.into())
+                } else {
+                    None
                 };
+
+                let array = PrimitiveArray::from_data(
+                    T::get_dtype().to_arrow(),
+                    list_values.into(),
+                    validity,
+                );
+                let data_type = ListArray::<i64>::default_datatype(T::get_dtype().to_arrow());
+                let arr =
+                    ListArray::<i64>::from_data(data_type, offsets.into(), Arc::new(array), None);
                 let mut ca = ListChunked::from_chunks(self.name(), vec![Arc::new(arr)]);
                 if can_fast_explode {
                     ca.set_fast_explode()
