@@ -367,7 +367,9 @@ impl PredicatePushDown {
                         |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
                     if has_aexpr(predicate, expr_arena, matches)
                         // join might create null values.
-                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
+                        || has_aexpr(predicate, expr_arena, checks_nulls)
+                        // only these join types produce null values
+                        && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -415,15 +417,6 @@ impl PredicatePushDown {
                         },
                         // business as usual
                         _ => {}
-                    }
-                    // An outer join or left join may create null values.
-                    // we also do it local
-                    let matches = |e: &AExpr| matches!(e, AExpr::IsNotNull(_) | AExpr::IsNull(_));
-                    if (options.how == JoinType::Outer) | (options.how == JoinType::Left)
-                        && has_aexpr(predicate, expr_arena, matches)
-                    {
-                        local_predicates.push(predicate);
-                        continue;
                     }
                 }
 
