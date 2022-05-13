@@ -4157,8 +4157,38 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @overload
     def partition_by(
-        self,
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: Literal[False] = ...,
+    ) -> List[DF]:
+        ...
+
+    @overload
+    def partition_by(
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: Literal[True],
+    ) -> Dict[Any, DF]:
+        ...
+
+    @overload
+    def partition_by(
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: bool,
+    ) -> Union[List[DF], Dict[Any, DF]]:
+        ...
+
+    def partition_by(
+        self: DF,
         groups: Union[str, List[str]],
         maintain_order: bool = True,
         *,
@@ -4221,7 +4251,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             groups = [groups]
 
         if as_dict:
-            out = dict()
+            out: Dict[Any, DF] = dict()
             if len(groups) == 1:
                 for _df in self._df.partition_by(groups, maintain_order):
                     df = self._from_pydf(_df)
@@ -4229,13 +4259,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
             else:
                 for _df in self._df.partition_by(groups, maintain_order):
                     df = self._from_pydf(_df)
-                    out[df[groups].row(0)] = df  # type: ignore
+                    out[df[groups].row(0)] = df
 
-            return out  # type: ignore
+            return out
 
         else:
             return [
-                self._from_pydf(_df)  # type: ignore
+                self._from_pydf(_df)
                 for _df in self._df.partition_by(groups, maintain_order)
             ]
 
