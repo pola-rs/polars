@@ -28,6 +28,7 @@ impl LazyFrame {
             cache: args.cache,
             with_columns: None,
             row_count: args.row_count,
+            rechunk: args.rechunk,
         };
         let mut lf: LazyFrame = LogicalPlanBuilder::scan_ipc(path, options)?.build().into();
         lf.opt_state.agg_scan_projection = true;

@@ -6,11 +6,18 @@ pub(crate) use polars_time::in_nanoseconds_window;
 pub(crate) use polars_time::{DynamicGroupOptions, PolarsTemporalGroupby, RollingGroupOptions};
 
 #[cfg(not(feature = "dynamic_groupby"))]
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
+#[cfg(not(feature = "dynamic_groupby"))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct DynamicGroupOptions {
     pub index_column: String,
 }
+
 #[cfg(not(feature = "dynamic_groupby"))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug)]
 pub struct RollingGroupOptions {
     pub index_column: String,

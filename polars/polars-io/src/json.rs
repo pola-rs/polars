@@ -73,7 +73,6 @@ use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
 use polars_core::prelude::*;
 use std::convert::TryFrom;
 use std::io::{BufRead, Seek, Write};
-
 pub enum JsonFormat {
     Json,
     JsonLines,
@@ -105,7 +104,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         df.rechunk();
         let fields = df.iter().map(|s| s.field().to_arrow()).collect::<Vec<_>>();
         let batches = df

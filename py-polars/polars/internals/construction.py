@@ -463,7 +463,7 @@ def sequence_to_pydf(
     data_series: List["PySeries"]
 
     if len(data) == 0:
-        data_series = []
+        return dict_to_pydf({}, columns=columns)
 
     elif isinstance(data[0], pli.Series):
         series_names = [s.name for s in data]
@@ -506,7 +506,7 @@ def sequence_to_pydf(
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)  # type: ignore[arg-type]
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
@@ -620,11 +620,6 @@ def pandas_to_pydf(
 
 
 def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
-    if isinstance(array, pa.TimestampArray) and array.type.tz is not None:
-        warnings.warn(
-            "Conversion of timezone aware to naive datetimes. TZ information may be lost",
-        )
-
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())

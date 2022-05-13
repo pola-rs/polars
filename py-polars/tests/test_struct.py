@@ -271,3 +271,10 @@ def test_list_to_struct() -> None:
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 1},
     ]
+
+
+def test_sort_df_with_list_struct() -> None:
+    assert pl.DataFrame([{"a": 1, "b": [{"c": 1}]}]).sort("a").to_dict(False) == {
+        "a": [1],
+        "b": [[{"c": 1}]],
+    }

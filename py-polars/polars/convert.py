@@ -248,7 +248,7 @@ def from_pandas(
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
 
-    Requires the pandas package to be installed.
+    This requires that pandas and pyarrow are installed.
 
     Parameters
     ----------
@@ -297,6 +297,11 @@ def from_pandas(
     ]
 
     """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError(  # pragma: no cover
+            "'pyarrow' is required when using from_pandas()."
+        )
+
     try:
         import pandas as pd
     except ImportError as e:  # pragma: no cover

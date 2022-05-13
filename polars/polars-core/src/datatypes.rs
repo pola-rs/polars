@@ -583,7 +583,10 @@ impl PartialOrd for AnyValue<'_> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,

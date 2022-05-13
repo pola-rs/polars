@@ -91,6 +91,9 @@ impl RevMapping {
     pub fn same_src(&self, other: &Self) -> bool {
         match (self, other) {
             (RevMapping::Global(_, _, l), RevMapping::Global(_, _, r)) => *l == *r,
+            (RevMapping::Local(l), RevMapping::Local(r)) => {
+                std::ptr::eq(l as *const Utf8Array<_>, r as *const Utf8Array<_>)
+            }
             _ => false,
         }
     }

@@ -927,11 +927,12 @@ export const _Expr = (_expr: any): Expr => {
         throw new Error("sample_n is not yet supported for expr");
       }
       if(typeof frac === "number") {
-        return wrap("sampleFrac", {
+        return wrap("sampleFrac",
           frac,
           withReplacement,
+          false,
           seed
-        });
+        );
       }
       else {
         throw new TypeError("must specify either 'frac' or 'n'");

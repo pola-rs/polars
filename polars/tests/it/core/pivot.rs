@@ -1,3 +1,4 @@
+use polars::export::chrono::{NaiveDate, NaiveDateTime};
 use polars::prelude::*;
 
 #[test]
@@ -164,6 +165,27 @@ fn test_pivot_2() -> Result<()> {
         "test" => [Some(0.4), Some(0.2), None],
     ]?;
     assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-datetime")]
+fn test_pivot_datetime() -> Result<()> {
+    let dt = NaiveDate::from_ymd(2021, 1, 1).and_hms(12, 15, 0);
+    let df = df![
+        "dt" => [dt, dt, dt, dt],
+        "key" => ["x", "x", "y", "y"],
+        "val" => [100, 50, 500, -80]
+    ]?;
+
+    let out = df.pivot(["val"], ["dt"], ["key"], PivotAgg::Sum, false)?;
+    let expected = df![
+        "dt" => [dt],
+        "x" => [150],
+        "y" => [420]
+    ]?;
+    assert!(out.frame_equal(&expected));
 
     Ok(())
 }

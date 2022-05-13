@@ -306,27 +306,34 @@ impl<'df> GroupBy<'df> {
     }
 
     pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Series> {
+        #[allow(unused_assignments)]
+        // needed to keep the lifetimes valid for this scope
+        let mut groups_owned = None;
+
+        let groups = if let Some((offset, len)) = slice {
+            groups_owned = Some(self.groups.slice(offset, len));
+            groups_owned.as_deref().unwrap()
+        } else {
+            &self.groups
+        };
+
         POOL.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(|s| {
-                    #[allow(unused_assignments)]
-                    // needed to keep the lifetimes valid for this scope
-                    let mut groups_owned = None;
-
-                    let groups = if let Some((offset, len)) = slice {
-                        groups_owned = Some(self.groups.slice(offset, len));
-                        groups_owned.as_deref().unwrap()
-                    } else {
-                        &self.groups
-                    };
-
-                    // Safety
-                    // groupby indexes are in bound.
-                    unsafe {
-                        s.take_iter_unchecked(
-                            &mut groups.idx_ref().iter().map(|(idx, _)| idx as usize),
-                        )
+                    match groups {
+                        GroupsProxy::Idx(groups) => {
+                            let mut iter = groups.iter().map(|(first, _idx)| first as usize);
+                            // Safety:
+                            // groups are always in bounds
+                            unsafe { s.take_iter_unchecked(&mut iter) }
+                        }
+                        GroupsProxy::Slice(groups) => {
+                            let mut iter = groups.iter().map(|&[first, _len]| first as usize);
+                            // Safety:
+                            // groups are always in bounds
+                            unsafe { s.take_iter_unchecked(&mut iter) }
+                        }
                     }
                 })
                 .collect()

@@ -173,7 +173,9 @@ def test_entropy() -> None:
     )
 
     assert (
-        df.groupby("group", maintain_order=True).agg(pl.col("id").entropy())
+        df.groupby("group", maintain_order=True).agg(
+            pl.col("id").entropy(normalize=True)
+        )
     ).frame_equal(
         pl.DataFrame(
             {"group": ["A", "B"], "id": [1.0397207708399179, 1.371381017771811]}

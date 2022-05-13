@@ -232,6 +232,7 @@ export function scanCSV(path, options?) {
 export function readJSON(pathOrBody: string | Buffer, options?: any): DataFrame
 export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
   options = {...readJsonDefaultOptions, ...options};
+  let method = options.format === "lines" ? pli.readJsonLines : pli.readJson;
   const extensions = [".ndjson", ".json", ".jsonl"];
   if (Buffer.isBuffer(pathOrBody)) {
     return _DataFrame(pli.readJson(pathOrBody, options));
@@ -240,9 +241,9 @@ export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
   if (typeof pathOrBody === "string") {
     const inline = !isPath(pathOrBody, extensions);
     if (inline) {
-      return _DataFrame(pli.readJson(Buffer.from(pathOrBody, "utf-8"), options));
+      return _DataFrame(method(Buffer.from(pathOrBody, "utf-8"), options));
     } else {
-      return _DataFrame(pli.readJson(pathOrBody, options));
+      return _DataFrame(method(pathOrBody, options));
     }
   } else {
     throw new Error("must supply either a path or body");

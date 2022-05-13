@@ -54,6 +54,9 @@ impl PhysicalExpr for IsNullExpr {
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
     }
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
 }
 
 #[cfg(feature = "parquet")]
@@ -71,5 +74,27 @@ impl StatsEvaluator for IsNullExpr {
             },
             None => Ok(read),
         }
+    }
+}
+
+impl PartitionedAggregation for IsNullExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let input = self.physical_expr.as_partitioned_aggregator().unwrap();
+        let s = input.evaluate_partitioned(df, groups, state)?;
+        Ok(s.is_null().into_series())
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

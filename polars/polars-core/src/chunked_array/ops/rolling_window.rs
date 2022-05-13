@@ -306,7 +306,7 @@ mod inner_mod {
             let arr = ca.downcast_iter().next().unwrap();
             let series_container =
                 ChunkedArray::<T>::from_slice("", &[T::Native::zero()]).into_series();
-            let array_ptr = &series_container.chunks()[0];
+            let array_ptr = &series_container.array_ref(0);
             let ptr = Arc::as_ptr(array_ptr) as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut builder = PrimitiveChunkedBuilder::<T>::new(self.name(), self.len());
 

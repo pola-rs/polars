@@ -48,6 +48,18 @@ fn use_supertype(
             // do nothing
             _ => {}
         }
+    } else {
+        use DataType::*;
+        match (type_left, type_right, left, right) {
+            // if the we compare a categorical to a literal string we want to cast the literal to categorical
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(_), Utf8, _, AExpr::Literal(_))
+            | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
+                st = DataType::Categorical(None);
+            }
+            // do nothing
+            _ => {}
+        }
     }
     st
 }
