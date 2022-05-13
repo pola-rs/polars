@@ -115,3 +115,25 @@ fn test_filter_no_combine() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_filter_block_join() -> Result<()> {
+    let df_a = df![
+        "a" => ["a", "b", "c"],
+        "c" => [1, 4, 6]
+    ]?;
+    let df_b = df![
+        "a" => ["a", "a", "c"],
+        "d" => [2, 4, 3]
+    ]?;
+
+    let out = df_a
+        .lazy()
+        .left_join(df_b.lazy(), "a", "a")
+        // mean is influence by join
+        .filter(col("c").mean().eq(col("d")))
+        .collect()?;
+    assert_eq!(out.shape(), (1, 3));
+
+    Ok(())
+}
