@@ -1616,12 +1616,23 @@ impl DataFrame {
     }
 
     pub(crate) unsafe fn take_unchecked(&self, idx: &IdxCa) -> Self {
-        let cols = POOL.install(|| {
-            self.apply_columns_par(&|s| match s.dtype() {
-                DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
-                _ => s.take_unchecked(idx).unwrap(),
+        self.take_unchecked_impl(idx, true)
+    }
+
+    unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
+        let cols = if allow_threads {
+            POOL.install(|| {
+                self.apply_columns_par(&|s| match s.dtype() {
+                    DataType::Utf8 => s.take_unchecked_threaded(idx, true).unwrap(),
+                    _ => s.take_unchecked(idx).unwrap(),
+                })
             })
-        });
+        } else {
+            self.columns
+                .iter()
+                .map(|s| s.take_unchecked(idx).unwrap())
+                .collect()
+        };
         DataFrame::new_no_checks(cols)
     }
 
@@ -2903,13 +2914,15 @@ impl DataFrame {
         DataFrame::new_no_checks(cols)
     }
 
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize]) -> Self {
+    /// Be careful with allowing threads when calling this in a large hot loop
+    /// every thread split may be on rayon stack and lead to SO
+    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();
 
         // create a temporary vec. we will not drop it.
         let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
-        let out = self.take_unchecked(&ca);
+        let out = self.take_unchecked_impl(&ca, allow_threads);
 
         // ref count of buffers should be one because we dropped all allocations
         let arr = {
@@ -2938,19 +2951,21 @@ impl DataFrame {
             self.groupby(cols)?.groups
         };
 
-        Ok(POOL.install(move || {
+        // don't parallelize this
+        // there is a lot of parallelization in take and this may easily SO
+        POOL.install(|| {
             match groups {
                 GroupsProxy::Idx(idx) => {
-                    idx.into_par_iter().map(|(_, group)| {
+                    Ok(idx.into_par_iter().map(|(_, group)| {
                         // groups are in bounds
-                        unsafe { self.take_unchecked_slice(&group) }
-                    })
+                        unsafe { self.take_unchecked_slice(&group, false) }
+                    }))
                 }
                 _ => {
                     unimplemented!()
                 }
             }
-        }))
+        })
     }
 
     /// Split into multiple DataFrames partitioned by groups
