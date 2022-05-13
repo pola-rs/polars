@@ -162,10 +162,42 @@ impl PredicatePushDown {
 
         match lp {
             Selection { predicate, input } => {
+
+                // If a predicates result would be influenced by earlier applied filter
+                // we remove it and apply it locally
+                let mut apply_local = vec![];
+                let mut apply_local_nodes = vec![];
+                for (k, previous) in &acc_predicates {
+                    if predicate_is_pushdown_boundary(*previous, expr_arena) {
+                        apply_local.push(k.clone())
+                    }
+                }
+                for name in &apply_local {
+                    apply_local_nodes.push(acc_predicates.remove(name).unwrap());
+                }
+
                 let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
                 let alp = lp_arena.take(input);
-                self.push_down(alp, acc_predicates, lp_arena, expr_arena)
+                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+
+                // TODO!
+                // If a predicates result would be influenced by earlier applied
+                // predicates, we simply don't pushdown this one passed this node
+                // However, we can do better and let it pass but store the order of the predicates
+                // so that we can apply them in correct order at the deepest level
+                if !apply_local_nodes.is_empty() {
+                    let predicate = combine_predicates(apply_local_nodes.into_iter(), expr_arena);
+                    let input = lp_arena.add(new_input);
+
+                    Ok(Selection {
+                        predicate,
+                        input
+                    })
+
+                } else {
+                    Ok(new_input)
+                }
             }
             DataFrameScan {
                 df,
