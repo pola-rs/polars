@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.33"
+version = "0.13.34"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
