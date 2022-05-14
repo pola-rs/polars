@@ -1,0 +1,10 @@
+[package]
+name = "json_path"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+polars = { path = "../../polars", features = ["strings", "json", "extract_jsonpath", "dtype-struct"] }
+serde_json = { version = "1" }
