@@ -161,6 +161,13 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
+def element() -> "pli.Expr":
+    """
+    Alias for an element in evaluated in an `eval` expression
+    """
+    return col("")
+
+
 @overload
 def count(column: str) -> "pli.Expr":
     ...

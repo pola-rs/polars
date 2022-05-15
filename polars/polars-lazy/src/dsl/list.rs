@@ -1,3 +1,4 @@
+use crate::dsl::eval::prepare_eval_expr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use parking_lot::Mutex;
@@ -211,18 +212,8 @@ impl ListNameSpace {
 
     /// Run any [`Expr`] on these lists elements
     #[cfg(feature = "list_eval")]
-    pub fn eval(self, mut expr: Expr, parallel: bool) -> Expr {
-        expr.mutate().apply(|e| match e {
-            Expr::Column(name) => {
-                *name = Arc::from("");
-                true
-            }
-            Expr::Nth(_) => {
-                *e = Expr::Column(Arc::from(""));
-                true
-            }
-            _ => true,
-        });
+    pub fn eval(self, expr: Expr, parallel: bool) -> Expr {
+        let expr = prepare_eval_expr(expr);
 
         let expr2 = expr.clone();
         let func = move |s: Series| {

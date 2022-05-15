@@ -5,6 +5,7 @@ pub mod cat;
 pub use cat::*;
 #[cfg(feature = "temporal")]
 mod dt;
+mod eval;
 mod expr;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
