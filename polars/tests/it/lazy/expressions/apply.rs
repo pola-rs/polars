@@ -82,30 +82,3 @@ fn test_expand_list() -> Result<()> {
 
     Ok(())
 }
-
-#[test]
-#[cfg(feature = "unique_counts")]
-fn test_update_groups_in_cast() -> Result<()> {
-    let df = df![
-        "group" =>  ["A" ,"A", "A", "B", "B", "B", "B"],
-        "id"=> [1, 2, 1, 4, 5, 4, 6],
-    ]?;
-
-    // optimized to
-    // col("id").unique_counts().cast(int64) * -1
-    // in aggregation that cast coerces a list and the cast may forget to update groups
-    let out = df
-        .lazy()
-        .groupby_stable([col("group")])
-        .agg([col("id").unique_counts() * lit(-1)])
-        .collect()?;
-
-    let expected = df![
-        "group" =>  ["A" ,"B"],
-        "id"=> [AnyValue::List(Series::new("", [-2i64, -1])), AnyValue::List(Series::new("", [-2i64, -1, -1]))]
-    ]?;
-    dbg!(&out, &expected);
-
-    assert!(out.frame_equal(&expected));
-    Ok(())
-}
