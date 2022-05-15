@@ -105,6 +105,7 @@ log = ["polars-core/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
 semi_anti_join = ["polars-core/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
+cumulative_eval = ["polars-lazy/cumulative_eval"]
 chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
@@ -228,6 +229,8 @@ docs-selection = [
   "string_encoding",
   "product",
   "to_dummies",
+  "list_eval",
+  "cumulative_eval",
 ]
 
 bench = [

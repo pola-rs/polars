@@ -126,6 +126,7 @@ Computations
     Expr.cummax
     Expr.cumprod
     Expr.cumcount
+    Expr.cumulative_eval
     Expr.dot
     Expr.mode
     Expr.n_unique

@@ -1175,6 +1175,13 @@ impl PyExpr {
         self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
+    fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .cumulative_eval(expr.inner, min_periods, parallel)
+            .into()
+    }
+
     fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
         let n_fields = match width_strat {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,

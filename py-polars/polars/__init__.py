@@ -72,6 +72,7 @@ from polars.internals.lazy_functions import (
     count,
     cov,
     duration,
+    element,
     exclude,
     first,
     fold,
