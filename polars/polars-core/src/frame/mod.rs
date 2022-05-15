@@ -478,6 +478,7 @@ impl DataFrame {
     }
 
     #[cfg(feature = "private")]
+    #[inline]
     pub fn get_columns_mut(&mut self) -> &mut Vec<Series> {
         &mut self.columns
     }
