@@ -39,11 +39,17 @@ fn use_supertype(
 
             // cast literal to right type
             (AExpr::Literal(_), _) => {
-                st = type_right.clone();
+                // never cast signed to unsigned
+                if type_right.is_signed() {
+                    st = type_right.clone();
+                }
             }
             // cast literal to left type
             (_, AExpr::Literal(_)) => {
-                st = type_left.clone();
+                // never cast signed to unsigned
+                if type_left.is_signed() {
+                    st = type_left.clone();
+                }
             }
             // do nothing
             _ => {}
