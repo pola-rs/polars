@@ -226,6 +226,8 @@
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
 //!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
+//!     - `list_eval` - Apply expressions over list elements.
+//!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!

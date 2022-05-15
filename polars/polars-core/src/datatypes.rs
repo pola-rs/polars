@@ -749,6 +749,21 @@ impl DataType {
             _ => true,
         }
     }
+    pub fn is_signed(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => true,
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => true,
+            DataType::Int32 | DataType::Int64 => true,
+            _ => false,
+        }
+    }
+    pub fn is_unsigned(&self) -> bool {
+        self.is_numeric() && !self.is_signed()
+    }
 
     /// Convert to an Arrow data type.
     pub fn to_arrow(&self) -> ArrowDataType {

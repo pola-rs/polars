@@ -86,3 +86,26 @@ def test_overflow_uint16_agg_mean() -> None:
         .to_dict(False)
         == {"col1": ["A"], "col3": [64.0]}
     )
+
+
+def test_binary_on_list_agg_3345() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": [1, 2, 1, 4, 5, 4, 6],
+        }
+    )
+
+    assert (
+        df.groupby(["group"], maintain_order=True)
+        .agg(
+            [
+                (
+                    (pl.col("id").unique_counts() / pl.col("id").len()).log()
+                    * -1
+                    * (pl.col("id").unique_counts() / pl.col("id").len())
+                ).sum()
+            ]
+        )
+        .to_dict(False)
+    ) == {"group": ["A", "B"], "id": [0.6365141682948128, 1.0397207708399179]}

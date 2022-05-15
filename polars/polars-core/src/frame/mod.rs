@@ -481,6 +481,7 @@ impl DataFrame {
     }
 
     #[cfg(feature = "private")]
+    #[inline]
     pub fn get_columns_mut(&mut self) -> &mut Vec<Series> {
         &mut self.columns
     }
@@ -3385,8 +3386,6 @@ mod test {
         assert_eq!(df1.shape(), (3, 3));
 
         let df2: DataFrame = df1.describe(None);
-
-        dbg!(df2.clone());
 
         assert_eq!(df2.shape(), (8, 4));
 
