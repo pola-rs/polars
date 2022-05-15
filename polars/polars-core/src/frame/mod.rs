@@ -2307,9 +2307,9 @@ impl DataFrame {
     /// ┌──────────┬─────────────┬─────────┬────────┐
     /// │ describe ┆ categorical ┆ numeric ┆ object │
     /// │ ---      ┆ ---         ┆ ---     ┆ ---    │
-    /// │ str      ┆ str         ┆ f64     ┆ str    │
+    /// │ str      ┆ f64         ┆ f64     ┆ f64    │
     /// ╞══════════╪═════════════╪═════════╪════════╡
-    /// │ count    ┆ null        ┆ 3.0     ┆ null   │
+    /// │ count    ┆ 3.0         ┆ 3.0     ┆ 3.0    │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
     /// │ mean     ┆ null        ┆ 2.0     ┆ null   │
     /// ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
@@ -3385,6 +3385,8 @@ mod test {
         assert_eq!(df1.shape(), (3, 3));
 
         let df2: DataFrame = df1.describe(None);
+
+        dbg!(df2.clone());
 
         assert_eq!(df2.shape(), (8, 4));
 
