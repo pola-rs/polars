@@ -1005,7 +1005,7 @@ class Series:
         shape: (5,)
         Series: 'values' [f64]
         [
-            null
+            0.0
             -3.0
             -8.0
             -15.0

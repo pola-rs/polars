@@ -45,7 +45,7 @@ impl Expr {
                     .into_par_iter()
                     .map(|len| {
                         let s = s.slice(0, len);
-                        if (len - s.null_count()) > min_periods {
+                        if (len - s.null_count()) >= min_periods {
                             let df = DataFrame::new_no_checks(vec![s]);
                             let out = phys_expr.evaluate(&df, &state);
                             match out {
@@ -67,7 +67,7 @@ impl Expr {
                 (1..s.len() + 1)
                     .map(|len| {
                         let s = s.slice(0, len);
-                        if (len - s.null_count()) > min_periods {
+                        if (len - s.null_count()) >= min_periods {
                             df_container.get_columns_mut().push(s);
                             let out = phys_expr.evaluate(&df_container, &state);
                             df_container.get_columns_mut().clear();
