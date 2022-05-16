@@ -1,7 +1,7 @@
 use super::*;
 use crate::conversion::to_wrapped;
 use crate::series::PySeries;
-use crate::Wrap;
+use crate::{PyPolarsErr, Wrap};
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use pyo3::prelude::*;
@@ -64,9 +64,19 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
         )?
         .to_object(py);
 
-        applyer
+        let result = applyer
             .apply_lambda_with_list_out_type(py, new_lambda, null_count, &series, dt)
-            .map(|ca| ca.into_series().into())
+            .map(|ca| ca.into_series().into());
+        match result {
+            Ok(out) => Ok(out),
+            // try anyvalue
+            Err(_) => {
+                let av = out.extract::<Wrap<AnyValue>>()?;
+                applyer
+                    .apply_extract_any_values(py, lambda, null_count, av.0)
+                    .map(|s| s.into())
+            }
+        }
     } else if out.is_instance_of::<PyDict>().unwrap() {
         let first = out.extract::<Wrap<AnyValue<'_>>>()?;
         applyer.apply_to_struct(py, lambda, null_count, first.0)
@@ -394,14 +404,14 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -409,14 +419,14 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -689,14 +699,14 @@ where
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -704,14 +714,14 @@ where
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -978,14 +988,14 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -993,14 +1003,14 @@ impl<'a> ApplyLambda<'a> for Utf8Chunked {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1172,7 +1182,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
         match self.dtype() {
             DataType::List(dt) => {
-                let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
+                let mut builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
+                    .map_err(PyPolarsErr::from)?;
                 if !self.has_validity() {
                     let mut it = self.into_no_null_iter();
                     // use first value to get dtype and replace default builder
@@ -1180,10 +1191,12 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         let out_series = call_series_lambda(pypolars, lambda, series)
                             .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                         let dt = out_series.dtype();
-                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
+                        builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
+                            .map_err(PyPolarsErr::from)?;
                         builder.append_opt_series(Some(&out_series));
                     } else {
-                        let mut builder = get_list_builder(dt, 0, 1, self.name());
+                        let mut builder =
+                            get_list_builder(dt, 0, 1, self.name()).map_err(PyPolarsErr::from)?;
                         let ca = builder.finish();
                         return Ok(PySeries::new(ca.into_series()));
                     }
@@ -1201,7 +1214,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                             let out_series = call_series_lambda(pypolars, lambda, series)
                                 .expect("Cannot determine dtype because lambda failed; Make sure that your udf returns a Series");
                             let dt = out_series.dtype();
-                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name());
+                            builder = get_list_builder(dt, self.len() * 5, self.len(), self.name())
+                                .map_err(PyPolarsErr::from)?;
                             builder.append_opt_series(Some(&out_series));
                             break;
                         } else {
@@ -1478,27 +1492,27 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_series_lambda(pypolars, lambda, val));
 
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1785,14 +1799,14 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_series_out(py, lambda, val).ok());
 
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1800,14 +1814,14 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .map(|opt_val| {
                     opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
                 });
-            Ok(iterator_to_list(
+            iterator_to_list(
                 dt,
                 it,
                 init_null_count,
                 Some(first_value),
                 self.name(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2026,14 +2040,14 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             let arg = make_dict_arg(py, &names, val);
             call_lambda_series_out(py, lambda, arg).ok()
         });
-        Ok(iterator_to_list(
+        iterator_to_list(
             dt,
             it,
             init_null_count,
             Some(first_value),
             self.name(),
             self.len(),
-        ))
+        )
     }
 
     fn apply_extract_any_values(

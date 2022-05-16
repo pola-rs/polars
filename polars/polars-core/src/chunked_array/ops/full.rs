@@ -62,7 +62,8 @@ impl ChunkFullNull for Utf8Chunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: &str, value: &Series, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
+        let mut builder =
+            get_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
         for _ in 0..length {
             builder.append_series(value)
         }
