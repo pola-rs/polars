@@ -333,38 +333,60 @@ pub fn get_list_builder(
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
-) -> Box<dyn ListBuilderTrait> {
+) -> Result<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    macro_rules! get_primitive_builder {
-        ($type:ty) => {{
-            let builder = ListPrimitiveChunkedBuilder::<$type>::new(
-                &name,
-                list_capacity,
-                value_capacity,
-                dt.clone(),
-            );
-            Box::new(builder)
-        }};
+    let _err = || -> Result<Box<dyn ListBuilderTrait>> {
+        Err(PolarsError::ComputeError(
+            format!(
+                "list builder not supported for this dtype: {}",
+                &physical_type
+            )
+            .into(),
+        ))
+    };
+
+    match &physical_type {
+        #[cfg(feature = "object")]
+        DataType::Object(_) => _err(),
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => _err(),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_) => _err(),
+        _ => {
+            macro_rules! get_primitive_builder {
+                ($type:ty) => {{
+                    let builder = ListPrimitiveChunkedBuilder::<$type>::new(
+                        &name,
+                        list_capacity,
+                        value_capacity,
+                        dt.clone(),
+                    );
+                    Box::new(builder)
+                }};
+            }
+            macro_rules! get_bool_builder {
+                () => {{
+                    let builder =
+                        ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
+                    Box::new(builder)
+                }};
+            }
+            macro_rules! get_utf8_builder {
+                () => {{
+                    let builder =
+                        ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    Box::new(builder)
+                }};
+            }
+            Ok(match_dtype_to_physical_apply_macro!(
+                physical_type,
+                get_primitive_builder,
+                get_utf8_builder,
+                get_bool_builder
+            ))
+        }
     }
-    macro_rules! get_bool_builder {
-        () => {{
-            let builder = ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
-            Box::new(builder)
-        }};
-    }
-    macro_rules! get_utf8_builder {
-        () => {{
-            let builder = ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
-            Box::new(builder)
-        }};
-    }
-    match_dtype_to_physical_apply_macro!(
-        physical_type,
-        get_primitive_builder,
-        get_utf8_builder,
-        get_bool_builder
-    )
 }
 
 pub struct AnonymousListBuilder<'a> {

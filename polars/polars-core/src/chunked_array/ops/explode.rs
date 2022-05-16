@@ -362,7 +362,7 @@ mod test {
 
     #[test]
     fn test_explode_list() -> Result<()> {
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
 
         builder.append_series(&Series::new("", &[1, 2, 3, 3]));
         builder.append_series(&Series::new("", &[1]));
@@ -412,7 +412,7 @@ mod test {
 
     #[test]
     fn test_explode_empty_list() -> Result<()> {
-        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a");
+        let mut builder = get_list_builder(&DataType::Int32, 1, 1, "a")?;
 
         let vals: [i32; 0] = [];
 
@@ -430,7 +430,7 @@ mod test {
     #[test]
     fn test_explode_empty_list_slot() -> Result<()> {
         // primitive
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
         builder.append_series(&Series::new("", &[1i32, 2]));
         builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[3i32]));
@@ -443,7 +443,7 @@ mod test {
         );
 
         // more primitive
-        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a");
+        let mut builder = get_list_builder(&DataType::Int32, 5, 5, "a")?;
         builder.append_series(&Series::new("", &[1i32]));
         builder.append_series(&Int32Chunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[2i32]));
@@ -458,7 +458,7 @@ mod test {
         );
 
         // utf8
-        let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a");
+        let mut builder = get_list_builder(&DataType::Utf8, 5, 5, "a")?;
         builder.append_series(&Series::new("", &["abc"]));
         builder.append_series(
             &<Utf8Chunked as NewChunkedArray<Utf8Type, &str>>::from_slice("", &[]).into_series(),
@@ -480,7 +480,7 @@ mod test {
         );
 
         // boolean
-        let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a");
+        let mut builder = get_list_builder(&DataType::Boolean, 5, 5, "a")?;
         builder.append_series(&Series::new("", &[true]));
         builder.append_series(&BooleanChunked::from_slice("", &[]).into_series());
         builder.append_series(&Series::new("", &[false]));

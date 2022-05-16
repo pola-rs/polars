@@ -86,7 +86,7 @@ pub fn apply_lambda_unknown<'a>(
             let dt = series.dtype();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_list_out_type(df, py, lambda, null_count, Some(&series), dt)
+                    apply_lambda_with_list_out_type(df, py, lambda, null_count, Some(&series), dt)?
                         .into_series(),
                 )
                 .into_py(py),
@@ -207,12 +207,12 @@ pub fn apply_lambda_with_list_out_type<'a>(
     init_null_count: usize,
     first_value: Option<&Series>,
     dt: &DataType,
-) -> ListChunked {
+) -> PyResult<ListChunked> {
     let columns = df.get_columns();
 
     let skip = if first_value.is_some() { 1 } else { 0 };
     if init_null_count == df.height() {
-        ChunkedArray::full_null("apply", df.height())
+        Ok(ChunkedArray::full_null("apply", df.height()))
     } else {
         let iter = ((init_null_count + skip)..df.height()).map(|idx| {
             let iter = columns.iter().map(|s: &Series| Wrap(s.get(idx)));
