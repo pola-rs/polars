@@ -29,8 +29,12 @@ pub struct MeltArgs {
 
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+        let mut df = self.clone();
         if self.height() == 0 {
-            return Ok(self.clone());
+            for s in &columns {
+                df.with_column(s.explode()?)?;
+            }
+            return Ok(df);
         }
         columns.sort_by(|sa, sb| {
             self.check_name_to_idx(sa.name())
@@ -38,8 +42,6 @@ impl DataFrame {
                 .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
                 .expect("cmp usize -> Ordering")
         });
-
-        let mut df = self.clone();
 
         // TODO: optimize this.
         // This is the slower easier option.
