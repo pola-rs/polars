@@ -331,10 +331,8 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
-    pub fn fetch(&self, n_rows: usize) -> PyResult<PyDataFrame> {
+    pub fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
         Ok(df.into())
     }

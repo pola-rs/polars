@@ -109,3 +109,17 @@ def test_binary_on_list_agg_3345() -> None:
         )
         .to_dict(False)
     ) == {"group": ["A", "B"], "id": [0.6365141682948128, 1.0397207708399179]}
+
+
+def test_maintain_order_after_sampling() -> None:
+    # internally samples cardinality
+    # check if the maintain_order kwarg is dispatched
+    df = pl.DataFrame(
+        {
+            "type": ["A", "B", "C", "D", "A", "B", "C", "D"],
+            "value": [1, 3, 2, 3, 4, 5, 3, 4],
+        }
+    )
+    assert df.groupby("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
+        False
+    ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
