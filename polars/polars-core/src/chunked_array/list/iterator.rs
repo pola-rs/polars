@@ -158,7 +158,7 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder = get_list_builder(&DataType::Int32, 10, 10, "");
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, "").unwrap();
         builder.append_series(&Series::new("", &[1, 2, 3]));
         builder.append_series(&Series::new("", &[3, 2, 1]));
         builder.append_series(&Series::new("", &[1, 1]));

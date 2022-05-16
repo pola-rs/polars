@@ -98,7 +98,7 @@ impl Series {
                 }
 
                 let mut builder =
-                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name());
+                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name())?;
 
                 let mut offset = 0i64;
                 for _ in 0..rows {
@@ -124,7 +124,7 @@ mod test {
     fn test_to_list() -> Result<()> {
         let s = Series::new("a", &[1, 2, 3]);
 
-        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name());
+        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name())?;
         builder.append_series(&s);
         let expected = builder.finish();
 

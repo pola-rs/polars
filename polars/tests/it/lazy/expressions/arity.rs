@@ -174,3 +174,55 @@ fn test_when_then_otherwise_single_bool() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "unique_counts")]
+fn test_update_groups_in_cast() -> Result<()> {
+    let df = df![
+        "group" =>  ["A" ,"A", "A", "B", "B", "B", "B"],
+        "id"=> [1, 2, 1, 4, 5, 4, 6],
+    ]?;
+
+    // optimized to
+    // col("id").unique_counts().cast(int64) * -1
+    // in aggregation that cast coerces a list and the cast may forget to update groups
+    let out = df
+        .lazy()
+        .groupby_stable([col("group")])
+        .agg([col("id").unique_counts() * lit(-1)])
+        .collect()?;
+
+    let expected = df![
+        "group" =>  ["A" ,"B"],
+        "id"=> [AnyValue::List(Series::new("", [-2i64, -1])), AnyValue::List(Series::new("", [-2i64, -1, -1]))]
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+    Ok(())
+}
+
+#[test]
+fn test_when_then_otherwise_sum_in_agg() -> Result<()> {
+    let df = df![
+        "groups" => [1, 1, 2, 2],
+        "dist_a" => [0.1, 0.2, 0.5, 0.5],
+        "dist_b" => [0.8, 0.2, 0.5, 0.2],
+    ]?;
+
+    let q = df
+        .lazy()
+        .groupby([col("groups")])
+        .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
+            .then(all().exclude(["groups"]).sum())
+            .otherwise(lit(NULL))])
+        .sort("groups", Default::default());
+
+    let expected = df![
+        "groups" => [1, 2],
+        "dist_a" => [None, Some(1.0f64)],
+        "dist_b" => [Some(1.0f64), None]
+    ]?;
+    assert!(q.collect()?.frame_equal_missing(&expected));
+
+    Ok(())
+}
