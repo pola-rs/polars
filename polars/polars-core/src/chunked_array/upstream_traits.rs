@@ -143,7 +143,8 @@ where
             None => return ListChunked::full_null("", 0),
         };
         // We don't know the needed capacity. We arbitrarily choose an average of 5 elements per series.
-        let mut builder = get_list_builder(v.borrow().dtype(), capacity * 5, capacity, "collected");
+        let mut builder =
+            get_list_builder(v.borrow().dtype(), capacity * 5, capacity, "collected").unwrap();
 
         builder.append_series(v.borrow());
         for s in it {

@@ -153,3 +153,12 @@ def test_datelike_identity() -> None:
         pl.Series([date(year=2000, month=1, day=1)]),
     ]:
         assert s.apply(lambda x: x).to_list() == s.to_list()
+
+
+def test_apply_list_anyvalue_fallback() -> None:
+    import json
+
+    df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
+    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
+    }
