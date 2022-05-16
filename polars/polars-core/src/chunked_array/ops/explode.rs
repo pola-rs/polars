@@ -237,17 +237,10 @@ impl ChunkExplode for ListChunked {
 
         // all empty
         if offsets[offsets.len() - 1] == 0 {
-            // Safety: empty dtype is correct
-            return unsafe {
-                Ok((
-                    Series::from_chunks_and_dtype_unchecked(
-                        self.name(),
-                        vec![values],
-                        &self.inner_dtype(),
-                    ),
-                    Buffer::from_slice(&[]),
-                ))
-            };
+            return Ok((
+                Series::new_empty(self.name(), &self.inner_dtype()),
+                Buffer::from_slice(&[]),
+            ));
         }
 
         if !offsets.is_empty() {
