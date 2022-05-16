@@ -2,7 +2,7 @@ pub mod dataframe;
 pub mod series;
 
 use crate::prelude::ObjectValue;
-use crate::{PySeries, Wrap};
+use crate::{PyPolarsErr, PySeries, Wrap};
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
 use polars_core::utils::CustomIterTools;
@@ -228,8 +228,9 @@ fn iterator_to_list(
     first_value: Option<&Series>,
     name: &str,
     capacity: usize,
-) -> ListChunked {
-    let mut builder = get_list_builder(dt, capacity * 5, capacity, name);
+) -> PyResult<ListChunked> {
+    let mut builder =
+        get_list_builder(dt, capacity * 5, capacity, name).map_err(PyPolarsErr::from)?;
     for _ in 0..init_null_count {
         builder.append_null()
     }
@@ -237,5 +238,5 @@ fn iterator_to_list(
     for opt_val in it {
         builder.append_opt_series(opt_val.as_ref())
     }
-    builder.finish()
+    Ok(builder.finish())
 }

@@ -228,7 +228,7 @@ impl ListChunked {
                 self.get_values_size() + vals_size_other + 1,
                 length,
                 self.name(),
-            );
+            )?;
             self.into_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
@@ -258,7 +258,7 @@ impl ListChunked {
                 self.get_values_size() + vals_size_other + 1,
                 length,
                 self.name(),
-            );
+            )?;
 
             for _ in 0..self.len() {
                 let mut acc = match first_iter.next().unwrap() {

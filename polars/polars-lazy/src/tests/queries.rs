@@ -332,7 +332,6 @@ fn test_lazy_query_5() {
         .agg([col("day").head(Some(2))])
         .collect()
         .unwrap();
-    dbg!(&out);
     let s = out
         .select_at_idx(1)
         .unwrap()
@@ -1566,7 +1565,7 @@ fn test_sort_by_suffix() -> Result<()> {
 #[test]
 fn test_list_in_select_context() -> Result<()> {
     let s = Series::new("a", &[1, 2, 3]);
-    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name());
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name()).unwrap();
     builder.append_series(&s);
     let expected = builder.finish().into_series();
 
