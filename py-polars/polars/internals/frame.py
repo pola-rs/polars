@@ -3624,6 +3624,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └──────┴─────┘
 
         """
+        if isinstance(column, list):
+            raise ValueError(
+                "`with_column` expects a single expression, not a list. Consider using `with_columns`"
+            )
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
         else:

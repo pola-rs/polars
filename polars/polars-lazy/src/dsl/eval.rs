@@ -1,6 +1,5 @@
 use super::*;
 use crate::physical_plan::state::ExecutionState;
-use parking_lot::Mutex;
 use rayon::prelude::*;
 
 pub(super) fn prepare_eval_expr(mut expr: Expr) -> Expr {
@@ -37,31 +36,35 @@ impl Expr {
 
             let state = ExecutionState::new();
 
-            let mut err = None;
+            let finish = |out: Series| {
+                if out.len() > 1 {
+                    Err(PolarsError::ComputeError(
+                        format!(
+                            "expected single value, got a result with length: {}, {:?}",
+                            out.len(),
+                            out
+                        )
+                        .into(),
+                    ))
+                } else {
+                    Ok(out.get(0).into_static().unwrap())
+                }
+            };
 
             let avs = if parallel {
-                let m_err = Mutex::new(None);
-                let avs = (1..s.len() + 1)
+                (1..s.len() + 1)
                     .into_par_iter()
                     .map(|len| {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
                             let df = DataFrame::new_no_checks(vec![s]);
-                            let out = phys_expr.evaluate(&df, &state);
-                            match out {
-                                Ok(s) => s.get(0).into_static().unwrap(),
-                                Err(e) => {
-                                    *m_err.lock() = Some(e);
-                                    AnyValue::Null
-                                }
-                            }
+                            let out = phys_expr.evaluate(&df, &state)?;
+                            finish(out)
                         } else {
-                            AnyValue::Null
+                            Ok(AnyValue::Null)
                         }
                     })
-                    .collect::<Vec<_>>();
-                err = m_err.lock().take();
-                avs
+                    .collect::<Result<Vec<_>>>()?
             } else {
                 let mut df_container = DataFrame::new_no_checks(vec![]);
                 (1..s.len() + 1)
@@ -69,26 +72,16 @@ impl Expr {
                         let s = s.slice(0, len);
                         if (len - s.null_count()) >= min_periods {
                             df_container.get_columns_mut().push(s);
-                            let out = phys_expr.evaluate(&df_container, &state);
+                            let out = phys_expr.evaluate(&df_container, &state)?;
                             df_container.get_columns_mut().clear();
-                            match out {
-                                Ok(s) => s.get(0).into_static().unwrap(),
-                                Err(e) => {
-                                    err = Some(e);
-                                    AnyValue::Null
-                                }
-                            }
+                            finish(out)
                         } else {
-                            AnyValue::Null
+                            Ok(AnyValue::Null)
                         }
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Result<Vec<_>>>()?
             };
-
-            match err {
-                None => Ok(Series::new(&name, avs)),
-                Some(e) => Err(e),
-            }
+            Ok(Series::new(&name, avs))
         };
 
         self.map(
@@ -102,7 +95,18 @@ impl Expr {
                     .unwrap_or_else(|| f.data_type().clone());
 
                 let df = Series::new_empty("", &dtype).into_frame();
-                match df.lazy().select([expr2.clone()]).collect() {
+
+                #[cfg(feature = "python")]
+                let out = {
+                    use pyo3::Python;
+                    Python::with_gil(|py| {
+                        py.allow_threads(|| df.lazy().select([expr2.clone()]).collect())
+                    })
+                };
+                #[cfg(not(feature = "python"))]
+                let out = { df.lazy().select([expr2.clone()]).collect() };
+
+                match out {
                     Ok(out) => {
                         let dtype = out.get_columns()[0].dtype();
                         Field::new(f.name(), dtype.clone())
