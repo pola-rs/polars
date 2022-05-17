@@ -8,6 +8,8 @@ use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::utils::get_supertype;
+#[cfg(feature = "list")]
+use polars_ops::prelude::ListNameSpaceImpl;
 use rayon::prelude::*;
 use std::ops::{BitAnd, BitOr};
 

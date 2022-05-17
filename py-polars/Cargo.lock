@@ -1218,6 +1218,7 @@ dependencies = [
 name = "polars-ops"
 version = "0.21.1"
 dependencies = [
+ "polars-arrow",
  "polars-core",
 ]
 
