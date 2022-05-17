@@ -1,10 +1,7 @@
 use crate::prelude::*;
 use jsonpath_lib::PathCompiled;
-use serde_json::Value;
 use std::borrow::Cow;
-use indexmap::set::IndexSet as HashSet;
-use arrow::io::{json, ndjson};
-use arrow::datatypes::DataType as ArrowDataType;
+use arrow::io::ndjson;
 
 
 #[cfg(feature = "extract_jsonpath")]
@@ -18,7 +15,6 @@ fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, st
             1 => serde_json::to_string(&result[0]).ok(),
             _ => serde_json::to_string(&result).ok(),
         };
-        //let first = *result.get(0)?;
 
         match result_str {
             Some(s) => Some(Cow::Owned(s.clone())),
@@ -44,12 +40,11 @@ impl Utf8Chunked {
     /// in the Utf8Chunked, with an optional number of rows to inspect.
     /// When None is passed for the number of rows, all rows are inspected.
     pub fn json_infer(&self, number_of_rows: Option<usize>) -> Result<DataType> {
-        // rechunk to have a continuous array
-        self.rechunk();
-        let chunk = &self.chunks()[0];
-        let utf8_array = chunk.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-        utf8_array
-            .json_infer(number_of_rows)
+        let values_iter = self
+            .into_no_null_iter()
+            .take(number_of_rows.unwrap_or(self.len()));
+
+        ndjson::read::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
             .map_err(|e| PolarsError::ComputeError(
                 format!("error infering JSON {:?}", e).into(),
@@ -59,12 +54,11 @@ impl Utf8Chunked {
 
     /// Extracts a JSON value for each row in the Utf8Chunked
     pub fn json_deserialize(&self, data_type: DataType) -> Result<Series> {
-        // rechunk to have a continuous array
-        self.rechunk();
-        let chunk = &self.chunks()[0];
-        let utf8_array = chunk.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
-        let array = utf8_array
-            .json_deserialize(data_type.to_arrow())
+        let iter = self
+            .into_iter()
+            .map(|x| x.unwrap_or("null"));
+
+        let array = ndjson::read::deserialize_iter(iter, data_type.to_arrow())
             .map_err(|e| PolarsError::ComputeError(
                 format!("error deserializing JSON {:?}", e).into(),
             ))?;
