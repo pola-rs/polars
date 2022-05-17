@@ -288,7 +288,18 @@ impl ListNameSpace {
                         .unwrap_or_else(|| f.data_type().clone());
 
                     let df = Series::new_empty("", &dtype).into_frame();
-                    match df.lazy().select([expr2.clone()]).collect() {
+
+                    #[cfg(feature = "python")]
+                    let out = {
+                        use pyo3::Python;
+                        Python::with_gil(|py| {
+                            py.allow_threads(|| df.lazy().select([expr2.clone()]).collect())
+                        })
+                    };
+                    #[cfg(not(feature = "python"))]
+                    let out = { df.lazy().select([expr2.clone()]).collect() };
+
+                    match out {
                         Ok(out) => {
                             let dtype = out.get_columns()[0].dtype();
                             Field::new(f.name(), DataType::List(Box::new(dtype.clone())))

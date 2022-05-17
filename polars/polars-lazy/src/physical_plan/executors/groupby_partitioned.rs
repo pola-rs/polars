@@ -200,7 +200,7 @@ impl Executor for PartitionGroupByExec {
                     &self.phys_aggs,
                     None,
                     state,
-                    false,
+                    self.maintain_order,
                     self.slice,
                 );
             }

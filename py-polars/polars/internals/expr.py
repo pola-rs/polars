@@ -1459,7 +1459,7 @@ class Expr:
 
     def map(
         self,
-        f: Callable[["pli.Series"], "pli.Series"],
+        f: Callable[["pli.Series"], Union["pli.Series", Any]],
         return_dtype: Optional[Type[DataType]] = None,
         agg_list: bool = False,
     ) -> "Expr":
