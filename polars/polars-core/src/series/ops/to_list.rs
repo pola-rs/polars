@@ -4,11 +4,17 @@ use polars_arrow::kernels::list::array_to_unit_list;
 use std::borrow::Cow;
 
 fn reshape_fast_path(name: &str, s: &Series) -> Series {
-    let chunks = s
-        .chunks()
-        .iter()
-        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
-        .collect::<Vec<_>>();
+    let chunks = match s.dtype() {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => {
+            vec![Arc::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
+        }
+        _ => s
+            .chunks()
+            .iter()
+            .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+            .collect::<Vec<_>>(),
+    };
 
     let mut ca = ListChunked::from_chunks(name, chunks);
     ca.set_fast_explode();

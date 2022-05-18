@@ -275,7 +275,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             let sb = sb.cast(&DataType::Int64)?;
             let low = sa.i64()?;
             let high = sb.i64()?;
-            let mut builder = ListPrimitiveChunkedBuilder::<i64>::new(
+            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 "arange",
                 low.len(),
                 low.len() * 3,

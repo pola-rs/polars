@@ -141,17 +141,38 @@ pub trait NumericNative:
     + FromPrimitive
     + NativeArithmetics
 {
+    type POLARSTYPE;
 }
-impl NumericNative for i8 {}
-impl NumericNative for i16 {}
-impl NumericNative for i32 {}
-impl NumericNative for i64 {}
-impl NumericNative for u8 {}
-impl NumericNative for u16 {}
-impl NumericNative for u32 {}
-impl NumericNative for u64 {}
-impl NumericNative for f32 {}
-impl NumericNative for f64 {}
+impl NumericNative for i8 {
+    type POLARSTYPE = Int8Type;
+}
+impl NumericNative for i16 {
+    type POLARSTYPE = Int16Type;
+}
+impl NumericNative for i32 {
+    type POLARSTYPE = Int32Type;
+}
+impl NumericNative for i64 {
+    type POLARSTYPE = Int64Type;
+}
+impl NumericNative for u8 {
+    type POLARSTYPE = UInt8Type;
+}
+impl NumericNative for u16 {
+    type POLARSTYPE = UInt16Type;
+}
+impl NumericNative for u32 {
+    type POLARSTYPE = UInt32Type;
+}
+impl NumericNative for u64 {
+    type POLARSTYPE = UInt64Type;
+}
+impl NumericNative for f32 {
+    type POLARSTYPE = Float32Type;
+}
+impl NumericNative for f64 {
+    type POLARSTYPE = Float64Type;
+}
 
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
     type Native: NumericNative;
@@ -676,6 +697,12 @@ pub enum DataType {
     Struct(Vec<Field>),
     // some logical types we cannot know statically, e.g. Datetime
     Unknown,
+}
+
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown
+    }
 }
 
 impl Hash for DataType {

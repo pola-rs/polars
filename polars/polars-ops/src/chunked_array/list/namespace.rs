@@ -217,6 +217,7 @@ pub trait ListNameSpaceImpl: AsList {
         let length = ca.len();
         let mut other = other.to_vec();
         let dtype = ca.dtype();
+        dbg!(&ca, ca.dtype());
         let inner_type = ca.inner_dtype();
 
         // broadcasting path in case all unit length
