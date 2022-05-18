@@ -160,6 +160,7 @@
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
+//! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for `Utf8Chunked`
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
