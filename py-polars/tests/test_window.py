@@ -158,3 +158,16 @@ def test_cumulative_eval_window_functions() -> None:
         "val": [20, 40, 30, 2, 4, 3],
         "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
     }
+
+
+def test_count_window() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "a": [1, 1, 2],
+            }
+        )
+        .with_column(pl.count().over("a"))["count"]
+        .to_list()
+        == [2, 2, 1]
+    )
