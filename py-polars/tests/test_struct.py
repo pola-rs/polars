@@ -278,3 +278,51 @@ def test_sort_df_with_list_struct() -> None:
         "a": [1],
         "b": [[{"c": 1}]],
     }
+
+
+def test_struct_list_head_tail() -> None:
+    assert pl.DataFrame(
+        {
+            "list_of_struct": [
+                [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
+                [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
+            ]
+        }
+    ).with_columns(
+        [
+            pl.col("list_of_struct").arr.head(1).alias("head"),
+            pl.col("list_of_struct").arr.tail(1).alias("tail"),
+        ]
+    ).to_dict(
+        False
+    ) == {
+        "list_of_struct": [
+            [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
+            [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
+        ],
+        "head": [[{"a": 1, "b": 4}], [{"a": 10, "b": 40}]],
+        "tail": [[{"a": 3, "b": 6}], [{"a": 30, "b": 60}]],
+    }
+
+
+def test_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b", "b"],
+            "col1": [
+                {"x": 1, "y": 100},
+                {"x": 2, "y": 200},
+                {"x": 3, "y": 300},
+                {"x": 4, "y": 400},
+                {"x": 5, "y": 500},
+            ],
+        }
+    )
+
+    assert df.groupby("group", maintain_order=True).agg_list().to_dict(False) == {
+        "group": ["a", "b"],
+        "col1": [
+            [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
+            [{"x": 3, "y": 300}, {"x": 4, "y": 400}, {"x": 5, "y": 500}],
+        ],
+    }

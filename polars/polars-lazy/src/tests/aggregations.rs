@@ -1,4 +1,5 @@
 use super::*;
+use polars_ops::prelude::ListNameSpaceImpl;
 
 #[test]
 fn test_agg_exprs() -> Result<()> {

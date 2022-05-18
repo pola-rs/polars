@@ -31,6 +31,7 @@ impl<'a> AnonymousBuilder<'a> {
         self.arrays.is_empty()
     }
 
+    #[inline]
     pub fn push(&mut self, arr: &'a dyn Array) {
         self.size += arr.len() as i64;
         self.offsets.push(self.size);

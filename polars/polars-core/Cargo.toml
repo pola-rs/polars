@@ -62,8 +62,6 @@ cum_agg = []
 # rolling window functions
 rolling_window = []
 interpolate = []
-# additional list utils
-list = []
 rank = []
 diff = []
 pct_change = ["diff"]
@@ -133,7 +131,6 @@ docs-selection = [
   "moment",
   "dtype-categorical",
   "rank",
-  "list",
   "diagonal_concat",
   "horizontal_concat",
   "abs",
@@ -176,7 +173,8 @@ thiserror = "^1.0"
 package = "arrow2"
 git = "https://github.com/jorgecarleitao/arrow2"
 # git = "https://github.com/ritchie46/arrow2"
-rev = "826a2b8ed8598a614c5df9115ea657d1e3c40184"
+rev = "aafba7b4eb4991e016638cbc1d4df676912e8236"
+# path = "../../../arrow2"
 # branch = "polars"
 # version = "0.11"
 default-features = false

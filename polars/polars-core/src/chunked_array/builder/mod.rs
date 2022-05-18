@@ -186,7 +186,8 @@ mod test {
 
     #[test]
     fn test_list_builder() {
-        let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("a", 10, 5, DataType::Int32);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5, DataType::Int32);
 
         // create a series containing two chunks
         let mut s1 = Int32Chunked::from_slice("a", &[1, 2, 3]).into_series();
@@ -212,7 +213,8 @@ mod test {
         assert_eq!(out.get(0).unwrap().len(), 6);
         assert_eq!(out.get(1).unwrap().len(), 3);
 
-        let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("a", 10, 5, DataType::Int32);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 5, DataType::Int32);
         builder.append_series(&s1);
         builder.append_null();
 
