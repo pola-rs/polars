@@ -8,7 +8,7 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &DataType) -> PyResult<Ser
     let s = match dtype {
         DataType::Int64 => {
             let mut builder =
-                ListPrimitiveChunkedBuilder::<i64>::new(name, len, len * 5, DataType::Int64);
+                ListPrimitiveChunkedBuilder::<Int64Type>::new(name, len, len * 5, DataType::Int64);
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;
@@ -32,8 +32,12 @@ pub fn py_seq_to_list(name: &str, seq: &PyAny, dtype: &DataType) -> PyResult<Ser
             builder.finish().into_series()
         }
         DataType::Float64 => {
-            let mut builder =
-                ListPrimitiveChunkedBuilder::<f64>::new(name, len, len * 5, DataType::Float64);
+            let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
+                name,
+                len,
+                len * 5,
+                DataType::Float64,
+            );
             for sub_seq in seq.iter()? {
                 let sub_seq = sub_seq?;
                 let (sub_seq, len) = get_pyseq(sub_seq)?;

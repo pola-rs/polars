@@ -1,5 +1,5 @@
 use super::*;
-use crate::conversion::to_wrapped;
+use crate::conversion::slice_to_wrapped;
 use crate::series::PySeries;
 use crate::{PyPolarsErr, Wrap};
 use polars::chunked_array::builder::get_list_builder;
@@ -1902,7 +1902,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
 fn make_dict_arg(py: Python, names: &[&str], vals: &[AnyValue]) -> Py<PyDict> {
     let dict = PyDict::new(py);
-    for (name, val) in names.iter().zip(to_wrapped(vals)) {
+    for (name, val) in names.iter().zip(slice_to_wrapped(vals)) {
         dict.set_item(name, val).unwrap()
     }
     dict.into_py(py)

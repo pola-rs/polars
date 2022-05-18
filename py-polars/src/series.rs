@@ -198,6 +198,12 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
+    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PySeries {
+        let avs = slice_extract_wrapped(&val);
+        Series::new(name, avs).into()
+    }
+
+    #[staticmethod]
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);

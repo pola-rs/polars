@@ -1797,7 +1797,8 @@ fn test_groupby_on_lists() -> Result<()> {
     let s0 = Series::new("", [1i32, 2, 3]);
     let s1 = Series::new("groups", [4i32, 5]);
 
-    let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("arrays", 10, 10, DataType::Int32);
+    let mut builder =
+        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
     builder.append_series(&s0);
     builder.append_series(&s1);
     let s2 = builder.finish().into_series();
