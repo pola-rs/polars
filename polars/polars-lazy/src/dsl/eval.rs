@@ -84,7 +84,7 @@ impl Expr {
             Ok(Series::new(&name, avs))
         };
 
-        self.map(
+        self.apply(
             func,
             GetOutput::map_field(move |f| {
                 // dummy df to determine output dtype
