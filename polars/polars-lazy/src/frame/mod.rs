@@ -315,12 +315,15 @@ impl LazyFrame {
 
     fn rename_impl_swapping(self, mut existing: Vec<String>, mut new: Vec<String>) -> Self {
         assert_eq!(new.len(), existing.len());
-        for idx in 0..existing.len() {
-            // remove "name" -> "name"
+        let mut removed = 0;
+        for mut idx in 0..existing.len() {
+            // remove "name" -> "name
             // these are no ops.
+            idx -= removed;
             if existing[idx] == new[idx] {
                 existing.swap_remove(idx);
                 new.swap_remove(idx);
+                removed += 1;
             }
         }
 
