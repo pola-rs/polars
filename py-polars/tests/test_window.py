@@ -138,3 +138,23 @@ def test_quantile_as_window() -> None:
         .to_series()
         .series_equal(pl.Series("value", [1.0, 1.0, 2.0, 2.0]))
     )
+
+
+def test_cumulative_eval_window_functions() -> None:
+    df = pl.DataFrame(
+        {
+            "group": [0, 0, 0, 1, 1, 1],
+            "val": [20, 40, 30, 2, 4, 3],
+        }
+    )
+
+    assert df.with_column(
+        pl.col("val")
+        .cumulative_eval(pl.element().max())
+        .over("group")
+        .alias("cumulative_eval_max")
+    ).to_dict(False) == {
+        "group": [0, 0, 0, 1, 1, 1],
+        "val": [20, 40, 30, 2, 4, 3],
+        "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
+    }
