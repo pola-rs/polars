@@ -46,13 +46,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     fn agg_list(&self, groups: &GroupsProxy) -> Series {
-        let fields = self
-            .0
-            .fields()
-            .iter()
-            .map(|s| s.agg_list(groups))
-            .collect::<Vec<_>>();
-        StructChunked::new_unchecked(self.name(), &fields).into_series()
+        self.0.agg_list(groups)
     }
 
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {

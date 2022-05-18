@@ -303,3 +303,26 @@ def test_struct_list_head_tail() -> None:
         "head": [[{"a": 1, "b": 4}], [{"a": 10, "b": 40}]],
         "tail": [[{"a": 3, "b": 6}], [{"a": 30, "b": 60}]],
     }
+
+
+def test_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b", "b"],
+            "col1": [
+                {"x": 1, "y": 100},
+                {"x": 2, "y": 200},
+                {"x": 3, "y": 300},
+                {"x": 4, "y": 400},
+                {"x": 5, "y": 500},
+            ],
+        }
+    )
+
+    assert df.groupby("group", maintain_order=True).agg_list().to_dict(False) == {
+        "group": ["a", "b"],
+        "col1": [
+            [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
+            [{"x": 3, "y": 300}, {"x": 4, "y": 400}, {"x": 5, "y": 500}],
+        ],
+    }

@@ -172,7 +172,8 @@ mod test {
         let ndarr = ca.to_ndarray()?;
         assert_eq!(ndarr, ArrayView1::from(&[1.0, 2.0, 3.0]));
 
-        let mut builder = ListPrimitiveChunkedBuilder::new("", 10, 10, DataType::Float64);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
         builder.append_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_slice(Some(&[2.0, 4.0, 5.0]));
         builder.append_slice(Some(&[6.0, 7.0, 8.0]));
@@ -183,7 +184,8 @@ mod test {
         assert_eq!(ndarr, expected);
 
         // test list array that is not square
-        let mut builder = ListPrimitiveChunkedBuilder::new("", 10, 10, DataType::Float64);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Float64Type>::new("", 10, 10, DataType::Float64);
         builder.append_slice(Some(&[1.0, 2.0, 3.0]));
         builder.append_slice(Some(&[2.0]));
         builder.append_slice(Some(&[6.0, 7.0, 8.0]));
