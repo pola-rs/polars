@@ -235,6 +235,25 @@ pub fn infer_file_schema(
             }
             column_names
         }
+    } else if has_header && !bytes.is_empty() {
+        // there was no new line char. So we copy the whole buf and add one
+        // this is likely to be cheap as there no rows.
+        let mut buf = Vec::with_capacity(bytes.len() + 2);
+        buf.extend_from_slice(bytes);
+        buf.push(b'\n');
+
+        return infer_file_schema(
+            &ReaderBytes::Owned(buf),
+            delimiter,
+            max_read_lines,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            comment_char,
+            quote_char,
+            null_values,
+            parse_dates,
+        );
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
     };

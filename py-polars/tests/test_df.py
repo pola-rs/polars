@@ -1684,6 +1684,17 @@ def test_rename_same_name() -> None:
     df = df.rename({"groups": "groups"})
     df = df.select(["groups"])
     assert df.collect().to_dict(False) == {"groups": ["A", "A", "B", "C", "B"]}
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4, 5],
+            "groups": ["A", "A", "B", "C", "B"],
+            "test": [1, 2, 3, 4, 5],
+        }
+    ).lazy()
+    df = df.rename({"nrs": "nrs", "groups": "groups"})
+    df = df.select(["groups"])
+    df.collect()
+    assert df.collect().to_dict(False) == {"groups": ["A", "A", "B", "C", "B"]}
 
 
 def test_fill_null() -> None:

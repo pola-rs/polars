@@ -89,11 +89,16 @@ where
 /// and not with
 ///     '\nfield_1,field_1'
 pub(crate) fn skip_header(input: &[u8]) -> (&[u8], usize) {
-    let mut pos = next_line_position_naive(input).expect("no lines in the file");
-    if input[pos] == b'\n' {
-        pos += 1;
+    match next_line_position_naive(input) {
+        Some(mut pos) => {
+            if input[pos] == b'\n' {
+                pos += 1;
+            }
+            (&input[pos..], pos)
+        }
+        // no lines in the file, so skipping the header is skipping all.
+        None => (&[], input.len()),
     }
-    (&input[pos..], pos)
 }
 
 /// Remove whitespace from the start of buffer.
