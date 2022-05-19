@@ -90,6 +90,46 @@ where
     ))
 }
 
+fn compare_fn<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
+
+pub(super) fn sort_buf<T>(buf: &mut [T])
+where
+    T: IsFloat + NativeType + PartialOrd,
+{
+    if T::is_float() {
+        buf.sort_by(|a, b| {
+            match (a.is_nan(), b.is_nan()) {
+                // safety: we checked nans
+                (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+                (true, true) => Ordering::Equal,
+                (true, false) => Ordering::Greater,
+                (false, true) => Ordering::Less,
+            }
+        });
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
+    }
+}
+
 fn rolling_apply_quantile<T, Fo, Fa>(
     values: &[T],
     quantile: f64,
@@ -102,14 +142,47 @@ fn rolling_apply_quantile<T, Fo, Fa>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
-    T: Debug + NativeType,
+    T: Debug + NativeType + IsFloat + PartialOrd,
 {
     let len = values.len();
+    let (mut last_start, mut last_end) = det_offsets_fn(0, window_size, len);
+    // buffer that we keep sorted
+    let mut buf = unsafe { values.get_unchecked(last_start..last_end) }.to_vec();
+    sort_buf(&mut buf);
+
     let out = (0..len)
         .map(|idx| {
             let (start, end) = det_offsets_fn(idx, window_size, len);
-            let vals = unsafe { values.get_unchecked(start..end) };
-            aggregator(vals, quantile, interpolation)
+            // remove elements that should leave the window
+            for idx in last_start..start {
+                // safety
+                // we are in bounds
+                let val = unsafe { values.get_unchecked(idx) };
+                // safety
+                // value is present in buf
+                let remove_idx = unsafe {
+                    buf.binary_search_by(|a| compare_fn(a, val))
+                        .unwrap_unchecked()
+                };
+                // this is O(n) but we need a sorted window
+                buf.remove(remove_idx);
+            }
+            last_start = start;
+            // insert elements that enter the window, but insert them sorted
+            for idx in last_end..end {
+                // safety
+                // we are in bounds
+                let val = *unsafe { values.get_unchecked(idx) };
+                let insertion_idx = buf
+                    .binary_search_by(|a| compare_fn(a, &val))
+                    .unwrap_or_else(|insertion_idx| insertion_idx);
+
+                // this is O(n) but we need a sorted window
+                buf.insert(insertion_idx, val);
+            }
+            last_end = end;
+
+            aggregator(&buf, quantile, interpolation)
         })
         .collect_trusted::<Vec<T>>();
 
@@ -135,7 +208,7 @@ fn rolling_apply_convolve_quantile<T, Fo, Fa>(
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
     Fa: Fn(&[T], f64, QuantileInterpolOptions) -> T,
-    T: Debug + NativeType + Mul<Output = T> + NumCast + ToPrimitive + Zero,
+    T: Debug + NativeType + Mul<Output = T> + NumCast + ToPrimitive + Zero + IsFloat + PartialOrd,
 {
     assert_eq!(weights.len(), window_size);
     let mut buf = vec![T::zero(); window_size];
@@ -148,6 +221,7 @@ where
                 .zip(vals.iter().zip(weights))
                 .for_each(|(b, (v, w))| *b = *v * NumCast::from(*w).unwrap());
 
+            sort_buf(&mut buf);
             aggregator(&buf, quantile, interpolation)
         })
         .collect_trusted::<Vec<T>>();
@@ -275,7 +349,7 @@ where
             window_size,
             min_periods,
             det_offsets_center,
-            compute_quantile,
+            compute_quantile2,
         ),
         (false, None) => rolling_apply_quantile(
             values,
@@ -284,7 +358,7 @@ where
             window_size,
             min_periods,
             det_offsets,
-            compute_quantile,
+            compute_quantile2,
         ),
         (true, Some(weights)) => rolling_apply_convolve_quantile(
             values,
@@ -293,7 +367,7 @@ where
             window_size,
             min_periods,
             det_offsets_center,
-            compute_quantile,
+            compute_quantile2,
             weights,
         ),
         (false, Some(weights)) => rolling_apply_convolve_quantile(
@@ -303,7 +377,7 @@ where
             window_size,
             min_periods,
             det_offsets,
-            compute_quantile,
+            compute_quantile2,
             weights,
         ),
     }
@@ -323,8 +397,8 @@ where
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum()
 }
 
-pub(crate) fn compute_quantile<T>(
-    values: &[T],
+pub(crate) fn compute_quantile2<T>(
+    vals: &[T],
     quantile: f64,
     interpolation: QuantileInterpolOptions,
 ) -> T
@@ -340,30 +414,6 @@ where
         + Mul<Output = T>
         + IsFloat,
 {
-    if !(0.0..=1.0).contains(&quantile) {
-        panic!("quantile should be between 0.0 and 1.0");
-    }
-
-    let mut vals: Vec<T> = values
-        .iter()
-        .copied()
-        .map(|x| NumCast::from(x).unwrap())
-        .collect();
-
-    if T::is_float() {
-        vals.sort_by(|a, b| {
-            match (a.is_nan(), b.is_nan()) {
-                // safety: we checked nans
-                (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-                (true, true) => Ordering::Equal,
-                (true, false) => Ordering::Greater,
-                (false, true) => Ordering::Less,
-            }
-        });
-    } else {
-        vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    }
-
     let length = vals.len();
 
     let mut idx = match interpolation {
@@ -380,9 +430,16 @@ where
         QuantileInterpolOptions::Midpoint => {
             let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
             if top_idx == idx {
-                vals[idx]
+                // safety
+                // we are in bounds
+                unsafe { *vals.get_unchecked(idx) }
             } else {
-                (vals[idx] + vals[idx + 1]) / T::from::<f64>(2.0f64).unwrap()
+                // safety
+                // we are in bounds
+                let (mid, mid_plus_1) =
+                    unsafe { (*vals.get_unchecked(idx), *vals.get_unchecked(idx + 1)) };
+
+                (mid + mid_plus_1) / T::from::<f64>(2.0f64).unwrap()
             }
         }
         QuantileInterpolOptions::Linear => {
@@ -390,13 +447,19 @@ where
             let top_idx = f64::ceil(float_idx) as usize;
 
             if top_idx == idx {
-                vals[idx]
+                // safety
+                // we are in bounds
+                unsafe { *vals.get_unchecked(idx) }
             } else {
                 let proportion = T::from(float_idx - idx as f64).unwrap();
                 proportion * (vals[top_idx] - vals[idx]) + vals[idx]
             }
         }
-        _ => vals[idx],
+        _ => {
+            // safety
+            // we are in bounds
+            unsafe { *vals.get_unchecked(idx) }
+        }
     }
 }
 

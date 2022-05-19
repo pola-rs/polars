@@ -1,5 +1,6 @@
 use super::*;
 use crate::data_types::IsFloat;
+use crate::kernels::rolling::no_nulls::sort_buf;
 use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
@@ -79,7 +80,7 @@ where
     // QuantileInterpolOptions -> Interpolation option
     // usize -> offset in validity bytes array
     // usize -> min_periods
-    Fa: Fn(&[T], &[u8], f64, QuantileInterpolOptions, usize, usize) -> Option<T>,
+    Fa: Fn(&[T], &mut Vec<T>, &[u8], f64, QuantileInterpolOptions, usize, usize) -> Option<T>,
     T: Default + NativeType,
 {
     let len = values.len();
@@ -94,6 +95,7 @@ where
             validity
         }
     };
+    let mut buf = Vec::with_capacity(window_size);
 
     let out = (0..len)
         .map(|idx| {
@@ -101,6 +103,7 @@ where
             let vals = unsafe { values.get_unchecked(start..end) };
             match aggregator(
                 vals,
+                &mut buf,
                 validity_bytes,
                 quantile,
                 interpolation,
@@ -216,6 +219,7 @@ where
 
 fn compute_quantile<T>(
     values: &[T],
+    buf: &mut Vec<T>,
     validity_bytes: &[u8],
     quantile: f64,
     interpolation: QuantileInterpolOptions,
@@ -237,28 +241,26 @@ where
         + Mul<Output = T>
         + IsFloat,
 {
-    if !(0.0..=1.0).contains(&quantile) {
-        panic!("quantile should be between 0.0 and 1.0");
-    }
-
+    buf.clear();
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
-        return Some(no_nulls::compute_quantile(values, quantile, interpolation));
+        buf.extend_from_slice(values);
+        sort_buf(buf);
+        return Some(no_nulls::compute_quantile2(buf, quantile, interpolation));
     } else if (values.len() - null_count) < min_periods {
         return None;
     }
 
-    let mut vals: Vec<T> = Vec::new();
     for (i, val) in values.iter().enumerate() {
         // Safety:
         // in bounds
         if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-            vals.push(NumCast::from(*val).unwrap());
+            buf.push(NumCast::from(*val).unwrap());
         }
     }
-    vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sort_buf(buf);
 
-    let length = vals.len();
+    let length = buf.len();
 
     let mut idx = match interpolation {
         QuantileInterpolOptions::Nearest => ((length as f64) * quantile) as usize,
@@ -273,20 +275,20 @@ where
     match interpolation {
         QuantileInterpolOptions::Midpoint => {
             let top_idx = ((length as f64 - 1.0) * quantile).ceil() as usize;
-            Some((vals[idx] + vals[top_idx]) / T::from::<f64>(2.0f64).unwrap())
+            Some((buf[idx] + buf[top_idx]) / T::from::<f64>(2.0f64).unwrap())
         }
         QuantileInterpolOptions::Linear => {
             let float_idx = (length as f64 - 1.0) * quantile;
             let top_idx = f64::ceil(float_idx) as usize;
 
             if top_idx == idx {
-                Some(vals[idx])
+                Some(buf[idx])
             } else {
                 let proportion = T::from(float_idx - idx as f64).unwrap();
-                Some(proportion * (vals[top_idx] - vals[idx]) + vals[idx])
+                Some(proportion * (buf[top_idx] - buf[idx]) + buf[idx])
             }
         }
-        _ => Some(vals[idx]),
+        _ => Some(buf[idx]),
     }
 }
 
