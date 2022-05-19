@@ -361,3 +361,23 @@ def test_struct_arr_methods() -> None:
     assert df.select([pl.col("list_struct").arr.get(0)]).to_dict(False) == {
         "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
     }
+
+
+def test_struct_concat_list() -> None:
+    assert pl.DataFrame(
+        {
+            "list_struct1": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+                [{"a": 1, "b": 2}],
+            ],
+            "list_struct2": [
+                [{"a": 6, "b": 7}, {"a": 8, "b": 9}],
+                [{"a": 6, "b": 7}],
+            ],
+        }
+    ).with_columns([pl.col("list_struct1").arr.concat("list_struct2").alias("result")])[
+        "result"
+    ].to_list() == [
+        [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
+        [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
+    ]
