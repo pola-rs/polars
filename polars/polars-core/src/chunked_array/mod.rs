@@ -445,6 +445,22 @@ where
     }
 }
 
+// A hack to save compiler bloat for null arrays
+impl Int32Chunked {
+    pub(crate) fn new_null(name: &str, len: usize) -> Self {
+        let arr = Arc::from(arrow::array::new_null_array(ArrowDataType::Null, len));
+        let field = Arc::new(Field::new(name, DataType::Null));
+        let chunks = vec![arr as ArrayRef];
+        ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            categorical_map: None,
+            bit_settings: 0,
+        }
+    }
+}
+
 impl<T> ChunkedArray<T>
 where
     T: PolarsNumericType,
