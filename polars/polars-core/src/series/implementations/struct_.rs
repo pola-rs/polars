@@ -207,7 +207,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series {
-        self.0.apply_fields(|s| s.rechunk()).into_series()
+        let mut out = self.0.clone();
+        out.rechunk();
+        out.into_series()
     }
 
     fn expand_at_index(&self, index: usize, length: usize) -> Series {

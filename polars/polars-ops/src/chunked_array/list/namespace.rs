@@ -217,7 +217,6 @@ pub trait ListNameSpaceImpl: AsList {
         let length = ca.len();
         let mut other = other.to_vec();
         let dtype = ca.dtype();
-        dbg!(&ca, ca.dtype());
         let inner_type = ca.inner_dtype();
 
         // broadcasting path in case all unit length
@@ -255,6 +254,13 @@ pub trait ListNameSpaceImpl: AsList {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
                         s.append(append).unwrap();
+                    }
+                    match inner_type {
+                        // structs don't have chunks, so we must first rechunk the underlying series
+                        #[cfg(feature = "dtype-struct")]
+                        DataType::Struct(_) => s = s.rechunk(),
+                        // nothing
+                        _ => {}
                     }
                     s
                 });
@@ -309,6 +315,13 @@ pub trait ListNameSpaceImpl: AsList {
                             continue;
                         }
                     }
+                }
+                match inner_type {
+                    // structs don't have chunks, so we must first rechunk the underlying series
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => acc = acc.rechunk(),
+                    // nothing
+                    _ => {}
                 }
                 builder.append_series(&acc);
             }
