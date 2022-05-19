@@ -151,7 +151,8 @@ where
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.unpack::<T>().unwrap();
+        let physical = s.to_physical_repr();
+        let ca = physical.unpack::<T>().unwrap();
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {
