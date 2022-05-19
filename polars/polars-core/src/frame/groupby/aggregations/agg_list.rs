@@ -367,8 +367,11 @@ impl AggList for StructChunked {
         let s = self.clone().into_series();
         match groups {
             GroupsProxy::Idx(groups) => {
-                let mut builder =
-                    AnonymousOwnedListBuilder::new(self.name(), groups.len(), self.dtype().clone());
+                let mut builder = AnonymousOwnedListBuilder::new(
+                    self.name(),
+                    groups.len(),
+                    Some(self.dtype().clone()),
+                );
                 for idx in groups.all().iter() {
                     let taken =
                         unsafe { s.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
@@ -377,8 +380,11 @@ impl AggList for StructChunked {
                 builder.finish().into_series()
             }
             GroupsProxy::Slice(groups) => {
-                let mut builder =
-                    AnonymousOwnedListBuilder::new(self.name(), groups.len(), self.dtype().clone());
+                let mut builder = AnonymousOwnedListBuilder::new(
+                    self.name(),
+                    groups.len(),
+                    Some(self.dtype().clone()),
+                );
                 for [first, len] in groups {
                     let taken = s.slice(*first as i64, *len as usize);
                     builder.append_series(&taken)

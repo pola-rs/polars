@@ -151,7 +151,8 @@ where
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let ca = s.unpack::<T>().unwrap();
+        let physical = s.to_physical_repr();
+        let ca = physical.unpack::<T>().unwrap();
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {
@@ -351,12 +352,12 @@ pub fn get_list_builder(
         DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            physical_type,
+            Some(physical_type),
         ))),
         DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
             name,
             list_capacity,
-            physical_type,
+            Some(physical_type),
         ))),
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(_) => _err(),
@@ -399,17 +400,17 @@ pub fn get_list_builder(
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
-    pub dtype: DataType,
+    pub dtype: Option<DataType>,
 }
 
 impl Default for AnonymousListBuilder<'_> {
     fn default() -> Self {
-        Self::new("", 0, Default::default())
+        Self::new("", 0, None)
     }
 }
 
 impl<'a> AnonymousListBuilder<'a> {
-    pub fn new(name: &str, capacity: usize, inner_dtype: DataType) -> Self {
+    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
@@ -439,16 +440,31 @@ impl<'a> AnonymousListBuilder<'a> {
         self.builder.push(arr)
     }
 
+    #[inline]
     pub fn append_null(&mut self) {
         self.builder.push_null();
     }
 
+    #[inline]
+    pub fn append_empty(&mut self) {
+        self.builder.push_empty()
+    }
+
     pub fn append_series(&mut self, s: &'a Series) {
-        match s.dtype() {
-            #[cfg(feature = "dtype-struct")]
-            DataType::Struct(_) => self.builder.push(&**s.array_ref(0)),
-            _ => {
-                self.builder.push_multiple(s.chunks());
+        // empty arrays tend to be null type and thus differ
+        // if we would push it the concat would fail.
+        if s.is_empty() {
+            self.builder.push_empty()
+        } else {
+            match s.dtype() {
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    let arr = &**s.array_ref(0);
+                    self.builder.push(arr)
+                }
+                _ => {
+                    self.builder.push_multiple(s.chunks());
+                }
             }
         }
     }
@@ -456,14 +472,14 @@ impl<'a> AnonymousListBuilder<'a> {
     pub fn finish(&mut self) -> ListChunked {
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
-            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype)
+            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
         } else {
-            let arr = slf
-                .builder
-                .finish(Some(&slf.dtype.to_physical().to_arrow()))
-                .unwrap();
+            let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
+            let arr = slf.builder.finish(dtype.as_ref()).unwrap();
+            let dtype = DataType::from(arr.data_type());
             let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
-            ca.field = Arc::new(Field::new(&slf.name, DataType::List(Box::new(slf.dtype))));
+
+            ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
         }
     }
@@ -473,35 +489,42 @@ pub struct AnonymousOwnedListBuilder {
     name: String,
     builder: AnonymousBuilder<'static>,
     owned: Vec<Series>,
-    inner_dtype: DataType,
+    inner_dtype: Option<DataType>,
 }
 
 impl Default for AnonymousOwnedListBuilder {
     fn default() -> Self {
-        Self::new("", 0, Default::default())
+        Self::new("", 0, None)
     }
 }
 
 impl ListBuilderTrait for AnonymousOwnedListBuilder {
     fn append_series(&mut self, s: &Series) {
-        // Safety
-        // we deref a raw pointer with a lifetime that is not static
-        // it is safe because we also clone Series (Arc +=1) and therefore the &dyn Arrays
-        // will not be dropped until the owned series are dropped
-        unsafe {
-            match s.dtype() {
-                #[cfg(feature = "dtype-struct")]
-                DataType::Struct(_) => self.builder.push(&*(&**s.array_ref(0) as *const dyn Array)),
-                _ => {
-                    self.builder
-                        .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
+        if s.is_empty() {
+            self.builder.push_empty()
+        } else {
+            // Safety
+            // we deref a raw pointer with a lifetime that is not static
+            // it is safe because we also clone Series (Arc +=1) and therefore the &dyn Arrays
+            // will not be dropped until the owned series are dropped
+            unsafe {
+                match s.dtype() {
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => {
+                        self.builder.push(&*(&**s.array_ref(0) as *const dyn Array))
+                    }
+                    _ => {
+                        self.builder
+                            .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
+                    }
                 }
             }
+            // this make sure that the underlying ArrayRef's are not dropped
+            self.owned.push(s.clone());
         }
-        // this make sure that the underlying ArrayRef's are not dropped
-        self.owned.push(s.clone());
     }
 
+    #[inline]
     fn append_null(&mut self) {
         self.builder.push_null()
     }
@@ -509,29 +532,35 @@ impl ListBuilderTrait for AnonymousOwnedListBuilder {
     fn finish(&mut self) -> ListChunked {
         let slf = std::mem::take(self);
         if slf.builder.is_empty() {
-            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.inner_dtype)
-        } else {
-            let arr = slf
-                .builder
-                .finish(Some(&slf.inner_dtype.to_physical().to_arrow()))
-                .unwrap();
-            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
-            ca.field = Arc::new(Field::new(
+            ListChunked::full_null_with_dtype(
                 &slf.name,
-                DataType::List(Box::new(slf.inner_dtype)),
-            ));
+                0,
+                &slf.inner_dtype.unwrap_or(DataType::Null),
+            )
+        } else {
+            let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
+            let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
+            let dtype = DataType::from(arr.data_type());
+            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+
+            ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
         }
     }
 }
 
 impl AnonymousOwnedListBuilder {
-    pub fn new(name: &str, capacity: usize, inner_dtype: DataType) -> Self {
+    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
             owned: Vec::with_capacity(capacity),
             inner_dtype,
         }
+    }
+
+    #[inline]
+    pub fn append_empty(&mut self) {
+        self.builder.push_empty()
     }
 }

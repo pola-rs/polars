@@ -539,9 +539,13 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
-            let avs = ob.extract::<Wrap<Row>>()?.0;
-            let s = Series::new("", &avs.0);
-            Ok(Wrap(AnyValue::List(s)))
+            if ob.is_empty()? {
+                Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
+            } else {
+                let avs = ob.extract::<Wrap<Row>>()?.0;
+                let s = Series::new("", &avs.0);
+                Ok(Wrap(AnyValue::List(s)))
+            }
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
