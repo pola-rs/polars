@@ -340,3 +340,24 @@ def test_struct_empty_list_creation() -> None:
     assert pl.DataFrame({"list_struct": payload}).to_dict(False) == {
         "list_struct": [[{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], []]
     }
+
+
+def test_struct_arr_methods() -> None:
+    df = pl.DataFrame(
+        {
+            "list_struct": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}],
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+                [{"a": 1, "b": 2}],
+            ],
+        }
+    )
+    assert df.select([pl.col("list_struct").arr.first()]).to_dict(False) == {
+        "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
+    }
+    assert df.select([pl.col("list_struct").arr.last()]).to_dict(False) == {
+        "list_struct": [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}]
+    }
+    assert df.select([pl.col("list_struct").arr.get(0)]).to_dict(False) == {
+        "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
+    }
