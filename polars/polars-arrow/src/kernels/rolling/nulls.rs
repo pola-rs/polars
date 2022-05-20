@@ -1,4 +1,5 @@
 use super::*;
+pub use quantile_nulls::{rolling_median, rolling_quantile};
 
 fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],

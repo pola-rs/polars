@@ -1,14 +1,9 @@
 use super::*;
 use no_nulls;
+use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
 use std::ops::SubAssign;
 
-pub(crate) trait RollingAggWindow<'a, T: NativeType> {
-    fn new(slice: &'a [T], start: usize, end: usize) -> Self;
-
-    unsafe fn update(&mut self, start: usize, end: usize) -> T;
-}
-
-struct SumWindow<'a, T: NativeType + IsFloat> {
+pub(super) struct SumWindow<'a, T> {
     slice: &'a [T],
     sum: T,
     last_start: usize,
@@ -203,38 +198,6 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
     }
 }
 
-pub(super) fn rolling_apply<'a, Agg, T, Fo>(
-    values: &'a [T],
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindow<'a, T>,
-    T: Debug + IsFloat + NativeType,
-{
-    let len = values.len();
-    let (start, end) = det_offsets_fn(0, window_size, len);
-    let mut agg_window = Agg::new(values, start, end);
-
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            // safety:
-            // we are in bounds
-            unsafe { agg_window.update(start, end) }
-        })
-        .collect_trusted::<Vec<_>>();
-
-    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
-        T::PRIMITIVE.into(),
-        out.into(),
-        validity.map(|b| b.into()),
-    ))
-}
-
 pub(crate) fn compute_min<T>(values: &[T]) -> T
 where
     T: NativeType + PartialOrd + IsFloat + Bounded,
@@ -309,7 +272,7 @@ where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
     match (center, weights) {
-        (true, None) => rolling_apply::<MaxWindow<_>, _, _>(
+        (true, None) => rolling_apply_agg_window::<MaxWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
@@ -368,15 +331,18 @@ where
     T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
 {
     match (center, weights) {
-        (true, None) => rolling_apply::<MinWindow<_>, _, _>(
+        (true, None) => rolling_apply_agg_window::<MinWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets_center,
         ),
-        (false, None) => {
-            rolling_apply::<MinWindow<_>, _, _>(values, window_size, min_periods, det_offsets)
-        }
+        (false, None) => rolling_apply_agg_window::<MinWindow<_>, _, _>(
+            values,
+            window_size,
+            min_periods,
+            det_offsets,
+        ),
         (true, Some(weights)) => {
             assert!(
                 T::is_float(),
@@ -427,15 +393,18 @@ where
     T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
 {
     match (center, weights) {
-        (true, None) => rolling_apply::<SumWindow<_>, _, _>(
+        (true, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
             values,
             window_size,
             min_periods,
             det_offsets_center,
         ),
-        (false, None) => {
-            rolling_apply::<SumWindow<_>, _, _>(values, window_size, min_periods, det_offsets)
-        }
+        (false, None) => rolling_apply_agg_window::<SumWindow<_>, _, _>(
+            values,
+            window_size,
+            min_periods,
+            det_offsets,
+        ),
         (true, Some(weights)) => {
             let weights = no_nulls::coerce_weights(weights);
             no_nulls::rolling_apply_weights(

@@ -1,8 +1,9 @@
+mod mean_no_nulls;
 pub mod no_nulls;
 pub mod nulls;
-pub mod quantile_no_nulls;
-pub mod quantile_nulls;
-pub mod sum_min_max_no_nulls;
+mod quantile_no_nulls;
+mod quantile_nulls;
+mod sum_min_max_no_nulls;
 mod window;
 
 use crate::data_types::IsFloat;
@@ -12,12 +13,10 @@ use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
-use core::fmt::Debug;
 use num::ToPrimitive;
 use num::{Bounded, Float, NumCast, One, Zero};
 use std::cmp::Ordering;
-use std::ops::AddAssign;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 use window::*;
 

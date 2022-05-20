@@ -9,6 +9,50 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;
 
+pub use mean_no_nulls::rolling_mean;
+
+pub(crate) trait RollingAggWindow<'a, T: NativeType> {
+    fn new(slice: &'a [T], start: usize, end: usize) -> Self;
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> T;
+}
+
+// Use an aggregation window that maintains the state
+pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
+    values: &'a [T],
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+    Agg: RollingAggWindow<'a, T>,
+    T: Debug + IsFloat + NativeType,
+{
+    let len = values.len();
+    let (start, end) = det_offsets_fn(0, window_size, len);
+    let mut agg_window = Agg::new(values, start, end);
+
+    let out = (0..len)
+        .map(|idx| {
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            // safety:
+            // we are in bounds
+            unsafe { agg_window.update(start, end) }
+        })
+        .collect_trusted::<Vec<_>>();
+
+    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        out.into(),
+        validity.map(|b| b.into()),
+    ))
+}
+
+pub use quantile_no_nulls::{rolling_median, rolling_quantile};
+pub use sum_min_max_no_nulls::{rolling_max, rolling_min, rolling_sum};
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum QuantileInterpolOptions {
@@ -162,50 +206,6 @@ where
         .iter()
         .map(|v| NumCast::from(*v).unwrap())
         .collect::<Vec<_>>()
-}
-
-pub fn rolling_mean<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + Float + std::iter::Sum<T>,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_mean,
-        ),
-        (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_mean),
-        (true, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_mean_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_mean_weights,
-                &weights,
-            )
-        }
-    }
 }
 
 pub fn rolling_var<T>(
