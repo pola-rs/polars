@@ -14,8 +14,7 @@ use crate::datatypes::*;
 pub struct StructChunked {
     fields: Vec<Series>,
     field: Field,
-    // needed by iterators
-    arrow_array: ArrayRef,
+    chunks: Vec<ArrayRef>,
 }
 
 fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
@@ -39,13 +38,45 @@ impl StructChunked {
     }
 
     pub(crate) fn arrow_array(&self) -> &ArrayRef {
-        &self.arrow_array
+        &self.chunks[0]
+    }
+
+    pub(crate) fn chunks(&self) -> &Vec<ArrayRef> {
+        &self.chunks
     }
 
     pub fn rechunk(&mut self) {
-        let (arrow_array, fields) = fields_to_struct_array(&self.fields);
-        self.arrow_array = arrow_array;
-        self.fields = fields;
+        self.fields = self.fields.iter().map(|s| s.rechunk()).collect();
+        self.update_chunks(0);
+    }
+
+    // Should be called after append or extend
+    pub(crate) fn update_chunks(&mut self, offset: usize) {
+        let new_fields = self
+            .fields
+            .iter()
+            .map(|s| s.field().to_arrow())
+            .collect::<Vec<_>>();
+        let n_chunks = self.fields[0].chunks().len();
+        for i in offset..n_chunks {
+            let field_arrays = self
+                .fields
+                .iter()
+                .map(|s| s.to_arrow(i))
+                .collect::<Vec<_>>();
+            let arr = Arc::new(StructArray::new(
+                ArrowDataType::Struct(new_fields.clone()),
+                field_arrays,
+                None,
+            )) as ArrayRef;
+            match self.chunks.get_mut(i) {
+                Some(a) => *a = arr,
+                None => {
+                    self.chunks.push(arr);
+                }
+            }
+        }
+        self.chunks.truncate(n_chunks);
     }
 
     /// Does not check the lengths of the fields
@@ -62,7 +93,7 @@ impl StructChunked {
         Self {
             fields,
             field,
-            arrow_array,
+            chunks: vec![arrow_array],
         }
     }
 
