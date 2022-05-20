@@ -130,8 +130,8 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::no_nulls::rolling_median,
-                        rolling::nulls::rolling_median,
+                        rolling::quantile_no_nulls::rolling_median,
+                        rolling::quantile_nulls::rolling_median,
                     )
                 }
 
@@ -149,7 +149,7 @@ mod inner_mod {
 
                     let arr = ca.downcast_iter().next().unwrap();
                     let arr = match self.has_validity() {
-                        false => rolling::no_nulls::rolling_quantile(
+                        false => rolling::quantile_no_nulls::rolling_quantile(
                             arr.values(),
                             quantile,
                             interpolation,
@@ -158,7 +158,7 @@ mod inner_mod {
                             options.center,
                             options.weights.as_deref(),
                         ),
-                        _ => rolling::nulls::rolling_quantile(
+                        _ => rolling::quantile_nulls::rolling_quantile(
                             arr,
                             quantile,
                             interpolation,
