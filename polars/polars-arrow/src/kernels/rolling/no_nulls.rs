@@ -7,7 +7,6 @@ use num::{Float, NumCast};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
-use std::ops::Mul;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -156,7 +155,7 @@ where
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum()
 }
 
-fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
+pub(super) fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
 where
 {
     weights
@@ -250,84 +249,5 @@ where
                 &weights,
             )
         }
-    }
-}
-
-pub fn rolling_sum<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T>,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_sum,
-        ),
-        (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_sum),
-        (true, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_sum_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_sum_weights,
-                &weights,
-            )
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    #[test]
-    fn test_rolling_sum() {
-        let values = &[1.0f64, 2.0, 3.0, 4.0];
-
-        let out = rolling_sum(values, 2, 2, false, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[None, Some(3.0), Some(5.0), Some(7.0)]);
-
-        let out = rolling_sum(values, 2, 1, false, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[Some(1.0), Some(3.0), Some(5.0), Some(7.0)]);
-
-        let out = rolling_sum(values, 4, 1, false, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[Some(1.0), Some(3.0), Some(6.0), Some(10.0)]);
-
-        let out = rolling_sum(values, 4, 1, true, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[Some(3.0), Some(6.0), Some(10.0), Some(9.0)]);
-
-        let out = rolling_sum(values, 4, 4, true, None);
-        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
-        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[None, None, Some(10.0), None]);
     }
 }

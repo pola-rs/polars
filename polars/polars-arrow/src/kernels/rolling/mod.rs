@@ -1,8 +1,8 @@
-pub mod min_max_no_nulls;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_no_nulls;
 pub mod quantile_nulls;
+pub mod sum_min_max_no_nulls;
 mod window;
 
 use crate::data_types::IsFloat;

@@ -33,6 +33,7 @@ mod inner_mod {
     use polars_arrow::prelude::QuantileInterpolOptions;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
+    use std::ops::SubAssign;
 
     fn rolling_agg<T, F1, F2>(
         ca: &ChunkedArray<T>,
@@ -92,7 +93,7 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::no_nulls::rolling_sum,
+                        rolling::sum_min_max_no_nulls::rolling_sum,
                         rolling::nulls::rolling_sum,
                     )
                 }
@@ -105,7 +106,7 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::min_max_no_nulls::rolling_min,
+                        rolling::sum_min_max_no_nulls::rolling_min,
                         rolling::nulls::rolling_min,
                     )
                 }
@@ -118,7 +119,7 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::min_max_no_nulls::rolling_max,
+                        rolling::sum_min_max_no_nulls::rolling_max,
                         rolling::nulls::rolling_max,
                     )
                 }
@@ -180,7 +181,7 @@ mod inner_mod {
     impl<T> ChunkedArray<T>
     where
         T: PolarsIntegerType,
-        T::Native: IsFloat,
+        T::Native: IsFloat + SubAssign,
     {
         /// Apply a rolling sum (moving sum) over the values in this array.
         /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -193,7 +194,7 @@ mod inner_mod {
             rolling_agg(
                 self,
                 options,
-                rolling::no_nulls::rolling_sum,
+                rolling::sum_min_max_no_nulls::rolling_sum,
                 rolling::nulls::rolling_sum,
             )
         }
@@ -229,7 +230,7 @@ mod inner_mod {
             rolling_agg(
                 self,
                 options,
-                rolling::min_max_no_nulls::rolling_min,
+                rolling::sum_min_max_no_nulls::rolling_min,
                 rolling::nulls::rolling_min,
             )
         }
@@ -245,7 +246,7 @@ mod inner_mod {
             rolling_agg(
                 self,
                 options,
-                rolling::min_max_no_nulls::rolling_max,
+                rolling::sum_min_max_no_nulls::rolling_max,
                 rolling::nulls::rolling_max,
             )
         }
