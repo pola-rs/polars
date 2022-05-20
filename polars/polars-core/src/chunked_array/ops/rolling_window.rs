@@ -33,6 +33,7 @@ mod inner_mod {
     use polars_arrow::prelude::QuantileInterpolOptions;
     use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
     use std::convert::TryFrom;
+    use std::ops::SubAssign;
 
     fn rolling_agg<T, F1, F2>(
         ca: &ChunkedArray<T>,
@@ -130,8 +131,8 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::quantile_no_nulls::rolling_median,
-                        rolling::quantile_nulls::rolling_median,
+                        rolling::no_nulls::rolling_median,
+                        rolling::nulls::rolling_median,
                     )
                 }
 
@@ -149,7 +150,7 @@ mod inner_mod {
 
                     let arr = ca.downcast_iter().next().unwrap();
                     let arr = match self.has_validity() {
-                        false => rolling::quantile_no_nulls::rolling_quantile(
+                        false => rolling::no_nulls::rolling_quantile(
                             arr.values(),
                             quantile,
                             interpolation,
@@ -158,7 +159,7 @@ mod inner_mod {
                             options.center,
                             options.weights.as_deref(),
                         ),
-                        _ => rolling::quantile_nulls::rolling_quantile(
+                        _ => rolling::nulls::rolling_quantile(
                             arr,
                             quantile,
                             interpolation,
@@ -180,7 +181,7 @@ mod inner_mod {
     impl<T> ChunkedArray<T>
     where
         T: PolarsIntegerType,
-        T::Native: IsFloat,
+        T::Native: IsFloat + SubAssign,
     {
         /// Apply a rolling sum (moving sum) over the values in this array.
         /// A window of length `window_size` will traverse the array. The values that fill this window

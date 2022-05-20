@@ -1,24 +1,5 @@
 use super::*;
 
-fn compare_fn<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat + NativeType,
-{
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
-
 pub(super) struct SortedBuf<'a, T: NativeType + IsFloat + PartialOrd> {
     // slice over which the window slides
     slice: &'a [T],
@@ -54,7 +35,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
             // value is present in buf
             let remove_idx = self
                 .buf
-                .binary_search_by(|a| compare_fn(a, val))
+                .binary_search_by(|a| compare_fn_nan_max(a, val))
                 .unwrap_unchecked();
             // this is O(n) but we need a sorted window
             self.buf.remove(remove_idx);
@@ -68,7 +49,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
             let val = *self.slice.get_unchecked(idx);
             let insertion_idx = self
                 .buf
-                .binary_search_by(|a| compare_fn(a, &val))
+                .binary_search_by(|a| compare_fn_nan_max(a, &val))
                 .unwrap_or_else(|insertion_idx| insertion_idx);
 
             // this is O(n) but we need a sorted window

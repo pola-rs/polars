@@ -242,7 +242,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::kernels::rolling::no_nulls::{rolling_max, rolling_min};
+    use crate::kernels::rolling::sum_min_max_no_nulls::{rolling_max, rolling_min};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
 
@@ -318,7 +318,7 @@ mod test {
 
     #[test]
     fn test_rolling_quantile_limits() {
-        let values = &[1.0, 2.0, 3.0, 4.0];
+        let values = &[1.0f64, 2.0, 3.0, 4.0];
 
         let interpol_options = vec![
             QuantileInterpolOptions::Lower,

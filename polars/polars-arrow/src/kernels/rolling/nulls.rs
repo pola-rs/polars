@@ -1,4 +1,5 @@
 use super::*;
+pub use quantile_nulls::{rolling_median, rolling_quantile};
 
 fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],
@@ -153,7 +154,7 @@ where
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
-        Some(no_nulls::compute_min(values))
+        Some(sum_min_max_no_nulls::compute_min(values))
     } else if (values.len() - null_count) < min_periods {
         None
     } else {
@@ -189,7 +190,7 @@ where
 {
     let null_count = count_zeros(validity_bytes, offset, values.len());
     if null_count == 0 {
-        Some(no_nulls::compute_max(values))
+        Some(sum_min_max_no_nulls::compute_max(values))
     } else if (values.len() - null_count) < min_periods {
         None
     } else {
