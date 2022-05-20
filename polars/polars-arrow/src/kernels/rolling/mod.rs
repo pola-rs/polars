@@ -1,3 +1,4 @@
+pub mod min_max_no_nulls;
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_no_nulls;
@@ -11,6 +12,7 @@ use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
+use core::fmt::Debug;
 use num::ToPrimitive;
 use num::{Bounded, Float, NumCast, One, Zero};
 use std::cmp::Ordering;
@@ -24,6 +26,25 @@ type End = usize;
 type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
+
+fn compare_fn<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
     (i.saturating_sub(window_size - 1), i + 1)

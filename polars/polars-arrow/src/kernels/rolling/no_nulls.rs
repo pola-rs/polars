@@ -1,10 +1,9 @@
 use super::*;
-use crate::data_types::IsFloat;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
 use arrow::datatypes::DataType;
 use arrow::types::NativeType;
-use num::{Bounded, Float, NumCast};
+use num::{Float, NumCast};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -27,7 +26,7 @@ impl Default for QuantileInterpolOptions {
     }
 }
 
-fn rolling_apply_weights<T, Fo, Fa>(
+pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],
     window_size: usize,
     min_periods: usize,
@@ -59,7 +58,7 @@ where
     ))
 }
 
-fn rolling_apply<T, K, Fo, Fa>(
+pub(super) fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],
     window_size: usize,
     min_periods: usize,
@@ -157,69 +156,6 @@ where
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum()
 }
 
-pub(crate) fn compute_min<T>(values: &[T]) -> T
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
-{
-    let mut min = T::max_value();
-
-    for &v in values {
-        if T::is_float() && v.is_nan() {
-            return v;
-        }
-        if v < min {
-            min = v
-        }
-    }
-    min
-}
-
-pub(crate) fn compute_min_weights<T>(values: &[T], weights: &[T]) -> T
-where
-    T: NativeType + PartialOrd + std::ops::Mul<Output = T>,
-{
-    values
-        .iter()
-        .zip(weights)
-        .map(|(v, w)| *v * *w)
-        .min_by(|a, b| a.partial_cmp(b).unwrap())
-        .unwrap()
-}
-
-pub(crate) fn compute_max<T>(values: &[T]) -> T
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded,
-{
-    let mut max = T::min_value();
-
-    for &v in values {
-        if T::is_float() && v.is_nan() {
-            return v;
-        }
-        if v > max {
-            max = v
-        }
-    }
-    max
-}
-
-pub(crate) fn compute_max_weights<T>(values: &[T], weights: &[T]) -> T
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded + Mul<Output = T>,
-{
-    let mut max = T::min_value();
-    for v in values.iter().zip(weights).map(|(v, w)| *v * *w) {
-        if T::is_float() && v.is_nan() {
-            return v;
-        }
-        if v > max {
-            max = v
-        }
-    }
-
-    max
-}
-
 fn coerce_weights<T: NumCast>(weights: &[f64]) -> Vec<T>
 where
 {
@@ -267,122 +203,6 @@ where
                 min_periods,
                 det_offsets,
                 compute_mean_weights,
-                &weights,
-            )
-        }
-    }
-}
-
-pub fn rolling_min<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_min,
-        ),
-        (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_min),
-        (true, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_min_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_min_weights,
-                &weights,
-            )
-        }
-    }
-}
-
-pub fn rolling_max<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_max,
-        ),
-        (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_max),
-        (true, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_max_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            assert!(
-                T::is_float(),
-                "implementation error, should only be reachable by float types"
-            );
-            let weights = weights
-                .iter()
-                .map(|v| NumCast::from(*v).unwrap())
-                .collect::<Vec<_>>();
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_max_weights,
                 &weights,
             )
         }
@@ -483,7 +303,7 @@ mod test {
 
     #[test]
     fn test_rolling_sum() {
-        let values = &[1.0, 2.0, 3.0, 4.0];
+        let values = &[1.0f64, 2.0, 3.0, 4.0];
 
         let out = rolling_sum(values, 2, 2, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();

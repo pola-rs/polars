@@ -105,7 +105,7 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::no_nulls::rolling_min,
+                        rolling::min_max_no_nulls::rolling_min,
                         rolling::nulls::rolling_min,
                     )
                 }
@@ -118,7 +118,7 @@ mod inner_mod {
                     rolling_agg(
                         self,
                         options,
-                        rolling::no_nulls::rolling_max,
+                        rolling::min_max_no_nulls::rolling_max,
                         rolling::nulls::rolling_max,
                     )
                 }
@@ -229,7 +229,7 @@ mod inner_mod {
             rolling_agg(
                 self,
                 options,
-                rolling::no_nulls::rolling_min,
+                rolling::min_max_no_nulls::rolling_min,
                 rolling::nulls::rolling_min,
             )
         }
@@ -245,7 +245,7 @@ mod inner_mod {
             rolling_agg(
                 self,
                 options,
-                rolling::no_nulls::rolling_max,
+                rolling::min_max_no_nulls::rolling_max,
                 rolling::nulls::rolling_max,
             )
         }
