@@ -1,5 +1,24 @@
 use super::*;
 
+fn compare_fn<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
+
 pub(super) struct SortedBuf<'a, T: NativeType + IsFloat + PartialOrd> {
     // slice over which the window slides
     slice: &'a [T],
@@ -57,6 +76,150 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
         }
         self.last_end = end;
         &self.buf
+    }
+}
+
+pub(super) fn sort_opt_buf<T>(buf: &mut [Option<T>])
+where
+    T: IsFloat + NativeType + PartialOrd,
+{
+    if T::is_float() {
+        buf.sort_by(|a, b| {
+            match (a, b) {
+                (Some(a), Some(b)) => {
+                    match (a.is_nan(), b.is_nan()) {
+                        // safety: we checked nans
+                        (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+                        (true, true) => Ordering::Equal,
+                        (true, false) => Ordering::Greater,
+                        (false, true) => Ordering::Less,
+                    }
+                }
+                _ => a.partial_cmp(b).unwrap(),
+            }
+        });
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { buf.sort_by(|a, b| a.partial_cmp(b).unwrap_unchecked()) };
+    }
+}
+
+fn compare_opt_fn<T>(a: Option<T>, b: Option<T>) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a, b) {
+            (Some(a), Some(b)) => {
+                match (a.is_nan(), b.is_nan()) {
+                    // safety: we checked nans
+                    (false, false) => unsafe { a.partial_cmp(&b).unwrap_unchecked() },
+                    (true, true) => Ordering::Equal,
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                }
+            }
+            _ => a.partial_cmp(&b).unwrap(),
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(&b).unwrap_unchecked() }
+    }
+}
+
+pub(super) struct SortedBufNulls<'a, T: NativeType + IsFloat + PartialOrd> {
+    // slice over which the window slides
+    slice: &'a [T],
+    validity: &'a Bitmap,
+    last_start: usize,
+    last_end: usize,
+    // values within the window that we keep sorted
+    buf: Vec<Option<T>>,
+    pub null_count: usize,
+}
+
+impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
+    pub(super) unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+    ) -> Self {
+        let mut null_count = 0;
+        let mut buf = (start..end)
+            .map(|idx| {
+                if validity.get_bit_unchecked(idx) {
+                    Some(*slice.get_unchecked(idx))
+                } else {
+                    null_count += 1;
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        sort_opt_buf(&mut buf);
+        Self {
+            slice,
+            validity,
+            last_start: start,
+            last_end: end,
+            buf,
+            null_count,
+        }
+    }
+
+    pub(super) fn window(&self) -> &[Option<T>] {
+        &self.buf
+    }
+
+    /// Update the window position by setting the `start` index and the `end` index.
+    /// # Safety
+    /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
+    ///
+    pub(super) unsafe fn update(&mut self, start: usize, end: usize) {
+        // remove elements that should leave the window
+        for idx in self.last_start..start {
+            // safety
+            // we are in bounds
+            let val = if self.validity.get_bit_unchecked(idx) {
+                Some(*self.slice.get_unchecked(idx))
+            } else {
+                self.null_count -= 1;
+                None
+            };
+
+            // safety
+            // value is present in buf
+            let remove_idx = self
+                .buf
+                .binary_search_by(|a| compare_opt_fn(*a, val))
+                .unwrap_unchecked();
+            // this is O(n) but we need a sorted window
+            self.buf.remove(remove_idx);
+        }
+        self.last_start = start;
+
+        // insert elements that enter the window, but insert them sorted
+        for idx in self.last_end..end {
+            // safety
+            // we are in bounds
+            let val = if self.validity.get_bit_unchecked(idx) {
+                Some(*self.slice.get_unchecked(idx))
+            } else {
+                self.null_count += 1;
+                None
+            };
+            let insertion_idx = self
+                .buf
+                .binary_search_by(|a| compare_opt_fn(*a, val))
+                .unwrap_or_else(|insertion_idx| insertion_idx);
+
+            // this is O(n) but we need a sorted window
+            self.buf.insert(insertion_idx, val);
+        }
+        self.last_end = end;
     }
 }
 

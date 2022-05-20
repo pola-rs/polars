@@ -1,17 +1,20 @@
 pub mod no_nulls;
 pub mod nulls;
 pub mod quantile_no_nulls;
+pub mod quantile_nulls;
 mod window;
 
 use crate::data_types::IsFloat;
-use crate::prelude::*;
+use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use num::ToPrimitive;
-use num::{NumCast, Zero};
+use num::{Bounded, Float, NumCast, One, Zero};
 use std::cmp::Ordering;
+use std::ops::AddAssign;
 use std::ops::{Add, Div, Mul, Sub};
 use std::sync::Arc;
 use window::*;
@@ -72,25 +75,6 @@ where
         None
     }
 }
-fn compare_fn<T>(a: &T, b: &T) -> Ordering
-where
-    T: PartialOrd + IsFloat + NativeType,
-{
-    if T::is_float() {
-        match (a.is_nan(), b.is_nan()) {
-            // safety: we checked nans
-            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
-            (true, true) => Ordering::Equal,
-            (true, false) => Ordering::Greater,
-            (false, true) => Ordering::Less,
-        }
-    } else {
-        // Safety:
-        // all integers are Ord
-        unsafe { a.partial_cmp(b).unwrap_unchecked() }
-    }
-}
-
 pub(super) fn sort_buf<T>(buf: &mut [T])
 where
     T: IsFloat + NativeType + PartialOrd,

@@ -131,7 +131,7 @@ mod inner_mod {
                         self,
                         options,
                         rolling::quantile_no_nulls::rolling_median,
-                        rolling::nulls::rolling_median,
+                        rolling::quantile_nulls::rolling_median,
                     )
                 }
 
@@ -158,7 +158,7 @@ mod inner_mod {
                             options.center,
                             options.weights.as_deref(),
                         ),
-                        _ => rolling::nulls::rolling_quantile(
+                        _ => rolling::quantile_nulls::rolling_quantile(
                             arr,
                             quantile,
                             interpolation,
