@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 import polars as pl
 from polars.internals.frame import DataFrame
@@ -406,3 +407,12 @@ def test_struct_comparison() -> None:
         "col1": [{"a": 3, "b": 4}],
         "col2": [{"a": 3, "b": 4}],
     }
+
+
+def test_struct_order() -> None:
+    with pytest.raises(pl.ComputeError, match="structs orders must remain the same"):
+        pl.DataFrame(
+            {
+                "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
+            }
+        )
