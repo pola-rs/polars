@@ -11,22 +11,22 @@ except ImportError:  # pragma: no cover
     # They are only redefined for documentation purposes
     # when there is no binary yet
 
-    class ArrowError:  # type: ignore
+    class ArrowError(Exception):  # type: ignore
         pass
 
-    class ComputeError:  # type: ignore
+    class ComputeError(Exception):  # type: ignore
         pass
 
-    class NoDataError:  # type: ignore
+    class NoDataError(Exception):  # type: ignore
         pass
 
-    class NotFoundError:  # type: ignore
+    class NotFoundError(Exception):  # type: ignore
         pass
 
-    class SchemaError:  # type: ignore
+    class SchemaError(Exception):  # type: ignore
         pass
 
-    class ShapeError:  # type: ignore
+    class ShapeError(Exception):  # type: ignore
         pass
 
 
