@@ -86,6 +86,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         s.chunk_lengths()
     }
 
+    /// Underlying chunks.
+    fn chunks(&self) -> &Vec<ArrayRef> {
+        self.0.chunks()
+    }
+
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
         let s = self.0.fields().first().unwrap();
@@ -105,10 +110,12 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     #[doc(hidden)]
     fn append(&mut self, other: &Series) -> Result<()> {
         let other = other.struct_()?;
+        let offset = self.chunks().len();
 
         for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
             lhs.append(rhs)?;
         }
+        self.0.update_chunks(offset);
         Ok(())
     }
 
@@ -119,6 +126,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
             lhs.extend(rhs)?;
         }
+        self.0.update_chunks(0);
         Ok(())
     }
 
@@ -294,6 +302,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn is_not_null(&self) -> BooleanChunked {
         let is_not_null = self.0.fields().iter().map(|s| s.is_not_null());
         is_not_null.reduce(|lhs, rhs| lhs.bitand(rhs)).unwrap()
+    }
+
+    fn reverse(&self) -> Series {
+        self.0.apply_fields(|s| s.reverse()).into_series()
     }
 
     fn shift(&self, periods: i64) -> Series {

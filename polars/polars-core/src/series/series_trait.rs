@@ -293,9 +293,7 @@ pub trait SeriesTrait:
     }
 
     /// Underlying chunks.
-    fn chunks(&self) -> &Vec<ArrayRef> {
-        invalid_operation_panic!(self)
-    }
+    fn chunks(&self) -> &Vec<ArrayRef>;
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {

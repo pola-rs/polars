@@ -381,3 +381,19 @@ def test_struct_concat_list() -> None:
         [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
         [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
     ]
+
+
+def test_struct_arr_reverse() -> None:
+    assert pl.DataFrame(
+        {
+            "list_struct": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}],
+                [{"a": 30, "b": 40}, {"a": 10, "b": 20}, {"a": 50, "b": 60}],
+            ],
+        }
+    ).with_columns([pl.col("list_struct").arr.reverse()]).to_dict(False) == {
+        "list_struct": [
+            [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}],
+            [{"a": 50, "b": 60}, {"a": 10, "b": 20}, {"a": 30, "b": 40}],
+        ]
+    }
