@@ -198,9 +198,11 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
-    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PySeries {
+    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PyResult<PySeries> {
         let avs = slice_extract_wrapped(&val);
-        Series::new(name, avs).into()
+        // from anyvalues is fallible
+        let s = Series::from_any_values(name, avs).map_err(PyPolarsErr::from)?;
+        Ok(s.into())
     }
 
     #[staticmethod]
