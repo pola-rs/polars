@@ -50,7 +50,8 @@ pub(crate) unsafe fn take_list_unchecked(
             vec![Arc::new(list_indices) as ArrayRef],
         ))
         .unwrap();
-    let taken = taken.chunks()[0].clone();
+
+    let taken = taken.array_ref(0).clone();
 
     let validity =
         // if null count > 0

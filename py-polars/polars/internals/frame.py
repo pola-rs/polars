@@ -3624,6 +3624,10 @@ class DataFrame(metaclass=DataFrameMetaClass):
         └──────┴─────┘
 
         """
+        if isinstance(column, list):
+            raise ValueError(
+                "`with_column` expects a single expression, not a list. Consider using `with_columns`"
+            )
         if isinstance(column, pli.Expr):
             return self.with_columns([column])
         else:
@@ -4157,9 +4161,43 @@ class DataFrame(metaclass=DataFrameMetaClass):
             self._df.melt(id_vars, value_vars, value_name, variable_name)
         )
 
+    @overload
     def partition_by(
-        self, groups: Union[str, List[str]], maintain_order: bool = True
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: Literal[False] = ...,
     ) -> List[DF]:
+        ...
+
+    @overload
+    def partition_by(
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: Literal[True],
+    ) -> Dict[Any, DF]:
+        ...
+
+    @overload
+    def partition_by(
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool,
+        *,
+        as_dict: bool,
+    ) -> Union[List[DF], Dict[Any, DF]]:
+        ...
+
+    def partition_by(
+        self: DF,
+        groups: Union[str, List[str]],
+        maintain_order: bool = True,
+        *,
+        as_dict: bool = False,
+    ) -> Union[List[DF], Dict[Any, DF]]:
         """
         Split into multiple DataFrames partitioned by groups.
 
@@ -4169,6 +4207,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Groups to partition by
         maintain_order
             Keep predictable output order. This is slower as it requires and extra sort operation.
+        as_dict
+            Return as dictionary
 
         Examples
         --------
@@ -4214,10 +4254,24 @@ class DataFrame(metaclass=DataFrameMetaClass):
         if isinstance(groups, str):
             groups = [groups]
 
-        return [
-            self._from_pydf(_df)  # type: ignore
-            for _df in self._df.partition_by(groups, maintain_order)
-        ]
+        if as_dict:
+            out: Dict[Any, DF] = dict()
+            if len(groups) == 1:
+                for _df in self._df.partition_by(groups, maintain_order):
+                    df = self._from_pydf(_df)
+                    out[df[groups][0, 0]] = df
+            else:
+                for _df in self._df.partition_by(groups, maintain_order):
+                    df = self._from_pydf(_df)
+                    out[df[groups].row(0)] = df
+
+            return out
+
+        else:
+            return [
+                self._from_pydf(_df)
+                for _df in self._df.partition_by(groups, maintain_order)
+            ]
 
     def shift(self: DF, periods: int) -> DF:
         """
@@ -5471,6 +5525,9 @@ class GroupBy(Generic[DF]):
     def get_group(self, group_value: Union[Any, Tuple[Any]]) -> DF:
         """
         Select a single group as a new DataFrame.
+
+        .. deprecated:: 0.13.32
+            Please use `partition_by`
 
         Parameters
         ----------

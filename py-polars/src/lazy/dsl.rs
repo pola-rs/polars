@@ -1175,6 +1175,13 @@ impl PyExpr {
         self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
+    fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .cumulative_eval(expr.inner, min_periods, parallel)
+            .into()
+    }
+
     fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
         let n_fields = match width_strat {
             "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
@@ -1358,8 +1365,8 @@ impl PyExpr {
         self.inner.clone().log(base).into()
     }
 
-    pub fn entropy(&self, base: f64) -> Self {
-        self.inner.clone().entropy(base).into()
+    pub fn entropy(&self, base: f64, normalize: bool) -> Self {
+        self.inner.clone().entropy(base, normalize).into()
     }
     pub fn hash(&self, seed: usize) -> Self {
         self.inner.clone().hash(seed).into()

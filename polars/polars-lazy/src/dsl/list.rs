@@ -1,3 +1,4 @@
+use crate::dsl::eval::prepare_eval_expr;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use parking_lot::Mutex;
@@ -211,18 +212,8 @@ impl ListNameSpace {
 
     /// Run any [`Expr`] on these lists elements
     #[cfg(feature = "list_eval")]
-    pub fn eval(self, mut expr: Expr, parallel: bool) -> Expr {
-        expr.mutate().apply(|e| match e {
-            Expr::Column(name) => {
-                *name = Arc::from("");
-                true
-            }
-            Expr::Nth(_) => {
-                *e = Expr::Column(Arc::from(""));
-                true
-            }
-            _ => true,
-        });
+    pub fn eval(self, expr: Expr, parallel: bool) -> Expr {
+        let expr = prepare_eval_expr(expr);
 
         let expr2 = expr.clone();
         let func = move |s: Series| {
@@ -297,7 +288,18 @@ impl ListNameSpace {
                         .unwrap_or_else(|| f.data_type().clone());
 
                     let df = Series::new_empty("", &dtype).into_frame();
-                    match df.lazy().select([expr2.clone()]).collect() {
+
+                    #[cfg(feature = "python")]
+                    let out = {
+                        use pyo3::Python;
+                        Python::with_gil(|py| {
+                            py.allow_threads(|| df.lazy().select([expr2.clone()]).collect())
+                        })
+                    };
+                    #[cfg(not(feature = "python"))]
+                    let out = { df.lazy().select([expr2.clone()]).collect() };
+
+                    match out {
                         Ok(out) => {
                             let dtype = out.get_columns()[0].dtype();
                             Field::new(f.name(), DataType::List(Box::new(dtype.clone())))

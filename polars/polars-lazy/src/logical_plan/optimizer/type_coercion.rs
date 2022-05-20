@@ -39,11 +39,29 @@ fn use_supertype(
 
             // cast literal to right type
             (AExpr::Literal(_), _) => {
-                st = type_right.clone();
+                // never cast signed to unsigned
+                if type_right.is_signed() {
+                    st = type_right.clone();
+                }
             }
             // cast literal to left type
             (_, AExpr::Literal(_)) => {
-                st = type_left.clone();
+                // never cast signed to unsigned
+                if type_left.is_signed() {
+                    st = type_left.clone();
+                }
+            }
+            // do nothing
+            _ => {}
+        }
+    } else {
+        use DataType::*;
+        match (type_left, type_right, left, right) {
+            // if the we compare a categorical to a literal string we want to cast the literal to categorical
+            #[cfg(feature = "dtype-categorical")]
+            (Categorical(_), Utf8, _, AExpr::Literal(_))
+            | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
+                st = DataType::Categorical(None);
             }
             // do nothing
             _ => {}

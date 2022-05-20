@@ -42,6 +42,12 @@ impl StructChunked {
         &self.arrow_array
     }
 
+    pub fn rechunk(&mut self) {
+        let (arrow_array, fields) = fields_to_struct_array(&self.fields);
+        self.arrow_array = arrow_array;
+        self.fields = fields;
+    }
+
     /// Does not check the lengths of the fields
     pub(crate) fn new_unchecked(name: &str, fields: &[Series]) -> Self {
         let dtype = DataType::Struct(

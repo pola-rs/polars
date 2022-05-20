@@ -85,9 +85,9 @@ lazy_regex = ["polars-lazy/regex"]
 cum_agg = ["polars-core/cum_agg", "polars-core/cum_agg"]
 rolling_window = ["polars-core/rolling_window", "polars-lazy/rolling_window"]
 interpolate = ["polars-core/interpolate", "polars-lazy/interpolate"]
-list = ["polars-core/list", "polars-lazy/list"]
+list = ["polars-lazy/list", "polars-ops/list"]
 rank = ["polars-core/rank", "polars-lazy/rank"]
-diff = ["polars-core/diff", "polars-lazy/diff"]
+diff = ["polars-core/diff", "polars-lazy/diff", "polars-ops/diff"]
 pct_change = ["polars-core/pct_change", "polars-lazy/pct_change"]
 moment = ["polars-core/moment", "polars-lazy/moment"]
 arange = ["polars-lazy/arange"]
@@ -105,10 +105,12 @@ log = ["polars-core/log", "polars-lazy/log"]
 partition_by = ["polars-core/partition_by"]
 semi_anti_join = ["polars-core/semi_anti_join"]
 list_eval = ["polars-lazy/list_eval"]
+cumulative_eval = ["polars-lazy/cumulative_eval"]
 chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
+timezones = ["polars-core/timezones"]
 
 test = [
   "lazy",
@@ -228,6 +230,8 @@ docs-selection = [
   "string_encoding",
   "product",
   "to_dummies",
+  "list_eval",
+  "cumulative_eval",
 ]
 
 bench = [

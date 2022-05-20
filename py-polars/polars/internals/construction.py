@@ -131,6 +131,18 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
     return next((v for v in values if v is not None), None)
 
 
+def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySeries":
+    """
+    Last resort conversion. AnyValues are most flexible and if they fail we go for object types
+    """
+
+    try:
+        return PySeries.new_from_anyvalues(name, values)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, False)
+
+
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
@@ -208,11 +220,8 @@ def sequence_to_pyseries(
             else:
                 try:
                     nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-                except ValueError as e:  # pragma: no cover
-                    raise ValueError(
-                        f"Cannot construct Series from sequence of {nested_dtype}."
-                    ) from e
-
+                except ValueError:  # pragma: no cover
+                    return sequence_from_anyvalue_or_object(name, values)
                 try:
                     arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
                     return arrow_to_pyseries(name, arrow_values)
@@ -226,15 +235,15 @@ def sequence_to_pyseries(
             return PySeries.new_series_list(name, [v.inner() for v in values], strict)
         elif dtype_ == PySeries:
             return PySeries.new_series_list(name, values, strict)
-
         else:
             constructor = py_type_to_constructor(dtype_)
 
             if constructor == PySeries.new_object:
-                np_constructor = numpy_type_to_constructor(dtype_)
-                if np_constructor is not None:
-                    values = np.array(values)  # type: ignore
-                    constructor = np_constructor
+                try:
+                    return PySeries.new_from_anyvalues(name, values)
+                # raised if we cannot convert to Wrap<AnyValue>
+                except RuntimeError:
+                    return sequence_from_anyvalue_or_object(name, values)
 
             return constructor(name, values, strict)
 

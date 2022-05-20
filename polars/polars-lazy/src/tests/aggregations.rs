@@ -1,4 +1,5 @@
 use super::*;
+use polars_ops::prelude::ListNameSpaceImpl;
 
 #[test]
 fn test_agg_exprs() -> Result<()> {
@@ -300,6 +301,7 @@ fn test_binary_agg_context_1() -> Result<()> {
             .otherwise(lit(90))
             .alias("vals")])
         .collect()?;
+    dbg!(&out);
 
     // if vals == 1 then sum(vals) else vals
     // [14, 90]

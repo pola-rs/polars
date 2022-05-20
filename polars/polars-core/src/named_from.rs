@@ -123,7 +123,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
 
         // inner type is also list so we need the anonymous builder
         if let DataType::List(inner) = dt {
-            let mut builder = AnonymousListBuilder::new(name, list_cap, *inner.clone());
+            let mut builder = AnonymousListBuilder::new(name, list_cap, Some(*inner.clone()));
             for s in series_slice {
                 builder.append_series(s)
             }
@@ -131,7 +131,7 @@ impl<T: AsRef<[Series]>> NamedFrom<T, ListType> for Series {
         } else {
             let values_cap = series_slice.iter().fold(0, |acc, s| acc + s.len());
 
-            let mut builder = get_list_builder(dt, values_cap, list_cap, name);
+            let mut builder = get_list_builder(dt, values_cap, list_cap, name).unwrap();
             for series in series_slice {
                 builder.append_series(series)
             }
@@ -154,7 +154,7 @@ impl<T: AsRef<[Option<Series>]>> NamedFrom<T, [Option<Series>]> for Series {
             .expect("cannot create List Series from a slice of nulls")
             .dtype();
 
-        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name);
+        let mut builder = get_list_builder(dt, values_cap, series_slice.len(), name).unwrap();
         for series in series_slice {
             builder.append_opt_series(series.as_ref())
         }

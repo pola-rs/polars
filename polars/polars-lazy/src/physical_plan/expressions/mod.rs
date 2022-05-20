@@ -6,6 +6,7 @@ mod cast;
 mod column;
 mod count;
 mod filter;
+mod group_iter;
 mod is_not_null;
 mod is_null;
 mod literal;
@@ -381,6 +382,7 @@ impl<'a> AggregationContext<'a> {
                 }
 
                 let out = s.agg_list(&self.groups);
+                self.state = AggState::AggregatedList(out.clone());
 
                 if !self.sorted {
                     self.sorted = true;
@@ -416,6 +418,17 @@ impl<'a> AggregationContext<'a> {
             s.agg_list(&self.groups)
         } else {
             self.aggregated()
+        }
+    }
+
+    // If a binary or ternary function has both of these branches true, it should
+    // flatten the list
+    fn arity_should_explode(&self) -> bool {
+        use AggState::*;
+        match self.agg_state() {
+            Literal(s) => s.len() == 1,
+            AggregatedFlat(_) => true,
+            _ => false,
         }
     }
 

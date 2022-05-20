@@ -68,21 +68,24 @@ where
                 "asof join must not have null values in 'on' arguments".into(),
             ));
         }
+        // cont_slice requires a single chunk
+        let ca = self.rechunk();
+        let other = other.rechunk();
 
         let out = match strategy {
             AsofStrategy::Forward => match tolerance {
-                None => join_asof_forward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
                 Some(tolerance) => {
                     let tolerance = tolerance.extract::<T::Native>().unwrap();
                     join_asof_forward_with_tolerance(
-                        self.cont_slice().unwrap(),
+                        ca.cont_slice().unwrap(),
                         other.cont_slice().unwrap(),
                         tolerance,
                     )
                 }
             },
             AsofStrategy::Backward => match tolerance {
-                None => join_asof_backward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
                 Some(tolerance) => {
                     let tolerance = tolerance.extract::<T::Native>().unwrap();
                     join_asof_backward_with_tolerance(

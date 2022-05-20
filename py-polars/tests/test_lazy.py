@@ -1258,3 +1258,27 @@ def test_lazy_schema() -> None:
         }
     ).lazy()
     assert lf.dtypes == [pl.Int64, pl.Float64, pl.Utf8]
+
+
+def test_deadlocks_3409() -> None:
+    assert (
+        pl.DataFrame(
+            {
+                "col1": [[1, 2, 3]],
+            }
+        )
+        .with_columns([pl.col("col1").arr.eval(pl.element().apply(lambda x: x))])
+        .to_dict(False)
+        == {"col1": [[1, 2, 3]]}
+    )
+
+    assert (
+        pl.DataFrame(
+            {
+                "col1": [1, 2, 3],
+            }
+        )
+        .with_columns([pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))])
+        .to_dict(False)
+        == {"col1": [0, 0, 0]}
+    )

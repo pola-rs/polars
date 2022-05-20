@@ -140,10 +140,15 @@ impl DataFrame {
                 .collect::<Vec<_>>();
 
             let row_index = match count {
-                0 => Some(vec![Series::new(
-                    &index[0],
-                    row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
-                )]),
+                0 => {
+                    let s = Series::new(
+                        &index[0],
+                        row_to_idx.into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
+                    );
+                    // restore logical type
+                    let s = s.cast(index_s.dtype()).unwrap();
+                    Some(vec![s])
+                }
                 _ => None,
             };
 
@@ -186,7 +191,7 @@ impl DataFrame {
                         .iter()
                         .enumerate()
                         .map(|(i, name)| {
-                            Series::new(
+                            let s = Series::new(
                                 name,
                                 row_to_idx
                                     .iter()
@@ -195,7 +200,9 @@ impl DataFrame {
                                         unsafe { k.get_unchecked(i).clone() }
                                     })
                                     .collect::<Vec<_>>(),
-                            )
+                            );
+                            // restore logical type
+                            s.cast(index_s[i].dtype()).unwrap()
                         })
                         .collect::<Vec<_>>(),
                 ),

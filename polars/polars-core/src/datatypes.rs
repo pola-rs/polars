@@ -141,17 +141,38 @@ pub trait NumericNative:
     + FromPrimitive
     + NativeArithmetics
 {
+    type POLARSTYPE;
 }
-impl NumericNative for i8 {}
-impl NumericNative for i16 {}
-impl NumericNative for i32 {}
-impl NumericNative for i64 {}
-impl NumericNative for u8 {}
-impl NumericNative for u16 {}
-impl NumericNative for u32 {}
-impl NumericNative for u64 {}
-impl NumericNative for f32 {}
-impl NumericNative for f64 {}
+impl NumericNative for i8 {
+    type POLARSTYPE = Int8Type;
+}
+impl NumericNative for i16 {
+    type POLARSTYPE = Int16Type;
+}
+impl NumericNative for i32 {
+    type POLARSTYPE = Int32Type;
+}
+impl NumericNative for i64 {
+    type POLARSTYPE = Int64Type;
+}
+impl NumericNative for u8 {
+    type POLARSTYPE = UInt8Type;
+}
+impl NumericNative for u16 {
+    type POLARSTYPE = UInt16Type;
+}
+impl NumericNative for u32 {
+    type POLARSTYPE = UInt32Type;
+}
+impl NumericNative for u64 {
+    type POLARSTYPE = UInt64Type;
+}
+impl NumericNative for f32 {
+    type POLARSTYPE = Float32Type;
+}
+impl NumericNative for f64 {
+    type POLARSTYPE = Float64Type;
+}
 
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
     type Native: NumericNative;
@@ -678,6 +699,12 @@ pub enum DataType {
     Unknown,
 }
 
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown
+    }
+}
+
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state)
@@ -748,6 +775,21 @@ impl DataType {
             DataType::Categorical(_) => false,
             _ => true,
         }
+    }
+    pub fn is_signed(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => true,
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => true,
+            DataType::Int32 | DataType::Int64 => true,
+            _ => false,
+        }
+    }
+    pub fn is_unsigned(&self) -> bool {
+        self.is_numeric() && !self.is_signed()
     }
 
     /// Convert to an Arrow data type.

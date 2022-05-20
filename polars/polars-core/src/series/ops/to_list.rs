@@ -4,11 +4,17 @@ use polars_arrow::kernels::list::array_to_unit_list;
 use std::borrow::Cow;
 
 fn reshape_fast_path(name: &str, s: &Series) -> Series {
-    let chunks = s
-        .chunks()
-        .iter()
-        .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
-        .collect::<Vec<_>>();
+    let chunks = match s.dtype() {
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => {
+            vec![Arc::new(array_to_unit_list(s.array_ref(0).clone())) as ArrayRef]
+        }
+        _ => s
+            .chunks()
+            .iter()
+            .map(|arr| Arc::new(array_to_unit_list(arr.clone())) as ArrayRef)
+            .collect::<Vec<_>>(),
+    };
 
     let mut ca = ListChunked::from_chunks(name, chunks);
     ca.set_fast_explode();
@@ -21,7 +27,7 @@ impl Series {
     /// `[1, 2, 3]` becomes `[[1, 2, 3]]`
     pub fn to_list(&self) -> Result<ListChunked> {
         let s = self.rechunk();
-        let values = &s.chunks()[0];
+        let values = s.array_ref(0);
 
         let offsets = vec![0i64, values.len() as i64];
         let inner_type = self.dtype();
@@ -98,7 +104,7 @@ impl Series {
                 }
 
                 let mut builder =
-                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name());
+                    get_list_builder(s_ref.dtype(), s_ref.len(), rows as usize, self.name())?;
 
                 let mut offset = 0i64;
                 for _ in 0..rows {
@@ -124,7 +130,7 @@ mod test {
     fn test_to_list() -> Result<()> {
         let s = Series::new("a", &[1, 2, 3]);
 
-        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name());
+        let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name())?;
         builder.append_series(&s);
         let expected = builder.finish();
 
