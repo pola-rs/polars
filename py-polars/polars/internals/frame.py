@@ -611,7 +611,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 sample_size=sample_size,
             )
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"No such file or directory: {file}") from e
+            raise FileNotFoundError(f"No such file or directory: {file!r}") from e
         return self
 
     @classmethod
