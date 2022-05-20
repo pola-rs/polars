@@ -3,6 +3,7 @@ use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::compute::cast::CastOptions;
 use arrow::compute::{cast::cast, temporal};
 use arrow::error::Result as ArrowResult;
+use polars_arrow::export::arrow;
 use polars_core::prelude::*;
 
 fn cast_and_apply<

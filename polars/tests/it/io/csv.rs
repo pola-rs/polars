@@ -949,8 +949,23 @@ fn test_escaping_quotes() -> Result<()> {
 fn test_header_only() -> Result<()> {
     let csv = "a,b,c";
     let file = Cursor::new(csv);
+
+    // no header
     let df = CsvReader::new(file).has_header(false).finish()?;
     assert_eq!(df.shape(), (1, 3));
+
+    // has header
+    for csv in &["x,y,z", "x,y,z\n"] {
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(true).finish()?;
+
+        assert_eq!(df.shape(), (0, 3));
+        assert_eq!(
+            df.dtypes(),
+            &[DataType::Utf8, DataType::Utf8, DataType::Utf8]
+        );
+    }
+
     Ok(())
 }
 

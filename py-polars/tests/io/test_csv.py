@@ -414,3 +414,11 @@ def quoting_round_trip() -> None:
     read_df = pl.read_csv(f)
 
     assert read_df.frame_equal(df)
+
+
+def fallback_chrono_parser() -> None:
+    data = """date_1,date_2
+    2021-01-01,2021-1-1
+    2021-02-02,2021-2-2
+    2021-10-10,2021-10-10"""
+    assert pl.read_csv(data.encode(), parse_dates=True).null_count().row(0) == (0, 0)

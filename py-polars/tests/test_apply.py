@@ -1,3 +1,4 @@
+import typing
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import List, Optional
@@ -55,6 +56,7 @@ def test_apply_return_py_object() -> None:
     assert out.shape == (1, 2)
 
 
+@typing.no_type_check
 def test_agg_objects() -> None:
     df = pl.DataFrame(
         {
@@ -64,8 +66,16 @@ def test_agg_objects() -> None:
         }
     )
 
+    class Foo:
+        def __init__(self, payload):
+            self.payload = payload
+
     out = df.groupby("groups").agg(
-        [pl.apply([pl.col("dates"), pl.col("names")], lambda s: dict(zip(s[0], s[1])))]
+        [
+            pl.apply(
+                [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1])))
+            )
+        ]
     )
     assert out.dtypes == [pl.Utf8, pl.Object]
 

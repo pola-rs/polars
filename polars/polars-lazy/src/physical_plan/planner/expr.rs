@@ -35,6 +35,8 @@ impl DefaultPlanner {
                 if apply_columns.is_empty() {
                     if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Literal(_))) {
                         apply_columns.push(Arc::from("literal"))
+                    } else if has_aexpr(function, expr_arena, |e| matches!(e, AExpr::Count)) {
+                        apply_columns.push(Arc::from("count"))
                     } else {
                         let e = node_to_expr(function, expr_arena);
                         return Err(PolarsError::ComputeError(
