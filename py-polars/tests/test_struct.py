@@ -2,7 +2,6 @@ from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
-import pytest
 
 import polars as pl
 from polars.internals.frame import DataFrame
@@ -131,25 +130,6 @@ def test_value_counts_expr() -> None:
         {"id": "b", "counts": 2},
         {"id": "a", "counts": 1},
     ]
-
-
-def test_struct_comparison() -> None:
-    s1 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
-    s2 = pl.DataFrame({"b": [0, 0, 0]}).to_struct("a")
-    s3 = pl.DataFrame({"c": [1, 2, 3]}).to_struct("a")
-    s4 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
-
-    pl.testing.assert_series_equal(s1, s1)
-    pl.testing.assert_series_equal(s1, s4)
-
-    with pytest.raises(AssertionError):
-        pl.testing.assert_series_equal(s1, s2)
-
-    with pytest.raises(AssertionError):
-        pl.testing.assert_series_equal(s1, s3)
-
-    assert (s1 != s2).all() is True
-    assert (s1 == s4).all() is True
 
 
 def test_nested_struct() -> None:
@@ -396,4 +376,33 @@ def test_struct_arr_reverse() -> None:
             [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}],
             [{"a": 50, "b": 60}, {"a": 10, "b": 20}, {"a": 30, "b": 40}],
         ]
+    }
+
+
+def test_struct_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+    # floats w/ ints
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 1.0, "b": 2}, {"a": 3.0, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 2, "b": 2}, {"a": 3, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).to_dict(False) == {
+        "col1": [{"a": 3, "b": 4}],
+        "col2": [{"a": 3, "b": 4}],
     }
