@@ -583,32 +583,35 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
         projection, columns = handle_projection_columns(columns)
 
-        self._df = PyDataFrame.read_csv(
-            file,
-            infer_schema_length,
-            batch_size,
-            has_header,
-            ignore_errors,
-            n_rows,
-            skip_rows,
-            projection,
-            sep,
-            rechunk,
-            columns,
-            encoding,
-            n_threads,
-            path,
-            dtype_list,
-            dtype_slice,
-            low_memory,
-            comment_char,
-            quote_char,
-            processed_null_values,
-            parse_dates,
-            skip_rows_after_header,
-            _prepare_row_count_args(row_count_name, row_count_offset),
-            sample_size=sample_size,
-        )
+        try:
+            self._df = PyDataFrame.read_csv(
+                file,
+                infer_schema_length,
+                batch_size,
+                has_header,
+                ignore_errors,
+                n_rows,
+                skip_rows,
+                projection,
+                sep,
+                rechunk,
+                columns,
+                encoding,
+                n_threads,
+                path,
+                dtype_list,
+                dtype_slice,
+                low_memory,
+                comment_char,
+                quote_char,
+                processed_null_values,
+                parse_dates,
+                skip_rows_after_header,
+                _prepare_row_count_args(row_count_name, row_count_offset),
+                sample_size=sample_size,
+            )
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"No such file or directory: {file}") from e
         return self
 
     @classmethod
