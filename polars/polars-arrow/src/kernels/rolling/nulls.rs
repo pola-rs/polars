@@ -1,6 +1,6 @@
 use super::*;
 use crate::data_types::IsFloat;
-use crate::kernels::rolling::no_nulls::sort_buf;
+use crate::kernels::rolling::quantile_no_nulls::compute_quantile2;
 use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
@@ -246,7 +246,7 @@ where
     if null_count == 0 {
         buf.extend_from_slice(values);
         sort_buf(buf);
-        return Some(no_nulls::compute_quantile2(buf, quantile, interpolation));
+        return Some(compute_quantile2(buf, quantile, interpolation));
     } else if (values.len() - null_count) < min_periods {
         return None;
     }
