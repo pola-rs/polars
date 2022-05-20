@@ -1,7 +1,9 @@
+mod mean_no_nulls;
 pub mod no_nulls;
 pub mod nulls;
-pub mod quantile_no_nulls;
-pub mod quantile_nulls;
+mod quantile_no_nulls;
+mod quantile_nulls;
+mod sum_min_max_no_nulls;
 mod window;
 
 use crate::data_types::IsFloat;
@@ -14,8 +16,7 @@ use arrow::types::NativeType;
 use num::ToPrimitive;
 use num::{Bounded, Float, NumCast, One, Zero};
 use std::cmp::Ordering;
-use std::ops::AddAssign;
-use std::ops::{Add, Div, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 use std::sync::Arc;
 use window::*;
 
@@ -24,6 +25,44 @@ type End = usize;
 type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
+
+fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
+
+fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Greater,
+            (false, true) => Ordering::Less,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
     (i.saturating_sub(window_size - 1), i + 1)
