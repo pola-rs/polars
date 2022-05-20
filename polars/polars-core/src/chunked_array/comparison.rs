@@ -908,25 +908,31 @@ impl ChunkCompare<&StructChunked> for StructChunked {
     }
 
     fn equal(&self, rhs: &StructChunked) -> BooleanChunked {
-        if self.len() != rhs.len() {
+        use std::ops::BitAnd;
+        if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {
             BooleanChunked::full("", false, self.len())
         } else {
-            let equal_count: usize = self
-                .fields()
+            self.fields()
                 .iter()
                 .zip(rhs.fields().iter())
-                .map(|(l, r)| l.series_equal(r) as usize)
-                .sum();
-            if equal_count == self.fields().len() {
-                BooleanChunked::full("", true, self.len())
-            } else {
-                BooleanChunked::full("", false, self.len())
-            }
+                .map(|(l, r)| l.equal(r).unwrap())
+                .reduce(|lhs, rhs| lhs.bitand(rhs))
+                .unwrap()
         }
     }
 
     fn not_equal(&self, rhs: &StructChunked) -> BooleanChunked {
-        self.equal(rhs).not()
+        use std::ops::BitOr;
+        if self.len() != rhs.len() || self.fields().len() != rhs.fields().len() {
+            BooleanChunked::full("", false, self.len())
+        } else {
+            self.fields()
+                .iter()
+                .zip(rhs.fields().iter())
+                .map(|(l, r)| l.not_equal(r).unwrap())
+                .reduce(|lhs, rhs| lhs.bitor(rhs))
+                .unwrap()
+        }
     }
 
     // following are not implemented because gt, lt comparison of series don't make sense
