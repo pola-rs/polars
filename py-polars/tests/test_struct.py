@@ -133,25 +133,6 @@ def test_value_counts_expr() -> None:
     ]
 
 
-def test_struct_comparison() -> None:
-    s1 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
-    s2 = pl.DataFrame({"b": [0, 0, 0]}).to_struct("a")
-    s3 = pl.DataFrame({"c": [1, 2, 3]}).to_struct("a")
-    s4 = pl.DataFrame({"b": [1, 2, 3]}).to_struct("a")
-
-    pl.testing.assert_series_equal(s1, s1)
-    pl.testing.assert_series_equal(s1, s4)
-
-    with pytest.raises(AssertionError):
-        pl.testing.assert_series_equal(s1, s2)
-
-    with pytest.raises(AssertionError):
-        pl.testing.assert_series_equal(s1, s3)
-
-    assert (s1 != s2).all() is True
-    assert (s1 == s4).all() is True
-
-
 def test_nested_struct() -> None:
     df = pl.DataFrame({"d": [1, 2, 3], "e": ["foo", "bar", "biz"]})
     # Nest the datafame
@@ -278,3 +259,160 @@ def test_sort_df_with_list_struct() -> None:
         "a": [1],
         "b": [[{"c": 1}]],
     }
+
+
+def test_struct_list_head_tail() -> None:
+    assert pl.DataFrame(
+        {
+            "list_of_struct": [
+                [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
+                [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
+            ]
+        }
+    ).with_columns(
+        [
+            pl.col("list_of_struct").arr.head(1).alias("head"),
+            pl.col("list_of_struct").arr.tail(1).alias("tail"),
+        ]
+    ).to_dict(
+        False
+    ) == {
+        "list_of_struct": [
+            [{"a": 1, "b": 4}, {"a": 3, "b": 6}],
+            [{"a": 10, "b": 40}, {"a": 20, "b": 50}, {"a": 30, "b": 60}],
+        ],
+        "head": [[{"a": 1, "b": 4}], [{"a": 10, "b": 40}]],
+        "tail": [[{"a": 3, "b": 6}], [{"a": 30, "b": 60}]],
+    }
+
+
+def test_struct_agg_list() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["a", "a", "b", "b", "b"],
+            "col1": [
+                {"x": 1, "y": 100},
+                {"x": 2, "y": 200},
+                {"x": 3, "y": 300},
+                {"x": 4, "y": 400},
+                {"x": 5, "y": 500},
+            ],
+        }
+    )
+
+    assert df.groupby("group", maintain_order=True).agg_list().to_dict(False) == {
+        "group": ["a", "b"],
+        "col1": [
+            [{"x": 1, "y": 100}, {"x": 2, "y": 200}],
+            [{"x": 3, "y": 300}, {"x": 4, "y": 400}, {"x": 5, "y": 500}],
+        ],
+    }
+
+
+def test_struct_empty_list_creation() -> None:
+    payload = [[], [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], []]
+
+    assert pl.DataFrame({"list_struct": payload}).to_dict(False) == {
+        "list_struct": [[], [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], []]
+    }
+
+    # pop first
+    payload = payload[1:]
+    assert pl.DataFrame({"list_struct": payload}).to_dict(False) == {
+        "list_struct": [[{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}], []]
+    }
+
+
+def test_struct_arr_methods() -> None:
+    df = pl.DataFrame(
+        {
+            "list_struct": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}],
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+                [{"a": 1, "b": 2}],
+            ],
+        }
+    )
+    assert df.select([pl.col("list_struct").arr.first()]).to_dict(False) == {
+        "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
+    }
+    assert df.select([pl.col("list_struct").arr.last()]).to_dict(False) == {
+        "list_struct": [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}]
+    }
+    assert df.select([pl.col("list_struct").arr.get(0)]).to_dict(False) == {
+        "list_struct": [{"a": 1, "b": 2}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]
+    }
+
+
+def test_struct_concat_list() -> None:
+    assert pl.DataFrame(
+        {
+            "list_struct1": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+                [{"a": 1, "b": 2}],
+            ],
+            "list_struct2": [
+                [{"a": 6, "b": 7}, {"a": 8, "b": 9}],
+                [{"a": 6, "b": 7}],
+            ],
+        }
+    ).with_columns([pl.col("list_struct1").arr.concat("list_struct2").alias("result")])[
+        "result"
+    ].to_list() == [
+        [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 6, "b": 7}, {"a": 8, "b": 9}],
+        [{"a": 1, "b": 2}, {"a": 6, "b": 7}],
+    ]
+
+
+def test_struct_arr_reverse() -> None:
+    assert pl.DataFrame(
+        {
+            "list_struct": [
+                [{"a": 1, "b": 2}, {"a": 3, "b": 4}, {"a": 5, "b": 6}],
+                [{"a": 30, "b": 40}, {"a": 10, "b": 20}, {"a": 50, "b": 60}],
+            ],
+        }
+    ).with_columns([pl.col("list_struct").arr.reverse()]).to_dict(False) == {
+        "list_struct": [
+            [{"a": 5, "b": 6}, {"a": 3, "b": 4}, {"a": 1, "b": 2}],
+            [{"a": 50, "b": 60}, {"a": 10, "b": 20}, {"a": 30, "b": 40}],
+        ]
+    }
+
+
+def test_struct_comparison() -> None:
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+    # floats w/ ints
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 1.0, "b": 2}, {"a": 3.0, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).shape == (2, 2)
+
+    df = pl.DataFrame(
+        {
+            "col1": [{"a": 1, "b": 2}, {"a": 3, "b": 4}],
+            "col2": [{"a": 2, "b": 2}, {"a": 3, "b": 4}],
+        }
+    )
+    assert df.filter(pl.col("col1") == pl.col("col2")).to_dict(False) == {
+        "col1": [{"a": 3, "b": 4}],
+        "col2": [{"a": 3, "b": 4}],
+    }
+
+
+def test_struct_order() -> None:
+    with pytest.raises(pl.ComputeError, match="structs orders must remain the same"):
+        pl.DataFrame(
+            {
+                "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
+            }
+        )

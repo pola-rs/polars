@@ -135,7 +135,7 @@ pub fn js_arr_to_list(name: &str, arr: &Array, dtype: &DataType) -> napi::Result
             builder.finish().into_series()
         }
         DataType::Datetime(_, _) => {
-            let mut builder = ListPrimitiveChunkedBuilder::<i64>::new(
+            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 name,
                 len as usize,
                 (len as usize) * 5,

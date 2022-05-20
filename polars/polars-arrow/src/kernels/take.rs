@@ -26,11 +26,10 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
         }
         // TODO! implement proper unchecked version
         #[cfg(feature = "compute")]
-        Boolean => {
+        _ => {
             use arrow::compute::take::take;
             Arc::from(take(arr, idx).unwrap())
         }
-        _ => unimplemented!(),
     }
 }
 

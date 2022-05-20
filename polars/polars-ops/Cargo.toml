@@ -10,6 +10,7 @@ description = "More operations on polars data structures"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+polars-arrow = { version = "0.21.1", path = "../polars-arrow", default-features = false }
 polars-core = { version = "0.21.1", path = "../polars-core", features = ["private"], default-features = false }
 
 [features]
@@ -22,4 +23,6 @@ dtype-struct = ["polars-core/dtype-struct"]
 dtype-u8 = ["polars-core/dtype-u8"]
 object = ["polars-core/object"]
 to_dummies = []
-list_to_struct = ["polars-core/list", "polars-core/dtype-struct"]
+list_to_struct = ["polars-core/dtype-struct", "list"]
+list = []
+diff = []
