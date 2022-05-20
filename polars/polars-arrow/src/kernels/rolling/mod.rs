@@ -27,7 +27,26 @@ type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
 
-fn compare_fn<T>(a: &T, b: &T) -> Ordering
+fn compare_fn_nan_min<T>(a: &T, b: &T) -> Ordering
+where
+    T: PartialOrd + IsFloat + NativeType,
+{
+    if T::is_float() {
+        match (a.is_nan(), b.is_nan()) {
+            // safety: we checked nans
+            (false, false) => unsafe { a.partial_cmp(b).unwrap_unchecked() },
+            (true, true) => Ordering::Equal,
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+        }
+    } else {
+        // Safety:
+        // all integers are Ord
+        unsafe { a.partial_cmp(b).unwrap_unchecked() }
+    }
+}
+
+fn compare_fn_nan_max<T>(a: &T, b: &T) -> Ordering
 where
     T: PartialOrd + IsFloat + NativeType,
 {

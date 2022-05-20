@@ -18,7 +18,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let min = *slice[start..end]
             .iter()
-            .min_by(|a, b| compare_fn(*a, *b))
+            .min_by(|a, b| compare_fn_nan_min(*a, *b))
             .unwrap();
         Self {
             slice,
@@ -35,8 +35,13 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
             // safety
             // we are in bounds
             let leaving_value = self.slice.get_unchecked(idx);
-            // if the leaving value is the max value, we need to recompute the max.
-            if matches!(compare_fn(leaving_value, &self.min), Ordering::Equal) {
+
+            // if the leaving value is the
+            // max value, we need to recompute the max.
+            if matches!(
+                compare_fn_nan_min(leaving_value, &self.min),
+                Ordering::Equal
+            ) {
                 recompute_min = true;
                 break;
             }
@@ -49,7 +54,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
                 .slice
                 .get_unchecked(start..end)
                 .iter()
-                .min_by(|a, b| compare_fn(*a, *b))
+                .min_by(|a, b| compare_fn_nan_min(*a, *b))
                 .unwrap();
         }
         // the max has not left the window, so we only check
@@ -59,9 +64,9 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
                 .slice
                 .get_unchecked(self.last_end..end)
                 .iter()
-                .min_by(|a, b| compare_fn(*a, *b))
+                .min_by(|a, b| compare_fn_nan_min(*a, *b))
                 .unwrap_unchecked();
-            if matches!(compare_fn(min_entering, &self.min), Ordering::Less) {
+            if matches!(compare_fn_nan_min(min_entering, &self.min), Ordering::Less) {
                 self.min = *min_entering
             }
         }
@@ -81,7 +86,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let max = *slice[start..end]
             .iter()
-            .max_by(|a, b| compare_fn(*a, *b))
+            .max_by(|a, b| compare_fn_nan_max(*a, *b))
             .unwrap();
         Self {
             slice,
@@ -99,7 +104,10 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
             // we are in bounds
             let leaving_value = self.slice.get_unchecked(idx);
             // if the leaving value is the max value, we need to recompute the max.
-            if matches!(compare_fn(leaving_value, &self.max), Ordering::Equal) {
+            if matches!(
+                compare_fn_nan_max(leaving_value, &self.max),
+                Ordering::Equal
+            ) {
                 recompute_max = true;
                 break;
             }
@@ -112,7 +120,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
                 .slice
                 .get_unchecked(start..end)
                 .iter()
-                .max_by(|a, b| compare_fn(*a, *b))
+                .max_by(|a, b| compare_fn_nan_max(*a, *b))
                 .unwrap_unchecked();
         }
         // the max has not left the window, so we only check
@@ -122,9 +130,12 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
                 .slice
                 .get_unchecked(self.last_end..end)
                 .iter()
-                .max_by(|a, b| compare_fn(*a, *b))
+                .max_by(|a, b| compare_fn_nan_max(*a, *b))
                 .unwrap_unchecked();
-            if matches!(compare_fn(max_entering, &self.max), Ordering::Greater) {
+            if matches!(
+                compare_fn_nan_max(max_entering, &self.max),
+                Ordering::Greater
+            ) {
                 self.max = *max_entering
             }
         }
@@ -376,5 +387,46 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(5.0), Some(5.0), Some(5.0)]);
+
+        // test nan handling.
+        let values = &[1.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
+        let out = rolling_min(values, 3, 3, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        // we cannot compare nans, so we compare the string values
+        assert_eq!(
+            format!("{:?}", out.as_slice()),
+            format!(
+                "{:?}",
+                &[
+                    None,
+                    None,
+                    Some(1.0),
+                    Some(f64::nan()),
+                    Some(f64::nan()),
+                    Some(f64::nan()),
+                    Some(5.0)
+                ]
+            )
+        );
+
+        let out = rolling_max(values, 3, 3, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(
+            format!("{:?}", out.as_slice()),
+            format!(
+                "{:?}",
+                &[
+                    None,
+                    None,
+                    Some(3.0),
+                    Some(f64::nan()),
+                    Some(f64::nan()),
+                    Some(f64::nan()),
+                    Some(7.0)
+                ]
+            )
+        );
     }
 }

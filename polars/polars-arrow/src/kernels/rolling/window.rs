@@ -35,7 +35,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
             // value is present in buf
             let remove_idx = self
                 .buf
-                .binary_search_by(|a| compare_fn(a, val))
+                .binary_search_by(|a| compare_fn_nan_max(a, val))
                 .unwrap_unchecked();
             // this is O(n) but we need a sorted window
             self.buf.remove(remove_idx);
@@ -49,7 +49,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
             let val = *self.slice.get_unchecked(idx);
             let insertion_idx = self
                 .buf
-                .binary_search_by(|a| compare_fn(a, &val))
+                .binary_search_by(|a| compare_fn_nan_max(a, &val))
                 .unwrap_or_else(|insertion_idx| insertion_idx);
 
             // this is O(n) but we need a sorted window
