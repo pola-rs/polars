@@ -44,6 +44,7 @@ from polars.datatypes import (
 from polars.exceptions import (
     ArrowError,
     ComputeError,
+    DuplicateError,
     NoDataError,
     NotFoundError,
     SchemaError,

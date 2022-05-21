@@ -148,7 +148,12 @@ def test_nested_struct() -> None:
 
 
 def test_eager_struct() -> None:
-    s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
+    with pytest.raises(pl.DuplicateError, match="multiple fields with name '' found"):
+        s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
+
+    s = pl.struct(
+        [pl.Series("a", [1, 2, 3]), pl.Series("b", ["a", "b", "c"])], eager=True
+    )
     assert s.dtype == pl.Struct
 
 
@@ -416,3 +421,46 @@ def test_struct_order() -> None:
                 "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
             }
         )
+
+
+def test_struct_schema_on_append_extend_3452() -> None:
+    housing1_data = [
+        {
+            "city": "Chicago",
+            "address": "100 Main St",
+            "price": 250000,
+            "nbr_bedrooms": 3,
+        },
+        {
+            "city": "New York",
+            "address": "100 First Ave",
+            "price": 450000,
+            "nbr_bedrooms": 2,
+        },
+    ]
+
+    housing2_data = [
+        {
+            "address": "303 Mockingbird Lane",
+            "city": "Los Angeles",
+            "nbr_bedrooms": 2,
+            "price": 450000,
+        },
+        {
+            "address": "404 Moldave Dr",
+            "city": "Miami Beach",
+            "nbr_bedrooms": 1,
+            "price": 250000,
+        },
+    ]
+    housing1, housing2 = pl.Series(housing1_data), pl.Series(housing2_data)
+    with pytest.raises(
+        pl.SchemaError,
+        match="cannot append field with name: address to struct with field name: city, please check your schema",
+    ):
+        housing1.append(housing2, append_chunks=True)
+    with pytest.raises(
+        pl.SchemaError,
+        match="cannot extend field with name: address to struct with field name: city, please check your schema",
+    ):
+        housing1.append(housing2, append_chunks=False)

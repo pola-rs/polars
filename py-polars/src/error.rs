@@ -34,7 +34,7 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                 PolarsError::Io(err) => PyIOError::new_err(err.to_string()),
                 PolarsError::InvalidOperation(err) => PyValueError::new_err(err.to_string()),
                 PolarsError::ArrowError(err) => ArrowErrorException::new_err(format!("{:?}", err)),
-                _ => default(),
+                PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),
             },
             Arrow(err) => ArrowErrorException::new_err(format!("{:?}", err)),
             _ => default(),
@@ -59,3 +59,4 @@ create_exception!(exceptions, NoDataError, PyException);
 create_exception!(exceptions, ArrowErrorException, PyException);
 create_exception!(exceptions, ShapeError, PyException);
 create_exception!(exceptions, SchemaError, PyException);
+create_exception!(exceptions, DuplicateError, PyException);
