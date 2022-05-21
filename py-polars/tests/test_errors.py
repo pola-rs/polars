@@ -49,3 +49,11 @@ def test_not_found_error() -> None:
 def test_string_numeric_comp_err() -> None:
     with pytest.raises(pl.ComputeError, match="cannot compare Utf8 with numeric data"):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
+
+
+def test_panic_exception() -> None:
+    with pytest.raises(
+        pl.PanicException,
+        match=r"""this operation is not implemented/valid for this dtype: .*""",
+    ):
+        pl.struct(pl.Series("a", [1, 2, 3]), eager=True).sort()

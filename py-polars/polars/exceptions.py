@@ -5,6 +5,7 @@ try:
         DuplicateError,
         NoDataError,
         NotFoundError,
+        PanicException,
         SchemaError,
         ShapeError,
     )
@@ -33,6 +34,9 @@ except ImportError:  # pragma: no cover
     class DuplicateError(Exception):  # type: ignore
         pass
 
+    class PanicException(Exception):  # type: ignore
+        pass
+
 
 __all__ = [
     "ArrowError",
@@ -42,4 +46,5 @@ __all__ = [
     "SchemaError",
     "ShapeError",
     "DuplicateError",
+    "PanicException",
 ]
