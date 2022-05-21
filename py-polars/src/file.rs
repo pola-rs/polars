@@ -212,7 +212,12 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
         } else {
             match File::open(str_slice) {
                 Ok(file) => BufReader::new(file),
-                Err(e) => return Err(PyErr::new::<PyFileNotFoundError, _>(format!("No such file or directory: {}", str_slice),))
+                Err(e) => {
+                    return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
+                        "No such file or directory: {}",
+                        str_slice
+                    )))
+                }
             }
         };
         Ok(EitherRustPythonFile::Rust(f))
@@ -245,7 +250,12 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let p = resolve_homedir(p);
         let f = match File::open(&p) {
             Ok(file) => file,
-            Err(e) => return Err(PyErr::new::<PyFileNotFoundError, _>(format!("No such file or directory: {}", s),))
+            Err(e) => {
+                return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
+                    "No such file or directory: {}",
+                    s
+                )))
+            }
         };
         Ok(Box::new(f))
     }
