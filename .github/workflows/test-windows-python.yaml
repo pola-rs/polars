@@ -28,7 +28,7 @@ jobs:
         shell: bash
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-04-01 && make build-and-test-no-venv
+          cd py-polars && rustup override set nightly-2022-05-01 && make build-and-test-no-venv
           cargo clippy
       # test if we can import polars without any requirements
       - name: Import polars

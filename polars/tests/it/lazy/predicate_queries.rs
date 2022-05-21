@@ -1,4 +1,5 @@
 use super::*;
+use polars_core::{with_string_cache, SINGLE_LOCK};
 
 #[test]
 fn test_predicate_after_renaming() -> Result<()> {
@@ -135,5 +136,31 @@ fn test_filter_block_join() -> Result<()> {
         .collect()?;
     assert_eq!(out.shape(), (1, 3));
 
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
+fn test_is_in_categorical_3420() -> Result<()> {
+    let df = df![
+        "a" => ["a", "b", "c", "d", "e"],
+        "b" => [1, 2, 3, 4, 5]
+    ]?;
+
+    let _guard = SINGLE_LOCK.lock();
+
+    let out: Result<_> = with_string_cache(|| {
+        let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
+        df.lazy()
+            .with_column(col("a").strict_cast(DataType::Categorical(None)))
+            .filter(col("a").is_in(lit(s).alias("x")))
+            .collect()
+    });
+    let mut expected = df![
+        "a" => ["a", "b", "c"],
+        "b" => [1, 2, 3]
+    ]?;
+    expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
+    assert!(out?.frame_equal(&expected));
     Ok(())
 }

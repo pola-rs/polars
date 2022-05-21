@@ -1,7 +1,6 @@
 use super::*;
 
 #[test]
-#[cfg(feature = "is_in")]
 fn test_is_in() -> Result<()> {
     let df = df![
         "x" => [1, 2, 3],
