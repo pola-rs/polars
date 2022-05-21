@@ -148,7 +148,12 @@ def test_nested_struct() -> None:
 
 
 def test_eager_struct() -> None:
-    s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
+    with pytest.raises(pl.DuplicateError, match="multiple fields with name '' found"):
+        s = pl.struct([pl.Series([1, 2, 3]), pl.Series(["a", "b", "c"])], eager=True)
+
+    s = pl.struct(
+        [pl.Series("a", [1, 2, 3]), pl.Series("b", ["a", "b", "c"])], eager=True
+    )
     assert s.dtype == pl.Struct
 
 

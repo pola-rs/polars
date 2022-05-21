@@ -2,6 +2,7 @@ try:
     from polars.polars import (
         ArrowError,
         ComputeError,
+        DuplicateError,
         NoDataError,
         NotFoundError,
         SchemaError,
@@ -29,6 +30,9 @@ except ImportError:  # pragma: no cover
     class ShapeError(Exception):  # type: ignore
         pass
 
+    class DuplicateError(Exception):  # type: ignore
+        pass
+
 
 __all__ = [
     "ArrowError",
@@ -37,4 +41,5 @@ __all__ = [
     "NotFoundError",
     "SchemaError",
     "ShapeError",
+    "DuplicateError",
 ]
