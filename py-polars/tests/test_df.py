@@ -842,6 +842,18 @@ def test_file_buffer() -> None:
     assert "Invalid Parquet file" in str(e.value)
 
 
+def test_read_missing_file() -> None:
+    with pytest.raises(FileNotFoundError, match="fake_parquet_file"):
+        pl.read_parquet("fake_parquet_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        pl.read_csv("fake_csv_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        with open("fake_csv_file", "r") as f:
+            pl.read_csv(f)
+
+
 def test_set() -> None:
     """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning"""
     with pytest.deprecated_call():
