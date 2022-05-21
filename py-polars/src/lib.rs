@@ -36,7 +36,8 @@ pub mod utils;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::{
-    ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
+    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
+    SchemaError,
 };
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
@@ -436,6 +437,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
         .unwrap();
     m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
+        .unwrap();
+    m.add("DuplicateError", py.get_type::<DuplicateError>())
         .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();

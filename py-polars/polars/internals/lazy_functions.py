@@ -164,7 +164,31 @@ def col(
 def element() -> "pli.Expr":
     """
     Alias for an element in evaluated in an `eval` expression
+
+    Examples
+    --------
+
+    A horizontal rank computation by taking the elements of a list
+
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+    >>> df.with_column(
+    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬────────────┐
+    │ a   ┆ b   ┆ rank       │
+    │ --- ┆ --- ┆ ---        │
+    │ i64 ┆ i64 ┆ list [f32] │
+    ╞═════╪═════╪════════════╡
+    │ 1   ┆ 4   ┆ [1.0, 2.0] │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 8   ┆ 5   ┆ [2.0, 1.0] │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ 2   ┆ [2.0, 1.0] │
+    └─────┴─────┴────────────┘
+
     """
+
     return col("")
 
 

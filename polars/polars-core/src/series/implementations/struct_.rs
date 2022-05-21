@@ -113,6 +113,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let offset = self.chunks().len();
 
         for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+            let lhs_name = lhs.name();
+            let rhs_name = rhs.name();
+            if lhs_name != rhs_name {
+                return Err(PolarsError::SchemaMisMatch(format!("cannot append field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+            }
             lhs.append(rhs)?;
         }
         self.0.update_chunks(offset);
@@ -124,6 +129,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         let other = other.struct_()?;
 
         for (lhs, rhs) in self.0.fields_mut().iter_mut().zip(other.fields()) {
+            let lhs_name = lhs.name();
+            let rhs_name = rhs.name();
+            if lhs_name != rhs_name {
+                return Err(PolarsError::SchemaMisMatch(format!("cannot extend field with name: {rhs_name} to struct with field name: {lhs_name}, please check your schema").into()));
+            }
             lhs.extend(rhs)?;
         }
         self.0.update_chunks(0);

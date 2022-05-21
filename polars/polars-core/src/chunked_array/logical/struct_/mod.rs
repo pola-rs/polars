@@ -28,6 +28,15 @@ fn fields_to_struct_array(fields: &[Series]) -> (ArrayRef, Vec<Series>) {
 
 impl StructChunked {
     pub fn new(name: &str, fields: &[Series]) -> Result<Self> {
+        let mut names = PlHashSet::with_capacity(fields.len());
+        for s in fields {
+            let name = s.name();
+            if !names.insert(name) {
+                return Err(PolarsError::Duplicate(
+                    format!("multiple fields with name '{name}' found").into(),
+                ));
+            }
+        }
         if !fields.iter().map(|s| s.len()).all_equal() {
             Err(PolarsError::ShapeMisMatch(
                 "expected all fields to have equal length".into(),
