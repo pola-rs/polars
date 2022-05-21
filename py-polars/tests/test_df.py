@@ -25,6 +25,16 @@ def test_init_empty() -> None:
     df1 = pl.DataFrame()
     assert df1.shape == (0, 0)
 
+def test_read_missing_file():
+    with pytest.raises(FileNotFoundError, match="fake_parquet_file"):
+        pl.read_parquet("fake_parquet_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        pl.read_csv("fake_csv_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        with open("fake_csv_file", "r") as f:
+            pl.read_csv(f)
 
 def test_init_only_columns() -> None:
     df = pl.DataFrame(columns=["a", "b", "c"])
