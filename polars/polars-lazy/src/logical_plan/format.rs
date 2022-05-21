@@ -231,8 +231,16 @@ impl fmt::Debug for Expr {
                 }
             }
             Cast {
-                expr, data_type, ..
-            } => write!(f, "{:?}.cast({:?})", expr, data_type),
+                expr,
+                data_type,
+                strict,
+            } => {
+                if *strict {
+                    write!(f, "{:?}.strict_cast({:?})", expr, data_type)
+                } else {
+                    write!(f, "{:?}.cast({:?})", expr, data_type)
+                }
+            }
             Ternary {
                 predicate,
                 truthy,

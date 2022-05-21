@@ -114,6 +114,14 @@ pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
 // utility for the tests to ensure a single thread can execute
 pub static SINGLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
+#[cfg(feature = "dtype-categorical")]
+pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
+    toggle_string_cache(true);
+    let out = func();
+    toggle_string_cache(false);
+    out
+}
+
 /// Use a global string cache for the Categorical Types.
 ///
 /// This is used to cache the string categories locally.
