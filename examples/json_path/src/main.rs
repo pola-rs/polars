@@ -12,9 +12,9 @@ fn main() -> Result<()> {
 
     dbg!(ca);
     dbg!(ca.str_lengths().into_series());
-    dbg!(ca.json_path_match("$.a")?);
+    dbg!(ca.json_path_select("$.a")?);
     dbg!(ca.json_path_extract("$.a")?);
-    dbg!(ca.json_path_match("$.b")?);
+    dbg!(ca.json_path_select("$.b")?);
     dbg!(ca.json_path_extract("$.b")?);
     dbg!(ca.json_path_extract("$.b")?.dtype());
     dbg!(ca.json_path_extract("$.b[:].c")?);

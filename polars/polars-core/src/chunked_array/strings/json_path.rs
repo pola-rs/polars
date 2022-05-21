@@ -1,11 +1,27 @@
 use crate::prelude::*;
 use jsonpath_lib::PathCompiled;
+use serde_json::Value;
 use std::borrow::Cow;
 use arrow::io::ndjson;
 
 
 #[cfg(feature = "extract_jsonpath")]
 fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
+    serde_json::from_str(json_str).ok().and_then(|value| {
+        // TODO: a lot of heap allocations here. Improve json path by adding a take?
+        let result = expr.select(&value).ok()?;
+        let first = *result.get(0)?;
+
+        match first {
+            Value::String(s) => Some(Cow::Owned(s.clone())),
+            Value::Null => None,
+            v => Some(Cow::Owned(v.to_string())),
+        }
+    })
+}
+
+#[cfg(feature = "extract_jsonpath")]
+fn select_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
@@ -66,13 +82,17 @@ impl Utf8Chunked {
         Series::try_from(("", array))
     }
 
-    pub fn json_path_extract(&self, json_path: &str) -> Result<Series> {
-        let expr = PathCompiled::compile(json_path)
-            .map_err(|e| PolarsError::ComputeError(
+    pub fn json_path_select(&self, json_path: &str) -> Result<Utf8Chunked> {
+        match PathCompiled::compile(json_path) {
+            Ok(pat) => Ok(self.apply_on_opt(|opt_s| opt_s.and_then(|s| select_json(&pat, s)))),
+            Err(e) => Err(PolarsError::ComputeError(
                 format!("error compiling JSONpath expression {:?}", e).into(),
-            ))?;
+            )),
+        }
+    }
 
-        let selected_json = self.apply_on_opt(|opt_s| opt_s.and_then(|s| extract_json(&expr, s)));
+    pub fn json_path_extract(&self, json_path: &str) -> Result<Series> {
+        let selected_json = self.json_path_select(json_path)?;
 
         let data_type = selected_json.json_infer(None)?;
         selected_json.json_deserialize(data_type)
