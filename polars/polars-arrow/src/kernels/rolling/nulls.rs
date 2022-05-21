@@ -1,5 +1,70 @@
 use super::*;
+pub use min_max_nulls::{rolling_max, rolling_min};
 pub use quantile_nulls::{rolling_median, rolling_quantile};
+
+pub(crate) trait RollingAggWindow<'a, T: NativeType> {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        min_periods: usize,
+    ) -> Self;
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
+}
+
+// Use an aggregation window that maintains the state
+pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
+    values: &'a [T],
+    validity: &'a Bitmap,
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
+    Agg: RollingAggWindow<'a, T>,
+    T: IsFloat + NativeType,
+{
+    let len = values.len();
+    let (start, end) = det_offsets_fn(0, window_size, len);
+    // Safety; we are in bounds
+    let mut agg_window = unsafe { Agg::new(values, validity, start, end, min_periods) };
+
+    let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
+    {
+        Some(v) => v,
+        None => {
+            let mut validity = MutableBitmap::with_capacity(len);
+            validity.extend_constant(len, true);
+            validity
+        }
+    };
+
+    let out = (0..len)
+        .map(|idx| {
+            let (start, end) = det_offsets_fn(idx, window_size, len);
+            // safety:
+            // we are in bounds
+            let agg = unsafe { agg_window.update(start, end) };
+            match agg {
+                Some(val) => val,
+                None => {
+                    // safety: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    T::default()
+                }
+            }
+        })
+        .collect_trusted::<Vec<_>>();
+
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        out.into(),
+        Some(validity.into()),
+    ))
+}
 
 fn rolling_apply<T, K, Fo, Fa>(
     values: &[T],
@@ -143,78 +208,6 @@ where
     }
 }
 
-fn compute_min<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + PartialOrd + Bounded + IsFloat,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(sum_min_max_no_nulls::compute_min(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        let mut out = None;
-        for (i, val) in values.iter().enumerate() {
-            // Safety:
-            // in bounds
-            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                match out {
-                    None => {
-                        out = Some(*val);
-                    }
-                    Some(a) => {
-                        if *val < a {
-                            out = Some(*val)
-                        }
-                    }
-                }
-            }
-        }
-        out
-    }
-}
-
-fn compute_max<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + PartialOrd + Bounded + IsFloat,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(sum_min_max_no_nulls::compute_max(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        let mut out = None;
-        for (i, val) in values.iter().enumerate() {
-            // Safety:
-            // in bounds
-            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                match out {
-                    None => {
-                        out = Some(*val);
-                    }
-                    Some(a) => {
-                        if *val > a {
-                            out = Some(*val)
-                        }
-                    }
-                }
-            }
-        }
-        out
-    }
-}
-
 pub fn rolling_var<T>(
     arr: &PrimitiveArray<T>,
     window_size: usize,
@@ -313,74 +306,6 @@ where
             min_periods,
             det_offsets,
             compute_mean,
-        )
-    }
-}
-
-pub fn rolling_min<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_min,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_min,
-        )
-    }
-}
-
-pub fn rolling_max<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + PartialOrd + Bounded + IsFloat,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_max,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_max,
         )
     }
 }

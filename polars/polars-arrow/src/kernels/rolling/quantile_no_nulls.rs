@@ -242,7 +242,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::kernels::rolling::sum_min_max_no_nulls::{rolling_max, rolling_min};
+    use crate::kernels::rolling::min_max_no_nulls::{rolling_max, rolling_min};
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
 

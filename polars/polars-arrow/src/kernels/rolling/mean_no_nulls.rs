@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernels::rolling::sum_min_max_no_nulls::SumWindow;
+use crate::kernels::rolling::sum_no_nulls::SumWindow;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
 
 struct MeanWindow<'a, T> {
