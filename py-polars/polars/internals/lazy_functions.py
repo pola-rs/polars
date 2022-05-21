@@ -1455,7 +1455,9 @@ def select(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: Literal[True],
 ) -> "pli.Series":
     ...
@@ -1463,7 +1465,9 @@ def struct(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: Literal[False],
 ) -> "pli.Expr":
     ...
@@ -1471,14 +1475,18 @@ def struct(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     ...
 
 
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     """

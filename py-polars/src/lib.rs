@@ -49,6 +49,7 @@ use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
+use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 #[cfg(target_os = "linux")]
 use tikv_jemallocator::Jemalloc;
@@ -439,6 +440,8 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
     m.add("DuplicateError", py.get_type::<DuplicateError>())
+        .unwrap();
+    m.add("PanicException", py.get_type::<PanicException>())
         .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
