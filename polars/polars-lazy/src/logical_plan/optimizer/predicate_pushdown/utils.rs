@@ -149,9 +149,9 @@ pub(super) fn project_other_column_is_predicate_pushdown_boundary(
             | AExpr::AnonymousFunction {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::Function {options: FunctionOptions { collect_groups: ApplyOptions::ApplyGroups, .. }, ..}
             | AExpr::BinaryExpr {..}
-            | AExpr::Cast {data_type: DataType::Float32 | DataType::Float64, ..}
-            // cast may create nulls
-            | AExpr::Cast {strict: false, ..}
+            // casts may produce null values, change values etc.
+            // they can fail in myriad ways
+            | AExpr::Cast {..}
             // still need to investigate this one
             | AExpr::Explode {..}
             // A groupby needs all rows for aggregation
