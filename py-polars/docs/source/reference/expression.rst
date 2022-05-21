@@ -13,6 +13,7 @@ These functions can be used as expression and sometimes also in eager contexts.
 
    select
    col
+   element
    count
    list
    std
