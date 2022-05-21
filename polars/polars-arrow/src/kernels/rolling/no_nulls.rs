@@ -10,6 +10,9 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 pub use mean_no_nulls::rolling_mean;
+pub use min_max_no_nulls::{rolling_max, rolling_min};
+pub use quantile_no_nulls::{rolling_median, rolling_quantile};
+pub use sum_no_nulls::rolling_sum;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
@@ -49,9 +52,6 @@ where
         validity.map(|b| b.into()),
     ))
 }
-
-pub use quantile_no_nulls::{rolling_median, rolling_quantile};
-pub use sum_min_max_no_nulls::{rolling_max, rolling_min, rolling_sum};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

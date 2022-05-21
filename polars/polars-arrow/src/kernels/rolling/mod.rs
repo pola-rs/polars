@@ -1,9 +1,11 @@
 mod mean_no_nulls;
+mod min_max_no_nulls;
+mod min_max_nulls;
 pub mod no_nulls;
 pub mod nulls;
 mod quantile_no_nulls;
 mod quantile_nulls;
-mod sum_min_max_no_nulls;
+mod sum_no_nulls;
 mod window;
 
 use crate::data_types::IsFloat;
