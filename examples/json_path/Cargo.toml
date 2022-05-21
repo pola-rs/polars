@@ -7,4 +7,3 @@ edition = "2021"
 
 [dependencies]
 polars = { path = "../../polars", features = ["strings", "json", "extract_jsonpath", "dtype-struct"] }
-serde_json = { version = "1" }

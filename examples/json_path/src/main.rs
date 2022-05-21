@@ -1,5 +1,4 @@
 use polars::prelude::*;
-use serde_json::json;
 
 fn main() -> Result<()> {
     let s = Series::new(

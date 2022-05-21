@@ -67,7 +67,7 @@ impl Utf8Chunked {
     }
 
     pub fn json_path_extract(&self, json_path: &str) -> Result<Series> {
-        let expr = Compiled::compile(json_path)
+        let expr = PathCompiled::compile(json_path)
             .map_err(|e| PolarsError::ComputeError(
                 format!("error compiling JSONpath expression {:?}", e).into(),
             ))?;
