@@ -47,6 +47,7 @@ from polars.exceptions import (
     DuplicateError,
     NoDataError,
     NotFoundError,
+    PanicException,
     SchemaError,
     ShapeError,
 )
