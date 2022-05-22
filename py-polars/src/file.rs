@@ -212,7 +212,7 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
         } else {
             match File::open(str_slice) {
                 Ok(file) => BufReader::new(file),
-                Err(e) => {
+                Err(_e) => {
                     return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
                         "No such file or directory: {}",
                         str_slice
