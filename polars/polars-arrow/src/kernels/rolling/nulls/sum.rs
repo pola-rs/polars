@@ -2,13 +2,13 @@ use super::*;
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindow};
 
-struct SumWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+pub(super) struct SumWindow<'a, T> {
     slice: &'a [T],
     validity: &'a Bitmap,
     sum: Option<T>,
     last_start: usize,
     last_end: usize,
-    null_count: usize,
+    pub(super) null_count: usize,
     min_periods: usize,
 }
 
