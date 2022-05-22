@@ -1,3 +1,8 @@
+mod mean;
+mod min_max;
+mod quantile;
+mod sum;
+
 use super::*;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
@@ -9,10 +14,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-pub use mean_no_nulls::rolling_mean;
-pub use min_max_no_nulls::{rolling_max, rolling_min};
-pub use quantile_no_nulls::{rolling_median, rolling_quantile};
-pub use sum_no_nulls::rolling_sum;
+pub use mean::rolling_mean;
+pub use min_max::{rolling_max, rolling_min};
+pub use quantile::{rolling_median, rolling_quantile};
+pub use sum::rolling_sum;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
@@ -183,13 +188,6 @@ where
     T: Float + std::iter::Sum<T>,
 {
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum::<T>() / T::from(values.len()).unwrap()
-}
-
-pub(crate) fn compute_sum<T>(values: &[T]) -> T
-where
-    T: std::iter::Sum<T> + Copy,
-{
-    values.iter().copied().sum()
 }
 
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T

@@ -1,6 +1,13 @@
+mod mean;
+mod min_max;
+mod quantile;
+mod sum;
+
 use super::*;
-pub use min_max_nulls::{rolling_max, rolling_min};
-pub use quantile_nulls::{rolling_median, rolling_quantile};
+pub use mean::rolling_mean;
+pub use min_max::{rolling_max, rolling_min};
+pub use quantile::{rolling_median, rolling_quantile};
+pub use sum::rolling_sum;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     unsafe fn new(
@@ -117,33 +124,6 @@ where
     ))
 }
 
-fn compute_sum<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(no_nulls::compute_sum(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        let mut out = Zero::zero();
-        for (i, val) in values.iter().enumerate() {
-            // Safety:
-            // in bounds
-            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                out += *val;
-            }
-        }
-        Some(out)
-    }
-}
-
 fn compute_mean<T>(
     values: &[T],
     validity_bytes: &[u8],
@@ -242,77 +222,10 @@ where
     }
 }
 
-pub fn rolling_sum<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_sum,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_sum,
-        )
-    }
-}
-
-pub fn rolling_mean<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy + Float,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_mean,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_mean,
-        )
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::kernels::rolling::nulls::mean::rolling_mean;
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
 
@@ -349,6 +262,32 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
+    }
+
+    #[test]
+    fn test_rolling_mean_nulls() {
+        // 1, None, -1, 4
+        let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
+        let arr = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, false, true, true])),
+        );
+
+        let out = rolling_mean(arr, 2, 2, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, Some(1.5)]);
+
+        let out = rolling_mean(arr, 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(1.0), Some(-1.0), Some(1.5)]);
+
+        let out = rolling_mean(arr, 4, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(1.0), Some(1.0), Some(0.0), Some(4.0 / 3.0)]);
     }
 
     #[test]
