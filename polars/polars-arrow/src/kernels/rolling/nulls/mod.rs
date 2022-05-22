@@ -1,7 +1,11 @@
+mod min_max;
+mod quantile;
+mod sum;
+
 use super::*;
-pub use min_max_nulls::{rolling_max, rolling_min};
-pub use quantile_nulls::{rolling_median, rolling_quantile};
-pub use sum_nulls::rolling_sum;
+pub use min_max::{rolling_max, rolling_min};
+pub use quantile::{rolling_median, rolling_quantile};
+pub use sum::rolling_sum;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     unsafe fn new(
