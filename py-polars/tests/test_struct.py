@@ -415,12 +415,33 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    with pytest.raises(pl.ComputeError, match="structs orders must remain the same"):
+    with pytest.raises(pl.ComputeError, match="struct orders must remain the same"):
         pl.DataFrame(
             {
                 "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
             }
         )
+
+    # null values should not trigger this
+    assert (
+        pl.Series(
+            values=[
+                {"a": 1, "b": None},
+                {"a": 2, "b": 20},
+            ],
+        ).to_list()
+        == [{"a": 1, "b": None}, {"a": 2, "b": 20}]
+    )
+
+    assert (
+        pl.Series(
+            values=[
+                {"a": 1, "b": 10},
+                {"a": 2, "b": None},
+            ],
+        ).to_list()
+        == [{"a": 1, "b": 10}, {"a": 2, "b": None}]
+    )
 
 
 def test_struct_schema_on_append_extend_3452() -> None:
