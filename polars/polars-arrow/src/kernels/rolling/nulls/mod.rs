@@ -2,12 +2,14 @@ mod mean;
 mod min_max;
 mod quantile;
 mod sum;
+mod variance;
 
 use super::*;
 pub use mean::rolling_mean;
 pub use min_max::{rolling_max, rolling_min};
 pub use quantile::{rolling_median, rolling_quantile};
 pub use sum::rolling_sum;
+pub use variance::rolling_var;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     unsafe fn new(
@@ -73,161 +75,22 @@ where
     ))
 }
 
-fn rolling_apply<T, K, Fo, Fa>(
-    values: &[T],
-    bitmap: &Bitmap,
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-    aggregator: Fa,
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
-    // &[T] -> values of array
-    // &[u8] -> validity bytes
-    // usize -> offset in validity bytes array
-    // usize -> min_periods
-    Fa: Fn(&[T], &[u8], usize, usize) -> Option<K>,
-    K: NativeType + Default,
-{
-    let len = values.len();
-    let (validity_bytes, offset, _) = bitmap.as_slice();
-
-    let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
-    {
-        Some(v) => v,
-        None => {
-            let mut validity = MutableBitmap::with_capacity(len);
-            validity.extend_constant(len, true);
-            validity
-        }
-    };
-
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            let vals = unsafe { values.get_unchecked(start..end) };
-            match aggregator(vals, validity_bytes, offset + start, min_periods) {
-                Some(val) => val,
-                None => {
-                    validity.set(idx, false);
-                    K::default()
-                }
-            }
-        })
-        .collect_trusted::<Vec<K>>();
-
-    Arc::new(PrimitiveArray::from_data(
-        K::PRIMITIVE.into(),
-        out.into(),
-        Some(validity.into()),
-    ))
-}
-
-fn compute_mean<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + Float,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(no_nulls::compute_mean(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        let mut out = T::zero();
-        let mut count = T::zero();
-        for (i, val) in values.iter().enumerate() {
-            // Safety:
-            // in bounds
-            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                out += *val;
-                count += One::one()
-            }
-        }
-        Some(out / count)
-    }
-}
-
-pub(crate) fn compute_var<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + Float,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(no_nulls::compute_var(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        match compute_mean(values, validity_bytes, offset, min_periods) {
-            None => None,
-            Some(mean) => {
-                let mut sum = T::zero();
-                let mut count = T::zero();
-                for (i, val) in values.iter().enumerate() {
-                    // Safety:
-                    // in bounds
-                    if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                        let v = *val - mean;
-                        sum += v * v;
-                        count += One::one()
-                    }
-                }
-                Some(sum / (count - T::one()))
-            }
-        }
-    }
-}
-
-pub fn rolling_var<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign + Float,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_var,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_var,
-        )
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::kernels::rolling::nulls::mean::rolling_mean;
     use arrow::buffer::Buffer;
     use arrow::datatypes::DataType;
+
+    fn get_null_arr() -> PrimitiveArray<f64> {
+        // 1, None, -1, 4
+        let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
+        PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, false, true, true])),
+        )
+    }
 
     #[test]
     fn test_rolling_sum_nulls() {
@@ -266,13 +129,8 @@ mod test {
 
     #[test]
     fn test_rolling_mean_nulls() {
-        // 1, None, -1, 4
-        let buf = Buffer::from(vec![1.0, 0.0, -1.0, 4.0]);
-        let arr = &PrimitiveArray::from_data(
-            DataType::Float64,
-            buf,
-            Some(Bitmap::from(&[true, false, true, true])),
-        );
+        let arr = get_null_arr();
+        let arr = &arr;
 
         let out = rolling_mean(arr, 2, 2, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -288,6 +146,36 @@ mod test {
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[Some(1.0), Some(1.0), Some(0.0), Some(4.0 / 3.0)]);
+    }
+
+    #[test]
+    fn test_rolling_var_nulls() {
+        let arr = get_null_arr();
+        let arr = &arr;
+
+        let out = rolling_var(arr, 3, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+
+        // we cannot compare nans, so we compare the string values
+        assert_eq!(
+            format!("{:?}", out.as_slice()),
+            format!("{:?}", &[f64::nan(), f64::nan(), 2.0, 12.5])
+        );
+
+        let out = rolling_var(arr, 4, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out
+            .into_iter()
+            .map(|v| v.copied().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            format!("{:?}", out.as_slice()),
+            format!("{:?}", &[f64::nan(), f64::nan(), 2.0, 6.333333333333334])
+        );
     }
 
     #[test]
