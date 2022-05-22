@@ -1,3 +1,4 @@
+import typing
 from datetime import datetime
 
 import pandas as pd
@@ -499,13 +500,17 @@ def test_struct_arr_eval() -> None:
     }
 
 
+@typing.no_type_check
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
     )
-    assert df.with_column(pl.col("col_struct").arr.unique().alias("unique")).to_dict(
-        False
-    ) == {
-        "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
-        "unique": [[{"a": 2, "b": 12}, {"a": 1, "b": 11}]],
-    }
+    # the order is unpredictable
+    unique = df.with_column(pl.col("col_struct").arr.unique().alias("unique"))[
+        "unique"
+    ].to_list()
+    assert len(unique) == 1
+    unique_el = unique[0]
+    assert len(unique_el) == 2
+    assert {"a": 2, "b": 12} in unique_el
+    assert {"a": 1, "b": 11} in unique_el

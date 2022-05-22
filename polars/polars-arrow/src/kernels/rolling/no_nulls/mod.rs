@@ -2,6 +2,7 @@ mod mean;
 mod min_max;
 mod quantile;
 mod sum;
+mod variance;
 
 use super::*;
 use crate::utils::CustomIterTools;
@@ -18,6 +19,7 @@ pub use mean::rolling_mean;
 pub use min_max::{rolling_max, rolling_min};
 pub use quantile::{rolling_median, rolling_quantile};
 pub use sum::rolling_sum;
+pub use variance::rolling_var;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
@@ -106,81 +108,24 @@ where
     ))
 }
 
-pub(super) fn rolling_apply<T, K, Fo, Fa>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    det_offsets_fn: Fo,
-    aggregator: Fa,
-) -> ArrayRef
-where
-    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Fa: Fn(&[T]) -> K,
-    K: NativeType,
-    T: Debug,
-{
-    let len = values.len();
-    let out = (0..len)
-        .map(|idx| {
-            let (start, end) = det_offsets_fn(idx, window_size, len);
-            let vals = unsafe { values.get_unchecked(start..end) };
-            aggregator(vals)
-        })
-        .collect_trusted::<Vec<K>>();
-
-    let validity = create_validity(min_periods, len as usize, window_size, det_offsets_fn);
-    Arc::new(PrimitiveArray::from_data(
-        K::PRIMITIVE.into(),
-        out.into(),
-        validity.map(|b| b.into()),
-    ))
-}
-
-pub(crate) fn compute_var<T>(vals: &[T]) -> T
-where
-    T: Float + std::ops::AddAssign + std::fmt::Debug,
-{
-    let mut count = T::zero();
-    let mut sum = T::zero();
-    let mut sum_of_squares = T::zero();
-
-    for &val in vals {
-        sum += val;
-        sum_of_squares += val * val;
-        count += T::one();
-    }
-
-    let mean = sum / count;
-    // apply Bessel's correction
-    ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
-}
-
 fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T
 where
     T: Float + std::ops::AddAssign,
 {
     let weighted_iter = vals.iter().zip(weights).map(|(x, y)| *x * *y);
 
-    let mut count = T::zero();
     let mut sum = T::zero();
     let mut sum_of_squares = T::zero();
 
     for val in weighted_iter {
         sum += val;
         sum_of_squares += val * val;
-        count += T::one();
     }
+    let count = NumCast::from(vals.len()).unwrap();
 
     let mean = sum / count;
     // apply Bessel's correction
     ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
-}
-
-pub(crate) fn compute_mean<T>(values: &[T]) -> T
-where
-    T: Float + std::iter::Sum<T>,
-{
-    values.iter().copied().sum::<T>() / T::from(values.len()).unwrap()
 }
 
 pub(crate) fn compute_mean_weights<T>(values: &[T], weights: &[T]) -> T
@@ -204,48 +149,4 @@ where
         .iter()
         .map(|v| NumCast::from(*v).unwrap())
         .collect::<Vec<_>>()
-}
-
-pub fn rolling_var<T>(
-    values: &[T],
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + Float + std::ops::AddAssign,
-{
-    match (center, weights) {
-        (true, None) => rolling_apply(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_var,
-        ),
-        (false, None) => rolling_apply(values, window_size, min_periods, det_offsets, compute_var),
-        (true, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-                compute_var_weights,
-                &weights,
-            )
-        }
-        (false, Some(weights)) => {
-            let weights = coerce_weights(weights);
-            rolling_apply_weights(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-                compute_var_weights,
-                &weights,
-            )
-        }
-    }
 }

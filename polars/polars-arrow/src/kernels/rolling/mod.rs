@@ -6,7 +6,6 @@ use crate::data_types::IsFloat;
 use crate::prelude::QuantileInterpolOptions;
 use crate::utils::CustomIterTools;
 use arrow::array::{ArrayRef, PrimitiveArray};
-use arrow::bitmap::utils::{count_zeros, get_bit_unchecked};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::NativeType;
 use num::ToPrimitive;

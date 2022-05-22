@@ -2,19 +2,13 @@ use super::sum::SumWindow;
 use super::*;
 use super::{rolling_apply_agg_window, RollingAggWindow};
 
-struct MeanWindow<'a, T> {
+pub(super) struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T>,
 }
 
 impl<
         'a,
-        T: NativeType
-            + IsFloat
-            + PartialOrd
-            + Add<Output = T>
-            + Sub<Output = T>
-            + NumCast
-            + Div<Output = T>,
+        T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + NumCast + Div<Output = T>,
     > RollingAggWindow<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(
@@ -31,7 +25,6 @@ impl<
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let sum = self.sum.update(start, end);
-        dbg!(sum);
         sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
     }
 }
