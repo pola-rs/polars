@@ -27,6 +27,14 @@ impl Series {
             DataType::Time => Int64Chunked::full_null(name, size)
                 .into_time()
                 .into_series(),
+            #[cfg(feature = "dtype-struct")]
+            DataType::Struct(fields) => {
+                let fields = fields
+                    .iter()
+                    .map(|fld| Series::full_null(fld.name(), size, fld.data_type()))
+                    .collect::<Vec<_>>();
+                StructChunked::new(name, &fields).unwrap().into_series()
+            }
             DataType::Null => ChunkedArray::new_null("", size).into_series(),
             _ => {
                 macro_rules! primitive {

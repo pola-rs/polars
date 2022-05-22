@@ -485,3 +485,15 @@ def test_struct_schema_on_append_extend_3452() -> None:
         match="cannot extend field with name: address to struct with field name: city, please check your schema",
     ):
         housing1.append(housing2, append_chunks=False)
+
+
+def test_struct_arr_eval() -> None:
+    df = pl.DataFrame(
+        {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
+    )
+    assert df.with_column(
+        pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
+    ).to_dict(False) == {
+        "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+        "first": [[{"a": 1, "b": 11}]],
+    }
