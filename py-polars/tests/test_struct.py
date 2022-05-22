@@ -415,12 +415,33 @@ def test_struct_comparison() -> None:
 
 
 def test_struct_order() -> None:
-    with pytest.raises(pl.ComputeError, match="structs orders must remain the same"):
+    with pytest.raises(pl.ComputeError, match="struct orders must remain the same"):
         pl.DataFrame(
             {
                 "col1": [{"a": 1, "b": 2}, {"b": 4, "a": 3}],
             }
         )
+
+    # null values should not trigger this
+    assert (
+        pl.Series(
+            values=[
+                {"a": 1, "b": None},
+                {"a": 2, "b": 20},
+            ],
+        ).to_list()
+        == [{"a": 1, "b": None}, {"a": 2, "b": 20}]
+    )
+
+    assert (
+        pl.Series(
+            values=[
+                {"a": 1, "b": 10},
+                {"a": 2, "b": None},
+            ],
+        ).to_list()
+        == [{"a": 1, "b": 10}, {"a": 2, "b": None}]
+    )
 
 
 def test_struct_schema_on_append_extend_3452() -> None:
@@ -464,3 +485,27 @@ def test_struct_schema_on_append_extend_3452() -> None:
         match="cannot extend field with name: address to struct with field name: city, please check your schema",
     ):
         housing1.append(housing2, append_chunks=False)
+
+
+def test_struct_arr_eval() -> None:
+    df = pl.DataFrame(
+        {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
+    )
+    assert df.with_column(
+        pl.col("col_struct").arr.eval(pl.element().first()).alias("first")
+    ).to_dict(False) == {
+        "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+        "first": [[{"a": 1, "b": 11}]],
+    }
+
+
+def test_arr_unique() -> None:
+    df = pl.DataFrame(
+        {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
+    )
+    assert df.with_column(pl.col("col_struct").arr.unique().alias("unique")).to_dict(
+        False
+    ) == {
+        "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+        "unique": [[{"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+    }
