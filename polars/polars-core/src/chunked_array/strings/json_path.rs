@@ -57,7 +57,8 @@ impl Utf8Chunked {
     /// When None is passed for the number of rows, all rows are inspected.
     pub fn json_infer(&self, number_of_rows: Option<usize>) -> Result<DataType> {
         let values_iter = self
-            .into_no_null_iter()
+            .into_iter()
+            .map(|x| x.unwrap_or("null"))
             .take(number_of_rows.unwrap_or(self.len()));
 
         ndjson::read::infer_iter(values_iter)
@@ -69,12 +70,17 @@ impl Utf8Chunked {
 
 
     /// Extracts a JSON value for each row in the Utf8Chunked
-    pub fn json_deserialize(&self, data_type: DataType) -> Result<Series> {
+    pub fn json_extract(&self, dtype: Option<DataType>) -> Result<Series> {
+        let dtype = match dtype {
+            Some(dt) => dt,
+            None => self.json_infer(None)?,
+        };
+
         let iter = self
             .into_iter()
             .map(|x| x.unwrap_or("null"));
 
-        let array = ndjson::read::deserialize_iter(iter, data_type.to_arrow())
+        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow())
             .map_err(|e| PolarsError::ComputeError(
                 format!("error deserializing JSON {:?}", e).into(),
             ))?;
@@ -91,10 +97,8 @@ impl Utf8Chunked {
         }
     }
 
-    pub fn json_path_extract(&self, json_path: &str) -> Result<Series> {
+    pub fn json_path_extract(&self, json_path: &str, dtype: Option<DataType>) -> Result<Series> {
         let selected_json = self.json_path_select(json_path)?;
-
-        let data_type = selected_json.json_infer(None)?;
-        selected_json.json_deserialize(data_type)
+        selected_json.json_extract(dtype)
     }
 }

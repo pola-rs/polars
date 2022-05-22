@@ -3971,6 +3971,144 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_json_path_match(json_path))
 
+    def json_infer(self, number_of_rows: Optional[int] = None) -> DataType:
+        """
+        Returns the inferred DataType for JSON values for each row in the Series,
+        with an optional number of rows to inspect. By default, all rows are
+        inspected.
+
+        Parameters
+        ----------
+        number_of_rows
+            A integer number of rows to consider for inferring the type
+
+        Returns
+        -------
+        DataType. Contains null if original value is null or values are not JSON format
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", ['{"b": null}', '{"b": 5}', '{"b": 1}', None])
+        >>> s.str.json_infer()
+        Struct[Field("b": <class 'polars.datatypes.Int64'>)]
+
+        """
+        return self._s.str_json_infer(number_of_rows)
+
+    def json_extract(self, dtype: Optional[Type[DataType]] = None) -> Series:
+        """
+        Extracts a JSON value for each row in the Series. If the row does not
+        contain JSON or is null, the value for that row will be null. The
+        common data type for all rows is inferred by default, unless an optional
+        data type is provided.
+
+        Parameters
+        ----------
+        dtype
+            An optional DataType matching the schema of the JSON
+
+        Returns
+        -------
+        Series. Contains null if original value is null or values are not JSON format
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", ['{"b": null}', '{"b": 5}', '{"b": 1}', None])
+        >>> s.str.json_extract()
+        shape: (4,)
+        Series: '' [struct[1]]
+        [
+            {null}
+            {5}
+            {1}
+            {null}
+        ]
+
+        """
+        return wrap_s(self._s.str_json_extract(dtype))
+
+    def json_path_select(self, json_path: str) -> Series:
+        """
+        Selects the JSON fields with provided JsonPath expression, returning a
+        string presentation of the selected fields.
+        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Parameters
+        ----------
+        json_path
+            A valid JSON path query string
+
+        Returns
+        -------
+        Utf8 array. Contain null if original value is null or the json_path return nothing.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame(
+        ...     {"json_val": ['{"a":"1"}', None, '{"a":2}', '{"a":2.1}', '{"a":true}']}
+        ... )
+        >>> df.select(pl.col("json_val").str.json_path_select("$.a"))[:, 0]
+        shape: (5,)
+        Series: 'json_val' [str]
+        [
+            "1"
+            null
+            "2"
+            "2.1"
+            "true"
+        ]
+
+        """
+        return wrap_s(self._s.str_json_path_select(json_path))
+
+    def json_path_extract(self, json_path: str, dtype: Optional[Type[DataType]] = None) -> Series:
+        """
+        Extracts the JSON fields with provided JsonPath expression, returning an
+        appropriately typed Series. The data type can optionally be provided to
+        specify the schema for the JSON fields being extracted, or by default the
+        data type is inferred by inspecting all of the rows in the Series.
+        Documentation on JSONPath standard: https://goessner.net/articles/JsonPath/
+
+        Parameters
+        ----------
+        json_path
+            A valid JSON path query string
+        dtype
+            A DataType for the JSON to be deserialized into
+
+        Returns
+        -------
+        Series. Contains null if original value is null or the json_path returns nothing.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("a", ['{"b": null}', '{"b": [5]}', '{"b": [1, 2]}', None])
+        >>> s.str.json_path_extract('$.b[0]')
+        shape: (4,)
+        Series: '' [i64]
+        [
+            null
+            5
+            1
+            null
+        ]
+        >>> s.str.json_path_extract('$.b[-1]')
+        shape: (4,)
+        Series: '' [i64]
+        [
+            null
+            5
+            2
+            null
+        ]
+
+        """
+        return wrap_s(self._s.str_json_path_extract(json_path, dtype))
+
     def extract(self, pattern: str, group_index: int = 1) -> Series:
         r"""
         Extract the target capture group from provided patterns.
