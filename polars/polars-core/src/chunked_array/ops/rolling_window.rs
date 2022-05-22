@@ -390,7 +390,7 @@ mod inner_mod {
     where
         ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
-        T::Native: Float + IsFloat,
+        T::Native: Float + IsFloat + SubAssign,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
