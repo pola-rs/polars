@@ -497,3 +497,15 @@ def test_struct_arr_eval() -> None:
         "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
         "first": [[{"a": 1, "b": 11}]],
     }
+
+
+def test_arr_unique() -> None:
+    df = pl.DataFrame(
+        {"col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]]}
+    )
+    assert df.with_column(pl.col("col_struct").arr.unique().alias("unique")).to_dict(
+        False
+    ) == {
+        "col_struct": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+        "unique": [[{"a": 2, "b": 12}, {"a": 1, "b": 11}]],
+    }
