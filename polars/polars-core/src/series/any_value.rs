@@ -92,9 +92,9 @@ impl Series {
                                 match av {
                                     AnyValue::StructOwned(pl) => {
                                         for (l, r) in fields.iter().zip(pl.1.iter()) {
-                                            if l != r {
+                                            if l.name() != r.name() {
                                                 return Err(PolarsError::ComputeError(
-                                                    "structs orders must remain the same".into(),
+                                                    "struct orders must remain the same".into(),
                                                 ));
                                             }
                                         }

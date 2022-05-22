@@ -73,7 +73,9 @@ impl DataFrame {
             }};
         }
 
-        if by.is_empty() || by[0].len() != self.height() {
+        // we only throw this error if self.width > 0
+        // so that we can still call this on a dummy dataframe where we provide the keys
+        if by.is_empty() || (by[0].len() != (self.height()) && (self.width() > 0)) {
             return Err(PolarsError::ShapeMisMatch(
                 "the Series used as keys should have the same length as the DataFrame".into(),
             ));

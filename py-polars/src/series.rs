@@ -1683,6 +1683,7 @@ impl_set_at_idx!(set_at_idx_i8, i8, i8, Int8);
 impl_set_at_idx!(set_at_idx_i16, i16, i16, Int16);
 impl_set_at_idx!(set_at_idx_i32, i32, i32, Int32);
 impl_set_at_idx!(set_at_idx_i64, i64, i64, Int64);
+impl_set_at_idx!(set_at_idx_bool, bool, bool, Boolean);
 
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {
