@@ -43,7 +43,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
         }
         self.last_start = start;
 
-        // we traverese all values and compute
+        // we traverse all values and compute
         if recompute_min {
             self.min = *self
                 .slice
