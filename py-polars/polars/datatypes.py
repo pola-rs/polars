@@ -139,10 +139,7 @@ class Field:
         self.dtype = py_type_to_dtype(dtype)
 
     def __eq__(self, other: "Field") -> bool:  # type: ignore
-        return (
-            (self.name == other.name) &
-            (self.dtype == other.dtype)
-        )
+        return (self.name == other.name) & (self.dtype == other.dtype)
 
     def __repr__(self) -> str:
         if isinstance(self.dtype, type):

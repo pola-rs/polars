@@ -269,13 +269,11 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Time => pl.getattr("Time").unwrap().into(),
             DataType::Struct(fields) => {
                 let field_class = pl.getattr("Field").unwrap();
-                let iter = fields
-                    .iter()
-                    .map(|fld| {
-                        let name = fld.name().clone();
-                        let dtype = Wrap(fld.data_type().clone()).to_object(py);
-                        field_class.call1((name, dtype,)).unwrap()
-                    });
+                let iter = fields.iter().map(|fld| {
+                    let name = fld.name().clone();
+                    let dtype = Wrap(fld.data_type().clone()).to_object(py);
+                    field_class.call1((name, dtype)).unwrap()
+                });
                 let fields = PyList::new(py, iter);
                 let struct_class = pl.getattr("Struct").unwrap();
                 struct_class.call1((fields,)).unwrap().into()
@@ -316,8 +314,7 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
 impl FromPyObject<'_> for Wrap<Field> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
         let name = ob.getattr("name")?.str()?.to_str()?;
-        let dtype = ob.getattr("dtype")?
-            .extract::<Wrap<DataType>>()?;
+        let dtype = ob.getattr("dtype")?.extract::<Wrap<DataType>>()?;
         Ok(Wrap(Field::new(name, dtype.0)))
     }
 }
@@ -327,7 +324,8 @@ impl FromPyObject<'_> for Wrap<DataType> {
         let type_name = ob.get_type().name()?;
 
         let dtype = match type_name {
-            "type" => { // just the class, not an object
+            "type" => {
+                // just the class, not an object
                 let name = ob.getattr("__name__")?.str()?.to_str()?;
                 match name {
                     "UInt8" => DataType::UInt8,
@@ -350,14 +348,14 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     "Object" => DataType::Object("unknown"),
                     "List" => DataType::List(Box::new(DataType::Boolean)),
                     "Null" => DataType::Null,
-                    dt => panic!("{} not expected as Python type for dtype conversion", dt)
+                    dt => panic!("{} not expected as Python type for dtype conversion", dt),
                 }
-            },
+            }
             "List" => {
                 let inner = ob.getattr("inner")?;
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
-            },
+            }
             "Struct" => {
                 let fields = ob.getattr("fields")?;
                 let fields = fields
