@@ -4064,7 +4064,9 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_json_path_select(json_path))
 
-    def json_path_extract(self, json_path: str, dtype: Optional[Type[DataType]] = None) -> Series:
+    def json_path_extract(
+        self, json_path: str, dtype: Optional[Type[DataType]] = None
+    ) -> Series:
         """
         Extracts the JSON fields with provided JsonPath expression, returning an
         appropriately typed Series. The data type can optionally be provided to
@@ -4087,7 +4089,7 @@ class StringNameSpace:
         --------
 
         >>> s = pl.Series("a", ['{"b": null}', '{"b": [5]}', '{"b": [1, 2]}', None])
-        >>> s.str.json_path_extract('$.b[0]')
+        >>> s.str.json_path_extract("$.b[0]")
         shape: (4,)
         Series: '' [i64]
         [
@@ -4096,7 +4098,7 @@ class StringNameSpace:
             1
             null
         ]
-        >>> s.str.json_path_extract('$.b[-1]')
+        >>> s.str.json_path_extract("$.b[-1]")
         shape: (4,)
         Series: '' [i64]
         [

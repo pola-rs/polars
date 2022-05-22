@@ -1,9 +1,8 @@
 use crate::prelude::*;
+use arrow::io::ndjson;
 use jsonpath_lib::PathCompiled;
 use serde_json::Value;
 use std::borrow::Cow;
-use arrow::io::ndjson;
-
 
 #[cfg(feature = "extract_jsonpath")]
 fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
@@ -63,11 +62,8 @@ impl Utf8Chunked {
 
         ndjson::read::infer_iter(values_iter)
             .map(|d| DataType::from(&d))
-            .map_err(|e| PolarsError::ComputeError(
-                format!("error infering JSON {:?}", e).into(),
-            ))
+            .map_err(|e| PolarsError::ComputeError(format!("error infering JSON {:?}", e).into()))
     }
-
 
     /// Extracts a JSON value for each row in the Utf8Chunked
     pub fn json_extract(&self, dtype: Option<DataType>) -> Result<Series> {
@@ -76,14 +72,11 @@ impl Utf8Chunked {
             None => self.json_infer(None)?,
         };
 
-        let iter = self
-            .into_iter()
-            .map(|x| x.unwrap_or("null"));
+        let iter = self.into_iter().map(|x| x.unwrap_or("null"));
 
-        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow())
-            .map_err(|e| PolarsError::ComputeError(
-                format!("error deserializing JSON {:?}", e).into(),
-            ))?;
+        let array = ndjson::read::deserialize_iter(iter, dtype.to_arrow()).map_err(|e| {
+            PolarsError::ComputeError(format!("error deserializing JSON {:?}", e).into())
+        })?;
 
         Series::try_from(("", array))
     }

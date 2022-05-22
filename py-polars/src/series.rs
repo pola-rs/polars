@@ -1077,9 +1077,7 @@ impl PySeries {
 
     pub fn str_json_infer(&self, py: Python, number_of_rows: Option<usize>) -> PyResult<PyObject> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
-        let dtype = ca
-            .json_infer(number_of_rows)
-            .map_err(PyPolarsErr::from)?;
+        let dtype = ca.json_infer(number_of_rows).map_err(PyPolarsErr::from)?;
         Ok(Wrap(dtype.clone()).to_object(py))
     }
 
@@ -1101,7 +1099,11 @@ impl PySeries {
         Ok(s.into())
     }
 
-    pub fn str_json_path_extract(&self, path: &str, dtype: Option<Wrap<DataType>>) -> PyResult<Self> {
+    pub fn str_json_path_extract(
+        &self,
+        path: &str,
+        dtype: Option<Wrap<DataType>>,
+    ) -> PyResult<Self> {
         let ca = self.series.utf8().map_err(PyPolarsErr::from)?;
         let s = ca
             .json_path_extract(path, dtype.map(|x| x.0))
