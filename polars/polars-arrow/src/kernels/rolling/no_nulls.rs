@@ -185,13 +185,6 @@ where
     values.iter().zip(weights).map(|(v, w)| *v * *w).sum::<T>() / T::from(values.len()).unwrap()
 }
 
-pub(crate) fn compute_sum<T>(values: &[T]) -> T
-where
-    T: std::iter::Sum<T> + Copy,
-{
-    values.iter().copied().sum()
-}
-
 pub(crate) fn compute_sum_weights<T>(values: &[T], weights: &[T]) -> T
 where
     T: std::iter::Sum<T> + Copy + std::ops::Mul<Output = T>,

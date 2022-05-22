@@ -6,6 +6,7 @@ pub mod nulls;
 mod quantile_no_nulls;
 mod quantile_nulls;
 mod sum_no_nulls;
+mod sum_nulls;
 mod window;
 
 use crate::data_types::IsFloat;

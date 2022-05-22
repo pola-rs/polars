@@ -1,6 +1,7 @@
 use super::*;
 pub use min_max_nulls::{rolling_max, rolling_min};
 pub use quantile_nulls::{rolling_median, rolling_quantile};
+pub use sum_nulls::rolling_sum;
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     unsafe fn new(
@@ -117,33 +118,6 @@ where
     ))
 }
 
-fn compute_sum<T>(
-    values: &[T],
-    validity_bytes: &[u8],
-    offset: usize,
-    min_periods: usize,
-) -> Option<T>
-where
-    T: NativeType + std::iter::Sum<T> + Zero + AddAssign,
-{
-    let null_count = count_zeros(validity_bytes, offset, values.len());
-    if null_count == 0 {
-        Some(no_nulls::compute_sum(values))
-    } else if (values.len() - null_count) < min_periods {
-        None
-    } else {
-        let mut out = Zero::zero();
-        for (i, val) in values.iter().enumerate() {
-            // Safety:
-            // in bounds
-            if unsafe { get_bit_unchecked(validity_bytes, offset + i) } {
-                out += *val;
-            }
-        }
-        Some(out)
-    }
-}
-
 fn compute_mean<T>(
     values: &[T],
     validity_bytes: &[u8],
@@ -238,40 +212,6 @@ where
             min_periods,
             det_offsets,
             compute_var,
-        )
-    }
-}
-
-pub fn rolling_sum<T>(
-    arr: &PrimitiveArray<T>,
-    window_size: usize,
-    min_periods: usize,
-    center: bool,
-    weights: Option<&[f64]>,
-) -> ArrayRef
-where
-    T: NativeType + std::iter::Sum + Zero + AddAssign + Copy,
-{
-    if weights.is_some() {
-        panic!("weights not yet supported on array with null values")
-    }
-    if center {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets_center,
-            compute_sum,
-        )
-    } else {
-        rolling_apply(
-            arr.values().as_slice(),
-            arr.validity().as_ref().unwrap(),
-            window_size,
-            min_periods,
-            det_offsets,
-            compute_sum,
         )
     }
 }
