@@ -108,24 +108,6 @@ where
     ))
 }
 
-pub(crate) fn compute_var<T>(vals: &[T]) -> T
-where
-    T: Float + std::ops::AddAssign + std::fmt::Debug,
-{
-    let mut sum = T::zero();
-    let mut sum_of_squares = T::zero();
-
-    for &val in vals {
-        sum += val;
-        sum_of_squares += val * val;
-    }
-    let count = NumCast::from(vals.len()).unwrap();
-
-    let mean = sum / count;
-    // apply Bessel's correction
-    ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
-}
-
 fn compute_var_weights<T>(vals: &[T], weights: &[T]) -> T
 where
     T: Float + std::ops::AddAssign,
@@ -144,13 +126,6 @@ where
     let mean = sum / count;
     // apply Bessel's correction
     ((sum_of_squares / count) - mean * mean) / (count - T::one()) * count
-}
-
-pub(crate) fn compute_mean<T>(values: &[T]) -> T
-where
-    T: Float + std::iter::Sum<T>,
-{
-    values.iter().copied().sum::<T>() / T::from(values.len()).unwrap()
 }
 
 pub(crate) fn compute_mean_weights<T>(values: &[T], weights: &[T]) -> T

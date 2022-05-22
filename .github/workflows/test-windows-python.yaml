@@ -15,7 +15,7 @@ jobs:
         with:
           toolchain: nightly-2022-05-20
           override: true
-          components: rustfmt, clippy
+          components: rustfmt
       - name: Set up Python
         uses: actions/setup-python@v3
         with:
@@ -29,7 +29,6 @@ jobs:
         run: |
           export RUSTFLAGS="-C debuginfo=0"
           cd py-polars && rustup override set nightly-2022-05-01 && make build-and-test-no-venv
-          cargo clippy
       # test if we can import polars without any requirements
       - name: Import polars
         run: |
