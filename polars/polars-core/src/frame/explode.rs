@@ -52,7 +52,13 @@ impl DataFrame {
                 if !ca.can_fast_explode() {
                     let (_, offsets) = get_exploded(col)?;
                     if offsets.is_empty() {
-                        return Ok(self.slice(0, 0));
+                        let mut out = self.slice(0, 0);
+                        // still explode the columns to get the inner dtype
+                        for col in &columns {
+                            out.try_apply(col.name(), |s| s.explode())?;
+                        }
+
+                        return Ok(out);
                     }
 
                     let mut mask = MutableBitmap::from_len_set(offsets.len() - 1);
