@@ -104,6 +104,12 @@ fn dtype_cols(dtypes: &PyAny) -> PyResult<dsl::PyExpr> {
 }
 
 #[pyfunction]
+fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
+    let dtype = dtype.0;
+    Ok(dtype.to_string())
+}
+
+#[pyfunction]
 fn lit(value: &PyAny) -> dsl::PyExpr {
     dsl::lit(value)
 }
@@ -454,6 +460,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();

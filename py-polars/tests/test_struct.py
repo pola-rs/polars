@@ -144,7 +144,7 @@ def test_nested_struct() -> None:
     nest_l2 = nest_l1.to_struct("a").to_frame()
 
     assert isinstance(nest_l2.dtypes[0], pl.datatypes.Struct)
-    assert nest_l2.dtypes[0].inner_types == nest_l1.dtypes
+    assert [f.dtype for f in nest_l2.dtypes[0].fields] == nest_l1.dtypes
     assert isinstance(nest_l1.dtypes[0], pl.datatypes.Struct)
 
 
