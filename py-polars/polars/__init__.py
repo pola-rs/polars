@@ -24,6 +24,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -153,6 +154,7 @@ __all__ = [
     "Time",
     "Object",
     "Categorical",
+    "Field",
     "Struct",
     # polars.io
     "read_csv",
