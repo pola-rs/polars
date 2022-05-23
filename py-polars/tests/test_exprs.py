@@ -222,3 +222,16 @@ def test_null_count_expr() -> None:
     df = pl.DataFrame({"key": ["a", "b", "b", "a"], "val": [1, 2, None, 1]})
 
     assert df.select([pl.all().null_count()]).to_dict(False) == {"key": [0], "val": [1]}
+
+
+def test_power_by_expression() -> None:
+    assert pl.DataFrame(
+        {"a": [1, None, None, 4, 5, 6], "b": [1, 2, None, 4, None, 6]}
+    ).select([(pl.col("a") ** pl.col("b")).alias("pow")])["pow"].to_list() == [
+        1.0,
+        None,
+        None,
+        256.0,
+        None,
+        46656.0,
+    ]

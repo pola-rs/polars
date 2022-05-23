@@ -188,13 +188,21 @@ fn test_power_in_agg_list1() -> Result<()> {
     let out = df
         .lazy()
         .groupby([col("fruits")])
-        .agg([col("A")
-            .rolling_min(RollingOptions {
-                window_size: 1,
-                ..Default::default()
-            })
-            .pow(2.0)
-            .alias("foo")])
+        .agg([
+            col("A")
+                .rolling_min(RollingOptions {
+                    window_size: 1,
+                    ..Default::default()
+                })
+                .alias("input"),
+            col("A")
+                .rolling_min(RollingOptions {
+                    window_size: 1,
+                    ..Default::default()
+                })
+                .pow(2.0)
+                .alias("foo"),
+        ])
         .sort(
             "fruits",
             SortOptions {
@@ -203,6 +211,7 @@ fn test_power_in_agg_list1() -> Result<()> {
             },
         )
         .collect()?;
+    dbg!(&out);
 
     let agg = out.column("foo")?.list()?;
     let first = agg.get(0).unwrap();
