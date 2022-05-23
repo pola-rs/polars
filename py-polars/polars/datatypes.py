@@ -21,7 +21,10 @@ except ImportError:  # pragma: no cover
 
 class DataType:
     @classmethod
-    def string_repr(self) -> str:
+    def string_repr(cls) -> str:
+        return dtype_str_repr(cls)
+
+    def __repr__(self) -> str:
         return dtype_str_repr(self)
 
 
@@ -130,9 +133,25 @@ class Categorical(DataType):
     pass
 
 
+class Field:
+    def __init__(self, name: str, dtype: Type[DataType]):
+        self.name = name
+        self.dtype = py_type_to_dtype(dtype)
+
+    def __eq__(self, other: "Field") -> bool:  # type: ignore
+        return (self.name == other.name) & (self.dtype == other.dtype)
+
+    def __repr__(self) -> str:
+        if isinstance(self.dtype, type):
+            dtype_str = self.dtype.string_repr()
+        else:
+            dtype_str = repr(self.dtype)
+        return f'Field("{self.name}": {dtype_str})'
+
+
 class Struct(DataType):
-    def __init__(self, inner_types: Sequence[Type[DataType]]):
-        self.inner_types = [py_type_to_dtype(dt) for dt in inner_types]
+    def __init__(self, fields: Sequence[Field]):
+        self.fields = fields
 
     def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
         # The comparison allows comparing objects to classes
@@ -143,10 +162,10 @@ class Struct(DataType):
         if type(other) is type and issubclass(other, Struct):
             return True
         if isinstance(other, Struct):
-            if self.inner_types is None or other.inner_types is None:
+            if self.fields is None or other.fields is None:
                 return True
             else:
-                return self.inner_types == other.inner_types
+                return self.fields == other.fields
         else:
             return False
 

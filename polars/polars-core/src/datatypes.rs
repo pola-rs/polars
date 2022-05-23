@@ -525,7 +525,7 @@ impl Display for DataType {
             }
             DataType::Duration(tu) => return write!(f, "duration[{}]", tu),
             DataType::Time => "time",
-            DataType::List(tp) => return write!(f, "list [{}]", tp),
+            DataType::List(tp) => return write!(f, "list[{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
