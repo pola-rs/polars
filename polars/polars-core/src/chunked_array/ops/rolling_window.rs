@@ -390,7 +390,7 @@ mod inner_mod {
     where
         ChunkedArray<T>: IntoSeries,
         T: PolarsFloatType,
-        T::Native: Float + IsFloat + SubAssign,
+        T::Native: Float + IsFloat + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
     {
         /// Apply a rolling custom function. This is pretty slow because of dynamic dispatch.
         pub fn rolling_apply_float<F>(&self, window_size: usize, f: F) -> Result<Self>
@@ -478,14 +478,41 @@ mod inner_mod {
         /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
         /// values will be aggregated to their std.
         pub fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
-            let s = self.rolling_var(options)?;
-            // Safety:
-            // We are still guarded by the type system.
-            let out = match self.dtype() {
-                DataType::Float32 => s.f32().unwrap().pow_f32(0.5).into_series(),
-                _ => s.f64().unwrap().pow_f64(0.5).into_series(), //Float64 case
+            check_input(options.window_size, options.min_periods)?;
+            let ca = self.rechunk();
+
+            // weights is only implemented by var kernel
+            if options.weights.is_some() {
+                if !matches!(self.dtype(), DataType::Float64 | DataType::Float32) {
+                    let s = ca.cast(&DataType::Float64).unwrap();
+                    return s
+                        .f64()
+                        .unwrap()
+                        .rolling_var(options)
+                        .and_then(|ca| ca.pow(0.5));
+                } else {
+                    return ca.rolling_var(options).and_then(|ca| ca.pow(0.5));
+                }
+            }
+
+            let arr = ca.downcast_iter().next().unwrap();
+            let arr = match self.has_validity() {
+                false => rolling::no_nulls::rolling_std(
+                    arr.values(),
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
+                _ => rolling::nulls::rolling_std(
+                    arr,
+                    options.window_size,
+                    options.min_periods,
+                    options.center,
+                    options.weights.as_deref(),
+                ),
             };
-            Ok(out)
+            Series::try_from((self.name(), arr))
         }
     }
 }

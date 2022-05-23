@@ -9,7 +9,7 @@ pub use mean::rolling_mean;
 pub use min_max::{rolling_max, rolling_min};
 pub use quantile::{rolling_median, rolling_quantile};
 pub use sum::rolling_sum;
-pub use variance::rolling_var;
+pub use variance::{rolling_std, rolling_var};
 
 pub(crate) trait RollingAggWindow<'a, T: NativeType> {
     unsafe fn new(
