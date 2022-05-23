@@ -226,3 +226,19 @@ fn test_when_then_otherwise_sum_in_agg() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_null_commutativity() {
+    let df = DataFrame::new_no_checks(vec![]);
+    let out = df
+        .lazy()
+        .select([
+            lit(1).neq(NULL.lit()).alias("a"),
+            NULL.lit().neq(1).alias("b"),
+        ])
+        .collect()
+        .unwrap();
+
+    assert_eq!(out.column("a").unwrap().get(0), AnyValue::Boolean(true));
+    assert_eq!(out.column("b").unwrap().get(0), AnyValue::Boolean(true));
+}
