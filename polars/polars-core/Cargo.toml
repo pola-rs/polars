@@ -77,6 +77,7 @@ log = []
 partition_by = []
 semi_anti_join = []
 chunked_ids = []
+describe = []
 timezones = ["chrono-tz", "arrow/chrono-tz"]
 
 dynamic_groupby = ["dtype-datetime", "dtype-date"]
@@ -139,6 +140,7 @@ docs-selection = [
   "product",
   "unique_counts",
   "log",
+  "describe",
   "chunked_ids",
   "semi_anti_join",
   "partition_by",

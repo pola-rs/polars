@@ -110,6 +110,7 @@ chunked_ids = ["polars-core/chunked_ids", "polars-lazy/chunked_ids"]
 to_dummies = ["polars-ops/to_dummies"]
 bigidx = ["polars-core/bigidx", "polars-lazy/bigidx"]
 list_to_struct = ["polars-ops/list_to_struct", "polars-lazy/list_to_struct"]
+describe = ["polars-core/describe"]
 timezones = ["polars-core/timezones"]
 
 test = [
@@ -230,6 +231,7 @@ docs-selection = [
   "string_encoding",
   "product",
   "to_dummies",
+  "describe",
   "list_eval",
   "cumulative_eval",
 ]
