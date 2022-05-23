@@ -1149,6 +1149,8 @@ class LazyFrame(Generic[DF]):
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
         """
+        if not isinstance(ldf, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
 
         if isinstance(on, str):
             left_on = on
@@ -1296,6 +1298,9 @@ class LazyFrame(Generic[DF]):
         └──────┴──────┴─────┴───────┘
 
         """
+        if not isinstance(ldf, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
+
         if how == "asof":
             warnings.warn(
                 "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof",
