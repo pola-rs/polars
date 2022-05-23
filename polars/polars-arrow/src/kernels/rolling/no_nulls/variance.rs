@@ -1,6 +1,7 @@
 use super::mean::MeanWindow;
 use super::*;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
+use num::pow::Pow;
 
 pub(super) struct SumSquaredWindow<'a, T> {
     slice: &'a [T],
@@ -153,6 +154,78 @@ where
                 compute_var_weights,
                 &weights,
             )
+        }
+    }
+}
+
+// E[(xi - E[x])^2]
+// can be expanded to
+// E[x^2] - E[x]^2
+struct StdWindow<'a, T> {
+    var: VarWindow<'a, T>,
+}
+
+impl<
+        'a,
+        T: NativeType
+            + IsFloat
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Div<Output = T>
+            + NumCast
+            + One
+            + Sub<Output = T>
+            + Pow<T, Output = T>,
+    > RollingAggWindow<'a, T> for StdWindow<'a, T>
+{
+    fn new(slice: &'a [T], start: usize, end: usize) -> Self {
+        Self {
+            var: VarWindow::new(slice, start, end),
+        }
+    }
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> T {
+        let var = self.var.update(start, end);
+        var.pow(NumCast::from(0.5).unwrap())
+    }
+}
+
+pub fn rolling_std<T>(
+    values: &[T],
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+    weights: Option<&[f64]>,
+) -> ArrayRef
+where
+    T: NativeType
+        + Float
+        + IsFloat
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Div<Output = T>
+        + NumCast
+        + One
+        + Sub<Output = T>
+        + Pow<T, Output = T>,
+{
+    match (center, weights) {
+        (true, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
+            values,
+            window_size,
+            min_periods,
+            det_offsets_center,
+        ),
+        (false, None) => rolling_apply_agg_window::<StdWindow<_>, _, _>(
+            values,
+            window_size,
+            min_periods,
+            det_offsets,
+        ),
+        (_, Some(_)) => {
+            panic!("weights not yet supported for rolling_std")
         }
     }
 }
