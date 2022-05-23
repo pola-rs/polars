@@ -197,8 +197,6 @@ mod dummies;
 #[cfg(feature = "compile")]
 pub mod frame;
 #[cfg(feature = "compile")]
-mod from;
-#[cfg(feature = "compile")]
 pub mod logical_plan;
 #[cfg(feature = "compile")]
 pub mod physical_plan;
