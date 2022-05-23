@@ -69,14 +69,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.equal(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    self.is_null()
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.equal(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    self.is_null()
                 }
             }
             _ => {
@@ -94,14 +94,14 @@ where
                 if let Some(value) = rhs.get(0) {
                     self.not_equal(value)
                 } else {
-                    BooleanChunked::full("", false, self.len())
+                    self.is_not_null()
                 }
             }
             (1, _) => {
                 if let Some(value) = self.get(0) {
                     rhs.not_equal(value)
                 } else {
-                    BooleanChunked::full("", false, rhs.len())
+                    self.is_not_null()
                 }
             }
             _ => {
