@@ -1090,8 +1090,17 @@ impl Expr {
     }
 
     /// Raise expression to the power `exponent`
-    pub fn pow(self, exponent: f64) -> Self {
-        self.map_private(FunctionExpr::Pow(exponent), "pow")
+    pub fn pow(self, exponent: Expr) -> Self {
+        Expr::Function {
+            input: vec![self, exponent],
+            function: FunctionExpr::Pow,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "pow",
+            },
+        }
     }
 
     /// Filter a single column

@@ -379,8 +379,8 @@ impl PyExpr {
         self.clone().inner.repeat_by(by.inner).into()
     }
 
-    pub fn pow(&self, exponent: f64) -> PyExpr {
-        self.clone().inner.pow(exponent).into()
+    pub fn pow(&self, exponent: PyExpr) -> PyExpr {
+        self.clone().inner.pow(exponent.inner).into()
     }
 
     pub fn cumsum(&self, reverse: bool) -> PyExpr {
