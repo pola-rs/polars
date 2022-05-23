@@ -132,7 +132,7 @@ class Expr:
     def __rmod__(self, other: Any) -> "Expr":
         return wrap_expr(self.__to_pyexpr(other) % self._pyexpr)
 
-    def __pow__(self, power: float, modulo: None = None) -> "Expr":
+    def __pow__(self, power: Union[float, "Expr"], modulo: None = None) -> "Expr":
         return self.pow(power)
 
     def __ge__(self, other: Any) -> "Expr":
@@ -1616,11 +1616,12 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.tail(n))
 
-    def pow(self, exponent: float) -> "Expr":
+    def pow(self, exponent: Union[float, "Expr"]) -> "Expr":
         """
         Raise expression to the power of exponent.
         """
-        return wrap_expr(self._pyexpr.pow(exponent))
+        exponent = expr_to_lit_or_expr(exponent)
+        return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
     def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
         """

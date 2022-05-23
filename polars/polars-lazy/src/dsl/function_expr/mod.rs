@@ -1,3 +1,5 @@
+mod pow;
+
 use super::*;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -7,7 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq, Debug)]
 pub enum FunctionExpr {
     NullCount,
-    Pow(f64),
+    Pow,
     #[cfg(feature = "row_hash")]
     Hash(usize),
 }
@@ -35,7 +37,7 @@ impl FunctionExpr {
         use FunctionExpr::*;
         match self {
             NullCount => with_dtype(IDX_DTYPE),
-            Pow(_) => float_dtype(),
+            Pow => float_dtype(),
             #[cfg(feature = "row_hash")]
             Hash(_) => with_dtype(DataType::UInt64),
         }
@@ -59,12 +61,8 @@ impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
                 };
                 wrap!(f)
             }
-            Pow(exponent) => {
-                let f = move |s: &mut [Series]| {
-                    let s = &s[0];
-                    s.pow(exponent)
-                };
-                wrap!(f)
+            Pow => {
+                wrap!(pow::pow)
             }
             #[cfg(feature = "row_hash")]
             Hash(seed) => {

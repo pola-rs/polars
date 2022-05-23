@@ -250,7 +250,7 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let p = resolve_homedir(p);
         let f = match File::open(&p) {
             Ok(file) => file,
-            Err(e) => {
+            Err(_e) => {
                 return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
                     "No such file or directory: {}",
                     s

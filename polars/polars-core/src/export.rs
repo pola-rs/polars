@@ -3,6 +3,8 @@ pub use arrow;
 pub use chrono;
 
 #[cfg(feature = "private")]
+pub use num;
+#[cfg(feature = "private")]
 pub use once_cell;
 #[cfg(feature = "private")]
 pub use rayon;

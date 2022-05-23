@@ -7,6 +7,7 @@ pub use cat::*;
 mod dt;
 mod eval;
 mod expr;
+mod from;
 pub(crate) mod function_expr;
 #[cfg(feature = "compile")]
 mod functions;
@@ -83,27 +84,27 @@ pub struct WhenThenThen {
 }
 
 impl When {
-    pub fn then(self, expr: Expr) -> WhenThen {
+    pub fn then<E: Into<Expr>>(self, expr: E) -> WhenThen {
         WhenThen {
             predicate: self.predicate,
-            then: expr,
+            then: expr.into(),
         }
     }
 }
 
 impl WhenThen {
-    pub fn when(self, predicate: Expr) -> WhenThenThen {
+    pub fn when<E: Into<Expr>>(self, predicate: E) -> WhenThenThen {
         WhenThenThen {
-            predicates: vec![self.predicate, predicate],
+            predicates: vec![self.predicate, predicate.into()],
             thens: vec![self.then],
         }
     }
 
-    pub fn otherwise(self, expr: Expr) -> Expr {
+    pub fn otherwise<E: Into<Expr>>(self, expr: E) -> Expr {
         Expr::Ternary {
             predicate: Box::new(self.predicate),
             truthy: Box::new(self.then),
-            falsy: Box::new(expr),
+            falsy: Box::new(expr.into()),
         }
     }
 }
@@ -171,8 +172,10 @@ impl WhenThenThen {
 }
 
 /// Start a when-then-otherwise expression
-pub fn when(predicate: Expr) -> When {
-    When { predicate }
+pub fn when<E: Into<Expr>>(predicate: E) -> When {
+    When {
+        predicate: predicate.into(),
+    }
 }
 
 pub fn ternary_expr(predicate: Expr, truthy: Expr, falsy: Expr) -> Expr {
@@ -234,33 +237,33 @@ impl Expr {
     }
 
     /// Compare `Expr` with other `Expr` on equality
-    pub fn eq(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::Eq, other)
+    pub fn eq<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::Eq, other.into())
     }
 
     /// Compare `Expr` with other `Expr` on non-equality
-    pub fn neq(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::NotEq, other)
+    pub fn neq<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::NotEq, other.into())
     }
 
     /// Check if `Expr` < `Expr`
-    pub fn lt(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::Lt, other)
+    pub fn lt<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::Lt, other.into())
     }
 
     /// Check if `Expr` > `Expr`
-    pub fn gt(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::Gt, other)
+    pub fn gt<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::Gt, other.into())
     }
 
     /// Check if `Expr` >= `Expr`
-    pub fn gt_eq(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::GtEq, other)
+    pub fn gt_eq<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::GtEq, other.into())
     }
 
     /// Check if `Expr` <= `Expr`
-    pub fn lt_eq(self, other: Expr) -> Expr {
-        binary_expr(self, Operator::LtEq, other)
+    pub fn lt_eq<E: Into<Expr>>(self, other: E) -> Expr {
+        binary_expr(self, Operator::LtEq, other.into())
     }
 
     /// Negate `Expr`
@@ -410,11 +413,11 @@ impl Expr {
 
     /// Slice the Series.
     /// `offset` may be negative.
-    pub fn slice(self, offset: Expr, length: Expr) -> Self {
+    pub fn slice<E: Into<Expr>, F: Into<Expr>>(self, offset: E, length: F) -> Self {
         Expr::Slice {
             input: Box::new(self),
-            offset: Box::new(offset),
-            length: Box::new(length),
+            offset: Box::new(offset.into()),
+            length: Box::new(length.into()),
         }
     }
 
@@ -529,10 +532,10 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn take(self, idx: Expr) -> Self {
+    pub fn take<E: Into<Expr>>(self, idx: E) -> Self {
         Expr::Take {
             expr: Box::new(self),
-            idx: Box::new(idx),
+            idx: Box::new(idx.into()),
         }
     }
 
@@ -782,8 +785,7 @@ impl Expr {
         }
     }
 
-    /// Shift the values in the array by some period and fill the resulting empty values.
-    pub fn shift_and_fill(self, periods: i64, fill_value: Expr) -> Self {
+    pub fn shift_and_fill_impl(self, periods: i64, fill_value: Expr) -> Self {
         // Note:
         // The order of the then | otherwise is important
         if periods > 0 {
@@ -819,6 +821,11 @@ impl Expr {
             .then(self.shift(periods))
             .otherwise(fill_value)
         }
+    }
+
+    /// Shift the values in the array by some period and fill the resulting empty values.
+    pub fn shift_and_fill<E: Into<Expr>>(self, periods: i64, fill_value: E) -> Self {
+        self.shift_and_fill_impl(periods, fill_value.into())
     }
 
     /// Get an array with the cumulative sum computed at every element
@@ -1009,17 +1016,21 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over<E: AsRef<[Expr]>>(self, partition_by: E) -> Self {
+    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
+        let partition_by = partition_by
+            .as_ref()
+            .iter()
+            .map(|e| e.clone().into())
+            .collect();
         Expr::Window {
             function: Box::new(self),
-            partition_by: partition_by.as_ref().to_vec(),
+            partition_by,
             order_by: None,
             options: WindowOptions { explode: false },
         }
     }
 
-    /// Replace the null values by a value.
-    pub fn fill_null(self, fill_value: Expr) -> Self {
+    fn fill_null_impl(self, fill_value: Expr) -> Self {
         self.map_many(
             |s| {
                 let a = &s[0];
@@ -1041,9 +1052,16 @@ impl Expr {
         .with_fmt("fill_null")
     }
 
+    /// Replace the null values by a value.
+    pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> Self {
+        self.fill_null_impl(fill_value.into())
+    }
+
     /// Replace the floating point `NaN` values by a value.
-    pub fn fill_nan(self, fill_value: Expr) -> Self {
-        when(self.clone().is_nan()).then(fill_value).otherwise(self)
+    pub fn fill_nan<E: Into<Expr>>(self, fill_value: E) -> Self {
+        when(self.clone().is_nan())
+            .then(fill_value.into())
+            .otherwise(self)
     }
     /// Count the values of the Series
     /// or
@@ -1075,35 +1093,44 @@ impl Expr {
     }
 
     /// and operation
-    pub fn and(self, expr: Expr) -> Self {
-        binary_expr(self, Operator::And, expr)
+    pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::And, expr.into())
     }
 
     // xor operation
-    pub fn xor(self, expr: Expr) -> Self {
-        binary_expr(self, Operator::Xor, expr)
+    pub fn xor<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::Xor, expr.into())
     }
 
     /// or operation
-    pub fn or(self, expr: Expr) -> Self {
-        binary_expr(self, Operator::Or, expr)
+    pub fn or<E: Into<Expr>>(self, expr: E) -> Self {
+        binary_expr(self, Operator::Or, expr.into())
     }
 
     /// Raise expression to the power `exponent`
-    pub fn pow(self, exponent: f64) -> Self {
-        self.map_private(FunctionExpr::Pow(exponent), "pow")
+    pub fn pow<E: Into<Expr>>(self, exponent: E) -> Self {
+        Expr::Function {
+            input: vec![self, exponent.into()],
+            function: FunctionExpr::Pow,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: false,
+                fmt_str: "pow",
+            },
+        }
     }
 
     /// Filter a single column
     /// Should be used in aggregation context. If you want to filter on a DataFrame level, use
     /// [LazyFrame::filter](LazyFrame::filter)
-    pub fn filter(self, predicate: Expr) -> Self {
+    pub fn filter<E: Into<Expr>>(self, predicate: E) -> Self {
         if has_expr(&self, |e| matches!(e, Expr::Wildcard)) {
             panic!("filter '*' not allowed, use LazyFrame::filter")
         };
         Expr::Filter {
             input: Box::new(self),
-            by: Box::new(predicate),
+            by: Box::new(predicate.into()),
         }
     }
 
@@ -1111,7 +1138,8 @@ impl Expr {
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_in")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_in")))]
-    pub fn is_in(self, other: Expr) -> Self {
+    pub fn is_in<E: Into<Expr>>(self, other: E) -> Self {
+        let other = other.into();
         let has_literal = has_root_literal_expr(&other);
         if has_literal {
             if let Expr::Literal(LiteralValue::Series(s)) = &other {
@@ -1142,8 +1170,12 @@ impl Expr {
 
     /// Sort this column by the ordering of another column.
     /// Can also be used in a groupby context to sort the groups.
-    pub fn sort_by<E: AsRef<[Expr]>, R: AsRef<[bool]>>(self, by: E, reverse: R) -> Expr {
-        let by = by.as_ref().to_vec();
+    pub fn sort_by<E: AsRef<[IE]>, IE: Into<Expr> + Clone, R: AsRef<[bool]>>(
+        self,
+        by: E,
+        reverse: R,
+    ) -> Expr {
+        let by = by.as_ref().iter().map(|e| e.clone().into()).collect();
         let reverse = reverse.as_ref().to_vec();
         Expr::SortBy {
             expr: Box::new(self),
@@ -1153,10 +1185,7 @@ impl Expr {
     }
 
     #[cfg(feature = "repeat_by")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
-    /// Repeat the column `n` times, where `n` is determined by the values in `by`.
-    /// This yields an `Expr` of dtype `List`
-    pub fn repeat_by(self, by: Expr) -> Expr {
+    fn repeat_by_impl(self, by: Expr) -> Expr {
         let function = |s: &mut [Series]| {
             let by = &s[1];
             let s = &s[0];
@@ -1172,6 +1201,14 @@ impl Expr {
         .with_fmt("repeat_by")
     }
 
+    #[cfg(feature = "repeat_by")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "repeat_by")))]
+    /// Repeat the column `n` times, where `n` is determined by the values in `by`.
+    /// This yields an `Expr` of dtype `List`
+    pub fn repeat_by<E: Into<Expr>>(self, by: E) -> Expr {
+        self.repeat_by_impl(by.into())
+    }
+
     #[cfg(feature = "is_first")]
     #[cfg_attr(docsrs, doc(cfg(feature = "is_first")))]
     #[allow(clippy::wrong_self_convention)]
@@ -1185,12 +1222,17 @@ impl Expr {
     }
 
     #[cfg(feature = "dot_product")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
-    pub fn dot(self, other: Expr) -> Expr {
+    fn dot_impl(self, other: Expr) -> Expr {
         let function = |s: &mut [Series]| Ok((&s[0] * &s[1]).sum_as_series());
 
         self.apply_many(function, &[other], GetOutput::same_type())
             .with_fmt("dot")
+    }
+
+    #[cfg(feature = "dot_product")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dot_product")))]
+    pub fn dot<E: Into<Expr>>(self, other: E) -> Expr {
+        self.dot_impl(other.into())
     }
 
     #[cfg(feature = "mode")]
