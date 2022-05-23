@@ -172,3 +172,11 @@ def test_apply_list_anyvalue_fallback() -> None:
     assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
         "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
     }
+
+    # starts with empty list '[]'
+    df = pl.DataFrame(
+        {"text": ["[]", '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]', '[{"x": 1, "y": 2}]']}
+    )
+    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
+    }

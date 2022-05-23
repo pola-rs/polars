@@ -1,5 +1,6 @@
 use super::*;
 use crate::conversion::slice_to_wrapped;
+use crate::py_modules::SERIES;
 use crate::series::PySeries;
 use crate::{PyPolarsErr, Wrap};
 use polars::chunked_array::builder::get_list_builder;
@@ -43,10 +44,18 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             .apply_lambda_with_list_out_type(py, lambda.to_object(py), null_count, &series, dt)
             .map(|ca| ca.into_series().into())
     } else if out.is_instance_of::<PyList>().unwrap() {
-        let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-        let series = pypolars.getattr(py, "Series").unwrap().call1(py, (out,))?;
+        let series = SERIES.call1(py, (out,))?;
         let py_pyseries = series.getattr(py, "_s").unwrap();
         let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
+
+        // empty dtype is incorrect use anyvalues.
+        if series.is_empty() {
+            let av = out.extract::<Wrap<AnyValue>>()?;
+            return applyer
+                .apply_extract_any_values(py, lambda, null_count, av.0)
+                .map(|s| s.into());
+        }
+
         let dt = series.dtype();
 
         // make a new python function that is:
@@ -57,7 +66,7 @@ fn infer_and_finish<'a, A: ApplyLambda<'a>>(
             move |args, _kwargs| {
                 Python::with_gil(|py| {
                     let out = lambda_owned.call1(py, args)?;
-                    pypolars.getattr(py, "Series").unwrap().call1(py, (out,))
+                    SERIES.call1(py, (out,))
                 })
             },
             py,
