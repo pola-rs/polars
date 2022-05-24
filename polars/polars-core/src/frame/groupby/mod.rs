@@ -923,10 +923,11 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
-            .idx_ref()
             .par_iter()
-            .map(|t| {
-                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
+            .map(|g| {
+                // safety
+                // groups are in bounds
+                let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -944,10 +945,11 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
-            .idx_ref()
             .iter()
-            .map(|t| {
-                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
+            .map(|g| {
+                // safety
+                // groups are in bounds
+                let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -955,6 +957,13 @@ impl<'df> GroupBy<'df> {
         let mut df = accumulate_dataframes_vertical(dfs)?;
         df.as_single_chunk();
         Ok(df)
+    }
+}
+
+unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
+    match g {
+        GroupsIndicator::Idx(idx) => df.take_iter_unchecked(idx.1.iter().map(|i| *i as usize)),
+        GroupsIndicator::Slice([first, len]) => df.slice(first as i64, len as usize),
     }
 }
 

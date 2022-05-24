@@ -102,7 +102,7 @@ fn estimate_unique_count(keys: &[Series], mut sample_size: usize) -> usize {
         let ui = if groups.len() == sample_size {
             u
         } else {
-            groups.idx_ref().iter().filter(|g| g.1.len() == 1).count() as f32
+            groups.iter().filter(|g| g.len() == 1).count() as f32
         };
 
         (u + (ui / sample_size as f32) * (set_size - sample_size) as f32) as usize

@@ -206,10 +206,15 @@ impl GroupsProxy {
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice(groups) => groups
-                .iter()
-                .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))
-                .collect(),
+            GroupsProxy::Slice(groups) => {
+                if std::env::var("POLARS_VERBOSE").is_ok() {
+                    println!("had to reallocate groups, missed an optimization opportunity.")
+                }
+                groups
+                    .iter()
+                    .map(|&[first, len]| (first, (first..first + len).collect_trusted::<Vec<_>>()))
+                    .collect()
+            }
         }
     }
 
@@ -238,6 +243,13 @@ impl GroupsProxy {
         let mut ca = ca.into_inner();
         ca.rename(name);
         ca
+    }
+
+    pub fn take_group_firsts(self) -> Vec<IdxSize> {
+        match self {
+            GroupsProxy::Idx(mut groups) => std::mem::take(&mut groups.first),
+            GroupsProxy::Slice(groups) => groups.into_iter().map(|[first, _len]| first).collect(),
+        }
     }
 
     #[cfg(feature = "private")]

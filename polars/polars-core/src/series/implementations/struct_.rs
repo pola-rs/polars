@@ -298,7 +298,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// Get first indexes of unique values.
     fn arg_unique(&self) -> Result<IdxCa> {
         let groups = self.group_tuples(true, false);
-        let first = std::mem::take(groups.into_idx().first_mut());
+        let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name(), first))
     }
 

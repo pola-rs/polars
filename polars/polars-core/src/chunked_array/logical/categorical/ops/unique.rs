@@ -1,6 +1,5 @@
 use super::*;
 use crate::prelude::groupby::IntoGroupsProxy;
-use crate::utils::NoNull;
 
 impl CategoricalChunked {
     pub fn unique(&self) -> Result<Self> {
@@ -35,21 +34,22 @@ impl CategoricalChunked {
     }
 
     pub fn value_counts(&self) -> Result<DataFrame> {
-        let group_tuples = self.logical().group_tuples(true, false).into_idx();
-        let logical_values = unsafe {
-            self.logical
-                .take_unchecked(group_tuples.iter().map(|t| t.0 as usize).into())
-        };
+        let groups = self.logical().group_tuples(true, false);
+        let logical_values = self
+            .logical()
+            .clone()
+            .into_series()
+            .agg_first(&groups)
+            .u32()
+            .unwrap()
+            .clone();
 
         let mut values = self.clone();
         *values.logical_mut() = logical_values;
 
-        let mut counts: NoNull<IdxCa> = group_tuples
-            .into_iter()
-            .map(|(_, groups)| groups.len() as IdxSize)
-            .collect();
+        let mut counts = groups.group_count();
         counts.rename("counts");
-        let cols = vec![values.into_series(), counts.into_inner().into_series()];
+        let cols = vec![values.into_series(), counts.into_series()];
         let df = DataFrame::new_no_checks(cols);
         df.sort(&["counts"], true)
     }
