@@ -1,5 +1,6 @@
 use crate::{utils::resolve_homedir, WriterFactory};
 use polars_core::prelude::*;
+use polars_core::POOL;
 use rayon::prelude::*;
 use std::{
     fs::File,
@@ -88,10 +89,33 @@ where
     }
 
     pub fn finish(self, df: &DataFrame) -> Result<()> {
-        df._partition_by_impl(&self.by, false)?
-            .enumerate()
-            .map(|(i, mut part_df)| self.write_partition_df(&mut part_df, i))
-            .collect::<Result<Vec<_>>>()?;
+        let groups = df.groupby(self.by.clone())?;
+        let groups = groups.get_groups();
+
+        // don't parallelize this
+        // there is a lot of parallelization in take and this may easily SO
+        POOL.install(|| {
+            match groups {
+                GroupsProxy::Idx(idx) => {
+                    idx.par_iter()
+                        .enumerate()
+                        .map(|(i, (_, group))| {
+                            // groups are in bounds
+                            let mut part_df = unsafe { df._take_unchecked_slice(group, false) };
+                            self.write_partition_df(&mut part_df, i)
+                        })
+                        .collect::<Result<Vec<_>>>()
+                }
+                GroupsProxy::Slice(groups) => groups
+                    .par_iter()
+                    .enumerate()
+                    .map(|(i, [first, len])| {
+                        let mut part_df = df.slice(*first as i64, *len as usize);
+                        self.write_partition_df(&mut part_df, i)
+                    })
+                    .collect::<Result<Vec<_>>>(),
+            }
+        })?;
 
         Ok(())
     }

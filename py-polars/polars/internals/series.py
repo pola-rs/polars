@@ -3642,6 +3642,22 @@ class Series:
         """
         return wrap_s(self._s.extend_constant(value, n))
 
+    def set_sorted(self, reverse: bool = False) -> "Series":
+        """
+        Set this `Series` as `sorted` so that downstream code can use
+        fast paths for sorted arrays.
+
+        .. warning::
+            This can lead to incorrect results if this `Series` is not sorted!!
+            Use with care!
+
+        Parameters
+        ----------
+        reverse
+            If the `Series` order is reversed, e.g. descending.
+        """
+        return wrap_s(self._s.set_sorted(reverse))
+
     @property
     def time_unit(self) -> Optional[str]:
         """

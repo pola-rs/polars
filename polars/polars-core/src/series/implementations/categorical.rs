@@ -73,7 +73,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         .into_series()
     }
 
-    fn set_sorted(&mut self, reverse: bool) {
+    fn _set_sorted(&mut self, reverse: bool) {
         self.0.logical_mut().set_sorted(reverse)
     }
 

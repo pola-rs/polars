@@ -198,6 +198,7 @@ Various
     Series.str
     Series.reinterpret
     Series.to_physical
+    Series.set_sorted
 
 TimeSeries
 ----------

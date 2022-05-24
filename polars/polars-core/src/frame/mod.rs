@@ -1725,10 +1725,17 @@ impl DataFrame {
         let mut take = match by_column.len() {
             1 => {
                 let s = &by_column[0];
-                s.argsort(SortOptions {
+                let options = SortOptions {
                     descending: reverse[0],
                     nulls_last,
-                })
+                };
+                // fast path for a frame with a single series
+                // no need to compute the sort indices and then take by these indices
+                // simply sort and return as frame
+                if self.width() == 1 && self.check_name_to_idx(s.name()).is_ok() {
+                    return Ok(s.sort_with(options).into_frame());
+                }
+                s.argsort(options)
             }
             _ => {
                 #[cfg(feature = "sort_multiple")]
@@ -1759,8 +1766,7 @@ impl DataFrame {
         // not present in the dataframe
         let _ = df.apply(&first_by_column, |s| {
             let mut s = s.clone();
-            let inner = s.get_inner_mut();
-            inner.set_sorted(first_reverse);
+            s.set_sorted(first_reverse);
             s
         });
         Ok(df)
@@ -2885,7 +2891,7 @@ impl DataFrame {
             None => self.get_column_names(),
         };
         let gb = self.groupby(names)?;
-        let groups = gb.get_groups().idx_ref();
+        let groups = gb.get_groups().unwrap_idx();
 
         let finish_maintain_order = |mut groups: Vec<IdxSize>| {
             groups.sort_unstable();
@@ -3020,7 +3026,8 @@ impl DataFrame {
 
     /// Be careful with allowing threads when calling this in a large hot loop
     /// every thread split may be on rayon stack and lead to SO
-    pub(crate) unsafe fn take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+    #[doc(hidden)]
+    pub unsafe fn _take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();
 
@@ -3044,11 +3051,7 @@ impl DataFrame {
 
     #[cfg(feature = "partition_by")]
     #[doc(hidden)]
-    pub fn _partition_by_impl(
-        &self,
-        cols: &[String],
-        stable: bool,
-    ) -> Result<impl IndexedParallelIterator<Item = DataFrame> + '_> {
+    pub fn _partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
         let groups = if stable {
             self.groupby_stable(cols)?.groups
         } else {
@@ -3060,14 +3063,18 @@ impl DataFrame {
         POOL.install(|| {
             match groups {
                 GroupsProxy::Idx(idx) => {
-                    Ok(idx.into_par_iter().map(|(_, group)| {
-                        // groups are in bounds
-                        unsafe { self.take_unchecked_slice(&group, false) }
-                    }))
+                    Ok(idx
+                        .into_par_iter()
+                        .map(|(_, group)| {
+                            // groups are in bounds
+                            unsafe { self._take_unchecked_slice(&group, false) }
+                        })
+                        .collect())
                 }
-                _ => {
-                    unimplemented!()
-                }
+                GroupsProxy::Slice(groups) => Ok(groups
+                    .into_par_iter()
+                    .map(|[first, len]| self.slice(first as i64, len as usize))
+                    .collect()),
             }
         })
     }
@@ -3078,7 +3085,6 @@ impl DataFrame {
     pub fn partition_by(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, false)
-            .map(|iter| iter.collect())
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3088,7 +3094,6 @@ impl DataFrame {
     pub fn partition_by_stable(&self, cols: impl IntoVec<String>) -> Result<Vec<DataFrame>> {
         let cols = cols.into_vec();
         self._partition_by_impl(&cols, true)
-            .map(|iter| iter.collect())
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be

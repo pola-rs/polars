@@ -262,10 +262,22 @@ impl GroupsProxy {
     /// # Panic
     ///
     /// panics if the groups are a slice.
-    pub fn idx_ref(&self) -> &GroupsIdx {
+    pub fn unwrap_idx(&self) -> &GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
             GroupsProxy::Slice(_) => panic!("groups are slices not index"),
+        }
+    }
+
+    /// Get a reference to the `GroupsSlice`.
+    ///
+    /// # Panic
+    ///
+    /// panics if the groups are an idx.
+    pub fn unwrap_slice(&self) -> &GroupsSlice {
+        match self {
+            GroupsProxy::Slice(groups) => groups,
+            GroupsProxy::Idx(_) => panic!("groups are index not slices"),
         }
     }
 

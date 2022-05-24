@@ -1,3 +1,4 @@
+mod groupby;
 mod joins;
 mod list;
 #[cfg(feature = "rows")]

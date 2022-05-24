@@ -39,7 +39,7 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn set_sorted(&mut self, reverse: bool) {
+    fn _set_sorted(&mut self, reverse: bool) {
         self.0.set_sorted(reverse)
     }
 
