@@ -48,10 +48,10 @@ def foods_csv() -> str:
 
 
 if not os.path.isfile(FOODS_PARQUET):
-    pl.read_csv(FOODS_CSV).to_parquet(FOODS_PARQUET)
+    pl.read_csv(FOODS_CSV).write_parquet(FOODS_PARQUET)
 
 if not os.path.isfile(FOODS_IPC):
-    pl.read_csv(FOODS_CSV).to_ipc(FOODS_IPC)
+    pl.read_csv(FOODS_CSV).write_ipc(FOODS_IPC)
 
 
 @pytest.fixture
