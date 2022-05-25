@@ -163,7 +163,9 @@ where
             order_reverse,
         );
 
-        ChunkedArray::from_vec(ca.name(), vals)
+        let mut ca = ChunkedArray::from_vec(ca.name(), vals);
+        ca.set_sorted(options.descending);
+        ca
     } else {
         let null_count = ca.null_count();
         let len = ca.len();

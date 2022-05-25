@@ -7,6 +7,7 @@ pub mod float;
 pub mod list;
 pub mod rolling;
 pub mod set;
+pub mod sort_partition;
 #[cfg(feature = "strings")]
 pub mod string;
 pub mod take;

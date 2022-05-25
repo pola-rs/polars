@@ -57,7 +57,7 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            fn set_sorted(&mut self, reverse: bool) {
+            fn _set_sorted(&mut self, reverse: bool) {
                 self.0.deref_mut().set_sorted(reverse)
             }
 
