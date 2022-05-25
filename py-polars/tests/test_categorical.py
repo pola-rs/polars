@@ -133,3 +133,10 @@ def test_comp_categorical_lit_dtype() -> None:
         .otherwise(pl.col("column"))
         .alias("column")
     ).dtypes == [pl.Categorical, pl.Int32]
+
+
+def test_categorical_describe_3487() -> None:
+    # test if we don't err
+    df = pl.DataFrame({"cats": ["a", "b"]})
+    df = df.with_column(pl.col("cats").cast(pl.Categorical))
+    df.describe()

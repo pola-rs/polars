@@ -3,7 +3,7 @@ use arrow::bitmap::MutableBitmap;
 use std::sync::Arc;
 
 impl CategoricalChunked {
-    pub(crate) fn merge_categorical_map(&self, other: &Self) -> Arc<RevMapping> {
+    pub(crate) fn merge_categorical_map(&self, other: &Self) -> Result<Arc<RevMapping>> {
         match (
             &**self.get_rev_map(),
             &**other.get_rev_map()
@@ -13,7 +13,7 @@ impl CategoricalChunked {
                 RevMapping::Global(r_map, r_slots, r_id),
             ) => {
                 if l_id != r_id {
-                    panic!("The two categorical arrays are not created under the same global string cache. They cannot be merged")
+                    return Err(PolarsError::ComputeError("The two categorical arrays are not created under the same global string cache. They cannot be merged".into()))
                 }
                 let mut new_map = (*l_map).clone();
 
@@ -52,20 +52,20 @@ impl CategoricalChunked {
                     });
                 }
                 let new_rev = RevMapping::Global(new_map, new_slots.into(), *l_id);
-                Arc::new(new_rev)
+                Ok(Arc::new(new_rev))
             }
             (RevMapping::Local(arr_l), RevMapping::Local(arr_r)) => {
                 // they are from the same source, just clone
                 if std::ptr::eq(arr_l, arr_r) {
-                    return self.get_rev_map().clone()
+                    return Ok(self.get_rev_map().clone())
                 }
 
                 let arr = arrow::compute::concatenate::concatenate(&[arr_l, arr_r]).unwrap();
                 let arr = arr.as_any().downcast_ref::<Utf8Array<i64>>().unwrap().clone();
 
-                Arc::new(RevMapping::Local(arr))
+                Ok(Arc::new(RevMapping::Local(arr)))
             }
-            _ => panic!("cannot combine categorical under a global string cache with a non cached categorical")
+            _ => Err(PolarsError::ComputeError("cannot combine categorical under a global string cache with a non cached categorical".into()))
         }
     }
 }
@@ -89,7 +89,7 @@ mod test {
         builder2.drain_iter(vec![Some("hello"), None, Some("world"), Some("bar")].into_iter());
         let ca1 = builder1.finish();
         let ca2 = builder2.finish();
-        let rev_map = ca1.merge_categorical_map(&ca2);
+        let rev_map = ca1.merge_categorical_map(&ca2).unwrap();
 
         let mut ca = UInt32Chunked::new("", &[0, 1, 2, 3]);
         ca.categorical_map = Some(rev_map);
