@@ -20,6 +20,8 @@ except ImportError:  # pragma: no cover
 
 
 class DataType:
+    """Base class for all Polars data types"""
+
     @classmethod
     def string_repr(cls) -> str:
         return dtype_str_repr(cls)
@@ -29,59 +31,93 @@ class DataType:
 
 
 class Int8(DataType):
+    """8-bit signed integer type"""
+
     pass
 
 
 class Int16(DataType):
+    """16-bit signed integer type"""
+
     pass
 
 
 class Int32(DataType):
+    """32-bit signed integer type"""
+
     pass
 
 
 class Int64(DataType):
+    """64-bit signed integer type"""
+
     pass
 
 
 class UInt8(DataType):
+    """8-bit unsigned integer type"""
+
     pass
 
 
 class UInt16(DataType):
+    """16-bit unsigned integer type"""
+
     pass
 
 
 class UInt32(DataType):
+    """32-bit unsigned integer type"""
+
     pass
 
 
 class UInt64(DataType):
+    """64-bit unsigned integer type"""
+
     pass
 
 
 class Float32(DataType):
+    """32-bit floating point type"""
+
     pass
 
 
 class Float64(DataType):
+    """64-bit floating point type"""
+
     pass
 
 
 class Boolean(DataType):
+    """Boolean type"""
+
     pass
 
 
 class Utf8(DataType):
+    """UTF-8 encoded string type"""
+
     pass
 
 
 class Null(DataType):
+    """Type representing Null / None values"""
+
     pass
 
 
 class List(DataType):
     def __init__(self, inner: Type[DataType]):
+        """
+        Nested list/array type
+
+        Parameters
+        ----------
+        inner
+            The `DataType` of values within the list
+        """
         self.inner = py_type_to_dtype(inner)
 
     def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
@@ -110,31 +146,53 @@ class List(DataType):
 
 
 class Date(DataType):
+    """Calendar date type"""
+
     pass
 
 
 class Datetime(DataType):
+    """Calendar date and time type"""
+
     pass
 
 
 class Duration(DataType):
+    """Time duration/delta type"""
+
     pass
 
 
 class Time(DataType):
+    """Time of day type"""
+
     pass
 
 
 class Object(DataType):
+    """Type for wrapping arbitrary Python objects"""
+
     pass
 
 
 class Categorical(DataType):
+    """A categorical encoding of a set of strings"""
+
     pass
 
 
 class Field:
     def __init__(self, name: str, dtype: Type[DataType]):
+        """
+        Definition of a single field within a `Struct` DataType
+
+        Parameters
+        ----------
+        name
+            The name of the field within its parent `Struct`
+        dtype
+            The `DataType` of the field's values
+        """
         self.name = name
         self.dtype = py_type_to_dtype(dtype)
 
@@ -151,6 +209,14 @@ class Field:
 
 class Struct(DataType):
     def __init__(self, fields: Sequence[Field]):
+        """
+        Struct composite type
+
+        Parameters
+        ----------
+        fields
+            The sequence of fields that make up the struct
+        """
         self.fields = fields
 
     def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
@@ -308,4 +374,5 @@ def maybe_cast(
     return el
 
 
+#: Mapping of `~polars.DataFrame` / `~polars.LazyFrame` column names to their `DataType`
 Schema = Dict[str, Type[DataType]]
