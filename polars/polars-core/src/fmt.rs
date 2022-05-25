@@ -251,6 +251,15 @@ impl Debug for Series {
                     "Series"
                 )
             }
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => format_array!(
+                limit,
+                f,
+                self.time().unwrap(),
+                "time",
+                self.name(),
+                "Series"
+            ),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());

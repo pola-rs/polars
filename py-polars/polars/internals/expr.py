@@ -23,6 +23,7 @@ from polars.datatypes import (
     Float64,
     Int32,
     Object,
+    Time,
     UInt32,
     py_type_to_dtype,
 )
@@ -3727,6 +3728,8 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_parse_date(fmt, strict, exact))
         elif datatype == Datetime:
             return wrap_expr(self._pyexpr.str_parse_datetime(fmt, strict, exact))
+        elif datatype == Time:
+            return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
         else:
             raise ValueError(
                 "dtype should be of type {Date, Datetime}"
