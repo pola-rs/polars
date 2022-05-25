@@ -2427,7 +2427,7 @@ class Expr:
 
     def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Expr":
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating poitns range.
+        Clip (limit) the values in an array to any value that fits in 64 floating point range.
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
@@ -2911,7 +2911,7 @@ class Expr:
             that visit all elements.
 
         .. warning::
-            This API is exprerimental and may change without it being considered a breaking change.
+            This API is experimental and may change without it being considered a breaking change.
 
         Parameters
         ----------

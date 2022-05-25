@@ -45,7 +45,7 @@ json = ["polars-io", "polars-io/json"]
 # support for arrows ipc file parsing
 ipc = ["polars-io", "polars-io/ipc", "polars-lazy/ipc"]
 
-# support for appache avro file parsing
+# support for apache avro file parsing
 avro = ["polars-io", "polars-io/avro"]
 
 # support for arrows csv file parsing

@@ -423,7 +423,7 @@ class LazyFrame(Generic[DF]):
         raw_output
             Return dot syntax. This cannot be combined with `show`
         figsize
-            Passed to matlotlib if `show` == True.
+            Passed to matplotlib if `show` == True.
         """
         if raw_output:
             show = False
@@ -624,7 +624,7 @@ class LazyFrame(Generic[DF]):
         no_optimization
             Turn off optimizations.
         slice_pushdown
-            Slice pushdown opitmizaiton
+            Slice pushdown optimization
 
         Returns
         -------
