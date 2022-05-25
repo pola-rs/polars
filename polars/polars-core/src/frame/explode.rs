@@ -84,7 +84,7 @@ impl DataFrame {
                     ))?;
                     *col = df[idx].clone();
                     let ca = col
-                        .get_inner_mut()
+                        ._get_inner_mut()
                         .as_any_mut()
                         .downcast_mut::<ListChunked>()
                         .unwrap();

@@ -291,12 +291,7 @@ impl PartitionedAggregation for AggregationExpr {
                 let mut length_so_far = 0i64;
                 offsets.push(length_so_far);
 
-                for (_, idx) in groups.idx_ref() {
-                    let ca = unsafe {
-                        // Safety
-                        // The indexes of the groupby operation are never out of bounds
-                        ca.take_unchecked(idx.into())
-                    };
+                let mut process_group = |ca: ListChunked| -> Result<()> {
                     let s = ca.explode()?;
                     length_so_far += s.len() as i64;
                     offsets.push(length_so_far);
@@ -305,7 +300,29 @@ impl PartitionedAggregation for AggregationExpr {
                     if s.len() == 0 {
                         can_fast_explode = false;
                     }
+                    Ok(())
+                };
+
+                match groups {
+                    GroupsProxy::Idx(groups) => {
+                        for (_, idx) in groups {
+                            let ca = unsafe {
+                                // Safety
+                                // The indexes of the groupby operation are never out of bounds
+                                ca.take_unchecked(idx.into())
+                            };
+                            process_group(ca)?;
+                        }
+                    }
+                    GroupsProxy::Slice(groups) => {
+                        for [first, len] in groups {
+                            let len = *len as usize;
+                            let ca = ca.slice(*first as i64, len);
+                            process_group(ca)?;
+                        }
+                    }
                 }
+
                 let vals = values.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let values: ArrayRef = concatenate(&vals).unwrap().into();
 

@@ -2955,6 +2955,22 @@ class Expr:
             self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
         )
 
+    def set_sorted(self, reverse: bool = False) -> "Expr":
+        """
+        Set this `Series` as `sorted` so that downstream code can use
+        fast paths for sorted arrays.
+
+        .. warning::
+            This can lead to incorrect results if this `Series` is not sorted!!
+            Use with care!
+
+        Parameters
+        ----------
+        reverse
+            If the `Series` order is reversed, e.g. descending.
+        """
+        return self.map(lambda s: s.set_sorted(reverse))
+
     # Below are the namespaces defined. Keep these at the end of the definition of Expr, as to not confuse mypy with
     # the type annotation `str` with the namespace "str"
 

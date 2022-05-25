@@ -248,6 +248,13 @@ Window
 
     Expr.over
 
+Various
+--------
+.. autosummary::
+   :toctree: api/
+
+    Expr.set_sorted
+
 TimeSeries
 ----------
 The following methods are available under the `expr.dt` attribute.

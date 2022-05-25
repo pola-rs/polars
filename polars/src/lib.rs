@@ -305,17 +305,6 @@
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //!
-//!
-//! ## Compile for WASM
-//! To be able to pretty print a `DataFrame` in `wasm32-wasi` you need to patch the `prettytable-rs`
-//! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print when
-//! compiling to `wasm32-wasi` target.
-//!
-//! ```toml
-//! [patch.crates-io]
-//! prettytable-rs = { git = "https://github.com/phsym/prettytable-rs", branch = "master"}
-//! ```
-//!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
 pub mod docs;

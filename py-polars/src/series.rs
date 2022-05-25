@@ -394,6 +394,12 @@ impl PySeries {
             .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
+    fn set_sorted(&self, reverse: bool) -> Self {
+        let mut out = self.series.clone();
+        out.set_sorted(reverse);
+        out.into()
+    }
+
     pub fn mean(&self) -> Option<f64> {
         match self.series.dtype() {
             DataType::Boolean => {

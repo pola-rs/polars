@@ -322,7 +322,7 @@ impl DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            self.take_unchecked_slice(join_tuples, true)
+            self._take_unchecked_slice(join_tuples, true)
         }
     }
 
@@ -498,7 +498,7 @@ impl DataFrame {
                     || unsafe {
                         // remove join columns
                         remove_selected(other, &selected_right)
-                            .take_unchecked_slice(join_idx_right, true)
+                            ._take_unchecked_slice(join_idx_right, true)
                     },
                 );
                 self.finish_join(df_left, df_right, suffix)
@@ -683,7 +683,7 @@ impl DataFrame {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_unchecked_slice(join_tuples_right, true)
+                    ._take_unchecked_slice(join_tuples_right, true)
             },
         );
         self.finish_join(df_left, df_right, suffix)
@@ -841,7 +841,7 @@ impl DataFrame {
         if let Some((offset, len)) = slice {
             idx = slice_slice(idx, offset, len);
         }
-        self.take_unchecked_slice(idx, true)
+        self._take_unchecked_slice(idx, true)
     }
 
     #[cfg(feature = "semi_anti_join")]
