@@ -115,7 +115,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     ) -> Series {
         let new_rev_map = self
             .0
-            .merge_categorical_map(right_column.categorical().unwrap());
+            .merge_categorical_map(right_column.categorical().unwrap())
+            .unwrap();
         let left = self.0.logical();
         let right = right_column
             .categorical()
@@ -210,7 +211,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if self.0.dtype() == other.dtype() {
             let other = other.categorical()?;
             self.0.logical_mut().extend(other.logical());
-            let new_rev_map = self.0.merge_categorical_map(other);
+            let new_rev_map = self.0.merge_categorical_map(other)?;
             self.0.set_rev_map(new_rev_map, false);
             Ok(())
         } else {
