@@ -40,6 +40,16 @@ impl StringNameSpace {
                             .into_series()
                     }
                 }
+                DataType::Time => {
+                    if options.exact {
+                        ca.as_time(options.fmt.as_deref())?.into_series()
+                    } else {
+                        return Err(PolarsError::ComputeError(
+                            format!("non-exact not implemented for dtype {:?}", DataType::Time)
+                                .into(),
+                        ));
+                    }
+                }
                 dt => {
                     return Err(PolarsError::ComputeError(
                         format!("not implemented for dtype {:?}", dt).into(),

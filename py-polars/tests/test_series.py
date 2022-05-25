@@ -1242,6 +1242,10 @@ def test_str_strptime() -> None:
         s, expected, "str.strptime", pl.Datetime, "%Y-%m-%d %H:%M:%S"
     )
 
+    s = pl.Series(["00:00:00", "03:20:10"])
+    expected = pl.Series([0, 12010000000000], dtype=pl.Time)
+    verify_series_and_expr_api(s, expected, "str.strptime", pl.Time, "%H:%M:%S")
+
 
 def test_dt_strftime() -> None:
     a = pl.Series("a", [10000, 20000, 30000], dtype=pl.Date)

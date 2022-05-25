@@ -427,6 +427,19 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_parse_time(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Time,
+                fmt,
+                strict,
+                exact,
+            })
+            .into()
+    }
+
     pub fn str_strip(&self) -> PyExpr {
         let function = |s: Series| {
             let ca = s.utf8()?;
