@@ -4428,7 +4428,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         * `.collect()` (run on all data)
         * `.describe_plan()` (print unoptimized query plan)
         * `.describe_optimized_plan()` (print optimized query plan)
-        * `.show_graph()` (show (un)optimized query plan) as graphiz graph)
+        * `.show_graph()` (show (un)optimized query plan) as graphviz graph)
 
         Lazy operations are advised because they allow for query optimization and more parallelization.
         """
@@ -5051,7 +5051,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             3
         ]
 
-        A horizontal string concattenation:
+        A horizontal string concatenation:
 
         >>> df = pl.DataFrame(
         ...     {

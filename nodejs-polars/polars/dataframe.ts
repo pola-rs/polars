@@ -524,7 +524,7 @@ export interface DataFrame extends Arithmetic<DataFrame>, Sample<DataFrame>, Wri
    *     1
    *     3
    * ]
-   * >>> // A horizontal string concattenation
+   * >>> // A horizontal string concatenation
    * >>> df = pl.DataFrame({
    * >>>   "a": ["foo", "bar", 2],
    * >>>   "b": [1, 2, 3],
