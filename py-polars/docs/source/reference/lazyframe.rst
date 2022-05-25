@@ -3,6 +3,11 @@ LazyFrame
 =========
 .. currentmodule:: polars
 
+.. py:class:: LazyFrame
+    :canonical: polars.internals.lazy_frame.LazyFrame
+
+    Representation of a Lazy computation graph/ query.
+
 Attributes
 ----------
 
