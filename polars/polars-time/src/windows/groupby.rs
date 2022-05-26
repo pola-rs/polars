@@ -127,13 +127,8 @@ pub fn groupby_windows(
     (groups, lower_bound, upper_bound)
 }
 
-fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> Option<usize> {
-    time.iter()
-        .enumerate()
-        .find_map(|(i, t)| match b.is_member(*t, closed) {
-            true => None,
-            false => Some(i),
-        })
+fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> usize {
+    time.partition_point(|v| b.is_member(*v, closed))
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -172,8 +167,10 @@ pub fn groupby_values(
                 lagging_offset += 1;
             }
 
-            let slice = &time[lagging_offset..];
-            let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
+            // Safety
+            // we just iterated over value i.
+            let slice = unsafe { time.get_unchecked(lagging_offset..) };
+            let len = find_offset(slice, b, closed_window);
 
             [lagging_offset as IdxSize, len as IdxSize]
         })
