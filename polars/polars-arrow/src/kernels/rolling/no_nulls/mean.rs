@@ -2,7 +2,7 @@ use super::sum::SumWindow;
 use super::*;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
 
-pub(super) struct MeanWindow<'a, T> {
+pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T>,
 }
 

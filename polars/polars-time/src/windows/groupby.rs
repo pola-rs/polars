@@ -3,6 +3,7 @@ use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use polars_arrow::trusted_len::TrustedLen;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -127,23 +128,17 @@ pub fn groupby_windows(
     (groups, lower_bound, upper_bound)
 }
 
-fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> usize {
+pub(crate) fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> usize {
     time.partition_point(|v| b.is_member(*v, closed))
 }
 
-/// Different from `groupby_windows`, where define window buckets and search which values fit that
-/// pre-defined bucket, this function defines every window based on the:
-///     - timestamp (lower bound)
-///     - timestamp + period (upper bound)
-/// where timestamps are the individual values in the array `time`
-///
-pub fn groupby_values(
+pub(crate) fn groupby_values_iter(
     period: Duration,
     offset: Duration,
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> GroupsSlice {
+) -> impl Iterator<Item=(IdxSize, IdxSize)> + TrustedLen + '_{
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -154,7 +149,7 @@ pub fn groupby_values(
     let mut lagging_offset = 0;
     time.iter()
         .enumerate()
-        .map(|(i, lower)| {
+        .map(move |(i, lower)| {
             let lower = add(&offset, *lower);
             let upper = add(&period, lower);
 
@@ -172,7 +167,23 @@ pub fn groupby_values(
             let slice = unsafe { time.get_unchecked(lagging_offset..) };
             let len = find_offset(slice, b, closed_window);
 
-            [lagging_offset as IdxSize, len as IdxSize]
+            (lagging_offset as IdxSize, len as IdxSize)
         })
-        .collect_trusted()
+}
+
+/// Different from `groupby_windows`, where define window buckets and search which values fit that
+/// pre-defined bucket, this function defines every window based on the:
+///     - timestamp (lower bound)
+///     - timestamp + period (upper bound)
+/// where timestamps are the individual values in the array `time`
+///
+pub fn groupby_values(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+) -> GroupsSlice {
+
+    groupby_values_iter(period, offset, time, closed_window, tu).map(|(offset, len)| [offset, len]).collect_trusted()
 }

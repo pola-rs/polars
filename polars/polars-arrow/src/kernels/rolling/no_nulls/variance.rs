@@ -65,7 +65,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
 // E[(xi - E[x])^2]
 // can be expanded to
 // E[x^2] - E[x]^2
-struct VarWindow<'a, T> {
+pub struct VarWindow<'a, T> {
     mean: MeanWindow<'a, T>,
     sum_of_squares: SumSquaredWindow<'a, T>,
 }
@@ -161,7 +161,7 @@ where
 // E[(xi - E[x])^2]
 // can be expanded to
 // E[x^2] - E[x]^2
-struct StdWindow<'a, T> {
+pub struct StdWindow<'a, T> {
     var: VarWindow<'a, T>,
 }
 

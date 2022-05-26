@@ -2,7 +2,7 @@ use super::*;
 use no_nulls;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
 
-struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     min: T,
     last_start: usize,
@@ -70,7 +70,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
     }
 }
 
-struct MaxWindow<'a, T: NativeType> {
+pub struct MaxWindow<'a, T: NativeType> {
     slice: &'a [T],
     max: T,
     last_start: usize,
