@@ -8,3 +8,5 @@ pub use num;
 pub use once_cell;
 #[cfg(feature = "private")]
 pub use rayon;
+#[cfg(feature = "private")]
+pub use regex;

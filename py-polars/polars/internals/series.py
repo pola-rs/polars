@@ -4033,6 +4033,67 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
+    def extract_all(self, pattern: str) -> Series:
+        r"""
+        Extract each successive non-overlapping regex match in an individual string as an array
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        List[Utf8] array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s.str.extract_all(r"(\d+)")
+        shape: (2, 1)
+        ┌────────────────┐
+        │ extracted_nrs  │
+        │ ---            │
+        │ list[str]      │
+        ╞════════════════╡
+        │ ["123", "45"]  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["678", "910"] │
+        └────────────────┘
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.extract_all(pattern)).to_series()
+
+    def count_match(self, pattern: str) -> Series:
+        r"""
+        Count all successive non-overlapping regex matches.
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        UInt32 array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> # count digits
+        >>> s.str.count_match(r"\d")
+        shape: (2,)
+        Series: 'foo' [u32]
+        [
+            5
+            6
+        ]
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.count_match(pattern)).to_series()
+
     def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.

@@ -3975,6 +3975,76 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_extract(pattern, group_index))
 
+    def extract_all(self, pattern: str) -> Expr:
+        r"""
+        Extract each successive non-overlapping regex match in an individual string as an array
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        List[Utf8] array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("foo").str.extract_all(r"(\d+)").alias("extracted_nrs"),
+        ...     ]
+        ... )
+        shape: (2, 1)
+        ┌────────────────┐
+        │ extracted_nrs  │
+        │ ---            │
+        │ list[str]      │
+        ╞════════════════╡
+        │ ["123", "45"]  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["678", "910"] │
+        └────────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.str_extract_all(pattern))
+
+    def count_match(self, pattern: str) -> Expr:
+        r"""
+        Count all successive non-overlapping regex matches.
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        UInt32 array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+        >>> df.select(
+        ...     [
+        ...         pl.col("foo").str.count_match(r"\d").alias("count_digits"),
+        ...     ]
+        ... )
+        shape: (2, 1)
+        ┌──────────────┐
+        │ count_digits │
+        │ ---          │
+        │ u32          │
+        ╞══════════════╡
+        │ 5            │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ 6            │
+        └──────────────┘
+
+        """
+        return wrap_expr(self._pyexpr.count_match(pattern))
+
     def split(self, by: str, inclusive: bool = False) -> Expr:
         """
         Split the string by a substring.
