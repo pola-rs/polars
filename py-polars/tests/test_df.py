@@ -1090,10 +1090,10 @@ def test_column_names() -> None:
 
 def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df[[pl.count("a")]]
+    out = df.select([pl.count("a")])
     assert out["a"] == 3
     assert pl.count(df["a"]) == 3
-    out = df[
+    out = df.select(
         [
             pl.var("b").alias("1"),
             pl.std("b").alias("2"),
@@ -1106,7 +1106,7 @@ def test_lazy_functions() -> None:
             pl.first("b").alias("9"),
             pl.last("b").alias("10"),
         ]
-    ]
+    )
     expected = 1.0
     assert np.isclose(out.select_at_idx(0), expected)
     assert np.isclose(pl.var(df["b"]), expected)  # type: ignore
@@ -1213,11 +1213,11 @@ def test_to_numpy() -> None:
 
 
 def test_argsort_by(df: pl.DataFrame) -> None:
-    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
-    assert a == [1, 0, 3]
+    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=[False, True]))
+    assert idx_df["int_nulls"] == [1, 0, 3]
 
-    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=False)]["int_nulls"]
-    assert a == [1, 0, 2]
+    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=False))
+    assert idx_df["int_nulls"] == [1, 0, 2]
 
 
 def test_literal_series() -> None:
@@ -1293,7 +1293,7 @@ def test_from_rows() -> None:
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
 
-    out = df[pl.col("n").repeat_by("n")]
+    out = df.select(pl.col("n").repeat_by("n"))
     s = out["n"]
     assert s[0] == [2, 2]
     assert s[1] == [3, 3, 3]
@@ -1356,14 +1356,14 @@ def dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df[[pl.col("a").dot("b")]][0, "a"] == 20
+    assert df.select([pl.col("a").dot("b")])[0, "a"] == 20
 
 
 def test_hash_rows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
     assert df.hash_rows().dtype == pl.UInt64
     assert df["a"].hash().dtype == pl.UInt64
-    assert df[[pl.col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
+    assert df.select([pl.col("a").hash().alias("foo")])["foo"].dtype == pl.UInt64
 
 
 def test_create_df_from_object() -> None:
@@ -1857,7 +1857,7 @@ def test_get_item() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [3, 4]})
 
     # expression
-    assert df[pl.col("a")].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    assert df.select(pl.col("a")).frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
 
     # numpy array
     assert df[np.array([True, False])].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
@@ -1890,7 +1890,7 @@ def test_get_item() -> None:
     # if bools, assumed to be a row mask
     # if integers, assumed to be row indices
     assert df[["a", "b"]].frame_equal(df)
-    assert df[[pl.col("a"), pl.col("b")]].frame_equal(df)
+    assert df.select([pl.col("a"), pl.col("b")]).frame_equal(df)
     df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
     df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
 

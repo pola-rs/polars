@@ -631,19 +631,19 @@ def test_is_in() -> None:
     assert out == [True, True, False]
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [1, 4]})
 
-    assert df[pl.col("a").is_in(pl.col("b")).alias("mask")]["mask"] == [True, False]
+    assert df.select(pl.col("a").is_in(pl.col("b"))).to_series() == [True, False]
 
 
 def test_str_slice() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
     assert df["a"].str.slice(-3) == ["bar", "foo"]
 
-    assert df[[pl.col("a").str.slice(2, 4)]]["a"] == ["obar", "rfoo"]
+    assert df.select([pl.col("a").str.slice(2, 4)])["a"] == ["obar", "rfoo"]
 
 
 def test_arange_expr() -> None:
     df = pl.DataFrame({"a": ["foobar", "barfoo"]})
-    out = df[[pl.arange(0, pl.col("a").count() * 10)]]
+    out = df.select([pl.arange(0, pl.col("a").count() * 10)])
     assert out.shape == (20, 1)
     assert out.select_at_idx(0)[-1] == 19
 
@@ -679,14 +679,14 @@ def test_reinterpret() -> None:
     s = pl.Series("a", [1, 1, 2], dtype=pl.UInt64)
     assert s.reinterpret(signed=True).dtype == pl.Int64
     df = pl.DataFrame([s])
-    assert df[[pl.col("a").reinterpret(signed=True)]]["a"].dtype == pl.Int64
+    assert df.select([pl.col("a").reinterpret(signed=True)])["a"].dtype == pl.Int64
 
 
 def test_mode() -> None:
     s = pl.Series("a", [1, 1, 2])
     assert s.mode() == [1]
     df = pl.DataFrame([s])
-    assert df[[pl.col("a").mode()]]["a"] == [1]
+    assert df.select([pl.col("a").mode()])["a"] == [1]
 
 
 def test_jsonpath_single() -> None:

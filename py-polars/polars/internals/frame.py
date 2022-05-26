@@ -946,7 +946,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         json_lines: bool = False,
         *,
         to_string: bool = False,
-    ) -> Optional[str]:
+    ) -> Optional[str]:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
             Please use `write_json`
@@ -1131,7 +1131,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         file: Optional[Union[TextIO, BytesIO, str, Path]] = None,
         has_header: bool = True,
         sep: str = ",",
-    ) -> Optional[str]:
+    ) -> Optional[str]:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
             Please use `write_csv`
@@ -1168,7 +1168,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
         compression: Literal["uncompressed", "snappy", "deflate"] = "uncompressed",
-    ) -> None:
+    ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
             Please use `write_avro`
@@ -1207,7 +1207,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         self,
         file: Union[BinaryIO, BytesIO, str, Path],
         compression: Optional[Literal["uncompressed", "lz4", "zstd"]] = "uncompressed",
-    ) -> None:
+    ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
             Please use `write_ipc`
@@ -1436,7 +1436,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
-    ) -> None:
+    ) -> None:  # pragma: no cover
         """
         .. deprecated:: 0.13.12
             Please use `write_parquet`
@@ -1541,7 +1541,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         # See: https://github.com/jupyter/notebook/issues/2014
         if item.startswith("_"):
             raise AttributeError(item)
-        try:
+        try:  # pragma: no cover
             warnings.warn(
                 "accessing series as Attribute of a DataFrame is deprecated",
                 DeprecationWarning,
@@ -1603,7 +1603,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Does quite a lot. Read the comments.
         """
-        if isinstance(item, pli.Expr):
+        if isinstance(item, pli.Expr):  # pragma: no cover
             warnings.warn(
                 "'using expressions in []' is deprecated. please use 'select'",
                 DeprecationWarning,
@@ -1764,7 +1764,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
 
     def __setitem__(
         self, key: Union[str, List, Tuple[Any, Union[str, int]]], value: Any
-    ) -> None:
+    ) -> None:  # pragma: no cover
         warnings.warn(
             "setting a DataFrame by indexing is deprecated; Consider using DataFrame.with_column",
             DeprecationWarning,
@@ -2310,7 +2310,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 .sort(by, reverse, nulls_last)
                 .collect(no_optimization=True, string_cache=False)
             )
-            if in_place:
+            if in_place:  # pragma: no cover
                 warnings.warn(
                     "in-place sorting is deprecated; please use default sorting",
                     DeprecationWarning,
@@ -2318,7 +2318,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 self._df = df._df
                 return self
             return df
-        if in_place:
+        if in_place:  # pragma: no cover
             warnings.warn(
                 "in-place sorting is deprecated; please use default sorting",
                 DeprecationWarning,
@@ -3493,7 +3493,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         The keys must be sorted to perform an asof join
 
         """
-        if how == "asof":
+        if how == "asof":  # pragma: no cover
             warnings.warn(
                 "using asof join via DataFrame.join is deprecated, please use DataFrame.join_asof",
                 DeprecationWarning,
@@ -5493,7 +5493,9 @@ class GroupBy(Generic[DF]):
         )
         return self._select(item)
 
-    def _select(self, columns: Union[str, List[str]]) -> "GBSelection[DF]":
+    def _select(
+        self, columns: Union[str, List[str]]
+    ) -> "GBSelection[DF]":  # pragma: no cover
         """
         Select the columns that will be aggregated.
 
@@ -5586,7 +5588,7 @@ class GroupBy(Generic[DF]):
         df = self._dataframe_class._from_pydf(self._df)
         return df[groups_idx]
 
-    def groups(self) -> DF:
+    def groups(self) -> DF:  # pragma: no cover
         """
         Return a `DataFrame` with:
 
