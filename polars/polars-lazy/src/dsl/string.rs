@@ -1,6 +1,7 @@
 use super::*;
 use polars_arrow::array::ValueSize;
 use polars_arrow::export::arrow::array::{MutableArray, MutableUtf8Array};
+use polars_ops::prelude::Utf8NameSpaceImpl;
 use polars_time::prelude::*;
 
 /// Specialized expressions for [`Series`] of [`DataType::Utf8`].
@@ -16,6 +17,33 @@ impl StringNameSpace {
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.extract")
+    }
+
+    /// Extract each successive non-overlapping match in an individual string as an array
+    pub fn extract_all(self, pat: &str) -> Expr {
+        let pat = pat.to_string();
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            ca.extract_all(&pat).map(|ca| ca.into_series())
+        };
+        self.0
+            .map(
+                function,
+                GetOutput::from_type(DataType::List(Box::new(DataType::Utf8))),
+            )
+            .with_fmt("str.extract_all")
+    }
+
+    /// Count all successive non-overlapping regex matches.
+    pub fn count_match(self, pat: &str) -> Expr {
+        let pat = pat.to_string();
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            ca.count_match(&pat).map(|ca| ca.into_series())
+        };
+        self.0
+            .map(function, GetOutput::from_type(DataType::UInt32))
+            .with_fmt("str.extract_all")
     }
 
     #[cfg(feature = "temporal")]

@@ -631,6 +631,14 @@ impl PyExpr {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
+    pub fn str_extract_all(&self, pat: &str) -> PyExpr {
+        self.inner.clone().str().extract_all(pat).into()
+    }
+
+    pub fn count_match(&self, pat: &str) -> PyExpr {
+        self.inner.clone().str().count_match(pat).into()
+    }
+
     pub fn strftime(&self, fmt: &str) -> PyExpr {
         self.inner.clone().dt().strftime(fmt).into()
     }
