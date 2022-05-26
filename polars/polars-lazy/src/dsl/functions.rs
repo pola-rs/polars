@@ -205,7 +205,9 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
 /// Concat lists entries.
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
-pub fn concat_lst(s: Vec<Expr>) -> Expr {
+pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
+    let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
+
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         let mut first = std::mem::take(&mut s[0]);
         let other = &s[1..];
