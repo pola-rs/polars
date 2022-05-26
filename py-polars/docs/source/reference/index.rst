@@ -17,3 +17,5 @@ methods. All classes and functions exposed in ``polars.*`` namespace are public.
    lazyframe
    testing
    config
+   datatypes
+   exceptions
