@@ -12,6 +12,7 @@
 //! * [GroupBy](#groupby)
 //! * [Joins](#joins)
 //! * [Conditionally apply](#conditionally-apply)
+//! * [Black box function](#black-box-function)
 //!
 //! ## Start a lazy computation
 //!
@@ -249,3 +250,51 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! # Black box function
+//!
+//! The expression API should be expressive enough for most of what you want to achieve, but it can happen
+//! that you need to pass the values to an external function you do not control. The snippet below
+//! shows how we use the `Struct` datatype to be able to apply a function over multiple inputs.
+//!
+//! ```
+//! use polars::prelude::*;
+//! fn my_black_box_function(a: f32, b: f32) -> f32 {
+//!     // do something
+//!     a
+//! }
+//!
+//! fn apply_multiples(lf: LazyFrame) -> Result<DataFrame> {
+//!     df![
+//!         "a" => [1.0, 2.0, 3.0],
+//!         "b" => [3.0, 5.1, 0.3]
+//!     ]?
+//!     .lazy()
+//!     .select([concat_lst(["col_a", "col_b"]).map(
+//!         |s| {
+//!             let ca = s.struct_()?;
+//!
+//!             let b = ca.field_by_name("col_a")?;
+//!             let a = ca.field_by_name("col_b")?;
+//!             let a = a.f32()?;
+//!             let b = b.f32()?;
+//!
+//!             let out: Float32Chunked = a
+//!                 .into_iter()
+//!                 .zip(b.into_iter())
+//!                 .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+//!                     (Some(a), Some(b)) => Some(my_black_box_function(a, b)),
+//!                     _ => None,
+//!                 })
+//!                 .collect();
+//!
+//!             Ok(out.into_series())
+//!         },
+//!         GetOutput::from_type(DataType::Float32),
+//!     )])
+//!     .collect()
+//! }
+//!
+//! ```
+//!
+//!
