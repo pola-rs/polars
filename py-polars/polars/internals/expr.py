@@ -3656,18 +3656,18 @@ class ExprStringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Type[Date], Type[Datetime]],
+        datatype: Union[Type[Date], Type[Datetime], Type[Time]],
         fmt: Optional[str] = None,
         strict: bool = True,
         exact: bool = True,
     ) -> Expr:
         """
-        Parse utf8 expression as a Date/Datetimetype.
+        Parse a UTF8 expression to a Date/Datetime/Time type.
 
         Parameters
         ----------
         datatype
-            Date | Datetime.
+            Date | Datetime | Time.
         fmt
             format to use, see the following link for examples:
             https://docs.rs/chrono/latest/chrono/format/strftime/index.html
@@ -3732,7 +3732,7 @@ class ExprStringNameSpace:
             return wrap_expr(self._pyexpr.str_parse_time(fmt, strict, exact))
         else:
             raise ValueError(
-                "dtype should be of type {Date, Datetime}"
+                "dtype should be of type {Date, Datetime, Time}"
             )  # pragma: no cover
 
     def lengths(self) -> Expr:

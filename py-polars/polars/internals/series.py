@@ -3754,7 +3754,7 @@ class StringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Type[Date], Type[Datetime]],
+        datatype: Union[Type[Date], Type[Datetime], Type[Time]],
         fmt: Optional[str] = None,
         strict: bool = True,
         exact: bool = True,
@@ -3765,7 +3765,7 @@ class StringNameSpace:
         Parameters
         ----------
         datatype
-            Date or Datetime.
+            Date, Datetime or Time.
         fmt
             format to use, see the following link for examples:
             https://docs.rs/chrono/latest/chrono/format/strftime/index.html
@@ -3779,7 +3779,7 @@ class StringNameSpace:
 
         Returns
         -------
-        A Date/ Datetime Series
+        A Date / Datetime / Time Series
 
         Examples
         --------
