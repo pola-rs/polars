@@ -222,34 +222,34 @@ def test_arange() -> None:
 
 def test_arg_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    col_a_unique = df[col("a").arg_unique()]["a"]
+    col_a_unique = df.select(col("a").arg_unique())["a"]
     assert col_a_unique.series_equal(pl.Series("a", [0, 1]).cast(pl.UInt32))
 
 
 def test_is_unique() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df[col("a").is_unique()]["a"].series_equal(
+    assert df.select(col("a").is_unique())["a"].series_equal(
         pl.Series("a", [False, True, False])
     )
 
 
 def test_is_first() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df[col("a").is_first()]["a"].series_equal(
+    assert df.select(col("a").is_first())["a"].series_equal(
         pl.Series("a", [True, True, False])
     )
 
 
 def test_is_duplicated() -> None:
     df = pl.DataFrame({"a": [4, 1, 4]})
-    assert df[col("a").is_duplicated()]["a"].series_equal(
+    assert df.select(col("a").is_duplicated())["a"].series_equal(
         pl.Series("a", [True, False, True])
     )
 
 
 def test_arg_sort() -> None:
     df = pl.DataFrame({"a": [4, 1, 3]})
-    assert df[col("a").arg_sort()]["a"] == [1, 2, 0]
+    assert df.select(col("a").arg_sort())["a"] == [1, 2, 0]
 
 
 def test_window_function() -> None:
@@ -272,20 +272,20 @@ def test_window_function() -> None:
     out = q.collect()
     assert out["cars_max_B"] == [5, 4, 5, 5, 5]
 
-    out = df[[pl.first("B").over(["fruits", "cars"]).alias("B_first")]]
+    out = df.select([pl.first("B").over(["fruits", "cars"]).alias("B_first")])
     assert out["B_first"] == [5, 4, 3, 3, 5]
 
 
 def test_when_then_flatten() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 4, 5]})
 
-    assert df[
+    assert df.select(
         when(col("foo") > 1)
         .then(col("bar"))
         .when(col("bar") < 3)
         .then(10)
         .otherwise(30)
-    ]["bar"] == [30, 4, 5]
+    )["bar"] == [30, 4, 5]
 
 
 def test_describe_plan() -> None:
@@ -333,7 +333,7 @@ def test_window_deadlock() -> None:
 def test_concat_str() -> None:
     df = pl.DataFrame({"a": ["a", "b", "c"], "b": [1, 2, 3]})
 
-    out = df[[pl.concat_str(["a", "b"], sep="-")]]
+    out = df.select([pl.concat_str(["a", "b"], sep="-")])
     assert out["a"] == ["a-1", "a-2", "a-3"]
 
     out = df.select([pl.format("foo_{}_bar_{}", pl.col("a"), "b").alias("fmt")])
@@ -501,7 +501,7 @@ def test_drop_nulls() -> None:
 
 def test_all_expr() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3, 4, 5, None]})
-    assert df[[pl.all()]].frame_equal(df)
+    assert df.select([pl.all()]).frame_equal(df)
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
@@ -867,10 +867,10 @@ def test_expr_bool_cmp() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, 5]})
 
     with pytest.raises(ValueError):
-        df[[pl.col("a").gt(pl.col("b")) and pl.col("b").gt(pl.col("b"))]]
+        df.select([pl.col("a").gt(pl.col("b")) and pl.col("b").gt(pl.col("b"))])
 
     with pytest.raises(ValueError):
-        df[[pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))]]
+        df.select([pl.col("a").gt(pl.col("b")) or pl.col("b").gt(pl.col("b"))])
 
 
 def test_is_in() -> None:
