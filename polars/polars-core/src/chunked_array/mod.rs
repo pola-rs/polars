@@ -29,8 +29,6 @@ pub mod object;
 #[cfg(feature = "random")]
 #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
-#[cfg(feature = "strings")]
-#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
 #[cfg(any(
     feature = "temporal",

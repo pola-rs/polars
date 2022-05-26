@@ -24,3 +24,19 @@ def test_null_comparisons() -> None:
     s = pl.Series("s", [None, "str", "a"])
     assert (s.shift() == s).null_count() == 0
     assert (s.shift() != s).null_count() == 0
+
+
+def test_extract_all_count() -> None:
+    df = pl.DataFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"]})
+    assert (
+        df.select(
+            [
+                pl.col("foo").str.extract_all(r"a").alias("extract"),
+                pl.col("foo").str.count_match(r"a").alias("count"),
+            ]
+        ).to_dict(False)
+        == {"extract": [["a", "a"], None], "count": [2, 0]}
+    )
+
+    assert df["foo"].str.extract_all(r"a").dtype == pl.List
+    assert df["foo"].str.count_match(r"a").dtype == pl.UInt32
