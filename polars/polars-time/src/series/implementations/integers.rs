@@ -1,7 +1,7 @@
 use polars_arrow::data_types::IsFloat;
 use super::*;
 
-impl<T: PolarsIntegerType> SeriesOps for WrapInt<ChunkedArray<T>>
+impl<T: PolarsIntegerType> SeriesOpsTime for WrapInt<ChunkedArray<T>>
 where
     T::Native: NumericNative ,
 Self: RollingAgg
@@ -12,8 +12,7 @@ Self: RollingAgg
 
     #[cfg(feature = "rolling_window")]
     fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-        let s = self.0.cast(&DataType::Float64).unwrap();
-        s.rolling_mean(options)
+        RollingAgg::rolling_mean(self, options)
     }
 
     #[cfg(feature = "rolling_window")]
@@ -22,7 +21,7 @@ Self: RollingAgg
     }
     #[cfg(feature = "rolling_window")]
     fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
-        RollingAgg::rolling_sum(self, options)
+        RollingAgg::rolling_median(self, options)
     }
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]
@@ -50,15 +49,13 @@ Self: RollingAgg
     }
     #[cfg(feature = "rolling_window")]
     fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
-        let s = self.0.cast(&DataType::Float64).unwrap();
-        s.rolling_var(options)
+        RollingAgg::rolling_var(self, options)
     }
 
     /// Apply a rolling std_dev to a Series.
     #[cfg(feature = "rolling_window")]
     fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
-        let s = self.0.cast(&DataType::Float64).unwrap();
-        s.rolling_std(options)
+        RollingAgg::rolling_std(self, options)
     }
 
 }

@@ -64,10 +64,7 @@ pub trait RollingAgg {
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their mean.
-    fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-        // not implemented by integers
-        unimplemented!()
-    }
+    fn rolling_mean(&self, options: RollingOptions) -> Result<Series>;
 
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -107,22 +104,13 @@ pub trait RollingAgg {
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their var.
-    fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
-        // not implemented by integers
-        // they are cast to float
-        unimplemented!()
-    }
+    fn rolling_var(&self, options: RollingOptions) -> Result<Series>;
 
     /// Apply a rolling std (moving std) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
-    fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
-        // not implemented by integers
-        // they are cast to float
-        unimplemented!()
-    }
-
+    fn rolling_std(&self, options: RollingOptions) -> Result<Series>;
 }
 
     /// utility

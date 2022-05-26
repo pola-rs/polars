@@ -150,8 +150,8 @@ macro_rules! rolling_impl {
         if options.weights.is_some() {
             if !matches!(self.0.dtype(), DataType::Float64 | DataType::Float32) {
                 let s = ca.cast(&DataType::Float64).unwrap();
-                    s.rolling_var(options.clone())
-                    .and_then(|ca| ca.pow(0.5));
+                return s.rolling_var(options.clone())
+                .and_then(|ca| ca.pow(0.5));
             } else {
                 return ca.into_series().rolling_var(options).and_then(|ca| ca.pow(0.5));
             }

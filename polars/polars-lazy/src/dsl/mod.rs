@@ -18,6 +18,7 @@ mod options;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+use polars_time::series::SeriesOpsTime;
 
 use crate::prelude::*;
 use crate::utils::has_expr;

@@ -13,7 +13,7 @@ macro_rules! invalid_operation {
     };
 }
 
-pub trait SeriesOps {
+pub trait SeriesOpsTime {
     fn dtype(&self) -> &DataType;
 
     /// Apply a rolling mean to a Series. See:
@@ -68,7 +68,7 @@ pub trait SeriesOps {
 
 }
 
-impl SeriesOps for Series {
+impl SeriesOpsTime for Series {
     fn dtype(&self) -> &DataType {
         self.deref().dtype()
     }

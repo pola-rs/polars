@@ -9,7 +9,9 @@ use polars_core::prelude::*;
 use polars_core::utils::Wrap;
 use std::sync::Arc;
 
-type SeriesOpsRef = Arc<dyn SeriesOps>;
+pub use SeriesOpsTime;
+
+type SeriesOpsRef = Arc<dyn SeriesOpsTime>;
 
 pub trait IntoSeriesOps {
     fn to_ops(&self) -> SeriesOpsRef;

@@ -2,7 +2,7 @@ use std::ops::SubAssign;
 use polars_arrow::data_types::IsFloat;
 use super::*;
 
-impl<T: PolarsFloatType> SeriesOps for WrapFloat<ChunkedArray<T>>
+impl<T: PolarsFloatType> SeriesOpsTime for WrapFloat<ChunkedArray<T>>
 where T::Native: IsFloat + SubAssign,
 Self: RollingAgg
 {
@@ -20,7 +20,7 @@ Self: RollingAgg
     }
     #[cfg(feature = "rolling_window")]
     fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
-        RollingAgg::rolling_sum(self, options)
+        RollingAgg::rolling_median(self, options)
     }
     /// Apply a rolling quantile to a Series.
     #[cfg(feature = "rolling_window")]

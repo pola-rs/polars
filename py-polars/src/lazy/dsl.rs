@@ -779,7 +779,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> PyExpr {
-        let options = RollingOptions {
+        let options = RollingOptionsFixedWindow {
             window_size,
             weights,
             min_periods,
@@ -962,13 +962,13 @@ impl PyExpr {
 
     pub fn rolling_sum(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> PyExpr {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -977,13 +977,13 @@ impl PyExpr {
     }
     pub fn rolling_min(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -992,13 +992,13 @@ impl PyExpr {
     }
     pub fn rolling_max(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -1007,13 +1007,13 @@ impl PyExpr {
     }
     pub fn rolling_mean(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -1024,13 +1024,13 @@ impl PyExpr {
 
     pub fn rolling_std(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -1041,13 +1041,13 @@ impl PyExpr {
 
     pub fn rolling_var(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -1058,13 +1058,13 @@ impl PyExpr {
 
     pub fn rolling_median(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
@@ -1076,7 +1076,7 @@ impl PyExpr {
         &self,
         quantile: f64,
         interpolation: &str,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
@@ -1091,7 +1091,7 @@ impl PyExpr {
         };
 
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,

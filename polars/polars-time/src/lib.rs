@@ -7,7 +7,7 @@ mod truncate;
 mod upsample;
 mod windows;
 mod rolling_kernels;
-mod series;
+pub mod series;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use groupby::dynamic::*;

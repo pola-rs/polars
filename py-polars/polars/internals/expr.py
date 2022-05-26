@@ -1878,8 +1878,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_min(window_size, weights, min_periods, center)
         )
@@ -1910,8 +1909,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_max(window_size, weights, min_periods, center)
         )
@@ -1971,8 +1969,7 @@ class Expr:
         └──────┘
 
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_mean(window_size, weights, min_periods, center)
         )
@@ -2003,8 +2000,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_sum(window_size, weights, min_periods, center)
         )
@@ -2036,8 +2032,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_std(window_size, weights, min_periods, center)
         )
@@ -2069,8 +2064,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_var(window_size, weights, min_periods, center)
         )
@@ -2171,8 +2165,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_median(window_size, weights, min_periods, center)
         )
@@ -2206,8 +2199,7 @@ class Expr:
         center
             Set the labels at the center of the window
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(window_size, min_periods)
         return wrap_expr(
             self._pyexpr.rolling_quantile(
                 quantile, interpolation, window_size, weights, min_periods, center
@@ -4764,3 +4756,16 @@ def _prepare_alpha(
     if alpha is None:
         raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha
+
+def _prepare_rolling_window_args(
+        window_size: int,
+        min_periods: Optional[int] = None,
+) -> (str, int):
+    if isinstance(window_size, int):
+        if min_periods is None:
+            min_periods = window_size
+        window_size = f"{window_size}i"
+    if min_periods is None:
+        min_periods = 1
+    return (window_size, min_periods)
+

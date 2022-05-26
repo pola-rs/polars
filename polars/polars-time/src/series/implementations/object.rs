@@ -1,6 +1,6 @@
 use super::*;
 
-impl<T: PolarsObject> SeriesOps for Wrap<ObjectChunked<T>> {
+impl<T: PolarsObject> SeriesOpsTime for Wrap<ObjectChunked<T>> {
     fn dtype(&self) -> &DataType {
         self.0.dtype()
     }
