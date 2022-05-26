@@ -18,7 +18,6 @@ mod series_trait;
 #[cfg(feature = "private")]
 pub mod unstable;
 
-use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 use crate::utils::{split_ca, split_series};

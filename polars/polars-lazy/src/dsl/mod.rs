@@ -1413,13 +1413,9 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.to_float()
+        self
             .apply(
-                move |s| match s.dtype() {
-                    DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
-                    DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
-                    _ => unreachable!(),
-                },
+                move |s| s.rolling_var(options.clone()),
                 GetOutput::same_type(),
             )
             .with_fmt("rolling_var")
@@ -1429,13 +1425,9 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.to_float()
+        self
             .apply(
-                move |s| match s.dtype() {
-                    DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
-                    DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
-                    _ => unreachable!(),
-                },
+                move |s| s.rolling_std(options.clone()),
                 GetOutput::same_type(),
             )
             .with_fmt("rolling_std")
@@ -1449,7 +1441,7 @@ impl Expr {
         self,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
         output_type: GetOutput,
-        options: RollingOptions,
+        options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
             move |s| s.rolling_apply(f.as_ref(), options.clone()),

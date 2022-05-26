@@ -144,7 +144,7 @@ pub trait ChunkRollApply {
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptions,
+        _options: RollingOptionsFixedWindow,
     ) -> Result<Series>
     where
         Self: Sized,

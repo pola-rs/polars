@@ -50,7 +50,7 @@ pub use crate::series::arithmetic::checked::NumOpsDispatchChecked;
 pub use crate::chunked_array::ops::unique::rank::{RankMethod, RankOptions};
 
 #[cfg(feature = "rolling_window")]
-pub use crate::chunked_array::ops::rolling_window::RollingOptions;
+pub use crate::chunked_array::ops::rolling_window::RollingOptionsFixedWindow;
 
 #[cfg(feature = "ewma")]
 pub use polars_arrow::kernels::ewm::EWMOptions;

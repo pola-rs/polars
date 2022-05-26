@@ -42,21 +42,9 @@ impl Default for RollingOptions {
 }
 
 #[cfg(feature = "rolling_window")]
-pub struct RollingOptionsFixedWindow {
-    /// The length of the window.
-    pub window_size: usize,
-    /// Amount of elements in the window that should be filled before computing a result.
-    pub min_periods: usize,
-    /// An optional slice with the same length as the window that will be multiplied
-    ///              elementwise with the values in the window.
-    pub weights: Option<Vec<f64>>,
-    /// Set the labels at the center of the window.
-    pub center: bool,
-}
-
-#[cfg(feature = "rolling_window")]
-impl From<RollingOptions> for RollingOptionsFixedWindow {
-    fn from(options: RollingOptions) -> Self {
+impl Into<RollingOptionsFixedWindow> for RollingOptions {
+    fn into(self) -> RollingOptionsFixedWindow {
+        let options = self;
         let window_size = options.window_size;
         assert!(window_size.parsed_int, "should be fixed integer window size at this point");
 
@@ -68,6 +56,7 @@ impl From<RollingOptions> for RollingOptionsFixedWindow {
         }
     }
 }
+
 
 #[cfg(feature = "rolling_window")]
 pub trait RollingAgg {
