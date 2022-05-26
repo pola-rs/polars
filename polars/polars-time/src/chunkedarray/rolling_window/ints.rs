@@ -1,3 +1,4 @@
+use crate::series::WrapInt;
 use super::*;
 
 
@@ -12,9 +13,9 @@ impl PolarsTimeIntegerType for Int32Type {}
 impl PolarsTimeIntegerType for Int64Type {}
 
 
-impl<T> RollingAgg for ChunkedArray<T>
+impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
     where
-        T: PolarsTimeIntegerType,
+        T: PolarsIntegerType,
         T::Native: IsFloat + SubAssign,
 {
     /// Apply a rolling sum (moving sum) over the values in this array.
@@ -23,10 +24,10 @@ impl<T> RollingAgg for ChunkedArray<T>
     /// values will be aggregated to their sum.
     fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
         // if options.weights.is_some() {
-        //     return self.cast(&DataType::Float64)?.rolling_sum(options);
+        //     return self.0.cast(&DataType::Float64)?.rolling_sum(options);
         // }
         rolling_agg(
-            self,
+            &self.0,
             options.into(),
             rolling::no_nulls::rolling_sum,
             rolling::nulls::rolling_sum,
@@ -64,7 +65,7 @@ impl<T> RollingAgg for ChunkedArray<T>
         //     return self.cast(&DataType::Float64)?.rolling_min(options);
         // }
         rolling_agg(
-            self,
+            &self.0,
             options.into(),
             rolling::no_nulls::rolling_min,
             rolling::nulls::rolling_min,
@@ -80,7 +81,7 @@ impl<T> RollingAgg for ChunkedArray<T>
         //     return self.cast(&DataType::Float64)?.rolling_max(options);
         // }
         rolling_agg(
-            self,
+            &self.0,
             options.into(),
             rolling::no_nulls::rolling_max,
             rolling::nulls::rolling_max,

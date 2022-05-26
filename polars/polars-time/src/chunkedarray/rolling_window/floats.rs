@@ -104,6 +104,79 @@ macro_rules! rolling_impl {
                     };
                     Series::try_from((self.0.name(), arr))
                 }
+
+
+    fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
+        let options_fixed : RollingOptionsFixedWindow = options.clone().into();
+        check_input(options_fixed.window_size, options.min_periods)?;
+        let ca = self.0.rechunk();
+        if options_fixed.weights.is_some()
+            && !matches!(self.0.dtype(), DataType::Float64 | DataType::Float32)
+        {
+            let s = ca.cast(&DataType::Float64).unwrap();
+            return s.rolling_var(options);
+        }
+
+        let arr = ca.downcast_iter().next().unwrap();
+        let arr = match self.0.has_validity() {
+            false => rolling::no_nulls::rolling_var(
+                arr.values(),
+                options_fixed.window_size,
+                options_fixed.min_periods,
+                options_fixed.center,
+                options_fixed.weights.as_deref(),
+            ),
+            _ => rolling::nulls::rolling_var(
+                arr,
+                options_fixed.window_size,
+                options_fixed.min_periods,
+                options_fixed.center,
+                options_fixed.weights.as_deref(),
+            ),
+        };
+        Series::try_from((self.0.name(), arr))
+    }
+
+    /// Apply a rolling std (moving std) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+    /// values will be aggregated to their std.
+    fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
+        let options_fixed : RollingOptionsFixedWindow = options.clone().into();
+        check_input(options_fixed.window_size, options.min_periods)?;
+        let ca = self.0.rechunk();
+
+        // weights is only implemented by var kernel
+        if options.weights.is_some() {
+            if !matches!(self.0.dtype(), DataType::Float64 | DataType::Float32) {
+                let s = ca.cast(&DataType::Float64).unwrap();
+                    s.rolling_var(options.clone())
+                    .and_then(|ca| ca.pow(0.5));
+            } else {
+                return ca.into_series().rolling_var(options).and_then(|ca| ca.pow(0.5));
+            }
+        }
+        let options : RollingOptionsFixedWindow = options.into();
+
+        let arr = ca.downcast_iter().next().unwrap();
+        let arr = match self.0.has_validity() {
+            false => rolling::no_nulls::rolling_std(
+                arr.values(),
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+            _ => rolling::nulls::rolling_std(
+                arr,
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+        };
+        Series::try_from((self.0.name(), arr))
+    }
             }
         };
     }

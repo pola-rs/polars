@@ -113,9 +113,30 @@ pub trait RollingAgg {
         interpolation: QuantileInterpolOptions,
         options: RollingOptions,
     ) -> Result<Series>;
+
+    /// Apply a rolling var (moving var) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+    /// values will be aggregated to their var.
+    fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
+        // not implemented by integers
+        // they are cast to float
+        unimplemented!()
+    }
+
+    /// Apply a rolling std (moving std) over the values in this array.
+    /// A window of length `window_size` will traverse the array. The values that fill this window
+    /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
+    /// values will be aggregated to their std.
+    fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
+        // not implemented by integers
+        // they are cast to float
+        unimplemented!()
+    }
+
 }
 
-/// utility
+    /// utility
 #[cfg(feature = "rolling_window")]
 fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
     if min_periods > window_size {

@@ -25,7 +25,8 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
+use polars_arrow::data_types::IsFloat;
 
 pub struct Utf8Type {}
 
@@ -137,8 +138,10 @@ pub trait NumericNative:
     + Div<Output = Self>
     + Rem<Output = Self>
     + AddAssign
+    + SubAssign
     + Bounded
     + FromPrimitive
+    + IsFloat
     + NativeArithmetics
 {
     type POLARSTYPE;
