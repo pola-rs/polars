@@ -12,6 +12,7 @@ pub mod sort_partition;
 pub mod string;
 pub mod take;
 pub mod take_agg;
+mod sorted_join;
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]
