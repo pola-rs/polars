@@ -17,11 +17,11 @@ use std::sync::Arc;
 
 pub use mean::*;
 pub use min_max::*;
-pub use quantile::{rolling_median, rolling_quantile};
+pub use quantile::*;
 pub use sum::*;
 pub use variance::*;
 
-pub trait RollingAggWindow<'a, T: NativeType> {
+pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
 
     /// Update and recompute the window
@@ -39,7 +39,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
-    Agg: RollingAggWindow<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T>,
     T: Debug + IsFloat + NativeType,
 {
     let len = values.len();

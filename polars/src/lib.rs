@@ -307,6 +307,7 @@
 //!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod docs;
 pub mod export;
 pub mod prelude;

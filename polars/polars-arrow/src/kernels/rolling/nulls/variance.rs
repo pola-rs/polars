@@ -1,10 +1,10 @@
 use super::*;
 use mean::MeanWindow;
 use nulls;
-use nulls::{rolling_apply_agg_window, RollingAggWindow};
+use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 use num::pow::Pow;
 
-pub struct SumSquaredWindow<'a, T> {
+pub(super) struct SumSquaredWindow<'a, T> {
     slice: &'a [T],
     validity: &'a Bitmap,
     sum_of_squares: Option<T>,
@@ -40,7 +40,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 }
 
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
-    RollingAggWindow<'a, T> for SumSquaredWindow<'a, T>
+    RollingAggWindowNulls<'a, T> for SumSquaredWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],
@@ -63,35 +63,41 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // remove elements that should leave the window
-        let mut recompute_sum = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                let leaving_value = *self.slice.get_unchecked(idx);
+        let recompute_sum = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_sum = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let valid = self.validity.get_bit_unchecked(idx);
+                if valid {
+                    let leaving_value = *self.slice.get_unchecked(idx);
 
-                // if the leaving value is nan we need to recompute the window
-                if T::is_float() && leaving_value.is_nan() {
-                    recompute_sum = true;
-                    break;
-                }
-                self.sum_of_squares = self
-                    .sum_of_squares
-                    .map(|v| v - leaving_value * leaving_value)
-            } else {
-                // null value leaving the window
-                self.null_count -= 1;
+                    // if the leaving value is nan we need to recompute the window
+                    if T::is_float() && leaving_value.is_nan() {
+                        recompute_sum = true;
+                        break;
+                    }
+                    self.sum_of_squares = self
+                        .sum_of_squares
+                        .map(|v| v - leaving_value * leaving_value)
+                } else {
+                    // null value leaving the window
+                    self.null_count -= 1;
 
-                // self.sum is None and the leaving value is None
-                // if the entering value is valid, we might get a new sum.
-                if self.sum_of_squares.is_none() {
-                    recompute_sum = true;
-                    break;
+                    // self.sum is None and the leaving value is None
+                    // if the entering value is valid, we might get a new sum.
+                    if self.sum_of_squares.is_none() {
+                        recompute_sum = true;
+                        break;
+                    }
                 }
             }
-        }
+            recompute_sum
+        };
+
         self.last_start = start;
 
         // we traverse all values and compute
@@ -126,7 +132,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 // E[(xi - E[x])^2]
 // can be expanded to
 // E[x^2] - E[x]^2
-struct VarWindow<'a, T> {
+pub struct VarWindow<'a, T> {
     mean: MeanWindow<'a, T>,
     sum_of_squares: SumSquaredWindow<'a, T>,
 }
@@ -143,7 +149,7 @@ impl<
             + One
             + Add<Output = T>
             + Sub<Output = T>,
-    > RollingAggWindow<'a, T> for VarWindow<'a, T>
+    > RollingAggWindowNulls<'a, T> for VarWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],
@@ -165,9 +171,15 @@ impl<
 
         let mean_of_squares = sum_of_squares / count;
         let mean = self.mean.update(start, end)?;
-        let var = mean_of_squares - mean * mean;
-        // apply Bessel's correction
-        Some(var / (count - T::one()) * count)
+
+        if count == T::one() {
+            NumCast::from(0)
+        } else {
+            let var = mean_of_squares - mean * mean;
+
+            // apply Bessel's correction
+            Some(var / (count - T::one()) * count)
+        }
     }
 }
 
@@ -203,7 +215,7 @@ where
     }
 }
 
-struct StdWindow<'a, T> {
+pub struct StdWindow<'a, T> {
     var: VarWindow<'a, T>,
 }
 
@@ -220,7 +232,7 @@ impl<
             + Add<Output = T>
             + Sub<Output = T>
             + Pow<T, Output = T>,
-    > RollingAggWindow<'a, T> for StdWindow<'a, T>
+    > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],

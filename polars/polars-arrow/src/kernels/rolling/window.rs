@@ -26,35 +26,42 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBuf<'a, T> {
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
     ///
     pub(super) unsafe fn update(&mut self, start: usize, end: usize) -> &[T] {
-        // remove elements that should leave the window
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let val = self.slice.get_unchecked(idx);
-            // safety
-            // value is present in buf
-            let remove_idx = self
-                .buf
-                .binary_search_by(|a| compare_fn_nan_max(a, val))
-                .unwrap_unchecked();
-            // this is O(n) but we need a sorted window
-            self.buf.remove(remove_idx);
+        // swap the whole buffer
+        if start >= self.last_end {
+            self.buf.clear();
+            let new_window = self.slice.get_unchecked(start..end);
+            self.buf.extend_from_slice(new_window)
+        } else {
+            // remove elements that should leave the window
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let val = self.slice.get_unchecked(idx);
+                // safety
+                // value is present in buf
+                let remove_idx = self
+                    .buf
+                    .binary_search_by(|a| compare_fn_nan_max(a, val))
+                    .unwrap_unchecked();
+                // this is O(n) but we need a sorted window
+                self.buf.remove(remove_idx);
+            }
+
+            // insert elements that enter the window, but insert them sorted
+            for idx in self.last_end..end {
+                // safety
+                // we are in bounds
+                let val = *self.slice.get_unchecked(idx);
+                let insertion_idx = self
+                    .buf
+                    .binary_search_by(|a| compare_fn_nan_max(a, &val))
+                    .unwrap_or_else(|insertion_idx| insertion_idx);
+
+                // this is O(n) but we need a sorted window
+                self.buf.insert(insertion_idx, val);
+            }
         }
         self.last_start = start;
-
-        // insert elements that enter the window, but insert them sorted
-        for idx in self.last_end..end {
-            // safety
-            // we are in bounds
-            let val = *self.slice.get_unchecked(idx);
-            let insertion_idx = self
-                .buf
-                .binary_search_by(|a| compare_fn_nan_max(a, &val))
-                .unwrap_or_else(|insertion_idx| insertion_idx);
-
-            // this is O(n) but we need a sorted window
-            self.buf.insert(insertion_idx, val);
-        }
         self.last_end = end;
         &self.buf
     }
@@ -122,33 +129,41 @@ pub(super) struct SortedBufNulls<'a, T: NativeType + IsFloat + PartialOrd> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
+    unsafe fn fill_and_sort_buf(&mut self, start: usize, end: usize) {
+        self.null_count = 0;
+        let iter = (start..end).map(|idx| {
+            if self.validity.get_bit_unchecked(idx) {
+                Some(*self.slice.get_unchecked(idx))
+            } else {
+                self.null_count += 1;
+                None
+            }
+        });
+
+        self.buf.clear();
+        self.buf.extend(iter);
+        sort_opt_buf(&mut self.buf);
+    }
+
     pub(super) unsafe fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
     ) -> Self {
-        let mut null_count = 0;
-        let mut buf = (start..end)
-            .map(|idx| {
-                if validity.get_bit_unchecked(idx) {
-                    Some(*slice.get_unchecked(idx))
-                } else {
-                    null_count += 1;
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
+        let buf = Vec::with_capacity(end - start);
 
-        sort_opt_buf(&mut buf);
-        Self {
+        // sort_opt_buf(&mut buf);
+        let mut out = Self {
             slice,
             validity,
             last_start: start,
             last_end: end,
             buf,
-            null_count,
-        }
+            null_count: 0,
+        };
+        out.fill_and_sort_buf(start, end);
+        out
     }
 
     pub(super) fn window(&self) -> &[Option<T>] {
@@ -160,46 +175,51 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> SortedBufNulls<'a, T> {
     /// The caller must ensure that `start` and `end` are within bounds of `self.slice`
     ///
     pub(super) unsafe fn update(&mut self, start: usize, end: usize) {
-        // remove elements that should leave the window
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let val = if self.validity.get_bit_unchecked(idx) {
-                Some(*self.slice.get_unchecked(idx))
-            } else {
-                self.null_count -= 1;
-                None
-            };
+        // swap the whole buffer
+        if start >= self.last_end {
+            self.fill_and_sort_buf(start, end);
+        } else {
+            // remove elements that should leave the window
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let val = if self.validity.get_bit_unchecked(idx) {
+                    Some(*self.slice.get_unchecked(idx))
+                } else {
+                    self.null_count -= 1;
+                    None
+                };
 
-            // safety
-            // value is present in buf
-            let remove_idx = self
-                .buf
-                .binary_search_by(|a| compare_opt_fn(*a, val))
-                .unwrap_unchecked();
-            // this is O(n) but we need a sorted window
-            self.buf.remove(remove_idx);
+                // safety
+                // value is present in buf
+                let remove_idx = self
+                    .buf
+                    .binary_search_by(|a| compare_opt_fn(*a, val))
+                    .unwrap_unchecked();
+                // this is O(n) but we need a sorted window
+                self.buf.remove(remove_idx);
+            }
+
+            // insert elements that enter the window, but insert them sorted
+            for idx in self.last_end..end {
+                // safety
+                // we are in bounds
+                let val = if self.validity.get_bit_unchecked(idx) {
+                    Some(*self.slice.get_unchecked(idx))
+                } else {
+                    self.null_count += 1;
+                    None
+                };
+                let insertion_idx = self
+                    .buf
+                    .binary_search_by(|a| compare_opt_fn(*a, val))
+                    .unwrap_or_else(|insertion_idx| insertion_idx);
+
+                // this is O(n) but we need a sorted window
+                self.buf.insert(insertion_idx, val);
+            }
         }
         self.last_start = start;
-
-        // insert elements that enter the window, but insert them sorted
-        for idx in self.last_end..end {
-            // safety
-            // we are in bounds
-            let val = if self.validity.get_bit_unchecked(idx) {
-                Some(*self.slice.get_unchecked(idx))
-            } else {
-                self.null_count += 1;
-                None
-            };
-            let insertion_idx = self
-                .buf
-                .binary_search_by(|a| compare_opt_fn(*a, val))
-                .unwrap_or_else(|insertion_idx| insertion_idx);
-
-            // this is O(n) but we need a sorted window
-            self.buf.insert(insertion_idx, val);
-        }
         self.last_end = end;
     }
 }

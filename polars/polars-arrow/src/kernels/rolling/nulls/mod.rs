@@ -5,13 +5,15 @@ mod sum;
 mod variance;
 
 use super::*;
-pub use mean::rolling_mean;
-pub use min_max::{rolling_max, rolling_min};
-pub use quantile::{rolling_median, rolling_quantile};
-pub use sum::rolling_sum;
-pub use variance::{rolling_std, rolling_var};
+pub use mean::*;
+pub use min_max::*;
+pub use quantile::*;
+pub use sum::*;
+pub use variance::*;
 
-pub(crate) trait RollingAggWindow<'a, T: NativeType> {
+pub trait RollingAggWindowNulls<'a, T: NativeType> {
+    /// # Safety
+    /// `start` and `end` must be in bounds for `slice` and `validity`
     unsafe fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
@@ -20,6 +22,8 @@ pub(crate) trait RollingAggWindow<'a, T: NativeType> {
         min_periods: usize,
     ) -> Self;
 
+    /// # Safety
+    /// `start` and `end` must be in bounds of `slice` and `bitmap`
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
 }
 
@@ -33,7 +37,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
-    Agg: RollingAggWindow<'a, T>,
+    Agg: RollingAggWindowNulls<'a, T>,
     T: IsFloat + NativeType,
 {
     let len = values.len();
@@ -160,11 +164,7 @@ mod test {
             .map(|v| v.copied().unwrap())
             .collect::<Vec<_>>();
 
-        // we cannot compare nans, so we compare the string values
-        assert_eq!(
-            format!("{:?}", out.as_slice()),
-            format!("{:?}", &[f64::nan(), f64::nan(), 2.0, 12.5])
-        );
+        assert_eq!(out, &[0.0, 0.0, 2.0, 12.5]);
 
         let out = rolling_var(arr, 4, 1, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
@@ -172,10 +172,7 @@ mod test {
             .into_iter()
             .map(|v| v.copied().unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(
-            format!("{:?}", out.as_slice()),
-            format!("{:?}", &[f64::nan(), f64::nan(), 2.0, 6.333333333333334])
-        );
+        assert_eq!(out, &[0.0, 0.0, 2.0, 6.333333333333334]);
     }
 
     #[test]
