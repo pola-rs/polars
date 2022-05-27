@@ -1,7 +1,11 @@
 use crate::prelude::*;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
+use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
+use polars_core::utils::split_offsets;
+use polars_core::POOL;
+use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -182,7 +186,23 @@ pub fn groupby_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> GroupsSlice {
-    groupby_values_iter(period, offset, time, closed_window, tu)
-        .map(|(offset, len)| [offset, len])
-        .collect_trusted()
+    let offset_duration = offset;
+
+    let groups = split_offsets(time.len(), POOL.current_num_threads())
+        .par_iter()
+        .map(|(base_offset, len)| {
+            let base_offset = *base_offset;
+            let len = *len;
+            groupby_values_iter(
+                period,
+                offset_duration,
+                &time[base_offset..base_offset + len],
+                closed_window,
+                tu,
+            )
+            .map(|(offset, len)| [base_offset as IdxSize + offset, len])
+            .collect_trusted::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    flatten(&groups, None)
 }

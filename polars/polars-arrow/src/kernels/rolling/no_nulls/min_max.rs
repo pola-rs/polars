@@ -24,56 +24,66 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_min = if start >= self.last_end {
-            true
-        } else {
-            let mut recompute_min = false;
+        let leaving_min = self
+            .slice
+            .get_unchecked(self.last_start..start)
+            .iter()
+            .min_by(|a, b| compare_fn_nan_min(*a, *b))
+            .unwrap_or(&self.slice[self.last_start]);
+        let entering_min = self
+            .slice
+            .get_unchecked(self.last_end..end)
+            .iter()
+            .min_by(|a, b| compare_fn_nan_min(*a, *b))
+            .unwrap_or(&self.slice[std::cmp::max(self.last_start, self.last_end - 1)]);
 
-            // remove elements that should leave the window
-            for idx in self.last_start..start {
-                // safety
-                // we are in bounds
-                let leaving_value = self.slice.get_unchecked(idx);
+        match compare_fn_nan_min(leaving_min, entering_min) {
+            // do nothing
+            Ordering::Equal => {}
+            // leaving < entering
+            Ordering::Less => {
+                // leaving value could be the smallest, we might need to recompute
 
-                // if the leaving value is the
-                // max value, we need to recompute the max.
-                if matches!(
-                    compare_fn_nan_min(leaving_value, &self.min),
+                // just a random value in the window to prevent O(n^2) behavior
+                // that can occur when all values in the window are the same
+                let remaining_value1 = self.slice.get(start).unwrap();
+                let remaining_value2 = self.slice.get(end - 1).unwrap();
+
+                // we check those two value in the window, if they are equal to leaving, we know
+                // we don't need to traverse all to compote the window
+                if !matches!(
+                    compare_fn_nan_min(remaining_value1, &self.min),
+                    Ordering::Equal
+                ) && !matches!(
+                    compare_fn_nan_min(remaining_value2, &self.min),
                     Ordering::Equal
                 ) {
-                    recompute_min = true;
-                    break;
+                    // the minimum value int the window we did not yet compute
+                    let min_in_between = self
+                        .slice
+                        .get_unchecked(start..self.last_end)
+                        .iter()
+                        .min_by(|a, b| compare_fn_nan_min(*a, *b))
+                        .unwrap();
+
+                    if matches!(
+                        compare_fn_nan_min(min_in_between, entering_min),
+                        Ordering::Less
+                    ) {
+                        self.min = *min_in_between
+                    } else {
+                        self.min = *entering_min
+                    }
                 }
             }
-            recompute_min
-        };
-
-        self.last_start = start;
-
-        // we traverse all values and compute
-        if recompute_min {
-            self.min = *self
-                .slice
-                .get_unchecked(start..end)
-                .iter()
-                .min_by(|a, b| compare_fn_nan_min(*a, *b))
-                .unwrap();
-        }
-        // the max has not left the window, so we only check
-        // if the entering values are larger
-        else if end > self.last_end {
-            let min_entering = self
-                .slice
-                .get_unchecked(self.last_end..end)
-                .iter()
-                .min_by(|a, b| compare_fn_nan_min(*a, *b))
-                .unwrap_unchecked();
-            if matches!(compare_fn_nan_min(min_entering, &self.min), Ordering::Less) {
-                self.min = *min_entering
+            // leaving > entering
+            Ordering::Greater => {
+                if matches!(compare_fn_nan_min(entering_min, &self.min), Ordering::Less) {
+                    self.min = *entering_min
+                }
             }
         }
+        self.last_start = start;
         self.last_end = end;
         self.min
     }
@@ -106,26 +116,40 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
         let recompute_max = if start >= self.last_end {
             true
         } else {
-            // remove elements that should leave the window
-            let mut recompute_max = false;
-            for idx in self.last_start..start {
-                // safety
-                // we are in bounds
-                let leaving_value = self.slice.get_unchecked(idx);
-                // if the leaving value is the max value, we need to recompute the max.
-                if matches!(
-                    compare_fn_nan_max(leaving_value, &self.max),
-                    Ordering::Equal
-                ) {
-                    recompute_max = true;
-                    break;
+            // just a random value in the window to prevent O(n^2) behavior
+            // that can occur when all values in the window are the same
+            let remaining_value1 = self.slice.get_unchecked(start);
+            let remaining_value2 = self.slice.get_unchecked(end);
+            if !matches!(
+                compare_fn_nan_max(remaining_value1, &self.max),
+                Ordering::Equal
+            ) && !matches!(
+                compare_fn_nan_max(remaining_value2, &self.max),
+                Ordering::Equal
+            ) {
+                // remove elements that should leave the window
+                let mut recompute_max = false;
+                for idx in self.last_start..start {
+                    // safety
+                    // we are in bounds
+                    let leaving_value = self.slice.get_unchecked(idx);
+                    // if the leaving value is the max value, we need to recompute the max.
+                    if matches!(
+                        compare_fn_nan_max(leaving_value, &self.max),
+                        Ordering::Equal
+                    ) {
+                        recompute_max = true;
+                        break;
+                    }
                 }
+                recompute_max
+            } else {
+                false
             }
-            recompute_max
         };
         self.last_start = start;
 
-        // we traverese all values and compute
+        // we traverse all values and compute
         if recompute_max {
             self.max = *self
                 .slice
