@@ -1,10 +1,11 @@
-use std::ops::SubAssign;
-use polars_arrow::data_types::IsFloat;
 use super::*;
+use polars_arrow::data_types::IsFloat;
+use std::ops::SubAssign;
 
 impl<T: PolarsFloatType> SeriesOpsTime for WrapFloat<ChunkedArray<T>>
-where T::Native: IsFloat + SubAssign,
-Self: RollingAgg
+where
+    T::Native: IsFloat + SubAssign,
+    Self: RollingAgg,
 {
     fn dtype(&self) -> &DataType {
         self.0.dtype()
@@ -30,11 +31,7 @@ Self: RollingAgg
         interpolation: QuantileInterpolOptions,
         options: RollingOptions,
     ) -> Result<Series> {
-        RollingAgg::rolling_quantile(self,
-            quantile,
-            interpolation,
-            options
-        )
+        RollingAgg::rolling_quantile(self, quantile, interpolation, options)
     }
     //
     #[cfg(feature = "rolling_window")]
@@ -43,7 +40,7 @@ Self: RollingAgg
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_max(&self,options: RollingOptions) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
         RollingAgg::rolling_max(self, options)
     }
     #[cfg(feature = "rolling_window")]

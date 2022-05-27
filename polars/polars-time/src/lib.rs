@@ -3,11 +3,10 @@ pub mod chunkedarray;
 mod date_range;
 mod groupby;
 pub mod prelude;
+pub mod series;
 mod truncate;
 mod upsample;
 mod windows;
-mod rolling_kernels;
-pub mod series;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use groupby::dynamic::*;

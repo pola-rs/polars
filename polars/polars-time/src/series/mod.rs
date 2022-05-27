@@ -62,7 +62,6 @@ where
 #[repr(transparent)]
 pub(crate) struct WrapFloat<T>(pub T);
 
-
 #[repr(transparent)]
 pub(crate) struct WrapInt<T>(pub T);
 

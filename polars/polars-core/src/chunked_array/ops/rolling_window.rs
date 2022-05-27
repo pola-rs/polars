@@ -256,10 +256,8 @@ mod inner_mod {
             );
             Ok(Self::from_chunks(self.name(), vec![Arc::new(arr)]))
         }
-
     }
 }
 
 #[cfg(feature = "rolling_window")]
 pub use inner_mod::*;
-

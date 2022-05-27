@@ -1,24 +1,20 @@
 use super::*;
-use polars_arrow::kernels::rolling::no_nulls::{
-    self, RollingAggWindow
-};
+use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindow};
 use polars_core::export::num;
 
 // Use an aggregation window that maintains the state
-pub(super) fn rolling_apply_agg_window<'a, Agg, T, O>(
-    values: &'a [T],
-    mut offsets: O,
-) -> ArrayRef
-    where
-        // items (offset, len) -> so offsets are offset, offset + len
-        Agg: RollingAggWindow<'a, T>,
-        O: Iterator<Item=(IdxSize, IdxSize)> + TrustedLen,
-        T: Debug + IsFloat + NativeType,
+pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], mut offsets: O) -> ArrayRef
+where
+    // items (offset, len) -> so offsets are offset, offset + len
+    Agg: RollingAggWindow<'a, T>,
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    T: Debug + IsFloat + NativeType,
 {
     let len = values.len();
     let mut agg_window = Agg::new(values, 0, 0);
 
-    let out = offsets.enumerate()
+    let out = offsets
+        .enumerate()
         .map(|(idx, (start, len))| {
             let end = start + len;
             // safety:
@@ -30,7 +26,7 @@ pub(super) fn rolling_apply_agg_window<'a, Agg, T, O>(
     Arc::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
         out.into(),
-        None
+        None,
     ))
 }
 
@@ -46,10 +42,7 @@ where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter)
 }
 
 fn rolling_max<T>(
@@ -60,16 +53,12 @@ fn rolling_max<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> ArrayRef
-    where
-        T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
+where
+    T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter)
 }
-
 
 fn rolling_sum<T>(
     values: &[T],
@@ -79,14 +68,11 @@ fn rolling_sum<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> ArrayRef
-    where
-        T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+where
+    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter)
 }
 
 fn rolling_mean<T>(
@@ -97,14 +83,11 @@ fn rolling_mean<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> ArrayRef
-    where
-        T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+where
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter)
 }
 
 fn rolling_var<T>(
@@ -115,14 +98,11 @@ fn rolling_var<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> ArrayRef
-    where
-        T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+where
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter)
 }
 
 fn rolling_std<T>(
@@ -133,8 +113,8 @@ fn rolling_std<T>(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> ArrayRef
-    where
-        T: NativeType
+where
+    T: NativeType
         + Float
         + IsFloat
         + std::iter::Sum
@@ -147,8 +127,5 @@ fn rolling_std<T>(
         + num::pow::Pow<T, Output = T>,
 {
     let offset_iter = groupby_values_iter(period, offset, time, closed_window, tu);
-    rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(
-        values,
-        offset_iter
-    )
+    rolling_apply_agg_window::<no_nulls::StdWindow<_>, _, _>(values, offset_iter)
 }

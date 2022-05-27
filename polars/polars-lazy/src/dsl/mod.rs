@@ -1414,24 +1414,22 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self
-            .apply(
-                move |s| s.rolling_var(options.clone()),
-                GetOutput::same_type(),
-            )
-            .with_fmt("rolling_var")
+        self.apply(
+            move |s| s.rolling_var(options.clone()),
+            GetOutput::same_type(),
+        )
+        .with_fmt("rolling_var")
     }
 
     /// Apply a rolling std-dev
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self
-            .apply(
-                move |s| s.rolling_std(options.clone()),
-                GetOutput::same_type(),
-            )
-            .with_fmt("rolling_std")
+        self.apply(
+            move |s| s.rolling_std(options.clone()),
+            GetOutput::same_type(),
+        )
+        .with_fmt("rolling_std")
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]

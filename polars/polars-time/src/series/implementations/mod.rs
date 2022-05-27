@@ -19,6 +19,6 @@ mod time;
 mod utf8;
 
 use crate::prelude::*;
+use crate::series::*;
 use polars_core::prelude::*;
 use polars_core::utils::Wrap;
-use crate::series::*;

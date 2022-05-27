@@ -65,7 +65,6 @@ pub trait SeriesOpsTime {
     fn rolling_std(&self, _options: RollingOptions) -> Result<Series> {
         invalid_operation!(self)
     }
-
 }
 
 impl SeriesOpsTime for Series {
@@ -92,11 +91,8 @@ impl SeriesOpsTime for Series {
         interpolation: QuantileInterpolOptions,
         options: RollingOptions,
     ) -> Result<Series> {
-        self.to_ops().rolling_quantile(
-            quantile,
-            interpolation,
-            options
-        )
+        self.to_ops()
+            .rolling_quantile(quantile, interpolation, options)
     }
 
     #[cfg(feature = "rolling_window")]
@@ -105,7 +101,7 @@ impl SeriesOpsTime for Series {
     }
     /// Apply a rolling max to a Series.
     #[cfg(feature = "rolling_window")]
-    fn rolling_max(&self,options: RollingOptions) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
         self.to_ops().rolling_max(options)
     }
 
@@ -120,5 +116,4 @@ impl SeriesOpsTime for Series {
     fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
         self.to_ops().rolling_std(options)
     }
-
 }

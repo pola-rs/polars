@@ -6,10 +6,10 @@ mod datetime;
 #[cfg(feature = "dtype-duration")]
 mod duration;
 mod kernels;
+mod rolling_window;
 #[cfg(feature = "dtype-time")]
 mod time;
 pub mod utf8;
-mod rolling_window;
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(feature = "dtype-date")]
@@ -21,10 +21,10 @@ pub use duration::DurationMethods;
 use kernels::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
+pub use rolling_window::*;
 #[cfg(feature = "dtype-time")]
 pub use time::TimeMethods;
 pub use utf8::Utf8Methods;
-pub use rolling_window::*;
 
 pub fn unix_time() -> NaiveDateTime {
     NaiveDateTime::from_timestamp(0, 0)

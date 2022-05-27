@@ -1,6 +1,5 @@
-use crate::series::WrapInt;
 use super::*;
-
+use crate::series::WrapInt;
 
 pub trait PolarsTimeIntegerType: PolarsIntegerType {}
 impl PolarsTimeIntegerType for UInt8Type {}
@@ -12,11 +11,10 @@ impl PolarsTimeIntegerType for Int16Type {}
 impl PolarsTimeIntegerType for Int32Type {}
 impl PolarsTimeIntegerType for Int64Type {}
 
-
 impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
-    where
-        T: PolarsIntegerType,
-        T::Native: IsFloat + SubAssign,
+where
+    T: PolarsIntegerType,
+    T::Native: IsFloat + SubAssign,
 {
     fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
         if options.weights.is_some() {
@@ -40,7 +38,8 @@ impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
         interpolation: QuantileInterpolOptions,
         options: RollingOptions,
     ) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?
+        self.0
+            .cast(&DataType::Float64)?
             .rolling_quantile(quantile, interpolation, options.into())
     }
 
@@ -69,19 +68,16 @@ impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
     }
 
     fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?
-            .rolling_var(options.into())
+        self.0.cast(&DataType::Float64)?.rolling_var(options.into())
     }
 
     fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?
-            .rolling_std(options.into())
+        self.0.cast(&DataType::Float64)?.rolling_std(options.into())
     }
 
     fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?
+        self.0
+            .cast(&DataType::Float64)?
             .rolling_mean(options.into())
     }
 }
-
-

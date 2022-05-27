@@ -2,20 +2,21 @@
 mod floats;
 #[cfg(feature = "rolling_window")]
 mod ints;
+mod rolling_kernels;
 
 use crate::prelude::*;
-use polars_arrow::export::arrow;
-use polars_core::prelude::*;
-use arrow::array::{Array, PrimitiveArray, ArrayRef};
+use crate::series::WrapFloat;
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
 use arrow::bitmap::MutableBitmap;
-use polars_core::export::num::{Float, Zero};
 use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::data_types::IsFloat;
+use polars_arrow::export::arrow;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
+use polars_core::export::num::{Float, Zero};
+use polars_core::prelude::*;
 use std::convert::TryFrom;
 use std::ops::SubAssign;
-use crate::series::WrapFloat;
 
 #[derive(Clone)]
 pub struct RollingOptions {
@@ -46,17 +47,19 @@ impl Into<RollingOptionsFixedWindow> for RollingOptions {
     fn into(self) -> RollingOptionsFixedWindow {
         let options = self;
         let window_size = options.window_size;
-        assert!(window_size.parsed_int, "should be fixed integer window size at this point");
+        assert!(
+            window_size.parsed_int,
+            "should be fixed integer window size at this point"
+        );
 
         RollingOptionsFixedWindow {
             window_size: window_size.nanoseconds() as usize,
             min_periods: options.min_periods,
             weights: options.weights,
-            center: options.center
+            center: options.center,
         }
     }
 }
-
 
 #[cfg(feature = "rolling_window")]
 pub trait RollingAgg {
@@ -71,7 +74,6 @@ pub trait RollingAgg {
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their sum.
     fn rolling_sum(&self, options: RollingOptions) -> Result<Series>;
-
 
     /// Apply a rolling min (moving min) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -113,7 +115,7 @@ pub trait RollingAgg {
     fn rolling_std(&self, options: RollingOptions) -> Result<Series>;
 }
 
-    /// utility
+/// utility
 #[cfg(feature = "rolling_window")]
 fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
     if min_periods > window_size {
@@ -148,10 +150,10 @@ fn rolling_agg<T, F1, F2>(
     rolling_agg_fn: F1,
     rolling_agg_fn_nulls: F2,
 ) -> Result<Series>
-    where
-        T: PolarsNumericType,
-        F1: FnOnce(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
-        F2: FnOnce(&PrimitiveArray<T::Native>, usize, usize, bool, Option<&[f64]>) -> ArrayRef,
+where
+    T: PolarsNumericType,
+    F1: FnOnce(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
+    F2: FnOnce(&PrimitiveArray<T::Native>, usize, usize, bool, Option<&[f64]>) -> ArrayRef,
 {
     check_input(options.window_size, options.min_periods)?;
     let ca = ca.rechunk();
@@ -175,7 +177,6 @@ fn rolling_agg<T, F1, F2>(
     };
     Series::try_from((ca.name(), arr))
 }
-
 
 #[cfg(all(test, feature = "rolling_window"))]
 mod test {
@@ -403,8 +404,8 @@ mod test {
                 min_periods: 10,
                 ..Default::default()
             })
-                .unwrap()
-                .null_count(),
+            .unwrap()
+            .null_count(),
             ca.len()
         );
 

@@ -20,13 +20,13 @@ pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit}
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
-use polars_arrow::data_types::IsFloat;
 
 pub struct Utf8Type {}
 

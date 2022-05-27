@@ -1,9 +1,9 @@
 use crate::prelude::*;
+use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-use polars_arrow::trusted_len::TrustedLen;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -138,7 +138,7 @@ pub(crate) fn groupby_values_iter(
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> impl Iterator<Item=(IdxSize, IdxSize)> + TrustedLen + '_{
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
     let add = match tu {
         TimeUnit::Nanoseconds => Duration::add_ns,
         TimeUnit::Microseconds => Duration::add_us,
@@ -147,28 +147,26 @@ pub(crate) fn groupby_values_iter(
 
     // the offset can be lagging if we have a negative offset duration
     let mut lagging_offset = 0;
-    time.iter()
-        .enumerate()
-        .map(move |(i, lower)| {
-            let lower = add(&offset, *lower);
-            let upper = add(&period, lower);
+    time.iter().enumerate().map(move |(i, lower)| {
+        let lower = add(&offset, *lower);
+        let upper = add(&period, lower);
 
-            let b = Bounds::new(lower, upper);
+        let b = Bounds::new(lower, upper);
 
-            for &t in &time[lagging_offset..] {
-                if b.is_member(t, closed_window) || lagging_offset == i {
-                    break;
-                }
-                lagging_offset += 1;
+        for &t in &time[lagging_offset..] {
+            if b.is_member(t, closed_window) || lagging_offset == i {
+                break;
             }
+            lagging_offset += 1;
+        }
 
-            // Safety
-            // we just iterated over value i.
-            let slice = unsafe { time.get_unchecked(lagging_offset..) };
-            let len = find_offset(slice, b, closed_window);
+        // Safety
+        // we just iterated over value i.
+        let slice = unsafe { time.get_unchecked(lagging_offset..) };
+        let len = find_offset(slice, b, closed_window);
 
-            (lagging_offset as IdxSize, len as IdxSize)
-        })
+        (lagging_offset as IdxSize, len as IdxSize)
+    })
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -184,6 +182,7 @@ pub fn groupby_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> GroupsSlice {
-
-    groupby_values_iter(period, offset, time, closed_window, tu).map(|(offset, len)| [offset, len]).collect_trusted()
+    groupby_values_iter(period, offset, time, closed_window, tu)
+        .map(|(offset, len)| [offset, len])
+        .collect_trusted()
 }
