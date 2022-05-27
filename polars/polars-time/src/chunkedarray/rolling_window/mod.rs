@@ -1,20 +1,21 @@
-#[cfg(feature = "rolling_window")]
 mod floats;
-#[cfg(feature = "rolling_window")]
 mod ints;
+#[cfg(feature = "rolling_window")]
 mod rolling_kernels;
 
 use crate::prelude::*;
 use crate::series::WrapFloat;
+#[cfg(feature = "rolling_window")]
 use arrow::array::{Array, ArrayRef, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
-use polars_arrow::bit_util::unset_bit_raw;
 use polars_arrow::data_types::IsFloat;
+#[cfg(feature = "rolling_window")]
 use polars_arrow::export::arrow;
+#[cfg(feature = "rolling_window")]
+use polars_arrow::kernels::rolling;
+#[cfg(feature = "rolling_window")]
 use polars_arrow::prelude::QuantileInterpolOptions;
-use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
-use polars_core::export::num::{Float, Zero};
 use polars_core::prelude::*;
+#[cfg(feature = "rolling_window")]
 use std::convert::TryFrom;
 use std::ops::SubAssign;
 
@@ -29,6 +30,10 @@ pub struct RollingOptions {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
+    /// Compute the rolling aggregates with a window defined by a time column
+    pub by: Option<String>,
+    /// The closed window of that time window if given
+    pub closed_window: Option<ClosedWindow>,
 }
 
 impl Default for RollingOptions {
@@ -38,14 +43,51 @@ impl Default for RollingOptions {
             min_periods: 1,
             weights: None,
             center: false,
+            by: None,
+            closed_window: None,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RollingOptionsImpl<'a> {
+    /// The length of the window.
+    pub window_size: Duration,
+    /// Amount of elements in the window that should be filled before computing a result.
+    pub min_periods: usize,
+    /// An optional slice with the same length as the window that will be multiplied
+    ///              elementwise with the values in the window.
+    pub weights: Option<Vec<f64>>,
+    /// Set the labels at the center of the window.
+    pub center: bool,
+    pub by: Option<&'a [i64]>,
+    pub tu: Option<TimeUnit>,
+    pub closed_window: Option<ClosedWindow>,
+}
+
+impl From<RollingOptions> for RollingOptionsImpl<'static> {
+    fn from(options: RollingOptions) -> Self {
+        let window_size = options.window_size;
+        assert!(
+            window_size.parsed_int,
+            "should be fixed integer window size at this point"
+        );
+
+        RollingOptionsImpl {
+            window_size,
+            min_periods: options.min_periods,
+            weights: options.weights,
+            center: options.center,
+            by: None,
+            tu: None,
+            closed_window: None,
         }
     }
 }
 
 #[cfg(feature = "rolling_window")]
-impl Into<RollingOptionsFixedWindow> for RollingOptions {
-    fn into(self) -> RollingOptionsFixedWindow {
-        let options = self;
+impl From<RollingOptions> for RollingOptionsFixedWindow {
+    fn from(options: RollingOptions) -> Self {
         let window_size = options.window_size;
         assert!(
             window_size.parsed_int,
@@ -61,36 +103,71 @@ impl Into<RollingOptionsFixedWindow> for RollingOptions {
     }
 }
 
+impl Default for RollingOptionsImpl<'static> {
+    fn default() -> Self {
+        RollingOptionsImpl {
+            window_size: Duration::parse("3i"),
+            min_periods: 1,
+            weights: None,
+            center: false,
+            by: None,
+            tu: None,
+            closed_window: None,
+        }
+    }
+}
+
+#[cfg(feature = "rolling_window")]
+impl<'a> From<RollingOptionsImpl<'a>> for RollingOptionsFixedWindow {
+    fn from(options: RollingOptionsImpl<'a>) -> Self {
+        let window_size = options.window_size;
+        assert!(
+            window_size.parsed_int,
+            "should be fixed integer window size at this point"
+        );
+
+        RollingOptionsFixedWindow {
+            window_size: window_size.nanoseconds() as usize,
+            min_periods: options.min_periods,
+            weights: options.weights,
+            center: options.center,
+        }
+    }
+}
+
+#[cfg(not(feature = "rolling_window"))]
+pub trait RollingAgg {}
+
 #[cfg(feature = "rolling_window")]
 pub trait RollingAgg {
     /// Apply a rolling mean (moving mean) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their mean.
-    fn rolling_mean(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling sum (moving sum) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their sum.
-    fn rolling_sum(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling min (moving min) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their min.
-    fn rolling_min(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling max (moving max) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their max.
-    fn rolling_max(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling median (moving median) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be weighted according to the `weights` vector.
-    fn rolling_median(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling quantile (moving quantile) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
@@ -99,20 +176,20 @@ pub trait RollingAgg {
         &self,
         quantile: f64,
         interpolation: QuantileInterpolOptions,
-        options: RollingOptions,
+        options: RollingOptionsImpl,
     ) -> Result<Series>;
 
     /// Apply a rolling var (moving var) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their var.
-    fn rolling_var(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series>;
 
     /// Apply a rolling std (moving std) over the values in this array.
     /// A window of length `window_size` will traverse the array. The values that fill this window
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
-    fn rolling_std(&self, options: RollingOptions) -> Result<Series>;
+    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series>;
 }
 
 /// utility
@@ -127,487 +204,64 @@ fn check_input(window_size: usize, min_periods: usize) -> Result<()> {
     }
 }
 
-/// utility
 #[cfg(feature = "rolling_window")]
-fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
-    let (start, end) = if center {
-        let right_window = (window_size + 1) / 2;
-        (
-            idx.saturating_sub(window_size - right_window),
-            std::cmp::min(len, idx + right_window),
-        )
-    } else {
-        (idx.saturating_sub(window_size - 1), idx + 1)
-    };
-
-    (start, end - start)
-}
-
-#[cfg(feature = "rolling_window")]
-fn rolling_agg<T, F1, F2>(
+#[allow(clippy::type_complexity)]
+fn rolling_agg<T>(
     ca: &ChunkedArray<T>,
-    options: RollingOptionsFixedWindow,
-    rolling_agg_fn: F1,
-    rolling_agg_fn_nulls: F2,
+    options: RollingOptionsImpl,
+    rolling_agg_fn: &dyn Fn(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
+    rolling_agg_fn_nulls: &dyn Fn(
+        &PrimitiveArray<T::Native>,
+        usize,
+        usize,
+        bool,
+        Option<&[f64]>,
+    ) -> ArrayRef,
+    rolling_agg_fn_dynamic: Option<
+        &dyn Fn(&[T::Native], Duration, Duration, &[i64], ClosedWindow, TimeUnit) -> ArrayRef,
+    >,
 ) -> Result<Series>
 where
     T: PolarsNumericType,
-    F1: FnOnce(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
-    F2: FnOnce(&PrimitiveArray<T::Native>, usize, usize, bool, Option<&[f64]>) -> ArrayRef,
 {
-    check_input(options.window_size, options.min_periods)?;
-    let ca = ca.rechunk();
-
     let arr = ca.downcast_iter().next().unwrap();
-    let arr = match ca.has_validity() {
-        false => rolling_agg_fn(
-            arr.values().as_slice(),
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-        ),
-        _ => rolling_agg_fn_nulls(
-            arr,
-            options.window_size,
-            options.min_periods,
-            options.center,
-            options.weights.as_deref(),
-        ),
+    // "5i" is a window size of 5, e.g. fixed
+    let arr = if options.window_size.parsed_int {
+        let options: RollingOptionsFixedWindow = options.into();
+        check_input(options.window_size, options.min_periods)?;
+        let ca = ca.rechunk();
+
+        match ca.has_validity() {
+            false => rolling_agg_fn(
+                arr.values().as_slice(),
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+            _ => rolling_agg_fn_nulls(
+                arr,
+                options.window_size,
+                options.min_periods,
+                options.center,
+                options.weights.as_deref(),
+            ),
+        }
+    } else {
+        if arr.null_count() > 0 {
+            panic!("'rolling by' not yet supported for series with null values, consider using 'groupby_rolling'")
+        }
+        let values = arr.values().as_slice();
+        let duration = options.window_size;
+        let tu = options.tu.unwrap();
+        let by = options.by.unwrap();
+        let closed_window = options.closed_window.expect("closed window  must be set");
+        let offset = Duration::from_nsecs(duration.add_ns(-duration.nanoseconds()));
+        let func = rolling_agg_fn_dynamic.expect(
+            "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
+        );
+
+        func(values, duration, offset, by, closed_window, tu)
     };
     Series::try_from((ca.name(), arr))
-}
-
-#[cfg(all(test, feature = "rolling_window"))]
-mod test {
-    use crate::prelude::*;
-    use polars_core::prelude::*;
-
-    #[test]
-    fn test_rolling() {
-        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
-        let a = ca
-            .rolling_sum(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                ..Default::default()
-            })
-            .unwrap();
-        let a = a.i32().unwrap();
-        assert_eq!(
-            Vec::from(a),
-            [1, 3, 5, 5, 3]
-                .iter()
-                .copied()
-                .map(Some)
-                .collect::<Vec<_>>()
-        );
-        let a = ca
-            .rolling_min(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                ..Default::default()
-            })
-            .unwrap();
-        let a = a.i32().unwrap();
-        assert_eq!(
-            Vec::from(a),
-            [1, 1, 2, 2, 1]
-                .iter()
-                .copied()
-                .map(Some)
-                .collect::<Vec<_>>()
-        );
-        let a = ca
-            .rolling_max(RollingOptions {
-                window_size: 2,
-                weights: Some(vec![1., 1.]),
-                min_periods: 1,
-                center: false,
-            })
-            .unwrap();
-
-        let a = a.f64().unwrap();
-        assert_eq!(
-            Vec::from(a),
-            [1., 2., 3., 3., 2.]
-                .iter()
-                .copied()
-                .map(Some)
-                .collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn test_rolling_min_periods() {
-        let ca = Int32Chunked::from_slice("foo", &[1, 2, 3, 2, 1]);
-        let a = ca
-            .rolling_max(RollingOptions {
-                window_size: 2,
-                min_periods: 2,
-                ..Default::default()
-            })
-            .unwrap();
-        let a = a.i32().unwrap();
-        assert_eq!(Vec::from(a), &[None, Some(2), Some(3), Some(3), Some(2)]);
-    }
-
-    #[test]
-    fn test_rolling_mean() {
-        let ca = Float64Chunked::new(
-            "foo",
-            &[
-                Some(0.0),
-                Some(1.0),
-                Some(2.0),
-                None,
-                None,
-                Some(5.0),
-                Some(6.0),
-            ],
-        );
-
-        // check err on wrong input
-        assert!(ca
-            .rolling_mean(RollingOptions {
-                window_size: 1,
-                min_periods: 2,
-                ..Default::default()
-            })
-            .is_err());
-
-        // validate that we divide by the proper window length. (same as pandas)
-        let a = ca
-            .rolling_mean(RollingOptions {
-                window_size: 3,
-                min_periods: 1,
-                center: false,
-                weights: None,
-            })
-            .unwrap();
-        let a = a.f64().unwrap();
-        assert_eq!(
-            Vec::from(a),
-            &[
-                Some(0.0),
-                Some(0.5),
-                Some(1.0),
-                Some(1.5),
-                Some(2.0),
-                Some(5.0),
-                Some(5.5)
-            ]
-        );
-
-        // check centered rolling window
-        let a = ca
-            .rolling_mean(RollingOptions {
-                window_size: 3,
-                min_periods: 1,
-                center: true,
-                weights: None,
-            })
-            .unwrap();
-        let a = a.f64().unwrap();
-        assert_eq!(
-            Vec::from(a),
-            &[
-                Some(0.5),
-                Some(1.0),
-                Some(1.5),
-                Some(2.0),
-                Some(5.0),
-                Some(5.5),
-                Some(5.5)
-            ]
-        );
-
-        // integers
-        let ca = Int32Chunked::from_slice("", &[1, 8, 6, 2, 16, 10]);
-        let out = ca
-            .into_series()
-            .rolling_mean(RollingOptions {
-                window_size: 2,
-                weights: None,
-                min_periods: 2,
-                center: false,
-            })
-            .unwrap();
-
-        let out = out.f64().unwrap();
-        assert_eq!(
-            Vec::from(out),
-            &[None, Some(4.5), Some(7.0), Some(4.0), Some(9.0), Some(13.0),]
-        );
-    }
-
-    #[test]
-    fn test_rolling_apply() {
-        let ca = Float64Chunked::new(
-            "foo",
-            &[
-                Some(0.0),
-                Some(1.0),
-                Some(2.0),
-                None,
-                None,
-                Some(5.0),
-                Some(6.0),
-            ],
-        );
-
-        let out = ca
-            .rolling_apply(
-                &|s| s.sum_as_series(),
-                RollingOptions {
-                    window_size: 3,
-                    min_periods: 3,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        let out = out.f64().unwrap();
-
-        assert_eq!(
-            Vec::from(out),
-            &[
-                None,
-                None,
-                Some(3.0),
-                Some(3.0),
-                Some(2.0),
-                Some(5.0),
-                Some(11.0)
-            ]
-        );
-    }
-
-    #[test]
-    fn test_rolling_var() {
-        let ca = Float64Chunked::new(
-            "foo",
-            &[
-                Some(0.0),
-                Some(1.0),
-                Some(2.0),
-                None,
-                None,
-                Some(5.0),
-                Some(6.0),
-            ],
-        );
-        // window larger than array
-        assert_eq!(
-            ca.rolling_var(RollingOptions {
-                window_size: 10,
-                min_periods: 10,
-                ..Default::default()
-            })
-            .unwrap()
-            .null_count(),
-            ca.len()
-        );
-
-        let options = RollingOptions {
-            window_size: 3,
-            min_periods: 3,
-            ..Default::default()
-        };
-        let out = ca
-            .rolling_var(options.clone())
-            .unwrap()
-            .cast(&DataType::Int32)
-            .unwrap();
-        let out = out.i32().unwrap();
-        assert_eq!(
-            Vec::from(out),
-            &[None, None, Some(1), None, None, None, None,]
-        );
-
-        let ca = Float64Chunked::from_slice("", &[0.0, 2.0, 8.0, 3.0, 12.0, 1.0]);
-        let out = ca
-            .rolling_var(options)
-            .unwrap()
-            .cast(&DataType::Int32)
-            .unwrap();
-        let out = out.i32().unwrap();
-
-        assert_eq!(
-            Vec::from(out),
-            &[None, None, Some(17), Some(10), Some(20), Some(34),]
-        );
-
-        // check centered rolling window
-        let out = ca
-            .rolling_var(RollingOptions {
-                window_size: 4,
-                min_periods: 3,
-                center: true,
-                weights: None,
-            })
-            .unwrap()
-            .round(2)
-            .unwrap();
-        let out = out.f64().unwrap();
-
-        assert_eq!(
-            Vec::from(out),
-            &[
-                None,
-                Some(17.33),
-                Some(11.58),
-                Some(21.58),
-                Some(24.67),
-                Some(34.33)
-            ]
-        );
-    }
-
-    #[test]
-    fn test_median_quantile_types() {
-        let ca = Int32Chunked::new("foo", &[1, 2, 3, 2, 1]);
-        let rol_med = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_med_weighted = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                weights: Some(vec![1.0, 2.0]),
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_quantile = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        let rol_quantile_weighted = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    weights: Some(vec![1.0, 2.0]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        assert_eq!(*rol_med.dtype(), DataType::Float64);
-        assert_eq!(*rol_med_weighted.dtype(), DataType::Float64);
-        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
-        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
-
-        let ca = Float32Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
-        let rol_med = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_med_weighted = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                weights: Some(vec![1.0, 2.0]),
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_quantile = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        let rol_quantile_weighted = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    weights: Some(vec![1.0, 2.0]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        assert_eq!(*rol_med.dtype(), DataType::Float32);
-        assert_eq!(*rol_med_weighted.dtype(), DataType::Float32);
-        assert_eq!(*rol_quantile.dtype(), DataType::Float32);
-        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float32);
-
-        let ca = Float64Chunked::new("foo", &[1.0, 2.0, 3.0, 2.0, 1.0]);
-        let rol_med = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_med_weighted = ca
-            .rolling_median(RollingOptions {
-                window_size: 2,
-                min_periods: 1,
-                weights: Some(vec![1.0, 2.0]),
-                ..Default::default()
-            })
-            .unwrap();
-
-        let rol_quantile = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        let rol_quantile_weighted = ca
-            .rolling_quantile(
-                0.3,
-                QuantileInterpolOptions::Linear,
-                RollingOptions {
-                    window_size: 2,
-                    min_periods: 1,
-                    weights: Some(vec![1.0, 2.0]),
-                    ..Default::default()
-                },
-            )
-            .unwrap();
-
-        assert_eq!(*rol_med.dtype(), DataType::Float64);
-        assert_eq!(*rol_med_weighted.dtype(), DataType::Float64);
-        assert_eq!(*rol_quantile.dtype(), DataType::Float64);
-        assert_eq!(*rol_quantile_weighted.dtype(), DataType::Float64);
-    }
 }

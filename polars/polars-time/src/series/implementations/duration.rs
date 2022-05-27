@@ -1,8 +1,7 @@
 use super::*;
-use std::ops::Deref;
 
 impl SeriesOpsTime for Wrap<DurationChunked> {
-    fn dtype(&self) -> &DataType {
+    fn ops_time_dtype(&self) -> &DataType {
         self.0.dtype()
     }
 }

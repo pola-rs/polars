@@ -190,13 +190,13 @@ fn test_power_in_agg_list1() -> Result<()> {
         .groupby([col("fruits")])
         .agg([
             col("A")
-                .rolling_min(RollingOptions {
+                .rolling_min(RollingOptionsImpl {
                     window_size: 1,
                     ..Default::default()
                 })
                 .alias("input"),
             col("A")
-                .rolling_min(RollingOptions {
+                .rolling_min(RollingOptionsImpl {
                     window_size: 1,
                     ..Default::default()
                 })
@@ -231,7 +231,7 @@ fn test_power_in_agg_list2() -> Result<()> {
         .lazy()
         .groupby([col("fruits")])
         .agg([col("A")
-            .rolling_min(RollingOptions {
+            .rolling_min(RollingOptionsImpl {
                 window_size: 2,
                 min_periods: 2,
                 ..Default::default()

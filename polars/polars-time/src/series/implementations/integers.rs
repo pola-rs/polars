@@ -1,56 +1,55 @@
 use super::*;
-use polars_arrow::data_types::IsFloat;
 
 impl<T: PolarsIntegerType> SeriesOpsTime for WrapInt<ChunkedArray<T>>
 where
     T::Native: NumericNative,
     Self: RollingAgg,
 {
-    fn dtype(&self) -> &DataType {
+    fn ops_time_dtype(&self) -> &DataType {
         self.0.dtype()
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_mean(self, options)
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_sum(self, options)
     }
     #[cfg(feature = "rolling_window")]
-    fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_median(self, options)
     }
-    /// Apply a rolling quantile to a Series.
+
     #[cfg(feature = "rolling_window")]
     fn rolling_quantile(
         &self,
         quantile: f64,
         interpolation: QuantileInterpolOptions,
-        options: RollingOptions,
+        options: RollingOptionsImpl,
     ) -> Result<Series> {
         RollingAgg::rolling_quantile(self, quantile, interpolation, options)
     }
-    //
+
     #[cfg(feature = "rolling_window")]
-    fn rolling_min(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_min(self, options)
     }
 
     #[cfg(feature = "rolling_window")]
-    fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_max(self, options)
     }
     #[cfg(feature = "rolling_window")]
-    fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_var(self, options)
     }
 
     /// Apply a rolling std_dev to a Series.
     #[cfg(feature = "rolling_window")]
-    fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
         RollingAgg::rolling_std(self, options)
     }
 }

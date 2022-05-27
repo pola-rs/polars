@@ -1,34 +1,34 @@
 use super::*;
 use crate::series::WrapInt;
 
-pub trait PolarsTimeIntegerType: PolarsIntegerType {}
-impl PolarsTimeIntegerType for UInt8Type {}
-impl PolarsTimeIntegerType for UInt16Type {}
-impl PolarsTimeIntegerType for UInt32Type {}
-impl PolarsTimeIntegerType for UInt64Type {}
-impl PolarsTimeIntegerType for Int8Type {}
-impl PolarsTimeIntegerType for Int16Type {}
-impl PolarsTimeIntegerType for Int32Type {}
-impl PolarsTimeIntegerType for Int64Type {}
-
+#[cfg(not(feature = "rolling_window"))]
 impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
 where
     T: PolarsIntegerType,
     T::Native: IsFloat + SubAssign,
 {
-    fn rolling_sum(&self, options: RollingOptions) -> Result<Series> {
+}
+
+#[cfg(feature = "rolling_window")]
+impl<T> RollingAgg for WrapInt<ChunkedArray<T>>
+where
+    T: PolarsIntegerType,
+    T::Native: IsFloat + SubAssign,
+{
+    fn rolling_sum(&self, options: RollingOptionsImpl) -> Result<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_sum(options);
         }
         rolling_agg(
             &self.0,
-            options.into(),
-            rolling::no_nulls::rolling_sum,
-            rolling::nulls::rolling_sum,
+            options,
+            &rolling::no_nulls::rolling_sum,
+            &rolling::nulls::rolling_sum,
+            Some(&super::rolling_kernels::no_nulls::rolling_sum),
         )
     }
 
-    fn rolling_median(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_median(&self, options: RollingOptionsImpl) -> Result<Series> {
         self.0.cast(&DataType::Float64)?.rolling_median(options)
     }
 
@@ -36,48 +36,48 @@ where
         &self,
         quantile: f64,
         interpolation: QuantileInterpolOptions,
-        options: RollingOptions,
+        options: RollingOptionsImpl,
     ) -> Result<Series> {
         self.0
             .cast(&DataType::Float64)?
-            .rolling_quantile(quantile, interpolation, options.into())
+            .rolling_quantile(quantile, interpolation, options)
     }
 
-    fn rolling_min(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_min(&self, options: RollingOptionsImpl) -> Result<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_min(options);
         }
         rolling_agg(
             &self.0,
-            options.into(),
-            rolling::no_nulls::rolling_min,
-            rolling::nulls::rolling_min,
+            options,
+            &rolling::no_nulls::rolling_min,
+            &rolling::nulls::rolling_min,
+            Some(&super::rolling_kernels::no_nulls::rolling_min),
         )
     }
 
-    fn rolling_max(&self, options: RollingOptions) -> Result<Series> {
+    fn rolling_max(&self, options: RollingOptionsImpl) -> Result<Series> {
         if options.weights.is_some() {
             return self.0.cast(&DataType::Float64)?.rolling_max(options);
         }
         rolling_agg(
             &self.0,
-            options.into(),
-            rolling::no_nulls::rolling_max,
-            rolling::nulls::rolling_max,
+            options,
+            &rolling::no_nulls::rolling_max,
+            &rolling::nulls::rolling_max,
+            Some(&super::rolling_kernels::no_nulls::rolling_max),
         )
     }
 
-    fn rolling_var(&self, options: RollingOptions) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?.rolling_var(options.into())
+    fn rolling_var(&self, options: RollingOptionsImpl) -> Result<Series> {
+        self.0.cast(&DataType::Float64)?.rolling_var(options)
     }
 
-    fn rolling_std(&self, options: RollingOptions) -> Result<Series> {
-        self.0.cast(&DataType::Float64)?.rolling_std(options.into())
+    fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
+        self.0.cast(&DataType::Float64)?.rolling_std(options)
     }
 
-    fn rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-        self.0
-            .cast(&DataType::Float64)?
-            .rolling_mean(options.into())
+    fn rolling_mean(&self, options: RollingOptionsImpl) -> Result<Series> {
+        self.0.cast(&DataType::Float64)?.rolling_mean(options)
     }
 }

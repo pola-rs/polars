@@ -3,19 +3,17 @@ use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindow};
 use polars_core::export::num;
 
 // Use an aggregation window that maintains the state
-pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], mut offsets: O) -> ArrayRef
+pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], offsets: O) -> ArrayRef
 where
     // items (offset, len) -> so offsets are offset, offset + len
     Agg: RollingAggWindow<'a, T>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {
-    let len = values.len();
     let mut agg_window = Agg::new(values, 0, 0);
 
     let out = offsets
-        .enumerate()
-        .map(|(idx, (start, len))| {
+        .map(|(start, len)| {
             let end = start + len;
             // safety:
             // we are in bounds
@@ -30,7 +28,7 @@ where
     ))
 }
 
-fn rolling_min<T>(
+pub(crate) fn rolling_min<T>(
     values: &[T],
     period: Duration,
     offset: Duration,
@@ -45,7 +43,7 @@ where
     rolling_apply_agg_window::<no_nulls::MinWindow<_>, _, _>(values, offset_iter)
 }
 
-fn rolling_max<T>(
+pub(crate) fn rolling_max<T>(
     values: &[T],
     period: Duration,
     offset: Duration,
@@ -60,7 +58,7 @@ where
     rolling_apply_agg_window::<no_nulls::MaxWindow<_>, _, _>(values, offset_iter)
 }
 
-fn rolling_sum<T>(
+pub(crate) fn rolling_sum<T>(
     values: &[T],
     period: Duration,
     offset: Duration,
@@ -75,7 +73,7 @@ where
     rolling_apply_agg_window::<no_nulls::SumWindow<_>, _, _>(values, offset_iter)
 }
 
-fn rolling_mean<T>(
+pub(crate) fn rolling_mean<T>(
     values: &[T],
     period: Duration,
     offset: Duration,
@@ -90,7 +88,7 @@ where
     rolling_apply_agg_window::<no_nulls::MeanWindow<_>, _, _>(values, offset_iter)
 }
 
-fn rolling_var<T>(
+pub(crate) fn rolling_var<T>(
     values: &[T],
     period: Duration,
     offset: Duration,
@@ -105,7 +103,7 @@ where
     rolling_apply_agg_window::<no_nulls::VarWindow<_>, _, _>(values, offset_iter)
 }
 
-fn rolling_std<T>(
+pub(crate) fn rolling_std<T>(
     values: &[T],
     period: Duration,
     offset: Duration,

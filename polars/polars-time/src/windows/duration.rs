@@ -30,6 +30,16 @@ pub struct Duration {
 }
 
 impl Duration {
+    /// Create a new integer size `Duration`
+    pub fn new(fixed_slots: i64) -> Self {
+        Duration {
+            months: 0,
+            nsecs: fixed_slots,
+            negative: fixed_slots < 0,
+            parsed_int: true,
+        }
+    }
+
     /// 1ns // 1 nanosecond
     /// 1us // 1 microsecond
     /// 1ms // 1 millisecond
@@ -176,7 +186,7 @@ impl Duration {
         self.months == 0 && self.nsecs == 0
     }
 
-    pub(crate) fn months_only(&self) -> bool {
+    pub fn months_only(&self) -> bool {
         self.months != 0 && self.nsecs == 0
     }
 

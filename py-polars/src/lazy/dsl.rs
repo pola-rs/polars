@@ -967,7 +967,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> PyExpr {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -982,7 +982,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -997,7 +997,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -1012,7 +1012,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -1029,7 +1029,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -1046,7 +1046,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -1063,7 +1063,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> Self {
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,
@@ -1090,7 +1090,7 @@ impl PyExpr {
             _ => panic!("not supported"),
         };
 
-        let options = RollingOptions {
+        let options = RollingOptionsImpl {
             window_size: Duration::parse(window_size),
             weights,
             min_periods,

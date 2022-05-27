@@ -1,4 +1,4 @@
-mod no_nulls;
+pub(super) mod no_nulls;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
 use arrow::array::PrimitiveArray;

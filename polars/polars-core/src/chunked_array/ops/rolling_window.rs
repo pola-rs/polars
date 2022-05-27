@@ -30,44 +30,8 @@ mod inner_mod {
     use num::{Float, Zero};
     use polars_arrow::bit_util::unset_bit_raw;
     use polars_arrow::data_types::IsFloat;
-    use polars_arrow::prelude::QuantileInterpolOptions;
-    use polars_arrow::{kernels::rolling, trusted_len::PushUnchecked};
-    use std::convert::TryFrom;
+    use polars_arrow::trusted_len::PushUnchecked;
     use std::ops::SubAssign;
-
-    fn rolling_agg<T, F1, F2>(
-        ca: &ChunkedArray<T>,
-        options: RollingOptionsFixedWindow,
-        rolling_agg_fn: F1,
-        rolling_agg_fn_nulls: F2,
-    ) -> Result<Series>
-    where
-        T: PolarsNumericType,
-        F1: FnOnce(&[T::Native], usize, usize, bool, Option<&[f64]>) -> ArrayRef,
-        F2: FnOnce(&PrimitiveArray<T::Native>, usize, usize, bool, Option<&[f64]>) -> ArrayRef,
-    {
-        check_input(options.window_size, options.min_periods)?;
-        let ca = ca.rechunk();
-
-        let arr = ca.downcast_iter().next().unwrap();
-        let arr = match ca.has_validity() {
-            false => rolling_agg_fn(
-                arr.values().as_slice(),
-                options.window_size,
-                options.min_periods,
-                options.center,
-                options.weights.as_deref(),
-            ),
-            _ => rolling_agg_fn_nulls(
-                arr,
-                options.window_size,
-                options.min_periods,
-                options.center,
-                options.weights.as_deref(),
-            ),
-        };
-        Series::try_from((ca.name(), arr))
-    }
 
     /// utility
     fn check_input(window_size: usize, min_periods: usize) -> Result<()> {

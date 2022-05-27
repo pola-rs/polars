@@ -2,7 +2,6 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
-use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(any(feature = "dtype-struct", feature = "object"))]
 use std::any::Any;
 

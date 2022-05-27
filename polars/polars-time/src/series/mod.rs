@@ -5,7 +5,6 @@ use polars_core::prelude::*;
 use std::ops::Deref;
 
 pub use self::_trait::*;
-use polars_core::prelude::*;
 use polars_core::utils::Wrap;
 use std::sync::Arc;
 
