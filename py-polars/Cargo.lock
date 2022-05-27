@@ -1230,6 +1230,7 @@ dependencies = [
  "lexical",
  "polars-arrow",
  "polars-core",
+ "polars-utils",
  "serde",
 ]
 

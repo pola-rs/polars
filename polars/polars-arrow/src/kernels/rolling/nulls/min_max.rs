@@ -74,7 +74,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                     let leaving_value = self.slice.get_unchecked(idx);
 
                     // if the leaving value is the
-                    // max value, we need to recompute the max.
+                    // min value, we need to recompute the min.
                     if matches!(
                         compare_fn_nan_min(leaving_value, &self.min.unwrap()),
                         Ordering::Equal
