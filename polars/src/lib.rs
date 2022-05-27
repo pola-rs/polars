@@ -270,7 +270,7 @@
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
 //! allocator.
 //! [Mimalloc](https://crates.io/crates/mimalloc) and
-//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) for instance, show a significant
+//! [JeMalloc](https://crates.io/crates/jemallocator) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Usage

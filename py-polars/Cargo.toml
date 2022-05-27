@@ -19,7 +19,7 @@ description = "Blazingly fast DataFrame library"
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_os="linux")'.dependencies]
-tikv-jemallocator = { version = "0.4", features = ["disable_initial_exec_tls"] }
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
 ahash = "0.7"
