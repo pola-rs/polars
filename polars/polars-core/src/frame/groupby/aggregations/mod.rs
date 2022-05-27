@@ -460,7 +460,7 @@ where
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => self.get(first as usize),
+                    1 => NumCast::from(0),
                     _ => {
                         let arr_group = slice_from_offsets(self, first, len);
                         arr_group.var().map(|flt| NumCast::from(flt).unwrap())
@@ -484,7 +484,7 @@ where
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                    1 => NumCast::from(0),
                     _ => {
                         let arr_group = slice_from_offsets(self, first, len);
                         arr_group.std().map(|flt| NumCast::from(flt).unwrap())
@@ -650,7 +650,7 @@ where
                     debug_assert!(len <= self.len() as IdxSize);
                     match len {
                         0 => None,
-                        1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                        1 => NumCast::from(0),
                         _ => {
                             let arr_group = slice_from_offsets(self, first, len);
                             arr_group.var()
@@ -675,7 +675,7 @@ where
                     debug_assert!(len <= self.len() as IdxSize);
                     match len {
                         0 => None,
-                        1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                        1 => NumCast::from(0),
                         _ => {
                             let arr_group = slice_from_offsets(self, first, len);
                             arr_group.std()

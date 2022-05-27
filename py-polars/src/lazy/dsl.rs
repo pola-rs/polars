@@ -779,7 +779,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> PyExpr {
-        let options = RollingOptions {
+        let options = RollingOptionsFixedWindow {
             window_size,
             weights,
             min_periods,
@@ -962,61 +962,77 @@ impl PyExpr {
 
     pub fn rolling_sum(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> PyExpr {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_sum(options).into()
     }
     pub fn rolling_min(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_min(options).into()
     }
     pub fn rolling_max(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_max(options).into()
     }
     pub fn rolling_mean(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_mean(options).into()
@@ -1024,16 +1040,20 @@ impl PyExpr {
 
     pub fn rolling_std(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -1041,16 +1061,20 @@ impl PyExpr {
 
     pub fn rolling_var(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -1058,16 +1082,20 @@ impl PyExpr {
 
     pub fn rolling_median(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_median(options).into()
     }
@@ -1076,10 +1104,12 @@ impl PyExpr {
         &self,
         quantile: f64,
         interpolation: &str,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let interpol = match interpolation {
             "nearest" => QuantileInterpolOptions::Nearest,
@@ -1091,10 +1121,12 @@ impl PyExpr {
         };
 
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner

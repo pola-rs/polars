@@ -20,6 +20,7 @@ dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
 dtype-datetime = ["polars-core/dtype-date", "polars-core/temporal"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
+rolling_window = ["polars-core/rolling_window", "dtype-duration"]
 private = []
 
 test = [

@@ -4,8 +4,6 @@ use super::SeriesTrait;
 use super::SeriesWrap;
 use super::*;
 use crate::chunked_array::comparison::*;
-#[cfg(feature = "rolling_window")]
-use crate::chunked_array::ops::rolling_window::RollingOptions;
 use crate::chunked_array::{
     ops::{
         aggregate::{ChunkAggSeries, QuantileAggSeries, VarAggSeries},
@@ -44,45 +42,6 @@ macro_rules! impl_dyn_series {
 
             fn explode_by_offsets(&self, offsets: &[i64]) -> Series {
                 self.0.explode_by_offsets(offsets)
-            }
-
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_mean(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_mean(options)
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_median(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_median(options)
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_quantile(
-                &self,
-                quantile: f64,
-                interpolation: QuantileInterpolOptions,
-                options: RollingOptions,
-            ) -> Result<Series> {
-                self.0.rolling_quantile(quantile, interpolation, options)
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_sum(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_sum(options).map(|ca| ca.into())
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_min(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_min(options).map(|ca| ca.into())
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_max(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_max(options).map(|ca| ca.into())
-            }
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_std(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_std(options)
-            }
-
-            #[cfg(feature = "rolling_window")]
-            fn _rolling_var(&self, options: RollingOptions) -> Result<Series> {
-                self.0.rolling_var(options)
             }
 
             #[cfg(feature = "cum_agg")]
@@ -211,7 +170,7 @@ macro_rules! impl_dyn_series {
             fn rolling_apply(
                 &self,
                 _f: &dyn Fn(&Series) -> Series,
-                _options: RollingOptions,
+                _options: RollingOptionsFixedWindow,
             ) -> Result<Series> {
                 ChunkRollApply::rolling_apply(&self.0, _f, _options).map(|ca| ca.into_series())
             }

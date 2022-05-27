@@ -15,15 +15,18 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-pub use mean::rolling_mean;
-pub use min_max::{rolling_max, rolling_min};
+pub use mean::*;
+pub use min_max::*;
 pub use quantile::{rolling_median, rolling_quantile};
-pub use sum::rolling_sum;
-pub use variance::{rolling_std, rolling_var};
+pub use sum::*;
+pub use variance::*;
 
-pub(crate) trait RollingAggWindow<'a, T: NativeType> {
+pub trait RollingAggWindow<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self;
 
+    /// Update and recompute the window
+    /// # Safety
+    /// `start` and `end` must be within the windows bounds
     unsafe fn update(&mut self, start: usize, end: usize) -> T;
 }
 

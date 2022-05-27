@@ -80,56 +80,6 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
 
-        /// Apply a rolling mean to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling sum to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling median to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_median(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling quantile to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_quantile(
-            &self,
-            _quantile: f64,
-            _interpolation: QuantileInterpolOptions,
-            _options: RollingOptions,
-        ) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling min to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling max to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling variance to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling std_dev to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
         /// Get an array with the cumulative max computed at every element
         #[cfg(feature = "cum_agg")]
         fn _cummax(&self, _reverse: bool) -> Series {
@@ -872,7 +822,7 @@ pub trait SeriesTrait:
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptions,
+        _options: RollingOptionsFixedWindow,
     ) -> Result<Series> {
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }

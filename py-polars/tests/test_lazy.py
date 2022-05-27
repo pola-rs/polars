@@ -658,15 +658,15 @@ def test_rolling(fruits_cars: pl.DataFrame) -> None:
         )
     )
 
-    out_nan = df.select(
+    out_single_val_variance = df.select(
         [
             pl.col("A").rolling_std(3, min_periods=1).round(decimals=4).alias("std"),
             pl.col("A").rolling_var(3, min_periods=1).round(decimals=1).alias("var"),
         ]
     )
 
-    assert out_nan[0, "std"] != out_nan[0, "std"]  # true if value is NaN
-    assert out_nan[0, "var"] != out_nan[0, "var"]  # true if value is NaN
+    assert out_single_val_variance[0, "std"] == 0.0
+    assert out_single_val_variance[0, "var"] == 0.0
 
 
 def test_rolling_apply() -> None:
