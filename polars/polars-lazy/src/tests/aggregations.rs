@@ -191,13 +191,13 @@ fn test_power_in_agg_list1() -> Result<()> {
         .agg([
             col("A")
                 .rolling_min(RollingOptions {
-                    window_size: 1,
+                    window_size: Duration::new(1),
                     ..Default::default()
                 })
                 .alias("input"),
             col("A")
                 .rolling_min(RollingOptions {
-                    window_size: 1,
+                    window_size: Duration::new(1),
                     ..Default::default()
                 })
                 .pow(2.0)
@@ -232,7 +232,7 @@ fn test_power_in_agg_list2() -> Result<()> {
         .groupby([col("fruits")])
         .agg([col("A")
             .rolling_min(RollingOptions {
-                window_size: 2,
+                window_size: Duration::new(2),
                 min_periods: 2,
                 ..Default::default()
             })

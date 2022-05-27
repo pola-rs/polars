@@ -18,6 +18,7 @@ mod options;
 pub mod string;
 #[cfg(feature = "dtype-struct")]
 mod struct_;
+use polars_time::series::SeriesOpsTime;
 
 use crate::prelude::*;
 use crate::utils::has_expr;
@@ -1332,16 +1333,77 @@ impl Expr {
             .with_fmt("interpolate")
     }
 
+    fn finish_rolling(
+        self,
+        options: RollingOptions,
+        expr_name: &'static str,
+        expr_name_by: &'static str,
+        rolling_fn: Arc<dyn (Fn(&Series, RollingOptionsImpl) -> Result<Series>) + Send + Sync>,
+    ) -> Expr {
+        if let Some(ref by) = options.by {
+            self.apply_many(
+                move |s| {
+                    let mut by = s[1].clone();
+                    by = by.rechunk();
+                    let s = &s[0];
+
+                    if options.weights.is_some() {
+                        return Err(PolarsError::ComputeError(
+                            "weights not supported in 'rolling by' expression".into(),
+                        ));
+                    }
+
+                    if matches!(by.dtype(), DataType::Datetime(_, _)) {
+                        by = by.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?;
+                    }
+                    let by = by.datetime().unwrap();
+                    let by_values = by.cont_slice().map_err(|_| {
+                        PolarsError::ComputeError(
+                            "'by' column should not have null values in 'rolling by'".into(),
+                        )
+                    })?;
+                    let tu = by.time_unit();
+
+                    let options = RollingOptionsImpl {
+                        window_size: options.window_size,
+                        min_periods: options.min_periods,
+                        weights: None,
+                        center: options.center,
+                        by: Some(by_values),
+                        tu: Some(tu),
+                        closed_window: options.closed_window,
+                    };
+
+                    rolling_fn(s, options)
+                },
+                &[col(by)],
+                GetOutput::same_type(),
+            )
+            .with_fmt(expr_name_by)
+        } else {
+            if !options.window_size.parsed_int {
+                panic!("if dynamic windows are used in a rolling aggregation, the 'by' argument must be set")
+            }
+
+            self.apply(
+                move |s| rolling_fn(&s, options.clone().into()),
+                GetOutput::same_type(),
+            )
+            .with_fmt(expr_name)
+        }
+    }
+
     /// Apply a rolling min See:
     /// [ChunkedArray::rolling_min]
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_min(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| s.rolling_min(options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_min",
+            "rolling_min_by",
+            Arc::new(|s, options| s.rolling_min(options)),
         )
-        .with_fmt("rolling_min")
     }
 
     /// Apply a rolling max See:
@@ -1349,11 +1411,12 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_max(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| s.rolling_max(options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_max",
+            "rolling_max_by",
+            Arc::new(|s, options| s.rolling_max(options)),
         )
-        .with_fmt("rolling_max")
     }
 
     /// Apply a rolling mean See:
@@ -1361,11 +1424,12 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_mean(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| s.rolling_mean(options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_mean",
+            "rolling_mean_by",
+            Arc::new(|s, options| s.rolling_mean(options)),
         )
-        .with_fmt("rolling_mean")
     }
 
     /// Apply a rolling sum See:
@@ -1373,11 +1437,12 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_sum(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| s.rolling_sum(options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_sum",
+            "rolling_sum_by",
+            Arc::new(|s, options| s.rolling_sum(options)),
         )
-        .with_fmt("rolling_sum")
     }
 
     /// Apply a rolling median See:
@@ -1385,11 +1450,12 @@ impl Expr {
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_median(self, options: RollingOptions) -> Expr {
-        self.apply(
-            move |s| s.rolling_median(options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_median",
+            "rolling_median_by",
+            Arc::new(|s, options| s.rolling_median(options)),
         )
-        .with_fmt("rolling_median")
     }
 
     /// Apply a rolling quantile See:
@@ -1402,43 +1468,36 @@ impl Expr {
         interpolation: QuantileInterpolOptions,
         options: RollingOptions,
     ) -> Expr {
-        self.apply(
-            move |s| s.rolling_quantile(quantile, interpolation, options.clone()),
-            GetOutput::same_type(),
+        self.finish_rolling(
+            options,
+            "rolling_quantile",
+            "rolling_quantile_by",
+            Arc::new(move |s, options| s.rolling_quantile(quantile, interpolation, options)),
         )
-        .with_fmt("rolling_quantile")
     }
 
     /// Apply a rolling variance
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_var(self, options: RollingOptions) -> Expr {
-        self.to_float()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Float32 => s.f32().unwrap().rolling_var(options.clone()),
-                    DataType::Float64 => s.f64().unwrap().rolling_var(options.clone()),
-                    _ => unreachable!(),
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("rolling_var")
+        self.finish_rolling(
+            options,
+            "rolling_var",
+            "rolling_var_by",
+            Arc::new(|s, options| s.rolling_var(options)),
+        )
     }
 
     /// Apply a rolling std-dev
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
     #[cfg(feature = "rolling_window")]
     pub fn rolling_std(self, options: RollingOptions) -> Expr {
-        self.to_float()
-            .apply(
-                move |s| match s.dtype() {
-                    DataType::Float32 => s.f32().unwrap().rolling_std(options.clone()),
-                    DataType::Float64 => s.f64().unwrap().rolling_std(options.clone()),
-                    _ => unreachable!(),
-                },
-                GetOutput::same_type(),
-            )
-            .with_fmt("rolling_std")
+        self.finish_rolling(
+            options,
+            "rolling_std",
+            "rolling_std_by",
+            Arc::new(|s, options| s.rolling_std(options)),
+        )
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
@@ -1449,7 +1508,7 @@ impl Expr {
         self,
         f: Arc<dyn Fn(&Series) -> Series + Send + Sync>,
         output_type: GetOutput,
-        options: RollingOptions,
+        options: RollingOptionsFixedWindow,
     ) -> Expr {
         self.apply(
             move |s| s.rolling_apply(f.as_ref(), options.clone()),

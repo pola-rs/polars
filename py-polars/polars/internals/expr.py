@@ -1854,10 +1854,12 @@ class Expr:
 
     def rolling_min(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         apply a rolling min (moving min) over the values in this array.
@@ -1868,7 +1870,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -1877,19 +1894,41 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_min(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_min(
+                window_size, weights, min_periods, center, by, closed
+            )
         )
 
     def rolling_max(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         Apply a rolling max (moving max) over the values in this array.
@@ -1900,7 +1939,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -1909,19 +1963,39 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_max(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_max(
+                window_size, weights, min_periods, center, by, closed
+            )
         )
 
     def rolling_mean(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         Apply a rolling mean (moving mean) over the values in this array.
@@ -1932,7 +2006,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -1941,6 +2030,21 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
 
         Examples
         --------
@@ -1971,18 +2075,23 @@ class Expr:
         └──────┘
 
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_mean(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_mean(
+                window_size, weights, min_periods, center, by, closed
+            )
         )
 
     def rolling_sum(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         Apply a rolling sum (moving sum) over the values in this array.
@@ -1993,7 +2102,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length of the window that will be multiplied
             elementwise with the values in the window.
@@ -2002,19 +2126,40 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_sum(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_sum(
+                window_size, weights, min_periods, center, by, closed
+            )
         )
 
     def rolling_std(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         Compute a rolling std dev
@@ -2026,7 +2171,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -2035,19 +2195,40 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_std(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_std(
+                window_size, weights, min_periods, center, by, closed
+            )
         )
 
     def rolling_var(
         self,
-        window_size: int,
+        window_size: Union[int, str],
         weights: Optional[List[float]] = None,
         min_periods: Optional[int] = None,
         center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
     ) -> "Expr":
         """
         Compute a rolling variance.
@@ -2059,7 +2240,22 @@ class Expr:
         Parameters
         ----------
         window_size
-            The length of the window.
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
@@ -2068,11 +2264,173 @@ class Expr:
             If None, it will be set equal to window size.
         center
             Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
         """
-        if min_periods is None:
-            min_periods = window_size
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
         return wrap_expr(
-            self._pyexpr.rolling_var(window_size, weights, min_periods, center)
+            self._pyexpr.rolling_var(
+                window_size, weights, min_periods, center, by, closed
+            )
+        )
+
+    def rolling_median(
+        self,
+        window_size: Union[int, str],
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
+    ) -> "Expr":
+        """
+        Compute a rolling median
+
+        Parameters
+        ----------
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
+        """
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return wrap_expr(
+            self._pyexpr.rolling_median(
+                window_size, weights, min_periods, center, by, closed
+            )
+        )
+
+    def rolling_quantile(
+        self,
+        quantile: float,
+        interpolation: str = "nearest",
+        window_size: Union[int, str] = 2,
+        weights: Optional[List[float]] = None,
+        min_periods: Optional[int] = None,
+        center: bool = False,
+        by: Optional[str] = None,
+        closed: str = "left",
+    ) -> "Expr":
+        """
+        Compute a rolling quantile
+
+        Parameters
+        ----------
+        quantile
+            quantile to compute
+        interpolation
+            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
+        window_size
+            The length of the window. Can be a fixed integer size, or a dynamic temporal size
+            indicated by the following string language:
+
+            - 1ns   (1 nanosecond)
+            - 1us   (1 microsecond)
+            - 1ms   (1 millisecond)
+            - 1s    (1 second)
+            - 1m    (1 minute)
+            - 1h    (1 hour)
+            - 1d    (1 day)
+            - 1w    (1 week)
+            - 1mo   (1 calendar month)
+            - 1y    (1 calendar year)
+            - 1i    (1 index count)
+
+            If the dynamic string language is used, the `by` and `closed` arguments must also be set.
+        weights
+            An optional slice with the same length as the window that will be multiplied
+            elementwise with the values in the window.
+        min_periods
+            The number of values in the window that should be non-null before computing a result.
+            If None, it will be set equal to window size.
+        center
+            Set the labels at the center of the window
+        by
+            If the `window_size` is temporal for instance `"5h"` or `"3s`, you must
+            set the column that will be used to determine the windows. This column must of dtype
+            `{Date, Datetime}`
+        closed
+            Defines if the temporal window interval is closed or not.
+            Any of {"left", "right", "both" "none"}
+
+        .. warning::
+            The dynamic windows functionality is still experimental and may change without
+            it considered being a breaking change
+
+        .. note::
+            If you want to compute multiple aggregation statistics over the same dynamic window, consider using
+            `groupby_rolling` this method can cache the window size computation.
+
+        """
+        window_size, min_periods = _prepare_rolling_window_args(
+            window_size, min_periods
+        )
+        return wrap_expr(
+            self._pyexpr.rolling_quantile(
+                quantile,
+                interpolation,
+                window_size,
+                weights,
+                min_periods,
+                center,
+                by,
+                closed,
+            )
         )
 
     def rolling_apply(
@@ -2145,72 +2503,6 @@ class Expr:
         return wrap_expr(
             self._pyexpr.rolling_apply(
                 function, window_size, weights, min_periods, center
-            )
-        )
-
-    def rolling_median(
-        self,
-        window_size: int,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
-    ) -> "Expr":
-        """
-        Compute a rolling median
-
-        Parameters
-        ----------
-        window_size
-            Size of the rolling window
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
-        center
-            Set the labels at the center of the window
-        """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_expr(
-            self._pyexpr.rolling_median(window_size, weights, min_periods, center)
-        )
-
-    def rolling_quantile(
-        self,
-        quantile: float,
-        interpolation: str = "nearest",
-        window_size: int = 2,
-        weights: Optional[List[float]] = None,
-        min_periods: Optional[int] = None,
-        center: bool = False,
-    ) -> "Expr":
-        """
-        Compute a rolling quantile
-
-        Parameters
-        ----------
-        quantile
-            quantile to compute
-        interpolation
-            interpolation type, options: ['nearest', 'higher', 'lower', 'midpoint', 'linear']
-        window_size
-            The length of the window.
-        weights
-            An optional slice with the same length as the window that will be multiplied
-            elementwise with the values in the window.
-        min_periods
-            The number of values in the window that should be non-null before computing a result.
-            If None, it will be set equal to window size.
-        center
-            Set the labels at the center of the window
-        """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_expr(
-            self._pyexpr.rolling_quantile(
-                quantile, interpolation, window_size, weights, min_periods, center
             )
         )
 
@@ -4764,3 +5056,16 @@ def _prepare_alpha(
     if alpha is None:
         raise ValueError("at least one of {com, span, half_life, alpha} should be set")
     return alpha
+
+
+def _prepare_rolling_window_args(
+    window_size: Union[int, str],
+    min_periods: Optional[int] = None,
+) -> Tuple[str, int]:
+    if isinstance(window_size, int):
+        if min_periods is None:
+            min_periods = window_size
+        window_size = f"{window_size}i"
+    if min_periods is None:
+        min_periods = 1
+    return (window_size, min_periods)
