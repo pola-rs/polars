@@ -234,6 +234,7 @@ docs-selection = [
   "describe",
   "list_eval",
   "cumulative_eval",
+  "timezones",
 ]
 
 bench = [
@@ -281,4 +282,4 @@ harness = false
 # all-features = true
 features = ["docs-selection"]
 # defines the configuration attribute `docsrs`
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "polars-core/docsrs"]

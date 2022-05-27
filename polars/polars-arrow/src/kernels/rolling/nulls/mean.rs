@@ -1,15 +1,15 @@
 use super::sum::SumWindow;
 use super::*;
-use super::{rolling_apply_agg_window, RollingAggWindow};
+use super::{rolling_apply_agg_window, RollingAggWindowNulls};
 
-pub(super) struct MeanWindow<'a, T> {
+pub struct MeanWindow<'a, T> {
     sum: SumWindow<'a, T>,
 }
 
 impl<
         'a,
         T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + NumCast + Div<Output = T>,
-    > RollingAggWindow<'a, T> for MeanWindow<'a, T>
+    > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],

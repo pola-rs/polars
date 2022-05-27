@@ -1,12 +1,12 @@
 use super::*;
-use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindow};
+use polars_arrow::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_core::export::num;
 
 // Use an aggregation window that maintains the state
 pub(crate) fn rolling_apply_agg_window<'a, Agg, T, O>(values: &'a [T], offsets: O) -> ArrayRef
 where
     // items (offset, len) -> so offsets are offset, offset + len
-    Agg: RollingAggWindow<'a, T>,
+    Agg: RollingAggWindowNoNulls<'a, T>,
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {

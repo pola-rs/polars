@@ -1,6 +1,6 @@
 use super::*;
 use no_nulls;
-use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
+use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
 pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
@@ -9,7 +9,7 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     last_end: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWindow<'a, T> {
+impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MinWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let min = *slice[start..end]
             .iter()
@@ -24,23 +24,32 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // remove elements that should leave the window
-        let mut recompute_min = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_min = if start >= self.last_end {
+            true
+        } else {
+            let mut recompute_min = false;
 
-            // if the leaving value is the
-            // max value, we need to recompute the max.
-            if matches!(
-                compare_fn_nan_min(leaving_value, &self.min),
-                Ordering::Equal
-            ) {
-                recompute_min = true;
-                break;
+            // remove elements that should leave the window
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let leaving_value = self.slice.get_unchecked(idx);
+
+                // if the leaving value is the
+                // max value, we need to recompute the max.
+                if matches!(
+                    compare_fn_nan_min(leaving_value, &self.min),
+                    Ordering::Equal
+                ) {
+                    recompute_min = true;
+                    break;
+                }
             }
-        }
+            recompute_min
+        };
+
         self.last_start = start;
 
         // we traverse all values and compute
@@ -77,7 +86,7 @@ pub struct MaxWindow<'a, T: NativeType> {
     last_end: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWindow<'a, T> {
+impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> for MaxWindow<'a, T> {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let max = *slice[start..end]
             .iter()
@@ -92,21 +101,28 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // remove elements that should leave the window
-        let mut recompute_max = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
-            // if the leaving value is the max value, we need to recompute the max.
-            if matches!(
-                compare_fn_nan_max(leaving_value, &self.max),
-                Ordering::Equal
-            ) {
-                recompute_max = true;
-                break;
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_max = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_max = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let leaving_value = self.slice.get_unchecked(idx);
+                // if the leaving value is the max value, we need to recompute the max.
+                if matches!(
+                    compare_fn_nan_max(leaving_value, &self.max),
+                    Ordering::Equal
+                ) {
+                    recompute_max = true;
+                    break;
+                }
             }
-        }
+            recompute_max
+        };
         self.last_start = start;
 
         // we traverese all values and compute

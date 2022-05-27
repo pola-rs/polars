@@ -1,5 +1,57 @@
 use super::*;
+use crate::index::IdxSize;
+use crate::trusted_len::TrustedLen;
 use std::fmt::Debug;
+
+// used by agg_quantile
+pub fn rolling_quantile_by_iter<T, O>(
+    values: &[T],
+    quantile: f64,
+    interpolation: QuantileInterpolOptions,
+    offsets: O,
+) -> ArrayRef
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    T: std::iter::Sum<T>
+        + NativeType
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>
+        + IsFloat,
+{
+    if values.is_empty() {
+        let out: Vec<T> = vec![];
+        return Arc::new(PrimitiveArray::from_data(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        ));
+    }
+
+    let mut sorted_window = SortedBuf::new(values, 0, 1);
+
+    let out = offsets
+        .map(|(start, len)| {
+            let end = start + len;
+
+            // safety:
+            // we are in bounds
+            if start == end {
+                None
+            } else {
+                let window = unsafe { sorted_window.update(start as usize, end as usize) };
+                Some(compute_quantile2(window, quantile, interpolation))
+            }
+        })
+        .collect::<PrimitiveArray<T>>();
+
+    Arc::new(out)
+}
 
 pub(crate) fn compute_quantile2<T>(
     vals: &[T],

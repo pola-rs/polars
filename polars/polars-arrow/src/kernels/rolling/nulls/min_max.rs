@@ -1,8 +1,8 @@
 use super::*;
 use nulls;
-use nulls::{rolling_apply_agg_window, RollingAggWindow};
+use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
-struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     validity: &'a Bitmap,
     min: Option<T>,
@@ -37,7 +37,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
     }
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWindow<'a, T> {
+impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
     unsafe fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
@@ -59,36 +59,44 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // remove elements that should leave the window
-        let mut recompute_min = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_min = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_min = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let valid = self.validity.get_bit_unchecked(idx);
+                if valid {
+                    let leaving_value = self.slice.get_unchecked(idx);
 
-                // if the leaving value is the
-                // max value, we need to recompute the max.
-                if matches!(
-                    compare_fn_nan_min(leaving_value, &self.min.unwrap()),
-                    Ordering::Equal
-                ) {
-                    recompute_min = true;
-                    break;
-                }
-            } else {
-                // null value leaving the window
-                self.null_count -= 1;
+                    // if the leaving value is the
+                    // max value, we need to recompute the max.
+                    if matches!(
+                        compare_fn_nan_min(leaving_value, &self.min.unwrap()),
+                        Ordering::Equal
+                    ) {
+                        recompute_min = true;
+                        break;
+                    }
+                } else {
+                    // null value leaving the window
+                    self.null_count -= 1;
 
-                // self.min is None and the leaving value is None
-                // if the entering value is valid, we might get a new min.
-                if self.min.is_none() {
-                    recompute_min = true;
-                    break;
+                    // self.min is None and the leaving value is None
+                    // if the entering value is valid, we might get a new min.
+                    if self.min.is_none() {
+                        recompute_min = true;
+                        break;
+                    }
                 }
             }
-        }
+            recompute_min
+        };
+
         self.last_start = start;
 
         // we traverese all values and compute
@@ -155,7 +163,7 @@ where
     }
 }
 
-struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+pub struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     validity: &'a Bitmap,
     max: Option<T>,
@@ -190,7 +198,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MaxWindow<'a, T> {
     }
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWindow<'a, T> {
+impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
     unsafe fn new(
         slice: &'a [T],
         validity: &'a Bitmap,
@@ -212,36 +220,44 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // remove elements that should leave the window
-        let mut recompute_max = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_max = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_max = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let valid = self.validity.get_bit_unchecked(idx);
+                if valid {
+                    let leaving_value = self.slice.get_unchecked(idx);
 
-                // if the leaving value is the
-                // max value, we need to recompute the max.
-                if matches!(
-                    compare_fn_nan_max(leaving_value, &self.max.unwrap()),
-                    Ordering::Equal
-                ) {
-                    recompute_max = true;
-                    break;
-                }
-            } else {
-                // null value leaving the window
-                self.null_count -= 1;
+                    // if the leaving value is the
+                    // max value, we need to recompute the max.
+                    if matches!(
+                        compare_fn_nan_max(leaving_value, &self.max.unwrap()),
+                        Ordering::Equal
+                    ) {
+                        recompute_max = true;
+                        break;
+                    }
+                } else {
+                    // null value leaving the window
+                    self.null_count -= 1;
 
-                // self.max is None and the leaving value is None
-                // if the entering value is valid, we might get a new max.
-                if self.max.is_none() {
-                    recompute_max = true;
-                    break;
+                    // self.max is None and the leaving value is None
+                    // if the entering value is valid, we might get a new max.
+                    if self.max.is_none() {
+                        recompute_max = true;
+                        break;
+                    }
                 }
             }
-        }
+            recompute_max
+        };
+
         self.last_start = start;
 
         // we traverese all values and compute

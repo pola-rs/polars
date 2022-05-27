@@ -1,4 +1,81 @@
 use super::*;
+use crate::index::IdxSize;
+use crate::trusted_len::TrustedLen;
+
+// used by agg_quantile
+#[allow(clippy::too_many_arguments)]
+pub fn rolling_quantile_by_iter<T, O>(
+    values: &[T],
+    bitmap: &Bitmap,
+    quantile: f64,
+    interpolation: QuantileInterpolOptions,
+    offsets: O,
+) -> ArrayRef
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    T: std::iter::Sum<T>
+        + NativeType
+        + Copy
+        + std::cmp::PartialOrd
+        + num::ToPrimitive
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>
+        + Div<Output = T>
+        + Mul<Output = T>
+        + IsFloat
+        + AddAssign
+        + Zero,
+{
+    if values.is_empty() {
+        let out: Vec<T> = vec![];
+        return Arc::new(PrimitiveArray::from_data(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        ));
+    }
+
+    let len = values.len();
+    // Safety
+    // we are in bounds
+    let mut sorted_window = unsafe { SortedBufNulls::new(values, bitmap, 0, 1) };
+
+    let mut validity = MutableBitmap::with_capacity(len);
+    validity.extend_constant(len, true);
+
+    let out = offsets
+        .enumerate()
+        .map(|(idx, (start, len))| {
+            let end = start + len;
+
+            if start == end {
+                validity.set(idx, false);
+                T::default()
+            } else {
+                // safety
+                // we are in bounds
+                unsafe { sorted_window.update(start as usize, end as usize) };
+                let null_count = sorted_window.null_count;
+                let window = sorted_window.window();
+
+                match compute_quantile(window, null_count, quantile, interpolation, 1) {
+                    Some(val) => val,
+                    None => {
+                        validity.set(idx, false);
+                        T::default()
+                    }
+                }
+            }
+        })
+        .collect_trusted::<Vec<T>>();
+
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        out.into(),
+        Some(validity.into()),
+    ))
+}
 
 #[allow(clippy::too_many_arguments)]
 fn rolling_apply_quantile<T, Fo, Fa>(
@@ -13,7 +90,7 @@ fn rolling_apply_quantile<T, Fo, Fa>(
 ) -> ArrayRef
 where
     Fo: Fn(Idx, WindowSize, Len) -> (Start, End) + Copy,
-    // &[Option<T>] -> window valuesj
+    // &[Option<T>] -> window values
     // usize -> null_count
     // f764 ->  quantile
     // QuantileInterpolOptions -> Interpolation option
