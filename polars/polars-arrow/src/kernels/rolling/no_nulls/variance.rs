@@ -1,6 +1,6 @@
 use super::mean::MeanWindow;
 use super::*;
-use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
+use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 use num::pow::Pow;
 
 pub(super) struct SumSquaredWindow<'a, T> {
@@ -11,7 +11,7 @@ pub(super) struct SumSquaredWindow<'a, T> {
 }
 
 impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<Output = T>>
-    RollingAggWindow<'a, T> for SumSquaredWindow<'a, T>
+    RollingAggWindowNoNulls<'a, T> for SumSquaredWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let sum = slice[start..end].iter().map(|v| *v * *v).sum::<T>();
@@ -24,20 +24,28 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // remove elements that should leave the window
-        let mut recompute_sum = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_sum = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_sum = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let leaving_value = self.slice.get_unchecked(idx);
 
-            if T::is_float() && leaving_value.is_nan() {
-                recompute_sum = true;
-                break;
+                if T::is_float() && leaving_value.is_nan() {
+                    recompute_sum = true;
+                    break;
+                }
+
+                self.sum_of_squares -= *leaving_value * *leaving_value;
             }
+            recompute_sum
+        };
 
-            self.sum_of_squares -= *leaving_value * *leaving_value;
-        }
         self.last_start = start;
 
         // we traverese all values and compute
@@ -82,7 +90,7 @@ impl<
             + One
             + Zero
             + Sub<Output = T>,
-    > RollingAggWindow<'a, T> for VarWindow<'a, T>
+    > RollingAggWindowNoNulls<'a, T> for VarWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         Self {
@@ -185,7 +193,7 @@ impl<
             + Zero
             + Sub<Output = T>
             + Pow<T, Output = T>,
-    > RollingAggWindow<'a, T> for StdWindow<'a, T>
+    > RollingAggWindowNoNulls<'a, T> for StdWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         Self {

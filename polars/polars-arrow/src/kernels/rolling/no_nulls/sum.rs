@@ -1,6 +1,6 @@
 use super::*;
 use no_nulls;
-use no_nulls::{rolling_apply_agg_window, RollingAggWindow};
+use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
 pub struct SumWindow<'a, T> {
     slice: &'a [T],
@@ -9,8 +9,8 @@ pub struct SumWindow<'a, T> {
     last_end: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign> RollingAggWindow<'a, T>
-    for SumWindow<'a, T>
+impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
+    RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize) -> Self {
         let sum = slice[start..end].iter().copied().sum::<T>();
@@ -23,24 +23,31 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign> Rolli
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> T {
-        // remove elements that should leave the window
-        let mut recompute_sum = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_sum = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_sum = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let leaving_value = self.slice.get_unchecked(idx);
 
-            if T::is_float() && leaving_value.is_nan() {
-                recompute_sum = true;
-                break;
+                if T::is_float() && leaving_value.is_nan() {
+                    recompute_sum = true;
+                    break;
+                }
+
+                self.sum -= *leaving_value;
             }
-
-            self.sum -= *leaving_value;
-        }
+            recompute_sum
+        };
         self.last_start = start;
 
-        // we traverese all values and compute
-        if T::is_float() && recompute_sum {
+        // we traverse all values and compute
+        if recompute_sum {
             self.sum = self
                 .slice
                 .get_unchecked(start..end)
@@ -48,8 +55,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign> Rolli
                 .copied()
                 .sum::<T>();
         }
-        // the max has not left the window, so we only check
-        // if the entering values are larger
+        // remove leaving values.
         else {
             for idx in self.last_end..end {
                 self.sum += *self.slice.get_unchecked(idx);

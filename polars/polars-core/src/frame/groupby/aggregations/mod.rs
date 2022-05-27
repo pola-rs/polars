@@ -2,12 +2,17 @@ mod agg_list;
 
 use crate::POOL;
 pub use agg_list::*;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use num::{Bounded, Num, NumCast, ToPrimitive, Zero};
 use rayon::prelude::*;
 
 use crate::apply_method_physical_integer;
 use arrow::types::{simd::Simd, NativeType};
+use polars_arrow::data_types::IsFloat;
+use polars_arrow::kernels::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
+};
+use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
 
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -16,9 +21,128 @@ use crate::frame::groupby::GroupsIdx;
 use crate::frame::groupby::GroupsIndicator;
 use crate::prelude::*;
 use crate::series::implementations::SeriesWrap;
+use polars_arrow::kernels::rolling;
 use polars_arrow::kernels::take_agg::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_arrow::trusted_len::PushUnchecked;
+
+// if the windows overlap, we can use the rolling_<agg> kernels
+// they maintain state, which saves a lot of compute by not naively traversing all elements every
+// window
+//
+// if the windows don't overlap, we should not use these kernels as they are single threaded, so
+// we miss out on easy parallization.
+fn use_rolling_kernels(groups: &GroupsSlice, chunks: &[ArrayRef]) -> bool {
+    match groups.len() {
+        0 | 1 => false,
+        _ => {
+            let [first_offset, first_len] = groups[0];
+            let second_offset = groups[1][0];
+
+            second_offset < (first_offset + first_len) && chunks.len() == 1
+        }
+    }
+}
+
+// Use an aggregation window that maintains the state
+pub(super) fn rolling_apply_agg_window_nulls<'a, Agg, T, O>(
+    values: &'a [T],
+    validity: &'a Bitmap,
+    offsets: O,
+) -> ArrayRef
+where
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    Agg: RollingAggWindowNulls<'a, T>,
+    T: IsFloat + NativeType,
+{
+    if values.is_empty() {
+        let out: Vec<T> = vec![];
+        return Arc::new(PrimitiveArray::from_data(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        ));
+    }
+
+    let len = values.len();
+    // start with a dummy index, will be overwritten on first iteration.
+    // Safety:
+    // we are in bounds
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, 0) };
+
+    let mut validity = MutableBitmap::with_capacity(len);
+    validity.extend_constant(len, true);
+
+    let out = offsets
+        .enumerate()
+        .map(|(idx, (start, len))| {
+            let end = start + len;
+
+            // safety:
+            // we are in bounds
+
+            let agg = if start == end {
+                None
+            } else {
+                unsafe { agg_window.update(start as usize, end as usize) }
+            };
+
+            match agg {
+                Some(val) => val,
+                None => {
+                    // safety: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    T::default()
+                }
+            }
+        })
+        .collect_trusted::<Vec<_>>();
+
+    Arc::new(PrimitiveArray::from_data(
+        T::PRIMITIVE.into(),
+        out.into(),
+        Some(validity.into()),
+    ))
+}
+
+// Use an aggregation window that maintains the state
+pub(crate) fn rolling_apply_agg_window_no_nulls<'a, Agg, T, O>(
+    values: &'a [T],
+    offsets: O,
+) -> ArrayRef
+where
+    // items (offset, len) -> so offsets are offset, offset + len
+    Agg: RollingAggWindowNoNulls<'a, T>,
+    O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
+    T: IsFloat + NativeType,
+{
+    if values.is_empty() {
+        let out: Vec<T> = vec![];
+        return Arc::new(PrimitiveArray::from_data(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        ));
+    }
+    // start with a dummy index, will be overwritten on first iteration.
+    let mut agg_window = Agg::new(values, 0, 0);
+
+    let out = offsets
+        .map(|(start, len)| {
+            let end = start + len;
+
+            if start == end {
+                None
+            } else {
+                // safety:
+                // we are in bounds
+                Some(unsafe { agg_window.update(start as usize, end as usize) })
+            }
+        })
+        .collect::<PrimitiveArray<T>>();
+
+    Arc::new(out)
+}
 
 fn slice_from_offsets<T>(ca: &ChunkedArray<T>, first: IdxSize, len: IdxSize) -> ChunkedArray<T>
 where
@@ -186,7 +310,7 @@ impl Series {
                 }
             }
         } else {
-            Series::full_null(self.name(), groups.len(), self.dtype())
+            Series::full_null("", groups.len(), self.dtype())
         }
     }
 
@@ -261,17 +385,37 @@ where
                     }
                 }
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.min()
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MinWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    Self::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.min()
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
 
@@ -308,17 +452,37 @@ where
                     }
                 }
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.max()
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MaxWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    Self::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.max()
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
 
@@ -355,17 +519,37 @@ where
                     }
                 }
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.sum()
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<SumWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::SumWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    Self::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.sum()
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
 }
@@ -378,7 +562,7 @@ where
         + VarAggSeries
         + ChunkQuantile<T::Native>
         + QuantileAggSeries,
-    T::Native: NativeType + PartialOrd + Num + NumCast + Simd + std::iter::Sum<T::Native>,
+    T::Native: Simd + NumericNative + num::pow::Pow<T::Native, Output = T::Native>,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -431,17 +615,37 @@ where
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
             }
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.mean().map(|flt| NumCast::from(flt).unwrap())
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<MeanWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::MeanWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.mean().map(|flt| NumCast::from(flt).unwrap())
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
 
@@ -456,17 +660,37 @@ where
                 let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<T>().unwrap().get(0)
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => NumCast::from(0),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.var().map(|flt| NumCast::from(flt).unwrap())
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<VarWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::VarWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => NumCast::from(0),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.var().map(|flt| NumCast::from(flt).unwrap())
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
     pub(crate) fn agg_std(&self, groups: &GroupsProxy) -> Series {
@@ -480,17 +704,37 @@ where
                 let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<T>().unwrap().get(0)
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => NumCast::from(0),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.std().map(|flt| NumCast::from(flt).unwrap())
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling_apply_agg_window_no_nulls::<StdWindow<_>, _, _>(
+                            values,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling_apply_agg_window_nulls::<
+                            rolling::nulls::StdWindow<_>,
+                            _,
+                            _,
+                        >(values, validity, offset_iter),
+                    };
+                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => NumCast::from(0),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.std().map(|flt| NumCast::from(flt).unwrap())
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
 
@@ -515,21 +759,45 @@ where
                     .unwrap()
                     .get(0)
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        // unwrap checked with invalid quantile check
-                        arr_group
-                            .quantile(quantile, interpol)
-                            .unwrap()
-                            .map(|flt| NumCast::from(flt).unwrap())
-                    }
+            GroupsProxy::Slice(groups) => {
+                if use_rolling_kernels(groups, self.chunks()) {
+                    let arr = self.downcast_iter().next().unwrap();
+                    let values = arr.values().as_slice();
+                    let offset_iter = groups.iter().map(|[first, len]| (*first, *len));
+                    let arr = match arr.validity() {
+                        None => rolling::no_nulls::rolling_quantile_by_iter(
+                            values,
+                            quantile,
+                            interpol,
+                            offset_iter,
+                        ),
+                        Some(validity) => rolling::nulls::rolling_quantile_by_iter(
+                            values,
+                            validity,
+                            quantile,
+                            interpol,
+                            offset_iter,
+                        ),
+                    };
+                    ChunkedArray::<T>::from_chunks("", vec![arr]).into_series()
+                } else {
+                    agg_helper_slice::<T, _>(groups, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                // unwrap checked with invalid quantile check
+                                arr_group
+                                    .quantile(quantile, interpol)
+                                    .unwrap()
+                                    .map(|flt| NumCast::from(flt).unwrap())
+                            }
+                        }
+                    })
                 }
-            }),
+            }
         }
     }
     pub(crate) fn agg_median(&self, groups: &GroupsProxy) -> Series {
@@ -543,17 +811,9 @@ where
                 let take = unsafe { ca.take_unchecked(idx.into()) };
                 take.median_as_series().unpack::<T>().unwrap().get(0)
             }),
-            GroupsProxy::Slice(groups) => agg_helper_slice::<T, _>(groups, |[first, len]| {
-                debug_assert!(len <= self.len() as IdxSize);
-                match len {
-                    0 => None,
-                    1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                    _ => {
-                        let arr_group = slice_from_offsets(self, first, len);
-                        arr_group.median().map(|flt| NumCast::from(flt).unwrap())
-                    }
-                }
-            }),
+            GroupsProxy::Slice(_) => {
+                self.agg_quantile(groups, 0.5, QuantileInterpolOptions::Linear)
+            }
         }
     }
 }
@@ -562,7 +822,7 @@ impl<T> ChunkedArray<T>
 where
     T: PolarsIntegerType,
     ChunkedArray<T>: IntoSeries,
-    T::Native: NativeType + Num + NumCast + Zero + Simd + Bounded + std::iter::Sum<T::Native> + Ord,
+    T::Native: NumericNative + Ord,
     <T::Native as Simd>::Simd: std::ops::Add<Output = <T::Native as Simd>::Simd>
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
@@ -619,18 +879,23 @@ where
                     }
                 })
             }
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                    debug_assert!(len < self.len() as IdxSize);
-                    match len {
-                        0 => None,
-                        1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                        _ => {
-                            let arr_group = slice_from_offsets(self, first, len);
-                            arr_group.mean()
+            GroupsProxy::Slice(groups_slice) => {
+                if use_rolling_kernels(groups_slice, self.chunks()) {
+                    let ca = self.cast(&DataType::Float64).unwrap();
+                    ca.agg_mean(groups)
+                } else {
+                    agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len < self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.mean()
+                            }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }
@@ -645,18 +910,23 @@ where
                 let take = unsafe { self.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    match len {
-                        0 => None,
-                        1 => NumCast::from(0),
-                        _ => {
-                            let arr_group = slice_from_offsets(self, first, len);
-                            arr_group.var()
+            GroupsProxy::Slice(groups_slice) => {
+                if use_rolling_kernels(groups_slice, self.chunks()) {
+                    let ca = self.cast(&DataType::Float64).unwrap();
+                    ca.agg_var(groups)
+                } else {
+                    agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => NumCast::from(0),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.var()
+                            }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }
@@ -670,18 +940,23 @@ where
                 let take = unsafe { self.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    match len {
-                        0 => None,
-                        1 => NumCast::from(0),
-                        _ => {
-                            let arr_group = slice_from_offsets(self, first, len);
-                            arr_group.std()
+            GroupsProxy::Slice(groups_slice) => {
+                if use_rolling_kernels(groups_slice, self.chunks()) {
+                    let ca = self.cast(&DataType::Float64).unwrap();
+                    ca.agg_std(groups)
+                } else {
+                    agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => NumCast::from(0),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.std()
+                            }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }
@@ -705,18 +980,23 @@ where
                     .unwrap()
                     .get(0)
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    match len {
-                        0 => None,
-                        1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                        _ => {
-                            let arr_group = slice_from_offsets(self, first, len);
-                            arr_group.quantile(quantile, interpol).unwrap()
+            GroupsProxy::Slice(groups_slice) => {
+                if use_rolling_kernels(groups_slice, self.chunks()) {
+                    let ca = self.cast(&DataType::Float64).unwrap();
+                    ca.agg_quantile(groups, quantile, interpol)
+                } else {
+                    agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.quantile(quantile, interpol).unwrap()
+                            }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }
@@ -733,18 +1013,23 @@ where
                     .unwrap()
                     .get(0)
             }),
-            GroupsProxy::Slice(groups) => {
-                agg_helper_slice::<Float64Type, _>(groups, |[first, len]| {
-                    debug_assert!(len <= self.len() as IdxSize);
-                    match len {
-                        0 => None,
-                        1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
-                        _ => {
-                            let arr_group = slice_from_offsets(self, first, len);
-                            arr_group.median()
+            GroupsProxy::Slice(groups_slice) => {
+                if use_rolling_kernels(groups_slice, self.chunks()) {
+                    let ca = self.cast(&DataType::Float64).unwrap();
+                    ca.agg_median(groups)
+                } else {
+                    agg_helper_slice::<Float64Type, _>(groups_slice, |[first, len]| {
+                        debug_assert!(len <= self.len() as IdxSize);
+                        match len {
+                            0 => None,
+                            1 => self.get(first as usize).map(|v| NumCast::from(v).unwrap()),
+                            _ => {
+                                let arr_group = slice_from_offsets(self, first, len);
+                                arr_group.median()
+                            }
                         }
-                    }
-                })
+                    })
+                }
             }
         }
     }

@@ -1,8 +1,8 @@
 use super::*;
 use nulls;
-use nulls::{rolling_apply_agg_window, RollingAggWindow};
+use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
-pub(super) struct SumWindow<'a, T> {
+pub struct SumWindow<'a, T> {
     slice: &'a [T],
     validity: &'a Bitmap,
     sum: Option<T>,
@@ -35,7 +35,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<
     }
 }
 
-impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAggWindow<'a, T>
+impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAggWindowNulls<'a, T>
     for SumWindow<'a, T>
 {
     unsafe fn new(
@@ -59,33 +59,41 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // remove elements that should leave the window
-        let mut recompute_sum = false;
-        for idx in self.last_start..start {
-            // safety
-            // we are in bounds
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                let leaving_value = self.slice.get_unchecked(idx);
+        // if we exceed the end, we have a completely new window
+        // so we recompute
+        let recompute_sum = if start >= self.last_end {
+            true
+        } else {
+            // remove elements that should leave the window
+            let mut recompute_sum = false;
+            for idx in self.last_start..start {
+                // safety
+                // we are in bounds
+                let valid = self.validity.get_bit_unchecked(idx);
+                if valid {
+                    let leaving_value = self.slice.get_unchecked(idx);
 
-                // if the leaving value is nan we need to recompute the window
-                if T::is_float() && leaving_value.is_nan() {
-                    recompute_sum = true;
-                    break;
-                }
-                self.sum = self.sum.map(|v| v - *leaving_value)
-            } else {
-                // null value leaving the window
-                self.null_count -= 1;
+                    // if the leaving value is nan we need to recompute the window
+                    if T::is_float() && leaving_value.is_nan() {
+                        recompute_sum = true;
+                        break;
+                    }
+                    self.sum = self.sum.map(|v| v - *leaving_value)
+                } else {
+                    // null value leaving the window
+                    self.null_count -= 1;
 
-                // self.sum is None and the leaving value is None
-                // if the entering value is valid, we might get a new sum.
-                if self.sum.is_none() {
-                    recompute_sum = true;
-                    break;
+                    // self.sum is None and the leaving value is None
+                    // if the entering value is valid, we might get a new sum.
+                    if self.sum.is_none() {
+                        recompute_sum = true;
+                        break;
+                    }
                 }
             }
-        }
+            recompute_sum
+        };
+
         self.last_start = start;
 
         // we traverse all values and compute
