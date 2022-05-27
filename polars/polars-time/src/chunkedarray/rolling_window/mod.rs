@@ -224,6 +224,11 @@ fn rolling_agg<T>(
 where
     T: PolarsNumericType,
 {
+    if ca.is_empty() {
+        return Ok(Series::new_empty(ca.name(), ca.dtype()));
+    }
+    let ca = ca.rechunk();
+
     let arr = ca.downcast_iter().next().unwrap();
     // "5i" is a window size of 5, e.g. fixed
     let arr = if options.window_size.parsed_int {
@@ -256,7 +261,8 @@ where
         let tu = options.tu.unwrap();
         let by = options.by.unwrap();
         let closed_window = options.closed_window.expect("closed window  must be set");
-        let offset = Duration::from_nsecs(duration.add_ns(-duration.nanoseconds()));
+        let mut offset = duration;
+        offset.negative = true;
         let func = rolling_agg_fn_dynamic.expect(
             "'rolling by' not yet supported for this expression, consider using 'groupby_rolling'",
         );

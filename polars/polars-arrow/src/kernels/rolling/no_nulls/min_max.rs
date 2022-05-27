@@ -14,7 +14,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MinWi
         let min = *slice[start..end]
             .iter()
             .min_by(|a, b| compare_fn_nan_min(*a, *b))
-            .unwrap();
+            .unwrap_or(&slice[start]);
         Self {
             slice,
             min,
@@ -82,7 +82,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindow<'a, T> for MaxWi
         let max = *slice[start..end]
             .iter()
             .max_by(|a, b| compare_fn_nan_max(*a, *b))
-            .unwrap();
+            .unwrap_or(&slice[start]);
         Self {
             slice,
             max,

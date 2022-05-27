@@ -2754,13 +2754,15 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_min(
-            window_size,
-            weights,
-            min_periods,
-            center
-
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_min(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_max(
         self,
@@ -2803,13 +2805,15 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_max(
-            window_size,
-            weights,
-            min_periods,
-            center
-
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_max(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_mean(
         self,
@@ -2852,13 +2856,15 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_mean(
-            window_size,
-            weights,
-            min_periods,
-            center
-
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_mean(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_sum(
         self,
@@ -2901,12 +2907,15 @@ class Series:
         ]
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_sum(
-            window_size,
-            weights,
-            min_periods,
-            center
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_sum(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_std(
         self,
@@ -2936,12 +2945,15 @@ class Series:
             Set the labels at the center of the window
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_std(
-            window_size,
-            weights,
-            min_periods,
-            center
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_std(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_var(
         self,
@@ -2971,12 +2983,15 @@ class Series:
             Set the labels at the center of the window
 
         """
-        return self.to_frame().select(pli.col(self.name).rolling_var(
-            window_size,
-            weights,
-            min_periods,
-            center
-        )).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_var(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_apply(
         self,
@@ -3061,9 +3076,15 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return self.to_frame().select(
-            pli.col(self.name).rolling_median(window_size, weights, min_periods, center)
-        ).to_series()
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_median(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_quantile(
         self,
@@ -3098,11 +3119,15 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(
-                quantile, interpolation, window_size, weights, min_periods, center
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_quantile(
+                    quantile, interpolation, window_size, weights, min_periods, center
+                )
             )
-        ).to_series()
+            .to_series()
+        )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """

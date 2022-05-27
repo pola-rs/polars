@@ -10,22 +10,32 @@ where
     O: Iterator<Item = (IdxSize, IdxSize)> + TrustedLen,
     T: Debug + IsFloat + NativeType,
 {
+    if values.is_empty() {
+        let out: Vec<T> = vec![];
+        return Arc::new(PrimitiveArray::from_data(
+            T::PRIMITIVE.into(),
+            out.into(),
+            None,
+        ));
+    }
+    // start with a dummy index, will be overwritten on first iteration.
     let mut agg_window = Agg::new(values, 0, 0);
 
     let out = offsets
         .map(|(start, len)| {
             let end = start + len;
-            // safety:
-            // we are in bounds
-            unsafe { agg_window.update(start as usize, end as usize) }
-        })
-        .collect_trusted::<Vec<_>>();
 
-    Arc::new(PrimitiveArray::from_data(
-        T::PRIMITIVE.into(),
-        out.into(),
-        None,
-    ))
+            if start == end {
+                None
+            } else {
+                // safety:
+                // we are in bounds
+                Some(unsafe { agg_window.update(start as usize, end as usize) })
+            }
+        })
+        .collect::<PrimitiveArray<T>>();
+
+    Arc::new(out)
 }
 
 pub(crate) fn rolling_min<T>(

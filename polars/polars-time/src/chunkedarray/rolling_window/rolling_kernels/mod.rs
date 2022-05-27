@@ -7,7 +7,6 @@ use polars_arrow::data_types::IsFloat;
 use polars_arrow::export::arrow;
 use polars_arrow::index::IdxSize;
 use polars_arrow::trusted_len::TrustedLen;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::export::num::{Bounded, Float, NumCast, One};
 use polars_core::prelude::*;
 use std::fmt::Debug;

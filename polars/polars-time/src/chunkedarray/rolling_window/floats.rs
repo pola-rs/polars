@@ -146,13 +146,16 @@ where
     /// will (optionally) be multiplied with the weights given by the `weights` vector. The resulting
     /// values will be aggregated to their std.
     fn rolling_std(&self, options: RollingOptionsImpl) -> Result<Series> {
-        let options_fixed: RollingOptionsFixedWindow = options.clone().into();
-        check_input(options_fixed.window_size, options.min_periods)?;
-        let ca = self.0.rechunk();
+        if options.window_size.parsed_int {
+            let options_fixed: RollingOptionsFixedWindow = options.clone().into();
+            check_input(options_fixed.window_size, options.min_periods)?;
+        }
 
         // weights is only implemented by var kernel
         if options.weights.is_some() {
-            return ca
+            return self
+                .0
+                .clone()
                 .into_series()
                 .rolling_var(options)
                 .and_then(|ca| ca.pow(0.5));

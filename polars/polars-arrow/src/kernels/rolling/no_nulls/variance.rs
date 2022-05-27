@@ -80,6 +80,7 @@ impl<
             + Div<Output = T>
             + NumCast
             + One
+            + Zero
             + Sub<Output = T>,
     > RollingAggWindow<'a, T> for VarWindow<'a, T>
 {
@@ -96,8 +97,13 @@ impl<
         let mean_of_squares = sum_of_squares / count;
         let mean = self.mean.update(start, end);
         let var = mean_of_squares - mean * mean;
-        // apply Bessel's correction
-        var / (count - T::one()) * count
+
+        if end - start == 1 {
+            T::zero()
+        } else {
+            // apply Bessel's correction
+            var / (count - T::one()) * count
+        }
     }
 }
 
@@ -118,6 +124,7 @@ where
         + Div<Output = T>
         + NumCast
         + One
+        + Zero
         + Sub<Output = T>,
 {
     match (center, weights) {
@@ -175,6 +182,7 @@ impl<
             + Div<Output = T>
             + NumCast
             + One
+            + Zero
             + Sub<Output = T>
             + Pow<T, Output = T>,
     > RollingAggWindow<'a, T> for StdWindow<'a, T>
@@ -208,6 +216,7 @@ where
         + Div<Output = T>
         + NumCast
         + One
+        + Zero
         + Sub<Output = T>
         + Pow<T, Output = T>,
 {
@@ -252,7 +261,7 @@ mod test {
         // we cannot compare nans, so we compare the string values
         assert_eq!(
             format!("{:?}", out.as_slice()),
-            format!("{:?}", &[f64::nan(), 8.0, 2.0, 0.5])
+            format!("{:?}", &[0.0, 8.0, 2.0, 0.5])
         );
         // test nan handling.
         let values = &[-10.0, 2.0, 3.0, f64::nan(), 5.0, 6.0, 7.0];
