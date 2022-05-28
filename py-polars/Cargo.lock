@@ -1251,7 +1251,6 @@ dependencies = [
  "lexical",
  "polars-arrow",
  "polars-core",
- "polars-utils",
  "serde",
 ]
 
@@ -1280,7 +1279,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "0.13.38"
+version = "0.13.39"
 dependencies = [
  "ahash",
  "bincode",
