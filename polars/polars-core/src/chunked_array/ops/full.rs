@@ -62,7 +62,8 @@ impl ChunkFullNull for Utf8Chunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: &str, value: &Series, length: usize) -> ListChunked {
-        let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
+        let mut builder =
+            get_list_builder(value.dtype(), value.len() * length, length, name).unwrap();
         for _ in 0..length {
             builder.append_series(value)
         }
@@ -77,11 +78,7 @@ impl ChunkFullNull for ListChunked {
 }
 
 impl ListChunked {
-    pub(crate) fn full_null_with_dtype(
-        name: &str,
-        length: usize,
-        inner_dtype: &DataType,
-    ) -> ListChunked {
+    pub fn full_null_with_dtype(name: &str, length: usize, inner_dtype: &DataType) -> ListChunked {
         let arr = new_null_array(
             ArrowDataType::LargeList(Box::new(ArrowField::new(
                 "item",

@@ -3,6 +3,21 @@ LazyFrame
 =========
 .. currentmodule:: polars
 
+.. py:class:: LazyFrame
+    :canonical: polars.internals.lazy_frame.LazyFrame
+
+    Representation of a Lazy computation graph/ query.
+
+Attributes
+----------
+
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.columns
+    LazyFrame.dtypes
+    LazyFrame.schema
+
 Aggregation
 -----------
 .. autosummary::
@@ -39,7 +54,7 @@ Manipulation/ selection
     LazyFrame.groupby_dynamic
     LazyFrame.groupby_rolling
     LazyFrame.join
-    DataFrame.join_asof
+    LazyFrame.join_asof
     LazyFrame.with_columns
     LazyFrame.with_column
     LazyFrame.drop
@@ -63,6 +78,15 @@ Manipulation/ selection
     LazyFrame.melt
     LazyFrame.interpolate
     LazyFrame.unnest
+
+Conversion
+----------
+.. autosummary::
+   :toctree: api/
+
+    LazyFrame.write_json
+    LazyFrame.read_json
+    LazyFrame.from_json
 
 Apply
 -----

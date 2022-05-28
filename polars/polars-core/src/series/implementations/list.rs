@@ -29,7 +29,7 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn set_sorted(&mut self, reverse: bool) {
+    fn _set_sorted(&mut self, reverse: bool) {
         self.0.set_sorted(reverse)
     }
 
@@ -42,7 +42,7 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 

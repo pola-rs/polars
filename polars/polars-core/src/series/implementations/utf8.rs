@@ -37,7 +37,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.explode_by_offsets(offsets)
     }
 
-    fn set_sorted(&mut self, reverse: bool) {
+    fn _set_sorted(&mut self, reverse: bool) {
         self.0.set_sorted(reverse)
     }
 
@@ -64,7 +64,7 @@ impl private::PrivateSeries for SeriesWrap<Utf8Chunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 

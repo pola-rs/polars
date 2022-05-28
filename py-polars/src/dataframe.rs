@@ -1,5 +1,5 @@
 use numpy::IntoPyArray;
-use pyo3::types::{PyList, PyTuple};
+use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::{BufReader, BufWriter, Cursor, Read};
 
@@ -18,6 +18,7 @@ use crate::{
     arrow_interop,
     error::PyPolarsErr,
     file::{get_either_file, get_file_like, EitherRustPythonFile},
+    py_modules,
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
@@ -72,6 +73,15 @@ impl From<DataFrame> for PyDataFrame {
     clippy::len_without_is_empty
 )]
 impl PyDataFrame {
+    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
+        // used for polars-lazy python node. This takes the dataframe from underneath of you, so
+        // don't use this anywhere else.
+        let mut df = std::mem::take(&mut self.df);
+        let cols = std::mem::take(df.get_columns_mut());
+        let (ptr, len, cap) = cols.into_raw_parts();
+        (ptr as usize, len, cap)
+    }
+
     #[new]
     pub fn __init__(columns: Vec<PySeries>) -> PyResult<Self> {
         let columns = to_series_collection(columns);
@@ -81,6 +91,14 @@ impl PyDataFrame {
 
     pub fn estimated_size(&self) -> usize {
         self.df.estimated_size()
+    }
+
+    pub fn dtype_strings(&self) -> Vec<String> {
+        self.df
+            .get_columns()
+            .iter()
+            .map(|s| format!("{}", s.dtype()))
+            .collect()
     }
 
     #[staticmethod]
@@ -108,7 +126,8 @@ impl PyDataFrame {
         null_values: Option<Wrap<NullValues>>,
         parse_dates: bool,
         skip_rows_after_header: usize,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
+        sample_size: usize,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
         let comment_char = comment_char.map(|s| s.as_bytes()[0]);
@@ -173,6 +192,7 @@ impl PyDataFrame {
             .with_quote_char(quote_char)
             .with_skip_rows_after_header(skip_rows_after_header)
             .with_row_count(row_count)
+            .sample_size(sample_size)
             .finish()
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
@@ -186,7 +206,7 @@ impl PyDataFrame {
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
         parallel: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         use EitherRustPythonFile::*;
 
@@ -221,7 +241,7 @@ impl PyDataFrame {
         columns: Option<Vec<String>>,
         projection: Option<Vec<usize>>,
         n_rows: Option<usize>,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let file = get_file_like(py_f, false)?;
@@ -370,6 +390,31 @@ impl PyDataFrame {
             .set_column_names(&names)
             .map_err(PyPolarsErr::from)?;
         Ok(pydf)
+    }
+
+    #[staticmethod]
+    pub fn read_dict(py: Python, dict: &PyDict) -> PyResult<Self> {
+        let cols = dict
+            .into_iter()
+            .map(|(key, val)| {
+                let name = key.extract::<&str>()?;
+
+                let s = if val.is_instance_of::<PyDict>()? {
+                    let df = Self::read_dict(py, val.extract::<&PyDict>()?)?;
+                    df.df.into_struct(name).into_series()
+                } else {
+                    let obj = py_modules::SERIES.call1(py, (name, val))?;
+
+                    let pyseries_obj = obj.getattr(py, "_s")?;
+                    let pyseries = pyseries_obj.extract::<PySeries>(py)?;
+                    pyseries.series
+                };
+                Ok(s)
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+
+        let df = DataFrame::new(cols).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
     }
 
     pub fn to_csv(
@@ -529,8 +574,8 @@ impl PyDataFrame {
             "gzip" => ParquetCompression::Gzip,
             "lzo" => ParquetCompression::Lzo,
             "brotli" => ParquetCompression::Brotli,
-            "lz4" => ParquetCompression::Lz4,
-            "zstd" => ParquetCompression::Zstd,
+            "lz4" => ParquetCompression::Lz4Raw,
+            "zstd" => ParquetCompression::Zstd(None),
             s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
         };
 
@@ -663,10 +708,16 @@ impl PyDataFrame {
         Ok(df.into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> PyResult<Self> {
+    pub fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_n(n, with_replacement, seed)
+            .sample_n(n, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -675,11 +726,12 @@ impl PyDataFrame {
         &self,
         frac: f64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let df = self
             .df
-            .sample_frac(frac, with_replacement, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(df.into())
     }
@@ -867,15 +919,15 @@ impl PyDataFrame {
         }
     }
 
-    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::from_vec("", indices);
+        let indices = IdxCa::from_vec("", indices);
         let df = self.df.take(&indices).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.u32().map_err(PyPolarsErr::from)?;
+        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let df = self.df.take(idx).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }
@@ -960,7 +1012,7 @@ impl PyDataFrame {
         }
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> PyResult<Self> {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> PyResult<Self> {
         let df = self
             .df
             .with_row_count(name, offset)

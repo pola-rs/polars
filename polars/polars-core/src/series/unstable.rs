@@ -3,7 +3,7 @@ use std::convert::TryFrom;
 use std::ptr::NonNull;
 
 /// A wrapper type that should make it a bit more clear that we should not clone Series
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 #[cfg(feature = "private")]
 pub struct UnstableSeries<'a> {
     // A series containing a single chunk ArrayRef
@@ -25,7 +25,7 @@ pub type ArrayBox = Box<dyn Array>;
 
 impl<'a> UnstableSeries<'a> {
     pub fn new(series: &'a Series) -> Self {
-        let inner_chunk = &series.chunks()[0];
+        let inner_chunk = series.array_ref(0);
         UnstableSeries {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),
@@ -40,10 +40,6 @@ impl<'a> UnstableSeries<'a> {
             container: series,
             inner: NonNull::new(inner_chunk as *const ArrayRef as *mut ArrayRef).unwrap(),
         }
-    }
-
-    pub fn clone(&self) {
-        panic!("don't clone this type, use deep_clone")
     }
 
     pub fn deep_clone(&self) -> Series {

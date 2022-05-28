@@ -869,8 +869,8 @@ fn test_with_row_count() -> Result<()> {
         .finish()?;
     let rc = df.column("rc")?;
     assert_eq!(
-        rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
-        (0u32..27).collect::<Vec<_>>()
+        rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+        (0 as IdxSize..27).collect::<Vec<_>>()
     );
     let df = CsvReader::from_path(FOODS_CSV)?
         .with_row_count(Some(RowCount {
@@ -880,8 +880,8 @@ fn test_with_row_count() -> Result<()> {
         .finish()?;
     let rc = df.column("rc_2")?;
     assert_eq!(
-        rc.u32()?.into_no_null_iter().collect::<Vec<_>>(),
-        (10u32..37).collect::<Vec<_>>()
+        rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
+        (10 as IdxSize..37).collect::<Vec<_>>()
     );
     Ok(())
 }
@@ -949,8 +949,23 @@ fn test_escaping_quotes() -> Result<()> {
 fn test_header_only() -> Result<()> {
     let csv = "a,b,c";
     let file = Cursor::new(csv);
+
+    // no header
     let df = CsvReader::new(file).has_header(false).finish()?;
     assert_eq!(df.shape(), (1, 3));
+
+    // has header
+    for csv in &["x,y,z", "x,y,z\n"] {
+        let file = Cursor::new(csv);
+        let df = CsvReader::new(file).has_header(true).finish()?;
+
+        assert_eq!(df.shape(), (0, 3));
+        assert_eq!(
+            df.dtypes(),
+            &[DataType::Utf8, DataType::Utf8, DataType::Utf8]
+        );
+    }
+
     Ok(())
 }
 
@@ -996,5 +1011,27 @@ fn test_whitespace_skipping() -> Result<()> {
     ]?;
     assert!(out.frame_equal(&expected));
 
+    Ok(())
+}
+
+#[test]
+fn test_duplicate_column_err() {
+    let csv = "a,b,a
+  12,1435,1";
+    let file = Cursor::new(csv);
+    assert!(CsvReader::new(file).finish().is_err());
+}
+
+#[test]
+fn test_parse_dates_3380() -> Result<()> {
+    let csv = "lat;lon;validdate;t_2m:C;precip_1h:mm
+46.685;7.953;2022-05-10T07:07:12Z;6.1;0.00
+46.685;7.953;2022-05-10T08:07:12Z;8.8;0.00";
+    let file = Cursor::new(csv);
+    let df = CsvReader::new(file)
+        .with_delimiter(b';')
+        .with_parse_dates(true)
+        .finish()?;
+    assert_eq!(df.column("validdate")?.null_count(), 0);
     Ok(())
 }

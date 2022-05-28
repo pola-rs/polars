@@ -1,8 +1,10 @@
+use crate::arrow_interop::to_rust::pyarrow_schema_to_rust;
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::file::get_file_like;
 use crate::lazy::{dsl::PyExpr, utils::py_exprs_to_exprs};
-use crate::prelude::{NullValues, ScanArgsIpc, ScanArgsParquet};
+use crate::prelude::{IdxSize, LogicalPlan, NullValues, ScanArgsIpc, ScanArgsParquet};
 use polars::io::RowCount;
 use polars::lazy::frame::{AllowedOptimizations, LazyCsvReader, LazyFrame, LazyGroupBy};
 use polars::lazy::prelude::col;
@@ -13,8 +15,10 @@ use polars_core::frame::UniqueKeepStrategy;
 use polars_core::prelude::{
     AnyValue, AsOfOptions, AsofStrategy, DataType, QuantileInterpolOptions, SortOptions,
 };
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
+use std::io::BufWriter;
 
 #[pyclass]
 #[repr(transparent)]
@@ -91,6 +95,36 @@ impl From<LazyFrame> for PyLazyFrame {
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
+    pub fn to_json(&self, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+        serde_json::to_writer(file, &self.ldf.logical_plan)
+            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+        Ok(())
+    }
+
+    #[staticmethod]
+    #[cfg(feature = "json")]
+    pub fn read_json(py_f: PyObject) -> PyResult<Self> {
+        // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
+        // so don't bother with files.
+        let mut json = String::new();
+        let _ = get_file_like(py_f, false)?
+            .read_to_string(&mut json)
+            .unwrap();
+
+        // Safety
+        // we skipped the serializing/deserializing of the static in lifetime in `DataType`
+        // so we actually don't have a lifetime at all when serializing.
+
+        // &str still has a lifetime. Bit its ok, because we drop it immediately
+        // in this scope
+        let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
+
+        let lp = serde_json::from_str::<LogicalPlan>(json)
+            .map_err(|err| PyValueError::new_err(format!("{:?}", err)))?;
+        Ok(LazyFrame::from(lp).into())
+    }
+
     #[staticmethod]
     #[allow(clippy::too_many_arguments)]
     pub fn new_from_csv(
@@ -111,7 +145,7 @@ impl PyLazyFrame {
         rechunk: bool,
         skip_rows_after_header: usize,
         encoding: &str,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
         parse_dates: bool,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -190,7 +224,7 @@ impl PyLazyFrame {
         cache: bool,
         parallel: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsParquet {
@@ -210,7 +244,7 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         rechunk: bool,
-        row_count: Option<(String, u32)>,
+        row_count: Option<(String, IdxSize)>,
     ) -> PyResult<Self> {
         let row_count = row_count.map(|(name, offset)| RowCount { name, offset });
         let args = ScanArgsIpc {
@@ -221,6 +255,12 @@ impl PyLazyFrame {
         };
         let lf = LazyFrame::scan_ipc(path, args).map_err(PyPolarsErr::from)?;
         Ok(lf.into())
+    }
+
+    #[staticmethod]
+    pub fn scan_from_python_function(schema: &PyList, scan_fn: Vec<u8>) -> PyResult<Self> {
+        let schema = pyarrow_schema_to_rust(schema)?;
+        Ok(LazyFrame::scan_from_python_function(schema, scan_fn).into())
     }
 
     pub fn describe_plan(&self) -> String {
@@ -291,10 +331,8 @@ impl PyLazyFrame {
         Ok(df.into())
     }
 
-    pub fn fetch(&self, n_rows: usize) -> PyResult<PyDataFrame> {
+    pub fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let gil = Python::acquire_gil();
-        let py = gil.python();
         let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
         Ok(df.into())
     }
@@ -602,12 +640,12 @@ impl PyLazyFrame {
             .into()
     }
 
-    pub fn slice(&self, offset: i64, len: u32) -> Self {
+    pub fn slice(&self, offset: i64, len: IdxSize) -> Self {
         let ldf = self.ldf.clone();
         ldf.slice(offset, len).into()
     }
 
-    pub fn tail(&self, n: u32) -> Self {
+    pub fn tail(&self, n: IdxSize) -> Self {
         let ldf = self.ldf.clone();
         ldf.tail(n).into()
     }
@@ -630,7 +668,7 @@ impl PyLazyFrame {
         ldf.melt(args).into()
     }
 
-    pub fn with_row_count(&self, name: &str, offset: Option<u32>) -> Self {
+    pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Self {
         let ldf = self.ldf.clone();
         ldf.with_row_count(name, offset).into()
     }
@@ -681,6 +719,26 @@ impl PyLazyFrame {
 
     pub fn columns(&self) -> Vec<String> {
         self.ldf.schema().iter_names().cloned().collect()
+    }
+
+    pub fn dtypes(&self, py: Python) -> PyObject {
+        let schema = self.ldf.schema();
+        let iter = schema
+            .iter_dtypes()
+            .map(|dt| Wrap(dt.clone()).to_object(py));
+        PyList::new(py, iter).to_object(py)
+    }
+
+    pub fn schema(&self, py: Python) -> PyObject {
+        let schema = self.ldf.schema();
+        let schema_dict = PyDict::new(py);
+
+        schema.iter_fields().for_each(|fld| {
+            schema_dict
+                .set_item(fld.name(), Wrap(fld.data_type().clone()))
+                .unwrap()
+        });
+        schema_dict.to_object(py)
     }
 
     pub fn unnest(&self, cols: Vec<String>) -> PyLazyFrame {

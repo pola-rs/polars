@@ -7,6 +7,8 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            #[cfg(feature = "python")]
+            PythonScan { .. } => write!(f, "PYTHON SCAN"),
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
             Cache { input } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]
@@ -229,8 +231,16 @@ impl fmt::Debug for Expr {
                 }
             }
             Cast {
-                expr, data_type, ..
-            } => write!(f, "{:?}.cast({:?})", expr, data_type),
+                expr,
+                data_type,
+                strict,
+            } => {
+                if *strict {
+                    write!(f, "{:?}.strict_cast({:?})", expr, data_type)
+                } else {
+                    write!(f, "{:?}.cast({:?})", expr, data_type)
+                }
+            }
             Ternary {
                 predicate,
                 truthy,
@@ -240,7 +250,7 @@ impl fmt::Debug for Expr {
                 "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
-            Function { input, options, .. } => {
+            AnonymousFunction { input, options, .. } | Function { input, options, .. } => {
                 if input.len() >= 2 {
                     write!(f, "{:?}.{}({:?})", input[0], options.fmt_str, &input[1..])
                 } else {

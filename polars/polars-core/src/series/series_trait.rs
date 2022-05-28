@@ -80,56 +80,6 @@ pub(crate) mod private {
             invalid_operation_panic!(self)
         }
 
-        /// Apply a rolling mean to a Series. See:
-        /// [ChunkedArray::rolling_mean](crate::prelude::ChunkWindow::rolling_mean).
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling sum to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling median to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_median(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling quantile to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_quantile(
-            &self,
-            _quantile: f64,
-            _interpolation: QuantileInterpolOptions,
-            _options: RollingOptions,
-        ) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling min to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_min(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-        /// Apply a rolling max to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_max(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling variance to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_var(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
-        /// Apply a rolling std_dev to a Series.
-        #[cfg(feature = "rolling_window")]
-        fn _rolling_std(&self, _options: RollingOptions) -> Result<Series> {
-            invalid_operation!(self)
-        }
-
         /// Get an array with the cumulative max computed at every element
         #[cfg(feature = "cum_agg")]
         fn _cummax(&self, _reverse: bool) -> Series {
@@ -142,7 +92,7 @@ pub(crate) mod private {
             panic!("operation cummin not supported for this dtype")
         }
 
-        fn set_sorted(&mut self, _reverse: bool) {
+        fn _set_sorted(&mut self, _reverse: bool) {
             invalid_operation_panic!(self)
         }
 
@@ -168,36 +118,36 @@ pub(crate) mod private {
         fn vec_hash_combine(&self, _build_hasher: RandomState, _hashes: &mut [u64]) {
             invalid_operation_panic!(self)
         }
-        fn agg_min(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_max(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
-        fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_std(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_var(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_list(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn agg_quantile(
             &self,
-            _groups: &GroupsProxy,
+            groups: &GroupsProxy,
             _quantile: f64,
             _interpol: QuantileInterpolOptions,
-        ) -> Option<Series> {
-            None
+        ) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
-        fn agg_median(&self, _groups: &GroupsProxy) -> Option<Series> {
-            None
+        fn agg_median(&self, groups: &GroupsProxy) -> Series {
+            Series::full_null(self._field().name(), groups.len(), self._dtype())
         }
         fn zip_outer_join_column(
             &self,
@@ -293,9 +243,7 @@ pub trait SeriesTrait:
     }
 
     /// Underlying chunks.
-    fn chunks(&self) -> &Vec<ArrayRef> {
-        invalid_operation_panic!(self)
-    }
+    fn chunks(&self) -> &Vec<ArrayRef>;
 
     /// Number of chunks in this Series
     fn n_chunks(&self) -> usize {
@@ -874,7 +822,7 @@ pub trait SeriesTrait:
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptions,
+        _options: RollingOptionsFixedWindow,
     ) -> Result<Series> {
         panic!("rolling apply not implemented for this dtype. Only implemented for numeric data.")
     }

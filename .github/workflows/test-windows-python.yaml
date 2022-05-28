@@ -9,15 +9,15 @@ jobs:
     name: Build and test Python
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-04-01
+          toolchain: nightly-2022-05-20
           override: true
-          components: rustfmt, clippy
+          components: rustfmt
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: "3.9"
       - name: Install dependencies
@@ -28,8 +28,7 @@ jobs:
         shell: bash
         run: |
           export RUSTFLAGS="-C debuginfo=0"
-          cd py-polars && rustup override set nightly-2022-04-01 && make build-and-test-no-venv
-          cargo clippy
+          cd py-polars && rustup override set nightly-2022-05-01 && make build-and-test-no-venv
       # test if we can import polars without any requirements
       - name: Import polars
         run: |

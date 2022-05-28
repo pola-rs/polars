@@ -1,3 +1,4 @@
+use crate::dsl::function_expr::FunctionExpr;
 use crate::logical_plan::Context;
 use crate::prelude::*;
 use polars_arrow::prelude::QuantileInterpolOptions;
@@ -74,10 +75,17 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    Function {
+    AnonymousFunction {
         input: Vec<Node>,
         function: NoEq<Arc<dyn SeriesUdf>>,
         output_type: GetOutput,
+        options: FunctionOptions,
+    },
+    Function {
+        /// function arguments
+        input: Vec<Node>,
+        /// function to apply
+        function: FunctionExpr,
         options: FunctionOptions,
     },
     Shift {
@@ -307,7 +315,7 @@ impl AExpr {
                     Ok(truthy)
                 }
             }
-            Function {
+            AnonymousFunction {
                 output_type, input, ..
             } => {
                 let fields = input
@@ -315,6 +323,15 @@ impl AExpr {
                     .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
                     .collect::<Result<Vec<_>>>()?;
                 Ok(output_type.get_field(schema, ctxt, &fields))
+            }
+            Function {
+                function, input, ..
+            } => {
+                let fields = input
+                    .iter()
+                    .map(|node| arena.get(*node).to_field(schema, ctxt, arena))
+                    .collect::<Result<Vec<_>>>()?;
+                function.get_field(schema, ctxt, &fields)
             }
             Shift { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),
             Slice { input, .. } => arena.get(*input).to_field(schema, ctxt, arena),

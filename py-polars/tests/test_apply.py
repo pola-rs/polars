@@ -1,3 +1,4 @@
+import typing
 from datetime import date, datetime, timedelta
 from functools import reduce
 from typing import List, Optional
@@ -55,6 +56,7 @@ def test_apply_return_py_object() -> None:
     assert out.shape == (1, 2)
 
 
+@typing.no_type_check
 def test_agg_objects() -> None:
     df = pl.DataFrame(
         {
@@ -64,8 +66,16 @@ def test_agg_objects() -> None:
         }
     )
 
+    class Foo:
+        def __init__(self, payload):
+            self.payload = payload
+
     out = df.groupby("groups").agg(
-        [pl.apply([pl.col("dates"), pl.col("names")], lambda s: dict(zip(s[0], s[1])))]
+        [
+            pl.apply(
+                [pl.col("dates"), pl.col("names")], lambda s: Foo(dict(zip(s[0], s[1])))
+            )
+        ]
     )
     assert out.dtypes == [pl.Utf8, pl.Object]
 
@@ -153,3 +163,20 @@ def test_datelike_identity() -> None:
         pl.Series([date(year=2000, month=1, day=1)]),
     ]:
         assert s.apply(lambda x: x).to_list() == s.to_list()
+
+
+def test_apply_list_anyvalue_fallback() -> None:
+    import json
+
+    df = pl.DataFrame({"text": ['[{"x": 1, "y": 2}, {"x": 3, "y": 4}]']})
+    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        "text": [[{"x": 1, "y": 2}, {"x": 3, "y": 4}]]
+    }
+
+    # starts with empty list '[]'
+    df = pl.DataFrame(
+        {"text": ["[]", '[{"x": 1, "y": 2}, {"x": 3, "y": 4}]', '[{"x": 1, "y": 2}]']}
+    )
+    assert df.select(pl.col("text").apply(json.loads)).to_dict(False) == {
+        "text": [[], [{"x": 1, "y": 2}, {"x": 3, "y": 4}], [{"x": 1, "y": 2}]]
+    }

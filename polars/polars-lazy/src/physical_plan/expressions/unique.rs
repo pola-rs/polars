@@ -67,20 +67,4 @@ impl PhysicalExpr for UniqueExpr {
     }
 }
 impl PhysicalAggregation for UniqueExpr {
-    // As a final aggregation a Unique returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let agg_s = ac.aggregated();
-        let agg_s = agg_s
-            .list()
-            .unwrap()
-            .apply_amortized(|s| s.as_ref().unique())
-            .into_series();
-        Ok(Some(agg_s))
-    }
 }

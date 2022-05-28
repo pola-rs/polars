@@ -73,7 +73,9 @@ impl DataFrame {
             }};
         }
 
-        if by.is_empty() || by[0].len() != self.height() {
+        // we only throw this error if self.width > 0
+        // so that we can still call this on a dummy dataframe where we provide the keys
+        if by.is_empty() || (by[0].len() != (self.height()) && (self.width() > 0)) {
             return Err(PolarsError::ShapeMisMatch(
                 "the Series used as keys should have the same length as the DataFrame".into(),
             ));
@@ -306,27 +308,34 @@ impl<'df> GroupBy<'df> {
     }
 
     pub fn keys_sliced(&self, slice: Option<(i64, usize)>) -> Vec<Series> {
+        #[allow(unused_assignments)]
+        // needed to keep the lifetimes valid for this scope
+        let mut groups_owned = None;
+
+        let groups = if let Some((offset, len)) = slice {
+            groups_owned = Some(self.groups.slice(offset, len));
+            groups_owned.as_deref().unwrap()
+        } else {
+            &self.groups
+        };
+
         POOL.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(|s| {
-                    #[allow(unused_assignments)]
-                    // needed to keep the lifetimes valid for this scope
-                    let mut groups_owned = None;
-
-                    let groups = if let Some((offset, len)) = slice {
-                        groups_owned = Some(self.groups.slice(offset, len));
-                        groups_owned.as_deref().unwrap()
-                    } else {
-                        &self.groups
-                    };
-
-                    // Safety
-                    // groupby indexes are in bound.
-                    unsafe {
-                        s.take_iter_unchecked(
-                            &mut groups.idx_ref().iter().map(|(idx, _)| idx as usize),
-                        )
+                    match groups {
+                        GroupsProxy::Idx(groups) => {
+                            let mut iter = groups.iter().map(|(first, _idx)| first as usize);
+                            // Safety:
+                            // groups are always in bounds
+                            unsafe { s.take_iter_unchecked(&mut iter) }
+                        }
+                        GroupsProxy::Slice(groups) => {
+                            let mut iter = groups.iter().map(|&[first, _len]| first as usize);
+                            // Safety:
+                            // groups are always in bounds
+                            unsafe { s.take_iter_unchecked(&mut iter) }
+                        }
                     }
                 })
                 .collect()
@@ -386,11 +395,9 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Mean);
-            let opt_agg = agg_col.agg_mean(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_mean(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -425,11 +432,9 @@ impl<'df> GroupBy<'df> {
 
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Sum);
-            let opt_agg = agg_col.agg_sum(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_sum(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -463,11 +468,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Min);
-            let opt_agg = agg_col.agg_min(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_min(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -501,11 +504,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Max);
-            let opt_agg = agg_col.agg_max(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_max(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -611,11 +612,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::NUnique);
-            let opt_agg = agg_col.agg_n_unique(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_n_unique(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -642,11 +641,9 @@ impl<'df> GroupBy<'df> {
         for agg_col in agg_cols {
             let new_name =
                 fmt_groupby_column(agg_col.name(), GroupByMethod::Quantile(quantile, interpol));
-            let opt_agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_quantile(&self.groups, quantile, interpol);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -665,11 +662,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Median);
-            let opt_agg = agg_col.agg_median(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_median(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -679,11 +674,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Var);
-            let opt_agg = agg_col.agg_var(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_var(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -693,11 +686,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::Std);
-            let opt_agg = agg_col.agg_std(&self.groups);
-            if let Some(mut agg) = opt_agg {
-                agg.rename(&new_name);
-                cols.push(agg.into_series());
-            }
+            let mut agg = agg_col.agg_std(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg.into_series());
         }
         DataFrame::new(cols)
     }
@@ -826,11 +817,9 @@ impl<'df> GroupBy<'df> {
         macro_rules! finish_agg_opt {
             ($self:ident, $name_fmt:expr, $agg_fn:ident, $agg_col:ident, $cols:ident) => {{
                 let new_name = format!($name_fmt, $agg_col.name());
-                let opt_agg = $agg_col.$agg_fn(&$self.groups);
-                if let Some(mut agg) = opt_agg {
-                    agg.rename(&new_name);
-                    $cols.push(agg.into_series());
-                }
+                let mut agg = $agg_col.$agg_fn(&$self.groups);
+                agg.rename(&new_name);
+                $cols.push(agg.into_series());
             }};
         }
         macro_rules! finish_agg {
@@ -903,10 +892,9 @@ impl<'df> GroupBy<'df> {
         let (mut cols, agg_cols) = self.prepare_agg()?;
         for agg_col in agg_cols {
             let new_name = fmt_groupby_column(agg_col.name(), GroupByMethod::List);
-            if let Some(mut agg) = agg_col.agg_list(&self.groups) {
-                agg.rename(&new_name);
-                cols.push(agg);
-            }
+            let mut agg = agg_col.agg_list(&self.groups);
+            agg.rename(&new_name);
+            cols.push(agg);
         }
         DataFrame::new(cols)
     }
@@ -935,10 +923,11 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
-            .idx_ref()
             .par_iter()
-            .map(|t| {
-                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
+            .map(|g| {
+                // safety
+                // groups are in bounds
+                let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -956,10 +945,11 @@ impl<'df> GroupBy<'df> {
         let df = self.prepare_apply()?;
         let dfs = self
             .get_groups()
-            .idx_ref()
             .iter()
-            .map(|t| {
-                let sub_df = unsafe { df.take_iter_unchecked(t.1.iter().map(|i| *i as usize)) };
+            .map(|g| {
+                // safety
+                // groups are in bounds
+                let sub_df = unsafe { take_df(&df, g) };
                 f(sub_df)
             })
             .collect::<Result<Vec<_>>>()?;
@@ -967,6 +957,13 @@ impl<'df> GroupBy<'df> {
         let mut df = accumulate_dataframes_vertical(dfs)?;
         df.as_single_chunk();
         Ok(df)
+    }
+}
+
+unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
+    match g {
+        GroupsIndicator::Idx(idx) => df.take_iter_unchecked(idx.1.iter().map(|i| *i as usize)),
+        GroupsIndicator::Slice([first, len]) => df.slice(first as i64, len as usize),
     }
 }
 
@@ -1258,18 +1255,11 @@ mod test {
             "int" => [1, 2, 3]
         ]?;
 
-        let out = df.groupby(["g"])?.select(["int"]).var()?;
-        assert_eq!(
-            out.column("int_agg_var")?.f64()?.sort(false).get(0),
-            Some(0.5)
-        );
-        let out = df.groupby(["g"])?.select(["int"]).std()?;
-        let val = out
-            .column("int_agg_std")?
-            .f64()?
-            .sort(false)
-            .get(0)
-            .unwrap();
+        let out = df.groupby_stable(["g"])?.select(["int"]).var()?;
+
+        assert_eq!(out.column("int_agg_var")?.f64()?.get(0), Some(0.5));
+        let out = df.groupby_stable(["g"])?.select(["int"]).std()?;
+        let val = out.column("int_agg_std")?.f64()?.get(0).unwrap();
         let expected = f64::FRAC_1_SQRT_2();
         assert!((val - expected).abs() < 0.000001);
         Ok(())

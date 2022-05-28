@@ -12,6 +12,9 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner: NonNull<ArrayRef>,
     lifetime: PhantomData<&'a ArrayRef>,
     iter: I,
+    // used only if feature="dtype-struct"
+    #[allow(dead_code)]
+    inner_dtype: DataType,
 }
 
 impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
@@ -20,7 +23,30 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|opt_val| {
             opt_val.map(|array_ref| {
+                #[cfg(feature = "dtype-struct")]
+                // structs arrays are bound to the series not to the arrayref
+                // so we must get a hold to the new array
+                if matches!(self.inner_dtype, DataType::Struct(_)) {
+                    // Safety
+                    // dtype is known
+                    unsafe {
+                        let array_ref = Arc::from(array_ref);
+                        let mut s = Series::from_chunks_and_dtype_unchecked(
+                            "",
+                            vec![array_ref],
+                            &self.inner_dtype,
+                        );
+                        // swap the new series with the container
+                        std::mem::swap(&mut *self.series_container, &mut s);
+                        // return a reference to the container
+                        // this lifetime is now bound to 'a
+                        return UnstableSeries::new(&*(&*self.series_container as *const Series));
+                    }
+                }
+
+                // update the inner state
                 unsafe { *self.inner.as_mut() = array_ref.into() };
+
                 // Safety
                 // we cannot control the lifetime of an iterators `next` method.
                 // but as long as self is alive the reference to the series container is valid
@@ -77,7 +103,7 @@ impl ListChunked {
             ))
         };
 
-        let ptr = &series_container.chunks()[0] as *const ArrayRef as *mut ArrayRef;
+        let ptr = series_container.array_ref(0) as *const ArrayRef as *mut ArrayRef;
 
         AmortizedListIter {
             len: self.len(),
@@ -85,6 +111,7 @@ impl ListChunked {
             inner: NonNull::new(ptr).unwrap(),
             lifetime: PhantomData,
             iter: self.downcast_iter().flat_map(|arr| arr.iter()),
+            inner_dtype: self.inner_dtype(),
         }
     }
 
@@ -158,7 +185,7 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder = get_list_builder(&DataType::Int32, 10, 10, "");
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, "").unwrap();
         builder.append_series(&Series::new("", &[1, 2, 3]));
         builder.append_series(&Series::new("", &[3, 2, 1]));
         builder.append_series(&Series::new("", &[1, 1]));

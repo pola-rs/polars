@@ -131,6 +131,18 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
     return next((v for v in values if v is not None), None)
 
 
+def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySeries":
+    """
+    Last resort conversion. AnyValues are most flexible and if they fail we go for object types
+    """
+
+    try:
+        return PySeries.new_from_anyvalues(name, values)
+    # raised if we cannot convert to Wrap<AnyValue>
+    except RuntimeError:
+        return PySeries.new_object(name, values, False)
+
+
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
@@ -208,11 +220,8 @@ def sequence_to_pyseries(
             else:
                 try:
                     nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
-                except ValueError as e:  # pragma: no cover
-                    raise ValueError(
-                        f"Cannot construct Series from sequence of {nested_dtype}."
-                    ) from e
-
+                except ValueError:  # pragma: no cover
+                    return sequence_from_anyvalue_or_object(name, values)
                 try:
                     arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
                     return arrow_to_pyseries(name, arrow_values)
@@ -226,15 +235,15 @@ def sequence_to_pyseries(
             return PySeries.new_series_list(name, [v.inner() for v in values], strict)
         elif dtype_ == PySeries:
             return PySeries.new_series_list(name, values, strict)
-
         else:
             constructor = py_type_to_constructor(dtype_)
 
             if constructor == PySeries.new_object:
-                np_constructor = numpy_type_to_constructor(dtype_)
-                if np_constructor is not None:
-                    values = np.array(values)  # type: ignore
-                    constructor = np_constructor
+                try:
+                    return PySeries.new_from_anyvalues(name, values)
+                # raised if we cannot convert to Wrap<AnyValue>
+                except RuntimeError:
+                    return sequence_from_anyvalue_or_object(name, values)
 
             return constructor(name, values, strict)
 
@@ -261,7 +270,7 @@ def _pandas_series_to_arrow(
     """
     dtype = values.dtype
     if dtype == "object" and len(values) > 0:
-        if isinstance(values.values[0], str):
+        if isinstance(_get_first_non_none(values.values), str):  # type: ignore
             return pa.array(values, pa.large_utf8(), from_pandas=nan_to_none)
 
         # array is null array, we set to a float64 array
@@ -374,18 +383,23 @@ def dict_to_pydf(
     """
     Construct a PyDataFrame from a dictionary of sequences.
     """
-    columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
-    if not data and dtypes:
-        data_series = [
-            pli.Series(name, [], dtypes.get(name)).inner() for name in columns
-        ]
-    else:
-        data_series = [
-            pli.Series(name, values, dtypes.get(name)).inner()
-            for name, values in data.items()
-        ]
-    data_series = _handle_columns_arg(data_series, columns=columns)
-    return PyDataFrame(data_series)
+    if columns is not None:
+        # the columns arg may also set the dtype of the series
+        columns, dtypes = _unpack_columns(columns, lookup_names=data.keys())
+
+        if not data and dtypes:
+            data_series = [
+                pli.Series(name, [], dtypes.get(name)).inner() for name in columns
+            ]
+        else:
+            data_series = [
+                pli.Series(name, values, dtypes.get(name)).inner()
+                for name, values in data.items()
+            ]
+        data_series = _handle_columns_arg(data_series, columns=columns)
+        return PyDataFrame(data_series)
+    # fast path
+    return PyDataFrame.read_dict(data)
 
 
 def numpy_to_pydf(
@@ -458,7 +472,7 @@ def sequence_to_pydf(
     data_series: List["PySeries"]
 
     if len(data) == 0:
-        data_series = []
+        return dict_to_pydf({}, columns=columns)
 
     elif isinstance(data[0], pli.Series):
         series_names = [s.name for s in data]
@@ -501,7 +515,7 @@ def sequence_to_pydf(
         columns, dtypes = _unpack_columns(columns, n_expected=1)
         data_series = [pli.Series(columns[0], data, dtypes.get(columns[0])).inner()]
 
-    data_series = _handle_columns_arg(data_series, columns=columns)  # type: ignore[arg-type]
+    data_series = _handle_columns_arg(data_series, columns=columns)
     return PyDataFrame(data_series)
 
 
@@ -516,8 +530,8 @@ def arrow_to_pydf(
             "'pyarrow' is required when constructing a PyDataFrame from an Arrow Table."
         )
     original_columns = columns
-    columns, dtypes = _unpack_columns(columns)
     if columns is not None:
+        columns, dtypes = _unpack_columns(columns)
         try:
             data = data.rename_columns(columns)
         except pa.lib.ArrowInvalid as e:
@@ -566,7 +580,7 @@ def arrow_to_pydf(
         df = df[names]
         pydf = df._df
 
-    if dtypes and original_columns:
+    if columns is not None and dtypes and original_columns:
         pydf = _post_apply_columns(pydf, original_columns)
     return pydf
 
@@ -615,11 +629,6 @@ def pandas_to_pydf(
 
 
 def coerce_arrow(array: "pa.Array", rechunk: bool = True) -> "pa.Array":
-    if isinstance(array, pa.TimestampArray) and array.type.tz is not None:
-        warnings.warn(
-            "Conversion of timezone aware to naive datetimes. TZ information may be lost",
-        )
-
     # note: Decimal256 could not be cast to float
     if isinstance(array.type, pa.Decimal128Type):
         array = pa.compute.cast(array, pa.float64())

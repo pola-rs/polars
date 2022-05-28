@@ -1,8 +1,12 @@
 use crate::prelude::*;
+use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ClosedWindow {
     Left,
     Right,
@@ -124,13 +128,45 @@ pub fn groupby_windows(
     (groups, lower_bound, upper_bound)
 }
 
-fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> Option<usize> {
-    time.iter()
-        .enumerate()
-        .find_map(|(i, t)| match b.is_member(*t, closed) {
-            true => None,
-            false => Some(i),
-        })
+pub(crate) fn find_offset(time: &[i64], b: Bounds, closed: ClosedWindow) -> usize {
+    time.partition_point(|v| b.is_member(*v, closed))
+}
+
+pub(crate) fn groupby_values_iter(
+    period: Duration,
+    offset: Duration,
+    time: &[i64],
+    closed_window: ClosedWindow,
+    tu: TimeUnit,
+) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
+    let add = match tu {
+        TimeUnit::Nanoseconds => Duration::add_ns,
+        TimeUnit::Microseconds => Duration::add_us,
+        TimeUnit::Milliseconds => Duration::add_ms,
+    };
+
+    // the offset can be lagging if we have a negative offset duration
+    let mut lagging_offset = 0;
+    time.iter().enumerate().map(move |(i, lower)| {
+        let lower = add(&offset, *lower);
+        let upper = add(&period, lower);
+
+        let b = Bounds::new(lower, upper);
+
+        for &t in &time[lagging_offset..] {
+            if b.is_member(t, closed_window) || lagging_offset == i {
+                break;
+            }
+            lagging_offset += 1;
+        }
+
+        // Safety
+        // we just iterated over value i.
+        let slice = unsafe { time.get_unchecked(lagging_offset..) };
+        let len = find_offset(slice, b, closed_window);
+
+        (lagging_offset as IdxSize, len as IdxSize)
+    })
 }
 
 /// Different from `groupby_windows`, where define window buckets and search which values fit that
@@ -146,33 +182,7 @@ pub fn groupby_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> GroupsSlice {
-    let add = match tu {
-        TimeUnit::Nanoseconds => Duration::add_ns,
-        TimeUnit::Microseconds => Duration::add_us,
-        TimeUnit::Milliseconds => Duration::add_ms,
-    };
-
-    // the offset can be lagging if we have a negative offset duration
-    let mut lagging_offset = 0;
-    time.iter()
-        .enumerate()
-        .map(|(i, lower)| {
-            let lower = add(&offset, *lower);
-            let upper = add(&period, lower);
-
-            let b = Bounds::new(lower, upper);
-
-            for &t in &time[lagging_offset..] {
-                if b.is_member(t, closed_window) || lagging_offset == i {
-                    break;
-                }
-                lagging_offset += 1;
-            }
-
-            let slice = &time[lagging_offset..];
-            let len = find_offset(slice, b, closed_window).unwrap_or(slice.len());
-
-            [lagging_offset as IdxSize, len as IdxSize]
-        })
+    groupby_values_iter(period, offset, time, closed_window, tu)
+        .map(|(offset, len)| [offset, len])
         .collect_trusted()
 }

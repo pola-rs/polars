@@ -136,18 +136,57 @@ pub fn split_series(s: &Series, n: usize) -> Result<Vec<Series>> {
     split_array!(s, n, i64)
 }
 
+fn flatten_df(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
+    df.iter_chunks().map(|chunk| {
+        DataFrame::new_no_checks(
+            df.iter()
+                .zip(chunk.into_arrays())
+                .map(|(s, arr)| {
+                    // Safety:
+                    // datatypes are correct
+                    unsafe {
+                        Series::from_chunks_and_dtype_unchecked(s.name(), vec![arr], s.dtype())
+                    }
+                })
+                .collect(),
+        )
+    })
+}
+
 #[cfg(feature = "private")]
 #[doc(hidden)]
 pub fn split_df(df: &DataFrame, n: usize) -> Result<Vec<DataFrame>> {
-    trait Len {
-        fn len(&self) -> usize;
+    let total_len = df.height();
+    let chunk_size = total_len / n;
+
+    if df.n_chunks()? == n
+        && df.get_columns()[0]
+            .chunk_lengths()
+            .all(|len| len.abs_diff(chunk_size) < 100)
+    {
+        return Ok(flatten_df(df).collect());
     }
-    impl Len for DataFrame {
-        fn len(&self) -> usize {
-            self.height()
+
+    let mut out = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let offset = i * chunk_size;
+        let len = if i == (n - 1) {
+            total_len - offset
+        } else {
+            chunk_size
+        };
+        let df = df.slice((i * chunk_size) as i64, len);
+        if df.n_chunks()? > 1 {
+            // we add every chunk as separate dataframe. This make sure that every partition
+            // deals with it.
+            out.extend(flatten_df(&df))
+        } else {
+            out.push(df)
         }
     }
-    split_array!(df, n, i64)
+
+    Ok(out)
 }
 
 pub fn slice_slice<T>(vals: &[T], offset: i64, len: usize) -> &[T] {
@@ -311,12 +350,10 @@ macro_rules! apply_method_all_arrow_series {
     }
 }
 
-// doesn't include Bool and Utf8
 #[macro_export]
-macro_rules! apply_method_numeric_series {
-    ($self:ident, $method:ident, $($args:expr),*) => {
+macro_rules! apply_method_physical_integer {
+    ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
-
             #[cfg(feature = "dtype-u8")]
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             #[cfg(feature = "dtype-u16")]
@@ -329,55 +366,21 @@ macro_rules! apply_method_numeric_series {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
-            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
-            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => $self.date().unwrap().$method($($args),*),
-            #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
             _ => unimplemented!(),
         }
     }
 }
 
+// doesn't include Bool and Utf8
 #[macro_export]
-macro_rules! static_zip {
-    ($selected_keys:ident, 0) => {
-        $selected_keys[0].as_groupable_iter()?
-    };
-    ($selected_keys:ident, 1) => {
-        static_zip!($selected_keys, 0).zip($selected_keys[1].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 2) => {
-        static_zip!($selected_keys, 1).zip($selected_keys[2].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 3) => {
-        static_zip!($selected_keys, 2).zip($selected_keys[3].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 4) => {
-        static_zip!($selected_keys, 3).zip($selected_keys[4].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 5) => {
-        static_zip!($selected_keys, 4).zip($selected_keys[5].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 6) => {
-        static_zip!($selected_keys, 5).zip($selected_keys[6].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 7) => {
-        static_zip!($selected_keys, 6).zip($selected_keys[7].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 8) => {
-        static_zip!($selected_keys, 7).zip($selected_keys[8].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 9) => {
-        static_zip!($selected_keys, 8).zip($selected_keys[9].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 10) => {
-        static_zip!($selected_keys, 9).zip($selected_keys[10].as_groupable_iter()?)
-    };
-    ($selected_keys:ident, 11) => {
-        static_zip!($selected_keys, 10).zip($selected_keys[11].as_groupable_iter()?)
-    };
+macro_rules! apply_method_physical_numeric {
+    ($self:expr, $method:ident, $($args:expr),*) => {
+        match $self.dtype() {
+            DataType::Float32 => $self.f32().unwrap().$method($($args),*),
+            DataType::Float64 => $self.f64().unwrap().$method($($args),*),
+            _ => apply_method_physical_integer!($self, $method, $($args),*),
+        }
+    }
 }
 
 #[macro_export]
@@ -431,7 +434,8 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
 
         (UInt32, Int32) => Some(Int64),
         (UInt32, Int64) => Some(Int64),
-
+        // needed for bigidx
+        (UInt64, Int32) => Some(Int64),
         (UInt64, Int64) => Some(Int64),
 
         (Int8, UInt8) => Some(Int8),
@@ -654,6 +658,10 @@ fn _get_supertype(l: &DataType, r: &DataType) -> Option<DataType> {
         {
             let tu = get_time_units(tu_l, tu_r);
             Some(Datetime(tu, None))
+        }
+        (List(inner), other) | (other, List(inner)) => {
+            let st = _get_supertype(inner, other)?;
+            Some(DataType::List(Box::new(st)))
         }
         _ => None,
     }

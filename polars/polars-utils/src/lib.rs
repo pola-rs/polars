@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod arena;
 pub mod contention_pool;
 mod error;

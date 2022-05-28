@@ -1,4 +1,5 @@
 use super::*;
+use polars_ops::prelude::ListNameSpaceImpl;
 
 #[test]
 fn test_agg_exprs() -> Result<()> {
@@ -123,6 +124,27 @@ fn test_cumsum_agg_as_key() -> Result<()> {
 }
 
 #[test]
+#[cfg(feature = "moment")]
+fn test_auto_skew_kurtosis_agg() -> Result<()> {
+    let df = fruits_cars();
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("fruits")])
+        .agg([
+            col("B").skew(false).alias("bskew"),
+            col("B").kurtosis(false, false).alias("bkurt"),
+        ])
+        .collect()?;
+
+    assert!(matches!(out.column("bskew")?.dtype(), DataType::Float64));
+    assert!(matches!(out.column("bkurt")?.dtype(), DataType::Float64));
+
+    Ok(())
+}
+
+#[test]
 fn test_auto_list_agg() -> Result<()> {
     let df = fruits_cars();
 
@@ -166,13 +188,21 @@ fn test_power_in_agg_list1() -> Result<()> {
     let out = df
         .lazy()
         .groupby([col("fruits")])
-        .agg([col("A")
-            .rolling_min(RollingOptions {
-                window_size: 1,
-                ..Default::default()
-            })
-            .pow(2.0)
-            .alias("foo")])
+        .agg([
+            col("A")
+                .rolling_min(RollingOptions {
+                    window_size: Duration::new(1),
+                    ..Default::default()
+                })
+                .alias("input"),
+            col("A")
+                .rolling_min(RollingOptions {
+                    window_size: Duration::new(1),
+                    ..Default::default()
+                })
+                .pow(2.0)
+                .alias("foo"),
+        ])
         .sort(
             "fruits",
             SortOptions {
@@ -181,6 +211,7 @@ fn test_power_in_agg_list1() -> Result<()> {
             },
         )
         .collect()?;
+    dbg!(&out);
 
     let agg = out.column("foo")?.list()?;
     let first = agg.get(0).unwrap();
@@ -201,7 +232,7 @@ fn test_power_in_agg_list2() -> Result<()> {
         .groupby([col("fruits")])
         .agg([col("A")
             .rolling_min(RollingOptions {
-                window_size: 2,
+                window_size: Duration::new(2),
                 min_periods: 2,
                 ..Default::default()
             })
@@ -234,8 +265,8 @@ fn test_binary_agg_context_0() -> Result<()> {
         .lazy()
         .groupby_stable([col("groups")])
         .agg([when(col("vals").first().neq(lit(1)))
-            .then(lit("a"))
-            .otherwise(lit("b"))
+            .then(repeat("a", count()))
+            .otherwise(repeat("b", count()))
             .alias("foo")])
         .collect()
         .unwrap();
@@ -279,6 +310,7 @@ fn test_binary_agg_context_1() -> Result<()> {
             .otherwise(lit(90))
             .alias("vals")])
         .collect()?;
+    dbg!(&out);
 
     // if vals == 1 then sum(vals) else vals
     // [14, 90]

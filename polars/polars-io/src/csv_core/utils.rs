@@ -1,10 +1,12 @@
 use crate::csv::CsvEncoding;
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+use crate::csv_core::parser::next_line_position_naive;
 use crate::csv_core::parser::{
     next_line_position, skip_bom, skip_line_ending, SplitFields, SplitLines,
 };
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::NullValues;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
 use polars_time::chunkedarray::utf8::infer as date_infer;
@@ -73,16 +75,18 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader>(reader: &mut R) -> Result<Rea
     }
 }
 
-lazy_static! {
-    static ref FLOAT_RE: Regex =
-        Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$")
-            .unwrap();
-    static ref INTEGER_RE: Regex = Regex::new(r"^\s*-?(\d+)$").unwrap();
-    static ref BOOLEAN_RE: Regex = RegexBuilder::new(r"^\s*(true)$|^(false)$")
+static FLOAT_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"^(\s*-?((\d*\.\d+)[eE]?[-\+]?\d*)|[-+]?inf|[-+]?NaN|\d+[eE][-+]\d+)$").unwrap()
+});
+
+static INTEGER_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-?(\d+)$").unwrap());
+
+static BOOLEAN_RE: Lazy<Regex> = Lazy::new(|| {
+    RegexBuilder::new(r"^\s*(true)$|^(false)$")
         .case_insensitive(true)
         .build()
-        .unwrap();
-}
+        .unwrap()
+});
 
 /// Infer the data type of a record
 fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
@@ -201,7 +205,7 @@ pub fn infer_file_schema(
 
         let byterecord = SplitFields::new(header_line, delimiter, quote_char);
         if has_header {
-            byterecord
+            let headers = byterecord
                 .map(|(slice, needs_escaping)| {
                     let slice_escaped = if needs_escaping && (slice.len() >= 2) {
                         &slice[1..(slice.len() - 1)]
@@ -211,7 +215,14 @@ pub fn infer_file_schema(
                     let s = parse_bytes_with_encoding(slice_escaped, encoding)?;
                     Ok(s.into())
                 })
-                .collect::<Result<_>>()?
+                .collect::<Result<Vec<_>>>()?;
+
+            if PlHashSet::from_iter(headers.iter()).len() != headers.len() {
+                return Err(PolarsError::ComputeError(
+                    "CSV header contains duplicate column names".into(),
+                ));
+            }
+            headers
         } else {
             let mut column_names: Vec<String> = byterecord
                 .enumerate()
@@ -224,6 +235,25 @@ pub fn infer_file_schema(
             }
             column_names
         }
+    } else if has_header && !bytes.is_empty() {
+        // there was no new line char. So we copy the whole buf and add one
+        // this is likely to be cheap as there no rows.
+        let mut buf = Vec::with_capacity(bytes.len() + 2);
+        buf.extend_from_slice(bytes);
+        buf.push(b'\n');
+
+        return infer_file_schema(
+            &ReaderBytes::Owned(buf),
+            delimiter,
+            max_read_lines,
+            has_header,
+            schema_overwrite,
+            skip_rows,
+            comment_char,
+            quote_char,
+            null_values,
+            parse_dates,
+        );
     } else {
         return Err(PolarsError::NoData("empty csv".into()));
     };
@@ -396,17 +426,90 @@ pub fn is_compressed(bytes: &[u8]) -> bool {
 }
 
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-pub(crate) fn decompress(bytes: &[u8]) -> Option<Vec<u8>> {
+fn decompress_impl<R: Read>(
+    decoder: &mut R,
+    bytes: &[u8],
+    n_rows: Option<usize>,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<Vec<u8>> {
+    let chunk_size = 4096;
+    Some(match n_rows {
+        None => {
+            // decompression will likely be an order of maginitude larger
+            let mut out = Vec::with_capacity(bytes.len() * 10);
+            decoder.read_to_end(&mut out).ok()?;
+            out
+        }
+        Some(n_rows) => {
+            // we take the first rows first '\n\
+            let mut out = vec![];
+            let mut expected_fields = 0;
+            // make sure that we have enough bytes to decode the header (even if it has embedded new line chars)
+            // those extra bytes in the buffer don't matter, we don't need to track them
+            loop {
+                let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                if read == 0 {
+                    break;
+                }
+                if next_line_position_naive(&out).is_some() {
+                    // an extra shot
+                    let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                    if read == 0 {
+                        break;
+                    }
+                    // now that we have enough, we compute the number of fields (also takes enmbedding into account)
+                    expected_fields = SplitFields::new(&out, delimiter, quote_char)
+                        .into_iter()
+                        .count();
+                    break;
+                }
+            }
+
+            let mut line_count = 0;
+            let mut buf_pos = 0;
+            // keep decoding bytes and count lines
+            // keep track of the n_rows we read
+            while line_count < n_rows {
+                match next_line_position(
+                    &out[buf_pos + 1..],
+                    expected_fields,
+                    delimiter,
+                    quote_char,
+                ) {
+                    Some(pos) => {
+                        line_count += 1;
+                        buf_pos += pos;
+                    }
+                    None => {
+                        // take more bytes so that we might find a new line the next iteration
+                        let read = decoder.take(chunk_size).read_to_end(&mut out).ok()?;
+                        // we depleted the reader
+                        if read == 0 {
+                            break;
+                        }
+                        continue;
+                    }
+                };
+            }
+            out
+        }
+    })
+}
+
+#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+pub(crate) fn decompress(
+    bytes: &[u8],
+    n_rows: Option<usize>,
+    delimiter: u8,
+    quote_char: Option<u8>,
+) -> Option<Vec<u8>> {
     if bytes.starts_with(&GZIP) {
-        let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
-        decoder.read_to_end(&mut out).ok()?;
-        Some(out)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
     } else if bytes.starts_with(&ZLIB0) || bytes.starts_with(&ZLIB1) || bytes.starts_with(&ZLIB2) {
-        let mut out = Vec::with_capacity(bytes.len());
         let mut decoder = flate2::read::ZlibDecoder::new(bytes);
-        decoder.read_to_end(&mut out).ok()?;
-        Some(out)
+        decompress_impl(&mut decoder, bytes, n_rows, delimiter, quote_char)
     } else {
         None
     }

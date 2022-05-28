@@ -8,6 +8,8 @@ use polars_core::export::arrow::temporal_conversions::NANOSECONDS;
 use polars_core::prelude::*;
 use polars_core::utils::arrow::temporal_conversions::SECONDS_IN_DAY;
 use polars_core::utils::get_supertype;
+#[cfg(feature = "list")]
+use polars_ops::prelude::ListNameSpaceImpl;
 use rayon::prelude::*;
 use std::ops::{BitAnd, BitOr};
 
@@ -166,7 +168,7 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
         polars_core::functions::argsort_by(by, &reverse).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: by.as_ref().to_vec(),
         function,
         output_type: GetOutput::from_type(IDX_DTYPE),
@@ -187,7 +189,7 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: s,
         function,
         output_type: GetOutput::from_type(DataType::Utf8),
@@ -203,7 +205,9 @@ pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
 /// Concat lists entries.
 #[cfg(feature = "list")]
 #[cfg_attr(docsrs, doc(cfg(feature = "list")))]
-pub fn concat_lst(s: Vec<Expr>) -> Expr {
+pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
+    let s = s.as_ref().iter().map(|e| e.clone().into()).collect();
+
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         let mut first = std::mem::take(&mut s[0]);
         let other = &s[1..];
@@ -217,7 +221,7 @@ pub fn concat_lst(s: Vec<Expr>) -> Expr {
         };
         first_ca.lst_concat(other).map(|ca| ca.into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: s,
         function,
         output_type: GetOutput::map_dtype(|dt| DataType::List(Box::new(dt.clone()))),
@@ -273,7 +277,7 @@ pub fn arange(low: Expr, high: Expr, step: usize) -> Expr {
             let sb = sb.cast(&DataType::Int64)?;
             let low = sa.i64()?;
             let high = sb.i64()?;
-            let mut builder = ListPrimitiveChunkedBuilder::<i64>::new(
+            let mut builder = ListPrimitiveChunkedBuilder::<Int64Type>::new(
                 "arange",
                 low.len(),
                 low.len() * 3,
@@ -395,7 +399,7 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
 
         Ok(ca.into_datetime(TimeUnit::Milliseconds, None).into_series())
     }) as Arc<dyn SeriesUdf>);
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: vec![
             year,
             month,
@@ -472,7 +476,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         nanoseconds.cast(&DataType::Duration(TimeUnit::Nanoseconds))
     }) as Arc<dyn SeriesUdf>);
 
-    Expr::Function {
+    Expr::AnonymousFunction {
         input: vec![
             args.days.unwrap_or_else(|| lit(0i64)),
             args.seconds.unwrap_or_else(|| lit(0i64)),
@@ -678,7 +682,7 @@ where
         }) as Arc<dyn SeriesUdf>);
 
         // Todo! make sure that output type is correct
-        Expr::Function {
+        Expr::AnonymousFunction {
             input: exprs,
             function,
             output_type: GetOutput::same_type(),

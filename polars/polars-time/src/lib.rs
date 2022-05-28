@@ -1,8 +1,9 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod chunkedarray;
 mod date_range;
 mod groupby;
 pub mod prelude;
-mod series;
+pub mod series;
 mod truncate;
 mod upsample;
 mod windows;

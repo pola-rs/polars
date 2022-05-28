@@ -1,3 +1,5 @@
+import numpy as np
+
 import polars as pl
 
 
@@ -86,3 +88,56 @@ def test_overflow_uint16_agg_mean() -> None:
         .to_dict(False)
         == {"col1": ["A"], "col3": [64.0]}
     )
+
+
+def test_binary_on_list_agg_3345() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "B"],
+            "id": [1, 2, 1, 4, 5, 4, 6],
+        }
+    )
+
+    assert (
+        df.groupby(["group"], maintain_order=True)
+        .agg(
+            [
+                (
+                    (pl.col("id").unique_counts() / pl.col("id").len()).log()
+                    * -1
+                    * (pl.col("id").unique_counts() / pl.col("id").len())
+                ).sum()
+            ]
+        )
+        .to_dict(False)
+    ) == {"group": ["A", "B"], "id": [0.6365141682948128, 1.0397207708399179]}
+
+
+def test_maintain_order_after_sampling() -> None:
+    # internally samples cardinality
+    # check if the maintain_order kwarg is dispatched
+    df = pl.DataFrame(
+        {
+            "type": ["A", "B", "C", "D", "A", "B", "C", "D"],
+            "value": [1, 3, 2, 3, 4, 5, 3, 4],
+        }
+    )
+    assert df.groupby("type", maintain_order=True).agg(pl.col("value").sum()).to_dict(
+        False
+    ) == {"type": ["A", "B", "C", "D"], "value": [5, 8, 5, 7]}
+
+
+def test_sorted_groupby_optimization() -> None:
+    df = pl.DataFrame({"a": np.random.randint(0, 5, 20)})
+
+    # the sorted optimization should not randomize the
+    # groups, so this is tests that we hit the sorted optimization
+    for reverse in [True, False]:
+        sorted_implicit = (
+            df.with_column(pl.col("a").sort(reverse=reverse))
+            .groupby("a")
+            .agg(pl.count())
+        )
+
+        sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
+        sorted_explicit.frame_equal(sorted_implicit)

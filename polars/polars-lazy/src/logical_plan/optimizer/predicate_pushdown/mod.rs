@@ -57,7 +57,7 @@ impl PredicatePushDown {
             // we should not pass these projections
             if exprs
                 .iter()
-                .any(|e_n| other_column_is_pushdown_boundary(*e_n, expr_arena))
+                .any(|e_n| project_other_column_is_predicate_pushdown_boundary(*e_n, expr_arena))
             {
                 return self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
             }
@@ -162,10 +162,22 @@ impl PredicatePushDown {
 
         match lp {
             Selection { predicate, input } => {
+
+                // If a predicates result would be influenced by earlier applied filter
+                // we remove it and apply it locally
+                let local_predicates = transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena));
+
                 let name = roots_to_key(&aexpr_to_root_names(predicate, expr_arena));
                 insert_and_combine_predicate(&mut acc_predicates, name, predicate, expr_arena);
                 let alp = lp_arena.take(input);
-                self.push_down(alp, acc_predicates, lp_arena, expr_arena)
+                let new_input = self.push_down(alp, acc_predicates, lp_arena, expr_arena)?;
+
+                // TODO!
+                // If a predicates result would be influenced by earlier applied
+                // predicates, we simply don't pushdown this one passed this node
+                // However, we can do better and let it pass but store the order of the predicates
+                // so that we can apply them in correct order at the deepest level
+                Ok(self.optional_apply_predicate(new_input, local_predicates, lp_arena, expr_arena))
             }
             DataFrameScan {
                 df,
@@ -199,7 +211,7 @@ impl PredicatePushDown {
                         || args.value_vars.iter().any(|s| s.as_str() == name)
                 };
                 let local_predicates =
-                    transfer_to_local(expr_arena, &mut acc_predicates, condition);
+                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
 
@@ -292,8 +304,9 @@ impl PredicatePushDown {
             }
             Explode { input, columns, schema } => {
                 let condition = |name: Arc<str>| columns.iter().any(|s| s.as_str() == &*name);
-                let local_predicates =
-                    transfer_to_local(expr_arena, &mut acc_predicates, condition);
+                let mut local_predicates =
+                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Explode { input, columns, schema };
@@ -319,8 +332,9 @@ impl PredicatePushDown {
                         true
                     }
                 };
-                let local_predicates =
-                    transfer_to_local(expr_arena, &mut acc_predicates, condition);
+                let mut local_predicates =
+                    transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
+                local_predicates.extend_from_slice(&transfer_to_local_by_node(&mut acc_predicates, |node| predicate_is_pushdown_boundary(node, expr_arena)));
 
                 self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
                 let lp = Distinct {
@@ -353,7 +367,9 @@ impl PredicatePushDown {
                         |e: &AExpr| matches!(e, AExpr::IsNull(_) | AExpr::IsNotNull(_));
                     if has_aexpr(predicate, expr_arena, matches)
                         // join might create null values.
-                        || has_aexpr(predicate, expr_arena, checks_nulls) && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
+                        || has_aexpr(predicate, expr_arena, checks_nulls)
+                        // only these join types produce null values
+                        && matches!(&options.how, JoinType::Left | JoinType::Outer | JoinType::Cross){
                         local_predicates.push(predicate);
                         continue;
                     }
@@ -361,26 +377,31 @@ impl PredicatePushDown {
                     let mut filter_left = false;
                     let mut filter_right = false;
 
-                    // no else if. predicate can be in both tables.
-                    if check_input_node(predicate, schema_left, expr_arena) {
-                        let name = get_insertion_name(expr_arena, predicate, schema_left);
-                        insert_and_combine_predicate(
-                            &mut pushdown_left,
-                            name,
-                            predicate,
-                            expr_arena,
-                        );
-                        filter_left = true;
-                    }
-                    if check_input_node(predicate, schema_right, expr_arena) {
-                        let name = get_insertion_name(expr_arena, predicate, schema_right);
-                        insert_and_combine_predicate(
-                            &mut pushdown_right,
-                            name,
-                            predicate,
-                            expr_arena,
-                        );
-                        filter_right = true;
+                    // predicate should not have an aggregation or window function as that would
+                    // be influenced by join
+                    if !predicate_is_pushdown_boundary(predicate, expr_arena) {
+                        // no else if. predicate can be in both tables.
+                        if check_input_node(predicate, schema_left, expr_arena) {
+                            let name = get_insertion_name(expr_arena, predicate, schema_left);
+                            insert_and_combine_predicate(
+                                &mut pushdown_left,
+                                name,
+                                predicate,
+                                expr_arena,
+                            );
+                            filter_left = true;
+                        }
+
+                        if check_input_node(predicate, schema_right, expr_arena)  {
+                            let name = get_insertion_name(expr_arena, predicate, schema_right);
+                            insert_and_combine_predicate(
+                                &mut pushdown_right,
+                                name,
+                                predicate,
+                                expr_arena,
+                            );
+                            filter_right = true;
+                        }
                     }
                     match (filter_left, filter_right, &options.how) {
                         // if not pushed down on of the tables we have to do it locally.
@@ -396,15 +417,6 @@ impl PredicatePushDown {
                         },
                         // business as usual
                         _ => {}
-                    }
-                    // An outer join or left join may create null values.
-                    // we also do it local
-                    let matches = |e: &AExpr| matches!(e, AExpr::IsNotNull(_) | AExpr::IsNull(_));
-                    if (options.how == JoinType::Outer) | (options.how == JoinType::Left)
-                        && has_aexpr(predicate, expr_arena, matches)
-                    {
-                        local_predicates.push(predicate);
-                        continue;
                     }
                 }
 
@@ -446,6 +458,11 @@ impl PredicatePushDown {
             lp @ Slice { .. }
             // dont push down predicates. An aggregation needs all rows
             | lp @ Aggregate {..} => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            }
+            #[cfg(feature = "python")]
+            // python node does not yet support predicates
+             lp @ PythonScan {..} => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
         }

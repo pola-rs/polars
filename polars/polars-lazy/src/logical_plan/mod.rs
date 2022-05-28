@@ -26,6 +26,9 @@ pub(crate) use builder::*;
 pub use lit::*;
 use polars_core::frame::explode::MeltArgs;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 // Will be set/ unset in the fetch operation to communicate overwriting the number of rows to scan.
 thread_local! {pub(crate) static FETCH_ROWS: Cell<Option<usize>> = Cell::new(None)}
 
@@ -39,7 +42,14 @@ pub enum Context {
 
 // https://stackoverflow.com/questions/1031076/what-are-projection-and-selection
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub enum LogicalPlan {
+    #[cfg(feature = "python")]
+    PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
     Selection {
         input: Box<LogicalPlan>,
@@ -104,6 +114,7 @@ pub enum LogicalPlan {
         keys: Arc<Vec<Expr>>,
         aggs: Vec<Expr>,
         schema: SchemaRef,
+        #[cfg_attr(feature = "serde", serde(skip))]
         apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: GroupbyOptions,
@@ -153,6 +164,7 @@ pub enum LogicalPlan {
         schema: SchemaRef,
     },
     /// A User Defined Function
+    #[cfg_attr(feature = "serde", serde(skip))]
     Udf {
         input: Box<LogicalPlan>,
         function: Arc<dyn DataFrameUdf>,
@@ -164,6 +176,7 @@ pub enum LogicalPlan {
         options: UnionOptions,
     },
     /// Catches errors and throws them later
+    #[cfg_attr(feature = "serde", serde(skip))]
     Error {
         input: Box<LogicalPlan>,
         err: Arc<Mutex<Option<PolarsError>>>,
@@ -197,6 +210,8 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
+            #[cfg(feature = "python")]
+            PythonScan { options } => &options.schema,
             Union { inputs, .. } => inputs[0].schema(),
             Cache { input } => input.schema(),
             Sort { input, .. } => input.schema(),

@@ -23,18 +23,18 @@ export interface WhenThenThen {
   otherwise(expr: Expr): Expr
 }
 
-function WhenThenThen(_when): WhenThenThen {
+function WhenThenThen(_whenthenthen: any): WhenThenThen {
   return {
-    when: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthenthen.when({_when, _expr})),
-    then: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthenthen.then({_when, _expr})),
-    otherwise: ({_expr}: Expr): Expr => (Expr as any)(pli._whenthenthen.otherwise({_when, _expr}))
+    when: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthenthen.when(_expr)),
+    then: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthenthen.then(_expr)),
+    otherwise: ({_expr}: Expr): Expr => (Expr as any)(_whenthenthen.otherwise(_expr))
   };
 }
 
-function WhenThen(_when): WhenThen {
+function WhenThen(_whenthen: any): WhenThen {
   return {
-    when: ({_expr}: Expr): WhenThenThen => WhenThenThen(pli._whenthen.when({_when, _expr})),
-    otherwise: ({_expr}: Expr): Expr => (Expr as any)(pli._whenthen.otherwise({_when, _expr}))
+    when: ({_expr}: Expr): WhenThenThen => WhenThenThen(_whenthen.when(_expr)),
+    otherwise: ({_expr}: Expr): Expr => (Expr as any)(_whenthen.otherwise(_expr))
   };
 }
 
@@ -43,9 +43,9 @@ function WhenThen(_when): WhenThen {
  * Utility function.
  * @see {@link when}
  */
-function When(_when): When {
+function When(_when: any): When {
   return {
-    then: ({_expr}: Expr): WhenThen => WhenThen(pli._when.then({_when, _expr}))
+    then: ({_expr}: Expr): WhenThen => WhenThen(_when.then(_expr))
   };
 }
 
@@ -95,5 +95,5 @@ function When(_when): When {
  */
 export function when(expr: Expr): When  {
 
-  return When(pli.when(expr));
+  return When(pli.when(expr._expr));
 }

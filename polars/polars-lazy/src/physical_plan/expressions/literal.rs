@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
@@ -130,49 +129,32 @@ impl PhysicalExpr for LiteralExpr {
         Ok(AggregationContext::from_literal(s, Cow::Borrowed(groups)))
     }
 
-    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
-        use LiteralValue::*;
-        let name = "literal";
-        let field = match &self.0 {
-            #[cfg(feature = "dtype-i8")]
-            Int8(_) => Field::new(name, DataType::Int8),
-            #[cfg(feature = "dtype-i16")]
-            Int16(_) => Field::new(name, DataType::Int16),
-            Int32(_) => Field::new(name, DataType::Int32),
-            Int64(_) => Field::new(name, DataType::Int64),
-            #[cfg(feature = "dtype-u8")]
-            UInt8(_) => Field::new(name, DataType::UInt8),
-            #[cfg(feature = "dtype-u16")]
-            UInt16(_) => Field::new(name, DataType::UInt16),
-            UInt32(_) => Field::new(name, DataType::UInt32),
-            UInt64(_) => Field::new(name, DataType::UInt64),
-            Float32(_) => Field::new(name, DataType::Float32),
-            Float64(_) => Field::new(name, DataType::Float64),
-            Boolean(_) => Field::new(name, DataType::Boolean),
-            Utf8(_) => Field::new(name, DataType::Utf8),
-            Null => Field::new(name, DataType::Null),
-            Range { data_type, .. } => Field::new(name, data_type.clone()),
-            #[cfg(all(feature = "temporal", feature = "dtype-datetime"))]
-            DateTime(_, tu) => Field::new(name, DataType::Datetime(*tu, None)),
-            #[cfg(all(feature = "temporal", feature = "dtype-duration"))]
-            Duration(_, tu) => Field::new(name, DataType::Duration(*tu)),
-            Series(s) => s.field().into_owned(),
-        };
-        Ok(field)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
+    fn to_field(&self, _input_schema: &Schema) -> Result<Field> {
+        let dtype = self.0.get_datatype();
+        Ok(Field::new("literal", dtype))
     }
 }
 
-impl PhysicalAggregation for LiteralExpr {
-    fn aggregate(
+impl PartitionedAggregation for LiteralExpr {
+    fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         _groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        PhysicalExpr::evaluate(self, df, state).map(Some)
+    ) -> Result<Series> {
+        self.evaluate(df, state)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

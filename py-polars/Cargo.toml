@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "0.13.25"
+version = "0.13.39"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 documentation = "https://pola-rs.github.io/polars/py-polars/html/reference/index.html"
 edition = "2021"
@@ -19,7 +19,7 @@ description = "Blazingly fast DataFrame library"
 mimalloc = { version = "*", default-features = false }
 
 [target.'cfg(target_os="linux")'.dependencies]
-tikv-jemallocator = { version = "0.4", features = ["disable_initial_exec_tls"] }
+jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
 
 [dependencies]
 ahash = "0.7"
@@ -27,7 +27,9 @@ bincode = "1.3"
 libc = "0.2"
 ndarray = "0.15"
 numpy = "0.16"
+once_cell = "1"
 polars-core = { path = "../polars/polars-core", default-features = false }
+polars-lazy = { path = "../polars/polars-lazy", features = ["python"], default-features = false }
 pyo3 = { version = "0.16", features = ["abi3-py37", "extension-module", "multiple-pymethods"] }
 serde_json = { version = "1", optional = true }
 thiserror = "^1.0"
@@ -99,6 +101,8 @@ features = [
   "partition_by",
   "semi_anti_join",
   "list_eval",
+  "cumulative_eval",
+  "list_to_struct",
   "to_dummies",
 ]
 

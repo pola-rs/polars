@@ -1,7 +1,7 @@
 import ctypes
 import os
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, Union
 
@@ -142,6 +142,18 @@ def handle_projection_columns(
     return projection, columns  # type: ignore
 
 
+def _to_python_time(value: int) -> time:
+    value = value // 1_000
+    microsecond = value
+    seconds = (microsecond // 1000_000) % 60
+    minutes = (microsecond // (1000_000 * 60)) % 60
+    hours = (microsecond // (1000_000 * 60 * 60)) % 24
+
+    microsecond = microsecond % seconds * 1000_000
+
+    return time(hour=hours, minute=minutes, second=seconds, microsecond=microsecond)
+
+
 def _to_python_timedelta(
     value: Union[int, float], tu: Optional[str] = "ns"
 ) -> timedelta:
@@ -170,7 +182,10 @@ EPOCH = datetime(1970, 1, 1).replace(tzinfo=None)
 
 
 def _to_python_datetime(
-    value: Union[int, float], dtype: Type[DataType], tu: Optional[str] = "ns"
+    value: Union[int, float],
+    dtype: Type[DataType],
+    tu: Optional[str] = "ns",
+    tz: Optional["str"] = None,
 ) -> Union[date, datetime]:
     if dtype == Date:
         # days to seconds
@@ -180,14 +195,21 @@ def _to_python_datetime(
     elif dtype == Datetime:
         if tu == "ns":
             # nanoseconds to seconds
-            return EPOCH + timedelta(microseconds=value / 1000)
-        if tu == "us":
-            return EPOCH + timedelta(microseconds=value)
+            dt = EPOCH + timedelta(microseconds=value / 1000)
+        elif tu == "us":
+            dt = EPOCH + timedelta(microseconds=value)
         elif tu == "ms":
             # milliseconds to seconds
-            return datetime.utcfromtimestamp(value / 1_000)
+            dt = datetime.utcfromtimestamp(value / 1_000)
         else:
             raise ValueError(f"time unit: {tu} not expected")
+        if tz is not None and len(tz) > 0:
+            import pytz
+
+            timezone = pytz.timezone(tz)
+            return timezone.localize(dt)
+        return dt
+
     else:
         raise NotImplementedError  # pragma: no cover
 

@@ -1,4 +1,3 @@
-use crate::physical_plan::expressions::utils::as_aggregated;
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
@@ -64,22 +63,35 @@ impl PhysicalExpr for AliasExpr {
         ))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
 }
 
-impl PhysicalAggregation for AliasExpr {
-    fn aggregate(
+impl PartitionedAggregation for AliasExpr {
+    fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let opt_agg = as_aggregated(self.physical_expr.as_ref(), df, groups, state)?;
-        Ok(opt_agg.map(|mut agg| {
-            agg.rename(&self.name);
-            agg
-        }))
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.evaluate_partitioned(df, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
+        agg.finalize(partitioned, groups, state).map(|mut s| {
+            s.rename(&self.name);
+            s
+        })
     }
 }

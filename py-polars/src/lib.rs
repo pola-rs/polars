@@ -1,3 +1,4 @@
+#![feature(vec_into_raw_parts)]
 #![allow(clippy::nonstandard_macro_braces)] // needed because clippy does not understand proc macro of pyo3
 #![allow(clippy::transmute_undefined_repr)]
 #[macro_use]
@@ -29,16 +30,20 @@ pub mod lazy;
 mod list_construction;
 pub mod npy;
 pub mod prelude;
+pub(crate) mod py_modules;
 pub mod series;
 pub mod utils;
 
 use crate::conversion::{get_df, get_lf, get_pyseq, get_series, Wrap};
 use crate::error::{
-    ArrowErrorException, ComputeError, NoDataError, NotFoundError, PyPolarsErr, SchemaError,
+    ArrowErrorException, ComputeError, DuplicateError, NoDataError, NotFoundError, PyPolarsErr,
+    SchemaError,
 };
 use crate::file::get_either_file;
 use crate::prelude::{ClosedWindow, DataType, DatetimeArgs, Duration, DurationArgs, PyDataType};
 use dsl::ToExprs;
+#[cfg(target_os = "linux")]
+use jemallocator::Jemalloc;
 #[cfg(not(target_os = "linux"))]
 use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
@@ -46,9 +51,8 @@ use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
+use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
-#[cfg(target_os = "linux")]
-use tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 #[cfg(target_os = "linux")]
@@ -97,6 +101,12 @@ fn dtype_cols(dtypes: &PyAny) -> PyResult<dsl::PyExpr> {
         dtypes.push(dt)
     }
     Ok(dsl::dtype_cols(dtypes))
+}
+
+#[pyfunction]
+fn dtype_str_repr(dtype: Wrap<DataType>) -> PyResult<String> {
+    let dtype = dtype.0;
+    Ok(dtype.to_string())
 }
 
 #[pyfunction]
@@ -205,7 +215,7 @@ fn concat_str(s: Vec<dsl::PyExpr>, sep: &str) -> dsl::PyExpr {
 
 #[pyfunction]
 fn concat_lst(s: Vec<dsl::PyExpr>) -> dsl::PyExpr {
-    let s = s.into_iter().map(|e| e.inner).collect();
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     polars::lazy::dsl::concat_lst(s).into()
 }
 
@@ -435,6 +445,10 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("SchemaError", py.get_type::<SchemaError>()).unwrap();
     m.add("ArrowError", py.get_type::<ArrowErrorException>())
         .unwrap();
+    m.add("DuplicateError", py.get_type::<DuplicateError>())
+        .unwrap();
+    m.add("PanicException", py.get_type::<PanicException>())
+        .unwrap();
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
@@ -446,6 +460,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(last)).unwrap();
     m.add_wrapped(wrap_pyfunction!(cols)).unwrap();
     m.add_wrapped(wrap_pyfunction!(dtype_cols)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(dtype_str_repr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(lit)).unwrap();
     m.add_wrapped(wrap_pyfunction!(fold)).unwrap();
     m.add_wrapped(wrap_pyfunction!(binary_expr)).unwrap();

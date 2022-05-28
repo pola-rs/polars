@@ -190,7 +190,7 @@ impl<'a> CoreReader<'a> {
                     // We keep track of the inferred schema bool
                     // In case the file is compressed this schema inference is wrong and has to be done
                     // again after decompression.
-                    if let Some(b) = decompress(&reader_bytes) {
+                    if let Some(b) = decompress(&reader_bytes, n_rows, delimiter, quote_char) {
                         reader_bytes = ReaderBytes::Owned(b);
                     }
 
@@ -331,7 +331,7 @@ impl<'a> CoreReader<'a> {
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
 
             // if we only need to parse n_rows,
-            // we first try to use the line statistics the total bytes we need to process
+            // we first try to use the line statistics to estimate the total bytes we need to process
             if let Some(n_rows) = self.n_rows {
                 total_rows = std::cmp::min(n_rows, total_rows);
 
@@ -505,7 +505,7 @@ impl<'a> CoreReader<'a> {
                                     .map(|buf| buf.into_series())
                                     .collect::<Result<_>>()?,
                             );
-                            let current_row_count = local_df.height() as u32;
+                            let current_row_count = local_df.height() as IdxSize;
                             if let Some(rc) = &self.row_count {
                                 local_df.with_row_count_mut(&rc.name, Some(rc.offset));
                             };
@@ -630,7 +630,7 @@ impl<'a> CoreReader<'a> {
                         if let Some(rc) = &self.row_count {
                             df.with_row_count_mut(&rc.name, Some(rc.offset));
                         }
-                        let n_read = df.height() as u32;
+                        let n_read = df.height() as IdxSize;
                         Ok((df, n_read))
                     })
                     .collect::<Result<Vec<_>>>()

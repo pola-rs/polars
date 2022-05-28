@@ -124,7 +124,7 @@ pub trait ChunkTakeEvery<T> {
     fn take_every(&self, n: usize) -> ChunkedArray<T>;
 }
 
-/// Explode/ flatten a
+/// Explode/ flatten a List or Utf8 Series
 pub trait ChunkExplode {
     fn explode(&self) -> Result<Series> {
         self.explode_and_offsets().map(|t| t.0)
@@ -144,7 +144,7 @@ pub trait ChunkRollApply {
     fn rolling_apply(
         &self,
         _f: &dyn Fn(&Series) -> Series,
-        _options: RollingOptions,
+        _options: RollingOptionsFixedWindow,
     ) -> Result<Series>
     where
         Self: Sized,

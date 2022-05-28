@@ -10,11 +10,11 @@ jobs:
     name: Docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install latest Rust nightly
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2022-04-01
+          toolchain: nightly-2022-05-20
           override: true
           components: rustfmt, clippy
       - name: Set up Node
@@ -27,7 +27,7 @@ jobs:
           npm install
           npx typedoc
       - name: Set up Python
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v3
         with:
           python-version: 3.9
       - name: Install dependencies

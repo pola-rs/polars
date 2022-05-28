@@ -1,6 +1,7 @@
 // Credits to https://github.com/omerbenamram/pyo3-file
 use crate::prelude::resolve_homedir;
 use polars::io::mmap::MmapBytesReader;
+use pyo3::exceptions::PyFileNotFoundError;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString};
@@ -209,7 +210,15 @@ pub fn get_either_file(py_f: PyObject, truncate: bool) -> PyResult<EitherRustPyt
         let f = if truncate {
             BufReader::new(File::create(str_slice)?)
         } else {
-            BufReader::new(File::open(str_slice)?)
+            match File::open(str_slice) {
+                Ok(file) => BufReader::new(file),
+                Err(_e) => {
+                    return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
+                        "No such file or directory: {}",
+                        str_slice
+                    )))
+                }
+            }
         };
         Ok(EitherRustPythonFile::Rust(f))
     } else {
@@ -239,7 +248,15 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
         let s = pstring.to_string();
         let p = std::path::Path::new(&s);
         let p = resolve_homedir(p);
-        let f = File::open(&p)?;
+        let f = match File::open(&p) {
+            Ok(file) => file,
+            Err(_e) => {
+                return Err(PyErr::new::<PyFileNotFoundError, _>(format!(
+                    "No such file or directory: {}",
+                    s
+                )))
+            }
+        };
         Ok(Box::new(f))
     }
     // a normal python file: with open(...) as f:.

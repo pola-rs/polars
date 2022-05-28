@@ -112,3 +112,133 @@ fn includes_null_predicate_3038() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_when_then_otherwise_cats() -> Result<()> {
+    let lf = df!["book" => [Some("bookA"),
+        None,
+        Some("bookB"),
+        None,
+        Some("bookA"),
+        Some("bookC"),
+        Some("bookC"),
+        Some("bookC")],
+        "user" => [Some("bob"), Some("bob"), Some("bob"), Some("tim"), Some("lucy"), Some("lucy"), None, None]
+    ]?.lazy();
+
+    let out = lf
+        .with_column(col("book").cast(DataType::Categorical(None)))
+        .with_column(col("user").cast(DataType::Categorical(None)))
+        .with_column(
+            when(col("book").eq(Null {}.lit()))
+                .then(col("user"))
+                .otherwise(col("book"))
+                .alias("a"),
+        )
+        .collect()?;
+
+    assert_eq!(
+        out.column("a")?
+            .categorical()?
+            .iter_str()
+            .flatten()
+            .collect::<Vec<_>>(),
+        &["bookA", "bob", "bookB", "tim", "bookA", "bookC", "bookC", "bookC"]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_when_then_otherwise_single_bool() -> Result<()> {
+    let df = df![
+        "key" => ["a", "b", "b"],
+        "val" => [Some(1), Some(2), None]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby_stable([col("key")])
+        .agg([when(col("val").null_count().gt(lit(0)))
+            .then(Null {}.lit())
+            .otherwise(col("val").sum())
+            .alias("sum_null_prop")])
+        .collect()?;
+
+    let expected = df![
+        "key" => ["a", "b"],
+        "sum_null_prop" => [Some(1), None]
+    ]?;
+
+    assert!(out.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "unique_counts")]
+fn test_update_groups_in_cast() -> Result<()> {
+    let df = df![
+        "group" =>  ["A" ,"A", "A", "B", "B", "B", "B"],
+        "id"=> [1, 2, 1, 4, 5, 4, 6],
+    ]?;
+
+    // optimized to
+    // col("id").unique_counts().cast(int64) * -1
+    // in aggregation that cast coerces a list and the cast may forget to update groups
+    let out = df
+        .lazy()
+        .groupby_stable([col("group")])
+        .agg([col("id").unique_counts() * lit(-1)])
+        .collect()?;
+
+    let expected = df![
+        "group" =>  ["A" ,"B"],
+        "id"=> [AnyValue::List(Series::new("", [-2i64, -1])), AnyValue::List(Series::new("", [-2i64, -1, -1]))]
+    ]?;
+
+    assert!(out.frame_equal(&expected));
+    Ok(())
+}
+
+#[test]
+fn test_when_then_otherwise_sum_in_agg() -> Result<()> {
+    let df = df![
+        "groups" => [1, 1, 2, 2],
+        "dist_a" => [0.1, 0.2, 0.5, 0.5],
+        "dist_b" => [0.8, 0.2, 0.5, 0.2],
+    ]?;
+
+    let q = df
+        .lazy()
+        .groupby([col("groups")])
+        .agg([when(all().exclude(["groups"]).sum().eq(lit(1)))
+            .then(all().exclude(["groups"]).sum())
+            .otherwise(lit(NULL))])
+        .sort("groups", Default::default());
+
+    let expected = df![
+        "groups" => [1, 2],
+        "dist_a" => [None, Some(1.0f64)],
+        "dist_b" => [Some(1.0f64), None]
+    ]?;
+    assert!(q.collect()?.frame_equal_missing(&expected));
+
+    Ok(())
+}
+
+#[test]
+fn test_null_commutativity() {
+    let df = DataFrame::new_no_checks(vec![]);
+    let out = df
+        .lazy()
+        .select([
+            lit(1).neq(NULL.lit()).alias("a"),
+            NULL.lit().neq(1).alias("b"),
+        ])
+        .collect()
+        .unwrap();
+
+    assert_eq!(out.column("a").unwrap().get(0), AnyValue::Boolean(true));
+    assert_eq!(out.column("b").unwrap().get(0), AnyValue::Boolean(true));
+}

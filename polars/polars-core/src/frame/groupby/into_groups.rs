@@ -1,6 +1,8 @@
 use super::*;
 use crate::utils::{copy_from_slice_unchecked, split_offsets};
+use polars_arrow::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
 use polars_arrow::prelude::*;
+use polars_utils::flatten;
 
 /// Used to create the tuples for a groupby operation.
 pub trait IntoGroupsProxy {
@@ -23,6 +25,7 @@ where
     T::Native: Hash + Eq + Send + AsU64,
     Option<T::Native>: AsU64,
 {
+    // set group size hint
     #[cfg(feature = "dtype-categorical")]
     let group_size_hint = if let Some(m) = &ca.categorical_map {
         ca.len() / m.len()
@@ -31,6 +34,7 @@ where
     };
     #[cfg(not(feature = "dtype-categorical"))]
     let group_size_hint = 0;
+
     if multithreaded && group_multithreaded(ca) {
         let n_partitions = set_partition_size() as u64;
 
@@ -61,12 +65,85 @@ where
     }
 }
 
+impl<T> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+{
+    fn create_groups_from_sorted(&self, multithreaded: bool) -> GroupsSlice {
+        if std::env::var("POLARS_VERBOSE").is_ok() {
+            eprintln!("groupby keys are sorted; running sorted key fast path");
+        }
+        let arr = self.downcast_iter().next().unwrap();
+        let mut values = arr.values().as_slice();
+        let null_count = arr.null_count();
+
+        let mut nulls_first = false;
+        if null_count > 0 {
+            nulls_first = arr.get(0).is_none()
+        }
+
+        if nulls_first {
+            values = &values[null_count..];
+        } else {
+            values = &values[..values.len() - null_count];
+        }
+
+        let n_threads = POOL.current_num_threads();
+        let groups = if multithreaded && n_threads > 1 {
+            let parts = create_clean_partitions(values, n_threads, self.is_sorted_reverse());
+            let n_parts = parts.len();
+
+            let first_ptr = &values[0] as *const T::Native as usize;
+            let groups = POOL
+                .install(|| {
+                    parts.par_iter().enumerate().map(|(i, part)| {
+                        // we go via usize as *const is not send
+                        let first_ptr = first_ptr as *const T::Native;
+
+                        let part_first_ptr = &part[0] as *const T::Native;
+                        let mut offset =
+                            unsafe { part_first_ptr.offset_from(first_ptr) } as IdxSize;
+
+                        // nulls first: only add the nulls at the first partition
+                        if nulls_first && i == 0 {
+                            partition_to_groups(part, null_count as IdxSize, true, offset)
+                        }
+                        // nulls last: only compute at the last partition
+                        else if !nulls_first && i == n_parts - 1 {
+                            partition_to_groups(part, null_count as IdxSize, false, offset)
+                        }
+                        // other partitions
+                        else {
+                            if nulls_first {
+                                offset += null_count as IdxSize;
+                            };
+
+                            partition_to_groups(part, 0, false, offset)
+                        }
+                    })
+                })
+                .collect::<Vec<_>>();
+            flatten(&groups, None)
+        } else {
+            partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
+        };
+        groups
+    }
+}
+
 impl<T> IntoGroupsProxy for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+        // sorted path
+        if self.is_sorted() || self.is_sorted_reverse() && self.chunks().len() == 1 {
+            // don't have to pass `sorted` arg, GroupSlice is always sorted.
+            return GroupsProxy::Slice(self.create_groups_from_sorted(multithreaded));
+        }
+
         match self.dtype() {
             DataType::UInt64 => {
                 // convince the compiler that we are this type.

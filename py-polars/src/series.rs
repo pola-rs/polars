@@ -198,6 +198,14 @@ impl From<Series> for PySeries {
 )]
 impl PySeries {
     #[staticmethod]
+    pub fn new_from_anyvalues(name: &str, val: Vec<Wrap<AnyValue<'_>>>) -> PyResult<PySeries> {
+        let avs = slice_extract_wrapped(&val);
+        // from anyvalues is fallible
+        let s = Series::from_any_values(name, avs).map_err(PyPolarsErr::from)?;
+        Ok(s.into())
+    }
+
+    #[staticmethod]
     pub fn new_str(name: &str, val: Wrap<Utf8Chunked>, _strict: bool) -> Self {
         let mut s = val.0.into_series();
         s.rename(name);
@@ -386,6 +394,12 @@ impl PySeries {
             .map(|dt| Wrap(dt.clone()).to_object(py))
     }
 
+    fn set_sorted(&self, reverse: bool) -> Self {
+        let mut out = self.series.clone();
+        out.set_sorted(reverse);
+        out.into()
+    }
+
     pub fn mean(&self) -> Option<f64> {
         match self.series.dtype() {
             DataType::Boolean => {
@@ -511,16 +525,16 @@ impl PySeries {
         self.series.arg_max()
     }
 
-    pub fn take(&self, indices: Wrap<Vec<u32>>) -> PyResult<Self> {
+    pub fn take(&self, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
-        let indices = UInt32Chunked::from_vec("", indices);
+        let indices = IdxCa::from_vec("", indices);
 
         let take = self.series.take(&indices).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }
 
     pub fn take_with_series(&self, indices: &PySeries) -> PyResult<Self> {
-        let idx = indices.series.u32().map_err(PyPolarsErr::from)?;
+        let idx = indices.series.idx().map_err(PyPolarsErr::from)?;
         let take = self.series.take(idx).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(take))
     }
@@ -571,10 +585,16 @@ impl PySeries {
         Ok(ca.into_series().into())
     }
 
-    pub fn sample_n(&self, n: usize, with_replacement: bool, seed: Option<u64>) -> PyResult<Self> {
+    pub fn sample_n(
+        &self,
+        n: usize,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> PyResult<Self> {
         let s = self
             .series
-            .sample_n(n, with_replacement, seed)
+            .sample_n(n, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
@@ -583,11 +603,12 @@ impl PySeries {
         &self,
         frac: f64,
         with_replacement: bool,
+        shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
         let s = self
             .series
-            .sample_frac(frac, with_replacement, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .map_err(PyPolarsErr::from)?;
         Ok(s.into())
     }
@@ -673,74 +694,78 @@ impl PySeries {
 
         let series = &self.series;
 
-        let primitive_to_list = |dt: &DataType, series: &Series| match dt {
-            DataType::Boolean => PyList::new(python, series.bool().unwrap()),
-            DataType::Utf8 => PyList::new(python, series.utf8().unwrap()),
-            DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
-            DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
-            DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
-            DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
-            DataType::Int8 => PyList::new(python, series.i8().unwrap()),
-            DataType::Int16 => PyList::new(python, series.i16().unwrap()),
-            DataType::Int32 => PyList::new(python, series.i32().unwrap()),
-            DataType::Int64 => PyList::new(python, series.i64().unwrap()),
-            DataType::Float32 => PyList::new(python, series.f32().unwrap()),
-            DataType::Float64 => PyList::new(python, series.f64().unwrap()),
-            dt => panic!("to_list() not implemented for {:?}", dt),
-        };
-
-        let pylist = match series.dtype() {
-            DataType::Categorical(_) => {
-                PyList::new(python, series.categorical().unwrap().iter_str())
-            }
-            DataType::Object(_) => {
-                let v = PyList::empty(python);
-                for i in 0..series.len() {
-                    let obj: Option<&ObjectValue> = self.series.get_object(i).map(|any| any.into());
-                    let val = obj.to_object(python);
-
-                    v.append(val).unwrap();
+        fn to_list_recursive(python: Python, series: &Series) -> PyObject {
+            let pylist = match series.dtype() {
+                DataType::Boolean => PyList::new(python, series.bool().unwrap()),
+                DataType::UInt8 => PyList::new(python, series.u8().unwrap()),
+                DataType::UInt16 => PyList::new(python, series.u16().unwrap()),
+                DataType::UInt32 => PyList::new(python, series.u32().unwrap()),
+                DataType::UInt64 => PyList::new(python, series.u64().unwrap()),
+                DataType::Int8 => PyList::new(python, series.i8().unwrap()),
+                DataType::Int16 => PyList::new(python, series.i16().unwrap()),
+                DataType::Int32 => PyList::new(python, series.i32().unwrap()),
+                DataType::Int64 => PyList::new(python, series.i64().unwrap()),
+                DataType::Float32 => PyList::new(python, series.f32().unwrap()),
+                DataType::Float64 => PyList::new(python, series.f64().unwrap()),
+                DataType::Categorical(_) => {
+                    PyList::new(python, series.categorical().unwrap().iter_str())
                 }
-                v
-            }
-            DataType::List(inner_dtype) => {
-                let v = PyList::empty(python);
-                let ca = series.list().unwrap();
-                for opt_s in ca.amortized_iter() {
-                    match opt_s {
-                        None => {
-                            v.append(python.None()).unwrap();
-                        }
-                        Some(s) => {
-                            let pylst = primitive_to_list(inner_dtype, s.as_ref());
-                            v.append(pylst).unwrap();
+                DataType::Object(_) => {
+                    let v = PyList::empty(python);
+                    for i in 0..series.len() {
+                        let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());
+                        let val = obj.to_object(python);
+
+                        v.append(val).unwrap();
+                    }
+                    v
+                }
+                DataType::List(_) => {
+                    let v = PyList::empty(python);
+                    let ca = series.list().unwrap();
+                    for opt_s in ca.amortized_iter() {
+                        match opt_s {
+                            None => {
+                                v.append(python.None()).unwrap();
+                            }
+                            Some(s) => {
+                                let pylst = to_list_recursive(python, s.as_ref());
+                                v.append(pylst).unwrap();
+                            }
                         }
                     }
+                    v
                 }
-                v
-            }
-            DataType::Date => {
-                let ca = series.date().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Datetime(_, _) => {
-                let ca = series.datetime().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Utf8 => {
-                let ca = series.utf8().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Struct(_) => {
-                let ca = series.struct_().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            DataType::Duration(_) => {
-                let ca = series.duration().unwrap();
-                return Wrap(ca).to_object(python);
-            }
-            dt => primitive_to_list(dt, series),
-        };
+                DataType::Date => {
+                    let ca = series.date().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Time => {
+                    let ca = series.time().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Datetime(_, _) => {
+                    let ca = series.datetime().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Utf8 => {
+                    let ca = series.utf8().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Struct(_) => {
+                    let ca = series.struct_().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                DataType::Duration(_) => {
+                    let ca = series.duration().unwrap();
+                    return Wrap(ca).to_object(python);
+                }
+                dt => panic!("to_list() not implemented for {:?}", dt),
+            };
+            pylist.to_object(python)
+        }
+
+        let pylist = to_list_recursive(python, series);
         pylist.to_object(python)
     }
 
@@ -1162,175 +1187,6 @@ impl PySeries {
             None
         }
     }
-    pub fn rolling_sum(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_sum(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_mean(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_mean(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_median(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_median(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_quantile(
-        &self,
-        quantile: f64,
-        interpolation: Wrap<QuantileInterpolOptions>,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let interpol = interpolation.0;
-        let s = self
-            .series
-            .rolling_quantile(quantile, interpol, options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_max(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_max(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-    pub fn rolling_min(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_min(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_var(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_var(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
-
-    pub fn rolling_std(
-        &self,
-        window_size: usize,
-        weights: Option<Vec<f64>>,
-        min_periods: usize,
-        center: bool,
-    ) -> PyResult<Self> {
-        let options = RollingOptions {
-            window_size,
-            weights,
-            min_periods,
-            center,
-        };
-
-        let s = self
-            .series
-            .rolling_std(options)
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into())
-    }
 
     pub fn year(&self) -> PyResult<Self> {
         let s = self.series.year().map_err(PyPolarsErr::from)?;
@@ -1664,6 +1520,7 @@ impl_set_at_idx!(set_at_idx_i8, i8, i8, Int8);
 impl_set_at_idx!(set_at_idx_i16, i16, i16, Int16);
 impl_set_at_idx!(set_at_idx_i32, i32, i32, Int32);
 impl_set_at_idx!(set_at_idx_i64, i64, i64, Int64);
+impl_set_at_idx!(set_at_idx_bool, bool, bool, Boolean);
 
 macro_rules! impl_get {
     ($name:ident, $series_variant:ident, $type:ty) => {

@@ -48,10 +48,10 @@ def foods_csv() -> str:
 
 
 if not os.path.isfile(FOODS_PARQUET):
-    pl.read_csv(FOODS_CSV).to_parquet(FOODS_PARQUET)
+    pl.read_csv(FOODS_CSV).write_parquet(FOODS_PARQUET)
 
 if not os.path.isfile(FOODS_IPC):
-    pl.read_csv(FOODS_CSV).to_ipc(FOODS_IPC)
+    pl.read_csv(FOODS_CSV).write_ipc(FOODS_IPC)
 
 
 @pytest.fixture
@@ -79,6 +79,10 @@ def df() -> pl.DataFrame:
             "date": [1324, 123, 1234],
             "datetime": [13241324, 12341256, 12341234],
             "time": [13241324, 12341256, 12341234],
+            "list_str": [["a", "b", None], ["a"], []],
+            "list_bool": [[True, False, None], [None], []],
+            "list_int": [[1, None, 3], [None], []],
+            "list_flt": [[1.0, None, 3.0], [None], []],
         }
     )
     return df.with_columns(
@@ -88,6 +92,13 @@ def df() -> pl.DataFrame:
             pl.col("strings").cast(pl.Categorical).alias("cat"),
             pl.col("time").cast(pl.Time),
         ]
+    )
+
+
+@pytest.fixture
+def df_no_lists(df: pl.DataFrame) -> pl.DataFrame:
+    return df.select(
+        pl.all().exclude(["list_str", "list_int", "list_bool", "list_int", "list_flt"])
     )
 
 

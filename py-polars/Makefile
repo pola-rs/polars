@@ -28,7 +28,11 @@ test: venv
 	$(PYTHON) -m pytest tests
 
 test-with-cov: venv
-	@cd tests && ../$(PYTHON) -m pytest --cov=polars --cov-fail-under=90 --import-mode=importlib
+	@cd tests && ../$(PYTHON) -m pytest \
+		--cov=polars \
+		--cov-report xml \
+		--cov-fail-under=90 \
+		--import-mode=importlib
 
 doctest:
 	cd tests && ../$(PYTHON) run_doc_examples.py

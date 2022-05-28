@@ -1,5 +1,4 @@
-import {Expr} from "../expr";
-import pli from "../../internals/polars_internal";
+import {Expr, _Expr} from "../expr";
 
 export interface ExprDateTime {
   /**
@@ -96,8 +95,9 @@ export interface ExprDateTime {
 }
 
 export const ExprDateTimeFunctions = (_expr: any): ExprDateTime => {
-  const wrap = (method, args?): Expr => {
-    return (Expr as any)(pli.expr.date[method]({_expr, ...args }));
+  const wrap = (method, ...args: any[]): Expr => {
+
+    return _Expr(_expr[method](...args));
   };
 
   const wrapNullArgs = (method: string) => () => wrap(method);
@@ -110,7 +110,7 @@ export const ExprDateTimeFunctions = (_expr: any): ExprDateTime => {
     nanosecond: wrapNullArgs("nanosecond"),
     ordinalDay: wrapNullArgs("ordinalDay"),
     second: wrapNullArgs("second"),
-    strftime: (fmt) => wrap("strftime", {fmt}),
+    strftime: (fmt) => wrap("strftime", fmt),
     timestamp: wrapNullArgs("timestamp"),
     week: wrapNullArgs("week"),
     weekday: wrapNullArgs("weekday"),

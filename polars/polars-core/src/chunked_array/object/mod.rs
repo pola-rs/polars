@@ -26,9 +26,7 @@ where
 
 /// Trimmed down object safe polars object
 pub trait PolarsObjectSafe: Any + Debug + Send + Sync + Display {
-    fn type_name(&self) -> &'static str
-    where
-        Self: Sized;
+    fn type_name(&self) -> &'static str;
 }
 
 /// Values need to implement this so that they can be stored into a Series and DataFrame
@@ -142,6 +140,9 @@ where
         let mut arr = self.clone();
         arr.null_bitmap = validity;
         Box::new(arr)
+    }
+    fn to_boxed(&self) -> Box<dyn Array> {
+        Box::new(self.clone())
     }
 }
 

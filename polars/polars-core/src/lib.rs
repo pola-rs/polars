@@ -22,40 +22,43 @@ pub mod testing;
 #[cfg(test)]
 mod tests;
 pub(crate) mod vector_hasher;
+use once_cell::sync::Lazy;
 
 #[cfg(any(feature = "dtype-categorical", feature = "object"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[cfg(feature = "dtype-categorical")]
 use ahash::AHashMap;
-use lazy_static::lazy_static;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 #[cfg(feature = "dtype-categorical")]
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 #[cfg(feature = "dtype-categorical")]
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 
 #[cfg(feature = "object")]
-lazy_static! {
-    pub(crate) static ref PROCESS_ID: u128 = SystemTime::now()
+pub(crate) static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_nanos();
-}
+        .as_nanos()
+});
 
 // this is re-exported in utils for polars child crates
-lazy_static! {
-    pub static ref POOL: ThreadPool = ThreadPoolBuilder::new()
+pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+    ThreadPoolBuilder::new()
         .num_threads(
             std::env::var("POLARS_MAX_THREADS")
                 .map(|s| s.parse::<usize>().expect("integer"))
-                .unwrap_or_else(|_| std::thread::available_parallelism()
-                    .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
-                    .get())
+                .unwrap_or_else(|_| {
+                    std::thread::available_parallelism()
+                        .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
+                        .get()
+                }),
         )
         .build()
-        .expect("could not spawn threads");
-}
+        .expect("could not spawn threads")
+});
 
 #[cfg(feature = "dtype-categorical")]
 struct SCacheInner {
@@ -104,16 +107,19 @@ impl Default for StringCache {
 
 #[cfg(feature = "dtype-categorical")]
 pub(crate) static USE_STRING_CACHE: AtomicBool = AtomicBool::new(false);
-#[cfg(feature = "dtype-categorical")]
-lazy_static! {
-    pub(crate) static ref STRING_CACHE: StringCache = Default::default();
-}
 
-#[cfg(test)]
 #[cfg(feature = "dtype-categorical")]
-lazy_static! {
-    // utility for the tests to ensure a single thread can execute
-    pub(crate) static ref SINGLE_LOCK: Mutex<()> = Mutex::new(());
+pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
+
+// utility for the tests to ensure a single thread can execute
+pub static SINGLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+#[cfg(feature = "dtype-categorical")]
+pub fn with_string_cache<F: FnOnce() -> T, T>(func: F) -> T {
+    toggle_string_cache(true);
+    let out = func();
+    toggle_string_cache(false);
+    out
 }
 
 /// Use a global string cache for the Categorical Types.

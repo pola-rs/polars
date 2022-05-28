@@ -5,9 +5,13 @@ use crate::prelude::*;
 use crate::utils::slice_slice;
 use asof::*;
 use num::Bounded;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
 pub struct AsOfOptions {
     pub strategy: AsofStrategy,
     /// A tolerance in the same unit as the asof column
@@ -38,6 +42,7 @@ fn check_asof_columns(a: &Series, b: &Series) -> Result<()> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AsofStrategy {
     /// selects the last row in the right DataFrame whose ‘on’ key is less than or equal to the left’s key
     Backward,
@@ -63,21 +68,24 @@ where
                 "asof join must not have null values in 'on' arguments".into(),
             ));
         }
+        // cont_slice requires a single chunk
+        let ca = self.rechunk();
+        let other = other.rechunk();
 
         let out = match strategy {
             AsofStrategy::Forward => match tolerance {
-                None => join_asof_forward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                None => join_asof_forward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
                 Some(tolerance) => {
                     let tolerance = tolerance.extract::<T::Native>().unwrap();
                     join_asof_forward_with_tolerance(
-                        self.cont_slice().unwrap(),
+                        ca.cont_slice().unwrap(),
                         other.cont_slice().unwrap(),
                         tolerance,
                     )
                 }
             },
             AsofStrategy::Backward => match tolerance {
-                None => join_asof_backward(self.cont_slice().unwrap(), other.cont_slice().unwrap()),
+                None => join_asof_backward(ca.cont_slice().unwrap(), other.cont_slice().unwrap()),
                 Some(tolerance) => {
                     let tolerance = tolerance.extract::<T::Native>().unwrap();
                     join_asof_backward_with_tolerance(

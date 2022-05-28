@@ -24,6 +24,7 @@ from polars.datatypes import (
     Date,
     Datetime,
     Duration,
+    Field,
     Float32,
     Float64,
     Int8,
@@ -44,8 +45,10 @@ from polars.datatypes import (
 from polars.exceptions import (
     ArrowError,
     ComputeError,
+    DuplicateError,
     NoDataError,
     NotFoundError,
+    PanicException,
     SchemaError,
     ShapeError,
 )
@@ -72,6 +75,7 @@ from polars.internals.lazy_functions import (
     count,
     cov,
     duration,
+    element,
     exclude,
     first,
     fold,
@@ -113,6 +117,7 @@ from polars.io import (
     read_parquet,
     read_sql,
     scan_csv,
+    scan_ds,
     scan_ipc,
     scan_parquet,
 )
@@ -149,6 +154,7 @@ __all__ = [
     "Time",
     "Object",
     "Categorical",
+    "Field",
     "Struct",
     # polars.io
     "read_csv",
@@ -158,6 +164,7 @@ __all__ = [
     "read_ipc",
     "scan_csv",
     "scan_ipc",
+    "scan_ds",
     "scan_parquet",
     "read_ipc_schema",
     "read_avro",

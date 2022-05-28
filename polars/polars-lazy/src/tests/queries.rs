@@ -259,36 +259,16 @@ fn test_lazy_binary_ops() {
 }
 
 #[test]
-fn test_lazy_query_1() {
-    // test on aggregation pushdown
-    // and a filter that is not in the projection
-    let df_a = load_df();
-    let df_b = df_a.clone();
-    df_a.lazy()
-        .left_join(df_b.lazy(), col("b"), col("b"))
-        .filter(col("a").lt(lit(2)))
-        .groupby([col("b")])
-        .agg([col("b").first(), col("c").first()])
-        .select([col("b"), col("c")])
-        .collect()
-        .unwrap();
-}
-
-#[test]
 fn test_lazy_query_2() {
     let df = load_df();
     let ldf = df
         .lazy()
-        .with_column(
-            col("a")
-                .map(|s| Ok(s * 2), GetOutput::same_type())
-                .alias("foo"),
-        )
+        .with_column(col("a").map(|s| Ok(s * 2), GetOutput::same_type()))
         .filter(col("a").lt(lit(2)))
         .select([col("b"), col("a")]);
 
     let new = ldf.collect().unwrap();
-    assert_eq!(new.shape(), (1, 2));
+    assert_eq!(new.shape(), (0, 2));
 }
 
 #[test]
@@ -352,7 +332,6 @@ fn test_lazy_query_5() {
         .agg([col("day").head(Some(2))])
         .collect()
         .unwrap();
-    dbg!(&out);
     let s = out
         .select_at_idx(1)
         .unwrap()
@@ -616,7 +595,7 @@ fn test_lazy_wildcard() {
     let new = df
         .lazy()
         .groupby([col("b")])
-        .agg([col("*").sum(), col("*").first()])
+        .agg([col("*").sum().suffix(""), col("*").first().suffix("_first")])
         .collect()
         .unwrap();
     assert_eq!(new.shape(), (3, 5)); // Should exclude b from wildcard aggregations.
@@ -1586,7 +1565,7 @@ fn test_sort_by_suffix() -> Result<()> {
 #[test]
 fn test_list_in_select_context() -> Result<()> {
     let s = Series::new("a", &[1, 2, 3]);
-    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name());
+    let mut builder = get_list_builder(s.dtype(), s.len(), 1, s.name()).unwrap();
     builder.append_series(&s);
     let expected = builder.finish().into_series();
 
@@ -1818,7 +1797,8 @@ fn test_groupby_on_lists() -> Result<()> {
     let s0 = Series::new("", [1i32, 2, 3]);
     let s1 = Series::new("groups", [4i32, 5]);
 
-    let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("arrays", 10, 10, DataType::Int32);
+    let mut builder =
+        ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays", 10, 10, DataType::Int32);
     builder.append_series(&s0);
     builder.append_series(&s1);
     let s2 = builder.finish().into_series();
@@ -1973,6 +1953,142 @@ fn test_is_in() -> Result<()> {
         Vec::from(out),
         &[Some(true), Some(false), Some(true), Some(true), Some(true)]
     );
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb() -> Result<()> {
+    // don't move these to integration tests
+    // keep these dtypes
+    let out = df![
+        "keys" => [1, 1, 1, 1, 2],
+        "vals" => ["a", "b", "c", "a", "a"]
+    ]?
+    .lazy()
+    .groupby([col("keys")])
+    .agg([
+        (col("vals").eq(lit("a"))).sum().alias("eq_a"),
+        (col("vals").eq(lit("b"))).sum().alias("eq_b"),
+    ])
+    .sort("keys", Default::default())
+    .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "keys" => [1, 2],
+        "eq_a" => [2 as IdxSize, 1],
+        "eq_b" => [1 as IdxSize, 0],
+    ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_count() -> Result<()> {
+    // don't move these to integration tests
+    let out = df![
+        "col" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+    ]?
+    .lazy()
+    .groupby([col("col")])
+    .agg([
+        // we make sure to alias with a different name
+        count().alias("counted"),
+        col("col").count().alias("count2"),
+    ])
+    .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "counted" => [100 as IdxSize],
+        "count2" => [100 as IdxSize],
+    ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_mean() -> Result<()> {
+    // don't move these to integration tests
+    let out = df![
+        "key" => (0..100).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+    ]?
+    .lazy()
+    .with_columns([lit("a").alias("str"), lit(1).alias("int")])
+    .groupby([col("key")])
+    .agg([
+        col("str").mean().alias("mean_str"),
+        col("int").mean().alias("mean_int"),
+    ])
+    .collect()?;
+
+    assert_eq!(out.shape(), (1, 3));
+    let str_col = out.column("mean_str")?;
+    assert_eq!(str_col.get(0), AnyValue::Null);
+    let int_col = out.column("mean_int")?;
+    assert_eq!(int_col.get(0), AnyValue::Float64(1.0));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_binary() -> Result<()> {
+    // don't move these to integration tests
+    let df = df![
+        "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("col")])
+        .agg([(col("col") + lit(10)).sum().alias("sum")])
+        .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "sum" => [200],
+    ]?));
+
+    let out = df
+        .lazy()
+        .groupby([col("col")])
+        .agg([(col("col").cast(DataType::Float32) + lit(10))
+            .sum()
+            .alias("sum")])
+        .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "sum" => [200.0 as f32],
+    ]?));
+
+    Ok(())
+}
+
+#[test]
+fn test_partitioned_gb_ternary() -> Result<()> {
+    // don't move these to integration tests
+    let df = df![
+        "col" => (0..20).map(|_| Some(0)).collect::<Int32Chunked>().into_series(),
+        "val" => (0..20).map(|i| Some(i)).collect::<Int32Chunked>().into_series(),
+    ]?;
+
+    let out = df
+        .clone()
+        .lazy()
+        .groupby([col("col")])
+        .agg([when(col("val").gt(lit(10)))
+            .then(lit(1))
+            .otherwise(lit(0))
+            .sum()
+            .alias("sum")])
+        .collect()?;
+
+    assert!(out.frame_equal(&df![
+        "col" => [0],
+        "sum" => [9],
+    ]?));
 
     Ok(())
 }

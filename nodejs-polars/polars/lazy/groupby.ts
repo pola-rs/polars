@@ -1,7 +1,6 @@
 import {Expr} from "./expr";
 import {selectionToExprList} from "../utils";
-import pli from "../internals/polars_internal";
-import {LazyDataFrame} from "./dataframe";
+import {_LazyDataFrame, LazyDataFrame} from "./dataframe";
 
 export interface LazyGroupBy {
   agg(...aggs: Expr[]): LazyDataFrame
@@ -10,39 +9,19 @@ export interface LazyGroupBy {
 }
 
 
-export const LazyGroupBy = (
-  _ldf: any,
-  by: any[],
-  maintainOrder: boolean
-): LazyGroupBy => {
-  by = selectionToExprList(by, false);
-
-  const baseArgs = {by, _ldf, maintainOrder};
-  const unwrap = (args) => LazyDataFrame(pli.ldf.groupby(args));
-
+export const LazyGroupBy = (_lgb: any): LazyGroupBy => {
   return {
     agg(...aggs: Expr[])  {
-      return unwrap({
-        aggs: aggs.flatMap(a => a._expr),
-        aggMethod: "agg",
-        ...baseArgs
-      });
+      const agg  = selectionToExprList(aggs.flat(), false);
+
+      return _LazyDataFrame(_lgb.agg(agg));
     },
     head(n=5) {
-      return unwrap({
-        n,
-        aggs: [],
-        aggMethod: "head",
-        ...baseArgs
-      });
+      return _LazyDataFrame(_lgb.head(n));
     },
     tail(n=5) {
-      return  unwrap({
-        n,
-        aggs: [],
-        aggMethod: "tail",
-        ...baseArgs
-      });
+      return _LazyDataFrame(_lgb.tail(n));
+
     }
   };
 };

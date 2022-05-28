@@ -190,22 +190,4 @@ impl PhysicalExpr for TakeExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.phys_expr.to_field(input_schema)
     }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for TakeExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        return self
-            .evaluate_on_groups(df, groups, state)
-            .map(|mut s| Some(s.aggregated()));
-    }
 }

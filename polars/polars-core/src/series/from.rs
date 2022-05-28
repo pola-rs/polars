@@ -124,14 +124,15 @@ impl Series {
             }
             #[cfg(feature = "dtype-datetime")]
             ArrowDataType::Timestamp(tu, tz) => {
+                let mut tz = tz.clone();
+                if tz.as_deref() == Some("") {
+                    tz = None;
+                }
                 // we still drop timezone for now
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
-                    .into_datetime(tu.into(), None)
+                    .into_datetime(tu.into(), tz)
                     .into_series();
-                if !(tz.is_none() || tz == &Some("".to_string())) {
-                    println!("Conversion of timezone aware to naive datetimes. TZ information may be lost.")
-                }
                 Ok(match tu {
                     ArrowTimeUnit::Second => &s * MILLISECONDS,
                     ArrowTimeUnit::Millisecond => s,
@@ -154,6 +155,10 @@ impl Series {
             }
             #[cfg(feature = "dtype-time")]
             ArrowDataType::Time64(tu) | ArrowDataType::Time32(tu) => {
+                let mut chunks = chunks;
+                if matches!(dtype, ArrowDataType::Time32(_)) {
+                    chunks = cast_chunks(&chunks, &DataType::Int32).unwrap();
+                }
                 let chunks = cast_chunks(&chunks, &DataType::Int64).unwrap();
                 let s = Int64Chunked::from_chunks(name, chunks)
                     .into_time()
@@ -187,133 +192,53 @@ impl Series {
                 let chunks = chunks.iter().map(|arr| &**arr).collect::<Vec<_>>();
                 let arr = arrow::compute::concatenate::concatenate(&chunks)?;
 
-                let (keys, values) = match (key_type, &**value_type) {
-                    (IntegerType::Int8, ArrowDataType::LargeUtf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
+                if !matches!(
+                    value_type.as_ref(),
+                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8
+                ) {
+                    return Err(PolarsError::ComputeError(
+                        "polars only support dictionaries with string like values".into(),
+                    ));
+                }
+
+                macro_rules! unpack_keys_values {
+                    ($dt:ty) => {{
+                        let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
                         let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
+                        let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
                         let values = arr.values();
-                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                        (keys, values.clone())
-                    }
-                    (IntegerType::Int16, ArrowDataType::LargeUtf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                        (keys, values.clone())
-                    }
-                    (IntegerType::Int32, ArrowDataType::LargeUtf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                        (keys, values.clone())
-                    }
-                    (IntegerType::Int64, ArrowDataType::LargeUtf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i64>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                        (keys, values.clone())
-                    }
-                    (IntegerType::UInt32, ArrowDataType::LargeUtf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<u32>>().unwrap();
-                        let keys = arr.keys();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<LargeStringArray>().unwrap();
-                        (keys.clone(), values.clone())
-                    }
-                    (IntegerType::Int8, ArrowDataType::Utf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i8>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-                        let values = cast(values, &ArrowDataType::LargeUtf8)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<Utf8Array<i64>>()
-                            .unwrap()
-                            .clone();
+                        let values = cast(&**values, &ArrowDataType::LargeUtf8)?;
                         (keys, values)
+                    }};
+                }
+
+                let (keys, values) = match key_type {
+                    IntegerType::Int8 => {
+                        unpack_keys_values!(i8)
                     }
-                    (IntegerType::Int16, ArrowDataType::Utf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i16>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-                        let values = cast(values, &ArrowDataType::LargeUtf8)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<Utf8Array<i64>>()
-                            .unwrap()
-                            .clone();
-                        (keys, values)
+                    IntegerType::UInt8 => {
+                        unpack_keys_values!(u8)
                     }
-                    (IntegerType::Int32, ArrowDataType::Utf8) => {
-                        let arr = arr.as_any().downcast_ref::<DictionaryArray<i32>>().unwrap();
-                        let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<PrimitiveArray<u32>>()
-                            .unwrap()
-                            .clone();
-                        let values = arr.values();
-                        let values = values.as_any().downcast_ref::<Utf8Array<i32>>().unwrap();
-                        let values = cast(values, &ArrowDataType::LargeUtf8)
-                            .unwrap()
-                            .as_any()
-                            .downcast_ref::<Utf8Array<i64>>()
-                            .unwrap()
-                            .clone();
-                        (keys, values)
+                    IntegerType::Int16 => {
+                        unpack_keys_values!(i16)
                     }
-                    (k, v) => {
-                        return Err(PolarsError::InvalidOperation(
-                            format!(
-                            "Cannot create polars series dictionary type of key:  {:?} value: {:?}",
-                            k, v
-                        )
-                            .into(),
+                    IntegerType::UInt16 => {
+                        unpack_keys_values!(u16)
+                    }
+                    IntegerType::Int32 => {
+                        unpack_keys_values!(i32)
+                    }
+                    IntegerType::UInt32 => {
+                        unpack_keys_values!(u32)
+                    }
+                    _ => {
+                        return Err(PolarsError::ComputeError(
+                            "dictionaries with 64 bits keys are not supported by polars".into(),
                         ))
                     }
                 };
+                let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
+                let values = values.as_any().downcast_ref::<Utf8Array<i64>>().unwrap();
 
                 let mut builder = CategoricalChunkedBuilder::new(name, keys.len());
                 let iter = keys

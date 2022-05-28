@@ -13,7 +13,8 @@ import polars as pl
 from polars import DataType
 
 
-def test_to_from_buffer(df: pl.DataFrame) -> None:
+def test_to_from_buffer(df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists
     buf = io.BytesIO()
     df.write_csv(buf)
     buf.seek(0)
@@ -26,7 +27,8 @@ def test_to_from_buffer(df: pl.DataFrame) -> None:
     assert df.frame_equal(read_df)
 
 
-def test_to_from_file(io_test_dir: str, df: pl.DataFrame) -> None:
+def test_to_from_file(io_test_dir: str, df_no_lists: pl.DataFrame) -> None:
+    df = df_no_lists
     df = df.drop("strings_nulls")
 
     f = os.path.join(io_test_dir, "small.csv")
@@ -223,6 +225,18 @@ a,b,c
     assert out2.frame_equal(expected)
 
 
+def test_partial_decompression(foods_csv: str) -> None:
+    fout = io.BytesIO()
+    with open(foods_csv, "rb") as fread:
+        with gzip.GzipFile(fileobj=fout, mode="w") as f:
+            f.write(fread.read())
+
+    csv_bytes = fout.getvalue()
+    for n_rows in [1, 5, 26]:
+        out = pl.read_csv(csv_bytes, n_rows=n_rows)
+        assert out.shape == (n_rows, 4)
+
+
 def test_empty_bytes() -> None:
     b = b""
     with pytest.raises(ValueError):
@@ -400,3 +414,11 @@ def quoting_round_trip() -> None:
     read_df = pl.read_csv(f)
 
     assert read_df.frame_equal(df)
+
+
+def fallback_chrono_parser() -> None:
+    data = """date_1,date_2
+    2021-01-01,2021-1-1
+    2021-02-02,2021-2-2
+    2021-10-10,2021-10-10"""
+    assert pl.read_csv(data.encode(), parse_dates=True).null_count().row(0) == (0, 0)

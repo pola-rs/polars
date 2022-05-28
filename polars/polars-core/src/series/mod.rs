@@ -2,7 +2,6 @@
 pub use crate::prelude::ChunkCompare;
 use crate::prelude::*;
 use arrow::array::ArrayRef;
-use polars_arrow::prelude::QuantileInterpolOptions;
 #[cfg(any(feature = "dtype-struct", feature = "object"))]
 use std::any::Any;
 
@@ -18,7 +17,6 @@ mod series_trait;
 #[cfg(feature = "private")]
 pub mod unstable;
 
-use crate::chunked_array::ops::rolling_window::RollingOptions;
 #[cfg(feature = "rank")]
 use crate::prelude::unique::rank::rank;
 use crate::utils::{split_ca, split_series};
@@ -159,11 +157,18 @@ impl Series {
         Series::full_null(name, 0, dtype)
     }
 
-    pub(crate) fn get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
+    #[doc(hidden)]
+    #[cfg(feature = "private")]
+    pub(crate) fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
         }
         Arc::get_mut(&mut self.0).expect("implementation error")
+    }
+
+    pub fn set_sorted(&mut self, _reverse: bool) {
+        let inner = self._get_inner_mut();
+        inner._set_sorted(_reverse)
     }
 
     pub fn into_frame(self) -> DataFrame {
@@ -172,18 +177,18 @@ impl Series {
 
     /// Rename series.
     pub fn rename(&mut self, name: &str) -> &mut Series {
-        self.get_inner_mut().rename(name);
+        self._get_inner_mut().rename(name);
         self
     }
 
     /// Shrink the capacity of this array to fit it's length.
     pub fn shrink_to_fit(&mut self) {
-        self.get_inner_mut().shrink_to_fit()
+        self._get_inner_mut().shrink_to_fit()
     }
 
     /// Append arrow array of same datatype.
     pub fn append_array(&mut self, other: ArrayRef) -> Result<&mut Self> {
-        self.get_inner_mut().append_array(other)?;
+        self._get_inner_mut().append_array(other)?;
         Ok(self)
     }
 
@@ -191,7 +196,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::append`] and [`ChunkedArray::extend`].
     pub fn append(&mut self, other: &Series) -> Result<&mut Self> {
-        self.get_inner_mut().append(other)?;
+        self._get_inner_mut().append(other)?;
         Ok(self)
     }
 
@@ -199,7 +204,7 @@ impl Series {
     ///
     /// See [`ChunkedArray::extend`] and [`ChunkedArray::append`].
     pub fn extend(&mut self, other: &Series) -> Result<&mut Self> {
-        self.get_inner_mut().extend(other)?;
+        self._get_inner_mut().extend(other)?;
         Ok(self)
     }
 
@@ -212,7 +217,7 @@ impl Series {
 
     /// Only implemented for numeric types
     pub fn as_single_ptr(&mut self) -> Result<usize> {
-        self.get_inner_mut().as_single_ptr()
+        self._get_inner_mut().as_single_ptr()
     }
 
     /// Cast `[Series]` to another `[DataType]`
@@ -654,116 +659,6 @@ impl Series {
         }
     }
 
-    /// Apply a rolling variance to a Series. See:
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_var(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_var(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-
-    /// Apply a rolling std to a Series. See:
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_std(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_std(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-
-    /// Apply a rolling mean to a Series. See:
-    /// [ChunkedArray::rolling_mean]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_mean(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_mean(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-    /// Apply a rolling sum to a Series. See:
-    /// [ChunkedArray::rolling_sum]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_sum(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_sum(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-    /// Apply a rolling median to a Series. See:
-    /// [`ChunkedArray::rolling_median`]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_median(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_median(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-    /// Apply a rolling quantile to a Series. See:
-    /// [`ChunkedArray::rolling_quantile`]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_quantile(
-        &self,
-        _quantile: f64,
-        _interpolation: QuantileInterpolOptions,
-        _options: RollingOptions,
-    ) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_quantile(_quantile, _interpolation, _options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-    /// Apply a rolling min to a Series. See:
-    /// [ChunkedArray::rolling_min]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_min(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_min(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-    /// Apply a rolling max to a Series. See:
-    /// [ChunkedArray::rolling_max]
-    #[cfg_attr(docsrs, doc(cfg(feature = "rolling_window")))]
-    pub fn rolling_max(&self, _options: RollingOptions) -> Result<Series> {
-        #[cfg(feature = "rolling_window")]
-        {
-            self._rolling_max(_options)
-        }
-        #[cfg(not(feature = "rolling_window"))]
-        {
-            panic!("activate 'rolling_window' feature")
-        }
-    }
-
     #[cfg(feature = "rank")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rank")))]
     pub fn rank(&self, options: RankOptions) -> Series {
@@ -953,7 +848,7 @@ impl Series {
         let val = [self.mean()];
         let s = Series::new(self.name(), val);
         if !self.dtype().is_numeric() {
-            s.cast(self.dtype()).unwrap()
+            Series::full_null(self.name(), 1, self.dtype())
         } else {
             s
         }

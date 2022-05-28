@@ -1,8 +1,8 @@
 use crate::ArrowResult;
-use arrow::io::parquet::read::statistics::{
-    deserialize_statistics, PrimitiveStatistics, Statistics, Utf8Statistics,
-};
-use arrow::io::parquet::read::ColumnChunkMetaData;
+use arrow::array::{Array, ArrayRef};
+use arrow::compute::concatenate::concatenate;
+use arrow::io::parquet::read::statistics::{self, deserialize, Statistics};
+use arrow::io::parquet::read::RowGroupMetaData;
 use polars_core::prelude::*;
 
 /// The statistics for a column in a Parquet file
@@ -11,79 +11,42 @@ use polars_core::prelude::*;
 /// - min value
 /// - null_count
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct ColumnStats(Box<dyn Statistics>);
+pub struct ColumnStats(Statistics, Field);
 
 impl ColumnStats {
     pub fn dtype(&self) -> DataType {
-        self.0.data_type().into()
+        self.1.data_type().clone()
     }
 
     pub fn null_count(&self) -> Option<usize> {
-        self.0.null_count().map(|v| v as usize)
+        match &self.0.null_count {
+            statistics::Count::Single(arr) => {
+                if arr.is_valid(0) {
+                    Some(arr.value(0) as usize)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
     }
 
     pub fn to_min_max(&self) -> Option<Series> {
-        let name = "";
-        use DataType::*;
-        let s = match self.dtype() {
-            Float64 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<f64>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
+        let max_val = &*self.0.max_value;
+        let min_val = &*self.0.min_value;
+
+        let dtype = DataType::from(min_val.data_type());
+        if dtype.is_numeric() || matches!(dtype, DataType::Utf8) {
+            let arr = concatenate(&[min_val, max_val]).unwrap();
+            let s = Series::try_from(("", Arc::from(arr) as ArrayRef)).unwrap();
+            if s.null_count() > 0 {
+                None
+            } else {
+                Some(s)
             }
-            Float32 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<f32>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
-            }
-            Int64 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<i64>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
-            }
-            Int32 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<i32>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
-            }
-            UInt32 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<u32>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
-            }
-            UInt64 => {
-                let stats = self
-                    .0
-                    .as_any()
-                    .downcast_ref::<PrimitiveStatistics<u64>>()
-                    .unwrap();
-                Series::new(name, [stats.min_value, stats.max_value])
-            }
-            Utf8 => {
-                let stats = self.0.as_any().downcast_ref::<Utf8Statistics>().unwrap();
-                Series::new(
-                    name,
-                    [stats.min_value.as_deref(), stats.max_value.as_deref()],
-                )
-            }
-            _ => return None,
-        };
-        Some(s)
+        } else {
+            None
+        }
     }
 }
 
@@ -105,17 +68,16 @@ impl BatchStats {
 
 /// Collect the statistics in a column chunk.
 pub(crate) fn collect_statistics(
-    md: &[ColumnChunkMetaData],
+    md: &[RowGroupMetaData],
     arrow_schema: &ArrowSchema,
 ) -> ArrowResult<Option<BatchStats>> {
     let mut schema = Schema::with_capacity(arrow_schema.fields.len());
     let mut stats = vec![];
 
     for fld in &arrow_schema.fields {
-        for st in deserialize_statistics(fld, md)?.into_iter().flatten() {
-            schema.with_column(fld.name.to_string(), (&fld.data_type).into());
-            stats.push(ColumnStats(st));
-        }
+        let st = deserialize(fld, md)?;
+        schema.with_column(fld.name.to_string(), (&fld.data_type).into());
+        stats.push(ColumnStats(st, Field::from(fld)));
     }
 
     Ok(if stats.is_empty() {

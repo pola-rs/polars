@@ -1,3 +1,4 @@
+import pli from "./native-polars";
 export interface Config {
   /** Use utf8 characters to print tables */
   setUtf8Tables(): Config
@@ -16,6 +17,7 @@ export interface Config {
 }
 export const Config: Config = {
   setUtf8Tables() {
+
     delete process.env["POLARS_FMT_NO_UTF8"];
 
     return this;
@@ -42,9 +44,13 @@ export const Config: Config = {
     return this;
   },
   setGlobalStringCache() {
+    pli.toggleStringCache(true);
+
     return this;
   },
   unsetGlobalStringCache() {
+    pli.toggleStringCache(false);
+
     return this;
   }
 };

@@ -255,6 +255,37 @@
 //! # }
 //! ```
 //!
+//!
+//! ### Multiple columns
+//!
+//! ```
+//! use polars::prelude::*;
+//! fn my_black_box_function(a: f32, b: f32) -> f32 {
+//!     // do something
+//!     a
+//! }
+//!
+//! fn apply_multiples(col_a: &Series, col_b: &Series) -> Float32Chunked {
+//!     match (col_a.dtype(), col_b.dtype()) {
+//!         (DataType::Float32, DataType::Float32) => {
+//!             // downcast to `ChunkedArray`
+//!             let a = col_a.f32().unwrap();
+//!             let b = col_b.f32().unwrap();
+//!
+//!             a.into_iter()
+//!                 .zip(b.into_iter())
+//!                 .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
+//!                     (Some(a), Some(b)) => Some(my_black_box_function(a, b)),
+//!                     // if any of the two value is `None` we propagate that null
+//!                     _ => None,
+//!                 })
+//!                 .collect()
+//!         }
+//!         _ => panic!("unpexptected dtypes"),
+//!     }
+//! }
+//! ```
+//!
 //! ### DataFrame
 //!
 //! ```

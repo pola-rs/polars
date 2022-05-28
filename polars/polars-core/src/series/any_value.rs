@@ -37,14 +37,14 @@ fn any_values_to_list(avs: &[AnyValue]) -> ListChunked {
 impl<'a, T: AsRef<[AnyValue<'a>]>> NamedFrom<T, [AnyValue<'a>]> for Series {
     fn new(name: &str, v: T) -> Self {
         let av = v.as_ref();
-        Series::from_any_values(name, av)
+        Series::from_any_values(name, av).unwrap()
     }
 }
 
 impl Series {
-    fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> Series {
+    pub fn from_any_values<'a>(name: &str, av: &[AnyValue<'a>]) -> Result<Series> {
         match av.iter().find(|av| !matches!(av, AnyValue::Null)) {
-            None => Series::full_null(name, av.len(), &DataType::Int32),
+            None => Ok(Series::full_null(name, av.len(), &DataType::Int32)),
             Some(av_) => {
                 let mut s = match av_ {
                     AnyValue::Int32(_) => any_values_to_primitive::<Int32Type>(av).into_series(),
@@ -78,10 +78,43 @@ impl Series {
                     AnyValue::Duration(_, tu) => any_values_to_primitive::<Int64Type>(av)
                         .into_duration(*tu)
                         .into_series(),
-                    _ => todo!(),
+                    #[cfg(feature = "dtype-struct")]
+                    AnyValue::StructOwned(payload) => {
+                        let vals = &payload.0;
+                        let fields = &payload.1;
+
+                        // the fields of the struct
+                        let mut series_fields = Vec::with_capacity(vals.len());
+                        for (i, field) in fields.iter().enumerate() {
+                            let mut field_avs = Vec::with_capacity(av.len());
+
+                            for av in av.iter() {
+                                match av {
+                                    AnyValue::StructOwned(pl) => {
+                                        for (l, r) in fields.iter().zip(pl.1.iter()) {
+                                            if l.name() != r.name() {
+                                                return Err(PolarsError::ComputeError(
+                                                    "struct orders must remain the same".into(),
+                                                ));
+                                            }
+                                        }
+
+                                        let av_val = pl.0[i].clone();
+                                        field_avs.push(av_val)
+                                    }
+                                    _ => field_avs.push(AnyValue::Null),
+                                }
+                            }
+                            series_fields.push(Series::new(field.name(), &field_avs))
+                        }
+                        return Ok(StructChunked::new(name, &series_fields)
+                            .unwrap()
+                            .into_series());
+                    }
+                    av => panic!("av {:?} not implemented", av),
                 };
                 s.rename(name);
-                s
+                Ok(s)
             }
         }
     }

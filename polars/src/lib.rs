@@ -160,6 +160,7 @@
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from `DataFrame` to `ndarray`
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
+//! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for `Utf8Chunked`
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
@@ -225,6 +226,9 @@
 //!     - `pct_change` - Compute change percentages.
 //!     - `unique_counts` - Count unique values in expressions.
 //!     - `log` - Logarithms for `Series`.
+//!     - `list_to_struct` - Convert `List` to `Struct` dtypes.
+//!     - `list_eval` - Apply expressions over list elements.
+//!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //! * `DataFrame` pretty printing
 //!     - `fmt` - Activate DataFrame formatting
 //!
@@ -266,7 +270,7 @@
 //! A DataFrame library naturally does a lot of heap allocations. It is recommended to use a custom
 //! allocator.
 //! [Mimalloc](https://crates.io/crates/mimalloc) and
-//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) for instance, show a significant
+//! [JeMalloc](https://crates.io/crates/jemallocator) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Usage
@@ -294,25 +298,16 @@
 //!                            cardinality. Setting this env var will turn partitioned groupby's off
 //! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
 //!                                     defaults to `0.001`
-//! * `POLARS_PARTITION_CARDINALITY_FRAC` -> at which (estimated) cardinality a partitioned groupby should run.
-//!                                          defaults to `0.005`, any higher cardinality will run default groupby.
+//! * `POLARS_PARTITION_UNIQUE_COUNT` -> at which (estimated) key count a partitioned groupby should run.
+//!                                          defaults to `1000`, any higher cardinality will run default groupby.
+//! * `POLARS_FORCE_PARTITION` -> Force partitioned groupby if the keys and aggregations allow it.
 //! * `POLARS_ALLOW_EXTENSION` -> allows for `[ObjectChunked<T>]` to be used in arrow, opening up possibilities like using
 //!                               `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
 //!
-//!
-//! ## Compile for WASM
-//! To be able to pretty print a `DataFrame` in `wasm32-wasi` you need to patch the `prettytable-rs`
-//! dependency. If you add this snippet to your `Cargo.toml` you can compile and pretty print when
-//! compiling to `wasm32-wasi` target.
-//!
-//! ```toml
-//! [patch.crates-io]
-//! prettytable-rs = { git = "https://github.com/phsym/prettytable-rs", branch = "master"}
-//! ```
-//!
 //! ## User Guide
 //! If you want to read more, [check the User Guide](https://pola-rs.github.io/polars-book/).
+#![cfg_attr(docsrs, feature(doc_cfg))]
 pub mod docs;
 pub mod export;
 pub mod prelude;

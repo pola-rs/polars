@@ -71,6 +71,8 @@ impl PhysicalExpr for CastExpr {
         state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
+        // before we flatten, make sure that groups are updated
+        ac.groups();
         let s = ac.flat_naive();
         let s = self.finish(s.as_ref())?;
 
@@ -90,7 +92,28 @@ impl PhysicalExpr for CastExpr {
         })
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+}
+
+impl PartitionedAggregation for CastExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let e = self.input.as_partitioned_aggregator().unwrap();
+        e.evaluate_partitioned(df, groups, state)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

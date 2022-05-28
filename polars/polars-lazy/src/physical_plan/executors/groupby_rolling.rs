@@ -18,7 +18,8 @@ impl Executor for GroupByRollingExec {
 
     #[cfg(feature = "dynamic_groupby")]
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let df = self.input.execute(state)?;
+        let mut df = self.input.execute(state)?;
+        df.as_single_chunk_par();
         state.set_schema(self.input_schema.clone());
 
         let keys = self
@@ -43,17 +44,15 @@ impl Executor for GroupByRollingExec {
                     self.aggs
                         .par_iter()
                         .map(|expr| {
-                            let opt_agg = as_aggregated(expr.as_ref(), &df, groups, state)?;
-                            if let Some(agg) = &opt_agg {
-                                if agg.len() != groups.len() {
-                                    return Err(PolarsError::ComputeError(
-                                        format!("returned aggregation is a different length: {} than the group lengths: {}",
-                                                agg.len(),
-                                                groups.len()).into()
-                                    ))
-                                }
-                            };
-                            Ok(opt_agg)
+                            let agg = expr.evaluate_on_groups(&df, groups, state)?.aggregated();
+                            if agg.len() != groups.len() {
+                                return Err(PolarsError::ComputeError(
+                                    format!("returned aggregation is a different length: {} than the group lengths: {}",
+                                            agg.len(),
+                                            groups.len()).into()
+                                ))
+                            }
+                            Ok(agg)
                         })
                         .collect::<Result<Vec<_>>>()
                 })?;
@@ -62,7 +61,7 @@ impl Executor for GroupByRollingExec {
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend(agg_columns.into_iter().flatten());
+        columns.extend_from_slice(&agg_columns);
 
         DataFrame::new(columns)
     }

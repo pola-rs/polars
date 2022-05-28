@@ -65,15 +65,7 @@ def from_dict(
     └─────┴─────┘
 
     """
-    # To deal with structs, we have to modify the data, but we dont want to modify
-    # `data` directly. Thus we create a separate dict, and only do so for the
-    # for the fields that need this, to save memory
-    data_struct = dict()
-    for col_name, value in data.items():
-        if isinstance(value, dict):
-            data_struct[col_name] = from_dict(value).to_struct(col_name)
-
-    return DataFrame._from_dict(data=dict(data, **data_struct), columns=columns)  # type: ignore
+    return DataFrame._from_dict(data=data, columns=columns)  # type: ignore
 
 
 def from_records(
@@ -256,7 +248,7 @@ def from_pandas(
     """
     Construct a Polars DataFrame or Series from a pandas DataFrame or Series.
 
-    Requires the pandas package to be installed.
+    This requires that pandas and pyarrow are installed.
 
     Parameters
     ----------
@@ -305,6 +297,11 @@ def from_pandas(
     ]
 
     """
+    if not _PYARROW_AVAILABLE:
+        raise ImportError(  # pragma: no cover
+            "'pyarrow' is required when using from_pandas()."
+        )
+
     try:
         import pandas as pd
     except ImportError as e:  # pragma: no cover

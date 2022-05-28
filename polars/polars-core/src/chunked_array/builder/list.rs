@@ -36,9 +36,9 @@ where
 
 pub struct ListPrimitiveChunkedBuilder<T>
 where
-    T: NumericNative,
+    T: PolarsNumericType,
 {
-    pub builder: LargePrimitiveBuilder<T>,
+    pub builder: LargePrimitiveBuilder<T::Native>,
     field: Field,
     fast_explode: bool,
 }
@@ -62,7 +62,7 @@ macro_rules! finish_list_builder {
 
 impl<T> ListPrimitiveChunkedBuilder<T>
 where
-    T: NumericNative,
+    T: PolarsNumericType,
 {
     pub fn new(
         name: &str,
@@ -70,8 +70,8 @@ where
         values_capacity: usize,
         logical_type: DataType,
     ) -> Self {
-        let values = MutablePrimitiveArray::<T>::with_capacity(values_capacity);
-        let builder = LargePrimitiveBuilder::<T>::new_with_capacity(values, capacity);
+        let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
+        let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
         let field = Field::new(name, DataType::List(Box::new(logical_type)));
 
         Self {
@@ -81,7 +81,7 @@ where
         }
     }
 
-    pub fn append_slice(&mut self, opt_v: Option<&[T]>) {
+    pub fn append_slice(&mut self, opt_v: Option<&[T::Native]>) {
         match opt_v {
             Some(items) => {
                 let values = self.builder.mut_values();
@@ -99,7 +99,7 @@ where
     }
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter_values<I: Iterator<Item = T> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -113,7 +113,7 @@ where
 
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter<I: Iterator<Item = Option<T>> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_iter<I: Iterator<Item = Option<T::Native>> + TrustedLen>(&mut self, iter: I) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -128,7 +128,7 @@ where
 
 impl<T> ListBuilderTrait for ListPrimitiveChunkedBuilder<T>
 where
-    T: NumericNative,
+    T: PolarsNumericType,
 {
     #[inline]
     fn append_opt_series(&mut self, opt_s: Option<&Series>) {
@@ -151,12 +151,11 @@ where
         if s.is_empty() {
             self.fast_explode = false;
         }
-        let arrays = s.chunks();
+        let physical = s.to_physical_repr();
+        let ca = physical.unpack::<T>().unwrap();
         let values = self.builder.mut_values();
 
-        arrays.iter().for_each(|x| {
-            let arr = x.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
-
+        ca.downcast_iter().for_each(|arr| {
             if !arr.has_validity() {
                 values.extend_from_slice(arr.values().as_slice())
             } else {
@@ -333,52 +332,89 @@ pub fn get_list_builder(
     value_capacity: usize,
     list_capacity: usize,
     name: &str,
-) -> Box<dyn ListBuilderTrait> {
+) -> Result<Box<dyn ListBuilderTrait>> {
     let physical_type = dt.to_physical();
 
-    macro_rules! get_primitive_builder {
-        ($type:ty) => {{
-            let builder = ListPrimitiveChunkedBuilder::<$type>::new(
-                &name,
-                list_capacity,
-                value_capacity,
-                dt.clone(),
-            );
-            Box::new(builder)
-        }};
+    let _err = || -> Result<Box<dyn ListBuilderTrait>> {
+        Err(PolarsError::ComputeError(
+            format!(
+                "list builder not supported for this dtype: {}",
+                &physical_type
+            )
+            .into(),
+        ))
+    };
+
+    match &physical_type {
+        #[cfg(feature = "object")]
+        DataType::Object(_) => _err(),
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(physical_type),
+        ))),
+        DataType::List(_) => Ok(Box::new(AnonymousOwnedListBuilder::new(
+            name,
+            list_capacity,
+            Some(physical_type),
+        ))),
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Categorical(_) => _err(),
+        _ => {
+            macro_rules! get_primitive_builder {
+                ($type:ty) => {{
+                    let builder = ListPrimitiveChunkedBuilder::<$type>::new(
+                        name,
+                        list_capacity,
+                        value_capacity,
+                        dt.clone(),
+                    );
+                    Box::new(builder)
+                }};
+            }
+            macro_rules! get_bool_builder {
+                () => {{
+                    let builder =
+                        ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
+                    Box::new(builder)
+                }};
+            }
+            macro_rules! get_utf8_builder {
+                () => {{
+                    let builder =
+                        ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
+                    Box::new(builder)
+                }};
+            }
+            Ok(match_dtype_to_logical_apply_macro!(
+                physical_type,
+                get_primitive_builder,
+                get_utf8_builder,
+                get_bool_builder
+            ))
+        }
     }
-    macro_rules! get_bool_builder {
-        () => {{
-            let builder = ListBooleanChunkedBuilder::new(&name, list_capacity, value_capacity);
-            Box::new(builder)
-        }};
-    }
-    macro_rules! get_utf8_builder {
-        () => {{
-            let builder = ListUtf8ChunkedBuilder::new(&name, list_capacity, 5 * value_capacity);
-            Box::new(builder)
-        }};
-    }
-    match_dtype_to_physical_apply_macro!(
-        physical_type,
-        get_primitive_builder,
-        get_utf8_builder,
-        get_bool_builder
-    )
 }
 
 pub struct AnonymousListBuilder<'a> {
     name: String,
     builder: AnonymousBuilder<'a>,
-    pub dtype: DataType,
+    pub dtype: Option<DataType>,
+}
+
+impl Default for AnonymousListBuilder<'_> {
+    fn default() -> Self {
+        Self::new("", 0, None)
+    }
 }
 
 impl<'a> AnonymousListBuilder<'a> {
-    pub fn new(name: &str, capacity: usize, dtype: DataType) -> Self {
+    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
         Self {
             name: name.into(),
             builder: AnonymousBuilder::new(capacity),
-            dtype,
+            dtype: inner_dtype,
         }
     }
 
@@ -404,25 +440,127 @@ impl<'a> AnonymousListBuilder<'a> {
         self.builder.push(arr)
     }
 
+    #[inline]
     pub fn append_null(&mut self) {
         self.builder.push_null();
     }
 
-    pub fn append_series(&mut self, s: &'a Series) {
-        self.builder.push_multiple(s.chunks());
+    #[inline]
+    pub fn append_empty(&mut self) {
+        self.builder.push_empty()
     }
 
-    pub fn finish(self) -> ListChunked {
-        if self.builder.is_empty() {
-            ListChunked::full_null_with_dtype(&self.name, 0, &self.dtype)
+    pub fn append_series(&mut self, s: &'a Series) {
+        // empty arrays tend to be null type and thus differ
+        // if we would push it the concat would fail.
+        if s.is_empty() {
+            self.builder.push_empty()
         } else {
-            let arr = self
-                .builder
-                .finish(Some(&self.dtype.to_physical().to_arrow()))
-                .unwrap();
+            match s.dtype() {
+                #[cfg(feature = "dtype-struct")]
+                DataType::Struct(_) => {
+                    let arr = &**s.array_ref(0);
+                    self.builder.push(arr)
+                }
+                _ => {
+                    self.builder.push_multiple(s.chunks());
+                }
+            }
+        }
+    }
+
+    pub fn finish(&mut self) -> ListChunked {
+        let slf = std::mem::take(self);
+        if slf.builder.is_empty() {
+            ListChunked::full_null_with_dtype(&slf.name, 0, &slf.dtype.unwrap_or(DataType::Null))
+        } else {
+            let dtype = slf.dtype.map(|dt| dt.to_physical().to_arrow());
+            let arr = slf.builder.finish(dtype.as_ref()).unwrap();
+            let dtype = DataType::from(arr.data_type());
             let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
-            ca.field = Arc::new(Field::new(&self.name, DataType::List(Box::new(self.dtype))));
+
+            ca.field = Arc::new(Field::new(&slf.name, dtype));
             ca
         }
+    }
+}
+
+pub struct AnonymousOwnedListBuilder {
+    name: String,
+    builder: AnonymousBuilder<'static>,
+    owned: Vec<Series>,
+    inner_dtype: Option<DataType>,
+}
+
+impl Default for AnonymousOwnedListBuilder {
+    fn default() -> Self {
+        Self::new("", 0, None)
+    }
+}
+
+impl ListBuilderTrait for AnonymousOwnedListBuilder {
+    fn append_series(&mut self, s: &Series) {
+        if s.is_empty() {
+            self.builder.push_empty()
+        } else {
+            // Safety
+            // we deref a raw pointer with a lifetime that is not static
+            // it is safe because we also clone Series (Arc +=1) and therefore the &dyn Arrays
+            // will not be dropped until the owned series are dropped
+            unsafe {
+                match s.dtype() {
+                    #[cfg(feature = "dtype-struct")]
+                    DataType::Struct(_) => {
+                        self.builder.push(&*(&**s.array_ref(0) as *const dyn Array))
+                    }
+                    _ => {
+                        self.builder
+                            .push_multiple(&*(s.chunks().as_ref() as *const [ArrayRef]));
+                    }
+                }
+            }
+            // this make sure that the underlying ArrayRef's are not dropped
+            self.owned.push(s.clone());
+        }
+    }
+
+    #[inline]
+    fn append_null(&mut self) {
+        self.builder.push_null()
+    }
+
+    fn finish(&mut self) -> ListChunked {
+        let slf = std::mem::take(self);
+        if slf.builder.is_empty() {
+            ListChunked::full_null_with_dtype(
+                &slf.name,
+                0,
+                &slf.inner_dtype.unwrap_or(DataType::Null),
+            )
+        } else {
+            let inner_dtype = slf.inner_dtype.map(|dt| dt.to_physical().to_arrow());
+            let arr = slf.builder.finish(inner_dtype.as_ref()).unwrap();
+            let dtype = DataType::from(arr.data_type());
+            let mut ca = ListChunked::from_chunks("", vec![Arc::new(arr)]);
+
+            ca.field = Arc::new(Field::new(&slf.name, dtype));
+            ca
+        }
+    }
+}
+
+impl AnonymousOwnedListBuilder {
+    pub fn new(name: &str, capacity: usize, inner_dtype: Option<DataType>) -> Self {
+        Self {
+            name: name.into(),
+            builder: AnonymousBuilder::new(capacity),
+            owned: Vec::with_capacity(capacity),
+            inner_dtype,
+        }
+    }
+
+    #[inline]
+    pub fn append_empty(&mut self) {
+        self.builder.push_empty()
     }
 }

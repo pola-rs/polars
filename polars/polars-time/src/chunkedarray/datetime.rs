@@ -1,65 +1,43 @@
 use super::*;
+use arrow::array::{Array, ArrayRef, PrimitiveArray};
+use arrow::compute::cast::CastOptions;
+use arrow::compute::{cast::cast, temporal};
+use arrow::error::Result as ArrowResult;
+use polars_arrow::export::arrow;
+use polars_core::prelude::*;
 
-pub trait DatetimeMethods {
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the year number in the calendar date.
-    fn year(&self) -> Int32Chunked;
+fn cast_and_apply<
+    F: Fn(&dyn Array) -> ArrowResult<PrimitiveArray<T::Native>>,
+    T: PolarsNumericType,
+>(
+    ca: &DatetimeChunked,
+    func: F,
+) -> ChunkedArray<T> {
+    let dtype = ca.dtype().to_arrow();
+    let chunks = ca
+        .downcast_iter()
+        .map(|arr| {
+            let arr = cast(
+                arr,
+                &dtype,
+                CastOptions {
+                    wrapped: true,
+                    partial: false,
+                },
+            )
+            .unwrap();
+            Arc::from(func(&*arr).unwrap()) as ArrayRef
+        })
+        .collect();
 
-    /// Extract month from underlying NaiveDateTime representation.
-    /// Returns the month number starting from 1.
-    ///
-    /// The return value ranges from 1 to 12.
-    fn month(&self) -> UInt32Chunked;
-
-    /// Extract weekday from underlying NaiveDateTime representation.
-    /// Returns the weekday number where monday = 0 and sunday = 6
-    fn weekday(&self) -> UInt32Chunked;
-
-    /// Returns the ISO week number starting from 1.
-    /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> UInt32Chunked;
-
-    /// Extract day from underlying NaiveDateTime representation.
-    /// Returns the day of month starting from 1.
-    ///
-    /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> UInt32Chunked;
-
-    /// Extract hour from underlying NaiveDateTime representation.
-    /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> UInt32Chunked;
-
-    /// Extract minute from underlying NaiveDateTime representation.
-    /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> UInt32Chunked;
-
-    /// Extract second from underlying NaiveDateTime representation.
-    /// Returns the second number from 0 to 59.
-    fn second(&self) -> UInt32Chunked;
-
-    /// Extract second from underlying NaiveDateTime representation.
-    /// Returns the number of nanoseconds since the whole non-leap second.
-    /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    fn nanosecond(&self) -> UInt32Chunked;
-
-    /// Returns the day of year starting from 1.
-    ///
-    /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal(&self) -> UInt32Chunked;
-
-    fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked;
+    ChunkedArray::from_chunks(ca.name(), chunks)
 }
 
-impl DatetimeMethods for DatetimeChunked {
+pub trait DatetimeMethods: AsDatetime {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
     fn year(&self) -> Int32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_year_ns,
-            TimeUnit::Microseconds => datetime_to_year_us,
-            TimeUnit::Milliseconds => datetime_to_year_ms,
-        };
-        self.apply_kernel_cast::<Int32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
@@ -67,34 +45,19 @@ impl DatetimeMethods for DatetimeChunked {
     ///
     /// The return value ranges from 1 to 12.
     fn month(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_month_ns,
-            TimeUnit::Microseconds => datetime_to_month_us,
-            TimeUnit::Milliseconds => datetime_to_month_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::month)
     }
 
     /// Extract weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 0 and sunday = 6
     fn weekday(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_weekday_ns,
-            TimeUnit::Microseconds => datetime_to_weekday_us,
-            TimeUnit::Milliseconds => datetime_to_weekday_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::weekday)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     fn week(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_week_ns,
-            TimeUnit::Microseconds => datetime_to_week_us,
-            TimeUnit::Milliseconds => datetime_to_week_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::iso_week)
     }
 
     /// Extract day from underlying NaiveDateTime representation.
@@ -102,69 +65,45 @@ impl DatetimeMethods for DatetimeChunked {
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
     fn day(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_day_ns,
-            TimeUnit::Microseconds => datetime_to_day_us,
-            TimeUnit::Milliseconds => datetime_to_day_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::day)
     }
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
     fn hour(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_hour_ns,
-            TimeUnit::Microseconds => datetime_to_hour_us,
-            TimeUnit::Milliseconds => datetime_to_hour_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::hour)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
     fn minute(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_minute_ns,
-            TimeUnit::Microseconds => datetime_to_minute_us,
-            TimeUnit::Milliseconds => datetime_to_minute_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::minute)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
     fn second(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_second_ns,
-            TimeUnit::Microseconds => datetime_to_second_us,
-            TimeUnit::Milliseconds => datetime_to_second_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::second)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
     fn nanosecond(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
-            TimeUnit::Nanoseconds => datetime_to_nanosecond_ns,
-            TimeUnit::Microseconds => datetime_to_nanosecond_us,
-            TimeUnit::Milliseconds => datetime_to_nanosecond_ms,
-        };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        cast_and_apply(self.as_datetime(), temporal::nanosecond)
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
     fn ordinal(&self) -> UInt32Chunked {
-        let f = match self.time_unit() {
+        let ca = self.as_datetime();
+        let f = match ca.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
             TimeUnit::Microseconds => datetime_to_ordinal_us,
             TimeUnit::Milliseconds => datetime_to_ordinal_ms,
         };
-        self.apply_kernel_cast::<UInt32Type>(&f)
+        ca.apply_kernel_cast::<UInt32Type>(&f)
     }
 
     fn parse_from_str_slice(name: &str, v: &[&str], fmt: &str, tu: TimeUnit) -> DatetimeChunked {
@@ -182,6 +121,18 @@ impl DatetimeMethods for DatetimeChunked {
         .into_datetime(tu, None)
     }
 }
+
+pub trait AsDatetime {
+    fn as_datetime(&self) -> &DatetimeChunked;
+}
+
+impl AsDatetime for DatetimeChunked {
+    fn as_datetime(&self) -> &DatetimeChunked {
+        self
+    }
+}
+
+impl DatetimeMethods for DatetimeChunked {}
 
 #[cfg(test)]
 mod test {

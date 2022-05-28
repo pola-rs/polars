@@ -1,4 +1,5 @@
 use super::*;
+use polars_core::{with_string_cache, SINGLE_LOCK};
 
 #[test]
 fn test_predicate_after_renaming() -> Result<()> {
@@ -91,5 +92,75 @@ fn test_many_filters() -> Result<()> {
         .with_predicate_pushdown(false)
         .collect()?;
 
+    Ok(())
+}
+
+#[test]
+fn test_filter_no_combine() -> Result<()> {
+    let df = df![
+        "vals" => [1, 2, 3, 4, 5]
+    ]?;
+
+    let out = df
+        .lazy()
+        .filter(col("vals").gt(lit(1)))
+        // should be > 2
+        // if optimizer would combine predicates this would be flawed
+        .filter(col("vals").gt(col("vals").min()))
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("vals")?.i32()?),
+        &[Some(3), Some(4), Some(5)]
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_filter_block_join() -> Result<()> {
+    let df_a = df![
+        "a" => ["a", "b", "c"],
+        "c" => [1, 4, 6]
+    ]?;
+    let df_b = df![
+        "a" => ["a", "a", "c"],
+        "d" => [2, 4, 3]
+    ]?;
+
+    let out = df_a
+        .lazy()
+        .left_join(df_b.lazy(), "a", "a")
+        // mean is influence by join
+        .filter(col("c").mean().eq(col("d")))
+        .collect()?;
+    assert_eq!(out.shape(), (1, 3));
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "is_in", feature = "dtype-categorical"))]
+fn test_is_in_categorical_3420() -> Result<()> {
+    let df = df![
+        "a" => ["a", "b", "c", "d", "e"],
+        "b" => [1, 2, 3, 4, 5]
+    ]?;
+
+    let _guard = SINGLE_LOCK.lock();
+
+    let out: Result<_> = with_string_cache(|| {
+        let s = Series::new("x", ["a", "b", "c"]).strict_cast(&DataType::Categorical(None))?;
+        df.lazy()
+            .with_column(col("a").strict_cast(DataType::Categorical(None)))
+            .filter(col("a").is_in(lit(s).alias("x")))
+            .collect()
+    });
+    let mut expected = df![
+        "a" => ["a", "b", "c"],
+        "b" => [1, 2, 3]
+    ]?;
+    expected.try_apply("a", |s| s.cast(&DataType::Categorical(None)))?;
+    assert!(out?.frame_equal(&expected));
     Ok(())
 }

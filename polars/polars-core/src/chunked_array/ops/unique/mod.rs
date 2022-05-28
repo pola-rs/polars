@@ -52,11 +52,17 @@ pub(crate) fn is_unique_helper(
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
-    let idx = groups
-        .into_idx()
-        .into_iter()
-        .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
-        .collect::<Vec<_>>();
+
+    let idx = match groups {
+        GroupsProxy::Idx(groups) => groups
+            .into_iter()
+            .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
+            .collect::<Vec<_>>(),
+        GroupsProxy::Slice(groups) => groups
+            .into_iter()
+            .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
+            .collect(),
+    };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)
 }
 

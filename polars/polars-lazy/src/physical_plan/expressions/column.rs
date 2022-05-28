@@ -88,6 +88,11 @@ impl PhysicalExpr for ColumnExpr {
         let s = self.evaluate(df, state)?;
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), false))
     }
+
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
+    }
+
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         let field = input_schema.get_field(&self.0).ok_or_else(|| {
             PolarsError::NotFound(format!(
@@ -96,5 +101,25 @@ impl PhysicalExpr for ColumnExpr {
             ))
         })?;
         Ok(field)
+    }
+}
+
+impl PartitionedAggregation for ColumnExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        _groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        self.evaluate(df, state)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

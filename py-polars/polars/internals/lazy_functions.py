@@ -161,6 +161,37 @@ def col(
     return pli.wrap_expr(pycol(name))
 
 
+def element() -> "pli.Expr":
+    """
+    Alias for an element in evaluated in an `eval` expression
+
+    Examples
+    --------
+
+    A horizontal rank computation by taking the elements of a list
+
+    >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
+    >>> df.with_column(
+    ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
+    ... )
+    shape: (3, 3)
+    ┌─────┬─────┬────────────┐
+    │ a   ┆ b   ┆ rank       │
+    │ --- ┆ --- ┆ ---        │
+    │ i64 ┆ i64 ┆ list [f32] │
+    ╞═════╪═════╪════════════╡
+    │ 1   ┆ 4   ┆ [1.0, 2.0] │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 8   ┆ 5   ┆ [2.0, 1.0] │
+    ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┤
+    │ 3   ┆ 2   ┆ [2.0, 1.0] │
+    └─────┴─────┴────────────┘
+
+    """
+
+    return col("")
+
+
 @overload
 def count(column: str) -> "pli.Expr":
     ...
@@ -1024,9 +1055,9 @@ def argsort_by(
     reverse
         Default is ascending.
     """
-    if not isinstance(exprs, list):
-        exprs = [exprs]  # type: ignore
-    if not isinstance(reverse, list):
+    if isinstance(exprs, str) or not isinstance(exprs, Sequence):
+        exprs = [exprs]
+    if isinstance(reverse, bool):
         reverse = [reverse] * len(exprs)
     exprs = pli.selection_to_pyexpr_list(exprs)
     return pli.wrap_expr(pyargsort_by(exprs, reverse))
@@ -1424,7 +1455,9 @@ def select(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: Literal[True],
 ) -> "pli.Series":
     ...
@@ -1432,7 +1465,9 @@ def struct(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: Literal[False],
 ) -> "pli.Expr":
     ...
@@ -1440,14 +1475,18 @@ def struct(
 
 @overload
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     ...
 
 
 def struct(
-    exprs: Union[Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr"],
+    exprs: Union[
+        Sequence[Union["pli.Expr", str, "pli.Series"]], "pli.Expr", "pli.Series"
+    ],
     eager: bool = False,
 ) -> Union["pli.Expr", "pli.Series"]:
     """

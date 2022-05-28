@@ -2,6 +2,8 @@ use crate::prelude::*;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 use arrow::temporal_conversions::{date32_to_date, timestamp_ns_to_datetime};
+#[cfg(feature = "timezones")]
+use chrono::TimeZone;
 use num::{Num, NumCast};
 use std::{
     fmt,
@@ -249,6 +251,15 @@ impl Debug for Series {
                     "Series"
                 )
             }
+            #[cfg(feature = "dtype-time")]
+            DataType::Time => format_array!(
+                limit,
+                f,
+                self.time().unwrap(),
+                "time",
+                self.name(),
+                "Series"
+            ),
             #[cfg(feature = "dtype-duration")]
             DataType::Duration(_) => {
                 let dt = format!("{}", self.dtype());
@@ -611,11 +622,28 @@ impl Display for AnyValue<'_> {
             #[cfg(feature = "dtype-date")]
             AnyValue::Date(v) => write!(f, "{}", date32_to_date(*v)),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(v, tu, _) => match tu {
-                TimeUnit::Nanoseconds => write!(f, "{}", timestamp_ns_to_datetime(*v)),
-                TimeUnit::Microseconds => write!(f, "{}", timestamp_us_to_datetime(*v)),
-                TimeUnit::Milliseconds => write!(f, "{}", timestamp_ms_to_datetime(*v)),
-            },
+            AnyValue::Datetime(v, tu, tz) => {
+                let ndt = match tu {
+                    TimeUnit::Nanoseconds => timestamp_ns_to_datetime(*v),
+                    TimeUnit::Microseconds => timestamp_us_to_datetime(*v),
+                    TimeUnit::Milliseconds => timestamp_ms_to_datetime(*v),
+                };
+                match tz {
+                    None => write!(f, "{}", ndt),
+                    Some(_tz) => {
+                        #[cfg(feature = "timezones")]
+                        {
+                            let tz = _tz.parse::<chrono_tz::Tz>().unwrap();
+                            let tz_dt = tz.from_local_datetime(&ndt).unwrap();
+                            write!(f, "{}", tz_dt)
+                        }
+                        #[cfg(not(feature = "timezones"))]
+                        {
+                            panic!("activate 'timezones' feature")
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(v, tu) => match tu {
                 TimeUnit::Nanoseconds => fmt_duration_ns(f, *v),
@@ -770,7 +798,8 @@ mod test {
 
     #[test]
     fn test_fmt_list() {
-        let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("a", 10, 10, DataType::Int32);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
         builder.append_slice(Some(&[1, 2, 3]));
         builder.append_slice(None);
         let list = builder.finish().into_series();

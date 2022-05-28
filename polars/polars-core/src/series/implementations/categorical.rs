@@ -73,7 +73,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         .into_series()
     }
 
-    fn set_sorted(&mut self, reverse: bool) {
+    fn _set_sorted(&mut self, reverse: bool) {
         self.0.logical_mut().set_sorted(reverse)
     }
 
@@ -99,12 +99,13 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.logical().vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
-        self.0.logical().agg_list(groups).map(|s| {
-            s.cast(&DataType::List(Box::new(self.dtype().clone())))
-                .unwrap()
-        })
+        self.0
+            .logical()
+            .agg_list(groups)
+            .cast(&DataType::List(Box::new(self.dtype().clone())))
+            .unwrap()
     }
 
     fn zip_outer_join_column(
@@ -114,7 +115,8 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     ) -> Series {
         let new_rev_map = self
             .0
-            .merge_categorical_map(right_column.categorical().unwrap());
+            .merge_categorical_map(right_column.categorical().unwrap())
+            .unwrap();
         let left = self.0.logical();
         let right = right_column
             .categorical()
@@ -209,7 +211,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         if self.0.dtype() == other.dtype() {
             let other = other.categorical()?;
             self.0.logical_mut().extend(other.logical());
-            let new_rev_map = self.0.merge_categorical_map(other);
+            let new_rev_map = self.0.merge_categorical_map(other)?;
             self.0.set_rev_map(new_rev_map, false);
             Ok(())
         } else {

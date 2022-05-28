@@ -40,7 +40,23 @@ where
             DataType::Categorical(_) => {
                 Ok(CategoricalChunked::full_null(self.name(), self.len()).into_series())
             }
-            _ => cast_impl(self.name(), &self.chunks, data_type),
+            _ => cast_impl(self.name(), &self.chunks, data_type).map(|mut s| {
+                // maintain sorted if data types remain signed
+                if self.is_sorted()
+                    || self.is_sorted_reverse() && (s.null_count() == self.null_count())
+                {
+                    // this may still fail with overflow?
+                    //
+                    if (self.dtype().is_signed() && data_type.is_signed())
+                        || (self.dtype().is_unsigned() && data_type.is_unsigned())
+                    {
+                        let reverse = self.is_sorted_reverse();
+                        let inner = s._get_inner_mut();
+                        inner._set_sorted(reverse)
+                    }
+                }
+                s
+            }),
         }
     }
 }
@@ -122,7 +138,8 @@ mod test {
 
     #[test]
     fn test_cast_list() -> Result<()> {
-        let mut builder = ListPrimitiveChunkedBuilder::<i32>::new("a", 10, 10, DataType::Int32);
+        let mut builder =
+            ListPrimitiveChunkedBuilder::<Int32Type>::new("a", 10, 10, DataType::Int32);
         builder.append_slice(Some(&[1i32, 2, 3]));
         builder.append_slice(Some(&[1i32, 2, 3]));
         let ca = builder.finish();

@@ -10,6 +10,7 @@ use polars::lazy::dsl::Operator;
 use polars::prelude::*;
 use polars_core::prelude::QuantileInterpolOptions;
 use pyo3::class::basic::CompareOp;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyFloat, PyInt, PyString};
 use std::borrow::Cow;
@@ -200,6 +201,9 @@ impl PyExpr {
     pub fn unique_counts(&self) -> PyExpr {
         self.inner.clone().unique_counts().into()
     }
+    pub fn null_count(&self) -> PyExpr {
+        self.inner.clone().null_count().into()
+    }
     pub fn cast(&self, data_type: Wrap<DataType>, strict: bool) -> PyExpr {
         let dt = data_type.0;
         let expr = if strict {
@@ -375,8 +379,8 @@ impl PyExpr {
         self.clone().inner.repeat_by(by.inner).into()
     }
 
-    pub fn pow(&self, exponent: f64) -> PyExpr {
-        self.clone().inner.pow(exponent).into()
+    pub fn pow(&self, exponent: PyExpr) -> PyExpr {
+        self.clone().inner.pow(exponent.inner).into()
     }
 
     pub fn cumsum(&self, reverse: bool) -> PyExpr {
@@ -416,6 +420,19 @@ impl PyExpr {
             .str()
             .strptime(StrpTimeOptions {
                 date_dtype: DataType::Datetime(TimeUnit::Microseconds, None),
+                fmt,
+                strict,
+                exact,
+            })
+            .into()
+    }
+
+    pub fn str_parse_time(&self, fmt: Option<String>, strict: bool, exact: bool) -> PyExpr {
+        self.inner
+            .clone()
+            .str()
+            .strptime(StrpTimeOptions {
+                date_dtype: DataType::Time,
                 fmt,
                 strict,
                 exact,
@@ -614,6 +631,14 @@ impl PyExpr {
         self.inner.clone().str().extract(pat, group_index).into()
     }
 
+    pub fn str_extract_all(&self, pat: &str) -> PyExpr {
+        self.inner.clone().str().extract_all(pat).into()
+    }
+
+    pub fn count_match(&self, pat: &str) -> PyExpr {
+        self.inner.clone().str().count_match(pat).into()
+    }
+
     pub fn strftime(&self, fmt: &str) -> PyExpr {
         self.inner.clone().dt().strftime(fmt).into()
     }
@@ -754,7 +779,7 @@ impl PyExpr {
         min_periods: usize,
         center: bool,
     ) -> PyExpr {
-        let options = RollingOptions {
+        let options = RollingOptionsFixedWindow {
             window_size,
             weights,
             min_periods,
@@ -886,16 +911,6 @@ impl PyExpr {
     pub fn dot(&self, other: PyExpr) -> PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
-    pub fn hash(&self, k0: u64, k1: u64, k2: u64, k3: u64) -> PyExpr {
-        let function = move |s: Series| {
-            let hb = ahash::RandomState::with_seeds(k0, k1, k2, k3);
-            Ok(s.hash(hb).into_series())
-        };
-        self.clone()
-            .inner
-            .map(function, GetOutput::from_type(DataType::UInt64))
-            .into()
-    }
 
     pub fn reinterpret(&self, signed: bool) -> PyExpr {
         let function = move |s: Series| reinterpret(&s, signed);
@@ -947,61 +962,77 @@ impl PyExpr {
 
     pub fn rolling_sum(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> PyExpr {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_sum(options).into()
     }
     pub fn rolling_min(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_min(options).into()
     }
     pub fn rolling_max(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_max(options).into()
     }
     pub fn rolling_mean(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_mean(options).into()
@@ -1009,16 +1040,20 @@ impl PyExpr {
 
     pub fn rolling_std(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_std(options).into()
@@ -1026,16 +1061,20 @@ impl PyExpr {
 
     pub fn rolling_var(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner.clone().rolling_var(options).into()
@@ -1043,16 +1082,20 @@ impl PyExpr {
 
     pub fn rolling_median(
         &self,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
         self.inner.clone().rolling_median(options).into()
     }
@@ -1061,10 +1104,12 @@ impl PyExpr {
         &self,
         quantile: f64,
         interpolation: &str,
-        window_size: usize,
+        window_size: &str,
         weights: Option<Vec<f64>>,
         min_periods: usize,
         center: bool,
+        by: Option<String>,
+        closed: Option<Wrap<ClosedWindow>>,
     ) -> Self {
         let interpol = match interpolation {
             "nearest" => QuantileInterpolOptions::Nearest,
@@ -1076,10 +1121,12 @@ impl PyExpr {
         };
 
         let options = RollingOptions {
-            window_size,
+            window_size: Duration::parse(window_size),
             weights,
             min_periods,
             center,
+            by,
+            closed_window: closed.map(|c| c.0),
         };
 
         self.inner
@@ -1181,6 +1228,41 @@ impl PyExpr {
         self.inner.clone().arr().eval(expr.inner, parallel).into()
     }
 
+    fn cumulative_eval(&self, expr: PyExpr, min_periods: usize, parallel: bool) -> Self {
+        self.inner
+            .clone()
+            .cumulative_eval(expr.inner, min_periods, parallel)
+            .into()
+    }
+
+    fn lst_to_struct(&self, width_strat: &str, name_gen: Option<PyObject>) -> PyResult<Self> {
+        let n_fields = match width_strat {
+            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
+            "max_width" => ListToStructWidthStrategy::MaxWidth,
+            strat => {
+                return Err(PyValueError::new_err(format!(
+                "strategy: {strat} not allowed, choose any of {{ 'first_non_null', 'max_width' }}"
+            )))
+            }
+        };
+
+        let name_gen = name_gen.map(|lambda| {
+            Arc::new(move |idx: usize| {
+                Python::with_gil(|py| {
+                    let out = lambda.call1(py, (idx,)).unwrap();
+                    out.extract::<String>(py).unwrap()
+                })
+            }) as NameGenerator
+        });
+
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .to_struct(n_fields, name_gen)
+            .into())
+    }
+
     fn rank(&self, method: &str, reverse: bool) -> Self {
         let method = str_to_rankmethod(method).unwrap();
         let options = RankOptions {
@@ -1263,10 +1345,16 @@ impl PyExpr {
         self.inner.clone().shuffle(seed).into()
     }
 
-    pub fn sample_frac(&self, frac: f64, with_replacement: bool, seed: Option<u64>) -> Self {
+    pub fn sample_frac(
+        &self,
+        frac: f64,
+        with_replacement: bool,
+        shuffle: bool,
+        seed: Option<u64>,
+    ) -> Self {
         self.inner
             .clone()
-            .sample_frac(frac, with_replacement, seed)
+            .sample_frac(frac, with_replacement, shuffle, seed)
             .into()
     }
 
@@ -1330,8 +1418,11 @@ impl PyExpr {
         self.inner.clone().log(base).into()
     }
 
-    pub fn entropy(&self, base: f64) -> Self {
-        self.inner.clone().entropy(base).into()
+    pub fn entropy(&self, base: f64, normalize: bool) -> Self {
+        self.inner.clone().entropy(base, normalize).into()
+    }
+    pub fn hash(&self, seed: usize) -> Self {
+        self.inner.clone().hash(seed).into()
     }
 }
 

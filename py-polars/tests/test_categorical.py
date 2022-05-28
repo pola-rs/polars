@@ -119,3 +119,24 @@ def test_cat_to_dummies() -> None:
         "bar_b": [0, 1, 0, 0],
         "bar_c": [0, 0, 0, 1],
     }
+
+
+def test_comp_categorical_lit_dtype() -> None:
+    df = pl.DataFrame(
+        data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
+        columns=[("column", pl.Categorical), ("more", pl.Int32)],
+    )
+
+    assert df.with_column(
+        pl.when(pl.col("column") == "e")
+        .then("d")
+        .otherwise(pl.col("column"))
+        .alias("column")
+    ).dtypes == [pl.Categorical, pl.Int32]
+
+
+def test_categorical_describe_3487() -> None:
+    # test if we don't err
+    df = pl.DataFrame({"cats": ["a", "b"]})
+    df = df.with_column(pl.col("cats").cast(pl.Categorical))
+    df.describe()

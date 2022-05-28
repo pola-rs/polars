@@ -57,7 +57,7 @@ macro_rules! impl_dyn_series {
                 self.0.cummin(reverse).$into_logical().into_series()
             }
 
-            fn set_sorted(&mut self, reverse: bool) {
+            fn _set_sorted(&mut self, reverse: bool) {
                 self.0.deref_mut().set_sorted(reverse)
             }
 
@@ -77,39 +77,20 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_min(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_min(groups)
-                    .map(|ca| ca.$into_logical().into_series())
+            fn agg_min(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_min(groups).$into_logical().into_series()
             }
 
-            fn agg_max(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_max(groups)
-                    .map(|ca| ca.$into_logical().into_series())
+            fn agg_max(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_max(groups).$into_logical().into_series()
             }
 
-            fn agg_sum(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_std(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_var(&self, _groups: &GroupsProxy) -> Option<Series> {
-                // does not make sense on logical
-                None
-            }
-
-            fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+            fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 // we cannot cast and dispatch as the inner type of the list would be incorrect
-                self.0.agg_list(groups).map(|s| {
-                    s.cast(&DataType::List(Box::new(self.dtype().clone())))
-                        .unwrap()
-                })
+                self.0
+                    .agg_list(groups)
+                    .cast(&DataType::List(Box::new(self.dtype().clone())))
+                    .unwrap()
             }
 
             fn agg_quantile(
@@ -117,16 +98,15 @@ macro_rules! impl_dyn_series {
                 groups: &GroupsProxy,
                 quantile: f64,
                 interpol: QuantileInterpolOptions,
-            ) -> Option<Series> {
+            ) -> Series {
                 self.0
                     .agg_quantile(groups, quantile, interpol)
-                    .map(|s| s.$into_logical().into_series())
+                    .$into_logical()
+                    .into_series()
             }
 
-            fn agg_median(&self, groups: &GroupsProxy) -> Option<Series> {
-                self.0
-                    .agg_median(groups)
-                    .map(|s| s.$into_logical().into_series())
+            fn agg_median(&self, groups: &GroupsProxy) -> Series {
+                self.0.agg_median(groups).$into_logical().into_series()
             }
 
             fn zip_outer_join_column(
@@ -613,9 +593,7 @@ mod test {
         let s = Series::new("foo", &[1, 2, 3]);
         let s = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
 
-        let l = s
-            .agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into()))
-            .unwrap();
+        let l = s.agg_list(&GroupsProxy::Idx(vec![(0, vec![0, 1, 2])].into()));
 
         match l.dtype() {
             DataType::List(inner) => {

@@ -6,6 +6,7 @@ use polars_io::RowCount;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CsvParserOptions {
     pub(crate) delimiter: u8,
     pub(crate) comment_char: Option<u8>,
@@ -13,7 +14,7 @@ pub struct CsvParserOptions {
     pub(crate) has_header: bool,
     pub(crate) skip_rows: usize,
     pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) low_memory: bool,
     pub(crate) ignore_errors: bool,
     pub(crate) cache: bool,
@@ -25,23 +26,28 @@ pub struct CsvParserOptions {
 }
 #[cfg(feature = "parquet")]
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ParquetOptions {
     pub(crate) n_rows: Option<usize>,
-    pub(crate) with_columns: Option<Vec<String>>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) cache: bool,
     pub(crate) parallel: bool,
+    pub(crate) rechunk: bool,
     pub(crate) row_count: Option<RowCount>,
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IpcScanOptions {
     pub n_rows: Option<usize>,
-    pub with_columns: Option<Vec<String>>,
+    pub with_columns: Option<Arc<Vec<String>>>,
     pub cache: bool,
     pub row_count: Option<RowCount>,
+    pub rechunk: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub(crate) slice: bool,
     pub(crate) slice_offset: i64,
@@ -49,6 +55,7 @@ pub struct UnionOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GroupbyOptions {
     pub(crate) dynamic: Option<DynamicGroupOptions>,
     pub(crate) rolling: Option<RollingGroupOptions>,
@@ -56,6 +63,7 @@ pub struct GroupbyOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptions {
     pub(crate) subset: Option<Arc<Vec<String>>>,
     pub(crate) maintain_order: bool,
@@ -133,9 +141,25 @@ pub struct LogicalPlanUdfOptions {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SortArguments {
     pub(crate) reverse: Vec<bool>,
     // Can only be true in case of a single column.
     pub(crate) nulls_last: bool,
     pub(crate) slice: Option<(i64, usize)>,
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
+#[cfg(feature = "python")]
+pub struct PythonOptions {
+    // Serialized Fn() -> Result<DataFrame>
+    pub(crate) scan_fn: Vec<u8>,
+    pub(crate) schema: SchemaRef,
+    pub(crate) output_schema: Option<SchemaRef>,
+    pub(crate) with_columns: Option<Arc<Vec<String>>>,
 }

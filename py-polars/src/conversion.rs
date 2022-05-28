@@ -19,7 +19,13 @@ use pyo3::{PyAny, PyResult};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
-pub(crate) fn to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
+pub(crate) fn slice_to_wrapped<T>(slice: &[T]) -> &[Wrap<T>] {
+    // Safety:
+    // Wrap is transparent.
+    unsafe { std::mem::transmute(slice) }
+}
+
+pub(crate) fn slice_extract_wrapped<T>(slice: &[Wrap<T>]) -> &[T] {
     // Safety:
     // Wrap is transparent.
     unsafe { std::mem::transmute(slice) }
@@ -197,27 +203,19 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
                 convert.call1((v, py_date_dtype)).unwrap().into_py(py)
             }
             AnyValue::Datetime(v, tu, tz) => {
-                if tz.is_some() {
-                    todo!()
-                }
                 let pl = PyModule::import(py, "polars").unwrap();
                 let utils = pl.getattr("utils").unwrap();
                 let convert = utils.getattr("_to_python_datetime").unwrap();
                 let py_datetime_dtype = pl.getattr("Datetime").unwrap();
-                match tu {
-                    TimeUnit::Nanoseconds => convert
-                        .call1((v, py_datetime_dtype, "ns"))
-                        .unwrap()
-                        .into_py(py),
-                    TimeUnit::Microseconds => convert
-                        .call1((v, py_datetime_dtype, "us"))
-                        .unwrap()
-                        .into_py(py),
-                    TimeUnit::Milliseconds => convert
-                        .call1((v, py_datetime_dtype, "ms"))
-                        .unwrap()
-                        .into_py(py),
-                }
+                let tu = match tu {
+                    TimeUnit::Nanoseconds => "ns",
+                    TimeUnit::Microseconds => "us",
+                    TimeUnit::Milliseconds => "ms",
+                };
+                convert
+                    .call1((v, py_datetime_dtype, tu, tz.as_ref().map(|s| s.as_str())))
+                    .unwrap()
+                    .into_py(py)
             }
             AnyValue::Duration(v, tu) => {
                 let pl = PyModule::import(py, "polars").unwrap();
@@ -269,13 +267,16 @@ impl ToPyObject for Wrap<DataType> {
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
-            DataType::Struct(inners) => {
-                let iter = inners
-                    .iter()
-                    .map(|fld| Wrap(fld.data_type().clone()).to_object(py));
-                let inners = PyList::new(py, iter);
+            DataType::Struct(fields) => {
+                let field_class = pl.getattr("Field").unwrap();
+                let iter = fields.iter().map(|fld| {
+                    let name = fld.name().clone();
+                    let dtype = Wrap(fld.data_type().clone()).to_object(py);
+                    field_class.call1((name, dtype)).unwrap()
+                });
+                let fields = PyList::new(py, iter);
                 let struct_class = pl.getattr("Struct").unwrap();
-                struct_class.call1((inners,)).unwrap().into()
+                struct_class.call1((fields,)).unwrap().into()
             }
             DataType::Null => pl.getattr("Null").unwrap().into(),
             dt => panic!("{} not supported", dt),
@@ -310,57 +311,65 @@ impl FromPyObject<'_> for Wrap<QuantileInterpolOptions> {
     }
 }
 
-static PREFIX_LEN: usize = "<class 'polars.datatypes.".len();
+impl FromPyObject<'_> for Wrap<Field> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let name = ob.getattr("name")?.str()?.to_str()?;
+        let dtype = ob.getattr("dtype")?.extract::<Wrap<DataType>>()?;
+        Ok(Wrap(Field::new(name, dtype.0)))
+    }
+}
 
 impl FromPyObject<'_> for Wrap<DataType> {
     fn extract(ob: &PyAny) -> PyResult<Self> {
-        let str_rep = ob.repr().unwrap().to_str().unwrap();
+        let type_name = ob.get_type().name()?;
 
-        // slice off unneeded parts
-        let dtype = match &str_rep[PREFIX_LEN..str_rep.len() - 2] {
-            "UInt8" => DataType::UInt8,
-            "UInt16" => DataType::UInt16,
-            "UInt32" => DataType::UInt32,
-            "UInt64" => DataType::UInt64,
-            "Int8" => DataType::Int8,
-            "Int16" => DataType::Int16,
-            "Int32" => DataType::Int32,
-            "Int64" => DataType::Int64,
-            "Utf8" => DataType::Utf8,
-            "Boolean" => DataType::Boolean,
-            "Categorical" => DataType::Categorical(None),
-            "Date" => DataType::Date,
-            "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
-            "Time" => DataType::Time,
-            "Duration" => DataType::Duration(TimeUnit::Microseconds),
-            "Float32" => DataType::Float32,
-            "Float64" => DataType::Float64,
-            "Object" => DataType::Object("unknown"),
-            // just the class, not an object
-            "List" => DataType::List(Box::new(DataType::Boolean)),
-            "Null" => DataType::Null,
+        let dtype = match type_name {
+            "type" => {
+                // just the class, not an object
+                let name = ob.getattr("__name__")?.str()?.to_str()?;
+                match name {
+                    "UInt8" => DataType::UInt8,
+                    "UInt16" => DataType::UInt16,
+                    "UInt32" => DataType::UInt32,
+                    "UInt64" => DataType::UInt64,
+                    "Int8" => DataType::Int8,
+                    "Int16" => DataType::Int16,
+                    "Int32" => DataType::Int32,
+                    "Int64" => DataType::Int64,
+                    "Utf8" => DataType::Utf8,
+                    "Boolean" => DataType::Boolean,
+                    "Categorical" => DataType::Categorical(None),
+                    "Date" => DataType::Date,
+                    "Datetime" => DataType::Datetime(TimeUnit::Microseconds, None),
+                    "Time" => DataType::Time,
+                    "Duration" => DataType::Duration(TimeUnit::Microseconds),
+                    "Float32" => DataType::Float32,
+                    "Float64" => DataType::Float64,
+                    "Object" => DataType::Object("unknown"),
+                    "List" => DataType::List(Box::new(DataType::Boolean)),
+                    "Null" => DataType::Null,
+                    dt => panic!("{} not expected as Python type for dtype conversion", dt),
+                }
+            }
+            "List" => {
+                let inner = ob.getattr("inner")?;
+                let inner = inner.extract::<Wrap<DataType>>()?;
+                DataType::List(Box::new(inner.0))
+            }
+            "Struct" => {
+                let fields = ob.getattr("fields")?;
+                let fields = fields
+                    .extract::<Vec<Wrap<Field>>>()?
+                    .into_iter()
+                    .map(|f| f.0)
+                    .collect::<Vec<Field>>();
+                DataType::Struct(fields)
+            }
             dt => {
-                let out: PyResult<_> = Python::with_gil(|py| {
-                    let builtins = PyModule::import(py, "builtins")?;
-                    let polars = PyModule::import(py, "polars")?;
-                    let list_class = polars.getattr("List").unwrap();
-                    if builtins
-                        .getattr("isinstance")
-                        .unwrap()
-                        .call1((ob, list_class))?
-                        .extract::<bool>()?
-                    {
-                        let inner = ob.getattr("inner")?;
-                        let inner = inner.extract::<Wrap<DataType>>()?;
-                        Ok(DataType::List(Box::new(inner.0)))
-                    } else {
-                        panic!(
-                            "{} not expected in python dtype to rust dtype conversion",
-                            dt
-                        )
-                    }
-                });
-                out?
+                panic!(
+                    "{} not expected in Python dtype to Rust dtype conversion",
+                    dt
+                )
             }
         };
         Ok(Wrap(dtype))
@@ -452,6 +461,19 @@ impl ToPyObject for Wrap<&DatetimeChunked> {
     }
 }
 
+impl ToPyObject for Wrap<&TimeChunked> {
+    fn to_object(&self, py: Python) -> PyObject {
+        let pl = PyModule::import(py, "polars").unwrap();
+        let pl_utils = pl.getattr("utils").unwrap();
+        let convert = pl_utils.getattr("_to_python_time").unwrap();
+        let iter = self
+            .0
+            .into_iter()
+            .map(|opt_v| opt_v.map(|v| convert.call1((v,)).unwrap()));
+        PyList::new(py, iter).into_py(py)
+    }
+}
+
 impl ToPyObject for Wrap<&DateChunked> {
     fn to_object(&self, py: Python) -> PyObject {
         let pl = PyModule::import(py, "polars").unwrap();
@@ -528,13 +550,13 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
             }
             Ok(Wrap(AnyValue::StructOwned(Box::new((vals, keys)))))
         } else if ob.is_instance_of::<PyList>()? {
-            Python::with_gil(|py| {
-                let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-                let series = pypolars.getattr(py, "Series").unwrap().call1(py, (ob,))?;
-                let py_pyseries = series.getattr(py, "_s").unwrap();
-                let series = py_pyseries.extract::<PySeries>(py).unwrap().series;
-                Ok(Wrap(AnyValue::List(series)))
-            })
+            if ob.is_empty()? {
+                Ok(Wrap(AnyValue::List(Series::new_empty("", &DataType::Null))))
+            } else {
+                let avs = ob.extract::<Wrap<Row>>()?.0;
+                let s = Series::new("", &avs.0);
+                Ok(Wrap(AnyValue::List(s)))
+            }
         } else if ob.hasattr("_s")? {
             let py_pyseries = ob.getattr("_s").unwrap();
             let series = py_pyseries.extract::<PySeries>().unwrap().series;
@@ -542,26 +564,22 @@ impl<'s> FromPyObject<'s> for Wrap<AnyValue<'s>> {
         } else if ob.get_type().name()?.contains("date") {
             let gil = Python::acquire_gil();
             let py = gil.python();
-            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-            let utils = pypolars.getattr(py, "utils").unwrap();
-            let utils = utils
+            let date = py_modules::UTILS
                 .getattr(py, "_date_to_pl_date")
                 .unwrap()
                 .call1(py, (ob,))
                 .unwrap();
-            let v = utils.extract::<i32>(py).unwrap();
+            let v = date.extract::<i32>(py).unwrap();
             Ok(Wrap(AnyValue::Date(v)))
         } else if ob.get_type().name()?.contains("timedelta") {
             let gil = Python::acquire_gil();
             let py = gil.python();
-            let pypolars = PyModule::import(py, "polars").unwrap().to_object(py);
-            let utils = pypolars.getattr(py, "utils").unwrap();
-            let utils = utils
+            let td = py_modules::UTILS
                 .getattr(py, "_timedelta_to_pl_timedelta")
                 .unwrap()
                 .call1(py, (ob, "us"))
                 .unwrap();
-            let v = utils.extract::<i64>(py).unwrap();
+            let v = td.extract::<i64>(py).unwrap();
             Ok(Wrap(AnyValue::Duration(v, TimeUnit::Microseconds)))
         } else {
             Err(PyErr::from(PyPolarsErr::Other(format!(
@@ -589,6 +607,23 @@ impl ToSeries for Vec<PySeries> {
         // Safety:
         // transparent repr
         unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl FromPyObject<'_> for Wrap<Schema> {
+    fn extract(ob: &PyAny) -> PyResult<Self> {
+        let dict = ob.extract::<&PyDict>()?;
+
+        Ok(Wrap(
+            dict.iter()
+                .map(|(key, val)| {
+                    let key = key.extract::<&str>()?;
+                    let val = val.extract::<Wrap<DataType>>()?;
+
+                    Ok(Field::new(key, val.0))
+                })
+                .collect::<PyResult<Schema>>()?,
+        ))
     }
 }
 

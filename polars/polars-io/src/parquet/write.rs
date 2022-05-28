@@ -44,11 +44,11 @@ impl FallibleStreamingIterator for Bla {
 #[must_use]
 pub struct ParquetWriter<W> {
     writer: W,
-    compression: write::Compression,
+    compression: write::CompressionOptions,
     statistics: bool,
 }
 
-pub use write::Compression as ParquetCompression;
+pub use write::CompressionOptions as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
@@ -61,13 +61,13 @@ where
     {
         ParquetWriter {
             writer,
-            compression: write::Compression::Snappy,
+            compression: write::CompressionOptions::Lz4Raw,
             statistics: false,
         }
     }
 
-    /// Set the compression used. Defaults to `Snappy`.
-    pub fn with_compression(mut self, compression: write::Compression) -> Self {
+    /// Set the compression used. Defaults to `Lz4Raw`.
+    pub fn with_compression(mut self, compression: write::CompressionOptions) -> Self {
         self.compression = compression;
         self
     }
@@ -104,37 +104,46 @@ where
             })
             .collect::<Vec<_>>();
 
-        let row_group_iter = rb_iter.map(|batch| {
-            let columns = batch
-                .columns()
-                .par_iter()
-                .zip(parquet_schema.columns().par_iter())
-                .zip(encodings.par_iter())
-                .map(|((array, descriptor), encoding)| {
-                    let encoded_pages =
-                        array_to_pages(array.as_ref(), descriptor.clone(), options, *encoding)?;
-                    encoded_pages
-                        .map(|page| {
-                            compress(page?, vec![], options.compression).map_err(|x| x.into())
-                        })
-                        .collect::<ArrowResult<VecDeque<_>>>()
-                })
-                .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()?;
+        let row_group_iter = rb_iter.filter_map(|batch| match batch.len() {
+            0 => None,
+            _ => {
+                let columns = batch
+                    .columns()
+                    .par_iter()
+                    .zip(parquet_schema.fields().par_iter())
+                    .zip(encodings.par_iter())
+                    .map(|((array, tp), encoding)| {
+                        let encoded_pages =
+                            array_to_pages(array.as_ref(), tp.clone(), options, *encoding)?;
+                        encoded_pages
+                            .map(|page| {
+                                compress(page?, vec![], options.compression).map_err(|x| x.into())
+                            })
+                            .collect::<ArrowResult<VecDeque<_>>>()
+                    })
+                    .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()
+                    .map(Some)
+                    .transpose();
 
-            let row_group = DynIter::new(
-                columns
-                    .into_iter()
-                    .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
-            );
-            ArrowResult::Ok((row_group, batch.columns()[0].len()))
+                columns.map(|columns| {
+                    columns.map(|columns| {
+                        let row_group = DynIter::new(
+                            columns
+                                .into_iter()
+                                .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
+                        );
+                        (row_group, batch.columns()[0].len())
+                    })
+                })
+            }
         });
 
         let mut writer = FileWriter::try_new(&mut self.writer, schema, options)?;
         // write the headers
         writer.start()?;
         for group in row_group_iter {
-            let (group, len) = group?;
-            writer.write(group, len)?;
+            let (group, _len) = group?;
+            writer.write(group)?;
         }
         let _ = writer.end(None)?;
 

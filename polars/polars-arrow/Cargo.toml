@@ -1,6 +1,6 @@
 [package]
 name = "polars-arrow"
-version = "0.20.0"
+version = "0.21.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -9,9 +9,10 @@ description = "Arrow interfaces for Polars DataFrame library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "36b08249dd03c8b8f88f454158fcf3401c647a49", default-features = false }
-arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "polars", default-features = false }
-# arrow = { package = "arrow2", version = "0.10", default-features = false, features = ["compute_concatenate"] }
+# arrow = { package = "arrow2", git = "https://github.com/jorgecarleitao/arrow2", rev = "aafba7b4eb4991e016638cbc1d4df676912e8236", features = ["compute_concatenate"], default-features = false }
+# arrow = { package = "arrow2", path = "../../../arrow2", features = ["compute_concatenate"], default-features = false }
+arrow = { package = "arrow2", git = "https://github.com/ritchie46/arrow2", branch = "improve_mutable", features = ["compute_concatenate"], default-features = false }
+# arrow = { package = "arrow2", version = "0.11", default-features = false, features = ["compute_concatenate"] }
 hashbrown = "0.12"
 num = "^0.4"
 serde = { version = "1", features = ["derive"], optional = true }
@@ -20,4 +21,5 @@ thiserror = "^1.0"
 [features]
 strings = []
 compute = ["arrow/compute_cast"]
+temporal = ["arrow/compute_temporal"]
 bigidx = []

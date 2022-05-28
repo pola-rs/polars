@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_core::frame::groupby::GroupsProxy;
 use polars_core::series::unstable::UnstableSeries;
@@ -126,11 +125,25 @@ impl PhysicalExpr for BinaryExpr {
                 Ok(ac_l)
             }
             // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
+            // the other is a literal value. In that case it is unlikely we want to expand this to the
+            // group sizes.
+            //
+            (AggState::AggregatedFlat(_), AggState::Literal(_), _)
+            | (AggState::Literal(_), AggState::AggregatedFlat(_), _) => {
+                let l = ac_l.series();
+                let r = ac_r.series();
+                let mut s = apply_operator(l, r, self.op)?;
+                s.rename(l.name());
+
+                ac_l.with_series(s, true);
+                Ok(ac_l)
+            }
+            // One of the two exprs is aggregated with flat aggregation, e.g. `e.min(), e.max(), e.first()`
 
             // if the groups_len == df.len we can just apply all flat.
             // within an aggregation a `col().first() - lit(0)` must still produce a boolean array of group length,
             // that's why a literal also takes this branch
-            (AggState::AggregatedFlat(s), AggState::NotAggregated(_) | AggState::Literal(_), _)
+            (AggState::AggregatedFlat(s), AggState::NotAggregated(_), _)
                 if s.len() != df.height() =>
             {
                 // this is a flat series of len eq to group tuples
@@ -179,7 +192,7 @@ impl PhysicalExpr for BinaryExpr {
             }
             // if the groups_len == df.len we can just apply all flat.
             (
-                AggState::Literal(_) | AggState::AggregatedList(_) | AggState::NotAggregated(_),
+                AggState::AggregatedList(_) | AggState::NotAggregated(_),
                 AggState::AggregatedFlat(s),
                 _,
             ) if s.len() != df.height() => {
@@ -272,8 +285,15 @@ impl PhysicalExpr for BinaryExpr {
                     let lhs = ac_l.aggregated();
                     ac_l.with_update_groups(UpdateGroups::WithSeriesLenOwned(lhs.clone()));
 
+                    // we should only explode lists
+                    // not aggregated flat states
+                    let flatten = |s: Series| match s.dtype() {
+                        DataType::List(_) => s.explode(),
+                        _ => Ok(s),
+                    };
+
                     let out =
-                        apply_operator(&lhs.explode()?, &ac_r.aggregated().explode()?, self.op)?;
+                        apply_operator(&flatten(lhs)?, &flatten(ac_r.aggregated())?, self.op)?;
                     ac_l.with_series(out, false);
                     Ok(ac_l)
                 } else {
@@ -295,25 +315,13 @@ impl PhysicalExpr for BinaryExpr {
         self.expr.to_field(input_schema, Context::Default)
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
+
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         Some(self)
-    }
-}
-
-impl PhysicalAggregation for BinaryExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated_arity_operation();
-        Ok(Some(s))
     }
 }
 
@@ -419,9 +427,16 @@ mod stats {
             let fld_l = self.left.to_field(schema)?;
             let fld_r = self.right.to_field(schema)?;
 
-            debug_assert_eq!(fld_l.data_type(), fld_r.data_type(), "implementation error");
-            if fld_l.data_type() != fld_r.data_type() {
-                return Ok(true);
+            #[cfg(debug_assertions)]
+            {
+                match (fld_l.data_type(), fld_r.data_type()) {
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Utf8, DataType::Categorical(_)) => {}
+                    #[cfg(feature = "dtype-categorical")]
+                    (DataType::Categorical(_), DataType::Utf8) => {}
+                    (l, r) if l != r => panic!("implementation error: {:?}, {:?}", l, r),
+                    _ => {}
+                }
             }
 
             let dummy = DataFrame::new_no_checks(vec![]);
@@ -433,6 +448,8 @@ mod stats {
                     match l.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
+                            // will be incorrect if not
+                            debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.right.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_rhs_lit(&min_max_s, &lit_s, self.op))
                         }
@@ -443,6 +460,8 @@ mod stats {
                     match r.to_min_max() {
                         None => Ok(true),
                         Some(min_max_s) => {
+                            // will be incorrect if not
+                            debug_assert_eq!(min_max_s.null_count(), 0);
                             let lit_s = self.left.evaluate(&dummy, &state).unwrap();
                             Ok(apply_operator_stats_lhs_lit(&lit_s, &min_max_s, self.op))
                         }
@@ -480,5 +499,29 @@ mod stats {
                 _ => self.impl_should_read(stats),
             }
         }
+    }
+}
+
+impl PartitionedAggregation for BinaryExpr {
+    fn evaluate_partitioned(
+        &self,
+        df: &DataFrame,
+        groups: &GroupsProxy,
+        state: &ExecutionState,
+    ) -> Result<Series> {
+        let left = self.left.as_partitioned_aggregator().unwrap();
+        let right = self.right.as_partitioned_aggregator().unwrap();
+        let left = left.evaluate_partitioned(df, groups, state)?;
+        let right = right.evaluate_partitioned(df, groups, state)?;
+        apply_operator(&left, &right, self.op)
+    }
+
+    fn finalize(
+        &self,
+        partitioned: Series,
+        _groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        Ok(partitioned)
     }
 }

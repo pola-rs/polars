@@ -2,7 +2,15 @@ use crate::prelude::*;
 use indexmap::IndexMap;
 use std::fmt::{Debug, Formatter};
 
+#[cfg(feature = "serde-lazy")]
+use serde::{Deserialize, Serialize};
+
 #[derive(PartialEq, Eq, Clone, Default)]
+#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    all(feature = "serde-lazy", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub struct Schema {
     inner: PlIndexMap<String, DataType>,
 }
@@ -31,6 +39,15 @@ where
             map.insert(fld.name().clone(), fld.data_type().clone());
         }
         Self { inner: map }
+    }
+}
+
+impl<J> FromIterator<J> for Schema
+where
+    J: Into<Field>,
+{
+    fn from_iter<I: IntoIterator<Item = J>>(iter: I) -> Self {
+        Schema::from(iter)
     }
 }
 
@@ -141,13 +158,13 @@ impl Schema {
         ArrowSchema::from(fields)
     }
 
-    pub fn iter_fields(&self) -> impl Iterator<Item = Field> + '_ {
+    pub fn iter_fields(&self) -> impl Iterator<Item = Field> + ExactSizeIterator + '_ {
         self.inner
             .iter()
             .map(|(name, dtype)| Field::new(name, dtype.clone()))
     }
 
-    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + '_ {
+    pub fn iter_dtypes(&self) -> impl Iterator<Item = &DataType> + ExactSizeIterator + '_ {
         self.inner.iter().map(|(_name, dtype)| dtype)
     }
 

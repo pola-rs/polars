@@ -5,6 +5,8 @@ mod csv;
 mod ipc;
 #[cfg(feature = "parquet")]
 mod parquet;
+#[cfg(feature = "python")]
+mod python;
 
 #[cfg(feature = "csv-file")]
 pub use csv::*;
@@ -31,6 +33,8 @@ use crate::logical_plan::optimizer::{
     predicate_pushdown::PredicatePushDown, projection_pushdown::ProjectionPushDown,
 };
 use crate::physical_plan::state::ExecutionState;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 #[cfg(any(feature = "parquet", feature = "csv-file"))]
 use crate::prelude::aggregate_scan_projections::agg_projection;
@@ -40,12 +44,14 @@ use crate::prelude::{
 };
 
 use crate::logical_plan::FETCH_ROWS;
+use crate::prelude::delay_rechunk::DelayRechunk;
 use crate::utils::{combine_predicates_expr, expr_to_root_column_names};
 use polars_arrow::prelude::QuantileInterpolOptions;
 use polars_core::frame::explode::MeltArgs;
 use polars_io::RowCount;
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
@@ -83,7 +89,7 @@ impl IntoLazy for DataFrame {
 #[derive(Clone, Default)]
 #[must_use]
 pub struct LazyFrame {
-    pub(crate) logical_plan: LogicalPlan,
+    pub logical_plan: LogicalPlan,
     pub(crate) opt_state: OptState,
 }
 
@@ -157,6 +163,27 @@ impl LazyFrame {
         let mut lp_arena = Arena::with_capacity(32);
         let root = to_alp(self.logical_plan, &mut expr_arena, &mut lp_arena).unwrap();
         (root, expr_arena, lp_arena)
+    }
+
+    /// Set allowed optimizations
+    pub fn with_optimizations(mut self, opt_state: OptState) -> Self {
+        self.opt_state = opt_state;
+        self
+    }
+
+    /// Turn off all optimizations
+    pub fn without_optimizations(self) -> Self {
+        self.with_optimizations(OptState {
+            projection_pushdown: false,
+            predicate_pushdown: false,
+            type_coercion: true,
+            simplify_expr: false,
+            global_string_cache: false,
+            slice_pushdown: false,
+            // will be toggled by a scan operation such as csv scan or parquet scan
+            agg_scan_projection: false,
+            aggregate_pushdown: false,
+        })
     }
 
     /// Toggle projection pushdown optimization.
@@ -286,7 +313,20 @@ impl LazyFrame {
         self.select_local(vec![col("*").reverse()])
     }
 
-    fn rename_impl_swapping(self, existing: Vec<String>, new: Vec<String>) -> Self {
+    fn rename_impl_swapping(self, mut existing: Vec<String>, mut new: Vec<String>) -> Self {
+        assert_eq!(new.len(), existing.len());
+        let mut removed = 0;
+        for mut idx in 0..existing.len() {
+            // remove "name" -> "name
+            // these are no ops.
+            idx -= removed;
+            if existing[idx] == new[idx] {
+                existing.swap_remove(idx);
+                new.swap_remove(idx);
+                removed += 1;
+            }
+        }
+
         // schema after renaming
         let mut new_schema = (&*self.schema()).clone();
 
@@ -531,6 +571,7 @@ impl LazyFrame {
         }
         // make sure its before slice pushdown.
         rules.push(Box::new(FastProjection {}));
+        rules.push(Box::new(DelayRechunk {}));
 
         if slice_pushdown {
             let slice_pushdown_opt = SlicePushDown {};
@@ -1066,7 +1107,7 @@ impl LazyFrame {
     /// # Warning
     /// This can have a negative effect on query performance.
     /// This may for instance block predicate pushdown optimization.
-    pub fn with_row_count(mut self, name: &str, offset: Option<u32>) -> LazyFrame {
+    pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
         match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv-file")]

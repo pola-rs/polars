@@ -1,5 +1,6 @@
+import typing
 from datetime import datetime
-from typing import Dict, Sequence, Union
+from typing import Dict, Sequence, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,40 @@ def test_from_numpy() -> None:
         pl.datatypes.Object,
     ]
     assert out == df.dtypes
+
+
+def test_to_numpy() -> None:
+    def test_series_to_numpy(
+        name: str,
+        values: list,
+        pl_dtype: Type[pl.DataType],
+        np_dtype: Union[
+            Type[np.signedinteger],
+            Type[np.unsignedinteger],
+            Type[np.floating],
+            Type[np.object_],
+        ],
+    ) -> None:
+        pl_series_to_numpy_array = np.array(pl.Series(name, values, pl_dtype))
+        numpy_array = np.array(values, dtype=np_dtype)
+        assert pl_series_to_numpy_array.dtype == numpy_array.dtype
+        assert np.all(pl_series_to_numpy_array == numpy_array) == np.bool_(True)
+
+    test_series_to_numpy("int8", [1, 3, 2], pl.Int8, np.int8)
+    test_series_to_numpy("int16", [1, 3, 2], pl.Int16, np.int16)
+    test_series_to_numpy("int32", [1, 3, 2], pl.Int32, np.int32)
+    test_series_to_numpy("int64", [1, 3, 2], pl.Int64, np.int64)
+
+    test_series_to_numpy("uint8", [1, 3, 2], pl.UInt8, np.uint8)
+    test_series_to_numpy("uint16", [1, 3, 2], pl.UInt16, np.uint16)
+    test_series_to_numpy("uint32", [1, 3, 2], pl.UInt32, np.uint32)
+    test_series_to_numpy("uint64", [1, 3, 2], pl.UInt64, np.uint64)
+
+    test_series_to_numpy("float32", [21.7, 21.8, 21], pl.Float32, np.float32)
+    test_series_to_numpy("float64", [21.7, 21.8, 21], pl.Float64, np.float64)
+
+    test_series_to_numpy("str", ["string1", "string2", "string3"], pl.Utf8, np.object_)
+    # test_series_to_numpy("bytes", ["byte_string1", "byte_string2", "byte_string3"], pl.Object, np.bytes_)
 
 
 def test_from_pandas() -> None:
@@ -225,7 +260,7 @@ def test_from_pandas_dataframe() -> None:
     df = pl.from_pandas(pd_df)
     assert df.shape == (2, 3)
 
-    # if not a Pandas dataframe, raise a ValueError
+    # if not a pandas dataframe, raise a ValueError
     with pytest.raises(ValueError):
         _ = pl.from_pandas([1, 2])  # type: ignore
 
@@ -333,3 +368,30 @@ def test_from_pandas_ns_resolution() -> None:
         columns=["date"],
     )
     assert pl.from_pandas(df)[0, 0] == datetime(2021, 1, 1, 1, 0, 1)
+
+
+@typing.no_type_check
+def test_pandas_string_none_conversion_3298() -> None:
+    data = {"col_1": ["a", "b", "c", "d"]}
+    data["col_1"][0] = None
+    df_pd = pd.DataFrame(data)
+    df_pl = pl.DataFrame(df_pd)
+    assert df_pl.to_series().to_list() == [None, "b", "c", "d"]
+
+
+def test_cat_int_types_3500() -> None:
+    with pl.StringCache():
+        # Create an enum / categorical / dictionary typed pyarrow array
+        # Most simply done by creating a pandas categorical series first
+        categorical_df = pd.Series(["a", "a", "b"], dtype="category")
+        pyarrow_array = pa.Array.from_pandas(categorical_df)
+
+        # The in-memory representation of each category can either be a signed or unsigned 8-bit integer
+        # Pandas uses Int8...
+        int_dict_type = pa.dictionary(index_type=pa.int8(), value_type=pa.utf8())
+        # ... while DuckDB uses UInt8
+        uint_dict_type = pa.dictionary(index_type=pa.uint8(), value_type=pa.utf8())
+
+        for t in [int_dict_type, uint_dict_type]:
+            s = pl.from_arrow(pyarrow_array.cast(t))
+            assert s.series_equal(pl.Series(["a", "a", "b"]).cast(pl.Categorical))

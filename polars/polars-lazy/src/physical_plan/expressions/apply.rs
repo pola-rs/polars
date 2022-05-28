@@ -1,5 +1,4 @@
 use crate::physical_plan::state::ExecutionState;
-use crate::physical_plan::PhysicalAggregation;
 use crate::prelude::*;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::frame::groupby::GroupsProxy;
@@ -171,31 +170,39 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect_trusted();
                     ca.rename(&name);
-                    let ac = acs.pop().unwrap();
+                    // take the first aggregation context that as that is the input series
+                    let ac = acs.swap_remove(0);
                     let ac = self.finish_apply_groups(ac, ca);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyFlat => {
                     let mut s = acs
-                        .iter()
-                        .map(|ac| ac.flat_naive().into_owned())
+                        .iter_mut()
+                        .map(|ac| {
+                            // make sure the groups are updated because we are about to throw away
+                            // the series length information
+                            if let UpdateGroups::WithSeriesLen = ac.update_groups {
+                                ac.groups();
+                            }
+
+                            ac.flat_naive().into_owned()
+                        })
                         .collect::<Vec<_>>();
 
                     let input_len = s.iter().map(|s| s.len()).max().unwrap();
                     let s = self.function.call_udf(&mut s)?;
                     check_map_output_len(input_len, s.len())?;
 
-                    let mut ac = acs.pop().unwrap();
-                    if ac.is_aggregated() {
-                        ac.with_update_groups(UpdateGroups::WithGroupsLen);
-                    }
+                    // take the first aggregation context that as that is the input series
+                    let mut ac = acs.swap_remove(0);
                     ac.with_series(s, false);
                     Ok(ac)
                 }
                 ApplyOptions::ApplyList => {
                     let mut s = acs.iter_mut().map(|ac| ac.aggregated()).collect::<Vec<_>>();
                     let s = self.function.call_udf(&mut s)?;
-                    let mut ac = acs.pop().unwrap();
+                    // take the first aggregation context that as that is the input series
+                    let mut ac = acs.swap_remove(0);
                     ac.with_update_groups(UpdateGroups::WithGroupsLen);
                     ac.with_series(s, true);
                     Ok(ac)
@@ -205,22 +212,5 @@ impl PhysicalExpr for ApplyExpr {
     }
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.inputs[0].to_field(input_schema)
-    }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-
-impl PhysicalAggregation for ApplyExpr {
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(Some(s))
     }
 }

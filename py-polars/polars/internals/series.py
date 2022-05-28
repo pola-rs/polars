@@ -268,10 +268,10 @@ class Series:
     def inner(self) -> "PySeries":
         return self._s
 
-    def __getstate__(self):  # type: ignore
+    def __getstate__(self) -> Any:
         return self._s.__getstate__()
 
-    def __setstate__(self, state):  # type: ignore
+    def __setstate__(self, state: Any) -> None:
         self._s = sequence_to_pyseries("", [], Float32)
         self._s.__setstate__(state)
 
@@ -309,11 +309,13 @@ class Series:
         if isinstance(other, datetime) and self.dtype == Datetime:
             ts = _datetime_to_pl_timestamp(other, self.time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
-            return wrap_s(f(ts))  # type: ignore
+            assert f is not None
+            return wrap_s(f(ts))
         if isinstance(other, date) and self.dtype == Date:
             d = _date_to_pl_date(other)
             f = get_ffi_func(op + "_<>", Int32, self._s)
-            return wrap_s(f(d))  # type: ignore
+            assert f is not None
+            return wrap_s(f(d))
 
         if isinstance(other, Sequence) and not isinstance(other, str):
             other = Series("", other)
@@ -418,7 +420,7 @@ class Series:
             return wrap_s(self._s._not())
         return NotImplemented
 
-    def __rtruediv__(self, other: Any) -> np.ndarray:
+    def __rtruediv__(self, other: Any) -> "Series":
         if self.is_datelike():
             raise ValueError("first cast to integer before dividing datelike dtypes")
         if self.is_float():
@@ -427,7 +429,7 @@ class Series:
         if isinstance(other, int):
             other = float(other)
 
-        return self.cast(Float64).__rfloordiv__(other)  # type: ignore
+        return self.cast(Float64).__rfloordiv__(other)
 
     def __rfloordiv__(self, other: Any) -> "Series":
         if self.is_datelike():
@@ -945,14 +947,75 @@ class Series:
         """
         return pli.select(pli.lit(self).unique_counts()).to_series()
 
-    def entropy(self, base: float = math.e) -> Optional[float]:
+    def entropy(self, base: float = math.e, normalize: bool = False) -> Optional[float]:
         """
         Compute the entropy as `-sum(pk * log(pk)`.
         where `pk` are discrete probabilities.
 
         This routine will normalize pk if they don’t sum to 1.
+
+        Parameters
+        ----------
+        base
+            Given base, defaults to `e`
+        normalize
+            Normalize pk if it doesn't sum to 1.
+
+        Examples
+        --------
+
+        >>> a = pl.Series([0.99, 0.005, 0.005])
+        >>> a.entropy(normalize=True)
+        0.06293300616044681
+        >>> b = pl.Series([0.65, 0.10, 0.25])
+        >>> b.entropy(normalize=True)
+        0.8568409950394724
+
         """
-        return pli.select(pli.lit(self).entropy(base)).to_series()[0]
+        return pli.select(pli.lit(self).entropy(base, normalize)).to_series()[0]
+
+    def cumulative_eval(
+        self, expr: "pli.Expr", min_periods: int = 1, parallel: bool = False
+    ) -> "Series":
+        """
+        Run an expression over a sliding window that increases `1` slot every iteration.
+
+        .. warning::
+            This can be really slow as it can have `O(n^2)` complexity. Don't use this for operations
+            that visit all elements.
+
+        .. warning::
+            This API is experimental and may change without it being considered a breaking change.
+
+        Parameters
+        ----------
+        expr
+            Expression to evaluate
+        min_periods
+            Number of valid values there should be in the window before the expression is evaluated.
+            valid values =  `length - null_count`
+        parallel
+            Run in parallel. Don't do this in a groupby or another operation that already has much parallelization.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("values", [1, 2, 3, 4, 5])
+        >>> s.cumulative_eval(pl.element().first() - pl.element().last() ** 2)
+        shape: (5,)
+        Series: 'values' [f64]
+        [
+            0.0
+            -3.0
+            -8.0
+            -15.0
+            -24.0
+        ]
+
+        """
+        return pli.select(
+            pli.lit(self).cumulative_eval(expr, min_periods, parallel)
+        ).to_series()
 
     @property
     def name(self) -> str:
@@ -1096,14 +1159,14 @@ class Series:
 
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s = pl.Series("a", [3, 5, 1])
         >>> s.cummax()
         shape: (3,)
         Series: 'a' [i64]
         [
-            1
-            2
             3
+            5
+            5
         ]
 
         """
@@ -1197,7 +1260,7 @@ class Series:
         append_chunks
             If set to `True` the append operation will add the chunks from `other` to self. This is super cheap.
 
-            if set to `False` the append operation will do the same as `DataFrame.extend` wich:
+            if set to `False` the append operation will do the same as `DataFrame.extend` which:
             extends the memory backed by this `Series` with the values from `other`.
 
             Different from `append chunks`, `extent` appends the data from `other` to the underlying memory locations and
@@ -2049,7 +2112,10 @@ class Series:
         return array
 
     def __array__(self, dtype: Any = None) -> np.ndarray:
-        return self.to_numpy().__array__(dtype)
+        if dtype:
+            return self.to_numpy().__array__(dtype)
+        else:
+            return self.to_numpy().__array__()
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
@@ -2323,7 +2389,7 @@ class Series:
 
     def ceil(self) -> "Series":
         """
-        Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+        Ceil underlying floating point array to the highest integers smaller or equal to the float value.
 
         Only works on floating point Series
         """
@@ -2688,9 +2754,15 @@ class Series:
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_min(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_min(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_max(
         self,
@@ -2733,9 +2805,15 @@ class Series:
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_max(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_max(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_mean(
         self,
@@ -2778,9 +2856,15 @@ class Series:
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_mean(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_mean(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_sum(
         self,
@@ -2823,9 +2907,15 @@ class Series:
         ]
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_sum(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_sum(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_std(
         self,
@@ -2855,9 +2945,15 @@ class Series:
             Set the labels at the center of the window
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_std(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_std(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_var(
         self,
@@ -2887,9 +2983,15 @@ class Series:
             Set the labels at the center of the window
 
         """
-        if min_periods is None:
-            min_periods = window_size
-        return wrap_s(self._s.rolling_var(window_size, weights, min_periods, center))
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_var(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_apply(
         self,
@@ -2974,9 +3076,15 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return self.to_frame().select(
-            pli.col(self.name).rolling_median(window_size, weights, min_periods, center)
-        )[self.name]
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_median(
+                    window_size, weights, min_periods, center
+                )
+            )
+            .to_series()
+        )
 
     def rolling_quantile(
         self,
@@ -3011,11 +3119,15 @@ class Series:
         if min_periods is None:
             min_periods = window_size
 
-        return self.to_frame().select(
-            pli.col(self.name).rolling_quantile(
-                quantile, interpolation, window_size, weights, min_periods, center
+        return (
+            self.to_frame()
+            .select(
+                pli.col(self.name).rolling_quantile(
+                    quantile, interpolation, window_size, weights, min_periods, center
+                )
             )
-        )[self.name]
+            .to_series()
+        )
 
     def rolling_skew(self, window_size: int, bias: bool = True) -> "Series":
         """
@@ -3037,6 +3149,7 @@ class Series:
         n: Optional[int] = None,
         frac: Optional[float] = None,
         with_replacement: bool = False,
+        shuffle: bool = False,
         seed: Optional[int] = None,
     ) -> "Series":
         """
@@ -3050,6 +3163,8 @@ class Series:
             Fraction between 0.0 and 1.0 .
         with_replacement
             sample with replacement.
+        shuffle
+            Shuffle the order of sampled data points.
         seed
             Initialization seed. If None is given a random seed is used.
 
@@ -3069,12 +3184,12 @@ class Series:
             raise ValueError("n and frac were both supplied")
 
         if n is None and frac is not None:
-            return wrap_s(self._s.sample_frac(frac, with_replacement, seed))
+            return wrap_s(self._s.sample_frac(frac, with_replacement, shuffle, seed))
 
         if n is None:
             n = 1
 
-        return wrap_s(self._s.sample_n(n, with_replacement, seed))
+        return wrap_s(self._s.sample_n(n, with_replacement, shuffle, seed))
 
     def peak_max(self) -> "Series":
         """
@@ -3375,7 +3490,7 @@ class Series:
 
     def clip(self, min_val: Union[int, float], max_val: Union[int, float]) -> "Series":
         """
-        Clip (limit) the values in an array to any value that fits in 64 floating poitns range.
+        Clip (limit) the values in an array to any value that fits in 64 floating point range.
 
         Only works for the following dtypes: {Int32, Int64, Float32, Float64, UInt32}.
 
@@ -3573,6 +3688,22 @@ class Series:
         """
         return wrap_s(self._s.extend_constant(value, n))
 
+    def set_sorted(self, reverse: bool = False) -> "Series":
+        """
+        Set this `Series` as `sorted` so that downstream code can use
+        fast paths for sorted arrays.
+
+        .. warning::
+            This can lead to incorrect results if this `Series` is not sorted!!
+            Use with care!
+
+        Parameters
+        ----------
+        reverse
+            If the `Series` order is reversed, e.g. descending.
+        """
+        return wrap_s(self._s.set_sorted(reverse))
+
     @property
     def time_unit(self) -> Optional[str]:
         """
@@ -3669,7 +3800,7 @@ class StringNameSpace:
 
     def strptime(
         self,
-        datatype: Union[Type[Date], Type[Datetime]],
+        datatype: Union[Type[Date], Type[Datetime], Type[Time]],
         fmt: Optional[str] = None,
         strict: bool = True,
         exact: bool = True,
@@ -3680,7 +3811,7 @@ class StringNameSpace:
         Parameters
         ----------
         datatype
-            Date or Datetime.
+            Date, Datetime or Time.
         fmt
             format to use, see the following link for examples:
             https://docs.rs/chrono/latest/chrono/format/strftime/index.html
@@ -3694,7 +3825,7 @@ class StringNameSpace:
 
         Returns
         -------
-        A Date/ Datetime Series
+        A Date / Datetime / Time Series
 
         Examples
         --------
@@ -3948,6 +4079,67 @@ class StringNameSpace:
         """
         return wrap_s(self._s.str_extract(pattern, group_index))
 
+    def extract_all(self, pattern: str) -> Series:
+        r"""
+        Extract each successive non-overlapping regex match in an individual string as an array
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        List[Utf8] array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> s.str.extract_all(r"(\d+)")
+        shape: (2, 1)
+        ┌────────────────┐
+        │ extracted_nrs  │
+        │ ---            │
+        │ list[str]      │
+        ╞════════════════╡
+        │ ["123", "45"]  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ ["678", "910"] │
+        └────────────────┘
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.extract_all(pattern)).to_series()
+
+    def count_match(self, pattern: str) -> Series:
+        r"""
+        Count all successive non-overlapping regex matches.
+
+        Parameters
+        ----------
+        pattern
+            A valid regex pattern
+
+        Returns
+        -------
+        UInt32 array. Contain null if original value is null or regex capture nothing.
+
+        Examples
+        --------
+        >>> s = pl.Series("foo", ["123 bla 45 asd", "xyz 678 910t"])
+        >>> # count digits
+        >>> s.str.count_match(r"\d")
+        shape: (2,)
+        Series: 'foo' [u32]
+        [
+            5
+            6
+        ]
+
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.count_match(pattern)).to_series()
+
     def split(self, by: str, inclusive: bool = False) -> Series:
         """
         Split the string by a substring.
@@ -4022,6 +4214,19 @@ class StringNameSpace:
             A valid regex pattern.
         value
             Substring to replace.
+
+        Examples
+        --------
+
+        >>> s = pl.Series(["123abc", "abc456"])
+        >>> s.str.replace(r"abc\b", "ABC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "123ABC"
+                "abc456"
+        ]
+
         """
         return wrap_s(self._s.str_replace(pattern, value))
 
@@ -4410,7 +4615,7 @@ class ListNameSpace:
 
         >>> df = pl.DataFrame({"a": [1, 8, 3], "b": [4, 5, 2]})
         >>> df.with_column(
-        ...     pl.concat_list(["a", "b"]).arr.eval(pl.first().rank()).alias("rank")
+        ...     pl.concat_list(["a", "b"]).arr.eval(pl.element().rank()).alias("rank")
         ... )
         shape: (3, 3)
         ┌─────┬─────┬────────────┐

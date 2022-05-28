@@ -21,11 +21,17 @@ pub(super) static DATE_Y_M_D: &[&str] = &[
 /// NOTE: don't use single letter dates like %F
 /// polars parsers does not support them, so it will be slower
 pub(super) static DATETIME_D_M_Y: &[&str] = &[
+    // --
+    // supported by polars' parser
+    // ---
     // 31/12/21 12:54:98
     "%d/%m/%y %H:%M:%S",
     // 31-12-2021 24:58:01
     "%d-%m-%Y %H:%M:%S",
     // 31-04-2021T02:45:55.555000000
+    // milliseconds
+    "%d-%m-%YT%H:%M:%S.%3f",
+    "%d-%m-%yT%H:%M:%S.%3f",
     // microseconds
     "%d-%m-%YT%H:%M:%S.%6f",
     // 31-04-21T02:45:55.555000000
@@ -62,14 +68,23 @@ pub(super) static DATETIME_Y_M_D: &[&str] = &[
     "%Y%m%d %H:%M:%S",
     // 2019-04-18T02:45:55
     "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%dT%H:%M:%SZ",
     // 2019-04-18T02:45:55.555000000
     // microseconds
     "%Y-%m-%dT%H:%M:%S.%6f",
     // nanoseconds
     "%Y-%m-%dT%H:%M:%S.%9f",
+    "%Y-%m-%dT%H:%M:%S.%3f",
     // no times
     "%Y-%m-%d",
     "%Y/%m/%d",
+    // --
+    // not supported by polars' parser
+    // ---
+    "%+",
+    // we cannot know this one, because polars needs to know
+    // the length of the parsed fmt
+    "%FT%H:%M:%S%.f",
 ];
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy, Debug)]

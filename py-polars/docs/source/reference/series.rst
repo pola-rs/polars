@@ -104,6 +104,7 @@ Computations
     Series.cummin
     Series.cummax
     Series.cumprod
+    Series.cumulative_eval
     Series.arg_true
     Series.arg_unique
     Series.unique
@@ -197,6 +198,7 @@ Various
     Series.str
     Series.reinterpret
     Series.to_physical
+    Series.set_sorted
 
 TimeSeries
 ----------

@@ -5,10 +5,14 @@ use polars_core::frame::groupby::GroupsProxy;
 use polars_core::prelude::*;
 use polars_core::POOL;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[repr(transparent)]
 struct Wrap<T>(pub T);
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DynamicGroupOptions {
     /// Time or index column
     pub index_column: String,
@@ -26,6 +30,7 @@ pub struct DynamicGroupOptions {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct RollingGroupOptions {
     /// Time or index column
     pub index_column: String,
@@ -403,7 +408,8 @@ mod test {
     use chrono::prelude::*;
 
     #[test]
-    fn test_rolling_groupby() -> Result<()> {
+    fn test_rolling_groupby_tu() -> Result<()> {
+        // test multiple time units
         for tu in [
             TimeUnit::Nanoseconds,
             TimeUnit::Microseconds,
@@ -436,10 +442,80 @@ mod test {
                     },
                 )
                 .unwrap();
-            let sum = a.agg_sum(&groups).unwrap();
+
+            let sum = a.agg_sum(&groups);
             let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
             assert_eq!(sum, expected);
         }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_rolling_groupby_aggs() -> Result<()> {
+        let date = Utf8Chunked::new(
+            "dt",
+            [
+                "2020-01-01 13:45:48",
+                "2020-01-01 16:42:13",
+                "2020-01-01 16:45:09",
+                "2020-01-02 18:12:48",
+                "2020-01-03 19:45:32",
+                "2020-01-08 23:16:43",
+            ],
+        )
+        .as_datetime(None, TimeUnit::Milliseconds)?
+        .into_series();
+        let a = Series::new("a", [3, 7, 5, 9, 2, 1]);
+        let df = DataFrame::new(vec![date, a.clone()])?;
+
+        let (_, _, groups) = df
+            .groupby_rolling(
+                vec![],
+                &RollingGroupOptions {
+                    index_column: "dt".into(),
+                    period: Duration::parse("2d"),
+                    offset: Duration::parse("-2d"),
+                    closed_window: ClosedWindow::Right,
+                },
+            )
+            .unwrap();
+
+        let nulls = Series::new("", [Some(3), Some(7), None, Some(9), Some(2), Some(1)]);
+
+        let min = a.agg_min(&groups);
+        let expected = Series::new("", [3, 3, 3, 3, 2, 1]);
+        assert_eq!(min, expected);
+
+        // expected for nulls is equal
+        let min = nulls.agg_min(&groups);
+        assert_eq!(min, expected);
+
+        let max = a.agg_max(&groups);
+        let expected = Series::new("", [3, 7, 7, 9, 9, 1]);
+        assert_eq!(max, expected);
+
+        let max = nulls.agg_max(&groups);
+        assert_eq!(max, expected);
+
+        let var = a.agg_var(&groups);
+        let expected = Series::new(
+            "",
+            [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
+        );
+        assert_eq!(var, expected);
+
+        let var = nulls.agg_var(&groups);
+        let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
+        assert_eq!(var, expected);
+
+        let quantile = a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear);
+        let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
+        assert_eq!(quantile, expected);
+
+        let quantile = nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear);
+        let expected = Series::new("", [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
+        assert_eq!(quantile, expected);
 
         Ok(())
     }

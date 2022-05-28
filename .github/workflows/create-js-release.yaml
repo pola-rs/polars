@@ -1,12 +1,15 @@
 name: nodejs-polars
-
-on:
+env:
+  DEBUG: napi:*
+  APP_NAME: nodejs-polars
+  MACOSX_DEPLOYMENT_TARGET: '10.13'
+'on':
   push:
      # Sequence of patterns matched against refs/tags
     tags:
       - 'nodejs-polars-v*' # Push events to matching nodejs-polars-v*, i.e. nodejs-polars-v1.0, nodejs-polars-v20.15.10
 jobs:
-  build-js:
+  build:
     defaults:
       run:
         working-directory: nodejs-polars
@@ -14,19 +17,39 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          # MAC
-          ######
-
           - host: macos-latest
-            target: 'x86_64-apple-darwin'
+            target: x86_64-apple-darwin
             architecture: x64
             build: |
               yarn build
               strip -x polars/*.node
-
-          - host: macos-latest
-            target: "aarch64-apple-darwin"
+          - host: windows-latest
             architecture: x64
+            build: yarn build
+            target: x86_64-pc-windows-msvc
+          - host: windows-latest
+            build: |
+              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
+              export CARGO_PROFILE_RELEASE_LTO=false
+              npm run build -- --target i686-pc-windows-msvc
+            target: i686-pc-windows-msvc
+            architecture: x86
+          - host: ubuntu-latest
+            architecture: x64
+            target: x86_64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine-zig
+            build: |-
+              set -e &&
+              rustup target add x86_64-unknown-linux-gnu &&
+              yarn build --target x86_64-unknown-linux-gnu --zig --zig-abi-suffix 2.12 &&
+              llvm-strip -x polars/*.node
+          # - host: ubuntu-latest
+          #   architecture: x64
+          #   target: x86_64-unknown-linux-musl
+          #   docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          #   build: set -e && yarn build && strip polars/*.node
+          - host: macos-latest
+            target: aarch64-apple-darwin
             build: |
               sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
               export CC=$(xcrun -f clang);
@@ -35,50 +58,6 @@ jobs:
               export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
               yarn build --target aarch64-apple-darwin
               strip -x polars/*.node
-
-            # Windows
-            ##########
-
-          - host: windows-latest
-            architecture: x64
-            target: "x86_64-pc-windows-msvc"
-            build: yarn build
-
-          - host: windows-latest
-            target: "i686-pc-windows-msvc"
-            architecture: x86
-            build: |
-              export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=128;
-              export CARGO_PROFILE_RELEASE_LTO=false
-              npm run build -- --target i686-pc-windows-msvc
-
-          # py & rust versions dont support this, so dropping it 
-          # - host: windows-latest
-          #   architecture: x64
-          #   target: "aarch64-pc-windows-msvc"
-          #   build: yarn build --target aarch64-pc-windows-msvc
-
-            # Linux
-            ########
-
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            architecture: x64
-            docker: |
-              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust@sha256:e510d7fdb259bd9b7ce05aa961223dd6379c1a944f85c271b76561b7ab7565b2
-              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust@sha256:e510d7fdb259bd9b7ce05aa961223dd6379c1a944f85c271b76561b7ab7565b2 builder
-            build: |
-              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
-
-          - host: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-            architecture: x64
-            docker: |
-              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine builder
-            build: |
-              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder yarn build && strip polars/*.node
-
           - host: ubuntu-latest
             architecture: x64
             target: aarch64-unknown-linux-gnu
@@ -97,73 +76,66 @@ jobs:
             build: |
               yarn build --target=armv7-unknown-linux-gnueabihf
               arm-linux-gnueabihf-strip polars/*.node
-
           - host: ubuntu-latest
-            target: "aarch64-linux-android"
             architecture: x64
+            target: aarch64-linux-android
             build: |
               export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+              export CC="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+              export CXX="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++"
               export PATH="${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin:${PATH}"
               yarn build --target aarch64-linux-android
               ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android-strip polars/*.node
+          # - host: ubuntu-latest
+          #   architecture: x64
+          #   target: aarch64-unknown-linux-musl
+          #   docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+          #   build: |-
+          #     rustup toolchain install $(cat ./rust-toolchain)
+          #     rustup target add aarch64-unknown-linux-musl
+          #     yarn build --target=aarch64-unknown-linux-musl
+          #     /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node
 
-          - host: ubuntu-latest
-            architecture: x64
-            target: aarch64-unknown-linux-musl
-            downloadTarget: aarch64-unknown-linux-musl
-            docker: |
-              docker pull ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
-              docker tag ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine builder
-            build: |
-              docker run --rm -v ~/.cargo/git:/root/.cargo/git -v ~/.cargo/registry:/root/.cargo/registry -v "$GITHUB_WORKSPACE:/build" -w /build/nodejs-polars builder sh -c "rustup toolchain install $(cat ./rust-toolchain) && rustup target add aarch64-unknown-linux-musl && yarn build --target=aarch64-unknown-linux-musl && /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip polars/*.node"
-
-    name: ${{ matrix.settings.target }}
+    name: ${{ matrix.settings.target }} - node@16
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
+      - uses: actions/checkout@v3
+      - name: Setup node
+        uses: actions/setup-node@v3
+        if: ${{ !matrix.settings.docker }}
         with:
           node-version: 16
-          architecture: ${{ matrix.settings.architecture }}
           cache: yarn
           cache-dependency-path: nodejs-polars/yarn.lock
+          architecture: ${{ matrix.settings.architecture }}
       - name: Copy rust-toolchain to root
         run: cp rust-toolchain ..
-      - name: Install latest Rust nightly
+      - name: Install
         uses: actions-rs/toolchain@v1
+        if: ${{ !matrix.settings.docker }}
         with:
           override: true
           target: ${{ matrix.settings.target }}
-
       - name: Generate Cargo.lock
         uses: actions-rs/cargo@v1
+        if: ${{ !matrix.settings.docker }}
         with:
           command: generate-lockfile
-
-      - name: Cache cargo registry
-        uses: actions/cache@v2
+      - name: Cache cargo
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/registry
-          key: ${{ matrix.settings.target }}-node@16-cargo-registry-trimmed-${{ hashFiles('**/Cargo.lock') }}
-
+          key: ${{ matrix.settings.target }}-cargo-registry
       - name: Cache cargo index
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/.cargo/git
-          key: ${{ matrix.settings.target }}-node@16-cargo-index-trimmed-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ matrix.settings.target }}-cargo-index
 
-      - name: Pull latest image
-        run: ${{ matrix.settings.docker }}
-        env:
-          DOCKER_REGISTRY_URL: ghcr.io
-          DOCKER_USERNAME: ${{ github.actor }}
-          DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        if: ${{ matrix.settings.docker }}
-
-      - name: "Setup toolchain"
-        if: ${{ matrix.settings.setup }}
+      - name: Setup toolchain
         run: ${{ matrix.settings.setup }}
-
+        if: ${{ matrix.settings.setup }}
+        shell: bash
       - name: "Install dependencies"
         run: yarn install
         if: ${{ matrix.settings.target != 'i686-pc-windows-msvc' }}
@@ -171,36 +143,41 @@ jobs:
       - name: "Install dependencies"
         run: npm install
         if: ${{ matrix.settings.target == 'i686-pc-windows-msvc' }}
-
-      - name: "Build"
+      - name: Build in docker
+        uses: addnab/docker-run-action@v3
+        if: ${{ matrix.settings.docker }}
+        with:
+          image: ${{ matrix.settings.docker }}
+          options: '-v ${{ env.HOME }}/.cargo/git:/root/.cargo/git -v ${{ env.HOME }}/.cargo/registry:/root/.cargo/registry -v ${{ github.workspace }}:/build -w /build/nodejs-polars'
+          run: ${{ matrix.settings.build }}
+      - name: Build
         run: ${{ matrix.settings.build }}
+        if: ${{ !matrix.settings.docker }}
         shell: bash
       - name: Upload artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
-          path: nodejs-polars/polars/*.node
           name: bindings-${{ matrix.settings.target }}
+          path: nodejs-polars/polars/*.node
           if-no-files-found: error
-
   test-macos:
     defaults:
       run:
         working-directory: nodejs-polars
     needs:
-      - build-js
+      - build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Install dependencies
         run: yarn install
       - name: Download all artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: bindings-x86_64-apple-darwin
-          path: nodejs-polars
+          path: nodejs-polars/polars
       - name: Run test
         run: yarn test
-
   publish:
     name: Publish
     needs:
@@ -210,7 +187,7 @@ jobs:
         working-directory: nodejs-polars
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: actions/setup-node@v2
         with:
           node-version: "16"
@@ -222,7 +199,7 @@ jobs:
         run: yarn install
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           path: nodejs-polars/artifacts
 

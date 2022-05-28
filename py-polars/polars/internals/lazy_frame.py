@@ -4,8 +4,11 @@ This module contains all expressions and classes needed for lazy computation/ qu
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import warnings
+from io import BytesIO, IOBase, StringIO
+from pathlib import Path
 from typing import (
     Any,
     Callable,
@@ -18,7 +21,13 @@ from typing import (
     Type,
     TypeVar,
     Union,
+    overload,
 )
+
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
 
 try:
     from polars.polars import PyExpr, PyLazyFrame, PyLazyGroupBy
@@ -27,9 +36,22 @@ try:
 except ImportError:  # pragma: no cover
     _DOCUMENTING = True
 
+
 from polars import internals as pli
 from polars.datatypes import DataType, py_type_to_dtype
-from polars.utils import _in_notebook, _prepare_row_count_args, _process_null_values
+from polars.utils import (
+    _in_notebook,
+    _prepare_row_count_args,
+    _process_null_values,
+    format_path,
+)
+
+try:
+    import pyarrow as pa
+
+    _PYARROW_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    _PYARROW_AVAILABLE = False
 
 # Used to type any type or subclass of LazyFrame.
 # Used to indicate when LazyFrame methods return the same type as self,
@@ -203,6 +225,95 @@ class LazyFrame(Generic[DF]):
         )
         return self
 
+    @classmethod
+    def from_json(cls, json: str) -> "LazyFrame":
+        """
+        See Also pl.read_json
+        """
+        f = StringIO(json)
+        return cls.read_json(f)
+
+    @classmethod
+    def read_json(
+        cls,
+        file: Union[str, Path, IOBase],
+    ) -> "LazyFrame":
+        """
+        See Also pl.read_json
+        """
+        if isinstance(file, StringIO):
+            file = BytesIO(file.getvalue().encode())
+        elif isinstance(file, (str, Path)):
+            file = format_path(file)
+
+        return wrap_ldf(PyLazyFrame.read_json(file))
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: Literal[True],
+    ) -> str:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: Literal[False] = ...,
+    ) -> None:
+        ...
+
+    @overload
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = ...,
+        *,
+        to_string: bool = ...,
+    ) -> Optional[str]:
+        ...
+
+    def write_json(
+        self,
+        file: Optional[Union[IOBase, str, Path]] = None,
+        *,
+        to_string: bool = False,
+    ) -> Optional[str]:
+        """
+        Serialize LogicalPlan to JSON representation.
+
+        Parameters
+        ----------
+        file
+            Write to this file instead of returning a string.
+        to_string
+            Ignore file argument and return a string.
+        """
+        if isinstance(file, (str, Path)):
+            file = format_path(file)
+        to_string_io = (file is not None) and isinstance(file, StringIO)
+        if to_string or file is None or to_string_io:
+            with BytesIO() as buf:
+                self._ldf.to_json(buf)
+                json_bytes = buf.getvalue()
+
+            json_str = json_bytes.decode("utf8")
+            if to_string_io:
+                file.write(json_str)  # type: ignore[union-attr]
+            else:
+                return json_str
+        else:
+            self._ldf.to_json(file)
+        return None
+
+    @classmethod
+    def _scan_python_function(cls, schema: "pa.schema", scan_fn: bytes) -> "LazyFrame":
+        self = cls.__new__(cls)
+        self._ldf = PyLazyFrame.scan_from_python_function(list(schema), scan_fn)
+        return self
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
@@ -312,7 +423,7 @@ class LazyFrame(Generic[DF]):
         raw_output
             Return dot syntax. This cannot be combined with `show`
         figsize
-            Passed to matlotlib if `show` == True.
+            Passed to matplotlib if `show` == True.
         """
         if raw_output:
             show = False
@@ -513,7 +624,7 @@ class LazyFrame(Generic[DF]):
         no_optimization
             Turn off optimizations.
         slice_pushdown
-            Slice pushdown opitmizaiton
+            Slice pushdown optimization
 
         Returns
         -------
@@ -559,6 +670,49 @@ class LazyFrame(Generic[DF]):
 
         """
         return self._ldf.columns()
+
+    @property
+    def dtypes(self) -> List[Type[DataType]]:
+        """
+        Get dtypes of columns in LazyFrame.
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.dtypes
+        [<class 'polars.datatypes.int64'>, <class 'polars.datatypes.float64'>, <class 'polars.datatypes.utf8'>]
+
+        See Also
+        --------
+        schema : Return a dict of [column name, dtype]
+        """
+        return self._ldf.dtypes()
+
+    @property
+    def schema(self) -> Dict[str, Type[DataType]]:
+        """
+        Get a dict[column name, DataType]
+
+        Examples
+        --------
+        >>> lf = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6.0, 7.0, 8.0],
+        ...         "ham": ["a", "b", "c"],
+        ...     }
+        ... ).lazy()
+        >>> lf.schema
+        {'foo': <class 'polars.datatypes.Int64'>, 'bar': <class 'polars.datatypes.Float64'>, 'ham': <class 'polars.datatypes.Utf8'>}
+
+        """
+        return self._ldf.schema()
 
     def cache(self: LDF) -> LDF:
         """
@@ -757,7 +911,7 @@ class LazyFrame(Generic[DF]):
             This column must be sorted in ascending order. If not the output will not make sense.
 
             In case of a rolling groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
+            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
         period
             length of the window
         offset
@@ -879,7 +1033,7 @@ class LazyFrame(Generic[DF]):
             This column must be sorted in ascending order. If not the output will not make sense.
 
             In case of a dynamic groupby on indices, dtype needs to be one of {Int32, Int64}. Note that
-            Int32 gets temporarely cast to Int64, so if performance matters use an Int64 column.
+            Int32 gets temporarily cast to Int64, so if performance matters use an Int64 column.
         every
             interval of the window
         period
@@ -995,6 +1149,8 @@ class LazyFrame(Generic[DF]):
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
         """
+        if not isinstance(ldf, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
 
         if isinstance(on, str):
             left_on = on
@@ -1142,6 +1298,9 @@ class LazyFrame(Generic[DF]):
         └──────┴──────┴─────┴───────┘
 
         """
+        if not isinstance(ldf, LazyFrame):
+            raise ValueError(f"Expected a `LazyFrame` as join table, got {type(ldf)}")
+
         if how == "asof":
             warnings.warn(
                 "using asof join via LazyFrame.join is deprecated, please use LazyFrame.join_asof",
@@ -1484,7 +1643,7 @@ class LazyFrame(Generic[DF]):
         """
         return self._from_pyldf(self._ldf.slice(offset, length))
 
-    def limit(self: LDF, n: int) -> LDF:
+    def limit(self: LDF, n: int = 5) -> LDF:
         """
         Limit the DataFrame to the first `n` rows. Note if you don't want the rows to be scanned,
         use the `fetch` operation.
@@ -1496,7 +1655,7 @@ class LazyFrame(Generic[DF]):
         """
         return self.slice(0, n)
 
-    def head(self: LDF, n: int) -> LDF:
+    def head(self: LDF, n: int = 5) -> LDF:
         """
         Gets the first `n` rows of the DataFrame. You probably don't want to use this!
 
@@ -1512,7 +1671,7 @@ class LazyFrame(Generic[DF]):
         """
         return self.limit(n)
 
-    def tail(self: LDF, n: int) -> LDF:
+    def tail(self: LDF, n: int = 5) -> LDF:
         """
         Get the last `n` rows of the DataFrame.
 

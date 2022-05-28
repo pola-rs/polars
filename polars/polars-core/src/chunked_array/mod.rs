@@ -29,8 +29,6 @@ pub mod object;
 #[cfg(feature = "random")]
 #[cfg_attr(docsrs, doc(cfg(feature = "random")))]
 mod random;
-#[cfg(feature = "strings")]
-#[cfg_attr(docsrs, doc(cfg(feature = "strings")))]
 pub mod strings;
 #[cfg(any(
     feature = "temporal",
@@ -435,6 +433,22 @@ where
             T::get_dtype()
         };
         let field = Arc::new(Field::new(name, datatype));
+        ChunkedArray {
+            field,
+            chunks,
+            phantom: PhantomData,
+            categorical_map: None,
+            bit_settings: 0,
+        }
+    }
+}
+
+// A hack to save compiler bloat for null arrays
+impl Int32Chunked {
+    pub(crate) fn new_null(name: &str, len: usize) -> Self {
+        let arr = Arc::from(arrow::array::new_null_array(ArrowDataType::Null, len));
+        let field = Arc::new(Field::new(name, DataType::Null));
+        let chunks = vec![arr as ArrayRef];
         ChunkedArray {
             field,
             chunks,

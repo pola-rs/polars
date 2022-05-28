@@ -4,6 +4,8 @@ use crate::utils::get_supertype;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use polars_arrow::kernels::concatenate::concatenate_owned_unchecked;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
     match series.dtype() {
@@ -17,6 +19,7 @@ fn get_exploded(series: &Series) -> Result<(Series, Buffer<i64>)> {
 
 /// Arguments for `[DataFrame::melt]` function
 #[derive(Clone, Default, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MeltArgs {
     pub id_vars: Vec<String>,
     pub value_vars: Vec<String>,
@@ -26,8 +29,12 @@ pub struct MeltArgs {
 
 impl DataFrame {
     pub fn explode_impl(&self, mut columns: Vec<Series>) -> Result<DataFrame> {
+        let mut df = self.clone();
         if self.height() == 0 {
-            return Ok(self.clone());
+            for s in &columns {
+                df.with_column(s.explode()?)?;
+            }
+            return Ok(df);
         }
         columns.sort_by(|sa, sb| {
             self.check_name_to_idx(sa.name())
@@ -35,8 +42,6 @@ impl DataFrame {
                 .partial_cmp(&self.check_name_to_idx(sb.name()).expect("checked above"))
                 .expect("cmp usize -> Ordering")
         });
-
-        let mut df = self.clone();
 
         // TODO: optimize this.
         // This is the slower easier option.
@@ -47,7 +52,13 @@ impl DataFrame {
                 if !ca.can_fast_explode() {
                     let (_, offsets) = get_exploded(col)?;
                     if offsets.is_empty() {
-                        return Ok(self.slice(0, 0));
+                        let mut out = self.slice(0, 0);
+                        // still explode the columns to get the inner dtype
+                        for col in &columns {
+                            out.try_apply(col.name(), |s| s.explode())?;
+                        }
+
+                        return Ok(out);
                     }
 
                     let mut mask = MutableBitmap::from_len_set(offsets.len() - 1);
@@ -73,7 +84,7 @@ impl DataFrame {
                     ))?;
                     *col = df[idx].clone();
                     let ca = col
-                        .get_inner_mut()
+                        ._get_inner_mut()
                         .as_any_mut()
                         .downcast_mut::<ListChunked>()
                         .unwrap();

@@ -1,7 +1,8 @@
 # flake8: noqa: W191,E101
 import io
 import os
-from typing import List
+from pathlib import Path
+from typing import List, Union
 
 import pytest
 
@@ -25,14 +26,15 @@ def test_from_to_buffer(df: pl.DataFrame, compressions: List[str]) -> None:
 def test_from_to_file(
     io_test_dir: str, df: pl.DataFrame, compressions: List[str]
 ) -> None:
-    f = os.path.join(io_test_dir, "small.ipc")
+    f_ipc = os.path.join(io_test_dir, "small.ipc")
 
     # does not yet work on windows because we hold an mmap?
     if os.name != "nt":
         for compression in compressions:
-            df.write_ipc(f, compression=compression)  # type: ignore
-            df_read = pl.read_ipc(str(f))
-            assert df.frame_equal(df_read)
+            for f in (str(f_ipc), Path(f_ipc)):
+                df.write_ipc(f, compression=compression)  # type: ignore
+                df_read = pl.read_ipc(f)  # type: ignore
+                assert df.frame_equal(df_read)
 
 
 def test_select_columns() -> None:
@@ -80,3 +82,30 @@ def test_ipc_schema(compressions: List[str]) -> None:
         f.seek(0)
 
         assert pl.read_ipc_schema(f) == {"a": pl.Int64, "b": pl.Utf8, "c": pl.Boolean}
+
+
+def test_ipc_schema_from_file(
+    io_test_dir: str, df_no_lists: pl.DataFrame, compressions: List[str]
+) -> None:
+    df = df_no_lists
+    f_ipc = os.path.join(io_test_dir, "small.ipc")
+
+    # does not yet work on windows because we hold an mmap?
+    if os.name != "nt":
+        for compression in compressions:
+            for f in (str(f_ipc), Path(f_ipc)):
+                df.write_ipc(f, compression=compression)  # type: ignore
+                assert pl.read_ipc_schema(f) == {  # type: ignore
+                    "bools": pl.Boolean,
+                    "bools_nulls": pl.Boolean,
+                    "int": pl.Int64,
+                    "int_nulls": pl.Int64,
+                    "floats": pl.Float64,
+                    "floats_nulls": pl.Float64,
+                    "strings": pl.Utf8,
+                    "strings_nulls": pl.Utf8,
+                    "date": pl.Date,
+                    "datetime": pl.Datetime,
+                    "time": pl.Time,
+                    "cat": pl.Categorical,
+                }

@@ -1,4 +1,5 @@
 import io
+import typing
 
 import numpy as np
 import pytest
@@ -49,3 +50,34 @@ def test_not_found_error() -> None:
 def test_string_numeric_comp_err() -> None:
     with pytest.raises(pl.ComputeError, match="cannot compare Utf8 with numeric data"):
         pl.DataFrame({"a": [1.1, 21, 31, 21, 51, 61, 71, 81]}).select(pl.col("a") < "9")
+
+
+def test_panic_exception() -> None:
+    with pytest.raises(
+        pl.PanicException,
+        match=r"""this operation is not implemented/valid for this dtype: .*""",
+    ):
+        pl.struct(pl.Series("a", [1, 2, 3]), eager=True).sort()
+
+
+@typing.no_type_check
+def test_join_lazy_on_df() -> None:
+    df_left = pl.DataFrame(
+        {
+            "Id": [1, 2, 3, 4],
+            "Names": ["A", "B", "C", "D"],
+        }
+    )
+    df_right = pl.DataFrame({"Id": [1, 3], "Tags": ["xxx", "yyy"]})
+
+    with pytest.raises(
+        ValueError,
+        match="Expected a `LazyFrame` as join table, got <class 'polars.internals.frame.DataFrame'>",
+    ):
+        df_left.lazy().join(df_right, on="Id")
+
+    with pytest.raises(
+        ValueError,
+        match="Expected a `LazyFrame` as join table, got <class 'polars.internals.frame.DataFrame'>",
+    ):
+        df_left.lazy().join_asof(df_right, on="Id")

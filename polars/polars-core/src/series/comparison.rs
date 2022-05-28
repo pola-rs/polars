@@ -1,7 +1,7 @@
 //! Comparison operations on Series.
 
 use super::Series;
-use crate::apply_method_numeric_series;
+use crate::apply_method_physical_numeric;
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use std::ops::Deref;
@@ -273,32 +273,38 @@ where
 
     fn equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, equal, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, equal, rhs))
     }
 
     fn not_equal(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, not_equal, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, not_equal, rhs))
     }
 
     fn gt(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, gt, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, gt, rhs))
     }
 
     fn gt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, gt_eq, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, gt_eq, rhs))
     }
 
     fn lt(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, lt, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, lt, rhs))
     }
 
     fn lt_eq(&self, rhs: Rhs) -> Result<BooleanChunked> {
         validate_types(self.dtype(), &DataType::Int8)?;
-        Ok(apply_method_numeric_series!(self, lt_eq, rhs))
+        let s = self.to_physical_repr();
+        Ok(apply_method_physical_numeric!(&s, lt_eq, rhs))
     }
 }
 

@@ -103,26 +103,4 @@ impl PhysicalExpr for SortExpr {
     fn to_field(&self, input_schema: &Schema) -> Result<Field> {
         self.physical_expr.to_field(input_schema)
     }
-
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
-    }
-}
-impl PhysicalAggregation for SortExpr {
-    // As a final aggregation a Sort returns a list array.
-    fn aggregate(
-        &self,
-        df: &DataFrame,
-        groups: &GroupsProxy,
-        state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
-        let agg_s = ac.aggregated();
-        let agg_s = agg_s
-            .list()
-            .unwrap()
-            .apply_amortized(|s| s.as_ref().sort_with(self.options))
-            .into_series();
-        Ok(Some(agg_s))
-    }
 }

@@ -1,10 +1,12 @@
 import io
-from datetime import date, datetime, timedelta
+import typing
+from datetime import date, datetime, time, timedelta
 
 import numpy as np
 import pandas as pd
 import pyarrow as pa
 import pytest
+import pytz
 from test_series import verify_series_and_expr_api
 
 import polars as pl
@@ -155,11 +157,12 @@ def test_timezone() -> None:
     # with timezone; we do expect a warning here
     tz_ts = pa.timestamp("s", tz="America/New_York")
     tz_data = pa.array([1000, 2000], type=tz_ts)
-    with pytest.warns(Warning):
-        tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
+    # with pytest.warns(Warning):
+    tz_s: pl.Series = pl.from_arrow(tz_data)  # type: ignore
 
     # timezones have no effect, i.e. `s` equals `tz_s`
-    assert s.series_equal(tz_s)
+    assert not s.series_equal(tz_s)
+    assert s.cast(int).series_equal(tz_s.cast(int))
 
 
 def test_to_list() -> None:
@@ -450,7 +453,7 @@ def test_upsample() -> None:
             "admin": ["Åland", "Netherlands", "Åland", "Netherlands"],
             "test2": [0, 1, 2, 3],
         }
-    )
+    ).with_column(pl.col("time").dt.with_time_zone("UTC"))
 
     up = df.upsample(
         time_column="time", every="1mo", by="admin", maintain_order=True
@@ -478,7 +481,7 @@ def test_upsample() -> None:
             ],
             "test2": [0, 0, 0, 2, 1, 1, 3],
         }
-    )
+    ).with_column(pl.col("time").dt.with_time_zone("UTC"))
 
     assert up.frame_equal(expected)
 
@@ -526,7 +529,8 @@ def test_read_utc_times_parquet() -> None:
     df.to_parquet(f)
     f.seek(0)
     df_in = pl.read_parquet(f)
-    assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0)
+    tz = pytz.timezone("UTC")
+    assert df_in["Timestamp"][0] == tz.localize(datetime(2022, 1, 1, 0, 0))
 
 
 def test_epoch() -> None:
@@ -834,3 +838,59 @@ def test_agg_logical() -> None:
     s = pl.Series(dates)
     assert s.max() == dates[1]
     assert s.min() == dates[0]
+
+
+@typing.no_type_check
+def test_from_time_arrow() -> None:
+    times = pa.array([10, 20, 30], type=pa.time32("s"))
+    times_table = pa.table([times], names=["times"])
+
+    assert pl.from_arrow(times_table).to_series().to_list() == [
+        time(0, 0, 10),
+        time(0, 0, 20),
+        time(0, 0, 30),
+    ]
+
+
+def test_datetime_strptime_patterns() -> None:
+    # note that all should be year first
+    df = pl.Series(
+        "date",
+        [
+            "09-05-2019" "2018-09-05",
+            "2018-09-05T04:05:01",
+            "2018-09-05T04:24:01.9",
+            "2018-09-05T04:24:02.11",
+            "2018-09-05T14:24:02.123",
+            "2018-09-05T14:24:02.123Z",
+            "2019-04-18T02:45:55.555000000",
+            "2019-04-18T22:45:55.555123",
+        ],
+    ).to_frame()
+    s = df.with_columns(
+        [
+            pl.col("date")
+            .str.strptime(pl.Datetime, fmt=None, strict=False)
+            .alias("parsed"),
+        ]
+    )["parsed"]
+    assert s.null_count() == 1
+    assert s[0] is None
+
+
+def test_timedelta_from() -> None:
+    as_dict = {
+        "A": [1, 2],
+        "B": [timedelta(seconds=4633), timedelta(seconds=50)],
+    }
+    as_rows = [
+        {
+            "A": 1,
+            "B": timedelta(seconds=4633),
+        },
+        {
+            "A": 2,
+            "B": timedelta(seconds=50),
+        },
+    ]
+    assert pl.DataFrame(as_dict).frame_equal(pl.DataFrame(as_rows))

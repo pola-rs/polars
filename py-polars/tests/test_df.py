@@ -1,5 +1,4 @@
 # flake8: noqa: W191,E101
-import io
 import sys
 import typing
 from builtins import range
@@ -15,8 +14,6 @@ import pytest
 
 import polars as pl
 from polars import testing
-from polars.datatypes import List
-from polars.internals.frame import DataFrame
 
 
 def test_version() -> None:
@@ -36,19 +33,23 @@ def test_init_only_columns() -> None:
     assert df.frame_equal(truth, null_equal=True)
     assert df.dtypes == [pl.Float32, pl.Float32, pl.Float32]
 
-    df = pl.DataFrame(
-        columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)]
-    )
-    truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
-        [
-            pl.col("a").cast(pl.Date),
-            pl.col("b").cast(pl.UInt64),
-            pl.col("c").cast(pl.Int8),
-        ]
-    )
-    assert df.shape == (0, 3)
-    assert df.frame_equal(truth, null_equal=True)
-    assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
+    # Validate construction with various flavours of no/empty data
+    no_data: Any
+    for no_data in (None, {}, []):
+        df = pl.DataFrame(
+            data=no_data,
+            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)],
+        )
+        truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
+            [
+                pl.col("a").cast(pl.Date),
+                pl.col("b").cast(pl.UInt64),
+                pl.col("c").cast(pl.Int8),
+            ]
+        )
+        assert df.shape == (0, 3)
+        assert df.frame_equal(truth, null_equal=True)
+        assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
 
 
 def test_init_dict() -> None:
@@ -841,6 +842,18 @@ def test_file_buffer() -> None:
     assert "Invalid Parquet file" in str(e.value)
 
 
+def test_read_missing_file() -> None:
+    with pytest.raises(FileNotFoundError, match="fake_parquet_file"):
+        pl.read_parquet("fake_parquet_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        pl.read_csv("fake_csv_file")
+
+    with pytest.raises(FileNotFoundError, match="fake_csv_file"):
+        with open("fake_csv_file", "r") as f:
+            pl.read_csv(f)
+
+
 def test_set() -> None:
     """Setting a dataframe using indices is deprecated. We keep these tests because we only generate a warning"""
     with pytest.deprecated_call():
@@ -1077,10 +1090,10 @@ def test_column_names() -> None:
 
 def test_lazy_functions() -> None:
     df = pl.DataFrame({"a": ["foo", "bar", "2"], "b": [1, 2, 3], "c": [1.0, 2.0, 3.0]})
-    out = df[[pl.count("a")]]
+    out = df.select([pl.count("a")])
     assert out["a"] == 3
     assert pl.count(df["a"]) == 3
-    out = df[
+    out = df.select(
         [
             pl.var("b").alias("1"),
             pl.std("b").alias("2"),
@@ -1093,7 +1106,7 @@ def test_lazy_functions() -> None:
             pl.first("b").alias("9"),
             pl.last("b").alias("10"),
         ]
-    ]
+    )
     expected = 1.0
     assert np.isclose(out.select_at_idx(0), expected)
     assert np.isclose(pl.var(df["b"]), expected)  # type: ignore
@@ -1200,11 +1213,11 @@ def test_to_numpy() -> None:
 
 
 def test_argsort_by(df: pl.DataFrame) -> None:
-    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=[False, True])]["int_nulls"]
-    assert a == [1, 0, 3]
+    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=[False, True]))
+    assert idx_df["int_nulls"] == [1, 0, 3]
 
-    a = df[pl.argsort_by(["int_nulls", "floats"], reverse=False)]["int_nulls"]
-    assert a == [1, 0, 2]
+    idx_df = df.select(pl.argsort_by(["int_nulls", "floats"], reverse=False))
+    assert idx_df["int_nulls"] == [1, 0, 2]
 
 
 def test_literal_series() -> None:
@@ -1280,7 +1293,7 @@ def test_from_rows() -> None:
 def test_repeat_by() -> None:
     df = pl.DataFrame({"name": ["foo", "bar"], "n": [2, 3]})
 
-    out = df[pl.col("n").repeat_by("n")]
+    out = df.select(pl.col("n").repeat_by("n"))
     s = out["n"]
     assert s[0] == [2, 2]
     assert s[1] == [3, 3, 3]
@@ -1343,14 +1356,14 @@ def dot_product() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
 
     assert df["a"].dot(df["b"]) == 20
-    assert df[[pl.col("a").dot("b")]][0, "a"] == 20
+    assert df.select([pl.col("a").dot("b")])[0, "a"] == 20
 
 
 def test_hash_rows() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4], "b": [2, 2, 2, 2]})
     assert df.hash_rows().dtype == pl.UInt64
     assert df["a"].hash().dtype == pl.UInt64
-    assert df[[pl.col("a").hash().alias("foo")]]["foo"].dtype == pl.UInt64
+    assert df.select([pl.col("a").hash().alias("foo")])["foo"].dtype == pl.UInt64
 
 
 def test_create_df_from_object() -> None:
@@ -1673,6 +1686,29 @@ def test_rename_swap() -> None:
     assert out.frame_equal(expected)
 
 
+def test_rename_same_name() -> None:
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4, 5],
+            "groups": ["A", "A", "B", "C", "B"],
+        }
+    ).lazy()
+    df = df.rename({"groups": "groups"})
+    df = df.select(["groups"])
+    assert df.collect().to_dict(False) == {"groups": ["A", "A", "B", "C", "B"]}
+    df = pl.DataFrame(
+        {
+            "nrs": [1, 2, 3, 4, 5],
+            "groups": ["A", "A", "B", "C", "B"],
+            "test": [1, 2, 3, 4, 5],
+        }
+    ).lazy()
+    df = df.rename({"nrs": "nrs", "groups": "groups"})
+    df = df.select(["groups"])
+    df.collect()
+    assert df.collect().to_dict(False) == {"groups": ["A", "A", "B", "C", "B"]}
+
+
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert df.fill_null(4).frame_equal(pl.DataFrame({"a": [1, 2], "b": [3, 4]}))
@@ -1793,7 +1829,7 @@ def test_arithmetic() -> None:
     )
     assert out.frame_equal(expected, null_equal=True)
 
-    # cannot do arithmetics with a sequence
+    # cannot do arithmetic with a sequence
     with pytest.raises(ValueError, match="Operation not supported"):
         _ = df + [1]  # type: ignore
 
@@ -1821,7 +1857,7 @@ def test_get_item() -> None:
     df = pl.DataFrame({"a": [1.0, 2.0], "b": [3, 4]})
 
     # expression
-    assert df[pl.col("a")].frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
+    assert df.select(pl.col("a")).frame_equal(pl.DataFrame({"a": [1.0, 2.0]}))
 
     # numpy array
     assert df[np.array([True, False])].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
@@ -1854,7 +1890,7 @@ def test_get_item() -> None:
     # if bools, assumed to be a row mask
     # if integers, assumed to be row indices
     assert df[["a", "b"]].frame_equal(df)
-    assert df[[pl.col("a"), pl.col("b")]].frame_equal(df)
+    assert df.select([pl.col("a"), pl.col("b")]).frame_equal(df)
     df[[1]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
     df[[False, True]].frame_equal(pl.DataFrame({"a": [1.0], "b": [3]}))
 
@@ -2081,3 +2117,28 @@ def test_partition_by() -> None:
         {"foo": ["B", "B"], "N": [2, 4], "bar": ["m", "m"]},
         {"foo": ["C"], "N": [2], "bar": ["l"]},
     ]
+
+    df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
+    assert df.partition_by(["a", "b"], as_dict=True)["one", 1].to_dict(False) == {
+        "a": ["one"],
+        "b": [1],
+    }
+    assert df.partition_by(["a"], as_dict=True)["one"].to_dict(False) == {
+        "a": ["one", "one"],
+        "b": [1, 3],
+    }
+
+
+@typing.no_type_check
+def test_list_of_list_of_struct() -> None:
+    expected = [{"list_of_list_of_struct": [[{"a": 1}, {"a": 2}]]}]
+    pa_df = pa.Table.from_pylist(expected)
+    df = pl.from_arrow(pa_df)
+    assert df.rows() == [([[{"a": 1}, {"a": 2}]],)]
+    assert df.to_dicts() == expected
+
+
+def test_concat_to_empty() -> None:
+    assert pl.concat([pl.DataFrame([]), pl.DataFrame({"a": [1]})]).to_dict(False) == {
+        "a": [1]
+    }

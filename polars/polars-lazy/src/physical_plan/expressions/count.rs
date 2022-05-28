@@ -5,6 +5,8 @@ use polars_core::prelude::*;
 use polars_core::utils::NoNull;
 use std::borrow::Cow;
 
+const COUNT_NAME: &str = "count";
+
 pub struct CountExpr {
     expr: Expr,
 }
@@ -44,7 +46,7 @@ impl PhysicalExpr for CountExpr {
                 ca.into_inner()
             }
         };
-        ca.rename("count");
+        ca.rename(COUNT_NAME);
         let s = ca.into_series();
 
         Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
@@ -53,20 +55,33 @@ impl PhysicalExpr for CountExpr {
         Ok(Field::new("count", DataType::UInt32))
     }
 
-    fn as_agg_expr(&self) -> Result<&dyn PhysicalAggregation> {
-        Ok(self)
+    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
+        Some(self)
     }
 }
 
-impl PhysicalAggregation for CountExpr {
-    fn aggregate(
+impl PartitionedAggregation for CountExpr {
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_partitioned(
         &self,
         df: &DataFrame,
         groups: &GroupsProxy,
         state: &ExecutionState,
-    ) -> Result<Option<Series>> {
-        let mut ac = self.evaluate_on_groups(df, groups, state)?;
-        let s = ac.aggregated();
-        Ok(Some(s))
+    ) -> Result<Series> {
+        self.evaluate_on_groups(df, groups, state)
+            .map(|mut ac| ac.aggregated())
+    }
+
+    /// Called to merge all the partitioned results in a final aggregate.
+    #[allow(clippy::ptr_arg)]
+    fn finalize(
+        &self,
+        partitioned: Series,
+        groups: &GroupsProxy,
+        _state: &ExecutionState,
+    ) -> Result<Series> {
+        let mut agg = partitioned.agg_sum(groups);
+        agg.rename(COUNT_NAME);
+        Ok(agg)
     }
 }

@@ -53,6 +53,8 @@ use polars_core::prelude::*;
 use polars_time::prelude::*;
 #[cfg(feature = "temporal")]
 use rayon::prelude::*;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::fs::File;
 use std::io::Write;
@@ -87,7 +89,7 @@ where
         }
     }
 
-    fn finish(mut self, df: &mut DataFrame) -> Result<()> {
+    fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
         df.rechunk();
         let names = df.get_column_names();
         let iter = df.iter_chunks();
@@ -144,6 +146,7 @@ where
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum CsvEncoding {
     /// Utf8 encoding
     Utf8,
@@ -152,6 +155,7 @@ pub enum CsvEncoding {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum NullValues {
     /// A single value that's used for all columns
     AllColumns(String),

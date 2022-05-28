@@ -60,6 +60,7 @@ impl LogicalPlanBuilder {
         cache: bool,
         parallel: bool,
         row_count: Option<RowCount>,
+        rechunk: bool,
     ) -> Result<Self> {
         use polars_io::SerReader as _;
 
@@ -78,6 +79,7 @@ impl LogicalPlanBuilder {
                 cache,
                 parallel,
                 row_count,
+                rechunk,
             },
         }
         .into())

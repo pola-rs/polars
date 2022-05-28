@@ -38,7 +38,7 @@ where
         Cow::Borrowed(self.0.ref_field())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Option<Series> {
+    fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 

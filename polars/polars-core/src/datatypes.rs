@@ -20,12 +20,13 @@ pub use arrow::datatypes::{DataType as ArrowDataType, TimeUnit as ArrowTimeUnit}
 use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num::{Bounded, FromPrimitive, Num, NumCast, Zero};
+use polars_arrow::data_types::IsFloat;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub};
+use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
 pub struct Utf8Type {}
 
@@ -137,21 +138,44 @@ pub trait NumericNative:
     + Div<Output = Self>
     + Rem<Output = Self>
     + AddAssign
+    + SubAssign
     + Bounded
     + FromPrimitive
+    + IsFloat
     + NativeArithmetics
 {
+    type POLARSTYPE;
 }
-impl NumericNative for i8 {}
-impl NumericNative for i16 {}
-impl NumericNative for i32 {}
-impl NumericNative for i64 {}
-impl NumericNative for u8 {}
-impl NumericNative for u16 {}
-impl NumericNative for u32 {}
-impl NumericNative for u64 {}
-impl NumericNative for f32 {}
-impl NumericNative for f64 {}
+impl NumericNative for i8 {
+    type POLARSTYPE = Int8Type;
+}
+impl NumericNative for i16 {
+    type POLARSTYPE = Int16Type;
+}
+impl NumericNative for i32 {
+    type POLARSTYPE = Int32Type;
+}
+impl NumericNative for i64 {
+    type POLARSTYPE = Int64Type;
+}
+impl NumericNative for u8 {
+    type POLARSTYPE = UInt8Type;
+}
+impl NumericNative for u16 {
+    type POLARSTYPE = UInt16Type;
+}
+impl NumericNative for u32 {
+    type POLARSTYPE = UInt32Type;
+}
+impl NumericNative for u64 {
+    type POLARSTYPE = UInt64Type;
+}
+impl NumericNative for f32 {
+    type POLARSTYPE = Float32Type;
+}
+impl NumericNative for f64 {
+    type POLARSTYPE = Float64Type;
+}
 
 pub trait PolarsNumericType: Send + Sync + PolarsDataType + 'static {
     type Native: NumericNative;
@@ -202,6 +226,7 @@ impl PolarsFloatType for Float32Type {}
 impl PolarsFloatType for Float64Type {}
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum AnyValue<'a> {
     Null,
     /// A binary true or false.
@@ -235,6 +260,7 @@ pub enum AnyValue<'a> {
     /// A 64-bit date representing the elapsed time since UNIX epoch (1970-01-01)
     /// in nanoseconds (64 bits).
     #[cfg(feature = "dtype-datetime")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Datetime(i64, TimeUnit, &'a Option<TimeZone>),
     // A 64-bit integer representing difference between date-times in [`TimeUnit`]
     #[cfg(feature = "dtype-duration")]
@@ -243,15 +269,19 @@ pub enum AnyValue<'a> {
     #[cfg(feature = "dtype-time")]
     Time(i64),
     #[cfg(feature = "dtype-categorical")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Categorical(u32, &'a RevMapping),
     /// Nested type, contains arrays that are filled with one of the datetypes.
     List(Series),
     #[cfg(feature = "object")]
     /// Can be used to fmt and implements Any, so can be downcasted to the proper value type.
+    #[cfg_attr(feature = "serde", serde(skip))]
     Object(&'a dyn PolarsObjectSafe),
     #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     Struct(Vec<AnyValue<'a>>, &'a [Field]),
     #[cfg(feature = "dtype-struct")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
     /// A UTF8 encoded string type.
     Utf8Owned(String),
@@ -498,49 +528,13 @@ impl Display for DataType {
             }
             DataType::Duration(tu) => return write!(f, "duration[{}]", tu),
             DataType::Time => "time",
-            DataType::List(tp) => return write!(f, "list [{}]", tp),
+            DataType::List(tp) => return write!(f, "list[{}]", tp),
             #[cfg(feature = "object")]
             DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => "cat",
             #[cfg(feature = "dtype-struct")]
-            DataType::Struct(fields) => {
-                return match fields.len() {
-                    1 => {
-                        write!(f, "struct{{{}: {}}}", fields[0].name(), fields[0].dtype)
-                    }
-                    2 => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}': {}, '{}': {}}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[0].dtype,
-                            fields[1].name(),
-                            fields[1].dtype
-                        )
-                    }
-                    3 => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}', '{}', '{}'}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[1].name(),
-                            fields[2].name()
-                        )
-                    }
-                    _ => {
-                        write!(
-                            f,
-                            "struct[{}]{{'{}',...,'{}'}}",
-                            fields.len(),
-                            fields[0].name(),
-                            fields[fields.len() - 1].name()
-                        )
-                    }
-                }
-            }
+            DataType::Struct(fields) => return write!(f, "struct[{}]", fields.len()),
             DataType::Unknown => unreachable!(),
         };
         f.write_str(s)
@@ -613,7 +607,10 @@ impl PartialOrd for AnyValue<'_> {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde-lazy", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    any(feature = "serde-lazy", feature = "serde"),
+    derive(Serialize, Deserialize)
+)]
 pub enum TimeUnit {
     Nanoseconds,
     Microseconds,
@@ -705,6 +702,12 @@ pub enum DataType {
     Unknown,
 }
 
+impl Default for DataType {
+    fn default() -> Self {
+        DataType::Unknown
+    }
+}
+
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state)
@@ -775,6 +778,21 @@ impl DataType {
             DataType::Categorical(_) => false,
             _ => true,
         }
+    }
+    pub fn is_signed(&self) -> bool {
+        // allow because it cannot be replaced when object feature is activated
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            #[cfg(feature = "dtype-i8")]
+            DataType::Int8 => true,
+            #[cfg(feature = "dtype-i16")]
+            DataType::Int16 => true,
+            DataType::Int32 | DataType::Int64 => true,
+            _ => false,
+        }
+    }
+    pub fn is_unsigned(&self) -> bool {
+        self.is_numeric() && !self.is_signed()
     }
 
     /// Convert to an Arrow data type.

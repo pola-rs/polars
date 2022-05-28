@@ -4,6 +4,7 @@ use polars_core::utils::get_supertype;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 
+use crate::dsl::function_expr::FunctionExpr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -247,7 +248,10 @@ impl AsRef<Expr> for AggExpr {
 #[derive(Clone, PartialEq)]
 #[must_use]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+#[cfg_attr(
+    all(feature = "serde", feature = "object"),
+    serde(bound(deserialize = "'de: 'static"))
+)]
 pub enum Expr {
     Alias(Box<Expr>, Arc<str>),
     Column(Arc<str>),
@@ -289,13 +293,20 @@ pub enum Expr {
         falsy: Box<Expr>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
-    Function {
+    AnonymousFunction {
         /// function arguments
         input: Vec<Expr>,
         /// function to apply
         function: NoEq<Arc<dyn SeriesUdf>>,
         /// output dtype of the function
         output_type: GetOutput,
+        options: FunctionOptions,
+    },
+    Function {
+        /// function arguments
+        input: Vec<Expr>,
+        /// function to apply
+        function: FunctionExpr,
         options: FunctionOptions,
     },
     Shift {
@@ -387,7 +398,19 @@ impl Operator {
     pub(crate) fn is_comparison(&self) -> bool {
         matches!(
             self,
-            Self::Eq | Self::NotEq | Self::Lt | Self::LtEq | Self::Gt | Self::GtEq
+            Self::Eq
+                | Self::NotEq
+                | Self::Lt
+                | Self::LtEq
+                | Self::Gt
+                | Self::GtEq
+                | Self::And
+                | Self::Or
+                | Self::Xor
         )
+    }
+
+    pub(crate) fn is_arithmetic(&self) -> bool {
+        !(self.is_comparison())
     }
 }

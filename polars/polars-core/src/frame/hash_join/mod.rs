@@ -12,6 +12,8 @@ use arrow::Either;
 #[cfg(feature = "chunked_ids")]
 use std::borrow::Cow;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 use single_keys::*;
 use single_keys_inner::*;
 use single_keys_left::*;
@@ -113,11 +115,13 @@ pub(crate) fn check_categorical_src(l: &DataType, r: &DataType) -> Result<()> {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     Left,
     Inner,
     Outer,
     #[cfg(feature = "asof_join")]
+    #[cfg_attr(feature = "serde", serde(skip))]
     AsOf(AsOfOptions),
     Cross,
     #[cfg(feature = "semi_anti_join")]
@@ -318,7 +322,7 @@ impl DataFrame {
         if left_join && join_tuples.len() == self.height() {
             self.clone()
         } else {
-            self.take_unchecked_slice(join_tuples)
+            self._take_unchecked_slice(join_tuples, true)
         }
     }
 
@@ -493,7 +497,8 @@ impl DataFrame {
                     || unsafe { self.create_left_df_from_slice(join_idx_left, false) },
                     || unsafe {
                         // remove join columns
-                        remove_selected(other, &selected_right).take_unchecked_slice(join_idx_right)
+                        remove_selected(other, &selected_right)
+                            ._take_unchecked_slice(join_idx_right, true)
                     },
                 );
                 self.finish_join(df_left, df_right, suffix)
@@ -678,7 +683,7 @@ impl DataFrame {
                 other
                     .drop(s_right.name())
                     .unwrap()
-                    .take_unchecked_slice(join_tuples_right)
+                    ._take_unchecked_slice(join_tuples_right, true)
             },
         );
         self.finish_join(df_left, df_right, suffix)
@@ -836,7 +841,7 @@ impl DataFrame {
         if let Some((offset, len)) = slice {
             idx = slice_slice(idx, offset, len);
         }
-        self.take_unchecked_slice(idx)
+        self._take_unchecked_slice(idx, true)
     }
 
     #[cfg(feature = "semi_anti_join")]
@@ -920,7 +925,7 @@ impl DataFrame {
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_) => {
                 let ca_left = s_left.categorical().unwrap();
-                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap());
+                let new_rev_map = ca_left.merge_categorical_map(s_right.categorical().unwrap())?;
                 let logical = s.u32().unwrap().clone();
                 CategoricalChunked::from_cats_and_rev_map(logical, new_rev_map).into_series()
             }

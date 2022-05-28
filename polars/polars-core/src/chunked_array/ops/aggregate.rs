@@ -391,6 +391,10 @@ where
         + compute::aggregate::SimdOrd<T::Native>,
 {
     fn var(&self) -> Option<f64> {
+        if self.len() == 1 {
+            return Some(0.0);
+        }
+
         let mean = self.mean()?;
         let squared = self.apply_cast_numeric::<_, Float64Type>(|value| {
             (value.to_f64().unwrap() - mean).powf(2.0)
@@ -409,6 +413,10 @@ where
 
 impl ChunkVar<f32> for Float32Chunked {
     fn var(&self) -> Option<f32> {
+        if self.len() == 1 {
+            return Some(0.0);
+        }
+
         let mean = self.mean()? as f32;
         let squared = self.apply(|value| (value - mean).powf(2.0));
         squared
@@ -422,6 +430,10 @@ impl ChunkVar<f32> for Float32Chunked {
 
 impl ChunkVar<f64> for Float64Chunked {
     fn var(&self) -> Option<f64> {
+        if self.len() == 1 {
+            return Some(0.0);
+        }
+
         let mean = self.mean()?;
         let squared = self.apply(|value| (value - mean).powf(2.0));
         squared
@@ -766,8 +778,8 @@ impl ChunkAggSeries for Utf8Chunked {
 }
 
 macro_rules! one_null_list {
-    ($self:ident) => {{
-        let mut builder = get_list_builder(&DataType::Null, 0, 1, $self.name());
+    ($self:ident, $dtype: expr) => {{
+        let mut builder = get_list_builder(&$dtype, 0, 1, $self.name()).unwrap();
         builder.append_opt_series(None);
         builder.finish().into_series()
     }};
@@ -775,13 +787,13 @@ macro_rules! one_null_list {
 
 impl ChunkAggSeries for ListChunked {
     fn sum_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn max_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
     fn min_as_series(&self) -> Series {
-        one_null_list!(self)
+        one_null_list!(self, self.inner_dtype())
     }
 }
 

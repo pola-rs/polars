@@ -13,19 +13,33 @@ use polars_core::prelude::{
 use polars_core::utils::arrow::temporal_conversions::NANOSECONDS;
 use std::ops::Mul;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 #[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Duration {
     // the number of months for the duration
     months: i64,
     // the number of nanoseconds for the duration
     nsecs: i64,
     // indicates if the duration is negative
-    negative: bool,
+    pub(crate) negative: bool,
     // indicates if an integer string was passed. e.g. "2i"
     pub parsed_int: bool,
 }
 
 impl Duration {
+    /// Create a new integer size `Duration`
+    pub fn new(fixed_slots: i64) -> Self {
+        Duration {
+            months: 0,
+            nsecs: fixed_slots.abs(),
+            negative: fixed_slots < 0,
+            parsed_int: true,
+        }
+    }
+
     /// 1ns // 1 nanosecond
     /// 1us // 1 microsecond
     /// 1ms // 1 millisecond
@@ -172,7 +186,7 @@ impl Duration {
         self.months == 0 && self.nsecs == 0
     }
 
-    pub(crate) fn months_only(&self) -> bool {
+    pub fn months_only(&self) -> bool {
         self.months != 0 && self.nsecs == 0
     }
 
