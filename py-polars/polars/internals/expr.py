@@ -730,7 +730,24 @@ class Expr:
         return wrap_expr(self._pyexpr.agg_groups())
 
     def count(self) -> "Expr":
-        """Count the number of values in this expression"""
+        """
+        Count the number of values in this expression
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df.select(pl.col("*").count())  # counts nulls
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ u32 ┆ u32 │
+        ╞═════╪═════╡
+        │ 3   ┆ 3   │
+        └─────┴─────┘
+
+        """
         return wrap_expr(self._pyexpr.count())
 
     def len(self) -> "Expr":
@@ -759,7 +776,29 @@ class Expr:
 
     def drop_nulls(self) -> "Expr":
         """
-        Drop null values
+        Drop null values.
+
+        Warnings
+        --------
+        NOTE that null values are not floating point NaN values!
+        To drop NaN values, use `drop_nans()`.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df.select(pl.col("b").drop_nulls())
+        shape: (2, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 4   │
+        ├╌╌╌╌╌┤
+        │ 4   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.drop_nulls())
 
@@ -1087,6 +1126,27 @@ class Expr:
         ----------
         periods
             Number of places to shift (may be negative).
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4]})
+        >>> df.select(pl.col("foo").shift(1))
+        shape: (4, 1)
+        ┌──────┐
+        │ foo  │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ null │
+        ├╌╌╌╌╌╌┤
+        │ 1    │
+        ├╌╌╌╌╌╌┤
+        │ 2    │
+        ├╌╌╌╌╌╌┤
+        │ 3    │
+        └──────┘
+
         """
         return wrap_expr(self._pyexpr.shift(periods))
 
@@ -1257,7 +1317,39 @@ class Expr:
         return wrap_expr(self._pyexpr.null_count())
 
     def arg_unique(self) -> "Expr":
-        """Get index of first unique value."""
+        """
+        Get index of first unique value.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"a": [8, 9, 10], "b": [None, 4, 4]})
+        >>> df.select(pl.col("a").arg_unique())
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 2   │
+        └─────┘
+        >>> df.select(pl.col("b").arg_unique())
+        shape: (2, 1)
+        ┌─────┐
+        │ b   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+
+        """
         return wrap_expr(self._pyexpr.arg_unique())
 
     def unique(self, maintain_order: bool = False) -> "Expr":
@@ -1558,6 +1650,37 @@ class Expr:
         Returns
         -------
         Exploded Series of same dtype
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": ["hello", "world"]})
+        >>> df.select(pl.col("foo").flatten())
+        shape: (10, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ str │
+        ╞═════╡
+        │ h   │
+        ├╌╌╌╌╌┤
+        │ e   │
+        ├╌╌╌╌╌┤
+        │ l   │
+        ├╌╌╌╌╌┤
+        │ l   │
+        ├╌╌╌╌╌┤
+        │ ... │
+        ├╌╌╌╌╌┤
+        │ o   │
+        ├╌╌╌╌╌┤
+        │ r   │
+        ├╌╌╌╌╌┤
+        │ l   │
+        ├╌╌╌╌╌┤
+        │ d   │
+        └─────┘
+
         """
 
         return wrap_expr(self._pyexpr.explode())
@@ -1600,6 +1723,25 @@ class Expr:
     def take_every(self, n: int) -> "Expr":
         """
         Take every nth value in the Series and return as a new Series.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
+        >>> df.select(pl.col("foo").take_every(3))
+        shape: (3, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        ├╌╌╌╌╌┤
+        │ 4   │
+        ├╌╌╌╌╌┤
+        │ 7   │
+        └─────┘
+
         """
         return wrap_expr(self._pyexpr.take_every(n))
 
@@ -2750,6 +2892,27 @@ class Expr:
     def sign(self) -> "Expr":
         """
         Returns an element-wise indication of the sign of a number.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [-9, -8, 0, 4]})
+        >>> df.select(pl.col("foo").sign())
+        shape: (4, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ -1  │
+        ├╌╌╌╌╌┤
+        │ -1  │
+        ├╌╌╌╌╌┤
+        │ 0   │
+        ├╌╌╌╌╌┤
+        │ 1   │
+        └─────┘
+
         """
         return np.sign(self)  # type: ignore
 
@@ -2915,6 +3078,25 @@ class Expr:
         Returns
         -------
         Expr
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3, 4, 5, 6, 7, 8, 9]})
+        >>> df.select(pl.col("foo").reshape((3, 3)))
+        shape: (3, 1)
+        ┌───────────┐
+        │ foo       │
+        │ ---       │
+        │ list[i64] │
+        ╞═══════════╡
+        │ [1, 2, 3] │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [4, 5, 6] │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [7, 8, 9] │
+        └───────────┘
+
         """
         return wrap_expr(self._pyexpr.reshape(dims))
 
