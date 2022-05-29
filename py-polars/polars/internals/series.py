@@ -2456,6 +2456,21 @@ class Series:
     def sign(self) -> "Series":
         """
         Returns an element-wise indication of the sign of a number.
+
+        Examples
+        --------
+
+        >>> s = pl.Series("foo", [-9, -8, 0, 4])
+        >>> s.sign()  #
+        shape: (4,)
+        Series: 'foo' [i64]
+        [
+                -1
+                -1
+                0
+                1
+        ]
+
         """
         return np.sign(self)  # type: ignore
 
