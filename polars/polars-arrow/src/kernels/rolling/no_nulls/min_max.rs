@@ -74,36 +74,35 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
                 Ordering::Less => {
                     // leaving value could be the smallest, we might need to recompute
 
-                    // just a random value in the window to prevent O(n^2) behavior
-                    // that can occur when all values in the window are the same
-                    let remaining_value1 = self.slice.get(start).unwrap_unchecked();
-                    let remaining_value2 = self.slice.get(end.saturating_sub(1)).unwrap();
+                    // check the values in between the window we did not yet
+                    // compute to find the max there. We compare that with the `entering_max`
+                    // if any value is equal to equal to `self.max` of previous window we can break
+                    // early
+                    let mut min_in_between = self.slice.get_unchecked(start);
+                    for idx in (start + 1)..self.last_end {
+                        // safety
+                        // we are in bounds
+                        let value = self.slice.get_unchecked(idx);
 
-                    // we check those two value in the window, if they are equal to leaving, we know
-                    // we don't need to traverse all to compote the window
-                    if !matches!(
-                        compare_fn_nan_min(remaining_value1, &self.min),
-                        Ordering::Equal
-                    ) && !matches!(
-                        compare_fn_nan_min(remaining_value2, &self.min),
-                        Ordering::Equal
-                    ) {
-                        // the minimum value int the window we did not yet compute
-                        let min_in_between = self
-                            .slice
-                            .get_unchecked(start..self.last_end)
-                            .iter()
-                            .min_by(|a, b| compare_fn_nan_min(*a, *b))
-                            .unwrap_or(&self.slice[start]);
-
-                        if matches!(
-                            compare_fn_nan_min(min_in_between, entering_min),
-                            Ordering::Less
-                        ) {
-                            self.min = *min_in_between
-                        } else {
-                            self.min = *entering_min
+                        if matches!(compare_fn_nan_min(value, min_in_between), Ordering::Less) {
+                            min_in_between = value;
                         }
+
+                        // the min is also in the in between values
+                        if matches!(compare_fn_nan_min(value, &self.min), Ordering::Equal) {
+                            self.last_start = start;
+                            self.last_end = end;
+                            return self.min;
+                        }
+                    }
+
+                    if matches!(
+                        compare_fn_nan_min(min_in_between, entering_min),
+                        Ordering::Less
+                    ) {
+                        self.min = *min_in_between
+                    } else {
+                        self.min = *entering_min
                     }
                 }
                 // leaving > entering
@@ -201,36 +200,35 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNoNulls<'a, T> fo
                 Ordering::Greater => {
                     // leaving value could be the largest, we might need to recompute
 
-                    // just a random value in the window to prevent O(n^2) behavior
-                    // that can occur when all values in the window are the same
-                    let remaining_value1 = self.slice.get(start).unwrap_unchecked();
-                    let remaining_value2 = self.slice.get(end.saturating_sub(1)).unwrap();
+                    // check the values in between the window we did not yet
+                    // compute to find the max there. We compare that with the `entering_max`
+                    // if any value is equal to equal to `self.max` of previous window we can break
+                    // early
+                    let mut max_in_between = self.slice.get_unchecked(start);
+                    for idx in (start + 1)..self.last_end {
+                        // safety
+                        // we are in bounds
+                        let value = self.slice.get_unchecked(idx);
 
-                    // we check those two value in the window, if they are equal to leaving, we know
-                    // we don't need to traverse all to compote the window
-                    if !matches!(
-                        compare_fn_nan_max(remaining_value1, &self.max),
-                        Ordering::Equal
-                    ) && !matches!(
-                        compare_fn_nan_max(remaining_value2, &self.max),
-                        Ordering::Equal
-                    ) {
-                        // the maximum value int the window we did not yet compute
-                        let max_in_between = self
-                            .slice
-                            .get_unchecked(start..self.last_end)
-                            .iter()
-                            .max_by(|a, b| compare_fn_nan_max(*a, *b))
-                            .unwrap_or(&self.slice[start]);
-
-                        if matches!(
-                            compare_fn_nan_max(max_in_between, entering_max),
-                            Ordering::Greater
-                        ) {
-                            self.max = *max_in_between
-                        } else {
-                            self.max = *entering_max
+                        if matches!(compare_fn_nan_max(value, max_in_between), Ordering::Greater) {
+                            max_in_between = value;
                         }
+
+                        // the max is also in the in between values
+                        if matches!(compare_fn_nan_max(value, &self.max), Ordering::Equal) {
+                            self.last_start = start;
+                            self.last_end = end;
+                            return self.max;
+                        }
+                    }
+
+                    if matches!(
+                        compare_fn_nan_max(max_in_between, entering_max),
+                        Ordering::Greater
+                    ) {
+                        self.max = *max_in_between
+                    } else {
+                        self.max = *entering_max
                     }
                 }
             }
