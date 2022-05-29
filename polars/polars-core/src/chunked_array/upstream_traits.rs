@@ -460,21 +460,27 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
         I: IntoParallelIterator<Item = Option<Series>>,
     {
         let mut dtype = None;
-        let mut vectors = collect_into_linked_list(iter);
-        let capacity: usize = get_capacity_from_par_results(&vectors);
-        let mut builder = AnonymousListBuilder::new("collected", capacity, None);
-        for v in &mut vectors {
-            for val in v {
-                if let Some(s) = val {
-                    if dtype.is_none() {
-                        dtype = Some(s.dtype().clone());
-                    }
-                    builder.append_series(s);
-                } else {
-                    builder.append_null();
-                }
-            }
-        }
+        let vectors = collect_into_linked_list(iter);
+
+        let list_capacity: usize = get_capacity_from_par_results(&vectors);
+        let value_capacity = vectors
+            .iter()
+            .map(|list| {
+                list.iter()
+                    .map(|opt_s| {
+                        opt_s
+                            .as_ref()
+                            .map(|s| {
+                                if dtype.is_none() && !matches!(s.dtype(), DataType::Null) {
+                                    dtype = Some(s.dtype().clone())
+                                }
+                                s.len()
+                            })
+                            .unwrap_or(0)
+                    })
+                    .sum::<usize>()
+            })
+            .sum::<usize>();
 
         match &dtype {
             #[cfg(feature = "object")]
@@ -484,7 +490,7 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                     .flatten()
                     .find_map(|opt_s| opt_s.as_ref())
                     .unwrap();
-                let mut builder = s.get_list_builder("collected", capacity * 5, capacity);
+                let mut builder = s.get_list_builder("collected", value_capacity, list_capacity);
 
                 for v in vectors {
                     for val in v {
@@ -493,7 +499,17 @@ impl FromParallelIterator<Option<Series>> for ListChunked {
                 }
                 builder.finish()
             }
-            _ => builder.finish(),
+            Some(dtype) => {
+                let mut builder =
+                    get_list_builder(dtype, value_capacity, list_capacity, "collected").unwrap();
+                for v in &vectors {
+                    for val in v {
+                        builder.append_opt_series(val.as_ref());
+                    }
+                }
+                builder.finish()
+            }
+            None => ListChunked::full_null_with_dtype("collected", list_capacity, &DataType::Null),
         }
     }
 }

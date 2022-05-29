@@ -453,7 +453,7 @@ impl<'a> AnonymousListBuilder<'a> {
     pub fn append_series(&mut self, s: &'a Series) {
         // empty arrays tend to be null type and thus differ
         // if we would push it the concat would fail.
-        if s.is_empty() {
+        if s.is_empty() && matches!(s.dtype(), DataType::Null) {
             self.builder.push_empty()
         } else {
             match s.dtype() {
