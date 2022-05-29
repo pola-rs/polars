@@ -1540,3 +1540,14 @@ def test_cumulative_eval() -> None:
     expr = pl.element().first() - pl.element().last() ** 2
     expected = pl.Series("values", [None, -3.0, -8.0, -15.0, -24.0])
     verify_series_and_expr_api(s, expected, "cumulative_eval", expr)
+
+
+def test_drop_nan_ignore_null_3525() -> None:
+    df = pl.DataFrame({"a": [1.0, float("NaN"), 2.0, None, 3.0, 4.0]})
+    assert df.select(pl.col("a").drop_nans()).to_series().to_list() == [
+        2.0,
+        2.0,
+        None,
+        3.0,
+        4.0,
+    ]

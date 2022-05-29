@@ -30,7 +30,6 @@ use polars_core::export::arrow::{array::BooleanArray, bitmap::MutableBitmap};
 use polars_core::prelude::*;
 
 use std::fmt::Debug;
-use std::ops::Not;
 use std::{
     ops::{Add, Div, Mul, Rem, Sub},
     sync::Arc,
@@ -301,12 +300,12 @@ impl Expr {
             |s| match s.dtype() {
                 DataType::Float32 => {
                     let ca = s.f32()?;
-                    let mask = ca.is_nan().not();
+                    let mask = ca.is_not_nan().fill_null(FillNullStrategy::One)?;
                     ca.filter(&mask).map(|ca| ca.into_series())
                 }
                 DataType::Float64 => {
                     let ca = s.f64()?;
-                    let mask = ca.is_nan().not();
+                    let mask = ca.is_not_nan().fill_null(FillNullStrategy::One)?;
                     ca.filter(&mask).map(|ca| ca.into_series())
                 }
                 _ => Ok(s),
