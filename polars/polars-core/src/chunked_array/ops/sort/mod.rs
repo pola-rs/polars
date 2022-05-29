@@ -169,6 +169,7 @@ where
     } else {
         let null_count = ca.null_count();
         let len = ca.len();
+
         let mut vals = Vec::with_capacity(ca.len());
 
         if !options.nulls_last {
@@ -177,13 +178,8 @@ where
         }
 
         ca.downcast_iter().for_each(|arr| {
-            // safety: we know the iterators len
-            let iter = unsafe {
-                arr.iter()
-                    .filter_map(|v| v.copied())
-                    .trust_my_length(len - null_count)
-            };
-            vals.extend_trusted_len(iter);
+            let iter = arr.iter().filter_map(|v| v.copied());
+            vals.extend(iter);
         });
         let mut_slice = if options.nulls_last {
             &mut vals[..len - null_count]
@@ -593,6 +589,7 @@ pub(crate) fn prepare_argsort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
+    use crate::series::ops::NullBehavior;
 
     #[test]
     fn test_argsort() {

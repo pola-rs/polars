@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import numpy as np
 
 import polars as pl
@@ -141,3 +143,17 @@ def test_sorted_groupby_optimization() -> None:
 
         sorted_explicit = df.groupby("a").agg(pl.count()).sort("a", reverse=reverse)
         sorted_explicit.frame_equal(sorted_implicit)
+
+
+def test_median_on_shifted_col_3522() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": [
+                datetime(2022, 5, 5, 12, 31, 34),
+                datetime(2022, 5, 5, 12, 47, 1),
+                datetime(2022, 5, 6, 8, 59, 11),
+            ]
+        }
+    )
+    diffs = df.select(pl.col("foo").diff().dt.seconds())
+    assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
