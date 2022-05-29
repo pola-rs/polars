@@ -214,3 +214,29 @@ def test_list_eval_dtype_inference() -> None:
         0.6666666865348816,
         0.3333333432674408,
     ]
+
+
+def test_list_empty_groupby_result_3521() -> None:
+    # Create a left relation where the join column contains a null value
+    left = pl.DataFrame().with_columns(
+        [
+            pl.lit(1).alias("groupby_column"),
+            pl.lit(None).cast(pl.Int32).alias("join_column"),
+        ]
+    )
+
+    # Create a right relation where there is a column to count distinct on
+    right = pl.DataFrame().with_columns(
+        [
+            pl.lit(1).alias("join_column"),
+            pl.lit(1).alias("n_unique_column"),
+        ]
+    )
+
+    # Calculate n_unique after dropping nulls
+    # This will panic on polars version 0.13.38 and 0.13.39
+    assert (
+        left.join(right, on="join_column", how="left")
+        .groupby("groupby_column")
+        .agg(pl.col("n_unique_column").drop_nulls())
+    ).to_dict(False) == {"groupby_column": [1], "n_unique_column": [[]]}
