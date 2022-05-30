@@ -46,7 +46,7 @@ impl IntoSeriesOps for Series {
 
 impl<T: PolarsIntegerType> IntoSeriesOps for &ChunkedArray<T>
 where
-    T::Native: NumericNative + From<f64>,
+    T::Native: NumericNative,
     ChunkedArray<T>: ChunkQuantile<f64>,
 {
     fn to_ops(&self) -> SeriesOpsRef {

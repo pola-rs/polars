@@ -23,19 +23,18 @@ pub trait CutQCut<T> {
 impl<T> CutQCut<T> for ChunkedArray<T>
 where
     T: PolarsNumericType + Sync,
-    T::Native: NumericNative + From<f64>,
+    T::Native: NumericNative,
     ChunkedArray<T>: ChunkQuantile<f64>,
 {
     fn qcut(&self, bins: Vec<f64>) -> Result<Series> {
         dbg!("qcut placeholder");
         dbg!(&bins);
-        let bin_vals: Vec<T::Native> = bins
+        let _bin_vals: Vec<f64> = bins
             .iter()
             .map(|f| {
                 self.quantile(*f, QuantileInterpolOptions::Nearest)
                     .unwrap()
                     .unwrap()
-                    .into()
             })
             .collect();
 

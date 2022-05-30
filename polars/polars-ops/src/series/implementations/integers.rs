@@ -2,7 +2,7 @@ use super::*;
 
 impl<T: PolarsIntegerType> SeriesOps for WrapInt<ChunkedArray<T>>
 where
-    T::Native: NumericNative + From<f64>,
+    T::Native: NumericNative,
     ChunkedArray<T>: ChunkQuantile<f64>,
 {
     fn dtype(&self) -> &DataType {
