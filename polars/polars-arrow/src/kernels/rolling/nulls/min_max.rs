@@ -9,7 +9,6 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     last_start: usize,
     last_end: usize,
     null_count: usize,
-    min_periods: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
@@ -86,13 +85,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -100,7 +93,6 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             last_start: start,
             last_end: end,
             null_count: 0,
-            min_periods,
         };
         let min = out.compute_min_and_update_null_count(start, end);
         out.min = min;
@@ -206,6 +198,10 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
         self.last_end = end;
         self.min
     }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        !(((self.last_end - self.last_start) - self.null_count) < min_periods)
+    }
 }
 
 pub fn rolling_min<T>(
@@ -247,7 +243,6 @@ pub struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     last_start: usize,
     last_end: usize,
     null_count: usize,
-    min_periods: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> MaxWindow<'a, T> {
@@ -276,13 +271,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MaxWindow<'a, T> {
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -290,7 +279,6 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             last_start: start,
             last_end: end,
             null_count: 0,
-            min_periods,
         };
         out.compute_max_and_null_count(start, end);
         out
@@ -361,11 +349,11 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             }
         }
         self.last_end = end;
-        if ((end - start) - self.null_count) < self.min_periods {
-            None
-        } else {
-            self.max
-        }
+        self.max
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        !(((self.last_end - self.last_start) - self.null_count) < min_periods)
     }
 }
 
