@@ -124,10 +124,13 @@ impl<'a> AggregationContext<'a> {
                                 out
                             })
                             .collect();
-                        self.groups = Cow::Owned(GroupsProxy::Slice(groups))
+                        self.groups = Cow::Owned(GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        })
                     }
                     // sliced groups are already in correct order
-                    GroupsProxy::Slice(_) => {}
+                    GroupsProxy::Slice { .. } => {}
                 }
                 self.update_groups = UpdateGroups::No;
             }
@@ -279,7 +282,10 @@ impl<'a> AggregationContext<'a> {
                         out
                     })
                     .collect_trusted();
-                self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                self.groups = Cow::Owned(GroupsProxy::Slice {
+                    groups,
+                    rolling: false,
+                });
             }
             _ => {
                 let groups = self
@@ -299,7 +305,10 @@ impl<'a> AggregationContext<'a> {
                         }
                     })
                     .collect_trusted();
-                self.groups = Cow::Owned(GroupsProxy::Slice(groups));
+                self.groups = Cow::Owned(GroupsProxy::Slice {
+                    groups,
+                    rolling: false,
+                });
             }
         }
         self.update_groups = UpdateGroups::No;

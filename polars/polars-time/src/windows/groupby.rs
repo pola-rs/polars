@@ -7,6 +7,7 @@ use polars_core::{export::rayon::prelude::*, utils::split_offsets};
 use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -253,7 +254,10 @@ pub(crate) fn groupby_values_iter_full_lookahead(
 fn partially_check_sorted(time: &[i64]) {
     // check sortedness of a small subslice.
     if time.len() > 1 {
-        assert!(time[..std::cmp::min(time.len(), 10)].windows(2).map(|w| w[0].cmp(&w[1])).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.")
+        assert!(time[..std::cmp::min(time.len(), 10)].windows(2).filter_map(|w| match w[0].cmp(&w[1]) {
+            Ordering::Equal => None,
+            t => Some(t)
+        }).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.")
     }
 }
 

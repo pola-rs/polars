@@ -98,6 +98,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
         // recompute min
         if start >= self.last_end {
             self.min = self.compute_min_and_update_null_count(start, end);
+            self.last_end = end;
+            self.last_start = start;
             return self.min;
         }
 

@@ -330,7 +330,17 @@ impl<'df> GroupBy<'df> {
                             // groups are always in bounds
                             unsafe { s.take_iter_unchecked(&mut iter) }
                         }
-                        GroupsProxy::Slice(groups) => {
+                        GroupsProxy::Slice { groups, rolling } => {
+                            if *rolling && !groups.is_empty() {
+                                // groups can be sliced
+                                let offset = groups[0][0];
+                                let [upper_offset, upper_len] = groups[groups.len() - 1];
+                                return s.slice(
+                                    offset as i64,
+                                    ((upper_offset + upper_len) - offset) as usize,
+                                );
+                            }
+
                             let mut iter = groups.iter().map(|&[first, _len]| first as usize);
                             // Safety:
                             // groups are always in bounds

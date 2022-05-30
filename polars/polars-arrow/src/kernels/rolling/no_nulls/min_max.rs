@@ -273,6 +273,16 @@ where
     max
 }
 
+pub fn is_sorted_max<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
+    values
+        .windows(2)
+        .all(|w| match compare_fn_nan_min(&w[0], &w[1]) {
+            Ordering::Equal => true,
+            Ordering::Greater => true,
+            Ordering::Less => false,
+        })
+}
+
 pub fn rolling_max<T>(
     values: &[T],
     window_size: usize,
@@ -284,18 +294,42 @@ where
     T: NativeType + PartialOrd + IsFloat + Bounded + NumCast + Mul<Output = T>,
 {
     match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-        ),
-        (false, None) => rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-        ),
+        (true, None) => {
+            // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
+            if is_sorted_max(values) {
+                let validity =
+                    create_validity(min_periods, values.len(), window_size, det_offsets_center);
+                return Arc::new(PrimitiveArray::from_data(
+                    T::PRIMITIVE.into(),
+                    values.to_vec().into(),
+                    validity.map(|b| b.into()),
+                ));
+            }
+
+            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                det_offsets_center,
+            )
+        }
+        (false, None) => {
+            if is_sorted_max(values) {
+                let validity = create_validity(min_periods, values.len(), window_size, det_offsets);
+                return Arc::new(PrimitiveArray::from_data(
+                    T::PRIMITIVE.into(),
+                    values.to_vec().into(),
+                    validity.map(|b| b.into()),
+                ));
+            }
+
+            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                det_offsets,
+            )
+        }
         (true, Some(weights)) => {
             assert!(
                 T::is_float(),
@@ -335,6 +369,16 @@ where
     }
 }
 
+pub fn is_sorted_min<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
+    values
+        .windows(2)
+        .all(|w| match compare_fn_nan_min(&w[0], &w[1]) {
+            Ordering::Equal => true,
+            Ordering::Less => true,
+            Ordering::Greater => false,
+        })
+}
+
 pub fn rolling_min<T>(
     values: &[T],
     window_size: usize,
@@ -346,18 +390,43 @@ where
     T: NativeType + PartialOrd + NumCast + Mul<Output = T> + Bounded + IsFloat,
 {
     match (center, weights) {
-        (true, None) => rolling_apply_agg_window::<MinWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets_center,
-        ),
-        (false, None) => rolling_apply_agg_window::<MinWindow<_>, _, _>(
-            values,
-            window_size,
-            min_periods,
-            det_offsets,
-        ),
+        (true, None) => {
+            // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
+            if is_sorted_min(values) {
+                let validity =
+                    create_validity(min_periods, values.len(), window_size, det_offsets_center);
+                return Arc::new(PrimitiveArray::from_data(
+                    T::PRIMITIVE.into(),
+                    values.to_vec().into(),
+                    validity.map(|b| b.into()),
+                ));
+            }
+
+            rolling_apply_agg_window::<MinWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                det_offsets_center,
+            )
+        }
+        (false, None) => {
+            // will be O(n2)
+            if is_sorted_min(values) {
+                let validity = create_validity(min_periods, values.len(), window_size, det_offsets);
+                return Arc::new(PrimitiveArray::from_data(
+                    T::PRIMITIVE.into(),
+                    values.to_vec().into(),
+                    validity.map(|b| b.into()),
+                ));
+            }
+
+            rolling_apply_agg_window::<MinWindow<_>, _, _>(
+                values,
+                window_size,
+                min_periods,
+                det_offsets,
+            )
+        }
         (true, Some(weights)) => {
             assert!(
                 T::is_float(),

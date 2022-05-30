@@ -314,7 +314,7 @@ impl PartitionedAggregation for AggregationExpr {
                             process_group(ca)?;
                         }
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         for [first, len] in groups {
                             let len = *len as usize;
                             let ca = ca.slice(*first as i64, len);

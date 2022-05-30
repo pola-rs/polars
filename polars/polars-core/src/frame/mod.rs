@@ -3071,7 +3071,7 @@ impl DataFrame {
                         })
                         .collect())
                 }
-                GroupsProxy::Slice(groups) => Ok(groups
+                GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
                     .map(|[first, len]| self.slice(first as i64, len as usize))
                     .collect()),

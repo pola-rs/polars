@@ -83,7 +83,7 @@ impl PhysicalExpr for SortExpr {
                     })
                     .collect()
             }
-            GroupsProxy::Slice(groups) => groups
+            GroupsProxy::Slice { groups, .. } => groups
                 .iter()
                 .map(|&[first, len]| {
                     let group = series.slice(first as i64, len as usize);

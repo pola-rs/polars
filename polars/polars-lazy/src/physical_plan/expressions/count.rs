@@ -41,7 +41,7 @@ impl PhysicalExpr for CountExpr {
                     .collect_trusted();
                 ca.into_inner()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let ca: NoNull<IdxCa> = groups.iter().map(|g| g[1]).collect_trusted();
                 ca.into_inner()
             }

@@ -106,7 +106,7 @@ where
                         })
                         .collect::<Result<Vec<_>>>()
                 }
-                GroupsProxy::Slice(groups) => groups
+                GroupsProxy::Slice { groups, .. } => groups
                     .par_iter()
                     .enumerate()
                     .map(|(i, [first, len])| {
