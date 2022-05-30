@@ -200,6 +200,22 @@ mod test {
         let out = rolling_max(arr, 4, 4, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[None, None, None, Some(4.0)])
+        assert_eq!(out, &[None, None, None, Some(4.0)]);
+
+        let buf = Buffer::from(vec![4.0, 3.0, 2.0, 1.0]);
+        let arr = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, true, true, true])),
+        );
+        let out = rolling_max(arr, 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
+
+        let out = super::no_nulls::rolling_max(&arr.values().as_slice(), 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
     }
 }

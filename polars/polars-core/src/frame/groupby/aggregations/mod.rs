@@ -10,8 +10,8 @@ use crate::apply_method_physical_integer;
 use arrow::types::{simd::Simd, NativeType};
 use polars_arrow::data_types::IsFloat;
 use polars_arrow::kernels::rolling::no_nulls::{
-    is_sorted_max, is_sorted_min, MaxWindow, MeanWindow, MinWindow, RollingAggWindowNoNulls,
-    StdWindow, SumWindow, VarWindow,
+    is_reverse_sorted_max, is_sorted_min, MaxWindow, MeanWindow, MinWindow,
+    RollingAggWindowNoNulls, StdWindow, SumWindow, VarWindow,
 };
 use polars_arrow::kernels::rolling::nulls::RollingAggWindowNulls;
 
@@ -495,7 +495,7 @@ where
                     let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                     let arr = match arr.validity() {
                         None => {
-                            if *rolling && is_sorted_max(values) {
+                            if *rolling && is_reverse_sorted_max(values) {
                                 return self.clone().into_series();
                             }
 

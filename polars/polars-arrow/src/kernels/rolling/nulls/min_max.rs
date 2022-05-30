@@ -1,6 +1,88 @@
 use super::*;
+use arrow::bitmap::utils::{count_zeros, zip_validity};
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
+
+pub fn is_reverse_sorted_max_nulls<T: NativeType + PartialOrd + IsFloat>(
+    values: &[T],
+    validity: &Bitmap,
+) -> bool {
+    let mut current_max = None;
+    for opt_v in zip_validity(values.iter(), Some(validity.iter())) {
+        match (current_max, opt_v) {
+            // do nothing
+            (None, None) => {}
+            (None, Some(v)) => current_max = Some(*v),
+            (Some(current), Some(val)) => {
+                match compare_fn_nan_min(&current, val) {
+                    Ordering::Greater => {
+                        current_max = Some(*val);
+                    }
+                    // allowed
+                    Ordering::Equal => {}
+                    // not sorted
+                    Ordering::Less => return false,
+                }
+            }
+            (Some(_current), None) => {}
+        }
+    }
+
+    true
+}
+
+pub struct SortedMinMax<'a, T: NativeType> {
+    slice: &'a [T],
+    validity: &'a Bitmap,
+    last_start: usize,
+    last_end: usize,
+    null_count: usize,
+}
+
+impl<'a, T: NativeType> SortedMinMax<'a, T> {
+    fn count_nulls(&self, start: usize, end: usize) -> usize {
+        let (bytes, offset, _) = self.validity.as_slice();
+        count_zeros(bytes, offset + start, end - start)
+    }
+}
+
+impl<'a, T: NativeType> RollingAggWindowNulls<'a, T> for SortedMinMax<'a, T> {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+        let mut out = Self {
+            slice,
+            validity,
+            last_start: start,
+            last_end: end,
+            null_count: 0,
+        };
+        let nulls = out.count_nulls(start, end);
+        out.null_count = nulls;
+        out
+    }
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+        self.null_count -= self.count_nulls(self.last_start, start);
+        self.null_count += self.count_nulls(self.last_end, end);
+
+        self.last_start = start;
+        self.last_end = end;
+
+        // return first non null
+        for idx in start..end {
+            let valid = self.validity.get_bit_unchecked(idx);
+
+            if valid {
+                return Some(*self.slice.get_unchecked(idx));
+            }
+        }
+
+        None
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        ((self.last_end - self.last_start) - self.null_count) >= min_periods
+    }
+}
 
 /// Generic `Min` / `Max` kernel. It is written in terms of `Min` aggregation,
 /// but applys to `max` as well, just mentally `:s/min/max/g`.
@@ -296,12 +378,31 @@ where
         panic!("weights not yet supported on array with null values")
     }
     if center {
-        rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+        if is_reverse_sorted_max_nulls(arr.values().as_slice(), arr.validity().as_ref().unwrap()) {
+            rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
+                arr.values().as_slice(),
+                arr.validity().as_ref().unwrap(),
+                window_size,
+                min_periods,
+                det_offsets_center,
+            )
+        } else {
+            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+                arr.values().as_slice(),
+                arr.validity().as_ref().unwrap(),
+                window_size,
+                min_periods,
+                det_offsets_center,
+            )
+        }
+    } else if is_reverse_sorted_max_nulls(arr.values().as_slice(), arr.validity().as_ref().unwrap())
+    {
+        rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
             arr.values().as_slice(),
             arr.validity().as_ref().unwrap(),
             window_size,
             min_periods,
-            det_offsets_center,
+            det_offsets,
         )
     } else {
         rolling_apply_agg_window::<MaxWindow<_>, _, _>(

@@ -2,6 +2,21 @@ use super::*;
 use no_nulls;
 use no_nulls::{rolling_apply_agg_window, RollingAggWindowNoNulls};
 
+pub struct SortedMinMax<'a, T: NativeType> {
+    slice: &'a [T],
+}
+
+impl<'a, T: NativeType> RollingAggWindowNoNulls<'a, T> for SortedMinMax<'a, T> {
+    fn new(slice: &'a [T], _start: usize, _end: usize) -> Self {
+        Self { slice }
+    }
+
+    #[inline]
+    unsafe fn update(&mut self, start: usize, _end: usize) -> T {
+        *self.slice.get_unchecked(start)
+    }
+}
+
 pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     min: T,
@@ -273,7 +288,7 @@ where
     max
 }
 
-pub fn is_sorted_max<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
+pub fn is_reverse_sorted_max<T: NativeType + PartialOrd + IsFloat>(values: &[T]) -> bool {
     values
         .windows(2)
         .all(|w| match compare_fn_nan_min(&w[0], &w[1]) {
@@ -296,39 +311,38 @@ where
     match (center, weights) {
         (true, None) => {
             // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
-            if is_sorted_max(values) {
-                let validity =
-                    create_validity(min_periods, values.len(), window_size, det_offsets_center);
-                return Arc::new(PrimitiveArray::from_data(
-                    T::PRIMITIVE.into(),
-                    values.to_vec().into(),
-                    validity.map(|b| b.into()),
-                ));
+            if is_reverse_sorted_max(values) {
+                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets_center,
+                )
+            } else {
+                rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets_center,
+                )
             }
-
-            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-            )
         }
         (false, None) => {
-            if is_sorted_max(values) {
-                let validity = create_validity(min_periods, values.len(), window_size, det_offsets);
-                return Arc::new(PrimitiveArray::from_data(
-                    T::PRIMITIVE.into(),
-                    values.to_vec().into(),
-                    validity.map(|b| b.into()),
-                ));
+            if is_reverse_sorted_max(values) {
+                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets,
+                )
+            } else {
+                rolling_apply_agg_window::<MaxWindow<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets,
+                )
             }
-
-            rolling_apply_agg_window::<MaxWindow<_>, _, _>(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-            )
         }
         (true, Some(weights)) => {
             assert!(
@@ -393,39 +407,38 @@ where
         (true, None) => {
             // will be O(n2) if we don't take this path we hope that we hit an early return on not sorted data
             if is_sorted_min(values) {
-                let validity =
-                    create_validity(min_periods, values.len(), window_size, det_offsets_center);
-                return Arc::new(PrimitiveArray::from_data(
-                    T::PRIMITIVE.into(),
-                    values.to_vec().into(),
-                    validity.map(|b| b.into()),
-                ));
+                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets_center,
+                )
+            } else {
+                rolling_apply_agg_window::<MinWindow<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets_center,
+                )
             }
-
-            rolling_apply_agg_window::<MinWindow<_>, _, _>(
-                values,
-                window_size,
-                min_periods,
-                det_offsets_center,
-            )
         }
         (false, None) => {
             // will be O(n2)
-            if is_sorted_min(values) {
-                let validity = create_validity(min_periods, values.len(), window_size, det_offsets);
-                return Arc::new(PrimitiveArray::from_data(
-                    T::PRIMITIVE.into(),
-                    values.to_vec().into(),
-                    validity.map(|b| b.into()),
-                ));
+            if is_reverse_sorted_max(values) {
+                rolling_apply_agg_window::<SortedMinMax<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets_center,
+                )
+            } else {
+                rolling_apply_agg_window::<MinWindow<_>, _, _>(
+                    values,
+                    window_size,
+                    min_periods,
+                    det_offsets,
+                )
             }
-
-            rolling_apply_agg_window::<MinWindow<_>, _, _>(
-                values,
-                window_size,
-                min_periods,
-                det_offsets,
-            )
         }
         (true, Some(weights)) => {
             assert!(
