@@ -14,10 +14,59 @@ pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
     // compute min from the entire window
-    unsafe fn compute_min_and_null_count(&mut self, start: usize, end: usize) -> Option<T> {
+    unsafe fn compute_min(&mut self, start: usize, end: usize) -> Option<T> {
         let mut min = None;
         let mut idx = start;
         self.null_count = 0;
+        for value in (&self.slice[start..end]).iter() {
+            let valid = self.validity.get_bit_unchecked(idx);
+            if valid {
+                match min {
+                    None => min = Some(*value),
+                    Some(current) => {
+                        min = Some(std::cmp::min_by(*value, current, compare_fn_nan_min))
+                    }
+                }
+            }
+            idx += 1;
+        }
+        min
+    }
+
+    unsafe fn compute_min_in_between_leaving_and_entering(&self, start: usize) -> Option<T> {
+        // check the values in between the window that remains e.g. is not leaving
+        // this between `start..last_end`
+        //
+        // because we know the current `min` (which might be leaving), we know we can stop
+        // searching if any value is equal to current `min`.
+        let mut min_in_between = None;
+        for idx in start..self.last_end {
+            let valid = self.validity.get_bit_unchecked(idx);
+            let value = self.slice.get_unchecked(idx);
+
+            if valid {
+                // early return
+                if let Some(current_min) = self.min {
+                    if matches!(compare_fn_nan_min(value, &current_min), Ordering::Equal) {
+                        return Some(current_min);
+                    }
+                }
+
+                match min_in_between {
+                    None => min_in_between = Some(*value),
+                    Some(current) => {
+                        min_in_between = Some(std::cmp::min_by(*value, current, compare_fn_nan_min))
+                    }
+                }
+            }
+        }
+        min_in_between
+    }
+
+    // compute min from the entire window
+    unsafe fn compute_min_and_update_null_count(&mut self, start: usize, end: usize) -> Option<T> {
+        let mut min = None;
+        let mut idx = start;
         for value in (&self.slice[start..end]).iter() {
             let valid = self.validity.get_bit_unchecked(idx);
             if valid {
@@ -32,7 +81,6 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
             }
             idx += 1;
         }
-        self.min = min;
         min
     }
 }
@@ -54,80 +102,109 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             null_count: 0,
             min_periods,
         };
-        out.compute_min_and_null_count(start, end);
+        let min = out.compute_min_and_update_null_count(start, end);
+        out.min = min;
         out
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_min = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_min = false;
-            for idx in self.last_start..start {
-                // safety
-                // we are in bounds
-                let valid = self.validity.get_bit_unchecked(idx);
-                if valid {
-                    let leaving_value = self.slice.get_unchecked(idx);
+        // recompute min
+        if start >= self.last_end {
+            self.min = self.compute_min_and_update_null_count(start, end);
+            return self.min;
+        }
 
-                    // if the leaving value is the
-                    // min value, we need to recompute the min.
-                    if matches!(
-                        compare_fn_nan_min(leaving_value, &self.min.unwrap()),
-                        Ordering::Equal
-                    ) {
-                        recompute_min = true;
-                        break;
-                    }
-                } else {
-                    // null value leaving the window
-                    self.null_count -= 1;
+        // remove elements that should leave the window
+        let mut recompute_min = false;
+        for idx in self.last_start..start {
+            // safety
+            // we are in bounds
+            let valid = self.validity.get_bit_unchecked(idx);
+            if valid {
+                let leaving_value = self.slice.get_unchecked(idx);
 
-                    // self.min is None and the leaving value is None
-                    // if the entering value is valid, we might get a new min.
-                    if self.min.is_none() {
-                        recompute_min = true;
-                        break;
-                    }
+                // if the leaving value is the
+                // min value, we need to recompute the min.
+                if matches!(
+                    compare_fn_nan_min(leaving_value, &self.min.unwrap()),
+                    Ordering::Equal
+                ) {
+                    recompute_min = true;
+                    break;
+                }
+            } else {
+                // null value leaving the window
+                self.null_count -= 1;
+
+                // self.min is None and the leaving value is None
+                // if the entering value is valid, we might get a new min.
+                if self.min.is_none() {
+                    recompute_min = true;
+                    break;
                 }
             }
-            recompute_min
-        };
+        }
 
-        self.last_start = start;
+        let entering_min = self.compute_min_and_update_null_count(self.last_end, end);
 
-        // we traverese all values and compute
-        if recompute_min {
-            self.compute_min_and_null_count(start, end);
-        } else {
-            // the max has not left the window, so we only check
-            // if the entering values are larger
-            for idx in self.last_end..end {
-                let valid = self.validity.get_bit_unchecked(idx);
+        match (self.min, entering_min) {
+            // all remains `None`
+            (None, None) => {}
+            (None, Some(new_min)) => self.min = Some(new_min),
+            // entering min is `None` and the `min` is leaving, so the `in_between` min is the new
+            // minimum.
+            // if min is not leaving, we don't do anything
+            (Some(_current_min), None) => {
+                if recompute_min {
+                    self.min = self.compute_min_in_between_leaving_and_entering(start);
+                }
+            }
+            (Some(current_min), Some(entering_min)) => {
+                if recompute_min {
+                    match compare_fn_nan_min(&current_min, &entering_min) {
+                        // do nothing
+                        Ordering::Equal => {}
+                        // leaving < entering
+                        Ordering::Less => {
+                            // leaving value could be the smallest, we might need to recompute
 
-                if valid {
-                    let value = *self.slice.get_unchecked(idx);
-                    match self.min {
-                        None => self.min = Some(value),
-                        Some(current) => {
-                            self.min = Some(std::cmp::min_by(value, current, compare_fn_nan_min))
+                            let min_in_between =
+                                self.compute_min_in_between_leaving_and_entering(start);
+                            match min_in_between {
+                                None => self.min = Some(entering_min),
+                                Some(min_in_between) => {
+                                    if matches!(
+                                        compare_fn_nan_min(&min_in_between, &entering_min),
+                                        Ordering::Less
+                                    ) {
+                                        self.min = Some(min_in_between)
+                                    } else {
+                                        self.min = Some(entering_min)
+                                    }
+                                }
+                            }
+                        }
+                        // leaving > entering
+                        Ordering::Greater => {
+                            if matches!(
+                                compare_fn_nan_min(&entering_min, &current_min),
+                                Ordering::Less
+                            ) {
+                                self.min = Some(entering_min)
+                            }
                         }
                     }
-                } else {
-                    // null value entering the window
-                    self.null_count += 1;
+                } else if matches!(
+                    compare_fn_nan_min(&entering_min, &current_min),
+                    Ordering::Less
+                ) {
+                    self.min = Some(entering_min)
                 }
             }
         }
+        self.last_start = start;
         self.last_end = end;
-        if ((end - start) - self.null_count) < self.min_periods {
-            None
-        } else {
-            self.min
-        }
+        self.min
     }
 }
 

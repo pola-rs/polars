@@ -48,7 +48,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
 
         self.last_start = start;
 
-        // we traverese all values and compute
+        // we traverse all values and compute
         if T::is_float() && recompute_sum {
             self.sum_of_squares = self
                 .slice
@@ -56,10 +56,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign + Mul<
                 .iter()
                 .map(|v| *v * *v)
                 .sum::<T>();
-        }
-        // the max has not left the window, so we only check
-        // if the entering values are larger
-        else {
+        } else {
             for idx in self.last_end..end {
                 let entering_value = *self.slice.get_unchecked(idx);
                 self.sum_of_squares += entering_value * entering_value;
