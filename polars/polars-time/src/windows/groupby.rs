@@ -2,7 +2,9 @@ use crate::prelude::*;
 use polars_arrow::trusted_len::TrustedLen;
 use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::utils::split_offsets;
+use polars_core::POOL;
+use polars_core::{export::rayon::prelude::*, utils::split_offsets};
+use polars_utils::flatten;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -135,6 +137,7 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    start_offset: usize,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
     debug_assert_eq!(offset.nanoseconds(), period.nanoseconds());
     debug_assert!(offset.negative);
@@ -146,29 +149,33 @@ pub(crate) fn groupby_values_iter_full_lookbehind(
     };
 
     let mut last_lookbehind_i = 0;
-    time.iter().enumerate().map(move |(i, lower)| {
-        let lower = add(&offset, *lower);
-        let upper = add(&period, lower);
+    time[start_offset..]
+        .iter()
+        .enumerate()
+        .map(move |(mut i, lower)| {
+            i += start_offset;
+            let lower = add(&offset, *lower);
+            let upper = add(&period, lower);
 
-        let b = Bounds::new(lower, upper);
+            let b = Bounds::new(lower, upper);
 
-        // we have a complete lookbehind so we know that `i` is the upper bound.
-        // Safety
-        // we are in bounds
-        let slice = unsafe { time.get_unchecked(last_lookbehind_i..i) };
-        let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
+            // we have a complete lookbehind so we know that `i` is the upper bound.
+            // Safety
+            // we are in bounds
+            let slice = unsafe { time.get_unchecked(last_lookbehind_i..i) };
+            let offset = slice.partition_point(|v| !b.is_member(*v, closed_window));
 
-        let lookbehind_i = offset + last_lookbehind_i;
-        // -1 for window boundary effects
-        last_lookbehind_i = lookbehind_i.saturating_sub(1);
+            let lookbehind_i = offset + last_lookbehind_i;
+            // -1 for window boundary effects
+            last_lookbehind_i = lookbehind_i.saturating_sub(1);
 
-        let mut len = i - lookbehind_i;
-        if matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both) {
-            len += 1;
-        }
+            let mut len = i - lookbehind_i;
+            if matches!(closed_window, ClosedWindow::Right | ClosedWindow::Both) {
+                len += 1;
+            }
 
-        (lookbehind_i as IdxSize, len as IdxSize)
-    })
+            (lookbehind_i as IdxSize, len as IdxSize)
+        })
 }
 
 // this one is correct for all lookbehind/lookaheads, but is slower
@@ -214,7 +221,10 @@ pub(crate) fn groupby_values_iter_full_lookahead(
     time: &[i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
+    start_offset: usize,
+    upper_bound: Option<usize>,
 ) -> impl Iterator<Item = (IdxSize, IdxSize)> + TrustedLen + '_ {
+    let upper_bound = upper_bound.unwrap_or(time.len());
     debug_assert!(!offset.negative);
 
     let add = match tu {
@@ -223,35 +233,45 @@ pub(crate) fn groupby_values_iter_full_lookahead(
         TimeUnit::Milliseconds => Duration::add_ms,
     };
 
-    time.iter().enumerate().map(move |(i, lower)| {
-        let lower = add(&offset, *lower);
-        let upper = add(&period, lower);
+    time[start_offset..upper_bound]
+        .iter()
+        .enumerate()
+        .map(move |(mut i, lower)| {
+            i += start_offset;
+            let lower = add(&offset, *lower);
+            let upper = add(&period, lower);
 
-        let b = Bounds::new(lower, upper);
+            let b = Bounds::new(lower, upper);
 
-        let slice = unsafe { time.get_unchecked(i..) };
-        let len = slice.partition_point(|v| b.is_member(*v, closed_window));
+            let slice = unsafe { time.get_unchecked(i..) };
+            let len = slice.partition_point(|v| b.is_member(*v, closed_window));
 
-        (i as IdxSize, len as IdxSize)
-    })
+            (i as IdxSize, len as IdxSize)
+        })
 }
 
+fn partially_check_sorted(time: &[i64]) {
+    // check sortedness of a small subslice.
+    if time.len() > 1 {
+        assert!(time[..std::cmp::min(time.len(), 10)].windows(2).map(|w| w[0].cmp(&w[1])).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.")
+    }
+}
+
+#[cfg(feature = "rolling_window")]
 pub(crate) fn groupby_values_iter<'a>(
     period: Duration,
     offset: Duration,
     time: &'a [i64],
     closed_window: ClosedWindow,
     tu: TimeUnit,
-) -> Box<dyn TrustedLen<Item=(IdxSize, IdxSize)> + 'a> {
-    // check sortedness of a small subslice.
-    if time.len() > 1 {
-        assert!(time[..std::cmp::min(time.len(), 10)].windows(2).map(|w| w[0].cmp(&w[1])).all_equal(), "subslice check showed that the values in `groupby_rolling` were not sorted. Pleasure ensure the index column is sorted.")
-    }
+) -> Box<dyn TrustedLen<Item = (IdxSize, IdxSize)> + 'a> {
+    partially_check_sorted(time);
     // we have a (partial) lookbehind window
     if offset.negative {
         // only lookbehind
         if offset.nanoseconds() == period.nanoseconds() {
-            let iter = groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu);
+            let iter =
+                groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu, 0);
             Box::new(iter)
         }
         // partial lookbehind
@@ -261,7 +281,8 @@ pub(crate) fn groupby_values_iter<'a>(
             Box::new(iter)
         }
     } else {
-        let iter = groupby_values_iter_full_lookahead(period, offset, time, closed_window, tu);
+        let iter =
+            groupby_values_iter_full_lookahead(period, offset, time, closed_window, tu, 0, None);
         Box::new(iter)
     }
 }
@@ -271,7 +292,6 @@ pub(crate) fn groupby_values_iter<'a>(
 ///     - timestamp (lower bound)
 ///     - timestamp + period (upper bound)
 /// where timestamps are the individual values in the array `time`
-///
 pub fn groupby_values(
     period: Duration,
     offset: Duration,
@@ -279,21 +299,60 @@ pub fn groupby_values(
     closed_window: ClosedWindow,
     tu: TimeUnit,
 ) -> GroupsSlice {
+    partially_check_sorted(time);
+    let thread_offsets = split_offsets(time.len(), POOL.current_num_threads());
+
     // we have a (partial) lookbehind window
     if offset.negative {
         // only lookbehind
         if offset.nanoseconds() == period.nanoseconds() {
-            let iter = groupby_values_iter_full_lookbehind(period, offset, time, closed_window, tu);
-            iter.map(|(offset, len)| [offset, len]).collect_trusted()
+            let vals = thread_offsets
+                .par_iter()
+                .copied()
+                .map(|(base_offset, len)| {
+                    let upper_bound = base_offset + len;
+                    let iter = groupby_values_iter_full_lookbehind(
+                        period,
+                        offset,
+                        &time[..upper_bound],
+                        closed_window,
+                        tu,
+                        base_offset,
+                    );
+                    iter.map(|(offset, len)| [offset as IdxSize, len])
+                        .collect_trusted::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            flatten(&vals, Some(time.len()))
         }
         // partial lookbehind
+        // this one is still single threaded
+        // can make it parallel later, its a bit more complicated because the boundaries are unknown
         else {
             let iter =
                 groupby_values_iter_partial_lookbehind(period, offset, time, closed_window, tu);
             iter.map(|(offset, len)| [offset, len]).collect_trusted()
         }
     } else {
-        let iter = groupby_values_iter_full_lookahead(period, offset, time, closed_window, tu);
-        iter.map(|(offset, len)| [offset, len]).collect_trusted()
+        let vals = thread_offsets
+            .par_iter()
+            .copied()
+            .map(|(base_offset, len)| {
+                let lower_bound = base_offset;
+                let upper_bound = base_offset + len;
+                let iter = groupby_values_iter_full_lookahead(
+                    period,
+                    offset,
+                    time,
+                    closed_window,
+                    tu,
+                    lower_bound,
+                    Some(upper_bound),
+                );
+                iter.map(|(offset, len)| [offset as IdxSize, len])
+                    .collect_trusted::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        flatten(&vals, Some(time.len()))
     }
 }
