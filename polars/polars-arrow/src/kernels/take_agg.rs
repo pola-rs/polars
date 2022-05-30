@@ -33,7 +33,7 @@ pub unsafe fn take_agg_no_null_primitive_iter_unchecked<
 
 /// Take kernel for single chunk and an iterator as index.
 /// # Safety
-/// caller must enure iterators indexes are in bounds
+/// caller must ensure iterators indexes are in bounds
 #[inline]
 pub unsafe fn take_agg_primitive_iter_unchecked<
     T: NativeType,
@@ -44,18 +44,21 @@ pub unsafe fn take_agg_primitive_iter_unchecked<
     indices: I,
     f: F,
     init: T,
+    len: IdxSize,
 ) -> Option<T> {
     let array_values = arr.values().as_slice();
     let validity = arr.validity().expect("null buffer should be there");
+    let mut null_count = 0 as IdxSize;
 
     let out = indices.into_iter().fold(init, |acc, idx| {
         if validity.get_bit_unchecked(idx) {
             f(acc, *array_values.get_unchecked(idx))
         } else {
+            null_count += 1;
             acc
         }
     });
-    if out == init {
+    if null_count == len {
         None
     } else {
         Some(out)
@@ -76,6 +79,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
     indices: I,
     f: F,
     init: TOut,
+    len: IdxSize,
 ) -> Option<(TOut, IdxSize)> {
     let array_values = arr.values().as_slice();
     let validity = arr.validity().expect("null buffer should be there");
@@ -92,7 +96,7 @@ pub unsafe fn take_agg_primitive_iter_unchecked_count_nulls<
             acc
         }
     });
-    if out == init {
+    if null_count == len {
         None
     } else {
         Some((out, null_count))

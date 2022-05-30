@@ -387,6 +387,7 @@ where
                                 idx.iter().map(|i| *i as usize),
                                 |a, b| if a < b { a } else { b },
                                 T::Native::max_value(),
+                                idx.len() as IdxSize,
                             )
                         },
                         _ => {
@@ -469,6 +470,7 @@ where
                                 idx.iter().map(|i| *i as usize),
                                 |a, b| if a > b { a } else { b },
                                 T::Native::min_value(),
+                                idx.len() as IdxSize,
                             )
                         },
                         _ => {
@@ -547,12 +549,17 @@ where
                             )
                         }),
                         (_, 1) => unsafe {
-                            take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            let out = take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                                 self.downcast_iter().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
                                 |a, b| a + b,
                                 T::Native::zero(),
-                            )
+                                idx.len() as IdxSize,
+                            );
+                            if out.is_none() {
+                                dbg!(idx, self);
+                            };
+                            out
                         },
                         _ => {
                             let take = unsafe { self.take_unchecked(idx.into()) };
@@ -641,6 +648,7 @@ where
                                     idx.iter().map(|i| *i as usize),
                                     |a, b| a + b,
                                     T::Native::zero(),
+                                    idx.len() as IdxSize,
                                 )
                             }
                             .map(|(sum, null_count)| {
@@ -907,6 +915,7 @@ where
                                         idx.iter().map(|i| *i as usize),
                                         |a, b| a + b,
                                         0.0,
+                                        idx.len() as IdxSize,
                                     )
                                 }
                                 .map(|(sum, null_count)| {
