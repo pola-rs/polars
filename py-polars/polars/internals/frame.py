@@ -1900,6 +1900,27 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Column to insert the new `Series` column.
         series
             `Series` to insert.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> s = pl.Series("baz", [97, 98, 99])
+        >>> df.insert_at_idx(1, s)  # returns None
+        >>> df
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ foo ┆ baz ┆ bar │
+        │ --- ┆ --- ┆ --- │
+        │ i64 ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ 1   ┆ 97  ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 98  ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 99  ┆ 6   │
+        └─────┴─────┴─────┘
+
         """
         self._df.insert_at_idx(index, series._s)
 
@@ -3377,6 +3398,51 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Allow the physical plan to optionally evaluate the computation of both DataFrames up to the join in parallel.
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to the join in parallel.
+
+        Examples
+        --------
+
+        >>> from datetime import datetime
+        >>> gdp = pl.DataFrame(
+        ...     {
+        ...         "date": [
+        ...             datetime(2016, 1, 1),
+        ...             datetime(2017, 1, 1),
+        ...             datetime(2018, 1, 1),
+        ...             datetime(2019, 1, 1),
+        ...         ],  # note record date: Jan 1st (sorted!)
+        ...         "gdp": [4164, 4411, 4566, 4696],
+        ...     }
+        ... )
+        >>> population = pl.DataFrame(
+        ...     {
+        ...         "date": [
+        ...             datetime(2016, 5, 12),
+        ...             datetime(2017, 5, 12),
+        ...             datetime(2018, 5, 12),
+        ...             datetime(2019, 5, 12),
+        ...         ],  # note record date: May 12th (sorted!)
+        ...         "population": [82.19, 82.66, 83.12, 83.52],
+        ...     }
+        ... )
+        >>> population.join_asof(
+        ...     gdp, left_on="date", right_on="date", strategy="backward"
+        ... )
+        shape: (4, 3)
+        ┌─────────────────────┬────────────┬──────┐
+        │ date                ┆ population ┆ gdp  │
+        │ ---                 ┆ ---        ┆ ---  │
+        │ datetime[μs]        ┆ f64        ┆ i64  │
+        ╞═════════════════════╪════════════╪══════╡
+        │ 2016-05-12 00:00:00 ┆ 82.19      ┆ 4164 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2017-05-12 00:00:00 ┆ 82.66      ┆ 4411 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2018-05-12 00:00:00 ┆ 83.12      ┆ 4566 │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌┤
+        │ 2019-05-12 00:00:00 ┆ 83.52      ┆ 4696 │
+        └─────────────────────┴────────────┴──────┘
+
         """
         return (
             self.lazy()
@@ -3570,6 +3636,39 @@ class DataFrame(metaclass=DataFrameMetaClass):
         inference_size
             Only used in the case when the custom function returns rows.
             This uses the first `n` rows to determine the output schema
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [-1, 5, 8]})
+        # return rows
+        >>> df.apply(lambda t: (t[0] * 2, t[1] * 3))
+        shape: (3, 2)
+        ┌──────────┬──────────┐
+        │ column_0 ┆ column_1 │
+        │ ---      ┆ ---      │
+        │ i64      ┆ i64      │
+        ╞══════════╪══════════╡
+        │ 2        ┆ -3       │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 4        ┆ 15       │
+        ├╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌┤
+        │ 6        ┆ 24       │
+        └──────────┴──────────┘
+        # return scalar
+        >>> df.apply(lambda t: (t[0] * 2 + t[1]))
+        shape: (3, 1)
+        ┌───────┐
+        │ apply │
+        │ ---   │
+        │ i64   │
+        ╞═══════╡
+        │ 1     │
+        ├╌╌╌╌╌╌╌┤
+        │ 9     │
+        ├╌╌╌╌╌╌╌┤
+        │ 14    │
+        └───────┘
 
         """
         out, is_df = self._df.apply(f, return_dtype, inference_size)
@@ -3765,6 +3864,33 @@ class DataFrame(metaclass=DataFrameMetaClass):
         ----------
         other
             DataFrame to vertically add.
+
+        Examples
+        --------
+
+        >>> df1 = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df2 = pl.DataFrame({"foo": [10, 20, 30], "bar": [40, 50, 60]})
+        >>> df1.extend(df2)  # returns None
+        >>> df1
+        shape: (6, 2)
+        ┌─────┬─────┐
+        │ foo ┆ bar │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 5   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 6   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 10  ┆ 40  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 20  ┆ 50  │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 30  ┆ 60  │
+        └─────┴─────┘
+
         """
         self._df.extend(other._df)
 
@@ -3888,18 +4014,56 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def get_columns(self) -> List["pli.Series"]:
         """
         Get the DataFrame as a List of Series.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.get_columns()
+        [shape: (3,)
+        Series: 'foo' [i64]
+        [
+                1
+                2
+                3
+        ], shape: (3,)
+        Series: 'bar' [i64]
+        [
+                4
+                5
+                6
+        ]]
+
         """
         return list(map(lambda s: pli.wrap_s(s), self._df.get_columns()))
 
     def get_column(self, name: str) -> "pli.Series":
         """
         Get a single column as Series by name.
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.get_column("foo")
+        shape: (3,)
+        Series: 'foo' [i64]
+        [
+                1
+                2
+                3
+        ]
+
         """
         return self[name]
 
     def fill_null(self: DF, strategy: Union[str, "pli.Expr", Any]) -> DF:
         """
         Fill null values using a filling strategy, literal, or Expr.
+
+        .. seealso::
+
+            fill_nan
 
         Parameters
         ----------
@@ -3928,9 +4092,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         Fill floating point NaN values by an Expression evaluation.
 
+        .. seealso::
+
+            fill_null
+
         Warnings
         --------
-        NOTE that floating point NaN (No a Number) are not missing values!
+        NOTE that floating point NaNs (Not a Number) are not missing values!
         to replace missing values, use `fill_null`.
 
         Parameters
@@ -4806,6 +4974,21 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def product(self: DF) -> DF:
         """
         Aggregate the columns of this DataFrame to their product values
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"factors": [1.0, 0.99, 1.3, 0.87]})
+        >>> df.product()
+        shape: (1, 1)
+        ┌─────────┐
+        │ factors │
+        │ ---     │
+        │ f64     │
+        ╞═════════╡
+        │ 1.1196  │
+        └─────────┘
+
         """
         return self.select(pli.all().product())
 
@@ -4893,6 +5076,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
     ) -> DF:
         """
         Drop duplicate rows from this DataFrame.
+
+        Warnings
+        --------
         Note that this fails if there is a column of type `List` in the DataFrame or subset.
 
         Parameters
@@ -4907,6 +5093,25 @@ class DataFrame(metaclass=DataFrameMetaClass):
         Returns
         -------
         DataFrame with unique rows
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"x": [1, 2, 3, 2, 1], "y": [3, 2, 1, 2, 3]})
+        >>> df.unique()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ y   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 3   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 2   ┆ 2   │
+        ├╌╌╌╌╌┼╌╌╌╌╌┤
+        │ 3   ┆ 1   │
+        └─────┴─────┘
+
         """
         if subset is not None and not isinstance(subset, list):
             subset = [subset]
@@ -5239,6 +5444,14 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def is_empty(self) -> bool:
         """
         Check if the dataframe is empty
+
+        Examples
+        --------
+
+        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [4, 5, 6]})
+        >>> df.filter(pl.col("foo") > 99).is_empty()
+        True
+
         """
         return self.height == 0
 
