@@ -19,6 +19,7 @@ use std::slice::Iter;
 pub unsafe trait TrustedLen: Iterator {}
 
 unsafe impl<T> TrustedLen for &mut dyn TrustedLen<Item = T> {}
+unsafe impl<T> TrustedLen for Box<dyn TrustedLen<Item = T> + '_> {}
 
 unsafe impl<T> TrustedLen for Iter<'_, T> {}
 
