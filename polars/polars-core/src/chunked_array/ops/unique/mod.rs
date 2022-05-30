@@ -58,7 +58,7 @@ pub(crate) fn is_unique_helper(
             .into_iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice(groups) => groups
+        GroupsProxy::Slice { groups, .. } => groups
             .into_iter()
             .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
             .collect(),

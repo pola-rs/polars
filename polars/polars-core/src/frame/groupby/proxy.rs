@@ -192,7 +192,7 @@ pub type GroupsSlice = Vec<[IdxSize; 2]>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum GroupsProxy {
     Idx(GroupsIdx),
-    Slice(GroupsSlice),
+    Slice { groups: GroupsSlice, rolling: bool },
 }
 
 impl Default for GroupsProxy {
@@ -206,7 +206,7 @@ impl GroupsProxy {
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 if std::env::var("POLARS_VERBOSE").is_ok() {
                     println!("had to reallocate groups, missed an optimization opportunity.")
                 }
@@ -226,8 +226,10 @@ impl GroupsProxy {
     pub fn sort(&mut self) {
         match self {
             GroupsProxy::Idx(groups) => groups.sort(),
-            GroupsProxy::Slice(groups) => {
-                groups.sort_unstable_by_key(|[first, _]| *first);
+            GroupsProxy::Slice { groups, rolling } => {
+                if !*rolling {
+                    groups.sort_unstable_by_key(|[first, _]| *first);
+                }
             }
         }
     }
@@ -238,7 +240,7 @@ impl GroupsProxy {
                 .iter()
                 .map(|(_, groups)| groups.len() as IdxSize)
                 .collect_trusted(),
-            GroupsProxy::Slice(groups) => groups.iter().map(|g| g[1]).collect_trusted(),
+            GroupsProxy::Slice { groups, .. } => groups.iter().map(|g| g[1]).collect_trusted(),
         };
         let mut ca = ca.into_inner();
         ca.rename(name);
@@ -248,7 +250,9 @@ impl GroupsProxy {
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
             GroupsProxy::Idx(mut groups) => std::mem::take(&mut groups.first),
-            GroupsProxy::Slice(groups) => groups.into_iter().map(|[first, _len]| first).collect(),
+            GroupsProxy::Slice { groups, .. } => {
+                groups.into_iter().map(|[first, _len]| first).collect()
+            }
         }
     }
 
@@ -265,7 +269,7 @@ impl GroupsProxy {
     pub fn unwrap_idx(&self) -> &GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice(_) => panic!("groups are slices not index"),
+            GroupsProxy::Slice { .. } => panic!("groups are slices not index"),
         }
     }
 
@@ -276,7 +280,7 @@ impl GroupsProxy {
     /// panics if the groups are an idx.
     pub fn unwrap_slice(&self) -> &GroupsSlice {
         match self {
-            GroupsProxy::Slice(groups) => groups,
+            GroupsProxy::Slice { groups, .. } => groups,
             GroupsProxy::Idx(_) => panic!("groups are index not slices"),
         }
     }
@@ -288,7 +292,7 @@ impl GroupsProxy {
                 let all = &groups.all[index];
                 GroupsIndicator::Idx((first, all))
             }
-            GroupsProxy::Slice(groups) => GroupsIndicator::Slice(groups[index]),
+            GroupsProxy::Slice { groups, .. } => GroupsIndicator::Slice(groups[index]),
         }
     }
 
@@ -300,14 +304,14 @@ impl GroupsProxy {
     pub fn idx_mut(&mut self) -> &mut GroupsIdx {
         match self {
             GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice(_) => panic!("groups are slices not index"),
+            GroupsProxy::Slice { .. } => panic!("groups are slices not index"),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
             GroupsProxy::Idx(groups) => groups.len(),
-            GroupsProxy::Slice(groups) => groups.len(),
+            GroupsProxy::Slice { groups, .. } => groups.len(),
         }
     }
 
@@ -324,7 +328,7 @@ impl GroupsProxy {
                     .collect_trusted();
                 ca.into_inner()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             }
@@ -339,7 +343,7 @@ impl GroupsProxy {
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
-            GroupsProxy::Slice(groups) => groups
+            GroupsProxy::Slice { groups, .. } => groups
                 .iter()
                 .map(|&[first, len]| {
                     let ca: NoNull<IdxCa> = (first..first + len).collect_trusted();
@@ -374,14 +378,17 @@ impl GroupsProxy {
                     groups.is_sorted(),
                 )))
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, rolling } => {
                 let groups = unsafe {
                     let groups = slice_slice(groups, offset, len);
                     let ptr = groups.as_ptr() as *mut _;
                     Vec::from_raw_parts(ptr, groups.len(), groups.len())
                 };
 
-                ManuallyDrop::new(GroupsProxy::Slice(groups))
+                ManuallyDrop::new(GroupsProxy::Slice {
+                    groups,
+                    rolling: *rolling,
+                })
             }
         };
 
@@ -443,7 +450,7 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
                     let item = groups.get_unchecked(self.idx);
                     Some(GroupsIndicator::Idx(item))
                 }
-                GroupsProxy::Slice(groups) => {
+                GroupsProxy::Slice { groups, .. } => {
                     Some(GroupsIndicator::Slice(*groups.get_unchecked(self.idx)))
                 }
             }
@@ -477,7 +484,9 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
             .map(|i| unsafe {
                 match self.vals {
                     GroupsProxy::Idx(groups) => GroupsIndicator::Idx(groups.get_unchecked(i)),
-                    GroupsProxy::Slice(groups) => GroupsIndicator::Slice(*groups.get_unchecked(i)),
+                    GroupsProxy::Slice { groups, .. } => {
+                        GroupsIndicator::Slice(*groups.get_unchecked(i))
+                    }
                 }
             })
             .drive_unindexed(consumer)

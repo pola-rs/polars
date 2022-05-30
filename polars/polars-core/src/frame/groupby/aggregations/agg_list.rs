@@ -79,7 +79,7 @@ where
                 }
                 ca.into()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let mut can_fast_explode = true;
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values();
@@ -151,7 +151,7 @@ impl AggList for BooleanChunked {
                 }
                 builder.finish().into_series()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let mut builder =
                     ListBooleanChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for [first, len] in groups {
@@ -176,7 +176,7 @@ impl AggList for Utf8Chunked {
                 }
                 builder.finish().into_series()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let mut builder =
                     ListUtf8ChunkedBuilder::new(self.name(), groups.len(), self.len());
                 for [first, len] in groups {
@@ -262,7 +262,7 @@ impl AggList for ListChunked {
 
                 agg_list_list(self, groups.len(), func)
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let func = |ca: &ListChunked,
                             mut can_fast_explode: bool,
                             offsets: &mut Vec<i64>,
@@ -379,7 +379,7 @@ impl AggList for StructChunked {
                 }
                 builder.finish().into_series()
             }
-            GroupsProxy::Slice(groups) => {
+            GroupsProxy::Slice { groups, .. } => {
                 let mut builder = AnonymousOwnedListBuilder::new(
                     self.name(),
                     groups.len(),

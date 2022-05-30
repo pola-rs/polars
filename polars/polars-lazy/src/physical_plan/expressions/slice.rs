@@ -124,12 +124,15 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsProxy::Idx(groups)
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
                             .collect_trusted();
-                        GroupsProxy::Slice(groups)
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
                     }
                 }
             }
@@ -152,7 +155,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsProxy::Idx(groups)
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -160,7 +163,10 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice(groups)
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
                     }
                 }
             }
@@ -183,7 +189,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsProxy::Idx(groups)
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -191,7 +197,10 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice(groups)
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
                     }
                 }
             }
@@ -219,7 +228,7 @@ impl PhysicalExpr for SliceExpr {
                             .collect();
                         GroupsProxy::Idx(groups)
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -228,7 +237,10 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice(groups)
+                        GroupsProxy::Slice {
+                            groups,
+                            rolling: false,
+                        }
                     }
                 }
             }

@@ -141,7 +141,10 @@ where
         // sorted path
         if self.is_sorted() || self.is_sorted_reverse() && self.chunks().len() == 1 {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
-            return GroupsProxy::Slice(self.create_groups_from_sorted(multithreaded));
+            return GroupsProxy::Slice {
+                groups: self.create_groups_from_sorted(multithreaded),
+                rolling: false,
+            };
         }
 
         match self.dtype() {

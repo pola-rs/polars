@@ -386,22 +386,23 @@ fn test_boundaries_ms() {
 #[test]
 fn test_rolling_lookback() {
     // Test month as interval in date range
-    let start = NaiveDate::from_ymd(2021, 12, 16).and_hms(0, 0, 0);
-    let end = NaiveDate::from_ymd(2021, 12, 16).and_hms(4, 0, 0);
+    let start = NaiveDate::from_ymd(1970, 1, 16).and_hms(0, 0, 0);
+    let end = NaiveDate::from_ymd(1970, 1, 16).and_hms(4, 0, 0);
     let dates = date_range_vec(
-        start.timestamp_nanos(),
-        end.timestamp_nanos(),
+        start.timestamp_millis(),
+        end.timestamp_millis(),
         Duration::parse("30m"),
         ClosedWindow::Both,
-        TimeUnit::Nanoseconds,
+        TimeUnit::Milliseconds,
     );
 
+    // full lookbehind
     let groups = groupby_values(
         Duration::parse("2h"),
         Duration::parse("-2h"),
         &dates,
         ClosedWindow::Right,
-        TimeUnit::Nanoseconds,
+        TimeUnit::Milliseconds,
     );
     assert_eq!(dates.len(), groups.len());
     assert_eq!(groups[0], [0, 1]); // bound: 22:00 -> 24:00     time: 24:00
@@ -413,6 +414,68 @@ fn test_rolling_lookback() {
     assert_eq!(groups[6], [3, 4]); // bound: 01:00 -> 03:00     time: 03:00
     assert_eq!(groups[7], [4, 4]); // bound: 01:30 -> 03:30     time: 03:30
     assert_eq!(groups[8], [5, 4]); // bound: 02:00 -> 04:00     time: 04:00
+
+    // partial lookbehind
+    let groups = groupby_values(
+        Duration::parse("2h"),
+        Duration::parse("-1h"),
+        &dates,
+        ClosedWindow::Right,
+        TimeUnit::Milliseconds,
+    );
+    assert_eq!(dates.len(), groups.len());
+    assert_eq!(groups[0], [0, 3]);
+    assert_eq!(groups[1], [0, 4]);
+    assert_eq!(groups[2], [1, 4]);
+    assert_eq!(groups[3], [2, 4]);
+    assert_eq!(groups[4], [3, 4]);
+    assert_eq!(groups[5], [4, 4]);
+    assert_eq!(groups[6], [5, 4]);
+    assert_eq!(groups[7], [6, 3]);
+    assert_eq!(groups[8], [7, 2]);
+
+    // no lookbehind
+    let groups = groupby_values(
+        Duration::parse("2h"),
+        Duration::parse("0h"),
+        &dates,
+        ClosedWindow::Right,
+        TimeUnit::Milliseconds,
+    );
+    assert_eq!(dates.len(), groups.len());
+    assert_eq!(groups[0], [0, 5]);
+    assert_eq!(groups[1], [1, 5]);
+    assert_eq!(groups[2], [2, 5]);
+    assert_eq!(groups[3], [3, 5]);
+    assert_eq!(groups[4], [4, 5]);
+    assert_eq!(groups[5], [5, 4]);
+    assert_eq!(groups[6], [6, 3]);
+    assert_eq!(groups[7], [7, 2]);
+    assert_eq!(groups[8], [8, 0]);
+
+    let period = Duration::parse("2h");
+    let tu = TimeUnit::Milliseconds;
+    for closed_window in [
+        ClosedWindow::Left,
+        ClosedWindow::Right,
+        ClosedWindow::Both,
+        ClosedWindow::None,
+    ] {
+        let offset = Duration::parse("0h");
+        let g0 =
+            groupby_values_iter_full_lookahead(period, offset, &dates, closed_window, tu, 0, None)
+                .collect::<Vec<_>>();
+        let g1 = groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu)
+            .collect::<Vec<_>>();
+        assert_eq!(g0, g1);
+
+        let offset = Duration::parse("-2h");
+        let g0 = groupby_values_iter_full_lookbehind(period, offset, &dates, closed_window, tu, 0)
+            .collect::<Vec<_>>();
+        let g1 = groupby_values_iter_partial_lookbehind(period, offset, &dates, closed_window, tu)
+            .collect::<Vec<_>>();
+        assert_eq!(g0, g1);
+    }
 }
 
 #[test]

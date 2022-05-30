@@ -76,7 +76,7 @@ impl PhysicalExpr for TakeExpr {
                                     .map(|(idx, first)| idx.map(|idx| idx + first))
                                     .collect_trusted()
                             }
-                            GroupsProxy::Slice(groups) => {
+                            GroupsProxy::Slice { groups, .. } => {
                                 if groups
                                     .iter()
                                     .zip(idx.into_iter())
@@ -132,7 +132,7 @@ impl PhysicalExpr for TakeExpr {
 
                                         groups.first().iter().map(|f| *f + idx).collect_trusted()
                                     }
-                                    GroupsProxy::Slice(groups) => {
+                                    GroupsProxy::Slice { groups, .. } => {
                                         if groups.iter().any(|g| idx >= g[1]) {
                                             return Err(PolarsError::ComputeError(
                                                 "out of bounds".into(),

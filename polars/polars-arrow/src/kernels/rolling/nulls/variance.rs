@@ -11,7 +11,6 @@ pub(super) struct SumSquaredWindow<'a, T> {
     last_start: usize,
     last_end: usize,
     null_count: usize,
-    min_periods: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
@@ -42,13 +41,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Output = T>>
     RollingAggWindowNulls<'a, T> for SumSquaredWindow<'a, T>
 {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -56,7 +49,6 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
             last_start: start,
             last_end: end,
             null_count: 0,
-            min_periods,
         };
         out.compute_sum_and_null_count(start, end);
         out
@@ -121,11 +113,10 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + Mul<Outpu
             }
         }
         self.last_end = end;
-        if ((end - start) - self.null_count) < self.min_periods {
-            None
-        } else {
-            self.sum_of_squares
-        }
+        self.sum_of_squares
+    }
+    fn is_valid(&self, min_periods: usize) -> bool {
+        ((self.last_end - self.last_start) - self.null_count) >= min_periods
     }
 }
 
@@ -151,16 +142,10 @@ impl<
             + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for VarWindow<'a, T>
 {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         Self {
-            mean: MeanWindow::new(slice, validity, start, end, min_periods),
-            sum_of_squares: SumSquaredWindow::new(slice, validity, start, end, min_periods),
+            mean: MeanWindow::new(slice, validity, start, end),
+            sum_of_squares: SumSquaredWindow::new(slice, validity, start, end),
         }
     }
 
@@ -180,6 +165,9 @@ impl<
             // apply Bessel's correction
             Some(var / (count - T::one()) * count)
         }
+    }
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.mean.is_valid(min_periods)
     }
 }
 
@@ -234,15 +222,9 @@ impl<
             + Pow<T, Output = T>,
     > RollingAggWindowNulls<'a, T> for StdWindow<'a, T>
 {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         Self {
-            var: VarWindow::new(slice, validity, start, end, min_periods),
+            var: VarWindow::new(slice, validity, start, end),
         }
     }
 
@@ -250,6 +232,9 @@ impl<
         self.var
             .update(start, end)
             .map(|var| var.pow(NumCast::from(0.5).unwrap()))
+    }
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.var.is_valid(min_periods)
     }
 }
 

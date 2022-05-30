@@ -347,7 +347,7 @@ impl PhysicalExpr for WindowExpr {
                             original_idx.extend_from_slice(g)
                         }
                     }
-                    GroupsProxy::Slice(groups) => {
+                    GroupsProxy::Slice { groups, .. } => {
                         for g in groups {
                             original_idx.extend(g[0]..g[0] + 1)
                         }
@@ -375,7 +375,7 @@ impl PhysicalExpr for WindowExpr {
                                 idx_mapping.extend(g.iter().copied().zip(&mut iter));
                             }
                         }
-                        GroupsProxy::Slice(groups) => {
+                        GroupsProxy::Slice { groups, .. } => {
                             for g in groups {
                                 idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
                             }
@@ -391,7 +391,7 @@ impl PhysicalExpr for WindowExpr {
                                 idx_mapping.extend(g.iter().copied().zip(&mut original_idx));
                             }
                         }
-                        GroupsProxy::Slice(groups) => {
+                        GroupsProxy::Slice { groups, .. } => {
                             for g in groups {
                                 idx_mapping.extend((g[0]..g[0] + g[1]).zip(&mut original_idx));
                             }

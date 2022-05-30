@@ -14,17 +14,13 @@ pub use variance::*;
 pub trait RollingAggWindowNulls<'a, T: NativeType> {
     /// # Safety
     /// `start` and `end` must be in bounds for `slice` and `validity`
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self;
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self;
 
     /// # Safety
     /// `start` and `end` must be in bounds of `slice` and `bitmap`
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
+
+    fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 // Use an aggregation window that maintains the state
@@ -43,7 +39,7 @@ where
     let len = values.len();
     let (start, end) = det_offsets_fn(0, window_size, len);
     // Safety; we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, start, end, min_periods) };
+    let mut agg_window = unsafe { Agg::new(values, validity, start, end) };
 
     let mut validity = match create_validity(min_periods, len as usize, window_size, det_offsets_fn)
     {
@@ -62,7 +58,15 @@ where
             // we are in bounds
             let agg = unsafe { agg_window.update(start, end) };
             match agg {
-                Some(val) => val,
+                Some(val) => {
+                    if agg_window.is_valid(min_periods) {
+                        val
+                    } else {
+                        // safety: we are in bounds
+                        unsafe { validity.set_unchecked(idx, false) };
+                        T::default()
+                    }
+                }
                 None => {
                     // safety: we are in bounds
                     unsafe { validity.set_unchecked(idx, false) };
@@ -196,6 +200,22 @@ mod test {
         let out = rolling_max(arr, 4, 4, false, None);
         let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
-        assert_eq!(out, &[None, None, None, Some(4.0)])
+        assert_eq!(out, &[None, None, None, Some(4.0)]);
+
+        let buf = Buffer::from(vec![4.0, 3.0, 2.0, 1.0]);
+        let arr = &PrimitiveArray::from_data(
+            DataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, true, true, true])),
+        );
+        let out = rolling_max(arr, 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
+
+        let out = super::no_nulls::rolling_max(&arr.values().as_slice(), 2, 1, false, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(4.0), Some(4.0), Some(3.0), Some(2.0)]);
     }
 }

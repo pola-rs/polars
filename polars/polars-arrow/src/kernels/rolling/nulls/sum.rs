@@ -9,7 +9,6 @@ pub struct SumWindow<'a, T> {
     last_start: usize,
     last_end: usize,
     pub(super) null_count: usize,
-    min_periods: usize,
 }
 
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'a, T> {
@@ -38,13 +37,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<
 impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAggWindowNulls<'a, T>
     for SumWindow<'a, T>
 {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -52,7 +45,6 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
             last_start: start,
             last_end: end,
             null_count: 0,
-            min_periods,
         };
         out.compute_sum_and_null_count(start, end);
         out
@@ -116,11 +108,11 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
             }
         }
         self.last_end = end;
-        if ((end - start) - self.null_count) < self.min_periods {
-            None
-        } else {
-            self.sum
-        }
+        self.sum
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        ((self.last_end - self.last_start) - self.null_count) >= min_periods
     }
 }
 

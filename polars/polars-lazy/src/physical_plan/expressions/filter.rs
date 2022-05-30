@@ -76,7 +76,7 @@ impl PhysicalExpr for FilterExpr {
 
                     GroupsProxy::Idx(groups)
                 }
-                GroupsProxy::Slice(groups) => {
+                GroupsProxy::Slice { groups, .. } => {
                     let groups = groups
                         .par_iter()
                         .map(|&[first, len]| unsafe {

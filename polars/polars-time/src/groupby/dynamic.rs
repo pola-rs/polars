@@ -225,7 +225,10 @@ impl Wrap<&DataFrame> {
             let (groups, lower, upper) =
                 groupby_windows(w, ts, options.include_boundaries, options.closed_window, tu);
             update_bounds(lower, upper);
-            GroupsProxy::Slice(groups)
+            GroupsProxy::Slice {
+                groups,
+                rolling: false,
+            }
         } else {
             let groups = self
                 .0
@@ -335,13 +338,16 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            GroupsProxy::Slice(groupby_values(
-                options.period,
-                options.offset,
-                ts,
-                options.closed_window,
-                tu,
-            ))
+            GroupsProxy::Slice {
+                groups: groupby_values(
+                    options.period,
+                    options.offset,
+                    ts,
+                    options.closed_window,
+                    tu,
+                ),
+                rolling: true,
+            }
         } else {
             let groups = self
                 .0

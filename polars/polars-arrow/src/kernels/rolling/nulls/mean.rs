@@ -11,21 +11,18 @@ impl<
         T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + NumCast + Div<Output = T>,
     > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
-    unsafe fn new(
-        slice: &'a [T],
-        validity: &'a Bitmap,
-        start: usize,
-        end: usize,
-        min_periods: usize,
-    ) -> Self {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
         Self {
-            sum: SumWindow::new(slice, validity, start, end, min_periods),
+            sum: SumWindow::new(slice, validity, start, end),
         }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
         let sum = self.sum.update(start, end);
         sum.map(|sum| sum / NumCast::from(end - start - self.sum.null_count).unwrap())
+    }
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.sum.is_valid(min_periods)
     }
 }
 
