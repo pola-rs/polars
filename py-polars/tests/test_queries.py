@@ -157,3 +157,30 @@ def test_median_on_shifted_col_3522() -> None:
     )
     diffs = df.select(pl.col("foo").diff().dt.seconds())
     assert diffs.select(pl.col("foo").median()).to_series()[0] == 36828.5
+
+
+def test_groupby_agg_equals_zero_3535() -> None:
+    # setup test frame
+    df = pl.DataFrame(
+        data=[
+            # note: the 'bb'-keyed values should clearly sum to 0
+            ("aa", 10, None),
+            ("bb", -10, 0.5),
+            ("bb", 10, -0.5),
+            ("cc", -99, 10.5),
+            ("cc", None, 0.0),
+        ],
+        columns=[
+            ("key", pl.Utf8),
+            ("val1", pl.Int16),
+            ("val2", pl.Float32),
+        ],
+    )
+    # group by the key, aggregating the two numeric cols
+    assert df.groupby(pl.col("key"), maintain_order=True).agg(
+        [pl.col("val1").sum(), pl.col("val2").sum()]
+    ).to_dict(False) == {
+        "key": ["aa", "bb", "cc"],
+        "val1": [10, 0, -99],
+        "val2": [None, 0.0, 10.5],
+    }
