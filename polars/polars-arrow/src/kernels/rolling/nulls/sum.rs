@@ -112,7 +112,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        !(((self.last_end - self.last_start) - self.null_count) < min_periods)
+        ((self.last_end - self.last_start) - self.null_count) >= min_periods
     }
 }
 

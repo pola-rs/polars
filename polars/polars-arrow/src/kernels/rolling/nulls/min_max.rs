@@ -2,36 +2,23 @@ use super::*;
 use nulls;
 use nulls::{rolling_apply_agg_window, RollingAggWindowNulls};
 
-pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+/// Generic `Min` / `Max` kernel. It is written in terms of `Min` aggregation,
+/// but applys to `max` as well, just mentally `:s/min/max/g`.
+pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     validity: &'a Bitmap,
     min: Option<T>,
     last_start: usize,
     last_end: usize,
     null_count: usize,
+    compare_fn_nan: fn(&T, &T) -> Ordering,
+    // ordering on which the window needs to act.
+    // for min kernel this is Less
+    // for max kernel this is Greater
+    agg_ordering: Ordering,
 }
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
-    // compute min from the entire window
-    unsafe fn compute_min(&mut self, start: usize, end: usize) -> Option<T> {
-        let mut min = None;
-        let mut idx = start;
-        self.null_count = 0;
-        for value in (&self.slice[start..end]).iter() {
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                match min {
-                    None => min = Some(*value),
-                    Some(current) => {
-                        min = Some(std::cmp::min_by(*value, current, compare_fn_nan_min))
-                    }
-                }
-            }
-            idx += 1;
-        }
-        min
-    }
-
+impl<'a, T: NativeType + IsFloat + PartialOrd> MinMaxWindow<'a, T> {
     unsafe fn compute_min_in_between_leaving_and_entering(&self, start: usize) -> Option<T> {
         // check the values in between the window that remains e.g. is not leaving
         // this between `start..last_end`
@@ -54,7 +41,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
                 match min_in_between {
                     None => min_in_between = Some(*value),
                     Some(current) => {
-                        min_in_between = Some(std::cmp::min_by(*value, current, compare_fn_nan_min))
+                        min_in_between =
+                            Some(std::cmp::min_by(*value, current, self.compare_fn_nan))
                     }
                 }
             }
@@ -72,7 +60,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
                 match min {
                     None => min = Some(*value),
                     Some(current) => {
-                        min = Some(std::cmp::min_by(*value, current, compare_fn_nan_min))
+                        min = Some(std::cmp::min_by(*value, current, self.compare_fn_nan))
                     }
                 }
             } else {
@@ -82,10 +70,15 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> MinWindow<'a, T> {
         }
         min
     }
-}
 
-impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
-    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+    unsafe fn new(
+        slice: &'a [T],
+        validity: &'a Bitmap,
+        start: usize,
+        end: usize,
+        compare_fn: fn(&T, &T) -> Ordering,
+        agg_ordering: Ordering,
+    ) -> Self {
         let mut out = Self {
             slice,
             validity,
@@ -93,6 +86,8 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             last_start: start,
             last_end: end,
             null_count: 0,
+            compare_fn_nan: compare_fn,
+            agg_ordering,
         };
         let min = out.compute_min_and_update_null_count(start, end);
         out.min = min;
@@ -118,7 +113,7 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                 // if the leaving value is the
                 // min value, we need to recompute the min.
                 if matches!(
-                    compare_fn_nan_min(leaving_value, &self.min.unwrap()),
+                    (self.compare_fn_nan)(leaving_value, &self.min.unwrap()),
                     Ordering::Equal
                 ) {
                     recompute_min = true;
@@ -153,11 +148,11 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
             }
             (Some(current_min), Some(entering_min)) => {
                 if recompute_min {
-                    match compare_fn_nan_min(&current_min, &entering_min) {
+                    match (self.compare_fn_nan)(&current_min, &entering_min) {
                         // do nothing
                         Ordering::Equal => {}
                         // leaving < entering
-                        Ordering::Less => {
+                        ord if ord == self.agg_ordering => {
                             // leaving value could be the smallest, we might need to recompute
 
                             let min_in_between =
@@ -165,10 +160,9 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                             match min_in_between {
                                 None => self.min = Some(entering_min),
                                 Some(min_in_between) => {
-                                    if matches!(
-                                        compare_fn_nan_min(&min_in_between, &entering_min),
-                                        Ordering::Less
-                                    ) {
+                                    if (self.compare_fn_nan)(&min_in_between, &entering_min)
+                                        == self.agg_ordering
+                                    {
                                         self.min = Some(min_in_between)
                                     } else {
                                         self.min = Some(entering_min)
@@ -177,19 +171,15 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
                             }
                         }
                         // leaving > entering
-                        Ordering::Greater => {
-                            if matches!(
-                                compare_fn_nan_min(&entering_min, &current_min),
-                                Ordering::Less
-                            ) {
+                        _ => {
+                            if (self.compare_fn_nan)(&entering_min, &current_min)
+                                == self.agg_ordering
+                            {
                                 self.min = Some(entering_min)
                             }
                         }
                     }
-                } else if matches!(
-                    compare_fn_nan_min(&entering_min, &current_min),
-                    Ordering::Less
-                ) {
+                } else if (self.compare_fn_nan)(&entering_min, &current_min) == self.agg_ordering {
                     self.min = Some(entering_min)
                 }
             }
@@ -200,7 +190,34 @@ impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for 
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        !(((self.last_end - self.last_start) - self.null_count) < min_periods)
+        ((self.last_end - self.last_start) - self.null_count) >= min_periods
+    }
+}
+
+pub struct MinWindow<'a, T: NativeType + PartialOrd + IsFloat> {
+    inner: MinMaxWindow<'a, T>,
+}
+
+impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MinWindow<'a, T> {
+    unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
+        Self {
+            inner: MinMaxWindow::new(
+                slice,
+                validity,
+                start,
+                end,
+                compare_fn_nan_min,
+                Ordering::Less,
+            ),
+        }
+    }
+
+    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
+        self.inner.update(start, end)
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.inner.is_valid(min_periods)
     }
 }
 
@@ -237,123 +254,29 @@ where
 }
 
 pub struct MaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
-    slice: &'a [T],
-    validity: &'a Bitmap,
-    max: Option<T>,
-    last_start: usize,
-    last_end: usize,
-    null_count: usize,
-}
-
-impl<'a, T: NativeType + IsFloat + PartialOrd> MaxWindow<'a, T> {
-    // compute max from the entire window
-    unsafe fn compute_max_and_null_count(&mut self, start: usize, end: usize) -> Option<T> {
-        let mut max = None;
-        let mut idx = start;
-        self.null_count = 0;
-        for value in (&self.slice[start..end]).iter() {
-            let valid = self.validity.get_bit_unchecked(idx);
-            if valid {
-                match max {
-                    None => max = Some(*value),
-                    Some(current) => {
-                        max = Some(std::cmp::max_by(*value, current, compare_fn_nan_max))
-                    }
-                }
-            } else {
-                self.null_count += 1;
-            }
-            idx += 1;
-        }
-        self.max = max;
-        max
-    }
+    inner: MinMaxWindow<'a, T>,
 }
 
 impl<'a, T: NativeType + IsFloat + PartialOrd> RollingAggWindowNulls<'a, T> for MaxWindow<'a, T> {
     unsafe fn new(slice: &'a [T], validity: &'a Bitmap, start: usize, end: usize) -> Self {
-        let mut out = Self {
-            slice,
-            validity,
-            max: None,
-            last_start: start,
-            last_end: end,
-            null_count: 0,
-        };
-        out.compute_max_and_null_count(start, end);
-        out
+        Self {
+            inner: MinMaxWindow::new(
+                slice,
+                validity,
+                start,
+                end,
+                compare_fn_nan_max,
+                Ordering::Greater,
+            ),
+        }
     }
 
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        // if we exceed the end, we have a completely new window
-        // so we recompute
-        let recompute_max = if start >= self.last_end {
-            true
-        } else {
-            // remove elements that should leave the window
-            let mut recompute_max = false;
-            for idx in self.last_start..start {
-                // safety
-                // we are in bounds
-                let valid = self.validity.get_bit_unchecked(idx);
-                if valid {
-                    let leaving_value = self.slice.get_unchecked(idx);
-
-                    // if the leaving value is the
-                    // max value, we need to recompute the max.
-                    if matches!(
-                        compare_fn_nan_max(leaving_value, &self.max.unwrap()),
-                        Ordering::Equal
-                    ) {
-                        recompute_max = true;
-                        break;
-                    }
-                } else {
-                    // null value leaving the window
-                    self.null_count -= 1;
-
-                    // self.max is None and the leaving value is None
-                    // if the entering value is valid, we might get a new max.
-                    if self.max.is_none() {
-                        recompute_max = true;
-                        break;
-                    }
-                }
-            }
-            recompute_max
-        };
-
-        self.last_start = start;
-
-        // we traverese all values and compute
-        if recompute_max {
-            self.compute_max_and_null_count(start, end);
-        } else {
-            // the max has not left the window, so we only check
-            // if the entering values are larger
-            for idx in self.last_end..end {
-                let valid = self.validity.get_bit_unchecked(idx);
-
-                if valid {
-                    let value = *self.slice.get_unchecked(idx);
-                    match self.max {
-                        None => self.max = Some(value),
-                        Some(current) => {
-                            self.max = Some(std::cmp::max_by(value, current, compare_fn_nan_max))
-                        }
-                    }
-                } else {
-                    // null value entering the window
-                    self.null_count += 1;
-                }
-            }
-        }
-        self.last_end = end;
-        self.max
+        self.inner.update(start, end)
     }
 
     fn is_valid(&self, min_periods: usize) -> bool {
-        !(((self.last_end - self.last_start) - self.null_count) < min_periods)
+        self.inner.is_valid(min_periods)
     }
 }
 

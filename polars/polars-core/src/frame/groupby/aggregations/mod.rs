@@ -68,7 +68,7 @@ where
     // start with a dummy index, will be overwritten on first iteration.
     // Safety:
     // we are in bounds
-    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0, 0) };
+    let mut agg_window = unsafe { Agg::new(values, validity, 0, 0) };
 
     let mut validity = MutableBitmap::with_capacity(len);
     validity.extend_constant(len, true);
