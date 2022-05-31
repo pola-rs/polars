@@ -480,19 +480,35 @@ impl<'a> FromNapiValue for Wrap<&'a str> {
 
 #[napi(object)]
 pub struct JsRollingOptions {
-    pub window_size: i64,
+    pub window_size: String,
     pub weights: Option<Vec<f64>>,
     pub min_periods: i64,
     pub center: bool,
 }
 
-impl From<JsRollingOptions> for RollingOptions {
+impl From<JsRollingOptions> for RollingOptionsImpl<'static> {
     fn from(o: JsRollingOptions) -> Self {
-        RollingOptions {
-            window_size: o.window_size as usize,
+        RollingOptionsImpl {
+            window_size: Duration::parse(&o.window_size),
             weights: o.weights,
             min_periods: o.min_periods as usize,
             center: o.center,
+            by: None,
+            tu: None,
+            closed_window: None,
+        }
+    }
+}
+
+impl From<JsRollingOptions> for RollingOptions {
+    fn from(o: JsRollingOptions) -> Self {
+        RollingOptions {
+            window_size: Duration::parse(&o.window_size),
+            weights: o.weights,
+            min_periods: o.min_periods as usize,
+            center: o.center,
+            by: None,
+            closed_window: None
         }
     }
 }
