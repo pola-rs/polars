@@ -177,6 +177,7 @@ Manipulation/ selection
 
     Expr.inspect
     Expr.slice
+    Expr.append
     Expr.explode
     Expr.flatten
     Expr.take_every
@@ -204,6 +205,7 @@ Manipulation/ selection
     Expr.reinterpret
     Expr.drop_nulls
     Expr.drop_nans
+    Expr.rechunk
     Expr.interpolate
     Expr.arg_sort
     Expr.clip

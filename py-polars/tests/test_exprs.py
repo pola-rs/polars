@@ -235,3 +235,16 @@ def test_power_by_expression() -> None:
         None,
         46656.0,
     ]
+
+
+def test_expression_appends() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2]})
+
+    assert df.select(pl.repeat(None, 3).append(pl.col("a"))).n_chunks() == 2
+
+    assert df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk()).n_chunks() == 1
+
+    out = df.select(pl.concat([pl.repeat(None, 3), pl.col("a")]))
+
+    assert out.n_chunks() == 1
+    assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
