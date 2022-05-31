@@ -14,7 +14,7 @@ import {col} from "../lazy/functions";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 export interface Series extends
   ArrayLike<any>,
-  Rolling<Series>,
+  // Rolling<Series>,
   Arithmetic<Series>,
   Comparison<Series>,
   Cumulative<Series>,
@@ -1463,8 +1463,6 @@ export function _Series(_s: any): Series {
         return this.alias(obj?.name ?? obj);
       }
     },
-
-
     rollingMax(...args) {
       return expr_op("rollingMax", ...args);
     },
