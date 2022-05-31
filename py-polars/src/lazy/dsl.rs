@@ -327,6 +327,17 @@ impl PyExpr {
         self.inner.clone().slice(offset.inner, length.inner).into()
     }
 
+    pub fn append(&self, other: PyExpr, upcast: bool) -> PyExpr {
+        self.inner.clone().append(other.inner, upcast).into()
+    }
+
+    pub fn rechunk(&self) -> PyExpr {
+        self.inner
+            .clone()
+            .map(|s| Ok(s.rechunk()), GetOutput::same_type())
+            .into()
+    }
+
     pub fn round(&self, decimals: u32) -> PyExpr {
         self.clone().inner.round(decimals).into()
     }

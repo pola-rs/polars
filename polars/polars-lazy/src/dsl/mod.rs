@@ -46,6 +46,7 @@ use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{get_supertype, NoNull};
+use polars_ops::prelude::SeriesOps;
 
 pub fn binary_expr(l: Expr, op: Operator, r: Expr) -> Expr {
     Expr::BinaryExpr {
@@ -419,6 +420,30 @@ impl Expr {
             offset: Box::new(offset.into()),
             length: Box::new(length.into()),
         }
+    }
+
+    /// Append expressions. This is done by adding the chunks of `other` to this [`Series`].
+    pub fn append<E: Into<Expr>>(self, other: E, upcast: bool) -> Self {
+        let output_type = if upcast {
+            GetOutput::super_type()
+        } else {
+            GetOutput::same_type()
+        };
+
+        apply_binary(
+            self,
+            other.into(),
+            move |mut a, mut b| {
+                if upcast {
+                    let dtype = get_supertype(a.dtype(), b.dtype())?;
+                    a = a.cast(&dtype)?;
+                    b = b.cast(&dtype)?;
+                }
+                a.append(&b)?;
+                Ok(a)
+            },
+            output_type,
+        )
     }
 
     /// Get the first `n` elements of the Expr result

@@ -60,13 +60,25 @@ def concat(
     ...
 
 
+@overload
+def concat(
+    items: Sequence["pli.Expr"],
+    rechunk: bool = True,
+    how: str = "vertical",
+) -> "pli.Expr":
+    ...
+
+
 def concat(
     items: Union[
-        Sequence["pli.DataFrame"], Sequence["pli.Series"], Sequence["pli.LazyFrame"]
+        Sequence["pli.DataFrame"],
+        Sequence["pli.Series"],
+        Sequence["pli.LazyFrame"],
+        Sequence["pli.Expr"],
     ],
     rechunk: bool = True,
     how: str = "vertical",
-) -> Union["pli.DataFrame", "pli.Series", "pli.LazyFrame"]:
+) -> Union["pli.DataFrame", "pli.Series", "pli.LazyFrame", "pli.Expr"]:
     """
     Aggregate all the Dataframes/Series in a List of DataFrames/Series to a single DataFrame/Series.
 
@@ -105,8 +117,9 @@ def concat(
     if not len(items) > 0:
         raise ValueError("cannot concat empty list")
 
-    out: Union["pli.Series", "pli.DataFrame", "pli.LazyFrame"]
-    if isinstance(items[0], pli.DataFrame):
+    out: Union["pli.Series", "pli.DataFrame", "pli.LazyFrame", "pli.Expr"]
+    first = items[0]
+    if isinstance(first, pli.DataFrame):
         if how == "vertical":
             out = pli.wrap_df(_concat_df(items))
         elif how == "diagonal":
@@ -117,10 +130,16 @@ def concat(
             raise ValueError(
                 f"how should be one of {'vertical', 'diagonal'}, got {how}"
             )
-    elif isinstance(items[0], pli.LazyFrame):
+    elif isinstance(first, pli.LazyFrame):
         return pli.wrap_ldf(_concat_lf(items, rechunk))
-    else:
+    elif isinstance(first, pli.Series):
         out = pli.wrap_s(_concat_series(items))
+    elif isinstance(first, pli.Expr):
+        out = first
+        for e in items[1:]:
+            out = out.append(e)  # type: ignore
+    else:
+        raise ValueError(f"did not expect type: {type(first)} in 'pl.concat'.")
 
     if rechunk:
         return out.rechunk()

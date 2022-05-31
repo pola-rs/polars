@@ -774,6 +774,26 @@ class Expr:
             length = pli.lit(length)
         return wrap_expr(self._pyexpr.slice(offset._pyexpr, length._pyexpr))
 
+    def append(self, other: "Expr", upcast: bool = True) -> "Expr":
+        """
+        Append expressions. This is done by adding the chunks of `other` to this `Series`.
+
+        Parameters
+        ----------
+        other
+            Expression to append
+        upcast
+            Cast both `Series` to the same supertype
+        """
+        other = expr_to_lit_or_expr(other)
+        return wrap_expr(self._pyexpr.append(other._pyexpr, upcast))
+
+    def rechunk(self) -> "Expr":
+        """
+        Create a single chunk of memory for this Series.
+        """
+        return wrap_expr(self._pyexpr.rechunk())
+
     def drop_nulls(self) -> "Expr":
         """
         Drop null values.
