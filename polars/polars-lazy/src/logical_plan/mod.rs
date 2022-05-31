@@ -11,6 +11,7 @@ use crate::utils::{expr_to_root_column_names, get_single_root, has_expr, has_wil
 
 pub(crate) mod aexpr;
 pub(crate) mod alp;
+pub(crate) mod anonymous_scan;
 mod apply;
 mod builder;
 pub(crate) mod conversion;
@@ -21,6 +22,7 @@ pub(crate) mod optimizer;
 pub(crate) mod options;
 mod projection;
 
+pub(crate) use anonymous_scan::*;
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
@@ -48,6 +50,11 @@ pub enum Context {
     serde(bound(deserialize = "'de: 'static"))
 )]
 pub enum LogicalPlan {
+    #[cfg_attr(feature = "serde", serde(skip))]
+    AnonymousScan {
+        options: AnonymousScanOptions,
+        function: Arc<dyn AnonymousScan>,
+    },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },
     /// Filter on a boolean mask
@@ -210,6 +217,7 @@ impl LogicalPlan {
     pub(crate) fn schema(&self) -> &SchemaRef {
         use LogicalPlan::*;
         match self {
+            AnonymousScan { options, .. } => &options.schema,
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             Union { inputs, .. } => inputs[0].schema(),

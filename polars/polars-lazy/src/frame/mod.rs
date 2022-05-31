@@ -7,6 +7,10 @@ mod ipc;
 mod parquet;
 #[cfg(feature = "python")]
 mod python;
+mod anonymous_scan;
+
+pub use anonymous_scan::*;
+
 
 #[cfg(feature = "csv-file")]
 pub use csv::*;

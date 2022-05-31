@@ -157,6 +157,9 @@ pub(crate) fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Result<Node> {
     let v = match lp {
+        LogicalPlan::AnonymousScan { options, function } => {
+            ALogicalPlan::AnonymousScan { options, function }
+        }
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan { options },
         LogicalPlan::Union { inputs, options } => {
@@ -646,6 +649,9 @@ pub(crate) fn node_to_lp(
     let lp = std::mem::take(lp);
 
     match lp {
+        ALogicalPlan::AnonymousScan { options, function } => {
+            LogicalPlan::AnonymousScan { options, function }
+        }
         #[cfg(feature = "python")]
         ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
         ALogicalPlan::Union { inputs, options } => {

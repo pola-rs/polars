@@ -1,3 +1,4 @@
+use crate::logical_plan::anonymous_scan::*;
 use crate::logical_plan::projection::rewrite_projections;
 use crate::prelude::*;
 use crate::utils;
@@ -52,6 +53,10 @@ macro_rules! try_delayed {
 }
 
 impl LogicalPlanBuilder {
+    pub fn anonymous_scan(function: Arc<dyn AnonymousScan>, options: AnonymousScanOptions) -> Self {
+        LogicalPlan::AnonymousScan { options, function }.into()
+    }
+
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]
     pub fn scan_parquet<P: Into<PathBuf>>(

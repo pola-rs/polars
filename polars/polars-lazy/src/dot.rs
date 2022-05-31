@@ -142,6 +142,28 @@ impl LogicalPlan {
                 self.write_dot(acc_str, prev_node, &current_node, id)?;
                 input.dot(acc_str, (branch, id + 1), &current_node)
             }
+            AnonymousScan { options, .. } => {
+                let schema = &options.schema;
+                let total_columns = schema.len();
+                let n_columns = if let Some(columns) = &options.with_columns {
+                    format!("{}", columns.len())
+                } else {
+                    "*".to_string()
+                };
+
+                let current_node = format!(
+                    "ANONYMOUS SCAN;\nπ {}/{};\n[{:?}]",
+                    n_columns,
+                    total_columns,
+                    (branch, id)
+                );
+                if id == 0 {
+                    self.write_dot(acc_str, prev_node, &current_node, id)?;
+                    write!(acc_str, "\"{}\"", current_node)
+                } else {
+                    self.write_dot(acc_str, prev_node, &current_node, id)
+                }
+            }
             #[cfg(feature = "python")]
             PythonScan { options } => {
                 let schema = &options.schema;

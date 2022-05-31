@@ -15,6 +15,10 @@ use std::sync::Arc;
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
+    AnonymousScan {
+        options: AnonymousScanOptions,
+        function: Arc<dyn AnonymousScan>,
+    },
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -147,6 +151,7 @@ impl ALogicalPlan {
     pub(crate) fn schema<'a>(&'a self, arena: &'a Arena<ALogicalPlan>) -> &'a SchemaRef {
         use ALogicalPlan::*;
         match self {
+            AnonymousScan { options, .. } => &options.schema,
             #[cfg(feature = "python")]
             PythonScan { options } => &options.schema,
             Union { inputs, .. } => arena.get(inputs[0]).schema(arena),
@@ -195,6 +200,10 @@ impl ALogicalPlan {
         use ALogicalPlan::*;
 
         match self {
+            AnonymousScan { options, function } => AnonymousScan {
+                options: options.clone(),
+                function: function.clone(),
+            },
             #[cfg(feature = "python")]
             PythonScan { options } => PythonScan {
                 options: options.clone(),
@@ -458,6 +467,7 @@ impl ALogicalPlan {
             }
             #[cfg(feature = "python")]
             PythonScan { .. } => {}
+            AnonymousScan { .. } => {}
         }
     }
 
@@ -513,6 +523,7 @@ impl ALogicalPlan {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            AnonymousScan { .. } => return,
         };
         container.push_node(input)
     }

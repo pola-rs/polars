@@ -7,6 +7,19 @@ impl fmt::Debug for LogicalPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use LogicalPlan::*;
         match self {
+            AnonymousScan { options, .. } => {
+                let total_columns = options.schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "ANONYMOUS SCAN; PROJECT {}/{} COLUMNS;",
+                    n_columns, total_columns
+                )
+            }
+
             #[cfg(feature = "python")]
             PythonScan { .. } => write!(f, "PYTHON SCAN"),
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),

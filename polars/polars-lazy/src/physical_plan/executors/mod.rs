@@ -1,3 +1,4 @@
+mod anonymous_scan;
 mod cache;
 mod drop_duplicates;
 mod explode;
@@ -17,6 +18,8 @@ mod sort;
 mod stack;
 mod udf;
 mod union;
+pub(super) use self::anonymous_scan::*;
+
 #[cfg(feature = "python")]
 pub(super) use self::python_scan::*;
 
