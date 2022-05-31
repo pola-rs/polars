@@ -14,7 +14,7 @@ import {col} from "../lazy/functions";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 export interface Series extends
   ArrayLike<any>,
-  Rolling<Series>,
+  // Rolling<Series>,
   Arithmetic<Series>,
   Comparison<Series>,
   Cumulative<Series>,
@@ -1027,14 +1027,14 @@ export function _Series(_s: any): Series {
   };
 
   const rolling =  (method: string, opts, weights?, minPeriods?, center?)  => {
-    const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
+    const windowSize = opts?.["windowSize"]?.toString() ?? (typeof opts === "number" ? opts.toString() : null);
     if (windowSize === null) {
       throw new Error("window size is required");
     }
     const callOpts = {
-      windowSize: opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null),
+      windowSize: opts?.["windowSize"]?.toString() ?? (typeof opts === "number" ? opts.toString() : null),
       weights: opts?.["weights"] ?? weights,
-      minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
+      minPeriods: opts?.["minPeriods"] ?? minPeriods ?? Number(windowSize),
       center: opts?.["center"] ?? center ?? false,
     };
 
@@ -1473,63 +1473,63 @@ export function _Series(_s: any): Series {
         return this.alias(obj?.name ?? obj);
       }
     },
-    rollingMax(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMax", windowSize, weights, minPeriods, center);
-    },
-    rollingMean(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMean", windowSize, weights, minPeriods, center);
-    },
-    rollingMin(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMin", windowSize, weights, minPeriods, center);
-    },
-    rollingSum(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingSum", windowSize, weights, minPeriods, center);
-    },
-    rollingStd(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingStd", windowSize, weights, minPeriods, center);
-    },
-    rollingVar(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingVar", windowSize, weights, minPeriods, center);
-    },
-    rollingMedian(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMedian", windowSize, weights, minPeriods, center);
-    },
-    rollingQuantile(val, interpolation = "nearest", windowSize?, weights?, minPeriods?, center?) {
-      if(typeof val === "number") {
+    // rollingMax(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingMax", windowSize, weights, minPeriods, center);
+    // },
+    // rollingMean(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingMean", windowSize, weights, minPeriods, center);
+    // },
+    // rollingMin(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingMin", windowSize, weights, minPeriods, center);
+    // },
+    // rollingSum(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingSum", windowSize, weights, minPeriods, center);
+    // },
+    // rollingStd(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingStd", windowSize, weights, minPeriods, center);
+    // },
+    // rollingVar(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingVar", windowSize, weights, minPeriods, center);
+    // },
+    // rollingMedian(windowSize, weights?, minPeriods?, center? ) {
+    //   return rolling("rollingMedian", windowSize, weights, minPeriods, center);
+    // },
+    // rollingQuantile(val, interpolation = "nearest", windowSize?, weights?, minPeriods?, center?) {
+    //   if(typeof val === "number") {
 
-        return wrap("rollingQuantile",
-          val,
-          interpolation ?? "nearest",
-          {
-            windowSize,
-            weights,
-            minPeriods,
-            center
-          });
-      }
-      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
-      if(windowSize === null) {
-        throw new Error("window size is required");
-      }
-      const options = {
-        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
-        weights: val?.["weights"] ?? weights,
-        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
-        center : val?.["center"] ?? center ?? false,
-      };
+    //     return wrap("rollingQuantile",
+    //       val,
+    //       interpolation ?? "nearest",
+    //       {
+    //         windowSize: windowSize.toString(),
+    //         weights,
+    //         minPeriods,
+    //         center
+    //       });
+    //   }
+    //   windowSize = val?.["windowSize"].toString() ?? (typeof val === "number" ? val.toString() : null);
+    //   if(windowSize === null) {
+    //     throw new Error("window size is required");
+    //   }
+    //   const options = {
+    //     windowSize: val?.["windowSize"].toString() ?? (typeof val === "number"? val.toString() : null),
+    //     weights: val?.["weights"] ?? weights,
+    //     minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
+    //     center : val?.["center"] ?? center ?? false,
+    //   };
 
-      return wrap("rollingQuantile",
-        val.quantile,
-        val.interpolation ?? "nearest",
-        options
-      );
-    },
-    rollingSkew(windowSize, bias?) {
-      return this
-        .toFrame()
-        .select(col(this.name).rollingSkew(windowSize, bias))
-        .getColumn(this.name);
-    },
+    //   return wrap("rollingQuantile",
+    //     val.quantile,
+    //     val.interpolation ?? "nearest",
+    //     options
+    //   );
+    // },
+    // rollingSkew(windowSize, bias?) {
+    //   return this
+    //     .toFrame()
+    //     .select(col(this.name).rollingSkew(windowSize, bias))
+    //     .getColumn(this.name);
+    // },
     floor() {
       return wrap("floor");
     },

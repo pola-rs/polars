@@ -547,7 +547,7 @@ export const _Expr = (_expr: any): Expr => {
       throw new Error("window size is required");
     }
     const callOpts = {
-      windowSize: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
+      windowSize: opts?.["windowSize"]?.toString() ?? (typeof opts === "number"? opts.toString() : null),
       weights: opts?.["weights"] ?? weights,
       minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
       center : opts?.["center"] ?? center ?? false,
@@ -885,20 +885,20 @@ export const _Expr = (_expr: any): Expr => {
           val,
           interpolation ?? "nearest",
           {
-            windowSize,
+            windowSize: windowSize.toString(),
             weights,
             minPeriods,
             center
           });
       }
-      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
+      windowSize = val?.["windowSize"].toString() ?? (typeof val === "number" ? val.toString() : null);
       if(windowSize === null) {
         throw new Error("window size is required");
       }
       const options = {
-        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
+        windowSize: val?.["windowSize"].toString() ?? (typeof val === "number"? val.toString() : null),
         weights: val?.["weights"] ?? weights,
-        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
+        minPeriods: val?.["minPeriods"] ?? minPeriods ?? Number(windowSize),
         center : val?.["center"] ?? center ?? false,
       };
 
@@ -913,7 +913,7 @@ export const _Expr = (_expr: any): Expr => {
         return wrap("rollingSkew", val, bias);
       }
 
-      return wrap("rollingSkew", val.windowSize, val.bias ?? bias);
+      return wrap("rollingSkew", val.windowSize.toString(), val.bias ?? bias);
     },
     round(decimals) {
       return _Expr(_expr.round(decimals?.decimals ?? decimals));
