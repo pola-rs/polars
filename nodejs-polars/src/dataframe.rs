@@ -424,7 +424,7 @@ impl JsDataFrame {
                 .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
             _ => {
                 return Err(napi::Error::from_reason(
-                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                    "unexpected format. \n supported options are 'json', 'bincode'".to_owned(),
                 ))
             }
         };
@@ -440,7 +440,7 @@ impl JsDataFrame {
                 .map_err(|err| napi::Error::from_reason(format!("{:?}", err)))?,
             _ => {
                 return Err(napi::Error::from_reason(
-                    "unexpected format. \n supportd options are 'json', 'bincode'".to_owned(),
+                    "unexpected format. \n supported options are 'json', 'bincode'".to_owned(),
                 ))
             }
         };
