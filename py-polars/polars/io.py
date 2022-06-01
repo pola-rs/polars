@@ -769,7 +769,7 @@ def read_ipc(
     file: Union[str, BinaryIO, BytesIO, Path, bytes],
     columns: Optional[Union[List[int], List[str]]] = None,
     n_rows: Optional[int] = None,
-    use_pyarrow: bool = _PYARROW_AVAILABLE,
+    use_pyarrow: bool = False,
     memory_map: bool = True,
     storage_options: Optional[Dict] = None,
     row_count_name: Optional[str] = None,

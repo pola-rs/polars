@@ -95,6 +95,33 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
+    fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        self.0
+            .agg_sum(groups)
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
+    fn agg_std(&self, groups: &GroupsProxy) -> Series {
+        self.0
+            .agg_std(groups)
+            // cast f64 back to physical type
+            .cast(&DataType::Int64)
+            .unwrap()
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
+    fn agg_var(&self, groups: &GroupsProxy) -> Series {
+        self.0
+            .agg_var(groups)
+            // cast f64 back to physical type
+            .cast(&DataType::Int64)
+            .unwrap()
+            .into_duration(self.0.time_unit())
+            .into_series()
+    }
+
     fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
@@ -111,6 +138,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     ) -> Series {
         self.0
             .agg_quantile(groups, quantile, interpol)
+            // cast f64 back to physical type
+            .cast(&DataType::Int64)
+            .unwrap()
             .into_duration(self.0.time_unit())
             .into_series()
     }
@@ -118,6 +148,9 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     fn agg_median(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_median(groups)
+            // cast f64 back to physical type
+            .cast(&DataType::Int64)
+            .unwrap()
             .into_duration(self.0.time_unit())
             .into_series()
     }

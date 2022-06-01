@@ -894,3 +894,47 @@ def test_timedelta_from() -> None:
         },
     ]
     assert pl.DataFrame(as_dict).frame_equal(pl.DataFrame(as_rows))
+
+
+def test_duration_aggregations() -> None:
+    df = pl.DataFrame(
+        {
+            "group": ["A", "B", "A", "B"],
+            "start": [
+                datetime(2022, 1, 1),
+                datetime(2022, 1, 2),
+                datetime(2022, 1, 3),
+                datetime(2022, 1, 4),
+            ],
+            "end": [
+                datetime(2022, 1, 2),
+                datetime(2022, 1, 4),
+                datetime(2022, 1, 6),
+                datetime(2022, 1, 6),
+            ],
+        }
+    )
+    df = df.with_column((pl.col("end") - pl.col("start")).alias("duration"))
+    assert df.groupby("group", maintain_order=True).agg(
+        [
+            pl.col("duration").mean().alias("mean"),
+            pl.col("duration").sum().alias("sum"),
+            pl.col("duration").min().alias("min"),
+            pl.col("duration").max().alias("max"),
+            pl.col("duration").quantile(0.1).alias("quantile"),
+            pl.col("duration").median().alias("median"),
+            pl.col("duration").list().alias("list"),
+        ]
+    ).to_dict(False) == {
+        "group": ["A", "B"],
+        "mean": [timedelta(days=2), timedelta(days=2)],
+        "sum": [timedelta(days=4), timedelta(days=4)],
+        "min": [timedelta(days=1), timedelta(days=2)],
+        "max": [timedelta(days=3), timedelta(days=2)],
+        "quantile": [timedelta(days=1), timedelta(days=2)],
+        "median": [timedelta(days=2), timedelta(days=2)],
+        "list": [
+            [timedelta(days=1), timedelta(days=3)],
+            [timedelta(days=2), timedelta(days=2)],
+        ],
+    }
