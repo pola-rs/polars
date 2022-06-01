@@ -142,7 +142,7 @@ impl WhenThenThen {
         //         )                                            _|      _|
         //
         // by iterating lifo we first create
-        // `inner` and then assighn that to `otherwise`,
+        // `inner` and then assign that to `otherwise`,
         // which will be used in the next layer `outer`
         //
 
@@ -479,7 +479,7 @@ impl Expr {
         .with_fmt("arg_unique")
     }
 
-    /// Get the index value that has the minumum value
+    /// Get the index value that has the minimum value
     pub fn arg_min(self) -> Self {
         let options = FunctionOptions {
             collect_groups: ApplyOptions::ApplyGroups,
@@ -907,7 +907,7 @@ impl Expr {
         .with_fmt("cummax")
     }
 
-    /// Get the product aggreagtion of an expresion
+    /// Get the product aggregation of an expression
     #[cfg_attr(docsrs, doc(cfg(feature = "product")))]
     pub fn product(self) -> Self {
         self.apply(
@@ -958,7 +958,7 @@ impl Expr {
             .with_fmt("floor")
     }
 
-    /// Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+    /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     #[cfg(feature = "round_series")]
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
     pub fn ceil(self) -> Self {

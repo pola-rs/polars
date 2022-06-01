@@ -436,7 +436,7 @@ fn decompress_impl<R: Read>(
     let chunk_size = 4096;
     Some(match n_rows {
         None => {
-            // decompression will likely be an order of maginitude larger
+            // decompression will likely be an order of magnitude larger
             let mut out = Vec::with_capacity(bytes.len() * 10);
             decoder.read_to_end(&mut out).ok()?;
             out
@@ -458,7 +458,7 @@ fn decompress_impl<R: Read>(
                     if read == 0 {
                         break;
                     }
-                    // now that we have enough, we compute the number of fields (also takes enmbedding into account)
+                    // now that we have enough, we compute the number of fields (also takes embedding into account)
                     expected_fields = SplitFields::new(&out, delimiter, quote_char)
                         .into_iter()
                         .count();

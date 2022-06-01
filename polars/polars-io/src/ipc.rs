@@ -293,7 +293,7 @@ impl IpcWriterOption {
         self
     }
 
-    /// Set the extention. Defaults to ".ipc".
+    /// Set the extension. Defaults to ".ipc".
     pub fn with_extension(mut self, extension: PathBuf) -> Self {
         self.extension = extension;
         self

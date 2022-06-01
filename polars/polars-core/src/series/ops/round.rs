@@ -43,7 +43,7 @@ impl Series {
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    /// Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+    /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     pub fn ceil(&self) -> Result<Self> {
         if let Ok(ca) = self.f32() {
             let s = ca.apply(|val| val.ceil()).into_series();
@@ -59,7 +59,7 @@ impl Series {
     }
 
     #[cfg_attr(docsrs, doc(cfg(feature = "round_series")))]
-    /// Ceil underlying floating point array to the heighest integers smaller or equal to the float value.
+    /// Ceil underlying floating point array to the highest integers smaller or equal to the float value.
     pub fn clip(&self, min: f64, max: f64) -> Result<Self> {
         if let Ok(ca) = self.f32() {
             let min = min as f32;
