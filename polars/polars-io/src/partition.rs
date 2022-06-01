@@ -65,8 +65,8 @@ where
     }
 
     /// Write the parquet file in parallel (default).
-    pub fn with_parallel(mut self, pararell: bool) -> Self {
-        self.parallel = pararell;
+    pub fn with_parallel(mut self, parallel: bool) -> Self {
+        self.parallel = parallel;
         self
     }
 
