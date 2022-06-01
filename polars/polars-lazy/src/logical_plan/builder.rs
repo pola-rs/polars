@@ -53,8 +53,8 @@ macro_rules! try_delayed {
 }
 
 impl LogicalPlanBuilder {
-    pub fn anonymous_scan(function: Arc<dyn AnonymousScan>, options: AnonymousScanOptions) -> Self {
-        LogicalPlan::AnonymousScan { options, function }.into()
+    pub fn anonymous_scan(function: Arc<dyn AnonymousScan>, options: AnonymousScanOptions) -> Result<Self> {
+        Ok(LogicalPlan::AnonymousScan { options, function }.into())
     }
 
     #[cfg(feature = "parquet")]

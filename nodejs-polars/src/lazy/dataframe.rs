@@ -655,6 +655,33 @@ pub fn scan_ipc(path: String, options: ScanIPCOptions) -> napi::Result<JsLazyFra
     Ok(lf.into())
 }
 
+#[derive(Clone)]
+#[napi(object)]
+pub struct ScanJsonOptions {
+    pub infer_schema_length: Option<u32>,
+    pub batch_size: Option<u32>,
+    pub format: Option<String>,
+}
+
+#[napi]
+pub fn scan_json(path: String, options: ScanJsonOptions) -> napi::Result<JsLazyFrame> {
+    let path = path.clone();
+
+    let f = move |_| {
+        let path = path.clone();
+        let options = options.clone();
+        let infer_schema_length = options.infer_schema_length.unwrap_or(100) as usize;
+        let batch_size = options.batch_size.unwrap_or(10000) as usize;
+
+        JsonLineReader::from_path(path)
+            .expect("unable to read file")
+            .infer_schema_len(Some(infer_schema_length))
+            .finish()
+    };
+    let lf = LazyFrame::anonymous_scan(f, None).map_err(JsPolarsErr::from)?;
+    Ok(lf.into())
+}
+
 pub struct AsyncFetch((LazyFrame, usize));
 
 impl Task for AsyncFetch {
