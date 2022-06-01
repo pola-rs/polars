@@ -809,7 +809,7 @@ impl Series {
             Float64 => a.f64().unwrap().abs().into_series(),
             dt => {
                 return Err(PolarsError::InvalidOperation(
-                    format!("abs not supportedd for series of type {:?}", dt).into(),
+                    format!("abs not supported for series of type {:?}", dt).into(),
                 ));
             }
         };
