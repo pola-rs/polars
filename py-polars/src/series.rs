@@ -315,7 +315,22 @@ impl PySeries {
     }
 
     pub fn get_fmt(&self, index: usize) -> String {
-        format!("{}", self.series.get(index))
+        let val = format!("{}", self.series.get(index));
+        if let DataType::Utf8 | DataType::Categorical(_) = self.series.dtype() {
+            let v_trunc = &val[..val
+                .char_indices()
+                .take(15)
+                .last()
+                .map(|(i, c)| i + c.len_utf8())
+                .unwrap_or(0)];
+            if val == v_trunc {
+                val
+            } else {
+                format!("{}...", v_trunc)
+            }
+        } else {
+            val
+        }
     }
 
     pub fn rechunk(&mut self, in_place: bool) -> Option<Self> {

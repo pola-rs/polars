@@ -312,16 +312,21 @@ impl Series {
     #[doc(hidden)]
     pub fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         use DataType::*;
-        if self.dtype().is_numeric() {
-            match self.dtype() {
-                Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
-                Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
-                _ => {
-                    apply_method_physical_integer!(self, agg_mean, groups)
-                }
+
+        match self.dtype() {
+            Float32 => SeriesWrap(self.f32().unwrap().clone()).agg_mean(groups),
+            Float64 => SeriesWrap(self.f64().unwrap().clone()).agg_mean(groups),
+            dt if dt.is_numeric() => {
+                apply_method_physical_integer!(self, agg_mean, groups)
             }
-        } else {
-            Series::full_null("", groups.len(), self.dtype())
+            dt @ Duration(_) => {
+                let s = self.to_physical_repr();
+                // agg_mean returns Float64
+                let out = s.agg_mean(groups);
+                // cast back to Int64 and then to logical duration type
+                out.cast(&Int64).unwrap().cast(dt).unwrap()
+            }
+            _ => Series::full_null("", groups.len(), self.dtype()),
         }
     }
 
