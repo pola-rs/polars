@@ -189,7 +189,7 @@ impl PhysicalExpr for ApplyExpr {
                         })
                         .collect::<Vec<_>>();
 
-                    let input_len = s.iter().map(|s| s.len()).max().unwrap();
+                    let input_len = s[0].len();
                     let s = self.function.call_udf(&mut s)?;
                     check_map_output_len(input_len, s.len())?;
 
