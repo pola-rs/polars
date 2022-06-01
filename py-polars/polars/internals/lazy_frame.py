@@ -314,6 +314,11 @@ class LazyFrame(Generic[DF]):
         self._ldf = PyLazyFrame.scan_from_python_function(list(schema), scan_fn)
         return self
 
+    def __getitem__(self, item: Union[int, range, slice]) -> None:
+        raise TypeError(
+            "'LazyFrame' object is not subscriptable. Use 'select()' or 'filter()' instead."
+        )
+
     def pipe(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """
         Apply a function on Self.
