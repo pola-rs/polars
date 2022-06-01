@@ -24,6 +24,7 @@ serde_json = { version = "1" }
 
 [dependencies.polars]
 features = [
+  "rolling_window",
   "json",
   "dynamic_groupby",
   "zip_with",

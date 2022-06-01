@@ -1251,8 +1251,8 @@ impl JsExpr {
         self.inner.clone().log(base).into()
     }
     #[napi]
-    pub fn entropy(&self, base: f64) -> JsExpr {
-        self.inner.clone().entropy(base).into()
+    pub fn entropy(&self, base: f64, normalize: bool) -> JsExpr {
+        self.inner.clone().entropy(base, normalize).into()
     }
     #[napi]
     pub fn add(&self, rhs: &JsExpr) -> JsExpr {

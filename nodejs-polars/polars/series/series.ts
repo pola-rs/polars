@@ -1026,20 +1026,13 @@ export function _Series(_s: any): Series {
     return pli[internalMethod](_s, ...args);
   };
 
-  const rolling =  (method: string, opts, weights?, minPeriods?, center?)  => {
-    const windowSize = opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null);
-    if (windowSize === null) {
-      throw new Error("window size is required");
-    }
-    const callOpts = {
-      windowSize: opts?.["windowSize"] ?? (typeof opts === "number" ? opts : null),
-      weights: opts?.["weights"] ?? weights,
-      minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
-      center: opts?.["center"] ?? center ?? false,
-    };
-
-    return _Series(_s[method](callOpts));
+  const expr_op =  (method: string, ...args)  => {
+    return _Series(_s)
+      .toFrame()
+      .select(col(_s.name)[method](...args))
+      .getColumn(_s.name);
   };
+
   const series = {
     _s,
     [inspect]() {
@@ -1149,10 +1142,7 @@ export function _Series(_s: any): Series {
       return _Series(s);
     },
     cumCount(reverse?) {
-      return this
-        .toFrame()
-        .select(col(this.name).cumCount(reverse))
-        .getColumn(this.name);
+      return expr_op("cumCount", reverse);
     },
     cumSum(reverse?) {
       return _Series(_s.cumsum(reverse));
@@ -1473,62 +1463,34 @@ export function _Series(_s: any): Series {
         return this.alias(obj?.name ?? obj);
       }
     },
-    rollingMax(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMax", windowSize, weights, minPeriods, center);
-    },
-    rollingMean(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMean", windowSize, weights, minPeriods, center);
-    },
-    rollingMin(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMin", windowSize, weights, minPeriods, center);
-    },
-    rollingSum(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingSum", windowSize, weights, minPeriods, center);
-    },
-    rollingStd(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingStd", windowSize, weights, minPeriods, center);
-    },
-    rollingVar(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingVar", windowSize, weights, minPeriods, center);
-    },
-    rollingMedian(windowSize, weights?, minPeriods?, center? ) {
-      return rolling("rollingMedian", windowSize, weights, minPeriods, center);
-    },
-    rollingQuantile(val, interpolation = "nearest", windowSize?, weights?, minPeriods?, center?) {
-      if(typeof val === "number") {
 
-        return wrap("rollingQuantile",
-          val,
-          interpolation ?? "nearest",
-          {
-            windowSize,
-            weights,
-            minPeriods,
-            center
-          });
-      }
-      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
-      if(windowSize === null) {
-        throw new Error("window size is required");
-      }
-      const options = {
-        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
-        weights: val?.["weights"] ?? weights,
-        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
-        center : val?.["center"] ?? center ?? false,
-      };
 
-      return wrap("rollingQuantile",
-        val.quantile,
-        val.interpolation ?? "nearest",
-        options
-      );
+    rollingMax(...args) {
+      return expr_op("rollingMax", ...args);
     },
-    rollingSkew(windowSize, bias?) {
-      return this
-        .toFrame()
-        .select(col(this.name).rollingSkew(windowSize, bias))
-        .getColumn(this.name);
+    rollingMean(...args) {
+      return expr_op("rollingMean", ...args);
+    },
+    rollingMin(...args) {
+      return expr_op("rollingMin", ...args);
+    },
+    rollingSum(...args) {
+      return expr_op("rollingSum", ...args);
+    },
+    rollingStd(...args) {
+      return expr_op("rollingStd", ...args);
+    },
+    rollingVar(...args) {
+      return expr_op("rollingVar", ...args);
+    },
+    rollingMedian(...args) {
+      return expr_op("rollingMedian", ...args);
+    },
+    rollingQuantile(...args) {
+      return expr_op("rollingQuantile", ...args);
+    },
+    rollingSkew(...args) {
+      return expr_op("rollingSkew", ...args);
     },
     floor() {
       return wrap("floor");
@@ -1548,13 +1510,8 @@ export function _Series(_s: any): Series {
         throw new InvalidOperationError("round", this.dtype);
       }
     },
-    clip(arg, max?) {
-      return this
-        .toFrame()
-        .select(
-          col(this.name).clip(arg, max)
-        )
-        .getColumn(this.name);
+    clip(...args) {
+      return expr_op("clip", ...args);
     },
     setAtIdx(indices, value) {
       indices = Series.isSeries(indices) ? indices.cast(DataType.UInt32).toArray() : indices;
@@ -1605,13 +1562,8 @@ export function _Series(_s: any): Series {
     shift(periods=1) {
       return wrap("shift", periods);
     },
-    shiftAndFill(periods, fillValue?) {
-      return this
-        .toFrame()
-        .select(
-          col(this.name).shiftAndFill(periods, fillValue)
-        )
-        .getColumn(this.name);
+    shiftAndFill(...args) {
+      return expr_op("shiftAndFill", ...args);
     },
     shrinkToFit(inPlace?: boolean) {
       if(inPlace) {

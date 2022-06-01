@@ -15,7 +15,7 @@ macro_rules! typed_to_chunked {
 macro_rules! typed_option_or_null {
     ($name:expr, $arr:expr, $type:ty, $dtype:expr, $pl_type:ty) => {{
         let len = $arr.len();
-        let mut builder = ListPrimitiveChunkedBuilder::<$type>::new(
+        let mut builder = ListPrimitiveChunkedBuilder::<$pl_type>::new(
             $name,
             len as usize,
             (len as usize) * 5,
@@ -55,7 +55,7 @@ macro_rules! typed_option_or_null {
 macro_rules! build_list_with_downcast {
     ($name:expr, $arr:expr, $type:ty, $dtype:expr, $pl_type:ty) => {{
         let len = $arr.len();
-        let mut builder = ListPrimitiveChunkedBuilder::<$type>::new(
+        let mut builder = ListPrimitiveChunkedBuilder::<$pl_type>::new(
             $name,
             len as usize,
             (len as usize) * 5,

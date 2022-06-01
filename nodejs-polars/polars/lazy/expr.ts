@@ -547,7 +547,7 @@ export const _Expr = (_expr: any): Expr => {
       throw new Error("window size is required");
     }
     const callOpts = {
-      windowSize: opts?.["windowSize"] ?? (typeof opts === "number"? opts : null),
+      windowSize: `${windowSize}i`,
       weights: opts?.["weights"] ?? weights,
       minPeriods: opts?.["minPeriods"] ?? minPeriods ?? windowSize,
       center : opts?.["center"] ?? center ?? false,
@@ -885,7 +885,7 @@ export const _Expr = (_expr: any): Expr => {
           val,
           interpolation ?? "nearest",
           {
-            windowSize,
+            windowSize: `${windowSize}i`,
             weights,
             minPeriods,
             center
@@ -896,7 +896,7 @@ export const _Expr = (_expr: any): Expr => {
         throw new Error("window size is required");
       }
       const options = {
-        windowSize: val?.["windowSize"] ?? (typeof val === "number"? val : null),
+        windowSize: `${windowSize}i`,
         weights: val?.["weights"] ?? weights,
         minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
         center : val?.["center"] ?? center ?? false,
