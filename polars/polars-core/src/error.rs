@@ -52,4 +52,4 @@ impl From<regex::Error> for PolarsError {
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
-pub use arrow::error::ArrowError;
+pub use arrow::error::Error as ArrowError;

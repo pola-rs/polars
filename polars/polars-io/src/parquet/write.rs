@@ -1,6 +1,6 @@
 use super::ArrowResult;
 use arrow::datatypes::PhysicalType;
-use arrow::error::ArrowError;
+use arrow::error::Error as ArrowError;
 use arrow::io::parquet::write::{self, FileWriter, *};
 use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;

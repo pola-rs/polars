@@ -1,6 +1,6 @@
 use arrow::array::growable::make_growable;
 use arrow::array::{Array, ArrayRef};
-use arrow::error::{ArrowError, Result};
+use arrow::error::{Error as ArrowError, Result};
 use std::sync::Arc;
 
 /// Concatenate multiple [Array] of the same type into a single [`Array`].

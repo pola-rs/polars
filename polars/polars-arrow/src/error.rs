@@ -6,7 +6,7 @@ type ErrString = Cow<'static, str>;
 #[derive(Debug, ThisError)]
 pub enum PolarsError {
     #[error(transparent)]
-    ArrowError(#[from] arrow::error::ArrowError),
+    ArrowError(#[from] arrow::error::Error),
     #[error("{0}")]
     ComputeError(ErrString),
     #[error("Out of bounds: {0}")]

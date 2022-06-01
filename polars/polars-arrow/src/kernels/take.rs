@@ -6,6 +6,7 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 use std::sync::Arc;
+use crate::trusted_len::{PushUnchecked, TrustedLen};
 
 /// # Safety
 /// Does not do bounds checks
@@ -99,7 +100,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
         *array_values.get_unchecked(*idx as usize)
     });
 
-    let values = Buffer::from_trusted_len_iter(iter);
+    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
     let validity = indices.validity().cloned();
     Arc::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
@@ -116,7 +117,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
 #[inline]
 pub unsafe fn take_no_null_primitive_iter_unchecked<
     T: NativeType,
-    I: IntoIterator<Item = usize>,
+    I: TrustedLen<Item = usize>,
 >(
     arr: &PrimitiveArray<T>,
     indices: I,
@@ -129,7 +130,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
         *array_values.get_unchecked(idx)
     });
 
-    let values = Buffer::from_trusted_len_iter_unchecked(iter);
+    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
     Arc::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))
 }
 
