@@ -891,14 +891,14 @@ export const _Expr = (_expr: any): Expr => {
             center
           });
       }
-      windowSize = val?.["windowSize"].toString() ?? (typeof val === "number" ? val.toString() : null);
+      windowSize = val?.["windowSize"] ?? (typeof val === "number" ? val : null);
       if(windowSize === null) {
         throw new Error("window size is required");
       }
       const options = {
         windowSize: `${windowSize}i`,
         weights: val?.["weights"] ?? weights,
-        minPeriods: val?.["minPeriods"] ?? minPeriods ?? Number(windowSize),
+        minPeriods: val?.["minPeriods"] ?? minPeriods ?? windowSize,
         center : val?.["center"] ?? center ?? false,
       };
 
@@ -913,7 +913,7 @@ export const _Expr = (_expr: any): Expr => {
         return wrap("rollingSkew", val, bias);
       }
 
-      return wrap("rollingSkew", val.windowSize.toString(), val.bias ?? bias);
+      return wrap("rollingSkew", val.windowSize, val.bias ?? bias);
     },
     round(decimals) {
       return _Expr(_expr.round(decimals?.decimals ?? decimals));

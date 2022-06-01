@@ -14,7 +14,7 @@ import {col} from "../lazy/functions";
 const inspect = Symbol.for("nodejs.util.inspect.custom");
 export interface Series extends
   ArrayLike<any>,
-  // Rolling<Series>,
+  Rolling<Series>,
   Arithmetic<Series>,
   Comparison<Series>,
   Cumulative<Series>,
