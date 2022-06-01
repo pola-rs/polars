@@ -1,95 +1,96 @@
 use crate::index::IdxSize;
-use arrow::types::NativeType;
 use std::fmt::Debug;
 
 type LeftJoinIds = (JoinIds, JoinOptIds);
 type JoinOptIds = Vec<Option<IdxSize>>;
 type JoinIds = Vec<IdxSize>;
 
-
-fn left<T>(lhs: &[T], rhs: &[T]) -> LeftJoinIds
-where T: NativeType + PartialOrd + Debug
-{
-    if lhs.is_empty() {
-        dbg!("return");
+pub(super) fn left<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> LeftJoinIds {
+    if left.is_empty() {
         return (vec![], vec![]);
     }
-    if rhs.is_empty() {
-        dbg!("return");
-        return ((0..lhs.len() as IdxSize).collect(), vec![None; lhs.len()]);
+    if right.is_empty() {
+        return ((0..left.len() as IdxSize).collect(), vec![None; left.len()]);
     }
-    let first_left = lhs[0];
-    let first_right = rhs[0];
-
     // * 1.5 because there can be duplicates
-    let cap = (lhs.len() as f32 * 1.5) as usize;
+    let cap = (left.len() as f32 * 1.5) as usize;
     let mut out_rhs = Vec::with_capacity(cap);
     let mut out_lhs = Vec::with_capacity(cap);
 
-    dbg!(first_left, first_right);
-    if first_left <= first_right {
+    let mut left_idx = 0 as IdxSize;
+    let mut right_idx = 0 as IdxSize;
+    // left array could start lower than right;
+    // left: [-1, 0, 1, 2],
+    // right: [1, 2, 3]
+    // first values should be None, until left has catched up
+    let mut left_catched_up = false;
 
-        let mut last_right_offset = 0;
-        for (lhs_i, lhs_val) in lhs.iter().enumerate() {
-
-            // look for the value in the rhs
-            let mut rhs_offset = last_right_offset;
-            loop {
-                dbg!(lhs_val, rhs.get(rhs_offset));
-                match rhs.get(rhs_offset) {
-                    Some(rhs_val) => {
-                        if lhs_val < rhs_val {
-                            out_lhs.push(lhs_i as IdxSize);
+    for &val_l in left {
+        loop {
+            match right.get(right_idx as usize) {
+                Some(&val_r) => {
+                    // we fill nulls until left value is larger than right
+                    if !left_catched_up {
+                        if val_l < val_r {
                             out_rhs.push(None);
-                            dbg!("here");
-                            // we break and must first increment left more
+                            out_lhs.push(left_idx);
                             break;
+                        } else {
+                            left_catched_up = true;
                         }
-                        // we found a match, we continue looping as there may be more
-                        if lhs_val == rhs_val {
-                            out_lhs.push(lhs_i as IdxSize);
-                            out_rhs.push(Some(rhs_offset as IdxSize));
-                            rhs_offset += 1;
-                        }
-                        // rhs is smaller than lhs
-                        // we must increment
-                        else {
+                    }
 
+                    // matching join key
+                    if val_l == val_r {
+                        out_lhs.push(left_idx);
+                        out_rhs.push(Some(right_idx));
+                        let current_idx = right_idx;
 
-                            // check if the next lhs value is the same as the current one
-                            // if so we can continue from the same `last_right_offset`
-                            // if not, we can increment the `last_right_offset` to `current_i`
-                            match lhs.get(lhs_i + 1) {
-                                Some(peek_lhs_val) => {
-                                    if peek_lhs_val != lhs_val {
-                                        last_right_offset = rhs_offset;
-                                    }
+                        loop {
+                            right_idx += 1;
+                            match right.get(right_idx as usize) {
+                                // rhs depleted
+                                None => {
+                                    // reset right index because the next lhs value can be the same
+                                    right_idx = current_idx;
                                     break;
                                 }
-                                // we depleted lhs, we can return
-                                None => {
-                                    dbg!("return");
-                                    return (out_lhs, out_rhs)
+                                Some(&val_r) => {
+                                    if val_l == val_r {
+                                        out_lhs.push(left_idx);
+                                        out_rhs.push(Some(right_idx));
+                                    } else {
+                                        // reset right index because the next lhs value can be the same
+                                        right_idx = current_idx;
+                                        break;
+                                    }
                                 }
                             }
-
                         }
+                        break;
                     }
-                    // we depleted rhs, we can return
-                    None => {
-                        out_lhs.extend((lhs_i as IdxSize)..(lhs.len() as IdxSize));
-                        out_rhs.extend(std::iter::repeat(None).take(lhs.len() - lhs_i));
-                        return (out_lhs, out_rhs)
-                    }
-                }
 
+                    // right is larger than left.
+                    if val_r > val_l {
+                        out_lhs.push(left_idx);
+                        out_rhs.push(None);
+                        break;
+                    }
+                    // continue looping the right side
+                    right_idx += 1;
+                }
+                // we depleted the right array
+                None => {
+                    out_lhs.push(left_idx);
+                    out_rhs.push(None);
+                    break;
+                }
             }
         }
+        left_idx += 1;
     }
-    out_rhs;
-    todo!()
+    (out_lhs, out_rhs)
 }
-
 
 #[cfg(test)]
 mod test {
@@ -102,8 +103,65 @@ mod test {
 
         let (l_idx, r_idx) = left(lhs, rhs);
 
-        dbg!(l_idx, r_idx);
+        assert_eq!(&l_idx, &[0, 1, 1, 2, 2, 3, 4, 5]);
+        assert_eq!(
+            &r_idx,
+            &[
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(1),
+                Some(2),
+                None,
+                Some(3),
+                None
+            ]
+        );
 
+        let lhs = &[0, 0, 1, 3, 4, 5, 6, 6, 6, 7];
+        let rhs = &[0, 0, 1, 3, 4, 6, 6];
+
+        let (l_idx, r_idx) = left(lhs, rhs);
+        assert_eq!(&l_idx, &[0, 0, 1, 1, 2, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9]);
+        assert_eq!(
+            &r_idx,
+            &[
+                Some(0),
+                Some(1),
+                Some(0),
+                Some(1),
+                Some(2),
+                Some(3),
+                Some(4),
+                None,
+                Some(5),
+                Some(6),
+                Some(5),
+                Some(6),
+                Some(5),
+                Some(6),
+                None
+            ]
+        );
+
+        let lhs = &[1, 3, 4, 5, 5, 5, 5, 6, 7, 7];
+        let rhs = &[2, 4, 5, 6, 7, 8, 10, 11, 11, 12, 12, 12, 12, 13];
+        let (l_idx, r_idx) = left(lhs, rhs);
+        assert_eq!(&l_idx, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(
+            &r_idx,
+            &[
+                None,
+                None,
+                Some(1),
+                Some(2),
+                Some(2),
+                Some(2),
+                Some(2),
+                Some(3),
+                Some(4),
+                Some(4)
+            ]
+        );
     }
-
 }
