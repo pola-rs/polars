@@ -336,6 +336,46 @@ describe("series", () => {
   ${numSeries()}  | ${"rename"}       | ${[{name: "new name"}]}
   ${numSeries()}  | ${"rename"}       | ${[{name: "new name", inPlace: true}]}
   ${numSeries()}  | ${"rename"}       | ${[{name: "new name"}]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[{windowSize: 1}]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[{windowSize: 1, weights: [.33]}]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[{windowSize: 1, weights: [.11], minPeriods: 1}]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[{windowSize: 1, weights: [.44], minPeriods: 1, center: false}]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[1]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[1, [.11]]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[1, [.11], 1]}
+  ${numSeries()}  | ${"rollingMax"}   | ${[1, [.23], 1, true]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[{windowSize: 1}]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[{windowSize: 1, weights: [.33]}]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[{windowSize: 1, weights: [.11], minPeriods: 1}]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[{windowSize: 1, weights: [.44], minPeriods: 1, center: false}]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[1]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[1, [.11]]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[1, [.11], 1]}
+  ${numSeries()}  | ${"rollingMean"}  | ${[1, [.23], 1, true]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[{windowSize: 1}]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[{windowSize: 1, weights: [.33]}]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[{windowSize: 1, weights: [.11], minPeriods: 1}]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[{windowSize: 1, weights: [.44], minPeriods: 1, center: false}]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[1]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[1, [.11]]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[1, [.11], 1]}
+  ${numSeries()}  | ${"rollingMin"}   | ${[1, [.23], 1, true]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[{windowSize: 1}]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[{windowSize: 1, weights: [.33]}]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[{windowSize: 1, weights: [.11], minPeriods: 1}]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[{windowSize: 1, weights: [.44], minPeriods: 1, center: false}]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[1]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[1, [.11]]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[1, [.11], 1]}
+  ${numSeries()}  | ${"rollingSum"}   | ${[1, [.23], 1, true]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[{windowSize: 1}]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[{windowSize: 1, weights: [.33]}]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[{windowSize: 1, weights: [.11], minPeriods: 1}]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[{windowSize: 1, weights: [.44], minPeriods: 1, center: false}]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[1]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[1, [.11]]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[1, [.11], 1]}
+  ${numSeries()}  | ${"rollingVar"}   | ${[1, [.23], 1, true]}
   ${fltSeries()}  | ${"round"}        | ${[1]}
   ${numSeries()}  | ${"sample"}       | ${[]}
   ${numSeries()}  | ${"sample"}       | ${[1, null, true]}
@@ -462,6 +502,11 @@ describe("series", () => {
   ${"quantile"}      | ${pl.Series([1, 2, 3]).quantile(0.5)}                | ${2}
   ${"rank"}          | ${pl.Series([1, 2, 3, 2, 2, 3, 0]).rank("dense")}    | ${pl.Series("", [2, 3, 4, 3, 3, 4, 1], pl.UInt32)}
   ${"rename"}        | ${pl.Series([1, 3, 0]).rename("b")}                  | ${pl.Series("b", [1, 3, 0])}
+  ${"rollingMax"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingMax(2)}          | ${pl.Series("", [null, 2, 3, 3, 2], pl.Float64)}
+  ${"rollingMin"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingMin(2)}          | ${pl.Series("", [null, 1, 2, 2, 1], pl.Float64)}
+  ${"rollingSum"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingSum(2)}          | ${pl.Series("", [null, 3, 5, 5, 3], pl.Float64)}
+  ${"rollingMean"}   | ${pl.Series([1, 2, 3, 2, 1]).rollingMean(2)}         | ${pl.Series("", [null, 1.5, 2.5, 2.5, 1.5], pl.Float64)}
+  ${"rollingVar"}    | ${pl.Series([1, 2, 3, 2, 1]).rollingVar(2)[1]}       | ${0.5}
   ${"sample:n"}      | ${pl.Series([1, 2, 3, 4, 5]).sample(2).len()}        | ${2}
   ${"sample:frac"}   | ${pl.Series([1, 2, 3, 4, 5]).sample({frac:.4, seed:0}).len()}| ${2}
   ${"shift"}         | ${pl.Series([1, 2, 3]).shift(1)}                     | ${pl.Series([null, 1, 2])}
@@ -516,6 +561,7 @@ describe("series", () => {
   name | fn | errorType
   ${"isFinite"} | ${pl.Series(["foo"]).isFinite} | ${TypeError}
   ${"isInfinite"} | ${pl.Series(["foo"]).isInfinite} | ${TypeError}
+  ${"rollingMax"} | ${() => pl.Series(["foo"]).rollingMax(null as any)} | ${Error}
   ${"sample"} | ${() => pl.Series(["foo"]).sample(null as any)} | ${Error}
   `("$# $name throws an error ", ({fn, errorType}) => {
     expect(fn).toThrow(errorType);

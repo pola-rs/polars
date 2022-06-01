@@ -1980,7 +1980,7 @@ describe("expr metadata", () => {
   });
 });
 
-describe.skip("rolling", () => {
+describe.only("rolling", () => {
   test("rollingMax", () => {
     const df = pl.Series("rolling", [1, 2, 3, 2, 1]).toFrame();
     const expected = pl.Series("rolling", [null, 2, 3, 3, 2], pl.Float64).toFrame();

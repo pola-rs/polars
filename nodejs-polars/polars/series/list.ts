@@ -18,7 +18,6 @@ export const SeriesListFunctions = (_s): ListFunctions<Series> => {
 
   return {
     argMax() {
-
       return wrap("argMax");
     },
     argMin() {
