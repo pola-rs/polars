@@ -20,6 +20,8 @@ impl IsFloat for u8 {}
 impl IsFloat for u16 {}
 impl IsFloat for u32 {}
 impl IsFloat for u64 {}
+impl IsFloat for &str {}
+impl<T: IsFloat> IsFloat for Option<T> {}
 
 macro_rules! impl_is_float {
     ($tp:ty) => {
