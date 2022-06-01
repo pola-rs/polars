@@ -45,16 +45,6 @@ fn order_reverse_flt<T: Float>(a: &T, b: &T) -> Ordering {
     order_default_flt(b, a)
 }
 
-/// Sort with null values, to reverse, swap the arguments.
-fn sort_with_nulls<T: PartialOrd>(a: &Option<T>, b: &Option<T>) -> Ordering {
-    match (a, b) {
-        (Some(a), Some(b)) => a.partial_cmp(b).unwrap(),
-        (None, Some(_)) => Ordering::Less,
-        (Some(_), None) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
-}
-
 fn sort_branch<T, Fd, Fr>(
     slice: &mut [T],
     reverse: bool,

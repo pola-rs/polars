@@ -601,6 +601,7 @@ impl PartialOrd for AnyValue<'_> {
             (Int64(l), Int64(r)) => l.partial_cmp(r),
             (Float32(l), Float32(r)) => l.partial_cmp(r),
             (Float64(l), Float64(r)) => l.partial_cmp(r),
+            (Utf8(l), Utf8(r)) => l.partial_cmp(r),
             _ => None,
         }
     }
