@@ -405,3 +405,12 @@ fn scan_predicate_on_set_null_values() -> Result<()> {
     assert_eq!(df.shape(), (12, 2));
     Ok(())
 }
+
+
+#[test]
+fn scan_anonymous_fn() -> Result<()> {
+    let df = LazyFrame::anonymous_scan(|_scan_opts: AnonymousScanOptions| {Ok(get_df())}, AnonymousScanOptions::default()).collect()?;
+
+    assert_eq!(df.shape(), (12, 2));
+    Ok(())
+}
