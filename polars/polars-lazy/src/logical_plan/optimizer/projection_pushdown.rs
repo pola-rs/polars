@@ -15,7 +15,6 @@ fn init_set() -> PlHashSet<Arc<str>> {
 }
 
 /// utility function to get names of the columns needed in projection at scan level
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
