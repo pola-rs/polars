@@ -287,3 +287,14 @@ impl Executor for DataFrameExec {
         }
     }
 }
+
+pub(crate) struct AnonymousScanExec {
+    pub(crate) function: Arc<dyn AnonymousScan>,
+    pub(crate) options: AnonymousScanOptions,
+}
+
+impl Executor for AnonymousScanExec {
+    fn execute(&mut self, _state: &ExecutionState) -> Result<DataFrame> {
+        self.function.scan(self.options.clone())
+    }
+}

@@ -163,3 +163,12 @@ pub struct PythonOptions {
     pub(crate) output_schema: Option<SchemaRef>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
 }
+
+
+#[derive(Clone, PartialEq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]
+pub struct AnonymousScanOptions {
+    pub schema: SchemaRef,
+    pub output_schema: Option<SchemaRef>,
+}
