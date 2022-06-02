@@ -71,7 +71,6 @@ impl DefaultPlanner {
         use ALogicalPlan::*;
         let logical_plan = lp_arena.take(root);
         match logical_plan {
-
             #[cfg(feature = "python")]
             PythonScan { options } => Ok(Box::new(executors::PythonScanExec { options })),
             Union { inputs, options } => {
@@ -230,13 +229,14 @@ impl DefaultPlanner {
             AnonymousScan {
                 function,
                 schema,
-                output_schema
-            } => {
-                Ok(Box::new(executors::AnonymousScanExec {
-                    function,
-                    options: AnonymousScanOptions { schema, output_schema }
-                }))
-            }
+                output_schema,
+            } => Ok(Box::new(executors::AnonymousScanExec {
+                function,
+                options: AnonymousScanOptions {
+                    schema,
+                    output_schema,
+                },
+            })),
             Sort {
                 input,
                 by_column,

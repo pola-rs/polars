@@ -338,7 +338,11 @@ impl ProjectionPushDown {
                     .project_local(proj)
                     .build())
             }
-            AnonymousScan { function, schema, mut output_schema } => {
+            AnonymousScan {
+                function,
+                schema,
+                mut output_schema,
+            } => {
                 let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
                 output_schema = if with_columns.is_none() {
                     None
@@ -350,7 +354,11 @@ impl ProjectionPushDown {
                         true,
                     )))
                 };
-                Ok(AnonymousScan { function, schema, output_schema })
+                Ok(AnonymousScan {
+                    function,
+                    schema,
+                    output_schema,
+                })
             }
             DataFrameScan {
                 df,

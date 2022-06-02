@@ -164,7 +164,6 @@ pub struct PythonOptions {
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
 }
 
-
 #[derive(Clone, PartialEq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(bound(deserialize = "'de: 'static")))]

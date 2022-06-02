@@ -52,15 +52,13 @@ macro_rules! try_delayed {
 }
 
 impl LogicalPlanBuilder {
-
     pub fn anonymous_scan(function: Arc<dyn AnonymousScan>, schema: Schema) -> Result<Self> {
-        Ok(LogicalPlan::AnonymousScan { 
-            function, 
-            schema: Arc::new(schema)
-        }.into()
-    )
+        Ok(LogicalPlan::AnonymousScan {
+            function,
+            schema: Arc::new(schema),
+        }
+        .into())
     }
-
 
     #[cfg(feature = "parquet")]
     #[cfg_attr(docsrs, doc(cfg(feature = "parquet")))]

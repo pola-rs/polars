@@ -123,14 +123,9 @@ impl LogicalPlan {
         let (mut branch, id) = id;
         match self {
             AnonymousScan { schema, .. } => {
-                
-                
                 let total_columns = schema.len();
 
-                let current_node = format!(
-                    "ANONYMOUS SCAN;\nπ {}",
-                    total_columns
-                );
+                let current_node = format!("ANONYMOUS SCAN;\nπ {}", total_columns);
                 if id == 0 {
                     self.write_dot(acc_str, prev_node, &current_node, id)?;
                     write!(acc_str, "\"{}\"", current_node)

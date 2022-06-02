@@ -7,7 +7,9 @@ impl LazyFrame {
         F: 'static + Fn(AnonymousScanOptions) -> Result<DataFrame> + Send + Sync,
     {
         let f = Arc::new(function);
-        let lf: LazyFrame = LogicalPlanBuilder::anonymous_scan(f, schema)?.build().into();
+        let lf: LazyFrame = LogicalPlanBuilder::anonymous_scan(f, schema)?
+            .build()
+            .into();
         Ok(lf)
     }
 }

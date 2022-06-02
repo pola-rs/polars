@@ -19,7 +19,6 @@ pub enum ALogicalPlan {
         function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         output_schema: Option<SchemaRef>,
-
     },
     #[cfg(feature = "python")]
     PythonScan {
@@ -381,14 +380,12 @@ impl ALogicalPlan {
             AnonymousScan {
                 function,
                 schema,
-                output_schema
-            } => {
-                AnonymousScan {
-                    function: function.clone(),
-                    schema: schema.clone(),
-                    output_schema: output_schema.clone()
-                }
-            }
+                output_schema,
+            } => AnonymousScan {
+                function: function.clone(),
+                schema: schema.clone(),
+                output_schema: output_schema.clone(),
+            },
             Udf {
                 function,
                 options,
