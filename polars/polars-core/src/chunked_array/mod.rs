@@ -163,7 +163,7 @@ impl<T> ChunkedArray<T> {
     }
 
     /// Set the 'sorted' bit meta info.
-    pub(crate) fn set_sorted(&mut self, reverse: bool) {
+    pub fn set_sorted(&mut self, reverse: bool) {
         if reverse {
             self.bit_settings |= 1 << 1
         } else {

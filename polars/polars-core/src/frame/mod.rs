@@ -327,13 +327,13 @@ impl DataFrame {
     pub fn with_row_count(&self, name: &str, offset: Option<IdxSize>) -> Result<Self> {
         let mut columns = Vec::with_capacity(self.columns.len() + 1);
         let offset = offset.unwrap_or(0);
-        columns.push(
-            IdxCa::from_vec(
-                name,
-                (offset..(self.height() as IdxSize) + offset).collect(),
-            )
-            .into_series(),
+
+        let mut ca = IdxCa::from_vec(
+            name,
+            (offset..(self.height() as IdxSize) + offset).collect(),
         );
+        ca.set_sorted(false);
+        columns.push(ca.into_series());
 
         columns.extend_from_slice(&self.columns);
         DataFrame::new(columns)
@@ -342,14 +342,13 @@ impl DataFrame {
     /// Add a row count in place.
     pub fn with_row_count_mut(&mut self, name: &str, offset: Option<IdxSize>) -> &mut Self {
         let offset = offset.unwrap_or(0);
-        self.columns.insert(
-            0,
-            IdxCa::from_vec(
-                name,
-                (offset..(self.height() as IdxSize) + offset).collect(),
-            )
-            .into_series(),
+        let mut ca = IdxCa::from_vec(
+            name,
+            (offset..(self.height() as IdxSize) + offset).collect(),
         );
+        ca.set_sorted(false);
+
+        self.columns.insert(0, ca.into_series());
         self
     }
 

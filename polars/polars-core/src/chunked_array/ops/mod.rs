@@ -525,12 +525,14 @@ pub trait ChunkSort<T> {
     }
 }
 
+pub type FillNullLimit = Option<IdxSize>;
+
 #[derive(Copy, Clone, Debug)]
 pub enum FillNullStrategy {
     /// previous value in array
-    Backward,
+    Backward(FillNullLimit),
     /// next value in array
-    Forward,
+    Forward(FillNullLimit),
     /// mean value of array
     Mean,
     /// minimal value in array

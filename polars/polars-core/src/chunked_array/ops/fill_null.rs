@@ -6,6 +6,105 @@ use polars_arrow::kernels::set::set_at_nulls;
 use polars_arrow::utils::CustomIterTools;
 use std::ops::Add;
 
+fn fill_forward_limit<T>(ca: &ChunkedArray<T>, limit: IdxSize) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    let mut cnt = 0;
+    let mut previous = None;
+    ca.into_iter()
+        .map(|opt_v| match opt_v {
+            Some(v) => {
+                cnt = 0;
+                previous = Some(v);
+                Some(v)
+            }
+            None => {
+                if cnt < limit {
+                    cnt += 1;
+                    previous
+                } else {
+                    None
+                }
+            }
+        })
+        .collect_trusted()
+}
+
+fn fill_backward_limit<T>(ca: &ChunkedArray<T>, limit: IdxSize) -> ChunkedArray<T>
+where
+    T: PolarsNumericType,
+{
+    let mut cnt = 0;
+    let mut previous = None;
+    ca.into_iter()
+        .rev()
+        .map(|opt_v| match opt_v {
+            Some(v) => {
+                cnt = 0;
+                previous = Some(v);
+                Some(v)
+            }
+            None => {
+                if cnt < limit {
+                    cnt += 1;
+                    previous
+                } else {
+                    None
+                }
+            }
+        })
+        .collect_reversed()
+}
+
+fn fill_backward_limit_bool(ca: &BooleanChunked, limit: IdxSize) -> BooleanChunked {
+    let mut cnt = 0;
+    let mut previous = None;
+    ca.into_iter()
+        .rev()
+        .map(|opt_v| match opt_v {
+            Some(v) => {
+                cnt = 0;
+                previous = Some(v);
+                Some(v)
+            }
+            None => {
+                if cnt < limit {
+                    cnt += 1;
+                    previous
+                } else {
+                    None
+                }
+            }
+        })
+        .collect_reversed()
+}
+
+fn fill_backward_limit_utf8(ca: &Utf8Chunked, limit: IdxSize) -> Utf8Chunked {
+    let mut cnt = 0;
+    let mut previous = None;
+    let out: Utf8Chunked = ca
+        .into_iter()
+        .rev()
+        .map(|opt_v| match opt_v {
+            Some(v) => {
+                cnt = 0;
+                previous = Some(v);
+                Some(v)
+            }
+            None => {
+                if cnt < limit {
+                    cnt += 1;
+                    previous
+                } else {
+                    None
+                }
+            }
+        })
+        .collect_trusted();
+    out.into_iter().rev().collect_trusted()
+}
+
 fn fill_forward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -35,10 +134,47 @@ macro_rules! impl_fill_forward {
     }};
 }
 
+macro_rules! impl_fill_forward_limit {
+    ($ca:ident, $limit:expr) => {{
+        let mut cnt = 0;
+        let mut previous = None;
+        $ca.into_iter()
+            .map(|opt_v| match opt_v {
+                Some(v) => {
+                    cnt = 0;
+                    previous = Some(v);
+                    Some(v)
+                }
+                None => {
+                    if cnt < $limit {
+                        cnt += 1;
+                        previous
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect_trusted()
+    }};
+}
+
 fn fill_backward<T>(ca: &ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
+    ca.into_iter()
+        .rev()
+        .scan(None, |previous, opt_v| match opt_v {
+            Some(value) => {
+                *previous = Some(value);
+                Some(Some(value))
+            }
+            None => Some(*previous),
+        })
+        .collect_reversed()
+}
+
+fn fill_backward_bool(ca: &BooleanChunked) -> BooleanChunked {
     ca.into_iter()
         .rev()
         .scan(None, |previous, opt_v| match opt_v {
@@ -81,8 +217,10 @@ where
             return Ok(self.clone());
         }
         let mut ca = match strategy {
-            FillNullStrategy::Forward => fill_forward(self),
-            FillNullStrategy::Backward => fill_backward(self),
+            FillNullStrategy::Forward(None) => fill_forward(self),
+            FillNullStrategy::Forward(Some(limit)) => fill_forward_limit(self, limit),
+            FillNullStrategy::Backward(None) => fill_backward(self),
+            FillNullStrategy::Backward(Some(limit)) => fill_backward_limit(self, limit),
             FillNullStrategy::Min => {
                 self.fill_null_with_values(self.min().ok_or_else(|| {
                     PolarsError::ComputeError("Could not determine fill value".into())
@@ -126,14 +264,19 @@ impl ChunkFillNull for BooleanChunked {
             return Ok(self.clone());
         }
         match strategy {
-            FillNullStrategy::Forward => {
-                let mut out: Self = impl_fill_forward!(self);
+            FillNullStrategy::Forward(limit) => {
+                let mut out: Self = match limit {
+                    Some(limit) => impl_fill_forward_limit!(self, limit),
+                    None => impl_fill_forward!(self),
+                };
                 out.rename(self.name());
                 Ok(out)
             }
-            FillNullStrategy::Backward => {
-                // TODO: still a double scan. impl collect_reversed for boolean
-                let mut out: Self = impl_fill_backward!(self, BooleanChunked);
+            FillNullStrategy::Backward(limit) => {
+                let mut out: Self = match limit {
+                    None => fill_backward_bool(self),
+                    Some(limit) => fill_backward_limit_bool(self, limit),
+                };
                 out.rename(self.name());
                 Ok(out)
             }
@@ -171,13 +314,19 @@ impl ChunkFillNull for Utf8Chunked {
             return Ok(self.clone());
         }
         match strategy {
-            FillNullStrategy::Forward => {
-                let mut out: Self = impl_fill_forward!(self);
+            FillNullStrategy::Forward(limit) => {
+                let mut out: Self = match limit {
+                    Some(limit) => impl_fill_forward_limit!(self, limit),
+                    None => impl_fill_forward!(self),
+                };
                 out.rename(self.name());
                 Ok(out)
             }
-            FillNullStrategy::Backward => {
-                let mut out: Self = impl_fill_backward!(self, Utf8Chunked);
+            FillNullStrategy::Backward(limit) => {
+                let mut out = match limit {
+                    None => impl_fill_backward!(self, Utf8Chunked),
+                    Some(limit) => fill_backward_limit_utf8(self, limit),
+                };
                 out.rename(self.name());
                 Ok(out)
             }
@@ -234,14 +383,14 @@ mod test {
     #[test]
     fn test_fill_null() {
         let ca = Int32Chunked::new("a", &[None, Some(2), Some(3), None, Some(4), None]);
-        let filled = ca.fill_null(FillNullStrategy::Forward).unwrap();
+        let filled = ca.fill_null(FillNullStrategy::Forward(None)).unwrap();
         assert_eq!(filled.name(), "a");
 
         assert_eq!(
             Vec::from(&filled),
             &[None, Some(2), Some(3), Some(3), Some(4), Some(4)]
         );
-        let filled = ca.fill_null(FillNullStrategy::Backward).unwrap();
+        let filled = ca.fill_null(FillNullStrategy::Backward(None)).unwrap();
         assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),
@@ -266,7 +415,7 @@ mod test {
             &[Some(3), Some(2), Some(3), Some(3), Some(4), Some(3)]
         );
         let ca = Int32Chunked::new("a", &[None, None, None, None, Some(4), None]);
-        let filled = ca.fill_null(FillNullStrategy::Backward).unwrap();
+        let filled = ca.fill_null(FillNullStrategy::Backward(None)).unwrap();
         assert_eq!(filled.name(), "a");
         assert_eq!(
             Vec::from(&filled),

@@ -2326,7 +2326,9 @@ class Series:
             self.to_frame().select(pli.col(self.name).fill_nan(fill_value)).to_series()
         )
 
-    def fill_null(self, strategy: Union[str, int, "pli.Expr"]) -> "Series":
+    def fill_null(
+        self, strategy: Union[str, int, "pli.Expr"], limit: Optional[int] = None
+    ) -> "Series":
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -2372,12 +2374,14 @@ class Series:
             - "one"
             - "zero"
             Or an expression.
+        limit
+            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
         """
         if not isinstance(strategy, str):
             return self.to_frame().select(pli.col(self.name).fill_null(strategy))[
                 self.name
             ]
-        return wrap_s(self._s.fill_null(strategy))
+        return wrap_s(self._s.fill_null(strategy, limit))
 
     def floor(self) -> "Series":
         """

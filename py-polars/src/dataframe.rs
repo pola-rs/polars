@@ -11,7 +11,7 @@ use crate::apply::dataframe::{
     apply_lambda_unknown, apply_lambda_with_bool_out_type, apply_lambda_with_primitive_out_type,
     apply_lambda_with_utf8_out_type,
 };
-use crate::conversion::{ObjectValue, Wrap};
+use crate::conversion::{parse_strategy, ObjectValue, Wrap};
 use crate::file::get_mmap_bytes_reader;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::{dicts_to_rows, str_to_null_strategy};
@@ -768,17 +768,8 @@ impl PyDataFrame {
         format!("{:?}", self.df)
     }
 
-    pub fn fill_null(&self, strategy: &str) -> PyResult<Self> {
-        let strat = match strategy {
-            "backward" => FillNullStrategy::Backward,
-            "forward" => FillNullStrategy::Forward,
-            "min" => FillNullStrategy::Min,
-            "max" => FillNullStrategy::Max,
-            "mean" => FillNullStrategy::Mean,
-            "one" => FillNullStrategy::One,
-            "zero" => FillNullStrategy::Zero,
-            s => return Err(PyPolarsErr::Other(format!("Strategy {} not supported", s)).into()),
-        };
+    pub fn fill_null(&self, strategy: &str, limit: FillNullLimit) -> PyResult<Self> {
+        let strat = parse_strategy(strategy, limit)?;
         let df = self.df.fill_null(strat).map_err(PyPolarsErr::from)?;
         Ok(PyDataFrame::new(df))
     }

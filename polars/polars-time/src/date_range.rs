@@ -17,8 +17,10 @@ pub fn date_range_impl(
     closed: ClosedWindow,
     tu: TimeUnit,
 ) -> DatetimeChunked {
-    Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu))
-        .into_datetime(tu, None)
+    let mut out = Int64Chunked::new_vec(name, date_range_vec(start, stop, every, closed, tu))
+        .into_datetime(tu, None);
+    out.set_sorted(start > stop);
+    out
 }
 
 /// Create a [`DatetimeChunked`] from a given `start` and `stop` date and a given `every` interval.
