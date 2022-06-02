@@ -1,12 +1,18 @@
 use super::ArrowResult;
+use arrow::array::Array;
+use arrow::chunk::Chunk;
+use arrow::datatypes::DataType as ArrowDataType;
 use arrow::datatypes::PhysicalType;
-use arrow::error::ArrowError;
+use arrow::error::Error as ArrowError;
+use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, FileWriter, *};
-use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::Write;
+
+pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel, ZstdLevel};
 
 struct Bla {
     columns: VecDeque<CompressedPage>,
@@ -48,8 +54,6 @@ pub struct ParquetWriter<W> {
     statistics: bool,
 }
 
-pub use write::CompressionOptions as ParquetCompression;
-
 impl<W> ParquetWriter<W>
 where
     W: Write,
@@ -90,63 +94,79 @@ where
         };
         let schema = ArrowSchema::from(fields);
         let parquet_schema = write::to_parquet_schema(&schema)?;
-        let encodings = schema
-            .fields
-            .iter()
-            .map(|field| match field.data_type().to_physical_type() {
-                // delta encoding
-                // Not yet supported by pyarrow
-                // PhysicalType::LargeUtf8 => Encoding::DeltaLengthByteArray,
-                // dictionaries are kept dict-encoded
+        // declare encodings
+        let encoding_map = |data_type: &ArrowDataType| {
+            match data_type.to_physical_type() {
                 PhysicalType::Dictionary(_) => Encoding::RleDictionary,
                 // remaining is plain
                 _ => Encoding::Plain,
-            })
+            }
+        };
+
+        let encodings = (&schema.fields)
+            .iter()
+            .map(|f| transverse(&f.data_type, encoding_map))
             .collect::<Vec<_>>();
 
         let row_group_iter = rb_iter.filter_map(|batch| match batch.len() {
             0 => None,
             _ => {
-                let columns = batch
-                    .columns()
-                    .par_iter()
-                    .zip(parquet_schema.fields().par_iter())
-                    .zip(encodings.par_iter())
-                    .map(|((array, tp), encoding)| {
-                        let encoded_pages =
-                            array_to_pages(array.as_ref(), tp.clone(), options, *encoding)?;
-                        encoded_pages
-                            .map(|page| {
-                                compress(page?, vec![], options.compression).map_err(|x| x.into())
-                            })
-                            .collect::<ArrowResult<VecDeque<_>>>()
-                    })
-                    .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()
-                    .map(Some)
-                    .transpose();
+                let row_group = create_serializer(
+                    batch,
+                    parquet_schema.fields().to_vec(),
+                    encodings.clone(),
+                    options,
+                );
 
-                columns.map(|columns| {
-                    columns.map(|columns| {
-                        let row_group = DynIter::new(
-                            columns
-                                .into_iter()
-                                .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
-                        );
-                        (row_group, batch.columns()[0].len())
-                    })
-                })
+                Some(row_group)
             }
         });
 
         let mut writer = FileWriter::try_new(&mut self.writer, schema, options)?;
-        // write the headers
-        writer.start()?;
         for group in row_group_iter {
-            let (group, _len) = group?;
-            writer.write(group)?;
+            writer.write(group?)?;
         }
         let _ = writer.end(None)?;
 
         Ok(())
     }
+}
+
+fn create_serializer(
+    batch: Chunk<Arc<dyn Array>>,
+    fields: Vec<ParquetType>,
+    encodings: Vec<Vec<Encoding>>,
+    options: WriteOptions,
+) -> std::result::Result<RowGroupIter<'static, ArrowError>, ArrowError> {
+    let columns = batch
+        .columns()
+        .par_iter()
+        .zip(fields)
+        .zip(encodings)
+        .flat_map(move |((array, type_), encoding)| {
+            let encoded_columns = array_to_columns(array, type_, options, encoding).unwrap();
+            encoded_columns
+                .into_iter()
+                .map(|encoded_pages| {
+                    let encoded_pages = DynIter::new(
+                        encoded_pages
+                            .into_iter()
+                            .map(|x| x.map_err(|e| ParquetError::General(e.to_string()))),
+                    );
+                    encoded_pages
+                        .map(|page| {
+                            compress(page?, vec![], options.compression).map_err(|x| x.into())
+                        })
+                        .collect::<ArrowResult<VecDeque<_>>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<ArrowResult<Vec<VecDeque<CompressedPage>>>>()?;
+
+    let row_group = DynIter::new(
+        columns
+            .into_iter()
+            .map(|column| Ok(DynStreamingIterator::new(Bla::new(column)))),
+    );
+    Ok(row_group)
 }

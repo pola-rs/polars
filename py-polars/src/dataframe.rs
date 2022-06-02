@@ -1,4 +1,5 @@
 use numpy::IntoPyArray;
+use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
 use std::io::{BufReader, BufWriter, Cursor, Read};
@@ -566,16 +567,38 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: &str,
+        compression_level: Option<i32>,
         statistics: bool,
     ) -> PyResult<()> {
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip,
+            "gzip" => ParquetCompression::Gzip(
+                compression_level
+                    .map(|lvl| {
+                        GzipLevel::try_new(lvl as u8)
+                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                    })
+                    .transpose()?,
+            ),
             "lzo" => ParquetCompression::Lzo,
-            "brotli" => ParquetCompression::Brotli,
+            "brotli" => ParquetCompression::Brotli(
+                compression_level
+                    .map(|lvl| {
+                        BrotliLevel::try_new(lvl as u32)
+                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                    })
+                    .transpose()?,
+            ),
             "lz4" => ParquetCompression::Lz4Raw,
-            "zstd" => ParquetCompression::Zstd(None),
+            "zstd" => ParquetCompression::Zstd(
+                compression_level
+                    .map(|lvl| {
+                        ZstdLevel::try_new(lvl as i32)
+                            .map_err(|e| PyValueError::new_err(format!("{:?}", e)))
+                    })
+                    .transpose()?,
+            ),
             s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),
         };
 

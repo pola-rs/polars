@@ -1351,6 +1351,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
     def write_parquet(
         self,
         file: Union[str, Path, BytesIO],
+        *,
         compression: Optional[
             Union[
                 Literal[
@@ -1359,6 +1360,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 str,
             ]
         ] = "lz4",
+        compression_level: Optional[int] = None,
         statistics: bool = False,
         use_pyarrow: bool = False,
         **kwargs: Any,
@@ -1379,6 +1381,17 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 - "brotli"
                 - "lz4"
                 - "zstd"
+        compression_level
+            Supported by {'gzip', 'brotli', 'zstd'}
+                - "gzip"
+                    * min-level: 0
+                    * max-level: 10
+                - "brotli"
+                    * min-level: 0
+                    * max-level: 11
+                - "zstd"
+                    * min-level: 1
+                    * max-level: 22
         statistics
             Write statistics to the parquet headers. This requires extra compute.
         use_pyarrow
@@ -1420,7 +1433,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
                 **kwargs,
             )
         else:
-            self._df.to_parquet(file, compression, statistics)
+            self._df.to_parquet(file, compression, compression_level, statistics)
 
     def to_parquet(
         self,
@@ -1444,7 +1457,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
         warnings.warn(
             "'to_parquet' is deprecated. please use 'write_parquet'", DeprecationWarning
         )
-        return self.write_parquet(file, compression, statistics, use_pyarrow, **kwargs)
+        return self.write_parquet(
+            file,
+            compression=compression,
+            statistics=statistics,
+            use_pyarrow=use_pyarrow,
+            **kwargs,
+        )
 
     def to_numpy(self) -> np.ndarray:
         """

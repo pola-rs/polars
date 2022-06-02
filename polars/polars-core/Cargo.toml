@@ -174,11 +174,11 @@ thiserror = "^1.0"
 
 [dependencies.arrow]
 package = "arrow2"
-# git = "https://github.com/jorgecarleitao/arrow2"
-git = "https://github.com/ritchie46/arrow2"
-# rev = "aafba7b4eb4991e016638cbc1d4df676912e8236"
+git = "https://github.com/jorgecarleitao/arrow2"
+# git = "https://github.com/ritchie46/arrow2"
+rev = "2fcc522b903f9a3d161daf97c8026fc9066736ee"
 # path = "../../../arrow2"
-branch = "improve_mutable"
+# branch = "improve_mutable"
 # version = "0.11"
 default-features = false
 features = [

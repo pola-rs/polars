@@ -1,3 +1,4 @@
+use crate::trusted_len::{PushUnchecked, TrustedLen};
 use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
 use arrow::array::*;
@@ -99,7 +100,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
         *array_values.get_unchecked(*idx as usize)
     });
 
-    let values = Buffer::from_trusted_len_iter(iter);
+    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
     let validity = indices.validity().cloned();
     Arc::new(PrimitiveArray::from_data(
         T::PRIMITIVE.into(),
@@ -114,10 +115,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
 /// - no bounds checks
 /// - iterator must be TrustedLen
 #[inline]
-pub unsafe fn take_no_null_primitive_iter_unchecked<
-    T: NativeType,
-    I: IntoIterator<Item = usize>,
->(
+pub unsafe fn take_no_null_primitive_iter_unchecked<T: NativeType, I: TrustedLen<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {
@@ -129,7 +127,7 @@ pub unsafe fn take_no_null_primitive_iter_unchecked<
         *array_values.get_unchecked(idx)
     });
 
-    let values = Buffer::from_trusted_len_iter_unchecked(iter);
+    let values: Buffer<_> = Vec::from_trusted_len_iter(iter).into();
     Arc::new(PrimitiveArray::from_data(T::PRIMITIVE.into(), values, None))
 }
 

@@ -239,7 +239,7 @@ impl ChunkExplode for ListChunked {
         if offsets[offsets.len() - 1] == 0 {
             return Ok((
                 Series::new_empty(self.name(), &self.inner_dtype()),
-                Buffer::from_slice(&[]),
+                vec![].into(),
             ));
         }
 
@@ -318,8 +318,7 @@ impl ChunkExplode for Utf8Chunked {
             .map(|t| t.0 as i64)
             .chain(std::iter::once(str_data.len() as i64));
 
-        // char_indices is TrustedLen
-        let offsets = unsafe { Buffer::from_trusted_len_iter_unchecked(chars) };
+        let offsets = Buffer::from_iter(chars);
 
         // the old bitmap doesn't fit on the exploded array, so we need to create a new one.
         let validity = if let Some(validity) = array.validity() {
