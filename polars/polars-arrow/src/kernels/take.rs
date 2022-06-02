@@ -1,3 +1,4 @@
+use crate::trusted_len::{PushUnchecked, TrustedLen};
 use crate::utils::with_match_primitive_type;
 use crate::{bit_util::unset_bit_raw, prelude::*, utils::CustomIterTools};
 use arrow::array::*;
@@ -6,7 +7,6 @@ use arrow::buffer::Buffer;
 use arrow::datatypes::{DataType, PhysicalType};
 use arrow::types::NativeType;
 use std::sync::Arc;
-use crate::trusted_len::{PushUnchecked, TrustedLen};
 
 /// # Safety
 /// Does not do bounds checks
@@ -115,10 +115,7 @@ pub unsafe fn take_no_null_primitive<T: NativeType>(
 /// - no bounds checks
 /// - iterator must be TrustedLen
 #[inline]
-pub unsafe fn take_no_null_primitive_iter_unchecked<
-    T: NativeType,
-    I: TrustedLen<Item = usize>,
->(
+pub unsafe fn take_no_null_primitive_iter_unchecked<T: NativeType, I: TrustedLen<Item = usize>>(
     arr: &PrimitiveArray<T>,
     indices: I,
 ) -> Arc<PrimitiveArray<T>> {

@@ -6,11 +6,13 @@ use arrow::datatypes::PhysicalType;
 use arrow::error::Error as ArrowError;
 use arrow::io::parquet::read::ParquetError;
 use arrow::io::parquet::write::{self, FileWriter, *};
-use arrow::io::parquet::write::{array_to_pages, DynIter, DynStreamingIterator, Encoding};
+use arrow::io::parquet::write::{DynIter, DynStreamingIterator, Encoding};
 use polars_core::prelude::*;
 use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::Write;
+
+pub use write::CompressionOptions as ParquetCompression;
 
 struct Bla {
     columns: VecDeque<CompressedPage>,
@@ -51,8 +53,6 @@ pub struct ParquetWriter<W> {
     compression: write::CompressionOptions,
     statistics: bool,
 }
-
-pub use write::CompressionOptions as ParquetCompression;
 
 impl<W> ParquetWriter<W>
 where
@@ -104,7 +104,7 @@ where
         };
 
         let encodings = (&schema.fields)
-            .par_iter()
+            .iter()
             .map(|f| transverse(&f.data_type, encoding_map))
             .collect::<Vec<_>>();
 
@@ -142,7 +142,7 @@ fn create_serializer(
         .columns()
         .par_iter()
         .zip(fields)
-        .zip(encodings.clone())
+        .zip(encodings)
         .flat_map(move |((array, type_), encoding)| {
             let encoded_columns = array_to_columns(array, type_, options, encoding).unwrap();
             encoded_columns

@@ -566,14 +566,19 @@ impl PyDataFrame {
         py: Python,
         py_f: PyObject,
         compression: &str,
+        compression_level: Option<u32>,
         statistics: bool,
     ) -> PyResult<()> {
+        // todo: use compression level
+        if compression_level.is_some() {
+            todo!();
+        }
         let compression = match compression {
             "uncompressed" => ParquetCompression::Uncompressed,
             "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip,
+            "gzip" => ParquetCompression::Gzip(None),
             "lzo" => ParquetCompression::Lzo,
-            "brotli" => ParquetCompression::Brotli,
+            "brotli" => ParquetCompression::Brotli(None),
             "lz4" => ParquetCompression::Lz4Raw,
             "zstd" => ParquetCompression::Zstd(None),
             s => return Err(PyPolarsErr::Other(format!("compression {} not supported", s)).into()),

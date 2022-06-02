@@ -239,7 +239,7 @@ impl ChunkExplode for ListChunked {
         if offsets[offsets.len() - 1] == 0 {
             return Ok((
                 Series::new_empty(self.name(), &self.inner_dtype()),
-                vec![].into()
+                vec![].into(),
             ));
         }
 

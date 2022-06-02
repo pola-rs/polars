@@ -1,8 +1,8 @@
+use crate::trusted_len::PushUnchecked;
 use arrow::array::{ArrayRef, UInt32Array, Utf8Array};
 use arrow::buffer::Buffer;
 use arrow::datatypes::DataType;
 use std::sync::Arc;
-use crate::trusted_len::PushUnchecked;
 
 pub fn string_lengths(array: &Utf8Array<i64>) -> ArrayRef {
     let values = array.offsets().windows(2).map(|x| (x[1] - x[0]) as u32);
