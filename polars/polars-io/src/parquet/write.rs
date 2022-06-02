@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use std::collections::VecDeque;
 use std::io::Write;
 
-pub use write::CompressionOptions as ParquetCompression;
+pub use write::{BrotliLevel, CompressionOptions as ParquetCompression, GzipLevel, ZstdLevel};
 
 struct Bla {
     columns: VecDeque<CompressedPage>,
