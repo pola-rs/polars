@@ -328,12 +328,12 @@ impl JsExpr {
     }
     #[napi]
     pub fn backward_fill(&self) -> JsExpr {
-        self.clone().inner.backward_fill().into()
+        self.clone().inner.backward_fill(None).into()
     }
 
     #[napi]
     pub fn forward_fill(&self) -> JsExpr {
-        self.clone().inner.forward_fill().into()
+        self.clone().inner.forward_fill(None).into()
     }
 
     #[napi]
