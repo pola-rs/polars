@@ -260,9 +260,32 @@ impl PySeries {
     #[staticmethod]
     pub fn from_arrow(name: &str, array: &PyAny) -> PyResult<Self> {
         let arr = array_to_rust(array)?;
-        let series: Series =
-            std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
-        Ok(series.into())
+
+        match arr.data_type() {
+            ArrowDataType::LargeList(_) => {
+                let array = arr.as_any().downcast_ref::<LargeListArray>().unwrap();
+
+                let mut previous = 0;
+                let mut fast_explode = true;
+                for &o in array.offsets().as_slice()[1..].iter() {
+                    if o == previous {
+                        fast_explode = false;
+                        break;
+                    }
+                    previous = o;
+                }
+                let mut out = ListChunked::from_chunks(name, vec![arr]);
+                if fast_explode {
+                    out.set_fast_explode()
+                }
+                return Ok(out.into_series().into());
+            }
+            _ => {
+                let series: Series =
+                    std::convert::TryFrom::try_from((name, arr)).map_err(PyPolarsErr::from)?;
+                Ok(series.into())
+            }
+        }
     }
 
     #[staticmethod]

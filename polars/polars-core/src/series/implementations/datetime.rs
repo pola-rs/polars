@@ -333,7 +333,13 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
-        Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
+        let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
+
+        if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
+            out.set_sorted(idx.is_sorted_reverse())
+        }
+
+        Ok(out
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series())
     }

@@ -504,7 +504,11 @@ macro_rules! impl_dyn_series {
                 } else {
                     Cow::Borrowed(idx)
                 };
-                Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
+                let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into());
+                if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
+                    out.set_sorted(idx.is_sorted_reverse())
+                }
+                Ok(out.into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {

@@ -1,4 +1,5 @@
 use super::*;
+use polars_core::series::IsSorted;
 
 #[test]
 fn test_with_duplicate_column_empty_df() {
@@ -122,5 +123,28 @@ fn test_alias_before_cast() -> Result<()> {
         Vec::from(out.column("d")?.i32()?),
         &[Some(1), Some(2), Some(3)]
     );
+    Ok(())
+}
+
+#[test]
+fn test_sorted_path() -> Result<()> {
+    // start with a sorted column and see if the metadata remains preserved
+
+    let payloads = &[1, 2, 3];
+    let df = df![
+        "a"=> [AnyValue::List(Series::new("", payloads)), AnyValue::List(Series::new("", payloads)), AnyValue::List(Series::new("", payloads))]
+    ]?;
+
+    let out = df
+        .lazy()
+        .with_row_count("row_nr", None)
+        .explode(["a"])
+        .groupby(["row_nr"])
+        .agg([col("a").count().alias("count")])
+        .collect()?;
+
+    let s = out.column("row_nr")?;
+    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+
     Ok(())
 }
