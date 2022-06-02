@@ -316,6 +316,8 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract
+    ExprStringNameSpace.extract_all
+    ExprStringNameSpace.count_match
     ExprStringNameSpace.split
     ExprStringNameSpace.split_exact
     ExprStringNameSpace.replace
