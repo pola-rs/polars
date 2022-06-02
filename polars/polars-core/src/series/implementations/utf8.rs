@@ -221,7 +221,14 @@ impl SeriesTrait for SeriesWrap<Utf8Chunked> {
         } else {
             Cow::Borrowed(idx)
         };
-        Ok(ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series())
+
+        let mut out = ChunkTake::take_unchecked(&self.0, (&*idx).into()).into_series();
+
+        if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
+            out.set_sorted(idx.is_sorted_reverse())
+        }
+
+        Ok(out)
     }
 
     unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {

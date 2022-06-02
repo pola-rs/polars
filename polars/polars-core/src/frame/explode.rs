@@ -43,6 +43,8 @@ impl DataFrame {
                 .expect("cmp usize -> Ordering")
         });
 
+        let verbose = std::env::var("POLARS_VERBOSE").is_ok();
+
         // TODO: optimize this.
         // This is the slower easier option.
         // instead of filtering the whole dataframe first
@@ -50,6 +52,12 @@ impl DataFrame {
         for col in &mut columns {
             if let Ok(ca) = col.list() {
                 if !ca.can_fast_explode() {
+                    if verbose {
+                        eprintln!(
+                            "could not fast explode column {}, running slower path",
+                            ca.name()
+                        );
+                    }
                     let (_, offsets) = get_exploded(col)?;
                     if offsets.is_empty() {
                         let mut out = self.slice(0, 0);
@@ -89,6 +97,8 @@ impl DataFrame {
                         .downcast_mut::<ListChunked>()
                         .unwrap();
                     ca.set_fast_explode();
+                } else if verbose {
+                    eprintln!("could fast explode column {}", ca.name());
                 }
             }
         }
@@ -107,7 +117,8 @@ impl DataFrame {
                 // expand all the other columns based the exploded first column
                 if i == 0 {
                     let row_idx = offsets_to_indexes(&offsets, exploded.len());
-                    let row_idx = IdxCa::from_vec("", row_idx);
+                    let mut row_idx = IdxCa::from_vec("", row_idx);
+                    row_idx.set_sorted(true);
                     // Safety
                     // We just created indices that are in bounds.
                     df = unsafe { df.take_unchecked(&row_idx) };

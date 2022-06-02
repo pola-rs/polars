@@ -326,9 +326,13 @@ macro_rules! impl_dyn_series {
             }
 
             unsafe fn take_unchecked(&self, idx: &IdxCa) -> Result<Series> {
-                Ok(ChunkTake::take_unchecked(self.0.deref(), idx.into())
-                    .$into_logical()
-                    .into_series())
+                let mut out = ChunkTake::take_unchecked(self.0.deref(), idx.into());
+
+                if self.0.is_sorted() && (idx.is_sorted() || idx.is_sorted_reverse()) {
+                    out.set_sorted(idx.is_sorted_reverse())
+                }
+
+                Ok(out.$into_logical().into_series())
             }
 
             unsafe fn take_opt_iter_unchecked(&self, iter: &mut dyn TakeIteratorNulls) -> Series {

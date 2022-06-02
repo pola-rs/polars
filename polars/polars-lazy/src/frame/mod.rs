@@ -752,12 +752,17 @@ impl LazyFrame {
     ///        ])
     /// }
     /// ```
-    pub fn groupby<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
+    pub fn groupby<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+        let keys = by
+            .as_ref()
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys,
             maintain_order: false,
             dynamic_options: None,
             rolling_options: None,
@@ -797,12 +802,17 @@ impl LazyFrame {
     }
 
     /// Similar to groupby, but order of the DataFrame is maintained.
-    pub fn groupby_stable<E: AsRef<[Expr]>>(self, by: E) -> LazyGroupBy {
+    pub fn groupby_stable<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, by: E) -> LazyGroupBy {
+        let keys = by
+            .as_ref()
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         LazyGroupBy {
             logical_plan: self.logical_plan,
             opt_state,
-            keys: by.as_ref().to_vec(),
+            keys,
             maintain_order: true,
             dynamic_options: None,
             rolling_options: None,
@@ -983,8 +993,12 @@ impl LazyFrame {
     }
 
     /// Apply explode operation. [See eager explode](polars_core::frame::DataFrame::explode).
-    pub fn explode<E: AsRef<[Expr]>>(self, columns: E) -> LazyFrame {
-        let columns = columns.as_ref().to_vec();
+    pub fn explode<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, columns: E) -> LazyFrame {
+        let columns = columns
+            .as_ref()
+            .iter()
+            .map(|e| e.clone().into())
+            .collect::<Vec<_>>();
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().explode(columns).build();
         Self::from_logical_plan(lp, opt_state)

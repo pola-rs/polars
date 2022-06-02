@@ -9,7 +9,7 @@ use std::borrow::Cow;
 #[cfg(feature = "temporal")]
 use std::sync::Arc;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum IsSorted {
     Ascending,
     Descending,
