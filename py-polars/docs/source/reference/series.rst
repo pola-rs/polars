@@ -259,6 +259,8 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.contains
     StringNameSpace.json_path_match
     StringNameSpace.extract
+    StringNameSpace.extract_all
+    StringNameSpace.count_match
     StringNameSpace.split
     StringNameSpace.split_exact
     StringNameSpace.replace
