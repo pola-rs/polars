@@ -112,7 +112,7 @@ impl ChunkOps for Utf8Chunked {
             )
             .unwrap()
             .into()];
-            ChunkedArray::from_chunks(self.name(), chunks)
+            self.copy_with_chunks(chunks)
         }
     }
     #[inline]

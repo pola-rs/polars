@@ -241,12 +241,12 @@ impl PyExpr {
         self.clone().inner.sort_by(by, reverse).into()
     }
 
-    pub fn backward_fill(&self) -> PyExpr {
-        self.clone().inner.backward_fill().into()
+    pub fn backward_fill(&self, limit: FillNullLimit) -> PyExpr {
+        self.clone().inner.backward_fill(limit).into()
     }
 
-    pub fn forward_fill(&self) -> PyExpr {
-        self.clone().inner.forward_fill().into()
+    pub fn forward_fill(&self, limit: FillNullLimit) -> PyExpr {
+        self.clone().inner.forward_fill(limit).into()
     }
 
     pub fn shift(&self, periods: i64) -> PyExpr {
@@ -263,13 +263,18 @@ impl PyExpr {
         self.clone().inner.fill_null(expr.inner).into()
     }
 
-    pub fn fill_null_with_strategy(&self, strategy: &str) -> PyExpr {
-        let strat = parse_strategy(strategy);
-        self.inner
+    pub fn fill_null_with_strategy(
+        &self,
+        strategy: &str,
+        limit: FillNullLimit,
+    ) -> PyResult<PyExpr> {
+        let strat = parse_strategy(strategy, limit)?;
+        Ok(self
+            .inner
             .clone()
             .apply(move |s| s.fill_null(strat), GetOutput::same_type())
-            .with_fmt("fill_null")
-            .into()
+            .with_fmt("fill_null_with_strategy")
+            .into())
     }
 
     pub fn fill_nan(&self, expr: PyExpr) -> PyExpr {

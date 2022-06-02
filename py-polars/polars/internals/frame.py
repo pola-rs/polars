@@ -4076,7 +4076,9 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self[name]
 
-    def fill_null(self: DF, strategy: Union[str, "pli.Expr", Any]) -> DF:
+    def fill_null(
+        self: DF, strategy: Union[str, "pli.Expr", Any], limit: Optional[int] = None
+    ) -> DF:
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -4096,6 +4098,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             - "zero"
             - "one"
             Or an expression.
+        limit
+            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
 
         Returns
         -------
@@ -4105,7 +4109,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
             return self.lazy().fill_null(strategy).collect(no_optimization=True)
         if not isinstance(strategy, str):
             return self.fill_null(pli.lit(strategy))
-        return self._from_pydf(self._df.fill_null(strategy))
+        return self._from_pydf(self._df.fill_null(strategy, limit))
 
     def fill_nan(self: DF, fill_value: Union["pli.Expr", int, float]) -> DF:
         """

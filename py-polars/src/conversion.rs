@@ -800,15 +800,28 @@ pub(crate) fn dicts_to_rows(records: &PyAny) -> PyResult<(Vec<Row>, Vec<String>)
     Ok((rows, keys_first))
 }
 
-pub(crate) fn parse_strategy(strat: &str) -> FillNullStrategy {
-    match strat {
-        "backward" => FillNullStrategy::Backward,
-        "forward" => FillNullStrategy::Forward,
-        "min" => FillNullStrategy::Min,
-        "max" => FillNullStrategy::Max,
-        "mean" => FillNullStrategy::Mean,
-        "zero" => FillNullStrategy::Zero,
-        "one" => FillNullStrategy::One,
-        s => panic!("Strategy {} not supported", s),
+pub(crate) fn parse_strategy(strat: &str, limit: FillNullLimit) -> PyResult<FillNullStrategy> {
+    if limit.is_some() && strat != "forward" && strat != "backward" {
+        Err(PyValueError::new_err(
+            "'limit' argument in 'fill_null' only allowed for {'forward', 'backward'} strategies",
+        ))
+    } else {
+        let strat = match strat {
+            "backward" => FillNullStrategy::Backward(limit),
+            "forward" => FillNullStrategy::Forward(limit),
+            "min" => FillNullStrategy::Min,
+            "max" => FillNullStrategy::Max,
+            "mean" => FillNullStrategy::Mean,
+            "zero" => FillNullStrategy::Zero,
+            "one" => FillNullStrategy::One,
+            s => {
+                return Err(PyValueError::new_err(format!(
+                    "Strategy {} not supported",
+                    s
+                )))
+            }
+        };
+
+        Ok(strat)
     }
 }

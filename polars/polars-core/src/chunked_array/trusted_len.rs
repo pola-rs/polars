@@ -2,7 +2,7 @@ use crate::chunked_array::upstream_traits::PolarsAsRef;
 use crate::prelude::*;
 use crate::utils::{CustomIterTools, FromTrustedLenIterator, NoNull};
 use arrow::bitmap::MutableBitmap;
-use polars_arrow::bit_util::unset_bit_raw;
+use polars_arrow::bit_util::{set_bit_raw, unset_bit_raw};
 use polars_arrow::trusted_len::{FromIteratorReversed, PushUnchecked};
 use std::borrow::Borrow;
 
@@ -72,6 +72,41 @@ where
             vals.into(),
             Some(validity.into()),
         );
+        ChunkedArray::from_chunks("", vec![Arc::new(arr)])
+    }
+}
+
+impl FromIteratorReversed<Option<bool>> for BooleanChunked {
+    fn from_trusted_len_iter_rev<I: TrustedLen<Item = Option<bool>>>(iter: I) -> Self {
+        let size = iter.size_hint().1.unwrap();
+
+        let vals = MutableBitmap::from_len_zeroed(size);
+        let mut validity = MutableBitmap::with_capacity(size);
+        validity.extend_constant(size, true);
+        let validity_ptr = validity.as_slice().as_ptr() as *mut u8;
+        let vals_ptr = vals.as_slice().as_ptr() as *mut u8;
+        unsafe {
+            let mut offset = size;
+
+            iter.for_each(|opt_item| {
+                offset -= 1;
+                match opt_item {
+                    Some(item) => {
+                        if item {
+                            // set value
+                            // validity bit is already true
+                            set_bit_raw(vals_ptr, offset);
+                        }
+                    }
+                    None => {
+                        // unset validity bit
+                        unset_bit_raw(validity_ptr, offset)
+                    }
+                }
+            });
+        }
+        let arr =
+            BooleanArray::from_data(ArrowDataType::Boolean, vals.into(), Some(validity.into()));
         ChunkedArray::from_chunks("", vec![Arc::new(arr)])
     }
 }

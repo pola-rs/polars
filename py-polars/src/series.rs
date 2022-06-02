@@ -827,8 +827,8 @@ impl PySeries {
         self.series.drop_nulls().into()
     }
 
-    pub fn fill_null(&self, strategy: &str) -> PyResult<Self> {
-        let strat = parse_strategy(strategy);
+    pub fn fill_null(&self, strategy: &str, limit: Option<IdxSize>) -> PyResult<Self> {
+        let strat = parse_strategy(strategy, limit)?;
         let series = self.series.fill_null(strat).map_err(PyPolarsErr::from)?;
         Ok(PySeries::new(series))
     }

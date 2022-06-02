@@ -1187,7 +1187,11 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.shift_and_fill(periods, fill_value._pyexpr))
 
-    def fill_null(self, fill_value: Union[int, float, bool, str, "Expr"]) -> "Expr":
+    def fill_null(
+        self,
+        fill_value: Union[int, float, bool, str, "Expr"],
+        limit: Optional[int] = None,
+    ) -> "Expr":
         """
         Fill null values using a filling strategy, literal, or Expr.
 
@@ -1201,6 +1205,8 @@ class Expr:
             - "one"
             - "zero"
             Or an expression.
+        limit
+            if strategy is 'forward' or 'backward', this the number of consecutive null values to forward/backward fill.
 
         Examples
         --------
@@ -1245,7 +1251,7 @@ class Expr:
             "zero",
             "one",
         ]:
-            return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value))
+            return wrap_expr(self._pyexpr.fill_null_with_strategy(fill_value, limit))
 
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_null(fill_value._pyexpr))
@@ -1257,17 +1263,27 @@ class Expr:
         fill_value = expr_to_lit_or_expr(fill_value, str_to_lit=True)
         return wrap_expr(self._pyexpr.fill_nan(fill_value._pyexpr))
 
-    def forward_fill(self) -> "Expr":
+    def forward_fill(self, limit: Optional[int] = None) -> "Expr":
         """
         Fill missing values with the latest seen values
-        """
-        return wrap_expr(self._pyexpr.forward_fill())
 
-    def backward_fill(self) -> "Expr":
+        Parameters
+        ----------
+        limit
+            This the number of consecutive null values to forward/backward fill.
+        """
+        return wrap_expr(self._pyexpr.forward_fill(limit))
+
+    def backward_fill(self, limit: Optional[int] = None) -> "Expr":
         """
         Fill missing values with the next to be seen values
+
+        Parameters
+        ----------
+        limit
+            This the number of consecutive null values to forward/backward fill.
         """
-        return wrap_expr(self._pyexpr.backward_fill())
+        return wrap_expr(self._pyexpr.backward_fill(limit))
 
     def reverse(self) -> "Expr":
         """

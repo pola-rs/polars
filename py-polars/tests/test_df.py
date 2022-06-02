@@ -2142,3 +2142,38 @@ def test_concat_to_empty() -> None:
     assert pl.concat([pl.DataFrame([]), pl.DataFrame({"a": [1]})]).to_dict(False) == {
         "a": [1]
     }
+
+
+def test_fill_null_limits() -> None:
+    assert pl.DataFrame(
+        {
+            "a": [1, None, None, None, 5, 6, None, None, None, 10],
+            "b": ["a", None, None, None, "b", "c", None, None, None, "d"],
+            "c": [True, None, None, None, False, True, None, None, None, False],
+        }
+    ).select(
+        [
+            pl.all().fill_null("forward", limit=2),
+            pl.all().fill_null("backward", limit=2).suffix("_backward"),
+        ]
+    ).to_dict(
+        False
+    ) == {
+        "a": [1, 1, 1, None, 5, 6, 6, 6, None, 10],
+        "b": ["a", "a", "a", None, "b", "c", "c", "c", None, "d"],
+        "c": [True, True, True, None, False, True, True, True, None, False],
+        "a_backward": [1, None, 5, 5, 5, 6, None, 10, 10, 10],
+        "b_backward": ["a", None, "b", "b", "b", "c", None, "d", "d", "d"],
+        "c_backward": [
+            True,
+            None,
+            False,
+            False,
+            False,
+            True,
+            None,
+            False,
+            False,
+            False,
+        ],
+    }

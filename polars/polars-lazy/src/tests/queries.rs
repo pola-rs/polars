@@ -1173,7 +1173,7 @@ fn test_fill_forward() -> Result<()> {
 
     let out = df
         .lazy()
-        .select([col("b").forward_fill().list().over([col("a")])])
+        .select([col("b").forward_fill(None).list().over([col("a")])])
         .collect()?;
     let agg = out.column("b")?.list()?;
 

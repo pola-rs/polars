@@ -45,7 +45,7 @@ where
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::from_chunks(self.name(), chunks))
+        Ok(self.copy_with_chunks(chunks))
     }
 }
 
@@ -66,7 +66,7 @@ impl ChunkFilter<BooleanType> for BooleanChunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::from_chunks(self.name(), chunks))
+        Ok(self.copy_with_chunks(chunks))
     }
 }
 
@@ -87,7 +87,8 @@ impl ChunkFilter<Utf8Type> for Utf8Chunked {
             .zip(filter.downcast_iter())
             .map(|(left, mask)| filter_fn(left, mask).unwrap().into())
             .collect::<Vec<_>>();
-        Ok(ChunkedArray::from_chunks(self.name(), chunks))
+
+        Ok(self.copy_with_chunks(chunks))
     }
 }
 

@@ -925,18 +925,18 @@ impl Expr {
     }
 
     /// Fill missing value with next non-null.
-    pub fn backward_fill(self) -> Self {
+    pub fn backward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Backward),
+            move |s: Series| s.fill_null(FillNullStrategy::Backward(limit)),
             GetOutput::same_type(),
         )
         .with_fmt("backward_fill")
     }
 
     /// Fill missing value with previous non-null.
-    pub fn forward_fill(self) -> Self {
+    pub fn forward_fill(self, limit: FillNullLimit) -> Self {
         self.apply(
-            move |s: Series| s.fill_null(FillNullStrategy::Forward),
+            move |s: Series| s.fill_null(FillNullStrategy::Forward(limit)),
             GetOutput::same_type(),
         )
         .with_fmt("forward_fill")

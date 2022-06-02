@@ -680,10 +680,10 @@ pub trait SeriesTrait:
     /// fn example() -> Result<()> {
     ///     let s = Series::new("some_missing", &[Some(1), None, Some(2)]);
     ///
-    ///     let filled = s.fill_null(FillNullStrategy::Forward)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Forward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(1), Some(2)]);
     ///
-    ///     let filled = s.fill_null(FillNullStrategy::Backward)?;
+    ///     let filled = s.fill_null(FillNullStrategy::Backward(None))?;
     ///     assert_eq!(Vec::from(filled.i32()?), &[Some(1), Some(2), Some(2)]);
     ///
     ///     let filled = s.fill_null(FillNullStrategy::Min)?;
