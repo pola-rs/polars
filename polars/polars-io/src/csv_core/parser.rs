@@ -486,11 +486,13 @@ pub(crate) fn parse_lines(
                                     let unparsable = String::from_utf8_lossy(field);
                                     PolarsError::ComputeError(
                                         format!(
-                                            r#"Could not parse {} as dtype {:?} at column {}.
-                                            The total offset in the file is {} bytes.
-
-                                            Consider running the parser `with_ignore_parser_errors=true`
-                                            or consider adding {} to the `null_values` list."#,
+                                            "Could not parse `{}` as dtype {:?} at column {}.\n\
+                                            The current offset in the file is {} bytes.\n\
+                                            \n\
+                                            Consider specifying the correct dtype, increasing\n\
+                                            the number of records used to infer the schema,\n\
+                                            running the parser with `ignore_parser_errors=true`\n\
+                                            or  adding `{}` to the `null_values` list.",
                                             &unparsable,
                                             buf.dtype(),
                                             idx,
