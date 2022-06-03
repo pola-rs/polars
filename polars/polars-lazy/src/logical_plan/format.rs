@@ -23,10 +23,7 @@ impl fmt::Debug for LogicalPlan {
                 write!(
                     f,
                     "{}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
-                    options.fmt_str,
-                    n_columns,
-                    total_columns,
-                    predicate
+                    options.fmt_str, n_columns, total_columns, predicate
                 )
             }
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),

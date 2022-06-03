@@ -466,7 +466,6 @@ impl PredicatePushDown {
              lp @ PythonScan {..} => {
                 self.no_pushdown_restart_opt(lp, ac_predicates, lp_arena, expr_arena)
             }
-            
             lp @ AnonymousScan {..} => {
                 // TODO: add predicate pushdowns.
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)

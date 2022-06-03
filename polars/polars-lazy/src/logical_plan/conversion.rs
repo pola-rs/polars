@@ -161,13 +161,13 @@ pub(crate) fn to_alp(
             function,
             schema,
             predicate,
-            options
+            options,
         } => ALogicalPlan::AnonymousScan {
             function,
             schema,
             output_schema: None,
             predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
-            options
+            options,
         },
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan { options },
@@ -663,12 +663,12 @@ pub(crate) fn node_to_lp(
             schema,
             output_schema: _,
             predicate,
-            options
+            options,
         } => LogicalPlan::AnonymousScan {
             function,
             schema,
             predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
-            options
+            options,
         },
         #[cfg(feature = "python")]
         ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },

@@ -56,7 +56,7 @@ pub enum LogicalPlan {
         function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         predicate: Option<Expr>,
-        options: AnonymousScanOptions
+        options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },

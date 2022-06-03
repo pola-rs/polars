@@ -20,7 +20,7 @@ pub enum ALogicalPlan {
         schema: SchemaRef,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,
-        options: AnonymousScanOptions
+        options: AnonymousScanOptions,
     },
     #[cfg(feature = "python")]
     PythonScan {
@@ -384,13 +384,13 @@ impl ALogicalPlan {
                 schema,
                 output_schema,
                 predicate,
-                options
+                options,
             } => AnonymousScan {
                 function: function.clone(),
                 schema: schema.clone(),
                 output_schema: output_schema.clone(),
                 predicate: predicate.clone(),
-                options: options.clone()
+                options: options.clone(),
             },
             Udf {
                 function,

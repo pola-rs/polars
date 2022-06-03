@@ -71,8 +71,8 @@ impl LogicalPlanBuilder {
             options: AnonymousScanOptions {
                 fmt_str: name,
                 output_schema: None,
-                with_columns: None
-            }
+                with_columns: None,
+            },
         }
         .into())
     }

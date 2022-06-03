@@ -170,6 +170,4 @@ pub struct AnonymousScanOptions {
     pub output_schema: Option<SchemaRef>,
     pub(crate) with_columns: Option<Arc<Vec<String>>>,
     pub(crate) fmt_str: &'static str,
-
-
 }

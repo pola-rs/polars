@@ -8,7 +8,7 @@ pub struct ScanArgsAnonymous {
     pub infer_schema_length: Option<usize>,
     pub schema: Option<Schema>,
     pub row_count: Option<RowCount>,
-    pub name: &'static str
+    pub name: &'static str,
 }
 
 impl Default for ScanArgsAnonymous {
@@ -18,7 +18,7 @@ impl Default for ScanArgsAnonymous {
             infer_schema_length: None,
             schema: None,
             row_count: None,
-            name: "ANONYMOUS SCAN"
+            name: "ANONYMOUS SCAN",
         }
     }
 }
@@ -26,14 +26,13 @@ impl LazyFrame {
     pub fn anonymous_scan(
         function: Arc<dyn AnonymousScan>,
         args: ScanArgsAnonymous,
-        
     ) -> Result<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::anonymous_scan(
             function,
             args.schema,
             args.infer_schema_length,
             args.n_rows,
-            args.name
+            args.name,
         )?
         .build()
         .into();
