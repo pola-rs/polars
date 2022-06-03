@@ -23,7 +23,7 @@ pub(crate) mod optimizer;
 pub(crate) mod options;
 mod projection;
 
-pub(crate) use anonymous_scan::*;
+pub use anonymous_scan::*;
 pub(crate) use apply::*;
 pub(crate) use builder::*;
 pub use lit::*;
@@ -55,6 +55,8 @@ pub enum LogicalPlan {
     AnonymousScan {
         function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
+        predicate: Option<Expr>,
+        options: AnonymousScanOptions
     },
     #[cfg(feature = "python")]
     PythonScan { options: PythonOptions },

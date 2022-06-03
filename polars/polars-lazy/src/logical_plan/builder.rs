@@ -52,10 +52,27 @@ macro_rules! try_delayed {
 }
 
 impl LogicalPlanBuilder {
-    pub fn anonymous_scan(function: Arc<dyn AnonymousScan>, schema: Schema) -> Result<Self> {
+    pub fn anonymous_scan(
+        function: Arc<dyn AnonymousScan>,
+        schema: Option<Schema>,
+        infer_schema_length: Option<usize>,
+        n_rows: Option<usize>,
+        name: &'static str,
+    ) -> Result<Self> {
+        let schema = Arc::new(match schema {
+            Some(s) => s,
+            None => function.schema(infer_schema_length)?,
+        });
+
         Ok(LogicalPlan::AnonymousScan {
             function,
-            schema: Arc::new(schema),
+            schema,
+            predicate: None,
+            options: AnonymousScanOptions {
+                fmt_str: name,
+                output_schema: None,
+                with_columns: None
+            }
         }
         .into())
     }

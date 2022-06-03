@@ -157,10 +157,17 @@ pub(crate) fn to_alp(
     lp_arena: &mut Arena<ALogicalPlan>,
 ) -> Result<Node> {
     let v = match lp {
-        LogicalPlan::AnonymousScan { function, schema } => ALogicalPlan::AnonymousScan {
+        LogicalPlan::AnonymousScan {
+            function,
+            schema,
+            predicate,
+            options
+        } => ALogicalPlan::AnonymousScan {
             function,
             schema,
             output_schema: None,
+            predicate: predicate.map(|expr| to_aexpr(expr, expr_arena)),
+            options
         },
         #[cfg(feature = "python")]
         LogicalPlan::PythonScan { options } => ALogicalPlan::PythonScan { options },
@@ -655,7 +662,14 @@ pub(crate) fn node_to_lp(
             function,
             schema,
             output_schema: _,
-        } => LogicalPlan::AnonymousScan { function, schema },
+            predicate,
+            options
+        } => LogicalPlan::AnonymousScan {
+            function,
+            schema,
+            predicate: predicate.map(|n| node_to_expr(n, expr_arena)),
+            options
+        },
         #[cfg(feature = "python")]
         ALogicalPlan::PythonScan { options } => LogicalPlan::PythonScan { options },
         ALogicalPlan::Union { inputs, options } => {

@@ -340,10 +340,12 @@ impl ProjectionPushDown {
             AnonymousScan {
                 function,
                 schema,
-                mut output_schema,
+                predicate,
+                mut options,
+                ..
             } => {
-                let with_columns = get_scan_columns(&mut acc_projections, expr_arena);
-                output_schema = if with_columns.is_none() {
+                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if options.with_columns.is_none() {
                     None
                 } else {
                     Some(Arc::new(update_scan_schema(
@@ -353,11 +355,16 @@ impl ProjectionPushDown {
                         true,
                     )))
                 };
-                Ok(AnonymousScan {
+                options.output_schema = output_schema.clone();
+
+                let lp = AnonymousScan {
                     function,
                     schema,
                     output_schema,
-                })
+                    options,
+                    predicate,
+                };
+                Ok(lp)
             }
             DataFrameScan {
                 df,
