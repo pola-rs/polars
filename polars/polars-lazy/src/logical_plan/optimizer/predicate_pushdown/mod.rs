@@ -464,7 +464,7 @@ impl PredicatePushDown {
             #[cfg(feature = "python")]
             // python node does not yet support predicates
              lp @ PythonScan {..} => {
-                self.no_pushdown_restart_opt(lp, ac_predicates, lp_arena, expr_arena)
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             }
             lp @ AnonymousScan {..} => {
                 // TODO: add predicate pushdowns.
