@@ -385,13 +385,19 @@ impl ALogicalPlan {
                 output_schema,
                 predicate,
                 options,
-            } => AnonymousScan {
-                function: function.clone(),
-                schema: schema.clone(),
-                output_schema: output_schema.clone(),
-                predicate: predicate.clone(),
-                options: options.clone(),
-            },
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
+                AnonymousScan {
+                    function: function.clone(),
+                    schema: schema.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    options: options.clone(),
+                }
+            }
             Udf {
                 function,
                 options,

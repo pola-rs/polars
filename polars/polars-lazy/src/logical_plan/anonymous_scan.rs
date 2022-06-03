@@ -16,7 +16,7 @@ where
     F: Fn(AnonymousScanOptions) -> Result<DataFrame> + Send + Sync,
 {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
-        self(scan_opts.clone())
+        self(scan_opts)
     }
 }
 

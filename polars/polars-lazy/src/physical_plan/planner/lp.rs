@@ -228,8 +228,6 @@ impl DefaultPlanner {
             }
             AnonymousScan {
                 function,
-                // schema,
-                output_schema,
                 predicate,
                 options,
                 ..
