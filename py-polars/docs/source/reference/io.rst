@@ -56,6 +56,13 @@ AVRO
    read_avro
    DataFrame.write_avro
 
+Excel
+~~~~~
+.. autosummary::
+   :toctree: api/
+
+   read_excel
+
 Datasets
 ~~~~~~~~
 Connect to pyarrow datasets.

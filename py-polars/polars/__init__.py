@@ -111,6 +111,7 @@ from polars.internals.whenthen import when
 from polars.io import (
     read_avro,
     read_csv,
+    read_excel,
     read_ipc,
     read_ipc_schema,
     read_json,

@@ -1028,8 +1028,88 @@ def read_sql(
         return cast(DataFrame, from_arrow(tbl))
     else:
         raise ImportError(
-            "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
+            "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
         )
+
+
+def read_excel(
+    file: Union[str, BytesIO, Path, BinaryIO, bytes],
+    sheet_id: Optional[int] = 1,
+    sheet_name: Optional[str] = None,
+    xlsx2csv_options: Optional[dict] = None,
+    read_csv_options: Optional[dict] = None,
+) -> DataFrame:
+    """
+    Read Excel (XLSX) sheet into a DataFrame by converting an Excel
+    sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parsing
+    the CSV output with ``pl.read_csv()``.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file-like object.
+        By file-like object, we refer to objects with a ``read()``
+        method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``.
+    sheet_id
+        Sheet number to convert (0 for all sheets).
+    sheet_name
+        Sheet name to convert.
+    xlsx2csv_options
+        Extra options passed to ``xlsx2csv.Xlsx2csv()``.
+        e.g.: ``{"skip_empty_lines": True}``
+    read_csv_options
+        Extra options passed to ``pl.read_csv()`` for parsing
+        the CSV file returned by ``xlsx2csv.Xlsx2csv().convert()``
+        e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c", "d", "e"]}``
+
+    Returns
+    -------
+    DataFrame
+    """
+
+    try:
+        import xlsx2csv  # type: ignore
+    except ImportError:
+        raise ImportError(
+            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+        )
+
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
+    if not xlsx2csv_options:
+        xlsx2csv_options = {}
+
+    if not read_csv_options:
+        read_csv_options = {}
+
+    # Override xlsx2csv eprint function so in case an error occurs
+    # it raises an exception instead of writing to stderr.
+    def _eprint(*args: Any, **kwargs: Any) -> None:
+        raise xlsx2csv.XlsxException(format(*args))
+
+    xlsx2csv.eprint = _eprint
+
+    # Create Xlsx2csv instance.
+    xlsx2csv_instance = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+
+    if sheet_name:
+        sheet_id = xlsx2csv_instance.getSheetIdByName(sheet_name)
+
+        if not sheet_id:
+            raise xlsx2csv.XlsxException(f"Sheet '{sheet_name}' not found.")
+
+    csv_buffer = StringIO()
+
+    # Convert sheet from XSLX document to CSV.
+    xlsx2csv_instance.convert(outfile=csv_buffer, sheetid=sheet_id)
+
+    # Rewind buffer to start.
+    csv_buffer.seek(0)
+
+    # Parse CSV output.
+    return read_csv(csv_buffer, **read_csv_options)
 
 
 def scan_ds(ds: "pa.dataset.dataset") -> "LazyFrame":
