@@ -1059,13 +1059,61 @@ def read_excel(
         Extra options passed to ``xlsx2csv.Xlsx2csv()``.
         e.g.: ``{"skip_empty_lines": True}``
     read_csv_options
-        Extra options passed to ``pl.read_csv()`` for parsing
+        Extra options passed to ``read_csv()`` for parsing
         the CSV file returned by ``xlsx2csv.Xlsx2csv().convert()``
-        e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c", "d", "e"]}``
+        e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"], infer_schema_length=None}``
 
     Returns
     -------
     DataFrame
+
+    Examples
+    --------
+
+    Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
+
+    >>> excel_file = "test.xlsx"
+    >>> sheet_name = "My Datasheet"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     sheet_name=sheet_name,
+    ... )  # doctest: +SKIP
+
+    Read sheet 3 from Excel sheet file to a DataFrame while skipping
+    empty lines in the sheet. As sheet 3 does not have header row,
+    pass the needed settings to ``read_csv()``.
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     sheet_id=3,
+    ...     xlsx2csv_options={"skip_empty_lines": True},
+    ...     read_csv_options={"has_header": False, "new_columns": ["a", "b", "c"]},
+    ... )  # doctest: +SKIP
+
+    If the correct datatypes can't be determined by polars, look
+    at ``read_csv()`` documentation to see which options you can pass
+    to fix this issue. For example ``"infer_schema_length": None``
+    can be used to read the whole data twice, once to infer the
+    correct output types and once to actually convert the input to
+    the correct types. With `"infer_schema_length": 1000``, only
+    the first 1000 lines are read twice.
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     read_csv_options={"infer_schema_length": None},
+    ... )  # doctest: +SKIP
+
+    Alternative
+    -----------
+
+    If ``read_excel()`` does not work or you need to read other types
+    of spreadsheet files, you can try pandas ``pd.read_excel()``
+    (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.from_pandas(pd.read_excel(excel_file))  # doctest: +SKIP
     """
 
     try:
