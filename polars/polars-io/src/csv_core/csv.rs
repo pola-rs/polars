@@ -280,7 +280,9 @@ impl<'a> CoreReader<'a> {
         })
     }
 
-    fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<&'b [u8]> {
+    fn find_starting_point<'b>(&self, mut bytes: &'b [u8]) -> Result<(&'b [u8], usize)> {
+        let starting_point_offset = bytes.as_ptr() as usize;
+
         // Skip all leading white space and the occasional utf8-bom
         bytes = skip_whitespace(skip_bom(bytes));
         // \n\n can be a empty string row of a single column
@@ -304,7 +306,10 @@ impl<'a> CoreReader<'a> {
                 bytes = &bytes[pos..];
             }
         }
-        Ok(bytes)
+
+        let starting_point_offset = bytes.as_ptr() as usize - starting_point_offset;
+
+        Ok((bytes, starting_point_offset))
     }
 
     fn parse_csv(
@@ -314,8 +319,9 @@ impl<'a> CoreReader<'a> {
         predicate: Option<&Arc<dyn PhysicalIoExpr>>,
     ) -> Result<DataFrame> {
         let logging = std::env::var("POLARS_VERBOSE").is_ok();
+
         // Make the variable mutable so that we can reassign the sliced file to this variable.
-        let mut bytes = self.find_starting_point(bytes)?;
+        let (mut bytes, starting_point_offset) = self.find_starting_point(bytes)?;
 
         // initial row guess. We use the line statistic to guess the number of rows to allocate
         let mut total_rows = 128;
@@ -485,9 +491,10 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
+                            let offset = read + starting_point_offset;
                             read += parse_lines(
                                 local_bytes,
-                                read,
+                                offset,
                                 delimiter,
                                 self.comment_char,
                                 self.quote_char,
@@ -602,9 +609,10 @@ impl<'a> CoreReader<'a> {
                             let local_bytes = &bytes[read..stop_at_nbytes];
 
                             last_read = read;
+                            let offset = read + starting_point_offset;
                             read += parse_lines(
                                 local_bytes,
-                                read,
+                                offset,
                                 delimiter,
                                 self.comment_char,
                                 self.quote_char,
