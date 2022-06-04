@@ -6,6 +6,7 @@ mod single_keys_left;
 mod single_keys_outer;
 #[cfg(feature = "semi_anti_join")]
 mod single_keys_semi_anti;
+pub(super) mod sort_merge;
 
 #[cfg(feature = "chunked_ids")]
 use arrow::Either;
@@ -26,6 +27,7 @@ use polars_arrow::utils::CustomIterTools;
 use crate::frame::hash_join::multiple_keys::{
     inner_join_multiple_keys, left_join_multiple_keys, outer_join_multiple_keys,
 };
+use sort_merge::*;
 
 #[cfg(feature = "semi_anti_join")]
 use crate::frame::hash_join::multiple_keys::{left_anti_multiple_keys, left_semi_multiple_keys};
@@ -97,6 +99,7 @@ macro_rules! det_hash_prone_order {
     }};
 }
 
+use crate::series::IsSorted;
 pub(super) use det_hash_prone_order;
 
 /// If Categorical types are created without a global string cache or under
@@ -667,7 +670,12 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let (join_tuples_left, join_tuples_right) = s_left.hash_join_inner(s_right);
+        let (join_tuples_left, join_tuples_right) = if use_sort_merge(s_left, s_right) {
+            par_sorted_merge_inner(s_left, s_right)
+        } else {
+            s_left.hash_join_inner(s_right)
+        };
+
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
 
@@ -826,7 +834,21 @@ impl DataFrame {
         #[cfg(feature = "dtype-categorical")]
         check_categorical_src(s_left.dtype(), s_right.dtype())?;
 
-        let ids = s_left.hash_join_left(s_right);
+        let ids = if use_sort_merge(s_left, s_right) {
+            let (left_idx, right_idx) = par_sorted_merge_left(s_left, s_right);
+            #[cfg(feature = "chunked_ids")]
+            {
+                (Either::Left(left_idx), Either::Left(right_idx))
+            }
+
+            #[cfg(not(feature = "chunked_ids"))]
+            {
+                (left_idx, right_idx)
+            }
+        } else {
+            s_left.hash_join_left(s_right)
+        };
+
         self.finish_left_join(ids, &other.drop(s_right.name()).unwrap(), suffix, slice)
     }
 

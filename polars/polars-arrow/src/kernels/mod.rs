@@ -8,7 +8,7 @@ pub mod list;
 pub mod rolling;
 pub mod set;
 pub mod sort_partition;
-mod sorted_join;
+pub mod sorted_join;
 #[cfg(feature = "strings")]
 pub mod string;
 pub mod take;

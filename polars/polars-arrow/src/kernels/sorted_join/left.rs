@@ -1,28 +1,34 @@
 use super::*;
 
-pub(super) fn join<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> LeftJoinIds {
+pub fn join<T: PartialOrd + Copy + Debug>(
+    left: &[T],
+    right: &[T],
+    left_offset: IdxSize,
+) -> LeftJoinIds {
     if left.is_empty() {
         return (vec![], vec![]);
     }
     if right.is_empty() {
-        return ((0..left.len() as IdxSize).collect(), vec![None; left.len()]);
+        return (
+            (left_offset..left.len() as IdxSize + left_offset).collect(),
+            vec![None; left.len()],
+        );
     }
     // * 1.5 because there can be duplicates
     let cap = (left.len() as f32 * 1.5) as usize;
     let mut out_rhs = Vec::with_capacity(cap);
     let mut out_lhs = Vec::with_capacity(cap);
 
-    let mut left_idx = 0 as IdxSize;
     let mut right_idx = 0 as IdxSize;
     // left array could start lower than right;
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
     // first values should be None, until left has catched up
 
-    let first_right = right[0];
-    left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
+    let first_right = right[right_idx as usize];
+    let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
     out_rhs.extend(std::iter::repeat(None).take(left_idx as usize));
-    out_lhs.extend(0..left_idx);
+    out_lhs.extend(left_offset..(left_idx + left_offset));
 
     for &val_l in &left[left_idx as usize..] {
         loop {
@@ -30,7 +36,7 @@ pub(super) fn join<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> Lef
                 Some(&val_r) => {
                     // matching join key
                     if val_l == val_r {
-                        out_lhs.push(left_idx);
+                        out_lhs.push(left_idx + left_offset);
                         out_rhs.push(Some(right_idx));
                         let current_idx = right_idx;
 
@@ -45,7 +51,7 @@ pub(super) fn join<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> Lef
                                 }
                                 Some(&val_r) => {
                                     if val_l == val_r {
-                                        out_lhs.push(left_idx);
+                                        out_lhs.push(left_idx + left_offset);
                                         out_rhs.push(Some(right_idx));
                                     } else {
                                         // reset right index because the next lhs value can be the same
@@ -60,7 +66,7 @@ pub(super) fn join<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> Lef
 
                     // right is larger than left.
                     if val_r > val_l {
-                        out_lhs.push(left_idx);
+                        out_lhs.push(left_idx + left_offset);
                         out_rhs.push(None);
                         break;
                     }
@@ -69,7 +75,7 @@ pub(super) fn join<T: PartialOrd + Copy + Debug>(left: &[T], right: &[T]) -> Lef
                 }
                 // we depleted the right array
                 None => {
-                    out_lhs.push(left_idx);
+                    out_lhs.push(left_idx + left_offset);
                     out_rhs.push(None);
                     break;
                 }
@@ -89,27 +95,35 @@ mod test {
         let lhs = &[0, 1, 1, 2, 3, 5];
         let rhs = &[0, 1, 1, 3, 4];
 
-        let (l_idx, r_idx) = join(lhs, rhs);
+        let (l_idx, r_idx) = join(lhs, rhs, 0);
+        let out_left = &[0, 1, 1, 2, 2, 3, 4, 5];
+        let out_right = &[
+            Some(0),
+            Some(1),
+            Some(2),
+            Some(1),
+            Some(2),
+            None,
+            Some(3),
+            None,
+        ];
+        assert_eq!(&l_idx, out_left);
+        assert_eq!(&r_idx, out_right);
 
-        assert_eq!(&l_idx, &[0, 1, 1, 2, 2, 3, 4, 5]);
-        assert_eq!(
-            &r_idx,
-            &[
-                Some(0),
-                Some(1),
-                Some(2),
-                Some(1),
-                Some(2),
-                None,
-                Some(3),
-                None
-            ]
-        );
+        let offset = 2;
+        let (l_idx, r_idx) = join(&lhs[offset..], rhs, offset as IdxSize);
+        assert_eq!(l_idx, out_left[3..]);
+        assert_eq!(r_idx, out_right[3..]);
+
+        let offset = 3;
+        let (l_idx, r_idx) = join(&lhs[offset..], rhs, offset as IdxSize);
+        assert_eq!(l_idx, out_left[5..]);
+        assert_eq!(r_idx, out_right[5..]);
 
         let lhs = &[0, 0, 1, 3, 4, 5, 6, 6, 6, 7];
         let rhs = &[0, 0, 1, 3, 4, 6, 6];
 
-        let (l_idx, r_idx) = join(lhs, rhs);
+        let (l_idx, r_idx) = join(lhs, rhs, 0);
         assert_eq!(&l_idx, &[0, 0, 1, 1, 2, 3, 4, 5, 6, 6, 7, 7, 8, 8, 9]);
         assert_eq!(
             &r_idx,
@@ -134,7 +148,7 @@ mod test {
 
         let lhs = &[1, 3, 4, 5, 5, 5, 5, 6, 7, 7];
         let rhs = &[2, 4, 5, 6, 7, 8, 10, 11, 11, 12, 12, 12, 12, 13];
-        let (l_idx, r_idx) = join(lhs, rhs);
+        let (l_idx, r_idx) = join(lhs, rhs, 0);
         assert_eq!(&l_idx, &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
         assert_eq!(
             &r_idx,
@@ -153,7 +167,7 @@ mod test {
         );
         let lhs = &[0, 1, 2, 2, 3, 4, 4, 6, 6, 7];
         let rhs = &[4, 4, 4, 8];
-        let (l_idx, r_idx) = join(lhs, rhs);
+        let (l_idx, r_idx) = join(lhs, rhs, 0);
         assert_eq!(&l_idx, &[0, 1, 2, 3, 4, 5, 5, 5, 6, 6, 6, 7, 8, 9]);
         assert_eq!(
             &r_idx,
@@ -174,5 +188,11 @@ mod test {
                 None
             ]
         )
+    }
+
+    #[test]
+    fn test_left_join_threaded() {
+        let lhs = &[0, 1, 1, 2, 3, 5];
+        let rhs = &[0, 1, 1, 3, 4];
     }
 }

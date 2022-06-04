@@ -1,5 +1,5 @@
-mod left;
-mod right;
+pub mod inner;
+pub mod left;
 
 use crate::index::IdxSize;
 use std::fmt::Debug;
