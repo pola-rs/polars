@@ -1028,8 +1028,136 @@ def read_sql(
         return cast(DataFrame, from_arrow(tbl))
     else:
         raise ImportError(
-            "connectorx is not installed." "Please run pip install connectorx>=0.2.2"
+            "connectorx is not installed. Please run `pip install connectorx>=0.2.2`."
         )
+
+
+def read_excel(
+    file: Union[str, BytesIO, Path, BinaryIO, bytes],
+    sheet_id: Optional[int] = 1,
+    sheet_name: Optional[str] = None,
+    xlsx2csv_options: Optional[dict] = None,
+    read_csv_options: Optional[dict] = None,
+) -> DataFrame:
+    """
+    Read Excel (XLSX) sheet into a DataFrame by converting an Excel
+    sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parsing
+    the CSV output with ``pl.read_csv()``.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file-like object.
+        By file-like object, we refer to objects with a ``read()``
+        method, such as a file handler (e.g. via builtin ``open``
+        function) or ``BytesIO``.
+    sheet_id
+        Sheet number to convert (0 for all sheets).
+    sheet_name
+        Sheet name to convert.
+    xlsx2csv_options
+        Extra options passed to ``xlsx2csv.Xlsx2csv()``.
+        e.g.: ``{"skip_empty_lines": True}``
+    read_csv_options
+        Extra options passed to ``read_csv()`` for parsing
+        the CSV file returned by ``xlsx2csv.Xlsx2csv().convert()``
+        e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"], infer_schema_length=None}``
+
+    Returns
+    -------
+    DataFrame
+
+    Examples
+    --------
+
+    Read "My Datasheet" sheet from Excel sheet file to a DataFrame.
+
+    >>> excel_file = "test.xlsx"
+    >>> sheet_name = "My Datasheet"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     sheet_name=sheet_name,
+    ... )  # doctest: +SKIP
+
+    Read sheet 3 from Excel sheet file to a DataFrame while skipping
+    empty lines in the sheet. As sheet 3 does not have header row,
+    pass the needed settings to ``read_csv()``.
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     sheet_id=3,
+    ...     xlsx2csv_options={"skip_empty_lines": True},
+    ...     read_csv_options={"has_header": False, "new_columns": ["a", "b", "c"]},
+    ... )  # doctest: +SKIP
+
+    If the correct datatypes can't be determined by polars, look
+    at ``read_csv()`` documentation to see which options you can pass
+    to fix this issue. For example ``"infer_schema_length": None``
+    can be used to read the whole data twice, once to infer the
+    correct output types and once to actually convert the input to
+    the correct types. With `"infer_schema_length": 1000``, only
+    the first 1000 lines are read twice.
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.read_excel(
+    ...     file=excel_file,
+    ...     read_csv_options={"infer_schema_length": None},
+    ... )  # doctest: +SKIP
+
+    Alternative
+    -----------
+
+    If ``read_excel()`` does not work or you need to read other types
+    of spreadsheet files, you can try pandas ``pd.read_excel()``
+    (supports `xls`, `xlsx`, `xlsm`, `xlsb`, `odf`, `ods` and `odt`).
+
+    >>> excel_file = "test.xlsx"
+    >>> pl.from_pandas(pd.read_excel(excel_file))  # doctest: +SKIP
+    """
+
+    try:
+        import xlsx2csv  # type: ignore
+    except ImportError:
+        raise ImportError(
+            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+        )
+
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
+    if not xlsx2csv_options:
+        xlsx2csv_options = {}
+
+    if not read_csv_options:
+        read_csv_options = {}
+
+    # Override xlsx2csv eprint function so in case an error occurs
+    # it raises an exception instead of writing to stderr.
+    def _eprint(*args: Any, **kwargs: Any) -> None:
+        raise xlsx2csv.XlsxException(format(*args))
+
+    xlsx2csv.eprint = _eprint
+
+    # Create Xlsx2csv instance.
+    xlsx2csv_instance = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
+
+    if sheet_name:
+        sheet_id = xlsx2csv_instance.getSheetIdByName(sheet_name)
+
+        if not sheet_id:
+            raise xlsx2csv.XlsxException(f"Sheet '{sheet_name}' not found.")
+
+    csv_buffer = StringIO()
+
+    # Convert sheet from XSLX document to CSV.
+    xlsx2csv_instance.convert(outfile=csv_buffer, sheetid=sheet_id)
+
+    # Rewind buffer to start.
+    csv_buffer.seek(0)
+
+    # Parse CSV output.
+    return read_csv(csv_buffer, **read_csv_options)
 
 
 def scan_ds(ds: "pa.dataset.dataset") -> "LazyFrame":
