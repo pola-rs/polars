@@ -121,7 +121,7 @@ impl SQLContext {
             }
             // Default polars group by will have group by columns at the front
             // need some container to contain position of group by columns and its position
-            // at the final agg projection, check the schema for the existant of group by column
+            // at the final agg projection, check the schema for the existence of group by column
             // and its projections columns, keeping the original index
             let (exclude_expr, groupby_pos): (Vec<_>, Vec<_>) = group_by
                 .iter()

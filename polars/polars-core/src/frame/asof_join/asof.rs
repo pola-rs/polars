@@ -60,7 +60,7 @@ where
     // left array could start lower than right;
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
-    // first values should be None, until left has catched up
+    // first values should be None, until left has caught up
     let mut left_catched_up = false;
 
     // init with left so that the distance starts at 0
@@ -132,7 +132,7 @@ pub(super) fn join_asof_backward<T: PartialOrd + Copy + Debug>(
     // left array could start lower than right;
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
-    // first values should be None, until left has catched up
+    // first values should be None, until left has caught up
     let mut left_catched_up = false;
 
     for &val_l in left {

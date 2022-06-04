@@ -10,7 +10,7 @@ pub trait ArrowGetItem {
     fn get(&self, item: usize) -> Option<Self::Item>;
 
     /// # Safety
-    /// Get item. It is the callers resposibility that the `item < self.len()`
+    /// Get item. It is the callers responsibility that the `item < self.len()`
     unsafe fn get_unchecked(&self, item: usize) -> Option<Self::Item>;
 }
 
