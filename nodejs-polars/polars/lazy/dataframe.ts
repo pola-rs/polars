@@ -117,7 +117,7 @@ export interface LazyDataFrame extends Serialize {
    */
   fetch(numRows?: number): Promise<DataFrame>
   fetch(numRows: number, opts: LazyOptions): Promise<DataFrame>
-  /** Behaves the same as fetch, but will perform the actions syncronously */
+  /** Behaves the same as fetch, but will perform the actions synchronously */
   fetchSync(numRows?: number): DataFrame
   fetchSync(numRows: number, opts: LazyOptions): DataFrame
   /**

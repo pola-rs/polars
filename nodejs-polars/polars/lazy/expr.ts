@@ -520,7 +520,7 @@ export interface Expr extends
   upperBound(): Expr
   /** Get variance. */
   var(): Expr
-  /** Alais for filter: @see {@link filter} */
+  /** Alias for filter: @see {@link filter} */
   where(predicate: Expr): Expr
 }
 

@@ -35,7 +35,7 @@ export function repeat<V>(value: V, n: number, name= ""): Series {
  * @param options.rechunk rechunk the final DataFrame/Series.
  * @param options.how Only used if the items are DataFrames. *Defaults to 'vertical'*
  *     - Vertical: Applies multiple `vstack` operations.
- *     - Horizontal: Stacks Series horizontall and fills with nulls if the lengths don't match.
+ *     - Horizontal: Stacks Series horizontally and fills with nulls if the lengths don't match.
  *
  * @example
  * >>> const df1 = pl.DataFrame({"a": [1], "b": [3]})

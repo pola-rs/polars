@@ -35,7 +35,7 @@ describe("lazyframe", () => {
 project */2 columns	|	details: None;
 selection: "None" `.replace(/\s+/g, " "));
   });
-  test("describeOptimiziedPlan", () => {
+  test("describeOptimizedPlan", () => {
     const df = pl.DataFrame({
       "foo": [1, 2],
       "bar": ["a", "b"]
