@@ -31,6 +31,10 @@ pub unsafe fn take_unchecked(arr: &dyn Array, idx: &IdxArr) -> ArrayRef {
             use arrow::compute::take::take;
             Arc::from(take(arr, idx).unwrap())
         }
+        #[cfg(not(feature = "compute"))]
+        _ => {
+            panic!("activate compute feature")
+        }
     }
 }
 
