@@ -23,7 +23,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     // left array could start lower than right;
     // left: [-1, 0, 1, 2],
     // right: [1, 2, 3]
-    // first values should be None, until left has catched up
+    // first values should be None, until left has caught up
 
     let first_right = right[right_idx as usize];
     let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;

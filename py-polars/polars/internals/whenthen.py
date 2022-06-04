@@ -16,13 +16,13 @@ class WhenThenThen:
     """
 
     def __init__(self, pywhenthenthen: Any):
-        self.pywenthenthen = pywhenthenthen
+        self.pywhenthenthen = pywhenthenthen
 
     def when(self, predicate: pli.Expr) -> "WhenThenThen":
         """
         Start another when, then, otherwise layer.
         """
-        return WhenThenThen(self.pywenthenthen.when(predicate._pyexpr))
+        return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
     def then(self, expr: Union[pli.Expr, int, float, str]) -> "WhenThenThen":
         """
@@ -31,7 +31,7 @@ class WhenThenThen:
         See Also: the `when` function.
         """
         expr_ = pli.expr_to_lit_or_expr(expr)
-        return WhenThenThen(self.pywenthenthen.then(expr_._pyexpr))
+        return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
 
     def otherwise(self, expr: Union[pli.Expr, int, float, str]) -> pli.Expr:
         """
@@ -40,7 +40,7 @@ class WhenThenThen:
         See Also: the `when` function.
         """
         expr = pli.expr_to_lit_or_expr(expr)
-        return pli.wrap_expr(self.pywenthenthen.otherwise(expr._pyexpr))
+        return pli.wrap_expr(self.pywhenthenthen.otherwise(expr._pyexpr))
 
 
 class WhenThen:

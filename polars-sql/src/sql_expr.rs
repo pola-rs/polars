@@ -135,7 +135,7 @@ pub(crate) fn parse_sql_expr(expr: &SqlExpr) -> Result<Expr> {
 fn apply_window_spec(expr: Expr, window_spec: &Option<WindowSpec>) -> Result<Expr> {
     Ok(match &window_spec {
         Some(window_spec) => {
-            // Process for simple window specification, partitionn by first
+            // Process for simple window specification, partition by first
             let partition_by = window_spec
                 .partition_by
                 .iter()

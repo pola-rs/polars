@@ -85,7 +85,7 @@ impl<'a, T: NativeType> RollingAggWindowNulls<'a, T> for SortedMinMax<'a, T> {
 }
 
 /// Generic `Min` / `Max` kernel. It is written in terms of `Min` aggregation,
-/// but applys to `max` as well, just mentally `:s/min/max/g`.
+/// but applies to `max` as well, just mentally `:s/min/max/g`.
 pub struct MinMaxWindow<'a, T: NativeType + PartialOrd + IsFloat> {
     slice: &'a [T],
     validity: &'a Bitmap,
