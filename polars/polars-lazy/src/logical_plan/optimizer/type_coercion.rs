@@ -37,18 +37,21 @@ fn use_supertype(
             |(_, AExpr::Literal(LiteralValue::Float32(_) | LiteralValue::Float64(_)))
             => {}
 
-            // cast literal to right type
-            (AExpr::Literal(_), _) => {
-                // never cast signed to unsigned
-                if type_right.is_signed() {
-                    st = type_right.clone();
+            // cast literal to right type if they fit in the range
+            (AExpr::Literal(value), _) => {
+                if let Some(lit_val) = value.to_anyvalue() {
+                   if type_right.value_within_range(lit_val) {
+                       st = type_right.clone();
+                   }
                 }
             }
             // cast literal to left type
-            (_, AExpr::Literal(_)) => {
-                // never cast signed to unsigned
-                if type_left.is_signed() {
-                    st = type_left.clone();
+            (_, AExpr::Literal(value)) => {
+
+                if let Some(lit_val) = value.to_anyvalue() {
+                    if type_left.value_within_range(lit_val) {
+                        st = type_left.clone();
+                    }
                 }
             }
             // do nothing

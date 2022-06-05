@@ -55,6 +55,30 @@ pub enum LiteralValue {
 }
 
 impl LiteralValue {
+    pub fn to_anyvalue(&self) -> Option<AnyValue> {
+        use LiteralValue::*;
+        let av = match self {
+            Null => AnyValue::Null,
+            Boolean(v) => AnyValue::Boolean(*v),
+            #[cfg(feature = "dtype-u8")]
+            UInt8(v) => AnyValue::UInt8(*v),
+            #[cfg(feature = "dtype-u16")]
+            UInt16(v) => AnyValue::UInt16(*v),
+            UInt32(v) => AnyValue::UInt32(*v),
+            UInt64(v) => AnyValue::UInt64(*v),
+            #[cfg(feature = "dtype-i16")]
+            Int8(v) => AnyValue::Int8(*v),
+            #[cfg(feature = "dtype-i16")]
+            Int16(v) => AnyValue::Int16(*v),
+            Int32(v) => AnyValue::Int32(*v),
+            Int64(v) => AnyValue::Int64(*v),
+            Float32(v) => AnyValue::Float32(*v),
+            Float64(v) => AnyValue::Float64(*v),
+            _ => return None,
+        };
+        Some(av)
+    }
+
     /// Getter for the `DataType` of the value
     pub fn get_datatype(&self) -> DataType {
         match self {

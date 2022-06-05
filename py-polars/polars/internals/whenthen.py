@@ -24,7 +24,7 @@ class WhenThenThen:
         """
         return WhenThenThen(self.pywhenthenthen.when(predicate._pyexpr))
 
-    def then(self, expr: Union[pli.Expr, int, float, str]) -> "WhenThenThen":
+    def then(self, expr: Union[pli.Expr, int, float, str, None]) -> "WhenThenThen":
         """
         Values to return in case of the predicate being `True`.
 
@@ -33,7 +33,7 @@ class WhenThenThen:
         expr_ = pli.expr_to_lit_or_expr(expr)
         return WhenThenThen(self.pywhenthenthen.then(expr_._pyexpr))
 
-    def otherwise(self, expr: Union[pli.Expr, int, float, str]) -> pli.Expr:
+    def otherwise(self, expr: Union[pli.Expr, int, float, str, None]) -> pli.Expr:
         """
         Values to return in case of the predicate being `False`.
 
@@ -75,7 +75,7 @@ class When:
     def __init__(self, pywhen: "pywhen"):
         self._pywhen = pywhen
 
-    def then(self, expr: Union[pli.Expr, int, float, str]) -> WhenThen:
+    def then(self, expr: Union[pli.Expr, int, float, str, None]) -> WhenThen:
         """
         Values to return in case of the predicate being `True`.
 

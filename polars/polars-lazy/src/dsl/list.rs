@@ -19,7 +19,7 @@ impl ListNameSpace {
             Ok(ca.lst_lengths().into_series())
         };
         self.0
-            .map(function, GetOutput::from_type(DataType::UInt32))
+            .map(function, GetOutput::from_type(IDX_DTYPE))
             .with_fmt("arr.len")
     }
 

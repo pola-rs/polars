@@ -20,8 +20,11 @@ impl CastExpr {
 
         if input.bool().is_ok() && input.null_count() == input.len() {
             match &self.data_type {
-                DataType::List(_) => {
-                    return Ok(ListChunked::full_null(input.name(), input.len()).into_series())
+                DataType::List(inner) => {
+                    return Ok(
+                        ListChunked::full_null_with_dtype(input.name(), input.len(), inner)
+                            .into_series(),
+                    )
                 }
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {

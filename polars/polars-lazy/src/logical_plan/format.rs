@@ -247,7 +247,7 @@ impl fmt::Debug for Expr {
                 falsy,
             } => write!(
                 f,
-                "\nWHEN {:?}\n\t{:?}\nOTHERWISE\n\t{:?}",
+                "\nWHEN {:?}\nTHEN\n\t{:?}\nOTHERWISE\n\t{:?}",
                 predicate, truthy, falsy
             ),
             AnonymousFunction { input, options, .. } | Function { input, options, .. } => {
