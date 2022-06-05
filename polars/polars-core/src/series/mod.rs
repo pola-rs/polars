@@ -423,11 +423,12 @@ impl Series {
     pub(crate) unsafe fn _take_chunked_unchecked_threaded(
         &self,
         chunk_ids: &[ChunkId],
+        sorted: IsSorted,
         rechunk: bool,
     ) -> Series {
         self.threaded_op(rechunk, chunk_ids.len(), &|offset, len| {
             let chunk_ids = &chunk_ids[offset..offset + len];
-            Ok(self._take_chunked_unchecked(chunk_ids))
+            Ok(self._take_chunked_unchecked(chunk_ids, sorted))
         })
         .unwrap()
     }

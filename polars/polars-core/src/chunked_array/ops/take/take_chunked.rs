@@ -1,7 +1,8 @@
 use super::*;
+use crate::series::IsSorted;
 
 pub trait TakeChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self;
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self;
 
     unsafe fn take_opt_chunked_unchecked(&self, by: &[Option<ChunkId>]) -> Self;
 }
@@ -10,7 +11,7 @@ impl<T> TakeChunked for ChunkedArray<T>
 where
     T: PolarsNumericType,
 {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let mut ca = if self.null_count() == 0 {
             let arrs = self
                 .downcast_iter()
@@ -36,6 +37,7 @@ where
                 .collect_trusted()
         };
         ca.rename(self.name());
+        ca.set_sorted2(sorted);
         ca
     }
 
@@ -57,7 +59,7 @@ where
 }
 
 impl TakeChunked for Utf8Chunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
@@ -67,6 +69,7 @@ impl TakeChunked for Utf8Chunked {
             })
             .collect_trusted();
         ca.rename(self.name());
+        ca.set_sorted2(sorted);
         ca
     }
 
@@ -88,7 +91,7 @@ impl TakeChunked for Utf8Chunked {
 }
 
 impl TakeChunked for BooleanChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
@@ -98,6 +101,7 @@ impl TakeChunked for BooleanChunked {
             })
             .collect_trusted();
         ca.rename(self.name());
+        ca.set_sorted2(sorted);
         ca
     }
 
@@ -119,7 +123,7 @@ impl TakeChunked for BooleanChunked {
 }
 
 impl TakeChunked for ListChunked {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
         let mut ca: Self = by
             .iter()
@@ -129,6 +133,7 @@ impl TakeChunked for ListChunked {
             })
             .collect();
         ca.rename(self.name());
+        ca.set_sorted2(sorted);
         ca
     }
 
@@ -150,7 +155,7 @@ impl TakeChunked for ListChunked {
 }
 #[cfg(feature = "object")]
 impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
-    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId]) -> Self {
+    unsafe fn take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Self {
         let arrs = self.downcast_iter().collect::<Vec<_>>();
 
         let mut ca: Self = by
@@ -162,6 +167,7 @@ impl<T: PolarsObject> TakeChunked for ObjectChunked<T> {
             .collect();
 
         ca.rename(self.name());
+        ca.set_sorted2(sorted);
         ca
     }
 

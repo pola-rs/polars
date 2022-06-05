@@ -44,6 +44,7 @@ use polars_arrow::prelude::*;
 
 #[cfg(feature = "dtype-categorical")]
 use crate::chunked_array::categorical::RevMapping;
+use crate::series::IsSorted;
 use crate::utils::CustomIterTools;
 use std::mem;
 
@@ -168,6 +169,14 @@ impl<T> ChunkedArray<T> {
             self.bit_settings |= 1 << 1
         } else {
             self.bit_settings |= 1
+        }
+    }
+
+    pub fn set_sorted2(&mut self, sorted: IsSorted) {
+        match sorted {
+            IsSorted::Not => {}
+            IsSorted::Ascending => self.set_sorted(false),
+            IsSorted::Descending => self.set_sorted(true),
         }
     }
 

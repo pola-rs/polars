@@ -158,9 +158,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
         self.0
-            .apply_fields(|s| s._take_chunked_unchecked(by))
+            .apply_fields(|s| s._take_chunked_unchecked(by, sorted))
             .into_series()
     }
 

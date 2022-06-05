@@ -4,11 +4,11 @@ use polars_arrow::kernels::sorted_join;
 use polars_utils::flatten;
 
 pub(super) fn use_sort_merge(s_left: &Series, s_right: &Series) -> bool {
-    let out = !matches!(s_left.is_sorted(), IsSorted::Not)
-        && !matches!(s_right.is_sorted(), IsSorted::Not)
-        && s_left.null_count() == 0
-        && s_right.null_count() == 0;
-
+    use IsSorted::*;
+    let out = match (s_left.is_sorted(), s_right.is_sorted()) {
+        (Ascending, Ascending) => s_left.null_count() == 0 && s_right.null_count() == 0,
+        _ => false,
+    };
     if out && std::env::var("POLARS_VERBOSE").is_ok() {
         eprintln!("keys are sorted: use sorted merge join")
     }

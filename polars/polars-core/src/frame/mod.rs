@@ -40,6 +40,7 @@ use crate::POOL;
 use serde::{Deserialize, Serialize};
 use std::hash::{BuildHasher, Hash, Hasher};
 
+use crate::series::IsSorted;
 pub use chunks::*;
 
 #[derive(Copy, Clone, Debug)]
@@ -3004,10 +3005,10 @@ impl DataFrame {
     }
 
     #[cfg(feature = "chunked_ids")]
-    pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId]) -> Self {
+    pub(crate) unsafe fn take_chunked_unchecked(&self, idx: &[ChunkId], sorted: IsSorted) -> Self {
         let cols = self.apply_columns_par(&|s| match s.dtype() {
-            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, true),
-            _ => s._take_chunked_unchecked(idx),
+            DataType::Utf8 => s._take_chunked_unchecked_threaded(idx, sorted, true),
+            _ => s._take_chunked_unchecked(idx, sorted),
         });
 
         DataFrame::new_no_checks(cols)
@@ -3027,11 +3028,26 @@ impl DataFrame {
     /// every thread split may be on rayon stack and lead to SO
     #[doc(hidden)]
     pub unsafe fn _take_unchecked_slice(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+        self._take_unchecked_slice2(idx, allow_threads, IsSorted::Not)
+    }
+
+    #[doc(hidden)]
+    pub unsafe fn _take_unchecked_slice2(
+        &self,
+        idx: &[IdxSize],
+        allow_threads: bool,
+        sorted: IsSorted,
+    ) -> Self {
         let ptr = idx.as_ptr() as *mut IdxSize;
         let len = idx.len();
 
         // create a temporary vec. we will not drop it.
         let mut ca = IdxCa::from_vec("", Vec::from_raw_parts(ptr, len, len));
+        match sorted {
+            IsSorted::Not => {}
+            IsSorted::Ascending => ca.set_sorted(false),
+            IsSorted::Descending => ca.set_sorted(true),
+        }
         let out = self.take_unchecked_impl(&ca, allow_threads);
 
         // ref count of buffers should be one because we dropped all allocations

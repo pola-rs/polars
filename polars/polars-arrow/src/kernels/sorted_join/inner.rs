@@ -60,52 +60,6 @@ pub fn join<T: PartialOrd + Copy + Debug>(
             // continue looping the right side
             right_idx += 1;
         }
-        // loop {
-        //     match right.get(right_idx as usize) {
-        //         Some(&val_r) => {
-        //             // matching join key
-        //             if val_l == val_r {
-        //                 out_lhs.push(left_idx + left_offset);
-        //                 out_rhs.push(right_idx);
-        //                 let current_idx = right_idx;
-        //
-        //                 loop {
-        //                     right_idx += 1;
-        //                     match right.get(right_idx as usize) {
-        //                         // rhs depleted
-        //                         None => {
-        //                             // reset right index because the next lhs value can be the same
-        //                             right_idx = current_idx;
-        //                             break;
-        //                         }
-        //                         Some(&val_r) => {
-        //                             if val_l == val_r {
-        //                                 out_lhs.push(left_idx + left_offset);
-        //                                 out_rhs.push(right_idx);
-        //                             } else {
-        //                                 // reset right index because the next lhs value can be the same
-        //                                 right_idx = current_idx;
-        //                                 break;
-        //                             }
-        //                         }
-        //                     }
-        //                 }
-        //                 break;
-        //             }
-        //
-        //             // right is larger than left.
-        //             if val_r > val_l {
-        //                 break;
-        //             }
-        //             // continue looping the right side
-        //             right_idx += 1;
-        //         }
-        //         // we depleted the right array
-        //         None => {
-        //             break;
-        //         }
-        //     }
-        // }
         left_idx += 1;
     }
     (out_lhs, out_rhs)

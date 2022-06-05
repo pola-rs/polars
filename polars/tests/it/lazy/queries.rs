@@ -148,3 +148,25 @@ fn test_sorted_path() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_sorted_path_joins() -> Result<()> {
+    let dfa = df![
+        "a"=> [1, 2, 3]
+    ]?;
+
+    let dfb = df![
+        "a"=> [1, 2, 3]
+    ]?;
+
+    let out = dfa
+        .lazy()
+        .with_column(col("a").set_sorted(IsSorted::Ascending))
+        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left)
+        .collect()?;
+
+    let s = out.column("a")?;
+    assert_eq!(s.is_sorted(), IsSorted::Ascending);
+
+    Ok(())
+}

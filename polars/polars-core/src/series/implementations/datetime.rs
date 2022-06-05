@@ -292,8 +292,8 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
-        let ca = self.0.deref().take_chunked_unchecked(by);
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
+        let ca = self.0.deref().take_chunked_unchecked(by, sorted);
         ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
