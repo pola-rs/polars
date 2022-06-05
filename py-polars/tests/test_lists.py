@@ -240,3 +240,15 @@ def test_list_empty_groupby_result_3521() -> None:
         .groupby("groupby_column")
         .agg(pl.col("n_unique_column").drop_nulls())
     ).to_dict(False) == {"groupby_column": [1], "n_unique_column": [[]]}
+
+
+def test_list_fill_null() -> None:
+    df = pl.DataFrame({"C": [["a", "b", "c"], [], [], ["d", "e"]]})
+    assert df.with_columns(
+        [
+            pl.when(pl.col("C").arr.lengths() == 0)
+            .then(None)
+            .otherwise(pl.col("C"))
+            .alias("C")
+        ]
+    ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]

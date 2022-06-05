@@ -733,6 +733,24 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
+    pub fn value_within_range(&self, other: AnyValue) -> bool {
+        use DataType::*;
+        match self {
+            UInt8 => other.extract::<u8>().is_some(),
+            #[cfg(feature = "dtype-u16")]
+            UInt16 => other.extract::<u16>().is_some(),
+            UInt32 => other.extract::<u32>().is_some(),
+            UInt64 => other.extract::<u64>().is_some(),
+            #[cfg(feature = "dtype-i8")]
+            Int8 => other.extract::<i8>().is_some(),
+            #[cfg(feature = "dtype-i16")]
+            Int16 => other.extract::<i16>().is_some(),
+            Int32 => other.extract::<i32>().is_some(),
+            Int64 => other.extract::<i64>().is_some(),
+            _ => false,
+        }
+    }
+
     pub fn inner_dtype(&self) -> Option<&DataType> {
         if let DataType::List(inner) = self {
             Some(&*inner)

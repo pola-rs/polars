@@ -5173,7 +5173,7 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, "pli.Series"],
+    expr: Union[Expr, bool, int, float, str, "pli.Series", None],
     str_to_lit: bool = True,
 ) -> Expr:
     """
