@@ -45,7 +45,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         Ok(StructChunked::new_unchecked(self.0.name(), &fields).into_series())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -54,7 +54,7 @@ impl private::PrivateSeries for SeriesWrap<StructChunked> {
         let gb = df
             .groupby_with_series(self.0.fields().to_vec(), multithreaded, sorted)
             .unwrap();
-        gb.groups
+        gb.take_groups()
     }
 }
 
@@ -286,7 +286,9 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     /// Get unique values in the Series.
     fn unique(&self) -> Result<Series> {
         let groups = self.group_tuples(true, false);
-        Ok(self.0.clone().into_series().agg_first(&groups))
+        // safety:
+        // groups are in bounds
+        Ok(unsafe { self.0.clone().into_series().agg_first(&groups) })
     }
 
     /// Get unique values in the Series.

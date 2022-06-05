@@ -323,7 +323,9 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!
                 if self.state.safe_to_agg(&self.groups) {
-                    let agg = s.agg_list(&self.groups);
+                    // safety:
+                    // groups are in bounds
+                    let agg = unsafe { s.agg_list(&self.groups) };
                     self.update_groups = UpdateGroups::WithGroupsLen;
                     self.state = AggState::AggregatedList(agg);
                 }
@@ -390,7 +392,9 @@ impl<'a> AggregationContext<'a> {
                     }
                 }
 
-                let out = s.agg_list(&self.groups);
+                // safety:
+                // groups are in bounds
+                let out = unsafe { s.agg_list(&self.groups) };
                 self.state = AggState::AggregatedList(out.clone());
 
                 if !self.sorted {
@@ -424,7 +428,9 @@ impl<'a> AggregationContext<'a> {
             let s = s.clone();
             // // todo! optimize this, we don't have to call agg_list, create the list directly.
             let s = s.expand_at_index(0, self.groups.iter().map(|g| g.len()).sum());
-            s.agg_list(&self.groups)
+            // safety:
+            // groups are in bounds
+            unsafe { s.agg_list(&self.groups) }
         } else {
             self.aggregated()
         }

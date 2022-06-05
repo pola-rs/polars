@@ -99,7 +99,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
         self.0.logical().vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .logical()

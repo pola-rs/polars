@@ -186,13 +186,13 @@ where
 }
 
 impl BooleanChunked {
-    pub(crate) fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.cast(&IDX_DTYPE).unwrap().agg_min(groups)
     }
-    pub(crate) fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.cast(&IDX_DTYPE).unwrap().agg_max(groups)
     }
-    pub(crate) fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.cast(&IDX_DTYPE).unwrap().agg_sum(groups)
     }
 }
@@ -243,7 +243,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_first(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Series {
         let out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.iter().map(|(first, idx)| {
@@ -255,7 +255,7 @@ impl Series {
                 });
                 // Safety:
                 // groups are always in bounds
-                unsafe { self.take_opt_iter_unchecked(&mut iter) }
+                self.take_opt_iter_unchecked(&mut iter)
             }
             GroupsProxy::Slice { groups, rolling } => {
                 if *rolling && !groups.is_empty() {
@@ -276,22 +276,21 @@ impl Series {
                     );
                 // Safety:
                 // groups are always in bounds
-                unsafe { self.take_opt_iter_unchecked(&mut iter) }
+                self.take_opt_iter_unchecked(&mut iter)
             }
         };
         self.restore_logical(out)
     }
 
     #[doc(hidden)]
-    pub fn agg_n_unique(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<IdxType, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     None
                 } else {
-                    let take =
-                        unsafe { self.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize)) };
+                    let take = self.take_iter_unchecked(&mut idx.iter().map(|i| *i as usize));
                     take.n_unique().ok().map(|v| v as IdxSize)
                 }
             }),
@@ -310,7 +309,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         use DataType::*;
 
         match self.dtype() {
@@ -331,7 +330,7 @@ impl Series {
     }
 
     #[doc(hidden)]
-    pub fn agg_last(&self, groups: &GroupsProxy) -> Series {
+    pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Series {
         let out = match groups {
             GroupsProxy::Idx(groups) => {
                 let mut iter = groups.all().iter().map(|idx| {
@@ -341,7 +340,7 @@ impl Series {
                         Some(idx[idx.len() - 1] as usize)
                     }
                 });
-                unsafe { self.take_opt_iter_unchecked(&mut iter) }
+                self.take_opt_iter_unchecked(&mut iter)
             }
             GroupsProxy::Slice { groups, .. } => {
                 let mut iter = groups.iter().map(|&[first, len]| {
@@ -351,7 +350,7 @@ impl Series {
                         Some((first + len - 1) as usize)
                     }
                 });
-                unsafe { self.take_opt_iter_unchecked(&mut iter) }
+                self.take_opt_iter_unchecked(&mut iter)
             }
         };
         self.restore_logical(out)
@@ -368,7 +367,7 @@ where
         + arrow::compute::aggregate::SimdOrd<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
-    pub(crate) fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -378,25 +377,21 @@ where
                     self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => unsafe {
-                            Some(take_agg_no_null_primitive_iter_unchecked(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| if a < b { a } else { b },
-                                T::Native::max_value(),
-                            ))
-                        },
-                        (_, 1) => unsafe {
-                            take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| if a < b { a } else { b },
-                                T::Native::max_value(),
-                                idx.len() as IdxSize,
-                            )
-                        },
+                        (false, 1) => Some(take_agg_no_null_primitive_iter_unchecked(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                        )),
+                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a < b { a } else { b },
+                            T::Native::max_value(),
+                            idx.len() as IdxSize,
+                        ),
                         _ => {
-                            let take = unsafe { self.take_unchecked(idx.into()) };
+                            let take = { self.take_unchecked(idx.into()) };
                             take.min()
                         }
                     }
@@ -451,7 +446,7 @@ where
         }
     }
 
-    pub(crate) fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -461,7 +456,7 @@ where
                     self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => Some(unsafe {
+                        (false, 1) => Some({
                             take_agg_no_null_primitive_iter_unchecked(
                                 self.downcast_iter().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
@@ -469,17 +464,15 @@ where
                                 T::Native::min_value(),
                             )
                         }),
-                        (_, 1) => unsafe {
-                            take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| if a > b { a } else { b },
-                                T::Native::min_value(),
-                                idx.len() as IdxSize,
-                            )
-                        },
+                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| if a > b { a } else { b },
+                            T::Native::min_value(),
+                            idx.len() as IdxSize,
+                        ),
                         _ => {
-                            let take = unsafe { self.take_unchecked(idx.into()) };
+                            let take = { self.take_unchecked(idx.into()) };
                             take.max()
                         }
                     }
@@ -535,7 +528,7 @@ where
         }
     }
 
-    pub(crate) fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx::<T, _>(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
@@ -545,7 +538,7 @@ where
                     self.get(first as usize)
                 } else {
                     match (self.has_validity(), self.chunks.len()) {
-                        (false, 1) => Some(unsafe {
+                        (false, 1) => Some({
                             take_agg_no_null_primitive_iter_unchecked(
                                 self.downcast_iter().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
@@ -553,7 +546,7 @@ where
                                 T::Native::zero(),
                             )
                         }),
-                        (_, 1) => unsafe {
+                        (_, 1) => {
                             let out = take_agg_primitive_iter_unchecked::<T::Native, _, _>(
                                 self.downcast_iter().next().unwrap(),
                                 idx.iter().map(|i| *i as usize),
@@ -565,9 +558,9 @@ where
                                 dbg!(idx, self);
                             };
                             out
-                        },
+                        }
                         _ => {
-                            let take = unsafe { self.take_unchecked(idx.into()) };
+                            let take = { self.take_unchecked(idx.into()) };
                             take.sum()
                         }
                     }
@@ -621,7 +614,7 @@ where
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
-    pub(crate) fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
                 agg_helper_idx::<T, _>(groups, |(first, idx)| {
@@ -637,7 +630,7 @@ where
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
-                            (false, 1) => unsafe {
+                            (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked(
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
@@ -647,7 +640,7 @@ where
                             }
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
-                            (_, 1) => unsafe {
+                            (_, 1) => {
                                 take_agg_primitive_iter_unchecked_count_nulls::<T::Native, _, _, _>(
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
@@ -662,7 +655,7 @@ where
                                     .unwrap()
                             }),
                             _ => {
-                                let take = unsafe { self.take_unchecked(idx.into()) };
+                                let take = { self.take_unchecked(idx.into()) };
                                 take.mean()
                             }
                         }
@@ -704,7 +697,7 @@ where
         }
     }
 
-    pub(crate) fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
         let ca = &self.0;
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -712,7 +705,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice { groups, .. } => {
@@ -748,7 +741,7 @@ where
             }
         }
     }
-    pub(crate) fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
         let ca = &self.0;
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -756,7 +749,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice { groups, .. } => {
@@ -793,7 +786,7 @@ where
         }
     }
 
-    pub(crate) fn agg_quantile(
+    pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
         quantile: f64,
@@ -807,7 +800,7 @@ where
                 if idx.is_empty() | invalid_quantile {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx.into()) };
                 take.quantile_as_series(quantile, interpol)
                     .unwrap() // checked with invalid quantile check
                     .unpack::<T>()
@@ -855,7 +848,7 @@ where
             }
         }
     }
-    pub(crate) fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         let ca = &self.0;
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -863,7 +856,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { ca.take_unchecked(idx.into()) };
+                let take = { ca.take_unchecked(idx.into()) };
                 take.median_as_series().unpack::<T>().unwrap().get(0)
             }),
             GroupsProxy::Slice { .. } => {
@@ -882,7 +875,7 @@ where
         + arrow::compute::aggregate::Sum<T::Native>
         + arrow::compute::aggregate::SimdOrd<T::Native>,
 {
-    pub(crate) fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => {
                 agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
@@ -898,7 +891,7 @@ where
                         self.get(first as usize).map(|sum| sum.to_f64().unwrap())
                     } else {
                         match (self.has_validity(), self.chunks.len()) {
-                            (false, 1) => unsafe {
+                            (false, 1) => {
                                 take_agg_no_null_primitive_iter_unchecked(
                                     self.downcast_iter().next().unwrap(),
                                     idx.iter().map(|i| *i as usize),
@@ -909,7 +902,7 @@ where
                             .to_f64()
                             .map(|sum| sum / idx.len() as f64),
                             (_, 1) => {
-                                unsafe {
+                                {
                                     take_agg_primitive_iter_unchecked_count_nulls::<
                                         T::Native,
                                         f64,
@@ -928,7 +921,7 @@ where
                                 })
                             }
                             _ => {
-                                let take = unsafe { self.take_unchecked(idx.into()) };
+                                let take = { self.take_unchecked(idx.into()) };
                                 take.mean()
                             }
                         }
@@ -959,14 +952,14 @@ where
         }
     }
 
-    pub(crate) fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.into()) };
+                let take = { self.take_unchecked(idx.into()) };
                 take.var_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
             GroupsProxy::Slice {
@@ -992,14 +985,14 @@ where
             }
         }
     }
-    pub(crate) fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.into()) };
+                let take = { self.take_unchecked(idx.into()) };
                 take.std_as_series().unpack::<Float64Type>().unwrap().get(0)
             }),
             GroupsProxy::Slice {
@@ -1026,7 +1019,7 @@ where
         }
     }
 
-    pub(crate) fn agg_quantile(
+    pub(crate) unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
         quantile: f64,
@@ -1038,7 +1031,7 @@ where
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.into()) };
+                let take = self.take_unchecked(idx.into());
                 take.quantile_as_series(quantile, interpol)
                     .unwrap()
                     .unpack::<Float64Type>()
@@ -1068,14 +1061,14 @@ where
             }
         }
     }
-    pub(crate) fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         match groups {
             GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<Float64Type, _>(groups, |idx| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     return None;
                 }
-                let take = unsafe { self.take_unchecked(idx.into()) };
+                let take = self.take_unchecked(idx.into());
                 take.median_as_series()
                     .unpack::<Float64Type>()
                     .unwrap()

@@ -81,28 +81,28 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_min(groups)
             .into_duration(self.0.time_unit())
             .into_series()
     }
 
-    fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_max(groups)
             .into_duration(self.0.time_unit())
             .into_series()
     }
 
-    fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_sum(groups)
             .into_duration(self.0.time_unit())
             .into_series()
     }
 
-    fn agg_std(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_std(groups)
             // cast f64 back to physical type
@@ -112,7 +112,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn agg_var(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_var(groups)
             // cast f64 back to physical type
@@ -122,7 +122,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .agg_list(groups)
@@ -130,7 +130,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .unwrap()
     }
 
-    fn agg_quantile(
+    unsafe fn agg_quantile(
         &self,
         groups: &GroupsProxy,
         quantile: f64,
@@ -145,7 +145,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series()
     }
 
-    fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
         self.0
             .agg_median(groups)
             // cast f64 back to physical type

@@ -2937,8 +2937,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_unique(&self) -> Result<BooleanChunked> {
-        let mut gb = self.groupby(self.get_column_names())?;
-        let groups = std::mem::take(&mut gb.groups);
+        let gb = self.groupby(self.get_column_names())?;
+        let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -2961,8 +2961,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn is_duplicated(&self) -> Result<BooleanChunked> {
-        let mut gb = self.groupby(self.get_column_names())?;
-        let groups = std::mem::take(&mut gb.groups);
+        let gb = self.groupby(self.get_column_names())?;
+        let groups = gb.take_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -3068,9 +3068,9 @@ impl DataFrame {
     #[doc(hidden)]
     pub fn _partition_by_impl(&self, cols: &[String], stable: bool) -> Result<Vec<DataFrame>> {
         let groups = if stable {
-            self.groupby_stable(cols)?.groups
+            self.groupby_stable(cols)?.take_groups()
         } else {
-            self.groupby(cols)?.groups
+            self.groupby(cols)?.take_groups()
         };
 
         // don't parallelize this

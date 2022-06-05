@@ -87,31 +87,31 @@ macro_rules! impl_dyn_series {
                 self.0.vec_hash_combine(build_hasher, hashes)
             }
 
-            fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_min(groups)
             }
 
-            fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_max(groups)
             }
 
-            fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_sum(groups)
             }
 
-            fn agg_std(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_std(&self, groups: &GroupsProxy) -> Series {
                 self.agg_std(groups)
             }
 
-            fn agg_var(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_var(&self, groups: &GroupsProxy) -> Series {
                 self.agg_var(groups)
             }
 
-            fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
                 self.0.agg_list(groups)
             }
 
-            fn agg_quantile(
+            unsafe fn agg_quantile(
                 &self,
                 groups: &GroupsProxy,
                 quantile: f64,
@@ -120,7 +120,7 @@ macro_rules! impl_dyn_series {
                 self.agg_quantile(groups, quantile, interpol)
             }
 
-            fn agg_median(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
                 self.agg_median(groups)
             }
             fn zip_outer_join_column(
