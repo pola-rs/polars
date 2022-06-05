@@ -40,119 +40,123 @@ impl PhysicalExpr for AggregationExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
 
-        let out = match self.agg_type {
-            GroupByMethod::Min => {
-                let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Max => {
-                let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Median => {
-                let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Mean => {
-                let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Sum => {
-                let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Count => {
-                // a few fast paths that prevent materializing new groups
-                match ac.update_groups {
-                    UpdateGroups::WithSeriesLen => {
-                        let list = ac
-                            .series()
-                            .list()
-                            .expect("impl error, should be a list at this point");
+        // Safety:
+        // groups must always be in bounds.
+        let out = unsafe {
+            match self.agg_type {
+                GroupByMethod::Min => {
+                    let agg_s = ac.flat_naive().into_owned().agg_min(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Max => {
+                    let agg_s = ac.flat_naive().into_owned().agg_max(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Median => {
+                    let agg_s = ac.flat_naive().into_owned().agg_median(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Mean => {
+                    let agg_s = ac.flat_naive().into_owned().agg_mean(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Sum => {
+                    let agg_s = ac.flat_naive().into_owned().agg_sum(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Count => {
+                    // a few fast paths that prevent materializing new groups
+                    match ac.update_groups {
+                        UpdateGroups::WithSeriesLen => {
+                            let list = ac
+                                .series()
+                                .list()
+                                .expect("impl error, should be a list at this point");
 
-                        let mut s = match list.chunks().len() {
-                            1 => {
-                                let arr = list.downcast_iter().next().unwrap();
-                                let offsets = arr.offsets().as_slice();
+                            let mut s = match list.chunks().len() {
+                                1 => {
+                                    let arr = list.downcast_iter().next().unwrap();
+                                    let offsets = arr.offsets().as_slice();
 
-                                let mut previous = 0i64;
-                                let counts: NoNull<IdxCa> = offsets[1..]
-                                    .iter()
-                                    .map(|&o| {
-                                        let len = (o - previous) as IdxSize;
-                                        previous = o;
-                                        len
-                                    })
-                                    .collect_trusted();
-                                counts.into_inner()
-                            }
-                            _ => {
-                                let counts: NoNull<IdxCa> = list
-                                    .amortized_iter()
-                                    .map(|s| {
-                                        if let Some(s) = s {
-                                            s.as_ref().len() as IdxSize
-                                        } else {
-                                            1
-                                        }
-                                    })
-                                    .collect_trusted();
-                                counts.into_inner()
-                            }
-                        };
-                        s.rename(&keep_name);
-                        s.into_series()
-                    }
-                    UpdateGroups::WithGroupsLen => {
-                        // no need to update the groups
-                        // we can just get the attribute, because we only need the length,
-                        // not the correct order
-                        let mut ca = ac.groups.group_count();
-                        ca.rename(&keep_name);
-                        ca.into_series()
-                    }
-                    // materialize groups
-                    _ => {
-                        let mut ca = ac.groups().group_count();
-                        ca.rename(&keep_name);
-                        ca.into_series()
+                                    let mut previous = 0i64;
+                                    let counts: NoNull<IdxCa> = offsets[1..]
+                                        .iter()
+                                        .map(|&o| {
+                                            let len = (o - previous) as IdxSize;
+                                            previous = o;
+                                            len
+                                        })
+                                        .collect_trusted();
+                                    counts.into_inner()
+                                }
+                                _ => {
+                                    let counts: NoNull<IdxCa> = list
+                                        .amortized_iter()
+                                        .map(|s| {
+                                            if let Some(s) = s {
+                                                s.as_ref().len() as IdxSize
+                                            } else {
+                                                1
+                                            }
+                                        })
+                                        .collect_trusted();
+                                    counts.into_inner()
+                                }
+                            };
+                            s.rename(&keep_name);
+                            s.into_series()
+                        }
+                        UpdateGroups::WithGroupsLen => {
+                            // no need to update the groups
+                            // we can just get the attribute, because we only need the length,
+                            // not the correct order
+                            let mut ca = ac.groups.group_count();
+                            ca.rename(&keep_name);
+                            ca.into_series()
+                        }
+                        // materialize groups
+                        _ => {
+                            let mut ca = ac.groups().group_count();
+                            ca.rename(&keep_name);
+                            ca.into_series()
+                        }
                     }
                 }
-            }
-            GroupByMethod::First => {
-                let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
-                agg_s.rename(&keep_name);
-                agg_s
-            }
-            GroupByMethod::Last => {
-                let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
-                agg_s.rename(&keep_name);
-                agg_s
-            }
-            GroupByMethod::NUnique => {
-                let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::List => {
-                let agg = ac.aggregated();
-                rename_series(agg, &keep_name)
-            }
-            GroupByMethod::Groups => {
-                let mut column: ListChunked = ac.groups().as_list_chunked();
-                column.rename(&keep_name);
-                column.into_series()
-            }
-            GroupByMethod::Std => {
-                let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Var => {
-                let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
-                rename_series(agg_s, &keep_name)
-            }
-            GroupByMethod::Quantile(_, _) => {
-                // implemented explicitly in AggQuantile struct
-                unimplemented!()
+                GroupByMethod::First => {
+                    let mut agg_s = ac.flat_naive().into_owned().agg_first(ac.groups());
+                    agg_s.rename(&keep_name);
+                    agg_s
+                }
+                GroupByMethod::Last => {
+                    let mut agg_s = ac.flat_naive().into_owned().agg_last(ac.groups());
+                    agg_s.rename(&keep_name);
+                    agg_s
+                }
+                GroupByMethod::NUnique => {
+                    let agg_s = ac.flat_naive().into_owned().agg_n_unique(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::List => {
+                    let agg = ac.aggregated();
+                    rename_series(agg, &keep_name)
+                }
+                GroupByMethod::Groups => {
+                    let mut column: ListChunked = ac.groups().as_list_chunked();
+                    column.rename(&keep_name);
+                    column.into_series()
+                }
+                GroupByMethod::Std => {
+                    let agg_s = ac.flat_naive().into_owned().agg_std(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Var => {
+                    let agg_s = ac.flat_naive().into_owned().agg_var(ac.groups());
+                    rename_series(agg_s, &keep_name)
+                }
+                GroupByMethod::Quantile(_, _) => {
+                    // implemented explicitly in AggQuantile struct
+                    unimplemented!()
+                }
             }
         };
 
@@ -182,65 +186,70 @@ impl PartitionedAggregation for AggregationExpr {
     ) -> Result<Series> {
         let expr = self.expr.as_partitioned_aggregator().unwrap();
         let series = expr.evaluate_partitioned(df, groups, state)?;
-        match self.agg_type {
-            #[cfg(feature = "dtype-struct")]
-            GroupByMethod::Mean => {
-                let new_name = series.name().to_string();
-                let mut agg_s = series.agg_sum(groups);
-                agg_s.rename(&new_name);
 
-                if !agg_s.dtype().is_numeric() {
-                    Ok(agg_s)
-                } else {
-                    let agg_s = match agg_s.dtype() {
-                        DataType::Float32 => agg_s,
-                        _ => agg_s.cast(&DataType::Float64).unwrap(),
-                    };
-                    let mut count_s = series.agg_valid_count(groups);
-                    count_s.rename("count");
-                    Ok(StructChunked::new(&new_name, &[agg_s, count_s])
-                        .unwrap()
-                        .into_series())
+        // Safety:
+        // groups are in bounds
+        unsafe {
+            match self.agg_type {
+                #[cfg(feature = "dtype-struct")]
+                GroupByMethod::Mean => {
+                    let new_name = series.name().to_string();
+                    let mut agg_s = series.agg_sum(groups);
+                    agg_s.rename(&new_name);
+
+                    if !agg_s.dtype().is_numeric() {
+                        Ok(agg_s)
+                    } else {
+                        let agg_s = match agg_s.dtype() {
+                            DataType::Float32 => agg_s,
+                            _ => agg_s.cast(&DataType::Float64).unwrap(),
+                        };
+                        let mut count_s = series.agg_valid_count(groups);
+                        count_s.rename("count");
+                        Ok(StructChunked::new(&new_name, &[agg_s, count_s])
+                            .unwrap()
+                            .into_series())
+                    }
                 }
-            }
-            GroupByMethod::List => {
-                let new_name = series.name();
-                let mut agg = series.agg_list(groups);
-                agg.rename(new_name);
-                Ok(agg)
-            }
-            GroupByMethod::First => {
-                let mut agg = series.agg_first(groups);
-                agg.rename(series.name());
-                Ok(agg)
-            }
-            GroupByMethod::Last => {
-                let mut agg = series.agg_last(groups);
-                agg.rename(series.name());
-                Ok(agg)
-            }
-            GroupByMethod::Max => {
-                let mut agg = series.agg_max(groups);
-                agg.rename(series.name());
-                Ok(agg)
-            }
-            GroupByMethod::Min => {
-                let mut agg = series.agg_min(groups);
-                agg.rename(series.name());
-                Ok(agg)
-            }
-            GroupByMethod::Sum => {
-                let mut agg = series.agg_sum(groups);
-                agg.rename(series.name());
-                Ok(agg)
-            }
-            GroupByMethod::Count => {
-                let mut ca = groups.group_count();
-                ca.rename(series.name());
-                Ok(ca.into_series())
-            }
-            _ => {
-                unimplemented!()
+                GroupByMethod::List => {
+                    let new_name = series.name();
+                    let mut agg = series.agg_list(groups);
+                    agg.rename(new_name);
+                    Ok(agg)
+                }
+                GroupByMethod::First => {
+                    let mut agg = series.agg_first(groups);
+                    agg.rename(series.name());
+                    Ok(agg)
+                }
+                GroupByMethod::Last => {
+                    let mut agg = series.agg_last(groups);
+                    agg.rename(series.name());
+                    Ok(agg)
+                }
+                GroupByMethod::Max => {
+                    let mut agg = series.agg_max(groups);
+                    agg.rename(series.name());
+                    Ok(agg)
+                }
+                GroupByMethod::Min => {
+                    let mut agg = series.agg_min(groups);
+                    agg.rename(series.name());
+                    Ok(agg)
+                }
+                GroupByMethod::Sum => {
+                    let mut agg = series.agg_sum(groups);
+                    agg.rename(series.name());
+                    Ok(agg)
+                }
+                GroupByMethod::Count => {
+                    let mut ca = groups.group_count();
+                    ca.rename(series.name());
+                    Ok(ca.into_series())
+                }
+                _ => {
+                    unimplemented!()
+                }
             }
         }
     }
@@ -253,7 +262,7 @@ impl PartitionedAggregation for AggregationExpr {
     ) -> Result<Series> {
         match self.agg_type {
             GroupByMethod::Count | GroupByMethod::Sum => {
-                let mut agg = partitioned.agg_sum(groups);
+                let mut agg = unsafe { partitioned.agg_sum(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
             }
@@ -267,7 +276,7 @@ impl PartitionedAggregation for AggregationExpr {
                         let sum = &ca.fields()[0];
                         let count = &ca.fields()[1];
                         let (agg_count, agg_s) =
-                            POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups));
+                            unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
                         let agg_s = &agg_s / &agg_count;
                         Ok(rename_series(agg_s, new_name))
                     }
@@ -340,22 +349,22 @@ impl PartitionedAggregation for AggregationExpr {
                 Ok(ca.into_series())
             }
             GroupByMethod::First => {
-                let mut agg = partitioned.agg_first(groups);
+                let mut agg = unsafe { partitioned.agg_first(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
             }
             GroupByMethod::Last => {
-                let mut agg = partitioned.agg_last(groups);
+                let mut agg = unsafe { partitioned.agg_last(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
             }
             GroupByMethod::Max => {
-                let mut agg = partitioned.agg_max(groups);
+                let mut agg = unsafe { partitioned.agg_max(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
             }
             GroupByMethod::Min => {
-                let mut agg = partitioned.agg_min(groups);
+                let mut agg = unsafe { partitioned.agg_min(groups) };
                 agg.rename(partitioned.name());
                 Ok(agg)
             }
@@ -403,10 +412,13 @@ impl PhysicalExpr for AggQuantileExpr {
         // don't change names by aggregations as is done in polars-core
         let keep_name = ac.series().name().to_string();
 
-        let mut agg =
+        // safety:
+        // groups are in bounds
+        let mut agg = unsafe {
             ac.flat_naive()
                 .into_owned()
-                .agg_quantile(ac.groups(), self.quantile, self.interpol);
+                .agg_quantile(ac.groups(), self.quantile, self.interpol)
+        };
         agg.rename(&keep_name);
         Ok(AggregationContext::new(agg, Cow::Borrowed(groups), true))
     }

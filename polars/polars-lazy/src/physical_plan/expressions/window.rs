@@ -239,8 +239,8 @@ impl PhysicalExpr for WindowExpr {
             // and keys are sorted
             //  we may optimize with explode call
             (!self.is_simple_column_expr() && !explicit_list_agg && sorted_keys && !self.is_aggregation());
-            let mut gb = df.groupby_with_series(groupby_columns.clone(), true, sorted)?;
-            let out: Result<GroupsProxy> = Ok(std::mem::take(gb.get_groups_mut()));
+            let gb = df.groupby_with_series(groupby_columns.clone(), true, sorted)?;
+            let out: Result<GroupsProxy> = Ok(gb.take_groups());
             out
         };
 
@@ -274,9 +274,9 @@ impl PhysicalExpr for WindowExpr {
 
         let mut ac = self.run_aggregation(df, state, &gb)?;
 
-        let cache_gb = |mut gb: GroupBy| {
+        let cache_gb = |gb: GroupBy| {
             if state.cache_window {
-                let groups = std::mem::take(gb.get_groups_mut());
+                let groups = gb.take_groups();
                 let mut gt_map = state.group_tuples.lock();
                 gt_map.insert(cache_key.clone(), groups);
             } else {

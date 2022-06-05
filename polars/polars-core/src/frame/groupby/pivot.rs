@@ -92,7 +92,7 @@ impl DataFrame {
         groups: &GroupsProxy,
     ) -> Result<(Vec<IdxSize>, Series)> {
         let column_s = self.column(column)?;
-        let column_agg = column_s.agg_first(groups);
+        let column_agg = unsafe { column_s.agg_first(groups) };
         let column_agg_physical = column_agg.to_physical_repr();
 
         let mut col_to_idx = PlHashMap::with_capacity(HASHMAP_INIT_SIZE);
@@ -121,7 +121,7 @@ impl DataFrame {
     ) -> Result<(Vec<IdxSize>, usize, Option<Vec<Series>>)> {
         let (row_locations, n_rows, row_index) = if index.len() == 1 {
             let index_s = self.column(&index[0])?;
-            let index_agg = index_s.agg_first(groups);
+            let index_agg = unsafe { index_s.agg_first(groups) };
             let index_agg_physical = index_agg.to_physical_repr();
 
             let mut row_to_idx =
@@ -157,7 +157,7 @@ impl DataFrame {
             let index_s = self.columns(index)?;
             let index_agg_physical = index_s
                 .iter()
-                .map(|s| s.agg_first(groups).to_physical_repr().into_owned())
+                .map(|s| unsafe { s.agg_first(groups).to_physical_repr().into_owned() })
                 .collect::<Vec<_>>();
             let mut iters = index_agg_physical
                 .iter()
@@ -261,15 +261,17 @@ impl DataFrame {
                     let value_col = self.column(value_col)?;
 
                     use PivotAgg::*;
-                    let value_agg = match agg_fn {
-                        Sum => value_col.agg_sum(&groups),
-                        Min => value_col.agg_min(&groups),
-                        Max => value_col.agg_max(&groups),
-                        Last => value_col.agg_last(&groups),
-                        First => value_col.agg_first(&groups),
-                        Mean => value_col.agg_mean(&groups),
-                        Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
+                    let value_agg = unsafe {
+                        match agg_fn {
+                            Sum => value_col.agg_sum(&groups),
+                            Min => value_col.agg_min(&groups),
+                            Max => value_col.agg_max(&groups),
+                            Last => value_col.agg_last(&groups),
+                            First => value_col.agg_first(&groups),
+                            Mean => value_col.agg_mean(&groups),
+                            Median => value_col.agg_median(&groups),
+                            Count => groups.group_count().into_series(),
+                        }
                     };
 
                     let headers = column_agg.unique_stable()?.cast(&DataType::Utf8)?;

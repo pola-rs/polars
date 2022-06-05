@@ -80,7 +80,9 @@ impl PartitionedAggregation for CountExpr {
         groups: &GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<Series> {
-        let mut agg = partitioned.agg_sum(groups);
+        // safety:
+        // groups are in bounds
+        let mut agg = unsafe { partitioned.agg_sum(groups) };
         agg.rename(COUNT_NAME);
         Ok(agg)
     }

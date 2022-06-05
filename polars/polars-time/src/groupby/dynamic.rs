@@ -288,10 +288,10 @@ impl Wrap<&DataFrame> {
             }
         };
 
-        let dt = dt.clone().into_series().agg_first(&groups);
+        let dt = unsafe { dt.clone().into_series().agg_first(&groups) };
         let mut dt = dt.datetime().unwrap().as_ref().clone();
         for key in by.iter_mut() {
-            *key = key.agg_first(&groups)
+            *key = unsafe { key.agg_first(&groups) };
         }
 
         if options.truncate {
@@ -379,7 +379,7 @@ impl Wrap<&DataFrame> {
 
         if !by.is_empty() {
             for key in by.iter_mut() {
-                *key = key.agg_first(&groups)
+                *key = unsafe { key.agg_first(&groups) };
             }
         }
         dt.cast(time_type).map(|s| (s, by, groups))
@@ -449,7 +449,7 @@ mod test {
                 )
                 .unwrap();
 
-            let sum = a.agg_sum(&groups);
+            let sum = unsafe { a.agg_sum(&groups) };
             let expected = Series::new("", [3, 10, 15, 24, 11, 1]);
             assert_eq!(sum, expected);
         }
@@ -489,37 +489,37 @@ mod test {
 
         let nulls = Series::new("", [Some(3), Some(7), None, Some(9), Some(2), Some(1)]);
 
-        let min = a.agg_min(&groups);
+        let min = unsafe { a.agg_min(&groups) };
         let expected = Series::new("", [3, 3, 3, 3, 2, 1]);
         assert_eq!(min, expected);
 
         // expected for nulls is equal
-        let min = nulls.agg_min(&groups);
+        let min = unsafe { nulls.agg_min(&groups) };
         assert_eq!(min, expected);
 
-        let max = a.agg_max(&groups);
+        let max = unsafe { a.agg_max(&groups) };
         let expected = Series::new("", [3, 7, 7, 9, 9, 1]);
         assert_eq!(max, expected);
 
-        let max = nulls.agg_max(&groups);
+        let max = unsafe { nulls.agg_max(&groups) };
         assert_eq!(max, expected);
 
-        let var = a.agg_var(&groups);
+        let var = unsafe { a.agg_var(&groups) };
         let expected = Series::new(
             "",
             [0.0, 8.0, 4.000000000000002, 6.666666666666667, 24.5, 0.0],
         );
         assert_eq!(var, expected);
 
-        let var = nulls.agg_var(&groups);
+        let var = unsafe { nulls.agg_var(&groups) };
         let expected = Series::new("", [0.0, 8.0, 8.0, 9.333333333333343, 24.5, 0.0]);
         assert_eq!(var, expected);
 
-        let quantile = a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear);
+        let quantile = unsafe { a.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 6.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 
-        let quantile = nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear);
+        let quantile = unsafe { nulls.agg_quantile(&groups, 0.5, QuantileInterpolOptions::Linear) };
         let expected = Series::new("", [3.0, 5.0, 5.0, 7.0, 5.5, 1.0]);
         assert_eq!(quantile, expected);
 

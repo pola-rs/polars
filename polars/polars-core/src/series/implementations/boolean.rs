@@ -66,19 +66,19 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
         self.0.vec_hash_combine(build_hasher, hashes)
     }
 
-    fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_min(groups)
     }
 
-    fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_max(groups)
     }
 
-    fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_sum(groups)
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 

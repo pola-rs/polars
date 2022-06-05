@@ -35,14 +35,15 @@ impl CategoricalChunked {
 
     pub fn value_counts(&self) -> Result<DataFrame> {
         let groups = self.logical().group_tuples(true, false);
-        let logical_values = self
-            .logical()
-            .clone()
-            .into_series()
-            .agg_first(&groups)
-            .u32()
-            .unwrap()
-            .clone();
+        let logical_values = unsafe {
+            self.logical()
+                .clone()
+                .into_series()
+                .agg_first(&groups)
+                .u32()
+                .unwrap()
+                .clone()
+        };
 
         let mut values = self.clone();
         *values.logical_mut() = logical_values;

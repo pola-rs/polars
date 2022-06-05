@@ -44,7 +44,7 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
         ChunkZip::zip_with(&self.0, mask, other.as_ref().as_ref()).map(|ca| ca.into_series())
     }
 
-    fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
         self.0.agg_list(groups)
     }
 
