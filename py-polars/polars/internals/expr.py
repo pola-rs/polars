@@ -1349,7 +1349,7 @@ class Expr:
         return wrap_expr(self._pyexpr.n_unique())
 
     def null_count(self) -> "Expr":
-        """Count unique values."""
+        """Count null values."""
         return wrap_expr(self._pyexpr.null_count())
 
     def arg_unique(self) -> "Expr":
