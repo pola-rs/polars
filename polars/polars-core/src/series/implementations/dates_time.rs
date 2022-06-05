@@ -294,8 +294,8 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
-                let ca = self.0.deref().take_chunked_unchecked(by);
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
+                let ca = self.0.deref().take_chunked_unchecked(by, sorted);
                 ca.$into_logical().into_series()
             }
 

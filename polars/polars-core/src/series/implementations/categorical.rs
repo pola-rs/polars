@@ -227,8 +227,8 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
-        let cats = self.0.logical().take_chunked_unchecked(by);
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
+        let cats = self.0.logical().take_chunked_unchecked(by, sorted);
         self.finish_with_state(false, cats).into_series()
     }
 

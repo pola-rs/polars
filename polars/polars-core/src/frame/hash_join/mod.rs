@@ -311,7 +311,8 @@ impl DataFrame {
         if left_join && chunk_ids.len() == self.height() {
             self.clone()
         } else {
-            self.take_chunked_unchecked(chunk_ids)
+            // left join keys are in ascending order
+            self.take_chunked_unchecked(chunk_ids, IsSorted::Ascending)
         }
     }
 

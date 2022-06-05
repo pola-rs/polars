@@ -97,6 +97,19 @@ macro_rules! impl_dyn_series {
             }
 
             fn _set_sorted(&mut self, reverse: bool) {
+                #[cfg(debug_assertions)]
+                {
+                    match (self.cont_slice(), self.is_empty()) {
+                        (Ok(vals), false) => {
+                            if reverse {
+                                assert!(vals[0] >= vals[vals.len() - 1])
+                            } else {
+                                assert!(vals[0] <= vals[vals.len() - 1])
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 self.0.set_sorted(reverse)
             }
 
@@ -468,8 +481,8 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "chunked_ids")]
-            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series {
-                self.0.take_chunked_unchecked(by).into_series()
+            unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series {
+                self.0.take_chunked_unchecked(by, sorted).into_series()
             }
 
             #[cfg(feature = "chunked_ids")]

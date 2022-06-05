@@ -45,6 +45,7 @@ use crate::dsl::function_expr::FunctionExpr;
 use polars_arrow::array::default_arrays::FromData;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+use polars_core::series::IsSorted;
 use polars_core::utils::{get_supertype, NoNull};
 use polars_ops::prelude::SeriesOps;
 
@@ -1960,6 +1961,25 @@ impl Expr {
                 options.auto_explode = true;
                 options
             })
+    }
+
+    /// Set this `Series` as `sorted` so that downstream code can use
+    /// fast paths for sorted arrays.
+    /// # Warning
+    /// This can lead to incorrect results if this `Series` is not sorted!!
+    /// Use with care!
+    pub fn set_sorted(self, sorted: IsSorted) -> Expr {
+        self.apply(
+            move |mut s| {
+                match sorted {
+                    IsSorted::Not => {}
+                    IsSorted::Ascending => s.set_sorted(false),
+                    IsSorted::Descending => s.set_sorted(true),
+                }
+                Ok(s)
+            },
+            GetOutput::same_type(),
+        )
     }
 
     #[cfg(feature = "row_hash")]

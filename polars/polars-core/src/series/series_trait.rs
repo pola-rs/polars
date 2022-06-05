@@ -434,7 +434,7 @@ pub trait SeriesTrait:
 
     #[doc(hidden)]
     #[cfg(feature = "chunked_ids")]
-    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId]) -> Series;
+    unsafe fn _take_chunked_unchecked(&self, by: &[ChunkId], sorted: IsSorted) -> Series;
 
     #[doc(hidden)]
     #[cfg(feature = "chunked_ids")]
