@@ -1,3 +1,5 @@
+import numpy as np
+
 import polars as pl
 
 
@@ -58,3 +60,30 @@ def test_join_same_cat_src() -> None:
         "more": [1, 2, 3],
         "more_right": [1.5, 1.5, 3.0],
     }
+
+
+def test_sorted_merge_joins() -> None:
+    for reverse in [False, True]:
+        n = 30
+        df_a = pl.DataFrame(
+            {"a": np.sort(np.random.randint(0, n // 2, n))}
+        ).with_row_count("row_a")
+
+        df_b = pl.DataFrame(
+            {"a": np.sort(np.random.randint(0, n // 2, n // 2))}
+        ).with_row_count("row_b")
+
+        if reverse:
+            df_a = df_a.select(pl.all().reverse())
+            df_b = df_b.select(pl.all().reverse())
+
+        for how in ["left", "inner"]:
+            # hash join
+            out_hash_join = df_a.join(df_b, on="a", how=how)
+
+            # sorted merge join
+            out_sorted_merge_join = df_a.with_column(
+                pl.col("a").set_sorted(reverse)
+            ).join(df_b.with_column(pl.col("a").set_sorted(reverse)), on="a", how=how)
+
+            assert out_hash_join.frame_equal(out_sorted_merge_join)
