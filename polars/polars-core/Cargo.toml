@@ -97,7 +97,7 @@ dtype-struct = []
 
 parquet = ["arrow/io_parquet"]
 
-# scale to terrabytes?
+# scale to terabytes?
 bigidx = ["polars-arrow/bigidx"]
 
 serde-lazy = ["serde", "polars-arrow/serde", "indexmap/serde"]
