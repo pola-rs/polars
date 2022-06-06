@@ -573,6 +573,10 @@ impl PyExpr {
             .into()
     }
 
+    pub fn str_zfill(&self, alignment: usize) -> PyExpr {
+        self.clone().inner.str().zfill(alignment).into()
+    }
+
     pub fn str_contains(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;

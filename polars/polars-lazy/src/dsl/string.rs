@@ -19,6 +19,20 @@ impl StringNameSpace {
             .with_fmt("str.extract")
     }
 
+    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
+    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
+    /// rather than before.
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    pub fn zfill(self, alignment: usize) -> Expr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.zfill(alignment).into_series())
+        };
+        self.0
+            .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.zfill")
+    }
+
     /// Extract each successive non-overlapping match in an individual string as an array
     pub fn extract_all(self, pat: &str) -> Expr {
         let pat = pat.to_string();
