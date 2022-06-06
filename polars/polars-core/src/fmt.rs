@@ -473,7 +473,7 @@ impl Display for DataFrame {
         {
             write!(
                 f,
-                "shape: {:?}\nto see more, compile with 'plain_fmt' or 'pretty_fmt' feature",
+                "shape: {:?}\nto see more, compile with the 'fmt' feature",
                 self.shape()
             )?;
         }
