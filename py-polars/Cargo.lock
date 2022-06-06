@@ -73,8 +73,9 @@ dependencies = [
 
 [[package]]
 name = "arrow2"
-version = "0.11.2"
-source = "git+https://github.com/jorgecarleitao/arrow2?rev=7014e28de391960f9aac578eada14796bf6950d2#7014e28de391960f9aac578eada14796bf6950d2"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5feafd6df4e3f577529e6aa2b9b7cdb3c9fe8e8f66ebc8dc29abbe71a7e968f0"
 dependencies = [
  "arrow-format",
  "avro-schema",
@@ -88,13 +89,13 @@ dependencies = [
  "futures",
  "hash_hasher",
  "indexmap",
+ "json-deserializer",
  "lexical-core",
  "libflate",
  "lz4",
  "multiversion",
  "num-traits",
  "parquet2",
- "serde",
  "serde_json",
  "simdutf8",
  "snap",
@@ -676,6 +677,12 @@ checksum = "af25a77299a7f711a01975c35a6a424eb6862092cc2d6c72c4ed6cbc56dfc1fa"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "json-deserializer"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47631885425c482fcf2dc4b182fc973c3c5b81a8f43a028055559bd24cccfa6e"
 
 [[package]]
 name = "jsonpath_lib"

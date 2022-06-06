@@ -120,7 +120,7 @@ parking_lot = "0.12"
 pyo3 = { version = "0.16", optional = true }
 rayon = "1.5"
 regex = { version = "1.5", optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
+serde = { version = "1", features = ["derive", "rc"], optional = true }
 
 polars-arrow = { version = "0.21.1", path = "../polars-arrow" }
 polars-core = { version = "0.21.1", path = "../polars-core", features = ["lazy", "private", "zip_with", "random"], default-features = false }

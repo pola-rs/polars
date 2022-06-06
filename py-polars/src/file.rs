@@ -267,15 +267,16 @@ pub fn get_mmap_bytes_reader<'a>(py_f: &'a PyAny) -> PyResult<Box<dyn MmapBytesR
             let f = File::open(filename.to_str()?)?;
             Ok(Box::new(f))
         }
+        // a bytesIO
+        else if let Ok(bytes) = py_f.call_method0("getvalue") {
+            let bytes = bytes.downcast::<PyBytes>()?;
+            Ok(Box::new(Cursor::new(bytes.as_bytes())))
+        }
         // don't really know what we got here, just read.
         else {
             let f = PyFileLikeObject::with_requirements(py_f.to_object(py), true, false, true)?;
             Ok(Box::new(f))
         }
-    // a bytesIO
-    } else if let Ok(bytes) = py_f.call_method0("getvalue") {
-        let bytes = bytes.downcast::<PyBytes>()?;
-        Ok(Box::new(Cursor::new(bytes.as_bytes())))
     }
     // don't really know what we got here, just read.
     else {
