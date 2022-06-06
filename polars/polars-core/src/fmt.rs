@@ -204,7 +204,7 @@ impl Debug for Series {
                 format_array!(limit, f, self.u8().unwrap(), "u8", self.name(), "Series")
             }
             DataType::UInt16 => {
-                format_array!(limit, f, self.u16().unwrap(), "u6", self.name(), "Series")
+                format_array!(limit, f, self.u16().unwrap(), "u16", self.name(), "Series")
             }
             DataType::UInt32 => {
                 format_array!(limit, f, self.u32().unwrap(), "u32", self.name(), "Series")
