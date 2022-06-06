@@ -546,19 +546,13 @@ where
                                 T::Native::zero(),
                             )
                         }),
-                        (_, 1) => {
-                            let out = take_agg_primitive_iter_unchecked::<T::Native, _, _>(
-                                self.downcast_iter().next().unwrap(),
-                                idx.iter().map(|i| *i as usize),
-                                |a, b| a + b,
-                                T::Native::zero(),
-                                idx.len() as IdxSize,
-                            );
-                            if out.is_none() {
-                                dbg!(idx, self);
-                            };
-                            out
-                        }
+                        (_, 1) => take_agg_primitive_iter_unchecked::<T::Native, _, _>(
+                            self.downcast_iter().next().unwrap(),
+                            idx.iter().map(|i| *i as usize),
+                            |a, b| a + b,
+                            T::Native::zero(),
+                            idx.len() as IdxSize,
+                        ),
                         _ => {
                             let take = { self.take_unchecked(idx.into()) };
                             take.sum()
