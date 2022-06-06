@@ -94,11 +94,7 @@ impl Executor for IpcExec {
             .with_n_rows(n_rows)
             .with_row_count(std::mem::take(&mut self.options.row_count))
             .set_rechunk(self.options.rechunk)
-            .finish_with_scan_ops(
-                predicate,
-                aggregate,
-                projection.as_ref().map(|v| v.as_ref()),
-            )?;
+            .finish_with_scan_ops(predicate, aggregate, projection)?;
 
         if self.options.cache {
             state.store_cache(cache_key, df.clone())

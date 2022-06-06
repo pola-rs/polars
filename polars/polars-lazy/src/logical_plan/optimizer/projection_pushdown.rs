@@ -96,8 +96,8 @@ fn update_scan_schema(
     schema: &Schema,
     // this is only needed for parsers that sort the projections
     // currently these are:
-    // sorting parsers: csv and ipc,
-    // non-sorting: parquet
+    // sorting parsers: csv,
+    // non-sorting: parquet, ipc
     sort_projections: bool,
 ) -> Schema {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
@@ -379,7 +379,7 @@ impl ProjectionPushDown {
                         &acc_projections,
                         expr_arena,
                         &*schema,
-                        true,
+                        false,
                     )))
                 };
                 options.with_columns = with_columns;

@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import List, Union
 
+import pyarrow as pa
 import pytest
 
 import polars as pl
@@ -109,3 +110,20 @@ def test_ipc_schema_from_file(
                     "time": pl.Time,
                     "cat": pl.Categorical,
                 }
+
+
+def test_ipc_column_order() -> None:
+    df = pl.DataFrame(
+        {
+            "cola": ["x", "y", "z"],
+            "colb": [1, 2, 3],
+            "colc": [4.5, 5.6, 6.7],
+        }
+    )
+    f = io.BytesIO()
+    df.write_ipc(f)
+    f.seek(0)
+
+    columns = ["colc", "colb", "cola"]
+    # read file into polars; the specified column order is no longer respected
+    assert pl.read_ipc(f, columns=columns).columns == columns
