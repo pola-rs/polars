@@ -361,6 +361,20 @@ _DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
     Time: time,
 }
 
+_NUMPY_CHAR_CODE_TO_DTYPE = {
+    "b": Int8,
+    "h": Int16,
+    "i": Int32,
+    "l": Int64,
+    "B": UInt8,
+    "H": UInt16,
+    "I": UInt32,
+    "L": UInt64,
+    "f": Float32,
+    "d": Float64,
+    "?": Boolean,
+}
+
 if _PYARROW_AVAILABLE:
     _PY_TYPE_TO_ARROW_TYPE: Dict[type, "pa.lib.DataType"] = {
         float: pa.float64(),
@@ -462,6 +476,17 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> "pa.lib.DataType":
         return _DTYPE_TO_ARROW_TYPE[lookup]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+
+
+def supported_numpy_char_code(dtype: str) -> bool:
+    return dtype in _NUMPY_CHAR_CODE_TO_DTYPE
+
+
+def numpy_char_code_to_dtype(dtype: str) -> Type[DataType]:
+    try:
+        return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
+    except KeyError:  # pragma: no cover
+        raise NotImplementedError
 
 
 def maybe_cast(
