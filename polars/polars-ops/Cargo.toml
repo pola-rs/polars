@@ -1,6 +1,6 @@
 [package]
 name = "polars-ops"
-version = "0.22.0"
+version = "0.22.1"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -11,19 +11,19 @@ description = "More operations on polars data structures"
 
 [dependencies]
 polars-arrow = { version = "0.22.0", path = "../polars-arrow", default-features = false }
-polars-core = { version = "0.22.0", path = "../polars-core", features = ["private"], default-features = false }
+polars-core = { version = "0.22.1", path = "../polars-core", features = ["private"], default-features = false }
 
 [features]
 dtype-categorical = ["polars-core/dtype-categorical"]
-dtype-date = ["polars-core/dtype-date"]
-dtype-datetime = ["polars-core/dtype-datetime"]
-dtype-time = ["polars-core/dtype-time"]
-dtype-duration = ["polars-core/dtype-duration"]
-dtype-struct = ["polars-core/dtype-struct"]
+dtype-date = ["polars-core/dtype-date", "polars-core/temporal"]
+dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal"]
+dtype-time = ["polars-core/dtype-time", "polars-core/temporal"]
+dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
+dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 object = ["polars-core/object"]
 to_dummies = []
 list_to_struct = ["polars-core/dtype-struct", "list"]
 list = []
 diff = []
-strings = []
+strings = ["polars-core/strings"]
