@@ -417,6 +417,6 @@ fn scan_anonymous_fn() -> Result<()> {
 
     let df = LazyFrame::anonymous_scan(function, args)?.collect()?;
 
-    assert_eq!(df.shape(), (4, 5));
+    assert_eq!(df.shape(), (5, 4));
     Ok(())
 }
