@@ -19,6 +19,37 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
         ca.apply_kernel_cast(&string_lengths)
     }
 
+    /// Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
+    /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
+    /// rather than before.
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    fn zfill<'a>(&'a self, alignment: usize) -> Utf8Chunked {
+        let ca = self.as_utf8();
+
+        let f = |s: &'a str| {
+            let alignment = alignment.saturating_sub(s.len());
+            if alignment == 0 {
+                return Cow::Borrowed(s);
+            }
+            if let Some(stripped) = s.strip_prefix('-') {
+                Cow::Owned(format!(
+                    "-{:0alignment$}{value}",
+                    0,
+                    alignment = alignment,
+                    value = stripped
+                ))
+            } else {
+                Cow::Owned(format!(
+                    "{:0alignment$}{value}",
+                    0,
+                    alignment = alignment,
+                    value = s
+                ))
+            }
+        };
+        ca.apply(f)
+    }
+
     /// Check if strings contain a regex pattern
     fn contains(&self, pat: &str) -> Result<BooleanChunked> {
         let ca = self.as_utf8();

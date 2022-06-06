@@ -313,6 +313,7 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.strip
     ExprStringNameSpace.lstrip
     ExprStringNameSpace.rstrip
+    ExprStringNameSpace.zfill
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract

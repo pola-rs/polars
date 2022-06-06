@@ -270,6 +270,7 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.strip
     StringNameSpace.rstrip
     StringNameSpace.lstrip
+    StringNameSpace.zfill
     StringNameSpace.slice
     StringNameSpace.encode
     StringNameSpace.decode

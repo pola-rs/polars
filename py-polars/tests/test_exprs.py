@@ -248,3 +248,30 @@ def test_expression_appends() -> None:
 
     assert out.n_chunks() == 1
     assert out.to_series().to_list() == [None, None, None, 1, 1, 2]
+
+
+def test_zfill() -> None:
+    df = pl.DataFrame(
+        {
+            "num": [-10, -1, 0, 1, 10, 100, 1000, 10000, 100000, 1000000, None],
+        }
+    )
+
+    out = [
+        "-0010",
+        "-0001",
+        "00000",
+        "00001",
+        "00010",
+        "00100",
+        "01000",
+        "10000",
+        "100000",
+        "1000000",
+        None,
+    ]
+    assert (
+        df.with_column(pl.col("num").cast(str).str.zfill(5)).to_series().to_list()
+        == out
+    )
+    assert df["num"].cast(str).str.zfill(5) == out

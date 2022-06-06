@@ -4302,6 +4302,21 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.rstrip()).to_series()
 
+    def zfill(self, alignment: int) -> Series:
+        """
+        Return a copy of the string left filled with ASCII '0' digits to make a string of length width.
+        A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
+        rather than before.
+        The original string is returned if width is less than or equal to `len(s)`.
+
+        Parameters
+        ----------
+        alignment
+            Fill the value up to this length
+        """
+        s = wrap_s(self._s)
+        return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
+
     def to_lowercase(self) -> Series:
         """
         Modify the strings to their lowercase equivalent.
