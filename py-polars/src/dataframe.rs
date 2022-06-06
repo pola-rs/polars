@@ -2,7 +2,8 @@ use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::{PyDict, PyList, PyTuple};
 use pyo3::{exceptions::PyRuntimeError, prelude::*};
-use std::io::{BufReader, BufWriter, Cursor, Read};
+use std::io::BufWriter;
+use std::ops::Deref;
 
 use polars::frame::groupby::GroupBy;
 use polars::prelude::*;
@@ -23,6 +24,7 @@ use crate::{
     series::{to_pyseries_collection, to_series_collection, PySeries},
 };
 use polars::frame::row::{rows_to_schema, Row};
+use polars::io::mmap::ReaderBytes;
 use polars::io::RowCount;
 use polars_core::export::arrow::datatypes::IntegerType;
 use polars_core::frame::explode::MeltArgs;
@@ -306,32 +308,28 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    pub fn read_json(py_f: PyObject, json_lines: bool) -> PyResult<Self> {
+    pub fn read_json(py_f: &PyAny, json_lines: bool) -> PyResult<Self> {
+        let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
         if json_lines {
-            let f = get_file_like(py_f, false)?;
-            let f = BufReader::new(f);
-            let out = JsonReader::new(f)
+            let out = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::JsonLines)
                 .finish()
                 .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
             Ok(out.into())
         } else {
-            // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
-            // so don't bother with files.
-            let mut json = String::new();
-            let _ = get_file_like(py_f, false)?
-                .read_to_string(&mut json)
-                .unwrap();
+            // memmap the file first
+            let mmap_bytes_r = get_mmap_bytes_reader(py_f)?;
+            let mmap_read: ReaderBytes = (&mmap_bytes_r).into();
+            let bytes = mmap_read.deref();
 
-            // Happy path is our column oriented json as that is fasted
+            // Happy path is our column oriented json as that is most performant
             // on failure we try
-            match serde_json::from_str::<DataFrame>(&json) {
+            match serde_json::from_slice::<DataFrame>(bytes) {
                 Ok(df) => Ok(df.into()),
                 // try arrow json reader instead
+                // this is row oriented
                 Err(_) => {
-                    let f = Cursor::new(json);
-
-                    let out = JsonReader::new(f)
+                    let out = JsonReader::new(mmap_bytes_r)
                         .with_json_format(JsonFormat::Json)
                         .finish()
                         .map_err(|e| PyPolarsErr::Other(format!("{:?}", e)))?;
