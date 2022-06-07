@@ -508,7 +508,7 @@ impl From<JsRollingOptions> for RollingOptions {
             min_periods: o.min_periods as usize,
             center: o.center,
             by: None,
-            closed_window: None
+            closed_window: None,
         }
     }
 }
