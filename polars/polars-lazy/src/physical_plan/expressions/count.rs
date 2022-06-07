@@ -1,8 +1,6 @@
 use crate::physical_plan::state::ExecutionState;
 use crate::prelude::*;
-use polars_arrow::utils::CustomIterTools;
 use polars_core::prelude::*;
-use polars_core::utils::NoNull;
 use std::borrow::Cow;
 
 const COUNT_NAME: &str = "count";
@@ -32,20 +30,7 @@ impl PhysicalExpr for CountExpr {
         groups: &'a GroupsProxy,
         _state: &ExecutionState,
     ) -> Result<AggregationContext<'a>> {
-        let mut ca = match groups {
-            GroupsProxy::Idx(groups) => {
-                let ca: NoNull<IdxCa> = groups
-                    .all()
-                    .iter()
-                    .map(|g| g.len() as IdxSize)
-                    .collect_trusted();
-                ca.into_inner()
-            }
-            GroupsProxy::Slice { groups, .. } => {
-                let ca: NoNull<IdxCa> = groups.iter().map(|g| g[1]).collect_trusted();
-                ca.into_inner()
-            }
-        };
+        let mut ca = groups.group_count();
         ca.rename(COUNT_NAME);
         let s = ca.into_series();
 

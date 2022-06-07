@@ -118,7 +118,7 @@ impl DataFrame {
                 if i == 0 {
                     let row_idx = offsets_to_indexes(&offsets, exploded.len());
                     let mut row_idx = IdxCa::from_vec("", row_idx);
-                    row_idx.set_sorted(true);
+                    row_idx.set_sorted(false);
                     // Safety
                     // We just created indices that are in bounds.
                     df = unsafe { df.take_unchecked(&row_idx) };
