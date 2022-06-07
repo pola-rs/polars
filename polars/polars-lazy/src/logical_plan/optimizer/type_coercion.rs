@@ -1,3 +1,4 @@
+use crate::dsl::function_expr::FunctionExpr;
 use polars_core::prelude::*;
 use polars_core::utils::get_supertype;
 
@@ -73,6 +74,19 @@ fn use_supertype(
     st
 }
 
+fn get_input(lp_arena: &Arena<ALogicalPlan>, lp_node: Node) -> [Option<Node>; 2] {
+    let plan = lp_arena.get(lp_node);
+    let mut inputs = [None, None];
+
+    // Used to get the schema of the input.
+    if is_scan(plan) {
+        inputs[0] = Some(lp_node);
+    } else {
+        plan.copy_inputs(&mut inputs);
+    };
+    inputs
+}
+
 impl OptimizationRule for TypeCoercionRule {
     fn optimize_expr(
         &self,
@@ -88,17 +102,7 @@ impl OptimizationRule for TypeCoercionRule {
                 falsy: falsy_node,
                 predicate,
             } => {
-                let plan = lp_arena.get(lp_node);
-                let mut inputs = [None, None];
-
-                // Used to get the schema of the input.
-                if is_scan(plan) {
-                    inputs[0] = Some(lp_node);
-                } else {
-                    plan.copy_inputs(&mut inputs);
-                };
-
-                if let Some(input) = inputs[0] {
+                if let Some(input) = get_input(lp_arena, lp_node)[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
                     let truthy = expr_arena.get(truthy_node);
                     let falsy = expr_arena.get(falsy_node);
@@ -154,16 +158,7 @@ impl OptimizationRule for TypeCoercionRule {
                 op,
                 right: node_right,
             } => {
-                let plan = lp_arena.get(lp_node);
-                let mut inputs = [None, None];
-
-                if is_scan(plan) {
-                    inputs[0] = Some(lp_node);
-                } else {
-                    plan.copy_inputs(&mut inputs);
-                };
-
-                if let Some(input) = inputs[0] {
+                if let Some(input) = get_input(lp_arena, lp_node)[0] {
                     let input_schema = lp_arena.get(input).schema(lp_arena);
 
                     let left = expr_arena.get(node_left);
@@ -320,6 +315,53 @@ impl OptimizationRule for TypeCoercionRule {
                             op,
                             right: new_node_right,
                         })
+                    }
+                } else {
+                    None
+                }
+            }
+            #[cfg(feature = "is_in")]
+            AExpr::Function {
+                function: FunctionExpr::IsIn,
+                ref input,
+                options,
+            } => {
+                if let Some(input_node) = get_input(lp_arena, lp_node)[0] {
+                    let input_schema = lp_arena.get(input_node).schema(lp_arena);
+                    let left_node = input[0];
+                    let other_node = input[1];
+                    let left = expr_arena.get(left_node);
+                    let other = expr_arena.get(other_node);
+
+                    let type_left = left
+                        .get_type(input_schema, Context::Default, expr_arena)
+                        .ok()?;
+                    let type_other = other
+                        .get_type(input_schema, Context::Default, expr_arena)
+                        .ok()?;
+
+                    match (&type_left, type_other) {
+                        (DataType::Categorical(Some(rev_map)), DataType::Utf8)
+                            if rev_map.is_global() =>
+                        {
+                            let mut input = input.clone();
+
+                            let casted_expr = AExpr::Cast {
+                                expr: other_node,
+                                data_type: DataType::Categorical(None),
+                                // does not matter
+                                strict: false,
+                            };
+                            let other_input = expr_arena.add(casted_expr);
+                            input[1] = other_input;
+
+                            Some(AExpr::Function {
+                                function: FunctionExpr::IsIn,
+                                input,
+                                options,
+                            })
+                        }
+                        _ => None,
                     }
                 } else {
                     None

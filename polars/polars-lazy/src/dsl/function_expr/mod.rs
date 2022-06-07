@@ -1,3 +1,5 @@
+#[cfg(feature = "is_in")]
+mod is_in;
 mod pow;
 
 use super::*;
@@ -12,6 +14,8 @@ pub enum FunctionExpr {
     Pow,
     #[cfg(feature = "row_hash")]
     Hash(usize),
+    #[cfg(feature = "is_in")]
+    IsIn,
 }
 
 impl FunctionExpr {
@@ -40,6 +44,8 @@ impl FunctionExpr {
             Pow => float_dtype(),
             #[cfg(feature = "row_hash")]
             Hash(_) => with_dtype(DataType::UInt64),
+            #[cfg(feature = "is_in")]
+            IsIn => with_dtype(DataType::Boolean),
         }
     }
 }
@@ -71,6 +77,10 @@ impl From<FunctionExpr> for NoEq<Arc<dyn SeriesUdf>> {
                     Ok(s.hash(ahash::RandomState::with_seed(seed)).into_series())
                 };
                 wrap!(f)
+            }
+            #[cfg(feature = "is_in")]
+            IsIn => {
+                wrap!(is_in::is_in)
             }
         }
     }

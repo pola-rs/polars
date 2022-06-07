@@ -763,6 +763,50 @@ impl Expr {
         }
     }
 
+    pub fn apply_many_private(
+        self,
+        function_expr: FunctionExpr,
+        arguments: &[Expr],
+        fmt_str: &'static str,
+    ) -> Self {
+        let mut input = Vec::with_capacity(arguments.len() + 1);
+        input.push(self);
+        input.extend_from_slice(arguments);
+
+        Expr::Function {
+            input,
+            function: function_expr,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyGroups,
+                input_wildcard_expansion: false,
+                auto_explode: true,
+                fmt_str,
+            },
+        }
+    }
+
+    pub fn map_many_private(
+        self,
+        function_expr: FunctionExpr,
+        arguments: &[Expr],
+        fmt_str: &'static str,
+    ) -> Self {
+        let mut input = Vec::with_capacity(arguments.len() + 1);
+        input.push(self);
+        input.extend_from_slice(arguments);
+
+        Expr::Function {
+            input,
+            function: function_expr,
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ApplyFlat,
+                input_wildcard_expansion: false,
+                auto_explode: true,
+                fmt_str,
+            },
+        }
+    }
+
     /// Get mask of finite values if dtype is Float
     #[allow(clippy::wrong_self_convention)]
     pub fn is_finite(self) -> Self {
@@ -1175,23 +1219,13 @@ impl Expr {
                 }
             }
         }
-
-        let f = |s: &mut [Series]| {
-            let left = &s[0];
-            let other = &s[1];
-
-            left.is_in(other).map(|ca| ca.into_series())
-        };
         let arguments = &[other];
-        let output_type = GetOutput::from_type(DataType::Boolean);
-
         // we don't have to apply on groups, so this is faster
         if has_literal {
-            self.map_many(f, arguments, output_type)
+            self.map_many_private(FunctionExpr::IsIn, arguments, "is_in_map")
         } else {
-            self.apply_many(f, arguments, output_type)
+            self.apply_many_private(FunctionExpr::IsIn, arguments, "is_in_apply")
         }
-        .with_fmt("is_in")
     }
 
     /// Sort this column by the ordering of another column.

@@ -55,6 +55,10 @@ impl Default for RevMapping {
 
 #[allow(clippy::len_without_is_empty)]
 impl RevMapping {
+    pub fn is_global(&self) -> bool {
+        matches!(self, Self::Global(_, _, _))
+    }
+
     /// Get the length of the [`RevMapping`]
     pub fn len(&self) -> usize {
         match self {
