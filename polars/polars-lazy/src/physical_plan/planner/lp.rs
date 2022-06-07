@@ -226,6 +226,21 @@ impl DefaultPlanner {
                     has_windows,
                 }))
             }
+            AnonymousScan {
+                function,
+                predicate,
+                options,
+                ..
+            } => {
+                let predicate = predicate
+                    .map(|pred| self.create_physical_expr(pred, Context::Default, expr_arena))
+                    .map_or(Ok(None), |v| v.map(Some))?;
+                Ok(Box::new(executors::AnonymousScanExec {
+                    function,
+                    predicate,
+                    options,
+                }))
+            }
             Sort {
                 input,
                 by_column,

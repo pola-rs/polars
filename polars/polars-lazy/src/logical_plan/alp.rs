@@ -15,6 +15,13 @@ use std::sync::Arc;
 // ALogicalPlan is a representation of LogicalPlan with Nodes which are allocated in an Arena
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
+    AnonymousScan {
+        function: Arc<dyn AnonymousScan>,
+        schema: SchemaRef,
+        output_schema: Option<SchemaRef>,
+        predicate: Option<Node>,
+        options: AnonymousScanOptions,
+    },
     #[cfg(feature = "python")]
     PythonScan {
         options: PythonOptions,
@@ -166,6 +173,7 @@ impl ALogicalPlan {
                 ..
             } => output_schema.as_ref().unwrap_or(schema),
             DataFrameScan { schema, .. } => schema,
+            AnonymousScan { schema, .. } => schema,
             Selection { input, .. } => arena.get(*input).schema(arena),
             #[cfg(feature = "csv-file")]
             CsvScan {
@@ -371,6 +379,25 @@ impl ALogicalPlan {
                     selection: new_selection,
                 }
             }
+            AnonymousScan {
+                function,
+                schema,
+                output_schema,
+                predicate,
+                options,
+            } => {
+                let mut new_predicate = None;
+                if predicate.is_some() {
+                    new_predicate = exprs.pop()
+                }
+                AnonymousScan {
+                    function: function.clone(),
+                    schema: schema.clone(),
+                    output_schema: output_schema.clone(),
+                    predicate: new_predicate,
+                    options: options.clone(),
+                }
+            }
             Udf {
                 function,
                 options,
@@ -458,6 +485,7 @@ impl ALogicalPlan {
             }
             #[cfg(feature = "python")]
             PythonScan { .. } => {}
+            AnonymousScan { .. } => {}
         }
     }
 
@@ -511,6 +539,7 @@ impl ALogicalPlan {
             #[cfg(feature = "csv-file")]
             CsvScan { .. } => return,
             DataFrameScan { .. } => return,
+            AnonymousScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
         };

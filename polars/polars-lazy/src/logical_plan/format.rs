@@ -9,6 +9,23 @@ impl fmt::Debug for LogicalPlan {
         match self {
             #[cfg(feature = "python")]
             PythonScan { .. } => write!(f, "PYTHON SCAN"),
+            AnonymousScan {
+                schema,
+                predicate,
+                options,
+                ..
+            } => {
+                let total_columns = schema.len();
+                let mut n_columns = "*".to_string();
+                if let Some(columns) = &options.with_columns {
+                    n_columns = format!("{}", columns.len());
+                }
+                write!(
+                    f,
+                    "{}; PROJECT {}/{} COLUMNS; SELECTION: {:?}",
+                    options.fmt_str, n_columns, total_columns, predicate
+                )
+            }
             Union { inputs, .. } => write!(f, "UNION {:?}", inputs),
             Cache { input } => write!(f, "CACHE {:?}", input),
             #[cfg(feature = "parquet")]

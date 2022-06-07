@@ -405,3 +405,18 @@ fn scan_predicate_on_set_null_values() -> Result<()> {
     assert_eq!(df.shape(), (12, 2));
     Ok(())
 }
+
+#[test]
+fn scan_anonymous_fn() -> Result<()> {
+    let function = Arc::new(|_scan_opts: AnonymousScanOptions| Ok(fruits_cars()));
+
+    let args = ScanArgsAnonymous {
+        schema: Some(fruits_cars().schema()),
+        ..ScanArgsAnonymous::default()
+    };
+
+    let df = LazyFrame::anonymous_scan(function, args)?.collect()?;
+
+    assert_eq!(df.shape(), (5, 4));
+    Ok(())
+}

@@ -94,7 +94,29 @@ impl SlicePushDown {
         use ALogicalPlan::*;
 
         match (lp, state) {
+            (AnonymousScan {
+                function,
+                schema,
+                output_schema,
+                predicate,
+                options,
 
+            },
+                // TODO! we currently skip slice pushdown if there is a predicate.
+                // we can modify the readers to only limit after predicates have been applied
+                Some(state)) if state.offset == 0 && predicate.is_none() => {
+                let mut options = options;
+                options.n_rows = Some(state.len as usize);
+                let lp = AnonymousScan {
+                    function,
+                    schema,
+                    output_schema,
+                    predicate,
+                    options
+                };
+
+                Ok(lp)
+            },
 
             #[cfg(feature = "parquet")]
             (ParquetScan {

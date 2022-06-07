@@ -15,7 +15,6 @@ fn init_set() -> PlHashSet<Arc<str>> {
 }
 
 /// utility function to get names of the columns needed in projection at scan level
-#[cfg(any(feature = "parquet", feature = "csv-file"))]
 fn get_scan_columns(
     acc_projections: &mut Vec<Node>,
     expr_arena: &Arena<AExpr>,
@@ -337,6 +336,35 @@ impl ProjectionPushDown {
                 Ok(ALogicalPlanBuilder::new(input, expr_arena, lp_arena)
                     .project_local(proj)
                     .build())
+            }
+            AnonymousScan {
+                function,
+                schema,
+                predicate,
+                mut options,
+                ..
+            } => {
+                options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
+                let output_schema = if options.with_columns.is_none() {
+                    None
+                } else {
+                    Some(Arc::new(update_scan_schema(
+                        &acc_projections,
+                        expr_arena,
+                        &*schema,
+                        true,
+                    )))
+                };
+                options.output_schema = output_schema.clone();
+
+                let lp = AnonymousScan {
+                    function,
+                    schema,
+                    output_schema,
+                    options,
+                    predicate,
+                };
+                Ok(lp)
             }
             DataFrameScan {
                 df,
