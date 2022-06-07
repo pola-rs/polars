@@ -154,13 +154,58 @@ class Date(DataType):
 class Datetime(DataType):
     """Calendar date and time type"""
 
-    pass
+    def __init__(self, time_unit: str = "us", time_zone: Optional[str] = None):
+        """
+        Calendar date and time type
+
+        Parameters
+        ----------
+        time_unit
+            Any of {'ns', 'us', 'ms'}
+        time_zone
+            Timezone string as defined in pytz
+        """
+        self.tu = time_unit
+        self.tz = time_zone
+
+    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+        # allow comparing object instances to class
+        if type(other) is type and issubclass(other, Datetime):
+            return True
+        if isinstance(other, Datetime):
+            return self.tu == other.tu and self.tz == other.tz
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(Datetime)
 
 
 class Duration(DataType):
     """Time duration/delta type"""
 
-    pass
+    def __init__(self, time_unit: str = "us"):
+        """
+        Time duration/delta type
+
+        Parameters
+        ----------
+        time_unit
+            Any of {'ns', 'us', 'ms'}
+        """
+        self.tu = time_unit
+
+    def __eq__(self, other: Type[DataType]) -> bool:  # type: ignore
+        # allow comparing object instances to class
+        if type(other) is type and issubclass(other, Duration):
+            return True
+        if isinstance(other, Duration):
+            return self.tu == other.tu
+        else:
+            return False
+
+    def __hash__(self) -> int:
+        return hash(Duration)
 
 
 class Time(DataType):

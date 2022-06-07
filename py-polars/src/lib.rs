@@ -403,14 +403,9 @@ fn py_date_range(
     every: &str,
     closed: Wrap<ClosedWindow>,
     name: &str,
-    tu: &str,
+    tu: Wrap<TimeUnit>,
 ) -> PySeries {
-    let tu = match tu {
-        "ns" => TimeUnit::Nanoseconds,
-        "ms" => TimeUnit::Milliseconds,
-        _ => panic!("{}", "expected one of {'ns', 'ms'}"),
-    };
-    polars::time::date_range_impl(name, start, stop, Duration::parse(every), closed.0, tu)
+    polars::time::date_range_impl(name, start, stop, Duration::parse(every), closed.0, tu.0)
         .into_series()
         .into()
 }

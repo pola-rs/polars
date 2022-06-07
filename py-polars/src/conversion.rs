@@ -2,6 +2,7 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::lazy::dataframe::PyLazyFrame;
 use crate::prelude::*;
+use crate::py_modules::POLARS;
 use crate::series::PySeries;
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
@@ -241,7 +242,7 @@ impl IntoPy<PyObject> for Wrap<AnyValue<'_>> {
 
 impl ToPyObject for Wrap<DataType> {
     fn to_object(&self, py: Python) -> PyObject {
-        let pl = PyModule::import(py, "polars").unwrap();
+        let pl = POLARS.as_ref(py);
 
         match &self.0 {
             DataType::Int8 => pl.getattr("Int8").unwrap().into(),
@@ -262,8 +263,17 @@ impl ToPyObject for Wrap<DataType> {
                 list_class.call1((inner,)).unwrap().into()
             }
             DataType::Date => pl.getattr("Date").unwrap().into(),
-            DataType::Datetime(_, _) => pl.getattr("Datetime").unwrap().into(),
-            DataType::Duration(_) => pl.getattr("Duration").unwrap().into(),
+            DataType::Datetime(tu, tz) => {
+                let datetime_class = pl.getattr("Datetime").unwrap();
+                datetime_class
+                    .call1((tu.to_ascii(), tz.clone()))
+                    .unwrap()
+                    .into()
+            }
+            DataType::Duration(tu) => {
+                let duration_class = pl.getattr("Duration").unwrap();
+                duration_class.call1((tu.to_ascii(),)).unwrap().into()
+            }
             DataType::Object(_) => pl.getattr("Object").unwrap().into(),
             DataType::Categorical(_) => pl.getattr("Categorical").unwrap().into(),
             DataType::Time => pl.getattr("Time").unwrap().into(),
@@ -351,8 +361,20 @@ impl FromPyObject<'_> for Wrap<DataType> {
                     dt => panic!("{} not expected as Python type for dtype conversion", dt),
                 }
             }
+            "Duration" => {
+                let tu = ob.getattr("tu").unwrap();
+                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
+                DataType::Duration(tu)
+            }
+            "Datetime" => {
+                let tu = ob.getattr("tu").unwrap();
+                let tu = tu.extract::<Wrap<TimeUnit>>()?.0;
+                let tz = ob.getattr("tz").unwrap();
+                let tz = tz.extract()?;
+                DataType::Datetime(tu, tz)
+            }
             "List" => {
-                let inner = ob.getattr("inner")?;
+                let inner = ob.getattr("inner").unwrap();
                 let inner = inner.extract::<Wrap<DataType>>()?;
                 DataType::List(Box::new(inner.0))
             }
