@@ -1034,15 +1034,13 @@ def read_sql(
 
 def read_excel(
     file: Union[str, BytesIO, Path, BinaryIO, bytes],
-    sheet_id: Optional[int] = 1,
-    sheet_name: Optional[str] = None,
-    xlsx2csv_options: Optional[dict] = None,
+    sheet_name: Optional[str] = "Sheet1",
     read_csv_options: Optional[dict] = None,
 ) -> DataFrame:
     """
     Read Excel (XLSX) sheet into a DataFrame by converting an Excel
-    sheet with ``xlsx2csv.Xlsx2csv().convert()`` to CSV and parsing
-    the CSV output with ``pl.read_csv()``.
+    sheet with ``openpyxl`` to CSV and parsing the CSV output with
+    ``pl.read_csv()``.
 
     Parameters
     ----------
@@ -1051,16 +1049,11 @@ def read_excel(
         By file-like object, we refer to objects with a ``read()``
         method, such as a file handler (e.g. via builtin ``open``
         function) or ``BytesIO``.
-    sheet_id
-        Sheet number to convert (0 for all sheets).
     sheet_name
         Sheet name to convert.
-    xlsx2csv_options
-        Extra options passed to ``xlsx2csv.Xlsx2csv()``.
-        e.g.: ``{"skip_empty_lines": True}``
     read_csv_options
         Extra options passed to ``read_csv()`` for parsing
-        the CSV file returned by ``xlsx2csv.Xlsx2csv().convert()``
+        the CSV file returned by ``openpyxl``
         e.g.: ``{"has_header": False, "new_columns": ["a", "b", "c"], infer_schema_length=None}``
 
     Returns
@@ -1086,8 +1079,7 @@ def read_excel(
     >>> excel_file = "test.xlsx"
     >>> pl.read_excel(
     ...     file=excel_file,
-    ...     sheet_id=3,
-    ...     xlsx2csv_options={"skip_empty_lines": True},
+    ...     sheet_name="Sheet1",
     ...     read_csv_options={"has_header": False, "new_columns": ["a", "b", "c"]},
     ... )  # doctest: +SKIP
 
@@ -1117,41 +1109,30 @@ def read_excel(
     """
 
     try:
-        import xlsx2csv  # type: ignore
+        import csv
+
+        import openpyxl  # type: ignore
     except ImportError:
         raise ImportError(
-            "xlsx2csv is not installed. Please run `pip install xlsx2csv`."
+            "openpyxl is not installed. Please run `pip install openpyxl`."
         )
 
     if isinstance(file, (str, Path)):
         file = format_path(file)
 
-    if not xlsx2csv_options:
-        xlsx2csv_options = {}
-
     if not read_csv_options:
         read_csv_options = {}
 
-    # Override xlsx2csv eprint function so in case an error occurs
-    # it raises an exception instead of writing to stderr.
-    def _eprint(*args: Any, **kwargs: Any) -> None:
-        raise xlsx2csv.XlsxException(format(*args))
-
-    xlsx2csv.eprint = _eprint
-
-    # Create Xlsx2csv instance.
-    xlsx2csv_instance = xlsx2csv.Xlsx2csv(file, **xlsx2csv_options)
-
-    if sheet_name:
-        sheet_id = xlsx2csv_instance.getSheetIdByName(sheet_name)
-
-        if not sheet_id:
-            raise xlsx2csv.XlsxException(f"Sheet '{sheet_name}' not found.")
-
+    # Write workbook to csv buffer
     csv_buffer = StringIO()
-
-    # Convert sheet from XSLX document to CSV.
-    xlsx2csv_instance.convert(outfile=csv_buffer, sheetid=sheet_id)
+    book = openpyxl.load_workbook(file)
+    sheet = book[sheet_name]
+    writer = csv.writer(csv_buffer, quoting=csv.QUOTE_ALL)
+    for row in sheet.iter_rows():
+        lrow = []
+        for cell in row:
+            lrow.append(cell.value)
+        writer.writerow(lrow)
 
     # Rewind buffer to start.
     csv_buffer.seek(0)
