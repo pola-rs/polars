@@ -184,7 +184,8 @@ pub fn argsort_by<E: AsRef<[Expr]>>(by: E, reverse: &[bool]) -> Expr {
 #[cfg(feature = "concat_str")]
 #[cfg_attr(docsrs, doc(cfg(feature = "concat_str")))]
 /// Horizontally concat string columns in linear time
-pub fn concat_str(s: Vec<Expr>, sep: &str) -> Expr {
+pub fn concat_str<E: AsRef<[Expr]>>(s: E, sep: &str) -> Expr {
+    let s = s.as_ref().to_vec();
     let sep = sep.to_string();
     let function = NoEq::new(Arc::new(move |s: &mut [Series]| {
         polars_core::functions::concat_str(s, &sep).map(|ca| ca.into_series())

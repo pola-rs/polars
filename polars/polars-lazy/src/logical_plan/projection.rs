@@ -245,7 +245,10 @@ fn prepare_excluded(expr: &Expr, schema: &Schema, keys: &[Expr]) -> Vec<Arc<str>
 fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
     expr.mutate().apply(|e| {
         match e {
-            Expr::AnonymousFunction { input, options, .. } if options.input_wildcard_expansion => {
+            Expr::AnonymousFunction { input, options, .. }
+            | Expr::Function { input, options, .. }
+                if options.input_wildcard_expansion =>
+            {
                 if input
                     .iter()
                     .any(|e| matches!(e, Expr::Columns(_) | Expr::DtypeColumn(_)))
@@ -291,7 +294,10 @@ fn expand_function_list_inputs(mut expr: Expr, schema: &Schema) -> Expr {
 fn function_wildcard_expansion(mut expr: Expr, schema: &Schema, exclude: &[Arc<str>]) -> Expr {
     expr.mutate().apply(|e| {
         match e {
-            Expr::AnonymousFunction { input, options, .. } if options.input_wildcard_expansion => {
+            Expr::AnonymousFunction { input, options, .. }
+            | Expr::Function { input, options, .. }
+                if options.input_wildcard_expansion =>
+            {
                 let mut new_inputs = Vec::with_capacity(input.len());
 
                 input.iter_mut().for_each(|e| {
@@ -356,14 +362,16 @@ pub(crate) fn rewrite_projections(exprs: Vec<Expr>, schema: &Schema, keys: &[Exp
             replace_nth(&mut expr, schema);
         }
 
-        if has_wildcard(&expr) {
+        let function_input_expansion = has_expr(
+            &expr,
+            |e| matches!(e, Expr::AnonymousFunction { options,  .. } | Expr::Function {options, ..} if options.input_wildcard_expansion),
+        );
+
+        if has_wildcard(&expr) || function_input_expansion {
             // keep track of column excluded from the wildcard
             let exclude = prepare_excluded(&expr, schema, keys);
             // this path prepares the wildcard as input for the Function Expr
-            if has_expr(
-                &expr,
-                |e| matches!(e, Expr::AnonymousFunction { options,  .. } if options.input_wildcard_expansion),
-            ) {
+            if function_input_expansion {
                 expr = function_wildcard_expansion(expr, schema, &exclude);
                 result.push(expr);
                 continue;
