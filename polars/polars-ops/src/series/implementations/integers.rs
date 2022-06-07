@@ -16,4 +16,8 @@ where
     fn qcut(&self, bins: Vec<f64>) -> Result<Series> {
         CutQCut::qcut(&self.0, bins)
     }
+    #[cfg(feature = "cut_qcut")]
+    fn cut(&self, bins: Vec<f64>) -> Result<Series> {
+        CutQCut::cut(&self.0, bins)
+    }
 }

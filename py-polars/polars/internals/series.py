@@ -910,6 +910,11 @@ class Series:
         """
         return pli.wrap_df(self._s.qcut(bins))
 
+    def cut(self, bins: List[float]) -> "pli.Series":
+        """
+        TODO: Complete
+        """
+        return pli.wrap_df(self._s.cut(bins))
 
     def value_counts(self) -> "pli.DataFrame":
         """

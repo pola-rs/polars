@@ -26,6 +26,11 @@ pub trait SeriesOps {
     fn qcut(&self, _bins: Vec<f64>) -> Result<Series> {
         invalid_operation!(self)
     }
+
+    #[cfg(feature = "cut_qcut")]
+    fn cut(&self, _bins: Vec<f64>) -> Result<Series> {
+        invalid_operation!(self)
+    }
 }
 
 impl SeriesOps for Series {
@@ -40,5 +45,10 @@ impl SeriesOps for Series {
     #[cfg(feature = "cut_qcut")]
     fn qcut(&self, bins: Vec<f64>) -> Result<Series> {
         self.to_ops().qcut(bins)
+    }
+
+    #[cfg(feature = "cut_qcut")]
+    fn cut(&self, bins: Vec<f64>) -> Result<Series> {
+        self.to_ops().cut(bins)
     }
 }
