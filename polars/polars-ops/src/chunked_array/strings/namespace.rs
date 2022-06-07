@@ -23,6 +23,8 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
     /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     fn zfill<'a>(&'a self, alignment: usize) -> Utf8Chunked {
         let ca = self.as_utf8();
 
@@ -45,6 +47,54 @@ pub trait Utf8NameSpaceImpl: AsUtf8 {
                     alignment = alignment,
                     value = s
                 ))
+            }
+        };
+        ca.apply(f)
+    }
+
+    /// Return the string left justified in a string of length width.
+    /// Padding is done using the specified `fillchar`,
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
+    fn ljust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
+        let ca = self.as_utf8();
+
+        let f = |s: &'a str| {
+            let padding = width.saturating_sub(s.len());
+            if padding == 0 {
+                Cow::Borrowed(s)
+            } else {
+                let mut buf = String::with_capacity(width);
+                buf.push_str(s);
+                for _ in 0..padding {
+                    buf.push(fillchar)
+                }
+                Cow::Owned(buf)
+            }
+        };
+        ca.apply(f)
+    }
+
+    /// Return the string right justified in a string of length width.
+    /// Padding is done using the specified `fillchar`,
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
+    fn rjust<'a>(&'a self, width: usize, fillchar: char) -> Utf8Chunked {
+        let ca = self.as_utf8();
+
+        let f = |s: &'a str| {
+            let padding = width.saturating_sub(s.len());
+            if padding == 0 {
+                Cow::Borrowed(s)
+            } else {
+                let mut buf = String::with_capacity(width);
+                for _ in 0..padding {
+                    buf.push(fillchar)
+                }
+                buf.push_str(s);
+                Cow::Owned(buf)
             }
         };
         ca.apply(f)

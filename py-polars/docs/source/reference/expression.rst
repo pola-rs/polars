@@ -314,6 +314,8 @@ The following methods are available under the `Expr.str` attribute.
     ExprStringNameSpace.lstrip
     ExprStringNameSpace.rstrip
     ExprStringNameSpace.zfill
+    ExprStringNameSpace.ljust
+    ExprStringNameSpace.rjust
     ExprStringNameSpace.contains
     ExprStringNameSpace.json_path_match
     ExprStringNameSpace.extract

@@ -103,7 +103,9 @@ class HTMLFormatter:
                                 if series.dtype == Object:
                                     self.elements.append(f"{series[r]}")
                                 else:
-                                    self.elements.append(f"{series._s.get_fmt(r)}")
+                                    self.elements.append(
+                                        f"<pre>{series._s.get_fmt(r)}</pre>"
+                                    )
 
     def write(self, inner: str) -> None:
         self.elements.append(inner)

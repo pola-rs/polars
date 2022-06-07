@@ -271,6 +271,8 @@ The following methods are available under the `Series.str` attribute.
     StringNameSpace.rstrip
     StringNameSpace.lstrip
     StringNameSpace.zfill
+    StringNameSpace.ljust
+    StringNameSpace.rjust
     StringNameSpace.slice
     StringNameSpace.encode
     StringNameSpace.decode

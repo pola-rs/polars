@@ -577,6 +577,14 @@ impl PyExpr {
         self.clone().inner.str().zfill(alignment).into()
     }
 
+    pub fn str_ljust(&self, width: usize, fillchar: char) -> PyExpr {
+        self.clone().inner.str().ljust(width, fillchar).into()
+    }
+
+    pub fn str_rjust(&self, width: usize, fillchar: char) -> PyExpr {
+        self.clone().inner.str().rjust(width, fillchar).into()
+    }
+
     pub fn str_contains(&self, pat: String) -> PyExpr {
         let function = move |s: Series| {
             let ca = s.utf8()?;

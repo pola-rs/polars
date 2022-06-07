@@ -1,6 +1,6 @@
 [package]
 name = "polars-core"
-version = "0.22.2"
+version = "0.22.3"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -125,7 +125,6 @@ docs-selection = [
   "concat_str",
   "row_hash",
   "mode",
-  "extract_jsonpath",
   "cum_agg",
   "rolling_window",
   "interpolate",

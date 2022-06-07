@@ -23,6 +23,8 @@ impl StringNameSpace {
     /// A leading sign prefix ('+'/'-') is handled by inserting the padding after the sign character
     /// rather than before.
     /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
     pub fn zfill(self, alignment: usize) -> Expr {
         let function = move |s: Series| {
             let ca = s.utf8()?;
@@ -31,6 +33,36 @@ impl StringNameSpace {
         self.0
             .map(function, GetOutput::from_type(DataType::Utf8))
             .with_fmt("str.zfill")
+    }
+
+    /// Return the string left justified in a string of length width.
+    /// Padding is done using the specified `fillchar`,
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
+    pub fn ljust(self, width: usize, fillchar: char) -> Expr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.ljust(width, fillchar).into_series())
+        };
+        self.0
+            .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.ljust")
+    }
+
+    /// Return the string right justified in a string of length width.
+    /// Padding is done using the specified `fillchar`,
+    /// The original string is returned if width is less than or equal to `s.len()`.
+    #[cfg(feature = "string_justify")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "string_justify")))]
+    pub fn rjust(self, width: usize, fillchar: char) -> Expr {
+        let function = move |s: Series| {
+            let ca = s.utf8()?;
+            Ok(ca.rjust(width, fillchar).into_series())
+        };
+        self.0
+            .map(function, GetOutput::from_type(DataType::Utf8))
+            .with_fmt("str.rjust")
     }
 
     /// Extract each successive non-overlapping match in an individual string as an array
