@@ -656,10 +656,9 @@ pub fn scan_ipc(path: String, options: ScanIPCOptions) -> napi::Result<JsLazyFra
     Ok(lf.into())
 }
 
-
 struct JsonScan {
     path: String,
-    batch_size: usize
+    batch_size: usize,
 }
 
 impl AnonymousScan for JsonScan {
@@ -682,7 +681,8 @@ impl AnonymousScan for JsonScan {
         let f = std::fs::File::open(&self.path)?;
         let mut reader = std::io::BufReader::new(f);
 
-        let data_type = ndjson::read::infer(&mut reader, infer_schema_length).unwrap();
+        let data_type = ndjson::read::infer(&mut reader, infer_schema_length)
+            .map_err(|err| PolarsError::ComputeError(format!("{:#?}", err).into()))?;
         let schema: polars_core::prelude::Schema = StructArray::get_fields(&data_type).into();
 
         Ok(schema)
@@ -697,16 +697,18 @@ pub struct JsonScanOptions {
 
 #[napi]
 pub fn scan_json(path: String, options: JsonScanOptions) -> napi::Result<JsLazyFrame> {
-
-    let f = JsonScan { path, batch_size: options.batch_size as usize };
+    let f = JsonScan {
+        path,
+        batch_size: options.batch_size as usize,
+    };
 
     let options = ScanArgsAnonymous {
         name: "JSON SCAN",
         infer_schema_length: Some(options.infer_schema_length as usize),
         ..ScanArgsAnonymous::default()
     };
-    let lf = LazyFrame::anonymous_scan(std::sync::Arc::new(f), options)
-        .map_err(JsPolarsErr::from)?;
+    let lf =
+        LazyFrame::anonymous_scan(std::sync::Arc::new(f), options).map_err(JsPolarsErr::from)?;
     Ok(lf.into())
 }
 

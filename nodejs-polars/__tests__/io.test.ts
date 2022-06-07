@@ -336,17 +336,4 @@ describe("stream", () => {
     await expect(pl.readJSONStream(readStream)).rejects.toBeDefined();
 
   });
-
-  test.skip("readJSON:schema mismatch", async () => {
-    // this panics now instead.
-    const readStream = new Stream.Readable({read(){}});
-    readStream.push(`${JSON.stringify({a: 1, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({a: 2, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({a: 3, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({b: "3", d: 2})} \n`);
-    readStream.push(null);
-
-    await expect(pl.readJSONStream(readStream, {batchSize: 2})).rejects.toBeDefined();
-
-  });
 });
