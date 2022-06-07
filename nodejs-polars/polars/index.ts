@@ -47,6 +47,7 @@ namespace pl {
 
   // // IO
   export import scanCSV = io.scanCSV;
+  export import scanJson = io.scanJson;
   export import scanIPC = io.scanIPC;
   export import scanParquet = io.scanParquet;
 
