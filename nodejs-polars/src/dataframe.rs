@@ -169,12 +169,14 @@ pub fn read_json_lines(
         Either::A(path) => JsonLineReader::from_path(path)
             .expect("unable to read file")
             .infer_schema_len(Some(infer_schema_length))
+            .with_chunk_size(batch_size)
             .finish()
             .map_err(JsPolarsErr::from)?,
         Either::B(buf) => {
             let cursor = Cursor::new(buf.as_ref());
             JsonLineReader::new(cursor)
                 .infer_schema_len(Some(infer_schema_length))
+                .with_chunk_size(batch_size)
                 .finish()
                 .map_err(JsPolarsErr::from)?
         }
@@ -1040,10 +1042,14 @@ impl JsDataFrame {
         shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
-        
         let df = self
             .df
-            .sample_n(n as usize, with_replacement, shuffle, seed.map(|s| s as u64))
+            .sample_n(
+                n as usize,
+                with_replacement,
+                shuffle,
+                seed.map(|s| s as u64),
+            )
             .map_err(JsPolarsErr::from)?;
         Ok(df.into())
     }
@@ -1056,7 +1062,6 @@ impl JsDataFrame {
         shuffle: bool,
         seed: Option<i64>,
     ) -> napi::Result<JsDataFrame> {
-        
         let df = self
             .df
             .sample_frac(frac, with_replacement, shuffle, seed.map(|s| s as u64))

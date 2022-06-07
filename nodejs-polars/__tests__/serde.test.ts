@@ -8,7 +8,8 @@ describe("serde", () => {
     const actual = deserde.collectSync();
     expect(actual).toFrameEqual(expected);
   });
-  test("lazyframe:bincode", () => {
+
+  test.skip("lazyframe:bincode", () => {
     const df = pl.scanCSV("../examples/datasets/foods1.csv");
     const buf = df.serialize("bincode");
     const deserde = pl.LazyDataFrame.deserialize(buf, "bincode");

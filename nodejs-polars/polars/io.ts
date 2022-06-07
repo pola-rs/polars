@@ -199,7 +199,6 @@ export function scanCSV(path, options?) {
 /**
    * __Read a JSON file or string into a DataFrame.__
    *
-   * _Note: Currently only newline delimited JSON is supported_
    * @param pathOrBody - path or buffer or string
    *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `file.csv`.
    *   - body: String or buffer to be read as a CSV
@@ -249,7 +248,43 @@ export function readJSON(pathOrBody, options = readJsonDefaultOptions) {
     throw new Error("must supply either a path or body");
   }
 }
+/**
+   * __Read a JSON file or string into a DataFrame.__
+   *
+   * _Note: Currently only newline delimited JSON is supported_
+   * @param path - path to json file
+   *   - path: Path to a file or a file like string. Any valid filepath can be used. Example: `./file.json`.
+   * @param options
+   * @param options.inferSchemaLength -Maximum number of lines to read to infer schema. If set to 0, all columns will be read as pl.Utf8.
+   *    If set to `null`, a full table scan will be done (slow).
+   * @param options.batchSize - Number of lines to read into the buffer at once. Modify this to change performance.
+   * @returns ({@link DataFrame})
+   * @example
+   * ```
+   * const jsonString = `
+   * {"a", 1, "b", "foo", "c": 3}
+   * {"a": 2, "b": "bar", "c": 6}
+   * `
+   * > const df = pl.scanJson(jsonString).collectSync()
+   * > console.log(df)
+   *   shape: (2, 3)
+   * ╭─────┬─────┬─────╮
+   * │ a   ┆ b   ┆ c   │
+   * │ --- ┆ --- ┆ --- │
+   * │ i64 ┆ str ┆ i64 │
+   * ╞═════╪═════╪═════╡
+   * │ 1   ┆ foo ┆ 3   │
+   * ├╌╌╌╌╌┼╌╌╌╌╌┼╌╌╌╌╌┤
+   * │ 2   ┆ bar ┆ 6   │
+   * ╰─────┴─────┴─────╯
+   * ```
+   */
+export function scanJson(path: string, options?: Partial<{ inferSchemaLength: number, batchSize: number}>): LazyDataFrame
+export function scanJson(path, options?) {
+  options = {...readJsonDefaultOptions, ...options};
 
+  return _LazyDataFrame(pli.scanJson(path, options));
+}
 /**
    * Read into a DataFrame from a parquet file.
    * @param pathOrBuffer

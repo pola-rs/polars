@@ -86,8 +86,8 @@ describe("read:json", () => {
   });
   it("can read from a json buffer", () => {
     const json = [
-      JSON.stringify({foo: 1, bar: "1"}),
-      JSON.stringify({foo: 2, bar: "1"}),
+      JSON.stringify({bar: "1", foo: 1}),
+      JSON.stringify({bar: "1", foo: 2}),
       ""
     ].join("\n");
     const df = pl.readJSON(Buffer.from(json));
@@ -101,6 +101,10 @@ describe("read:json", () => {
 describe("scan", () => {
   it("can lazy load (scan) from a csv file", () => {
     const df = pl.scanCSV(csvpath).collectSync();
+    expect(df.shape).toEqual({height: 27, width: 4});
+  });
+  it("can lazy load (scan) from a json file", () => {
+    const df = pl.scanJson(jsonpath).collectSync();
     expect(df.shape).toEqual({height: 27, width: 4});
   });
   it("can lazy load (scan) from a csv file with options", () => {
@@ -330,17 +334,6 @@ describe("stream", () => {
     readStream.push(null);
 
     await expect(pl.readJSONStream(readStream)).rejects.toBeDefined();
-
-  });
-  test("readJSON:schema mismatch", async () => {
-    const readStream = new Stream.Readable({read(){}});
-    readStream.push(`${JSON.stringify({a: 1, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({a: 2, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({a: 3, b: 2})} \n`);
-    readStream.push(`${JSON.stringify({b: "3", d: 2})} \n`);
-    readStream.push(null);
-
-    await expect(pl.readJSONStream(readStream, {batchSize: 2})).rejects.toBeDefined();
 
   });
 });
