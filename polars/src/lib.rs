@@ -162,10 +162,12 @@
 //! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for `Utf8Chunked`
+//!     - `string_justify` - `zfill`, `ljust`, `rjust`
 //! * `object` - Support for generic ChunkedArrays called `ObjectChunked<T>` (generic over `T`).
 //!              These are downcastable from Series through the [Any](https://doc.rust-lang.org/std/any/index.html) trait.
 //! * Performance related:
 //!     - `simd` - SIMD operations _(nightly only)_
+//!     - `performant` - more fast paths, slower compile times.
 //!     - `bigidx` - Activate this feature if you expect >> 2^32 rows. This has not been needed by anyone.
 //!                  This allows polars to scale up way beyond that by using `u64` as an index.
 //!                  Polars will be a bit slower with this feature activated as many data structures

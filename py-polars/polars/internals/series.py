@@ -4317,6 +4317,42 @@ class StringNameSpace:
         s = wrap_s(self._s)
         return s.to_frame().select(pli.col(s.name).str.zfill(alignment)).to_series()
 
+    def ljust(self, width: int, fillchar: str = " ") -> Series:
+        """
+        Return the string left justified in a string of length width.
+        Padding is done using the specified `fillchar`,
+        The original string is returned if width is less than or equal to `len(s)`.
+
+        Parameters
+        ----------
+        width
+            justify left to this length
+        fillchar
+            fill with this ASCII character
+        """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame().select(pli.col(s.name).str.ljust(width, fillchar)).to_series()
+        )
+
+    def rjust(self, width: int, fillchar: str = " ") -> Series:
+        """
+        Return the string right justified in a string of length width.
+        Padding is done using the specified `fillchar`,
+        The original string is returned if width is less than or equal to `len(s)`.
+
+        Parameters
+        ----------
+        width
+            justify right to this length
+        fillchar
+            fill with this ASCII character
+        """
+        s = wrap_s(self._s)
+        return (
+            s.to_frame().select(pli.col(s.name).str.rjust(width, fillchar)).to_series()
+        )
+
     def to_lowercase(self) -> Series:
         """
         Modify the strings to their lowercase equivalent.

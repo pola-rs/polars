@@ -104,6 +104,7 @@ features = [
   "cumulative_eval",
   "list_to_struct",
   "to_dummies",
+  "string_justify",
 ]
 
 # [patch.crates-io]

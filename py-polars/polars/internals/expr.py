@@ -4356,6 +4356,36 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_zfill(alignment))
 
+    def ljust(self, width: int, fillchar: str = " ") -> Expr:
+        """
+        Return the string left justified in a string of length width.
+        Padding is done using the specified `fillchar`,
+        The original string is returned if width is less than or equal to `len(s)`.
+
+        Parameters
+        ----------
+        width
+            justify left to this length
+        fillchar
+            fill with this ASCII character
+        """
+        return wrap_expr(self._pyexpr.str_ljust(width, fillchar))
+
+    def rjust(self, width: int, fillchar: str = " ") -> Expr:
+        """
+        Return the string right justified in a string of length width.
+        Padding is done using the specified `fillchar`,
+        The original string is returned if width is less than or equal to `len(s)`.
+
+        Parameters
+        ----------
+        width
+            justify right to this length
+        fillchar
+            fill with this ASCII character
+        """
+        return wrap_expr(self._pyexpr.str_rjust(width, fillchar))
+
     def contains(self, pattern: str) -> Expr:
         """
         Check if string contains regex.
