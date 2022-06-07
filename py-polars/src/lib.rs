@@ -209,7 +209,7 @@ fn toggle_string_cache(toggle: bool) {
 
 #[pyfunction]
 fn concat_str(s: Vec<dsl::PyExpr>, sep: &str) -> dsl::PyExpr {
-    let s = s.into_iter().map(|e| e.inner).collect();
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
     polars::lazy::dsl::concat_str(s, sep).into()
 }
 

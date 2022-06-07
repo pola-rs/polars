@@ -105,3 +105,21 @@ fn scan_join_same_file() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn concat_str_regex_expansion() -> Result<()> {
+    let df = df![
+        "a"=> [1, 1, 1],
+        "b_a_1"=> ["a--", "", ""],
+        "b_a_2"=> ["", "b--", ""],
+        "b_a_3"=> ["", "", "c--"]
+    ]?
+    .lazy();
+    let out = df
+        .select([concat_str([col(r"^b_a_\d$")], ";").alias("concatenated")])
+        .collect()?;
+    let s = out.column("concatenated")?;
+    assert_eq!(s, &Series::new("concatenated", ["a--;;", ";b--;", ";;c--"]));
+
+    Ok(())
+}
