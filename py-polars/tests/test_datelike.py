@@ -938,3 +938,28 @@ def test_duration_aggregations() -> None:
             [timedelta(days=2), timedelta(days=2)],
         ],
     }
+
+
+def test_datetime_units() -> None:
+    df = pl.DataFrame(
+        {
+            "ns": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="ns"
+            ),
+            "us": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="us"
+            ),
+            "ms": pl.date_range(
+                datetime(2020, 1, 1), datetime(2020, 5, 1), "1mo", time_unit="ms"
+            ),
+        }
+    )
+    names = set(df.columns)
+
+    for unit in ["ns", "us", "ms"]:
+        subset = names - set([unit])
+
+        assert (
+            len(set(df.select([pl.all().exclude(pl.Datetime(unit))]).columns) - subset)
+            == 0
+        )

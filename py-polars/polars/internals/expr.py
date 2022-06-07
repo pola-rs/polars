@@ -310,7 +310,13 @@ class Expr:
 
     def exclude(
         self,
-        columns: Union[str, List[str], Type[DataType], Sequence[Type[DataType]]],
+        columns: Union[
+            str,
+            List[str],
+            Union[DataType, Type[DataType]],
+            DataType,
+            Sequence[Union[DataType, Type[DataType]]],
+        ],
     ) -> "Expr":
         """
         Exclude certain columns from a wildcard/regex selection.
@@ -369,11 +375,16 @@ class Expr:
         if isinstance(columns, str):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude(columns))
-        elif not isinstance(columns, Sequence) and issubclass(columns, DataType):
+        elif not isinstance(columns, Sequence) or isinstance(columns, DataType):
             columns = [columns]
             return wrap_expr(self._pyexpr.exclude_dtype(columns))
 
-        if not all([isinstance(a, str) or issubclass(a, DataType) for a in columns]):
+        if not all(
+            [
+                isinstance(a, str) or (type(a) is type and issubclass(a, DataType))
+                for a in columns
+            ]
+        ):
             raise ValueError("input should be all string or all DataType")
 
         if isinstance(columns[0], str):

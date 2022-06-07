@@ -647,6 +647,15 @@ impl Display for TimeUnit {
 }
 
 impl TimeUnit {
+    pub fn to_ascii(self) -> &'static str {
+        use TimeUnit::*;
+        match self {
+            Nanoseconds => "ns",
+            Microseconds => "us",
+            Milliseconds => "ms",
+        }
+    }
+
     pub fn to_arrow(self) -> ArrowTimeUnit {
         match self {
             TimeUnit::Nanoseconds => ArrowTimeUnit::Nanosecond,
