@@ -1,10 +1,10 @@
 use crate::prelude::*;
-use jsonpath_lib::PathCompiled;
+use jsonpath_lib::Compiled;
 use serde_json::Value;
 use std::borrow::Cow;
 
 #[cfg(feature = "extract_jsonpath")]
-fn extract_json<'a>(expr: &PathCompiled, json_str: &'a str) -> Option<Cow<'a, str>> {
+fn extract_json<'a>(expr: &Compiled, json_str: &'a str) -> Option<Cow<'a, str>> {
     serde_json::from_str(json_str).ok().and_then(|value| {
         // TODO: a lot of heap allocations here. Improve json path by adding a take?
         let result = expr.select(&value).ok()?;
