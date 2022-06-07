@@ -526,7 +526,7 @@ pub fn concat<L: AsRef<[LazyFrame]>>(inputs: L, rechunk: bool) -> Result<LazyFra
     if rechunk {
         Ok(lf.map(
             |mut df: DataFrame| {
-                df.rechunk();
+                df.as_single_chunk_par();
                 Ok(df)
             },
             Some(AllowedOptimizations::default()),

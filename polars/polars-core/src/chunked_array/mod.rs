@@ -166,15 +166,24 @@ impl<T> ChunkedArray<T> {
     /// Set the 'sorted' bit meta info.
     pub fn set_sorted(&mut self, reverse: bool) {
         if reverse {
+            // unset sorted
+            self.bit_settings &= !1;
+            // set reverse sorted
             self.bit_settings |= 1 << 1
         } else {
+            // // unset reverse sorted
+            self.bit_settings &= !(1 << 1);
+            // set sorted
             self.bit_settings |= 1
         }
     }
 
     pub fn set_sorted2(&mut self, sorted: IsSorted) {
         match sorted {
-            IsSorted::Not => {}
+            IsSorted::Not => {
+                self.bit_settings &= !(1 << 1);
+                self.bit_settings &= !1;
+            }
             IsSorted::Ascending => self.set_sorted(false),
             IsSorted::Descending => self.set_sorted(true),
         }

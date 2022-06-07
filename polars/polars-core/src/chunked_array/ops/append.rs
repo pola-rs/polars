@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::series::IsSorted;
 
 pub(crate) fn new_chunks(chunks: &mut Vec<ArrayRef>, other: &[ArrayRef], len: usize) {
     // replace an empty array
@@ -19,6 +20,7 @@ where
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted2(IsSorted::Not);
     }
 }
 
@@ -27,6 +29,7 @@ impl BooleanChunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted2(IsSorted::Not);
     }
 }
 #[doc(hidden)]
@@ -34,6 +37,7 @@ impl Utf8Chunked {
     pub fn append(&mut self, other: &Self) {
         let len = self.len();
         new_chunks(&mut self.chunks, &other.chunks, len);
+        self.set_sorted2(IsSorted::Not);
     }
 }
 
