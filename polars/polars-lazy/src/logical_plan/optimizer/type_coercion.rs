@@ -11,7 +11,7 @@ pub struct TypeCoercionRule {}
 
 /// determine if we use the supertype or not. For instance when we have a column Int64 and we compare with literal UInt32
 /// it would be wasteful to cast the column instead of the literal.
-fn use_supertype(
+fn modify_supertype(
     mut st: DataType,
     left: &AExpr,
     right: &AExpr,
@@ -67,6 +67,14 @@ fn use_supertype(
             | (Utf8, Categorical(_), AExpr::Literal(_), _) => {
                 st = DataType::Categorical(None);
             }
+            // when then expression literals can have a different list type.
+            // so we cast the literal to the other hand side.
+            (List(inner), List(other), _, AExpr::Literal(_))
+            | (List(other), List(inner), AExpr::Literal(_), _)
+                if inner != other =>
+            {
+                st = DataType::List(inner.clone())
+            }
             // do nothing
             _ => {}
         }
@@ -117,7 +125,7 @@ impl OptimizationRule for TypeCoercionRule {
                         None
                     } else {
                         let st = get_supertype(&type_true, &type_false).expect("supertype");
-                        let st = use_supertype(st, truthy, falsy, &type_true, &type_false);
+                        let st = modify_supertype(st, truthy, falsy, &type_true, &type_false);
 
                         // only cast if the type is not already the super type.
                         // this can prevent an expensive flattening and subsequent aggregation
@@ -270,7 +278,7 @@ impl OptimizationRule for TypeCoercionRule {
                         let st = get_supertype(&type_left, &type_right)
                             .expect("could not find supertype of binary expr");
 
-                        let mut st = use_supertype(st, left, right, &type_left, &type_right);
+                        let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
                         #[allow(unused_mut, unused_assignments)]
                         let mut cat_str_arithmetic = false;

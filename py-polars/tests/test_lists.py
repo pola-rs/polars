@@ -252,3 +252,14 @@ def test_list_fill_null() -> None:
             .alias("C")
         ]
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
+
+
+def test_list_fill_list() -> None:
+    assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
+        [
+            pl.when(pl.col("a").arr.lengths() == 0)
+            .then([5])
+            .otherwise(pl.col("a"))
+            .alias("filled")
+        ]
+    ).to_dict(False) == {"filled": [[1, 2, 3], [5]]}

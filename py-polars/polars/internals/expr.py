@@ -5286,7 +5286,23 @@ class ExprDateTimeNameSpace:
 
 
 def expr_to_lit_or_expr(
-    expr: Union[Expr, bool, int, float, str, "pli.Series", None],
+    expr: Union[
+        Expr,
+        bool,
+        int,
+        float,
+        str,
+        "pli.Series",
+        None,
+        Sequence[
+            Union[
+                int,
+                float,
+                str,
+                None,
+            ]
+        ],
+    ],
     str_to_lit: bool = True,
 ) -> Expr:
     """
@@ -5312,6 +5328,8 @@ def expr_to_lit_or_expr(
         return pli.lit(expr)
     elif isinstance(expr, Expr):
         return expr
+    elif isinstance(expr, list):
+        return pli.lit(pli.Series("", [expr]))
     else:
         raise ValueError(
             f"did not expect value {expr} of type {type(expr)}, maybe disambiguate with pl.lit or pl.col"
