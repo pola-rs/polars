@@ -49,7 +49,7 @@ def test_repeat_expansion_in_groupby() -> None:
         pl.DataFrame({"g": [1, 2, 2, 3, 3, 3]})
         .groupby("g", maintain_order=True)
         .agg(pl.repeat(1, pl.count()).cumsum())
-        .to_dict()
+        .to_dict(False)
     )
     assert out == {"g": [1, 2, 3], "literal": [[1], [1, 2], [1, 2, 3]]}
 

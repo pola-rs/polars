@@ -107,6 +107,7 @@ fn scan_join_same_file() -> Result<()> {
 }
 
 #[test]
+#[cfg(all(feature = "regex", feature = "concat_str"))]
 fn concat_str_regex_expansion() -> Result<()> {
     let df = df![
         "a"=> [1, 1, 1],

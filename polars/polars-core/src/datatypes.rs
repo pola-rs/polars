@@ -733,6 +733,11 @@ impl PartialEq for DataType {
                 #[cfg(feature = "dtype-categorical")]
                 (Categorical(_), Categorical(_)) => true,
                 (Datetime(tu_l, tz_l), Datetime(tu_r, tz_r)) => tu_l == tu_r && tz_l == tz_r,
+                (List(left_inner), List(right_inner)) => left_inner == right_inner,
+                #[cfg(feature = "dtype-duration")]
+                (Duration(tu_l), Duration(tu_r)) => tu_l == tu_r,
+                #[cfg(feature = "object")]
+                (Object(lhs), Object(rhs)) => lhs == rhs,
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
