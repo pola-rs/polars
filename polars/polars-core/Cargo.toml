@@ -74,7 +74,6 @@ ewma = []
 dataframe_arithmetic = []
 product = []
 unique_counts = []
-log = []
 partition_by = []
 semi_anti_join = []
 chunked_ids = []
@@ -139,7 +138,6 @@ docs-selection = [
   "string_encoding",
   "product",
   "unique_counts",
-  "log",
   "describe",
   "chunked_ids",
   "semi_anti_join",

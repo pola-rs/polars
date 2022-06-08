@@ -1535,6 +1535,14 @@ def test_sign() -> None:
     verify_series_and_expr_api(a, expected, "sign")
 
 
+def test_exp() -> None:
+    a = pl.Series("a", [0.1, 0.01, None])
+    expected = pl.Series("a", [1.1051709180756477, 1.010050167084168, None])
+    verify_series_and_expr_api(a, expected, "exp")
+    # test if we can run on empty series as well.
+    assert a[:0].exp().to_list() == []
+
+
 def test_cumulative_eval() -> None:
     s = pl.Series("values", [1, 2, 3, 4, 5])
     expr = pl.element().first() - pl.element().last() ** 2

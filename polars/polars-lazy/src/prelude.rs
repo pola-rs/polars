@@ -25,6 +25,8 @@ pub struct RollingGroupOptions {
     pub index_column: String,
 }
 
+pub(crate) use polars_ops::prelude::*;
+
 pub use crate::{
     dsl::*,
     frame::*,

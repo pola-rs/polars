@@ -1446,6 +1446,10 @@ impl PyExpr {
         self.inner.clone().log(base).into()
     }
 
+    pub fn exp(&self) -> Self {
+        self.inner.clone().exp().into()
+    }
+
     pub fn entropy(&self, base: f64, normalize: bool) -> Self {
         self.inner.clone().entropy(base, normalize).into()
     }

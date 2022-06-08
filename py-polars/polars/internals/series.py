@@ -585,7 +585,7 @@ class Series:
         """
         Return the exponential element-wise
         """
-        return np.exp(self)  # type: ignore
+        return self.to_frame().select(pli.col(self.name).exp()).to_series()
 
     def drop_nulls(self) -> "Series":
         """

@@ -22,9 +22,12 @@ dtype-duration = ["polars-core/dtype-duration", "polars-core/temporal"]
 dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 object = ["polars-core/object"]
+
+# ops
 to_dummies = []
 list_to_struct = ["polars-core/dtype-struct", "list"]
 list = []
 diff = []
 strings = ["polars-core/strings"]
 string_justify = ["polars-core/strings"]
+log = []
