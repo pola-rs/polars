@@ -309,9 +309,18 @@ class LazyFrame(Generic[DF]):
         return None
 
     @classmethod
-    def _scan_python_function(cls, schema: "pa.schema", scan_fn: bytes) -> "LazyFrame":
+    def _scan_python_function(
+        cls, schema: Union["pa.schema", Dict[str, Type[DataType]]], scan_fn: bytes
+    ) -> "LazyFrame":
         self = cls.__new__(cls)
-        self._ldf = PyLazyFrame.scan_from_python_function(list(schema), scan_fn)
+        if isinstance(schema, dict):
+            self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
+                [(name, dt) for name, dt in schema.items()], scan_fn
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
+                list(schema), scan_fn
+            )
         return self
 
     def __getitem__(self, item: Union[int, range, slice]) -> None:
