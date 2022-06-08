@@ -50,6 +50,7 @@ use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
 use polars_core::prelude::IntoSeries;
+use polars_core::POOL;
 use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
 
@@ -446,6 +447,11 @@ fn as_struct(exprs: Vec<PyExpr>) -> PyExpr {
     polars::lazy::dsl::as_struct(&exprs).into()
 }
 
+#[pyfunction]
+fn pool_size() -> usize {
+    POOL.current_num_threads()
+}
+
 #[pymodule]
 fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add("NotFoundError", py.get_type::<NotFoundError>())
@@ -505,5 +511,6 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(max_exprs)).unwrap();
     m.add_wrapped(wrap_pyfunction!(as_struct)).unwrap();
     m.add_wrapped(wrap_pyfunction!(repeat)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(pool_size)).unwrap();
     Ok(())
 }

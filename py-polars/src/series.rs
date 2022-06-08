@@ -34,12 +34,17 @@ macro_rules! init_method {
         #[pymethods]
         impl PySeries {
             #[staticmethod]
-            pub fn $name(name: &str, val: &PyArray1<$type>, _strict: bool) -> PySeries {
-                unsafe {
-                    PySeries {
-                        series: Series::new(name, val.as_slice().unwrap()),
-                    }
-                }
+            pub fn $name(
+                py: Python,
+                name: &str,
+                array: &PyArray1<$type>,
+                _strict: bool,
+            ) -> PySeries {
+                let array = array.readonly();
+                let vals = array.as_slice().unwrap();
+                py.allow_threads(|| PySeries {
+                    series: Series::new(name, vals),
+                })
             }
         }
     };
@@ -58,41 +63,39 @@ init_method!(new_u64, u64);
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    pub fn new_f32(name: &str, val: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
-        // numpy array as slice is unsafe
-        unsafe {
+    pub fn new_f32(py: Python, name: &str, array: &PyArray1<f32>, nan_is_null: bool) -> PySeries {
+        let array = array.readonly();
+        let vals = array.as_slice().unwrap();
+        py.allow_threads(|| {
             if nan_is_null {
-                let mut ca: Float32Chunked = val
-                    .as_slice()
-                    .expect("contiguous array")
+                let mut ca: Float32Chunked = vals
                     .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
                 ca.rename(name);
                 ca.into_series().into()
             } else {
-                Series::new(name, val.as_slice().unwrap()).into()
+                Series::new(name, vals).into()
             }
-        }
+        })
     }
 
     #[staticmethod]
-    pub fn new_f64(name: &str, val: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
-        // numpy array as slice is unsafe
-        unsafe {
+    pub fn new_f64(py: Python, name: &str, array: &PyArray1<f64>, nan_is_null: bool) -> PySeries {
+        let array = array.readonly();
+        let vals = array.as_slice().unwrap();
+        py.allow_threads(|| {
             if nan_is_null {
-                let mut ca: Float64Chunked = val
-                    .as_slice()
-                    .expect("contiguous array")
+                let mut ca: Float64Chunked = vals
                     .iter()
                     .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
                 ca.rename(name);
                 ca.into_series().into()
             } else {
-                Series::new(name, val.as_slice().unwrap()).into()
+                Series::new(name, vals).into()
             }
-        }
+        })
     }
 
     pub fn struct_to_frame(&self) -> PyResult<PyDataFrame> {
