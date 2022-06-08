@@ -225,7 +225,7 @@ def sequence_to_pyseries(
                 try:
                     arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
                     return arrow_to_pyseries(name, arrow_values)
-                except pa.lib.ArrowInvalid:
+                except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
                     pass
 
             # Convert mixed sequences like `[[12], "foo", 9]`
