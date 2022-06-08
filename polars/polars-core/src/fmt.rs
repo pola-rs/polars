@@ -300,6 +300,9 @@ impl Debug for Series {
                 self.name(),
                 "Series"
             ),
+            DataType::Null => {
+                writeln!(f, "nullarray")
+            }
             dt => panic!("{:?} not impl", dt),
         }
     }

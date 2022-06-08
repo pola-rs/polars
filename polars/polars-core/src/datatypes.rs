@@ -1063,6 +1063,8 @@ pub type IdxType = UInt32Type;
 #[cfg(feature = "bigidx")]
 pub type IdxType = UInt64Type;
 
+pub const NULL_DTYPE: DataType = DataType::Int32;
+
 #[cfg(test)]
 mod test {
     use super::*;
