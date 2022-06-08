@@ -1,5 +1,7 @@
 mod _trait;
 mod implementations;
+mod ops;
+
 pub use self::_trait::*;
 use polars_core::prelude::*;
 use polars_core::utils::Wrap;
@@ -10,6 +12,7 @@ type SeriesOpsRef = Arc<dyn SeriesOps>;
 pub trait IntoSeriesOps {
     fn to_ops(&self) -> SeriesOpsRef;
 }
+pub use ops::*;
 
 impl IntoSeriesOps for Series {
     fn to_ops(&self) -> SeriesOpsRef {

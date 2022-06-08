@@ -1969,6 +1969,23 @@ impl Expr {
 
     #[cfg(feature = "log")]
     #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
+    /// Calculate the exponential of all elements in the input array
+    pub fn exp(self) -> Self {
+        self.map(
+            move |s| Ok(s.exp()),
+            GetOutput::map_dtype(|dt| {
+                if matches!(dt, DataType::Float32) {
+                    DataType::Float32
+                } else {
+                    DataType::Float64
+                }
+            }),
+        )
+        .with_fmt("log")
+    }
+
+    #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     /// Compute the entropy as `-sum(pk * log(pk)`.
     /// where `pk` are discrete probabilities.
     pub fn entropy(self, base: f64, normalize: bool) -> Self {

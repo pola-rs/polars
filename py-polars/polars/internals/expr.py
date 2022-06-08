@@ -253,7 +253,7 @@ class Expr:
         """
         Return the exponential element-wise
         """
-        return np.exp(self)  # type: ignore
+        return wrap_expr(self._pyexpr.exp())
 
     def alias(self, name: str) -> "Expr":
         """
