@@ -1,4 +1,5 @@
 import ctypes
+import sys
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, Optional, Sequence, Type, Union
 
@@ -361,15 +362,20 @@ _DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
     Time: time,
 }
 
+# Map Numpy char codes to polars dtypes.
+#
+# Windows behaves differently from other platforms as C long is
+# only 32-bit on Windows, while it is 64-bit on other platforms.
+# See: https://numpy.org/doc/stable/reference/arrays.scalars.html
 _NUMPY_CHAR_CODE_TO_DTYPE = {
     "b": Int8,
     "h": Int16,
     "i": Int32,
-    "l": Int64,
+    ("q" if sys.platform == "win32" else "l"): Int64,
     "B": UInt8,
     "H": UInt16,
     "I": UInt32,
-    "L": UInt64,
+    ("Q" if sys.platform == "win32" else "L"): UInt64,
     "f": Float32,
     "d": Float64,
     "?": Boolean,
