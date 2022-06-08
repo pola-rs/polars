@@ -270,3 +270,34 @@ def test_empty_list_construction() -> None:
     assert pl.DataFrame([{"array": [], "not_array": 1234}], orient="row").to_dict(
         False
     ) == {"array": [[]], "not_array": [1234]}
+
+
+def test_list_ternary_concat() -> None:
+    df = pl.DataFrame(
+        {
+            "list1": [["123", "456"], None],
+            "list2": [["789"], ["zzz"]],
+        }
+    )
+
+    assert df.with_column(
+        pl.when(pl.col("list1").is_null())
+        .then(pl.col("list1").arr.concat(pl.col("list2")))
+        .otherwise(pl.col("list2"))
+        .alias("result")
+    ).to_dict(False) == {
+        "list1": [["123", "456"], None],
+        "list2": [["789"], ["zzz"]],
+        "result": [["789"], None],
+    }
+
+    assert df.with_column(
+        pl.when(pl.col("list1").is_null())
+        .then(pl.col("list2"))
+        .otherwise(pl.col("list1").arr.concat(pl.col("list2")))
+        .alias("result")
+    ).to_dict(False) == {
+        "list1": [["123", "456"], None],
+        "list2": [["789"], ["zzz"]],
+        "result": [["123", "456", "789"], ["zzz"]],
+    }
