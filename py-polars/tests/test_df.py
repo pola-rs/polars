@@ -99,6 +99,9 @@ def test_init_dict() -> None:
     )
     assert df.schema == {"c": pl.Int8, "d": pl.Int16}
 
+    df = pl.DataFrame({"a": [[]], "b": [()]})
+    assert df.schema == {"a": pl.List(pl.Float64), "b": pl.List(pl.Float64)}
+
 
 def test_init_ndarray() -> None:
     # Empty array
