@@ -5079,6 +5079,18 @@ class DataFrame(metaclass=DataFrameMetaClass):
         """
         return self._from_pydf(self._df.to_dummies())
 
+    def qcut(self: DF) -> DF:
+        """
+        TODO: complete
+                """
+        return self._from_pydf(self._df.qcut())
+
+    def cut(self: DF) -> DF:
+        """
+        TODO: complete
+                """
+        return self._from_pydf(self._df.cut())
+
     def distinct(
         self: DF,
         maintain_order: bool = True,

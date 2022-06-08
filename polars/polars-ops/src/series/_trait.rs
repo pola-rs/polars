@@ -21,6 +21,16 @@ pub trait SeriesOps {
     fn to_dummies(&self) -> Result<DataFrame> {
         invalid_operation!(self)
     }
+
+    #[cfg(feature = "cut_qcut")]
+    fn qcut(&self, _bins: Vec<f64>) -> Result<Series> {
+        invalid_operation!(self)
+    }
+
+    #[cfg(feature = "cut_qcut")]
+    fn cut(&self, _bins: Vec<f64>) -> Result<Series> {
+        invalid_operation!(self)
+    }
 }
 
 impl SeriesOps for Series {
@@ -30,5 +40,15 @@ impl SeriesOps for Series {
     #[cfg(feature = "to_dummies")]
     fn to_dummies(&self) -> Result<DataFrame> {
         self.to_ops().to_dummies()
+    }
+
+    #[cfg(feature = "cut_qcut")]
+    fn qcut(&self, bins: Vec<f64>) -> Result<Series> {
+        self.to_ops().qcut(bins)
+    }
+
+    #[cfg(feature = "cut_qcut")]
+    fn cut(&self, bins: Vec<f64>) -> Result<Series> {
+        self.to_ops().cut(bins)
     }
 }

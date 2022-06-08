@@ -1217,6 +1217,16 @@ impl PySeries {
         Ok(df.into())
     }
 
+    pub fn qcut(&self, bins: Vec<f64>) -> PyResult<PySeries> {
+        let df = self.series.qcut(bins).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
+    }
+
+    pub fn cut(&self, bins: Vec<f64>) -> PyResult<PySeries> {
+        let df = self.series.cut(bins).map_err(PyPolarsErr::from)?;
+        Ok(df.into())
+    }
+
     pub fn get_list(&self, index: usize) -> Option<Self> {
         if let Ok(ca) = &self.series.list() {
             let s = ca.get(index);
