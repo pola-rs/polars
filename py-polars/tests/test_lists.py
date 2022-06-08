@@ -263,3 +263,10 @@ def test_list_fill_list() -> None:
             .alias("filled")
         ]
     ).to_dict(False) == {"filled": [[1, 2, 3], [5]]}
+
+
+def test_empty_list_construction() -> None:
+    assert pl.Series([[]]).to_list() == [[]]
+    assert pl.DataFrame([{"array": [], "not_array": 1234}], orient="row").to_dict(
+        False
+    ) == {"array": [[]], "not_array": [1234]}

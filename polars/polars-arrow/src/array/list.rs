@@ -5,7 +5,7 @@ use arrow::datatypes::DataType;
 use arrow::error::Result;
 
 pub struct AnonymousBuilder<'a> {
-    pub arrays: Vec<&'a dyn Array>,
+    arrays: Vec<&'a dyn Array>,
     offsets: Vec<i64>,
     validity: Option<MutableBitmap>,
     size: i64,
@@ -29,6 +29,14 @@ impl<'a> AnonymousBuilder<'a> {
 
     pub fn is_empty(&self) -> bool {
         self.arrays.is_empty()
+    }
+
+    pub fn offsets(&self) -> &[i64] {
+        &self.offsets
+    }
+
+    pub fn take_offsets(self) -> Vec<i64> {
+        self.offsets
     }
 
     #[inline]
