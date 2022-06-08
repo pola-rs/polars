@@ -127,13 +127,20 @@ pub(crate) fn finish_reader<R: ArrowReader>(
 
         apply_aggregations(&mut df, aggregate)?;
 
-        parsed_dfs.push(df);
-
         if let Some(n) = n_rows {
             if num_rows >= n {
+                let len = n - parsed_dfs
+                    .iter()
+                    .map(|df: &DataFrame| df.height())
+                    .sum::<usize>();
+                if std::env::var("POLARS_VERBOSE").is_ok() {
+                    eprintln!("sliced off {} rows of the 'DataFrame'. These lines were read because they were in a single chunk.", df.height() - n)
+                }
+                parsed_dfs.push(df.slice(0, len));
                 break;
             }
         }
+        parsed_dfs.push(df);
     }
 
     let df = {
