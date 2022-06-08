@@ -49,7 +49,6 @@ use mimalloc::MiMalloc;
 use polars::functions::{diag_concat_df, hor_concat_df};
 use polars::prelude::Null;
 use polars_core::datatypes::TimeUnit;
-use polars_core::export::arrow::io::ipc::read::read_file_metadata;
 use polars_core::prelude::IntoSeries;
 use pyo3::panic::PanicException;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyString};
@@ -351,6 +350,7 @@ fn concat_series(series: &PyAny) -> PyResult<PySeries> {
 
 #[pyfunction]
 fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+    use polars_core::export::arrow::io::ipc::read::read_file_metadata;
     let metadata = match get_either_file(py_f, false)? {
         EitherRustPythonFile::Rust(mut r) => {
             read_file_metadata(&mut r).map_err(PyPolarsErr::from)?
@@ -360,6 +360,24 @@ fn ipc_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
 
     let dict = PyDict::new(py);
     for field in metadata.schema.fields {
+        let dt: Wrap<DataType> = Wrap((&field.data_type).into());
+        dict.set_item(field.name, dt.to_object(py))?;
+    }
+    Ok(dict.to_object(py))
+}
+
+#[pyfunction]
+fn parquet_schema(py: Python, py_f: PyObject) -> PyResult<PyObject> {
+    use polars_core::export::arrow::io::parquet::read::{infer_schema, read_metadata};
+
+    let metadata = match get_either_file(py_f, false)? {
+        EitherRustPythonFile::Rust(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
+        EitherRustPythonFile::Py(mut r) => read_metadata(&mut r).map_err(PyPolarsErr::from)?,
+    };
+    let arrow_schema = infer_schema(&metadata).map_err(PyPolarsErr::from)?;
+
+    let dict = PyDict::new(py);
+    for field in arrow_schema.fields {
         let dt: Wrap<DataType> = Wrap((&field.data_type).into());
         dict.set_item(field.name, dt.to_object(py))?;
     }
@@ -474,6 +492,7 @@ fn polars(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(concat_lf)).unwrap();
     m.add_wrapped(wrap_pyfunction!(concat_series)).unwrap();
     m.add_wrapped(wrap_pyfunction!(ipc_schema)).unwrap();
+    m.add_wrapped(wrap_pyfunction!(parquet_schema)).unwrap();
     m.add_wrapped(wrap_pyfunction!(collect_all)).unwrap();
     m.add_wrapped(wrap_pyfunction!(spearman_rank_corr)).unwrap();
     m.add_wrapped(wrap_pyfunction!(map_mul)).unwrap();
