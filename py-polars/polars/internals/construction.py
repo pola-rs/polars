@@ -180,7 +180,7 @@ def sequence_to_pyseries(
 
         elif dtype_ == list or dtype_ == tuple:
             nested_value = _get_first_non_none(value)
-            nested_dtype = type(nested_value) if value is not None else float
+            nested_dtype = type(nested_value) if nested_value is not None else float
 
             # recursively call Series constructor
             if nested_dtype == list:
@@ -225,7 +225,7 @@ def sequence_to_pyseries(
                 try:
                     arrow_values = pa.array(values, pa.large_list(nested_arrow_dtype))
                     return arrow_to_pyseries(name, arrow_values)
-                except pa.lib.ArrowInvalid:
+                except (pa.lib.ArrowInvalid, pa.lib.ArrowTypeError):
                     pass
 
             # Convert mixed sequences like `[[12], "foo", 9]`
