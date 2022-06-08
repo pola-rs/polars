@@ -1380,7 +1380,7 @@ def test_create_df_from_object() -> None:
                 self._value == other._value
             )
 
-        def __repr__(self):
+        def __repr__(self) -> str:
             return f"{self.__class__.__name__}({self._value})"
 
     # from miscellaneous object
