@@ -196,7 +196,7 @@ class Series:
         self,
         name: Optional[Union[str, ArrayLike]] = None,
         values: Optional[ArrayLike] = None,
-        dtype: Optional[Type[DataType]] = None,
+        dtype: Optional[Union[Type[DataType], DataType]] = None,
         strict: bool = True,
         nan_to_null: bool = False,
     ):
@@ -1941,7 +1941,7 @@ class Series:
         ]
 
         """
-        pl_dtype = py_type_to_dtype(dtype)  # type: ignore
+        pl_dtype = py_type_to_dtype(dtype)
         return wrap_s(self._s.cast(pl_dtype, strict))
 
     def to_physical(self) -> "Series":

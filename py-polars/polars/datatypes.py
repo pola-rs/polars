@@ -1,6 +1,6 @@
 import ctypes
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Sequence, Type
+from datetime import date, datetime, time, timedelta
+from typing import Any, Dict, Optional, Sequence, Type, Union
 
 try:
     import pyarrow as pa
@@ -28,6 +28,9 @@ class DataType:
 
     def __repr__(self) -> str:
         return dtype_str_repr(self)
+
+
+PolarsDataType = Union[Type[DataType], DataType]
 
 
 class Int8(DataType):
@@ -284,7 +287,7 @@ class Struct(DataType):
         return hash(Struct)
 
 
-_DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
+_DTYPE_TO_FFINAME: Dict[PolarsDataType, str] = {
     Int8: "i8",
     Int16: "i16",
     Int32: "i32",
@@ -307,7 +310,7 @@ _DTYPE_TO_FFINAME: Dict[Type[DataType], str] = {
     Struct: "struct",
 }
 
-_DTYPE_TO_CTYPE = {
+_DTYPE_TO_CTYPE: Dict[PolarsDataType, Any] = {
     UInt8: ctypes.c_uint8,
     UInt16: ctypes.c_uint16,
     UInt32: ctypes.c_uint32,
@@ -325,15 +328,21 @@ _DTYPE_TO_CTYPE = {
 }
 
 
-_PY_TYPE_TO_DTYPE = {
+_PY_TYPE_TO_DTYPE: Dict[type, Type[DataType]] = {
     float: Float64,
     int: Int64,
     str: Utf8,
     bool: Boolean,
+    date: Date,
+    datetime: Datetime,
+    timedelta: Duration,
+    time: Time,
+    list: List,
+    tuple: List,
 }
 
 
-_DTYPE_TO_PY_TYPE = {
+_DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
     Float64: float,
     Float32: float,
     Int64: int,
@@ -346,47 +355,87 @@ _DTYPE_TO_PY_TYPE = {
     UInt32: int,
     UInt64: int,
     Boolean: bool,
+    Duration: timedelta,
+    Datetime: datetime,
+    Date: date,
+    Time: time,
 }
 
 if _PYARROW_AVAILABLE:
-    _PY_TYPE_TO_ARROW_TYPE = {
+    _PY_TYPE_TO_ARROW_TYPE: Dict[type, "pa.lib.DataType"] = {
         float: pa.float64(),
         int: pa.int64(),
         str: pa.large_utf8(),
         bool: pa.bool_(),
+        date: pa.date32(),
+        time: pa.time64("us"),
+        datetime: pa.timestamp("us"),
+        timedelta: pa.duration("us"),
+    }
+
+    _DTYPE_TO_ARROW_TYPE = {
+        Int8: pa.int8(),
+        Int16: pa.int16(),
+        Int32: pa.int32(),
+        Int64: pa.int64(),
+        UInt8: pa.uint8(),
+        UInt16: pa.uint16(),
+        UInt32: pa.uint32(),
+        UInt64: pa.uint64(),
+        Float32: pa.float32(),
+        Float64: pa.float64(),
+        Boolean: pa.bool_(),
+        Utf8: pa.large_utf8(),
+        Date: pa.date32(),
+        # handle temporal types that require units
+        Datetime: pa.timestamp("us"),
+        (Datetime, "ms"): pa.timestamp("ms"),
+        (Datetime, "us"): pa.timestamp("us"),
+        (Datetime, "ns"): pa.timestamp("ns"),
+        Duration: pa.duration("us"),
+        (Duration, "ms"): pa.duration("ms"),
+        (Duration, "us"): pa.duration("us"),
+        (Duration, "ns"): pa.duration("ns"),
+        Time: pa.time64("us"),
+        (Time, "ms"): pa.time32("ms"),
+        (Time, "us"): pa.time64("us"),
+        (Time, "ns"): pa.time64("ns"),
     }
 
 
-def dtype_to_ctype(dtype: Type[DataType]) -> Type[_SimpleCData]:
+def dtype_to_ctype(dtype: PolarsDataType) -> Type[_SimpleCData]:
     try:
         return _DTYPE_TO_CTYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
-def dtype_to_ffiname(dtype: Type[DataType]) -> str:
+def dtype_to_ffiname(dtype: PolarsDataType) -> str:
     try:
         return _DTYPE_TO_FFINAME[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
-def dtype_to_py_type(dtype: Type[DataType]) -> Type:
+def dtype_to_py_type(dtype: PolarsDataType) -> Type:
     try:
         return _DTYPE_TO_PY_TYPE[dtype]
     except KeyError:  # pragma: no cover
         raise NotImplementedError
 
 
-def py_type_to_dtype(data_type: Type[Any]) -> Type[DataType]:
-    # when the passed in is already a Polars datatype, return that
-    if (
+def is_polars_dtype(data_type: Any) -> bool:
+    return (
         type(data_type) is type
         and issubclass(data_type, DataType)
         or isinstance(data_type, DataType)
-    ):
-        return data_type
+    )
 
+
+def py_type_to_dtype(data_type: Any) -> Type[DataType]:
+    # when the passed in is already a Polars datatype, return that
+    if is_polars_dtype(data_type):
+        return data_type
     try:
         return _PY_TYPE_TO_DTYPE[data_type]
     except KeyError:  # pragma: no cover
@@ -399,6 +448,18 @@ def py_type_to_arrow_type(dtype: Type[Any]) -> "pa.lib.DataType":
     """
     try:
         return _PY_TYPE_TO_ARROW_TYPE[dtype]
+    except KeyError:  # pragma: no cover
+        raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+
+
+def dtype_to_arrow_type(dtype: PolarsDataType) -> "pa.lib.DataType":
+    """
+    Convert a Polars dtype to an Arrow dtype.
+    """
+    try:
+        unit = getattr(dtype, "tu", None)
+        lookup = dtype if unit is None else (dtype, unit)
+        return _DTYPE_TO_ARROW_TYPE[lookup]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
 

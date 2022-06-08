@@ -1005,7 +1005,7 @@ class Expr:
         └─────┴─────┘
 
         """
-        dtype = py_type_to_dtype(dtype)  # type: ignore
+        dtype = py_type_to_dtype(dtype)
         return wrap_expr(self._pyexpr.cast(dtype, strict))
 
     def sort(self, reverse: bool = False, nulls_last: bool = False) -> "Expr":

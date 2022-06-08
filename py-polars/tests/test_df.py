@@ -2,7 +2,7 @@
 import sys
 import typing
 from builtins import range
-from datetime import datetime
+from datetime import date, datetime, time
 from io import BytesIO
 from typing import Any, Iterator, Type
 from unittest.mock import patch
@@ -38,7 +38,12 @@ def test_init_only_columns() -> None:
     for no_data in (None, {}, []):
         df = pl.DataFrame(
             data=no_data,
-            columns=[("a", pl.Date), ("b", pl.UInt64), ("c", pl.datatypes.Int8)],
+            columns=[  # type: ignore
+                ("a", pl.Date),
+                ("b", pl.UInt64),
+                ("c", pl.datatypes.Int8),
+                ("d", pl.List(pl.UInt8)),
+            ],
         )
         truth = pl.DataFrame({"a": [], "b": [], "c": []}).with_columns(
             [
@@ -47,9 +52,12 @@ def test_init_only_columns() -> None:
                 pl.col("c").cast(pl.Int8),
             ]
         )
-        assert df.shape == (0, 3)
+        truth.insert_at_idx(3, pl.Series("d", [], pl.List(pl.UInt8)))
+
+        assert df.shape == (0, 4)
         assert df.frame_equal(truth, null_equal=True)
-        assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8]
+        assert df.dtypes == [pl.Date, pl.UInt64, pl.Int8, pl.List]
+        assert getattr(df.schema["d"], "inner") == pl.UInt8
 
 
 def test_init_dict() -> None:
@@ -81,7 +89,7 @@ def test_init_dict() -> None:
     assert df.dtypes == [pl.Int64, pl.Float64]
 
     df = pl.DataFrame(
-        {"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
+        data={"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]},
         columns=[("a", pl.Int8), ("b", pl.Float32)],
     )
     assert df.schema == {"a": pl.Int8, "b": pl.Float32}
@@ -89,6 +97,30 @@ def test_init_dict() -> None:
     # Values contained in tuples
     df = pl.DataFrame({"a": (1, 2, 3), "b": [1.0, 2.0, 3.0]})
     assert df.shape == (3, 2)
+
+    # Datetime/Date types (from both python and integer values)
+    py_datetimes = (
+        datetime(2022, 12, 31, 23, 59, 59),
+        datetime(2022, 12, 31, 23, 59, 59),
+    )
+    py_dates = (date(2022, 12, 31), date(2022, 12, 31))
+    int_datetimes = [1672531199000000, 1672531199000000]
+    int_dates = [19357, 19357]
+
+    for dates, datetimes, coldefs in (
+        # test inferred and explicit (given both py/polars dtypes)
+        (py_dates, py_datetimes, None),
+        (py_dates, py_datetimes, [("dt", date), ("dtm", datetime)]),
+        (py_dates, py_datetimes, [("dt", pl.Date), ("dtm", pl.Datetime)]),
+        (int_dates, int_datetimes, [("dt", date), ("dtm", datetime)]),
+        (int_dates, int_datetimes, [("dt", pl.Date), ("dtm", pl.Datetime)]),
+    ):
+        df = pl.DataFrame(
+            data={"dt": dates, "dtm": datetimes},
+            columns=coldefs,
+        )
+        assert df.schema == {"dt": pl.Date, "dtm": pl.Datetime}
+        assert df.rows() == list(zip(py_dates, py_datetimes))
 
     # Overriding dict column names/types
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}, columns=["c", "d"])
