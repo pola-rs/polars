@@ -26,7 +26,7 @@ impl Default for ScanArgsAnonymous {
 }
 impl LazyFrame {
     pub fn anonymous_scan(
-        function: Arc<dyn AnonymousScan>,
+        function: Arc<dyn ScanProvider>,
         args: ScanArgsAnonymous,
     ) -> Result<Self> {
         let mut lf: LazyFrame = LogicalPlanBuilder::anonymous_scan(

@@ -53,7 +53,7 @@ macro_rules! try_delayed {
 
 impl LogicalPlanBuilder {
     pub fn anonymous_scan(
-        function: Arc<dyn AnonymousScan>,
+        function: Arc<dyn ScanProvider>,
         schema: Option<Schema>,
         infer_schema_length: Option<usize>,
         skip_rows: Option<usize>,
@@ -69,6 +69,7 @@ impl LogicalPlanBuilder {
             function,
             schema: schema.clone(),
             predicate: None,
+            aggregate: vec![],
             options: AnonymousScanOptions {
                 fmt_str: name,
                 schema,
