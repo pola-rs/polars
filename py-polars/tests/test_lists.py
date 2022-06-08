@@ -306,6 +306,10 @@ def test_empty_list_construction() -> None:
         False
     ) == {"array": [[]], "not_array": [1234]}
 
+    df = pl.DataFrame(columns=[("col", pl.List)])
+    assert df.schema == {"col": pl.List}
+    assert df.rows() == []
+
 
 def test_list_ternary_concat() -> None:
     df = pl.DataFrame(

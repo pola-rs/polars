@@ -125,7 +125,8 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
 
     If sequence doesn't contain non-None values, return None.
     """
-    return next((v for v in values if v is not None), None)
+    if values is not None:
+        return next((v for v in values if v is not None), None)
 
 
 def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySeries":
