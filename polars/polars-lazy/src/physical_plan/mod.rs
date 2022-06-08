@@ -31,3 +31,16 @@ pub trait PhysicalPlanner {
 pub trait Executor: Send + Sync {
     fn execute(&mut self, cache: &ExecutionState) -> Result<DataFrame>;
 }
+
+pub struct Dummy {}
+impl Executor for Dummy {
+    fn execute(&mut self, _cache: &ExecutionState) -> Result<DataFrame> {
+        panic!("should not get here");
+    }
+}
+
+impl Default for Box<dyn Executor> {
+    fn default() -> Self {
+        Box::new(Dummy {})
+    }
+}
