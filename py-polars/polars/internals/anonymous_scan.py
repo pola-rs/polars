@@ -92,3 +92,33 @@ def _scan_ipc_fsspec(
         schema = pli.read_ipc_schema(data)
 
     return pli.LazyFrame._scan_python_function(schema, func_serialized)
+
+
+def _scan_parquet_impl(
+    uri: "str", with_columns: Optional[List[str]]
+) -> "pli.DataFrame":
+    """
+    Takes the projected columns and materializes an arrow table.
+
+    Parameters
+    ----------
+    uri
+    with_columns
+    """
+    import polars as pl
+
+    return pl.read_parquet(uri, with_columns)
+
+
+def _scan_parquet_fsspec(
+    file: str,
+    storage_options: Optional[Dict] = None,
+) -> "pli.LazyFrame":
+    func = partial(_scan_parquet_impl, file)
+    func_serialized = pickle.dumps(func)
+
+    storage_options = storage_options or {}
+    with pli._prepare_file_arg(file, **storage_options) as data:
+        schema = pli.read_parquet_schema(data)
+
+    return pli.LazyFrame._scan_python_function(schema, func_serialized)

@@ -28,6 +28,7 @@ except ImportError:
 
 try:
     from polars.polars import ipc_schema as _ipc_schema
+    from polars.polars import parquet_schema as _parquet_schema
 except ImportError:  # pragma: no cover
     pass
 
@@ -123,3 +124,24 @@ def read_ipc_schema(
         file = format_path(file)
 
     return _ipc_schema(file)
+
+
+def read_parquet_schema(
+    file: Union[str, BinaryIO, Path, bytes]
+) -> Dict[str, Type[DataType]]:
+    """
+    Get a schema of the Parquet file without reading data.
+
+    Parameters
+    ----------
+    file
+        Path to a file or a file-like object.
+
+    Returns
+    -------
+    Dictionary mapping column names to datatypes
+    """
+    if isinstance(file, (str, Path)):
+        file = format_path(file)
+
+    return _parquet_schema(file)

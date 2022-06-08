@@ -31,7 +31,7 @@ test-with-cov: venv
 	@cd tests && ../$(PYTHON) -m pytest \
 		--cov=polars \
 		--cov-report xml \
-		--cov-fail-under=90 \
+		--cov-fail-under=85 \
 		--import-mode=importlib
 
 doctest:

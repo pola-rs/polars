@@ -31,6 +31,7 @@ Parquet
 
    read_parquet
    scan_parquet
+   read_parquet_schema
    DataFrame.write_parquet
 
 SQL

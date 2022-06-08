@@ -30,7 +30,13 @@ except ImportError:  # pragma: no cover
 
 from polars.convert import from_arrow
 from polars.datatypes import DataType
-from polars.internals import DataFrame, LazyFrame, _scan_ds, _scan_ipc_fsspec
+from polars.internals import (
+    DataFrame,
+    LazyFrame,
+    _scan_ds,
+    _scan_ipc_fsspec,
+    _scan_parquet_fsspec,
+)
 from polars.internals.io import _prepare_file_arg
 
 try:
@@ -558,6 +564,10 @@ def scan_ipc(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a
+        particular storage connection.
+        e.g. host, port, username, password, etc.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -588,6 +598,7 @@ def scan_parquet(
     rechunk: bool = True,
     row_count_name: Optional[str] = None,
     row_count_offset: int = 0,
+    storage_options: Optional[Dict] = None,
     **kwargs: Any,
 ) -> LazyFrame:
     """
@@ -612,6 +623,10 @@ def scan_parquet(
         If not None, this will insert a row count column with give name into the DataFrame
     row_count_offset
         Offset to start the row_count column (only use if the name is set)
+    storage_options
+        Extra options that make sense for ``fsspec.open()`` or a
+        particular storage connection.
+        e.g. host, port, username, password, etc.
     """
 
     # Map legacy arguments to current ones and remove them from kwargs.
@@ -619,6 +634,10 @@ def scan_parquet(
 
     if isinstance(file, (str, Path)):
         file = format_path(file)
+
+    # try fsspec scanner
+    if not os.path.exists((file)):
+        return _scan_parquet_fsspec(file, storage_options)
 
     return LazyFrame.scan_parquet(
         file=file,
