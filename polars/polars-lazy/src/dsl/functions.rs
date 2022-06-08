@@ -225,7 +225,7 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     Expr::AnonymousFunction {
         input: s,
         function,
-        output_type: GetOutput::map_dtype(|dt| DataType::List(Box::new(dt.clone()))),
+        output_type: GetOutput::same_type(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,
