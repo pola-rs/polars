@@ -39,3 +39,4 @@ Parallelization
    :toctree: api/
 
    collect_all
+   threadpool_size

@@ -123,6 +123,7 @@ from polars.io import (
     scan_parquet,
 )
 from polars.string_cache import StringCache
+from polars.utils import threadpool_size
 
 __all__ = [
     "exceptions",
@@ -232,6 +233,7 @@ __all__ = [
     "from_pandas",
     # testing
     "testing",
+    "threadpool_size",
 ]
 
 __version__ = version()

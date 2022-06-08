@@ -7,6 +7,13 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Type, U
 
 import numpy as np
 
+try:
+    from polars.polars import pool_size as _pool_size
+
+    _DOCUMENTING = False
+except ImportError:  # pragma: no cover
+    _DOCUMENTING = True
+
 from polars.datatypes import DataType, Date, Datetime
 
 if sys.version_info >= (3, 10):
@@ -232,3 +239,10 @@ def format_path(path: Union[str, Path]) -> str:
     Returns a string path, expanding the home directory if present.
     """
     return os.path.expanduser(path)
+
+
+def threadpool_size() -> int:
+    """
+    Get the size of polars; thread pool
+    """
+    return _pool_size()
