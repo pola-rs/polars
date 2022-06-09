@@ -1126,6 +1126,7 @@ impl LazyFrame {
     /// This can have a negative effect on query performance.
     /// This may for instance block predicate pushdown optimization.
     pub fn with_row_count(mut self, name: &str, offset: Option<IdxSize>) -> LazyFrame {
+        let mut add_row_count_in_map = false;
         match &mut self.logical_plan {
             // Do the row count at scan
             #[cfg(feature = "csv-file")]
@@ -1134,7 +1135,6 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
-                self
             }
             #[cfg(feature = "ipc")]
             LogicalPlan::IpcScan { options, .. } => {
@@ -1142,7 +1142,6 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
-                self
             }
             #[cfg(feature = "parquet")]
             LogicalPlan::ParquetScan { options, .. } => {
@@ -1150,28 +1149,41 @@ impl LazyFrame {
                     name: name.to_string(),
                     offset: offset.unwrap_or(0),
                 });
-                self
             }
             _ => {
-                let new_schema = self
-                    .schema()
-                    .insert_index(0, name.to_string(), IDX_DTYPE)
-                    .unwrap();
-                let name = name.to_owned();
-
-                let opt = AllowedOptimizations {
-                    slice_pushdown: false,
-                    predicate_pushdown: false,
-                    ..Default::default()
-                };
-                self.map(
-                    move |df: DataFrame| df.with_row_count(&name, offset),
-                    Some(opt),
-                    Some(new_schema),
-                    Some("WITH ROW COUNT"),
-                )
+                add_row_count_in_map = true;
             }
         }
+
+        let new_schema = self
+            .schema()
+            .insert_index(0, name.to_string(), IDX_DTYPE)
+            .unwrap();
+        let name = name.to_owned();
+
+        // if we do the row count at scan we add a dummy map, to update the schema
+        let opt = if add_row_count_in_map {
+            AllowedOptimizations {
+                slice_pushdown: false,
+                predicate_pushdown: false,
+                ..Default::default()
+            }
+        } else {
+            AllowedOptimizations::default()
+        };
+
+        self.map(
+            move |df: DataFrame| {
+                if add_row_count_in_map {
+                    df.with_row_count(&name, offset)
+                } else {
+                    Ok(df)
+                }
+            },
+            Some(opt),
+            Some(new_schema),
+            Some("WITH ROW COUNT"),
+        )
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
