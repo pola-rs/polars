@@ -285,14 +285,16 @@ impl Executor for DataFrameExec {
 }
 
 pub(crate) struct AnonymousScanExec {
-    pub(crate) function: Arc<dyn ScanProvider>,
+    pub(crate) function: Arc<dyn AnonymousScan>,
     pub(crate) options: AnonymousScanOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &ExecutionState) -> Result<DataFrame> {
-        let mut df = self.function.scan(self.options.clone(), self.predicate.clone())?;
+        let mut df = self
+            .function
+            .scan(self.options.clone(), self.predicate.clone())?;
         if let Some(predicate) = &self.predicate {
             let s = predicate.evaluate(&df, state)?;
             let mask = s.bool().map_err(|_| {

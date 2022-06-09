@@ -53,7 +53,7 @@ pub enum Context {
 pub enum LogicalPlan {
     #[cfg_attr(feature = "serde", serde(skip))]
     AnonymousScan {
-        function: Arc<dyn ScanProvider>,
+        function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         predicate: Option<Expr>,
         aggregate: Vec<Expr>,

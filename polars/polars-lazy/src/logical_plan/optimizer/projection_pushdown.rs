@@ -343,10 +343,8 @@ impl ProjectionPushDown {
                 predicate,
                 mut options,
                 output_schema,
-                aggregate
-                
+                aggregate,
             } => {
-
                 if function.allows_projection_pushdown()? {
                     options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
 
@@ -368,10 +366,9 @@ impl ProjectionPushDown {
                         output_schema,
                         options,
                         predicate,
-                        aggregate
+                        aggregate,
                     };
                     Ok(lp)
-
                 } else {
                     let lp = AnonymousScan {
                         function,
@@ -379,11 +376,10 @@ impl ProjectionPushDown {
                         predicate,
                         options,
                         output_schema,
-                        aggregate
+                        aggregate,
                     };
                     Ok(lp)
                 }
-              
             }
             DataFrameScan {
                 df,

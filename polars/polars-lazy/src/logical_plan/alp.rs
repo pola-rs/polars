@@ -16,7 +16,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub enum ALogicalPlan {
     AnonymousScan {
-        function: Arc<dyn ScanProvider>,
+        function: Arc<dyn AnonymousScan>,
         schema: SchemaRef,
         output_schema: Option<SchemaRef>,
         predicate: Option<Node>,

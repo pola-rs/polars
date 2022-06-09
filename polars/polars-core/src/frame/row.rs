@@ -187,7 +187,7 @@ pub fn infer_schema(
     infer_schema_length: usize,
 ) -> Schema {
     let mut values: Tracker = Tracker::new();
-    let len = iter.size_hint().1.unwrap();
+    let len = iter.size_hint().1.unwrap_or(infer_schema_length);
 
     let max_infer = std::cmp::min(len, infer_schema_length);
     for inner in iter.take(max_infer) {
@@ -223,7 +223,8 @@ fn resolve_fields(spec: Tracker) -> Vec<Field> {
         .collect()
 }
 
-fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
+/// Coerces a slice of datatypes into a single supertype.
+pub fn coerce_data_type<A: Borrow<DataType>>(datatypes: &[A]) -> DataType {
     use DataType::*;
 
     let are_all_equal = datatypes.windows(2).all(|w| w[0].borrow() == w[1].borrow());
