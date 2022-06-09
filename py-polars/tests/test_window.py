@@ -148,12 +148,14 @@ def test_cumulative_eval_window_functions() -> None:
         }
     )
 
-    assert df.with_column(
-        pl.col("val")
-        .cumulative_eval(pl.element().max())
-        .over("group")
-        .alias("cumulative_eval_max")
-    ).to_dict(False) == {
+    assert (
+        df.with_column(
+            pl.col("val")
+            .cumulative_eval(pl.element().max())
+            .over("group")
+            .alias("cumulative_eval_max")
+        ).to_dict(False)
+    ) == {
         "group": [0, 0, 0, 1, 1, 1],
         "val": [20, 40, 30, 2, 4, 3],
         "cumulative_eval_max": [20, 40, 40, 2, 4, 4],
@@ -169,5 +171,4 @@ def test_count_window() -> None:
         )
         .with_column(pl.count().over("a"))["count"]
         .to_list()
-        == [2, 2, 1]
-    )
+    ) == [2, 2, 1]

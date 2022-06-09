@@ -88,8 +88,7 @@ def test_overflow_uint16_agg_mean() -> None:
         .groupby(["col1"])
         .agg(pl.col("col3").mean())
         .to_dict(False)
-        == {"col1": ["A"], "col3": [64.0]}
-    )
+    ) == {"col1": ["A"], "col3": [64.0]}
 
 
 def test_binary_on_list_agg_3345() -> None:

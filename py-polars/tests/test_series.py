@@ -91,7 +91,7 @@ def test_init_inputs(monkeypatch: Any) -> None:
     with pytest.raises(ValueError):
         pl.Series({"a": [1, 2, 3]})
     with pytest.raises(OverflowError):
-        pl.Series("bigint", [2 ** 64])
+        pl.Series("bigint", [2**64])
 
 
 def test_concat() -> None:
@@ -202,7 +202,7 @@ def test_arithmetic(s: pl.Series) -> None:
     with pytest.raises(ValueError):
         a % 2
     with pytest.raises(ValueError):
-        a ** 2
+        a**2
     with pytest.raises(ValueError):
         2 / a
     with pytest.raises(ValueError):
@@ -212,7 +212,7 @@ def test_arithmetic(s: pl.Series) -> None:
     with pytest.raises(ValueError):
         2 % a
     with pytest.raises(ValueError):
-        2 ** a
+        2**a
 
 
 def test_add_string() -> None:
@@ -473,7 +473,7 @@ def test_fill_null() -> None:
 
 def test_apply() -> None:
     a = pl.Series("a", [1, 2, None])
-    b = a.apply(lambda x: x ** 2)
+    b = a.apply(lambda x: x**2)
     assert b == [1, 4, None]
 
     a = pl.Series("a", ["foo", "bar", None])
@@ -849,9 +849,9 @@ def test_range() -> None:
 
 def test_strict_cast() -> None:
     with pytest.raises(pl.ComputeError):
-        pl.Series("a", [2 ** 16]).cast(dtype=pl.Int16, strict=True)
+        pl.Series("a", [2**16]).cast(dtype=pl.Int16, strict=True)
     with pytest.raises(pl.ComputeError):
-        pl.DataFrame({"a": [2 ** 16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
+        pl.DataFrame({"a": [2**16]}).select([pl.col("a").cast(pl.Int16, strict=True)])
 
 
 def test_list_concat_dispatch() -> None:

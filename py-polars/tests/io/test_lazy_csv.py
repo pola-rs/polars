@@ -64,5 +64,4 @@ def test_scan_csv_schema_overwrite_and_dtypes_overwrite(foods_csv: str) -> None:
         )
         .collect()
         .dtypes
-        == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]
-    )
+    ) == [pl.Utf8, pl.Utf8, pl.Float32, pl.Int64]

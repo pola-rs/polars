@@ -548,7 +548,7 @@ class Series:
         ]
 
         """
-        return self ** 0.5
+        return self**0.5
 
     def any(self) -> bool:
         """
