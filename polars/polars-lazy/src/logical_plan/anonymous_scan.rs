@@ -16,21 +16,20 @@ pub trait AnonymousScan: Send + Sync {
     /// specify if the scan provider should allow predicate pushdowns
     ///
     /// Defaults to `false`
-    fn allows_predicate_pushdown(&self) -> Result<bool> {
-        Ok(false)
+    fn allows_predicate_pushdown(&self) -> bool {
+        false
     }
     /// specify if the scan provider should allow projection pushdowns
     ///
     /// Defaults to `false`
-    fn allows_projection_pushdown(&self) -> Result<bool> {
-        Ok(false)
+    fn allows_projection_pushdown(&self) -> bool {
+        false
     }
     /// specify if the scan provider should allow slice pushdowns
     ///
     /// Defaults to `false`
-    fn allows_slice_pushdown(&self) -> Result<bool> {
-        // defaults to no pushdowns
-        Ok(false)
+    fn allows_slice_pushdown(&self) -> bool {
+        false
     }
 }
 
