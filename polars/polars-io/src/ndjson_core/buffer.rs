@@ -5,8 +5,7 @@ use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
 use serde_json::Value;
-use std::collections::BTreeMap;
-pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<BTreeMap<String, Buffer>> {
+pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<PlIndexMap<String, Buffer>> {
     schema
         .iter()
         .map(|(name, dtype)| {

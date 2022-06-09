@@ -11,7 +11,6 @@ use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
 use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -256,7 +255,7 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_lines<'a>(bytes: &[u8], buffers: &mut BTreeMap<String, Buffer<'a>>) -> Result<usize> {
+fn parse_lines<'a>(bytes: &[u8], buffers: &mut PlIndexMap<String, Buffer<'a>>) -> Result<usize> {
     let mut stream = Deserializer::from_slice(bytes).into_iter::<Value>();
     for value in stream.by_ref() {
         let v = value.unwrap_or(Value::Null);
