@@ -1,7 +1,6 @@
 use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::prelude::*;
-use polars_core::utils::Wrap;
 use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
@@ -218,7 +217,7 @@ where
 fn value_to_dtype(val: &Value) -> DataType {
     match val {
         Value::Null => DataType::Null,
-        Value::Bool(b) => DataType::Boolean,
+        Value::Bool(_) => DataType::Boolean,
         Value::Number(n) => {
             if n.is_i64() {
                 DataType::Int64
@@ -239,7 +238,7 @@ fn value_to_dtype(val: &Value) -> DataType {
                 let dtype = value_to_dtype(value);
                 Field::new(key, dtype)
             });
-            DataType::Struct(fields.collect()).into()
+            DataType::Struct(fields.collect())
         }
     }
 }
