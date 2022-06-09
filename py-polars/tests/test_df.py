@@ -2117,7 +2117,7 @@ def test_explode_empty() -> None:
 
     df = pl.DataFrame(dict(x=["1", "2", "4"], y=[["a", "b", "c"], ["d"], []]))
     assert df.explode("y").frame_equal(
-        pl.DataFrame({"x": ["1", "1", "1", "2"], "y": ["a", "b", "c", "d"]})
+        pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]})
     )
 
 
