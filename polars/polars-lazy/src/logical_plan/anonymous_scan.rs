@@ -1,15 +1,13 @@
-use crate::prelude::{AnonymousScanOptions, PhysicalExpr};
+use crate::prelude::AnonymousScanOptions;
 use polars_core::prelude::*;
 use std::fmt::{Debug, Formatter};
 
 pub trait AnonymousScan: Send + Sync {
     /// Creates a dataframe from the supplied function & scan options.
-    #[must_use]
     fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame>;
 
     /// function to supply the schema.
     /// Allows for an optional infer schema argument for data sources with dynamic schemas
-    #[must_use]
     fn schema(&self, _infer_schema_length: Option<usize>) -> Result<Schema> {
         Err(PolarsError::ComputeError(
             "Must supply either a schema or a schema function".into(),
