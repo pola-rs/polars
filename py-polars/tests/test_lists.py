@@ -1,3 +1,5 @@
+from datetime import date, datetime, time
+
 import pandas as pd
 from test_series import verify_series_and_expr_api
 
@@ -40,9 +42,42 @@ def test_contains() -> None:
 
 
 def test_dtype() -> None:
+    # inferred
     a = pl.Series("a", [[1, 2, 3], [2, 5], [6, 7, 8, 9]])
     assert a.dtype == pl.List
     assert a.inner_dtype == pl.Int64
+    assert getattr(a.dtype, "inner") == pl.Int64
+
+    # explicit
+    df = pl.DataFrame(
+        data={
+            "i": [[1, 2, 3]],
+            "tm": [[time(10, 30, 45)]],
+            "dt": [[date(2022, 12, 31)]],
+            "dtm": [[datetime(2022, 12, 31, 1, 2, 3)]],
+        },
+        columns=[  # type: ignore
+            ["i", pl.List(pl.Int8)],
+            ["tm", pl.List(pl.Time)],
+            ["dt", pl.List(pl.Date)],
+            ["dtm", pl.List(pl.Datetime)],
+        ],
+    )
+    assert df.schema == {
+        "i": pl.List(pl.Int8),
+        "tm": pl.List(pl.Time),
+        "dt": pl.List(pl.Date),
+        "dtm": pl.List(pl.Datetime),
+    }
+    assert getattr(df.schema["i"], "inner") == pl.Int8
+    assert df.rows() == [
+        (
+            [1, 2, 3],
+            [time(10, 30, 45)],
+            [date(2022, 12, 31)],
+            [datetime(2022, 12, 31, 1, 2, 3)],
+        )
+    ]
 
 
 def test_categorical() -> None:
@@ -270,6 +305,10 @@ def test_empty_list_construction() -> None:
     assert pl.DataFrame([{"array": [], "not_array": 1234}], orient="row").to_dict(
         False
     ) == {"array": [[]], "not_array": [1234]}
+
+    df = pl.DataFrame(columns=[("col", pl.List)])
+    assert df.schema == {"col": pl.List}
+    assert df.rows() == []
 
 
 def test_list_ternary_concat() -> None:

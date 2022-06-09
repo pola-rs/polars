@@ -1,5 +1,5 @@
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from itertools import zip_longest
 from typing import (
     TYPE_CHECKING,
@@ -17,14 +17,13 @@ from typing import (
 import numpy as np
 
 from polars import internals as pli
+from polars.datatypes import Categorical, DataType, Date, Datetime, Duration, Float32
+from polars.datatypes import List as ListDType
 from polars.datatypes import (
-    Categorical,
-    DataType,
-    Date,
-    Datetime,
-    Duration,
-    Float32,
     Time,
+    dtype_to_arrow_type,
+    dtype_to_py_type,
+    is_polars_dtype,
     py_type_to_arrow_type,
     py_type_to_dtype,
 )
@@ -56,9 +55,9 @@ else:
         _PYARROW_AVAILABLE = False
 
 ColumnsType = Union[
-    Union[List[str], Sequence[str]],  # ['x','y','z']
-    Dict[str, Type[DataType]],  # {'x':date,'y':str,'z':int}
-    Sequence[Tuple[str, Type[DataType]]],  # [('x',date),('y',str),('z',int)]
+    Union[List[str], Sequence[str]],
+    Dict[str, Type[DataType]],
+    Sequence[Tuple[str, Union[Type[DataType], DataType]]],
 ]
 
 ################################
@@ -66,10 +65,7 @@ ColumnsType = Union[
 ################################
 
 
-def series_to_pyseries(
-    name: str,
-    values: "pli.Series",
-) -> "PySeries":
+def series_to_pyseries(name: str, values: "pli.Series") -> "PySeries":
     """
     Construct a PySeries from a Polars Series.
     """
@@ -129,7 +125,8 @@ def _get_first_non_none(values: Sequence[Optional[Any]]) -> Any:
 
     If sequence doesn't contain non-None values, return None.
     """
-    return next((v for v in values if v is not None), None)
+    if values is not None:
+        return next((v for v in values if v is not None), None)
 
 
 def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySeries":
@@ -147,41 +144,65 @@ def sequence_from_anyvalue_or_object(name: str, values: Sequence[Any]) -> "PySer
 def sequence_to_pyseries(
     name: str,
     values: Sequence[Any],
-    dtype: Optional[Type[DataType]] = None,
+    dtype: Optional[Union[Type[DataType], DataType]] = None,
     strict: bool = True,
 ) -> "PySeries":
     """
     Construct a PySeries from a sequence.
     """
-    # Empty sequence defaults to Float32 type
+    dtype_: Optional[type] = None
+    nested_dtype: Optional[Union[Type[DataType], type]] = None
+    temporal_unit: Optional[str] = None
+
+    # empty sequence defaults to Float32 type
     if not values and dtype is None:
         dtype = Float32
+    # lists defer to subsequent handling; identify nested type
+    elif dtype == ListDType:
+        nested_dtype = getattr(dtype, "inner", None)
+        dtype_ = list
 
-    if dtype is not None:
+    # infer temporal type handling
+    py_temporal_types = {date, datetime, timedelta, time}
+    pl_temporal_types = {Date, Datetime, Duration, Time}
+
+    value = _get_first_non_none(values)
+    if value is not None:
+        if dtype in py_temporal_types and isinstance(value, int):
+            dtype = py_type_to_dtype(dtype)  # construct from integer
+        elif dtype in pl_temporal_types and not isinstance(value, int):
+            temporal_unit = getattr(dtype, "tu", None)
+            dtype_ = dtype_to_py_type(dtype)  # construct from python type
+
+    if (dtype is not None) and is_polars_dtype(dtype) and (dtype_ is None):
         constructor = polars_type_to_constructor(dtype)
         pyseries = constructor(name, values, strict)
 
         if dtype in (Date, Datetime, Duration, Time, Categorical):
             pyseries = pyseries.cast(dtype, True)
-
         return pyseries
-
     else:
-        value = _get_first_non_none(values)
-        dtype_ = type(value) if value is not None else float
+        if dtype_ is None:
+            dtype_ = float if (value is None) else type(value)
 
-        if dtype_ in {date, datetime, timedelta}:
+        if dtype_ in py_temporal_types:
             if not _PYARROW_AVAILABLE:  # pragma: no cover
                 raise ImportError(
                     "'pyarrow' is required for converting a Sequence of date or datetime values to a PySeries."
                 )
             # let arrow infer dtype if not timedelta
             # arrow uses microsecond durations by default, not supported yet.
-            return arrow_to_pyseries(name, pa.array(values))
+            arrow_dtype = (
+                dtype_to_arrow_type(dtype)
+                if (dtype is not None and temporal_unit)
+                else None
+            )
+            return arrow_to_pyseries(name, pa.array(values, type=arrow_dtype))
 
         elif dtype_ == list or dtype_ == tuple:
-            nested_value = _get_first_non_none(value)
-            nested_dtype = type(nested_value) if nested_value is not None else float
+            if nested_dtype is None:
+                nested_value = _get_first_non_none(value)
+                nested_dtype = type(nested_value) if nested_value is not None else float
 
             # recursively call Series constructor
             if nested_dtype == list:
@@ -220,7 +241,12 @@ def sequence_to_pyseries(
                 # pass we create an object if we get here
             else:
                 try:
-                    nested_arrow_dtype = py_type_to_arrow_type(nested_dtype)
+                    to_arrow_type = (
+                        dtype_to_arrow_type
+                        if is_polars_dtype(nested_dtype)
+                        else py_type_to_arrow_type
+                    )
+                    nested_arrow_dtype = to_arrow_type(nested_dtype)
                 except ValueError:  # pragma: no cover
                     return sequence_from_anyvalue_or_object(name, values)
                 try:
@@ -307,8 +333,7 @@ def pandas_to_pyseries(
 
 
 def _handle_columns_arg(
-    data: List["PySeries"],
-    columns: Optional[Sequence[str]] = None,
+    data: List["PySeries"], columns: Optional[Sequence[str]] = None
 ) -> List["PySeries"]:
     """
     Rename data according to columns argument.
@@ -326,10 +351,7 @@ def _handle_columns_arg(
             raise ValueError("Dimensions of columns arg must match data dimensions.")
 
 
-def _post_apply_columns(
-    pydf: "PyDataFrame",
-    columns: ColumnsType,
-) -> "PyDataFrame":
+def _post_apply_columns(pydf: "PyDataFrame", columns: ColumnsType) -> "PyDataFrame":
     """
     Apply 'columns' param _after_ PyDataFrame creation (if no alternative).
     """
@@ -352,7 +374,7 @@ def _unpack_columns(
     columns: Optional[ColumnsType],
     lookup_names: Optional[Iterable[str]] = None,
     n_expected: Optional[int] = None,
-) -> Tuple[List[str], Dict[str, Type[DataType]]]:
+) -> Tuple[List[str], Dict[str, Union[Type[DataType], DataType]]]:
     """
     Unpack column names and create dtype lookup for any (name,dtype) pairs or schema dict input.
     """
@@ -378,8 +400,7 @@ def _unpack_columns(
 
 
 def dict_to_pydf(
-    data: Dict[str, Sequence[Any]],
-    columns: Optional[ColumnsType] = None,
+    data: Dict[str, Sequence[Any]], columns: Optional[ColumnsType] = None
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a dictionary of sequences.
@@ -611,8 +632,7 @@ def arrow_to_pydf(
 
 
 def series_to_pydf(
-    data: "pli.Series",
-    columns: Optional[ColumnsType] = None,
+    data: "pli.Series", columns: Optional[ColumnsType] = None
 ) -> "PyDataFrame":
     """
     Construct a PyDataFrame from a Polars Series.

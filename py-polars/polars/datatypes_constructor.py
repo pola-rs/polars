@@ -1,11 +1,10 @@
-from typing import Any, Callable, Sequence, Type
+from typing import Any, Callable, Dict, Sequence, Type
 
 import numpy as np
 
 from polars.datatypes import (
     Boolean,
     Categorical,
-    DataType,
     Date,
     Datetime,
     Duration,
@@ -16,6 +15,7 @@ from polars.datatypes import (
     Int32,
     Int64,
     Object,
+    PolarsDataType,
     Time,
     UInt8,
     UInt16,
@@ -33,7 +33,7 @@ except ImportError:  # pragma: no cover
 
 
 if not _DOCUMENTING:
-    _POLARS_TYPE_TO_CONSTRUCTOR = {
+    _POLARS_TYPE_TO_CONSTRUCTOR: Dict[PolarsDataType, Callable] = {
         Float32: PySeries.new_opt_f32,
         Float64: PySeries.new_opt_f64,
         Int8: PySeries.new_opt_i8,
@@ -56,7 +56,7 @@ if not _DOCUMENTING:
 
 
 def polars_type_to_constructor(
-    dtype: Type[DataType],
+    dtype: PolarsDataType,
 ) -> Callable[[str, Sequence[Any], bool], "PySeries"]:
     """
     Get the right PySeries constructor for the given Polars dtype.
