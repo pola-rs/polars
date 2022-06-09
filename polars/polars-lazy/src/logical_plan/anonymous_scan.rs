@@ -5,11 +5,7 @@ use std::fmt::{Debug, Formatter};
 pub trait AnonymousScan: Send + Sync {
     /// Creates a dataframe from the supplied function & scan options.
     #[must_use]
-    fn scan(
-        &self,
-        scan_opts: AnonymousScanOptions,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Result<DataFrame>;
+    fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame>;
 
     /// function to supply the schema.
     /// Allows for an optional infer schema argument for data sources with dynamic schemas
@@ -42,14 +38,10 @@ pub trait AnonymousScan: Send + Sync {
 
 impl<F> AnonymousScan for F
 where
-    F: Fn(AnonymousScanOptions, Option<Arc<dyn PhysicalExpr>>) -> Result<DataFrame> + Send + Sync,
+    F: Fn(AnonymousScanOptions) -> Result<DataFrame> + Send + Sync,
 {
-    fn scan(
-        &self,
-        scan_opts: AnonymousScanOptions,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
-    ) -> Result<DataFrame> {
-        self(scan_opts, predicate)
+    fn scan(&self, scan_opts: AnonymousScanOptions) -> Result<DataFrame> {
+        self(scan_opts)
     }
 }
 
