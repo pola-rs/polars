@@ -10,14 +10,14 @@ pytz
 types-pytz
 
 # Tooling
-maturin==0.12.1
-pytest==6.2.5
+maturin==0.12.19
+pytest==7.1.2
 pytest-cov[toml]==3.0.0
 black==21.6b0
 blackdoc==0.3.4
-isort~=5.9.2
-mypy==0.910
-ghp-import==2.0.1
+isort~=5.10.1
+mypy==0.961
+ghp-import==2.1.0
 flake8==4.0.1
 sphinx==4.2.0
 pydata-sphinx-theme==0.6.3
@@ -30,12 +30,13 @@ sphinxcontrib-qthelp==1.0.3
 sphinxcontrib-serializinghtml==1.1.5
 sphinxcontrib-napoleon
 commonmark==0.9.1
-numpydoc==1.1.0
+numpydoc==1.3.1
 
 # Stub files
-pandas-stubs==1.2.0.39
+pandas-stubs==1.2.0.61
 
 
 # pinned third rate deps
 # to be removed later
 click==8.0.4
+
