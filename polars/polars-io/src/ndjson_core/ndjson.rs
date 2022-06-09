@@ -14,7 +14,7 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
-
+use std::collections::BTreeMap;
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
 
@@ -213,16 +213,16 @@ impl<'a> CoreJsonReader<'a> {
                         last_read = read;
                         read += parse_lines(local_bytes, &mut buffers)?;
                     }
-                    DataFrame::new(
+                    let df = DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<Result<_>>()?,
-                    )
+                    )?;
+                    Ok(df)
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
-
         accumulate_dataframes_vertical(dfs)
     }
     pub fn as_df(&mut self) -> Result<DataFrame> {
@@ -243,7 +243,7 @@ impl<'a> CoreJsonReader<'a> {
     }
 }
 
-fn parse_lines(bytes: &[u8], buffers: &mut PlHashMap<String, Buffer>) -> Result<usize> {
+fn parse_lines<'a>(bytes: &[u8], buffers: &mut BTreeMap<String, Buffer<'a>>) -> Result<usize> {
     let mut stream = Deserializer::from_slice(bytes).into_iter::<Value>();
     for value in stream.by_ref() {
         let v = value.unwrap_or(Value::Null);
@@ -252,9 +252,7 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlHashMap<String, Buffer>) -> Result<
                 buffers
                     .iter_mut()
                     .for_each(|(s, inner)| match value.get(s) {
-                        Some(v) => {
-                            inner.add(v).expect("inner.add(v)");
-                        }
+                        Some(v) => inner.add(v).expect("inner.add(v)"),
                         None => inner.add_null(),
                     });
             }
