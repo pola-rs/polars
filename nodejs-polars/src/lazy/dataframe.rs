@@ -663,7 +663,6 @@ struct JsonScan {
 
 impl AnonymousScan for JsonScan {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> polars::prelude::Result<DataFrame> {
-        println!("scan_opts={:#?}", scan_opts);
         let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
         JsonLineReader::from_path(&self.path)
             .expect("unable to read file")

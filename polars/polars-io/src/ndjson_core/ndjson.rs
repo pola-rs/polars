@@ -237,7 +237,6 @@ impl<'a> CoreJsonReader<'a> {
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
-        println!("dfs={:#?}", dfs);
         accumulate_dataframes_vertical(dfs)
     }
     pub fn as_df(&mut self) -> Result<DataFrame> {
