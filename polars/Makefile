@@ -74,3 +74,20 @@ bench-save:
 
 bench-cmp:
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
+
+
+publish:
+	cargo publish --allow-dirty -p polars-arrow
+	sleep 10
+	cargo publish --allow-dirty -p polars-utils
+	sleep 10
+	cargo publish --allow-dirty -p polars-core
+	sleep 10
+	cargo publish --allow-dirty -p polars-time
+	cargo publish --allow-dirty -p polars-ops
+	sleep 10
+	cargo publish --allow-dirty -p polars-io
+	sleep 10
+	cargo publish --allow-dirty -p polars-lazy
+	sleep 10
+	cargo publish --allow-dirty -p polars
