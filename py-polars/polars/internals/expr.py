@@ -1813,7 +1813,7 @@ class Expr:
         exponent = expr_to_lit_or_expr(exponent)
         return wrap_expr(self._pyexpr.pow(exponent._pyexpr))
 
-    def is_in(self, other: Union["Expr", List[Any]]) -> "Expr":
+    def is_in(self, other: Union["Expr", List[Any], str]) -> "Expr":
         """
         Check if elements of this Series are in the right Series, or List values of the right Series.
 

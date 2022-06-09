@@ -20,7 +20,7 @@ csv-file = ["polars-io/csv-file"]
 temporal = ["polars-core/temporal", "polars-time", "dtype-datetime"]
 # debugging purposes
 fmt = ["polars-core/fmt"]
-strings = ["polars-core/strings"]
+strings = ["polars-core/strings", "polars-ops/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]

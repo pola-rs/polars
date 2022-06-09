@@ -330,6 +330,11 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
+    #[cfg(feature = "is_in")]
+    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+        self.0.is_in(other)
+    }
+
     fn fmt_list(&self) -> String {
         self.0.fmt_list()
     }
