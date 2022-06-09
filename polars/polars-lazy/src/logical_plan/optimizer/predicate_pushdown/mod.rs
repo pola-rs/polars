@@ -310,7 +310,7 @@ impl PredicatePushDown {
                 predicate,
                 aggregate
             } => {
-                if function.allows_predicate_pushdown()? {
+                if function.allows_predicate_pushdown() {
                     let predicate = predicate_at_scan(acc_predicates, predicate, expr_arena);
                     let lp = AnonymousScan {
                         function,

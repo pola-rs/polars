@@ -345,7 +345,7 @@ impl ProjectionPushDown {
                 output_schema,
                 aggregate,
             } => {
-                if function.allows_projection_pushdown()? {
+                if function.allows_projection_pushdown() {
                     options.with_columns = get_scan_columns(&mut acc_projections, expr_arena);
 
                     let output_schema = if options.with_columns.is_none() {
