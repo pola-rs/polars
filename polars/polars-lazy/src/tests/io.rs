@@ -333,7 +333,7 @@ fn skip_rows_and_slice() -> Result<()> {
 }
 
 #[test]
-fn test_row_count() -> Result<()> {
+fn test_row_count_on_files() -> Result<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     for offset in [0 as IdxSize, 10] {
         let lf = LazyCsvReader::new(FOODS_CSV.to_string())
@@ -351,16 +351,8 @@ fn test_row_count() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_parquet(
-            FOODS_PARQUET.to_string(),
-            ScanArgsParquet {
-                row_count: Some(RowCount {
-                    name: "rc".into(),
-                    offset,
-                }),
-                ..Default::default()
-            },
-        )?;
+        let lf = LazyFrame::scan_parquet(FOODS_PARQUET.to_string(), Default::default())?
+            .with_row_count("rc", Some(offset));
         assert!(row_count_at_scan(lf.clone()));
         let df = lf.collect()?;
         let rc = df.column("rc")?;
@@ -369,24 +361,23 @@ fn test_row_count() -> Result<()> {
             (offset..27 + offset).collect::<Vec<_>>()
         );
 
-        let lf = LazyFrame::scan_ipc(
-            FOODS_IPC.to_string(),
-            ScanArgsIpc {
-                row_count: Some(RowCount {
-                    name: "rc".into(),
-                    offset,
-                }),
-                ..Default::default()
-            },
-        )?;
+        let lf = LazyFrame::scan_ipc(FOODS_IPC.to_string(), Default::default())?
+            .with_row_count("rc", Some(offset));
 
         assert!(row_count_at_scan(lf.clone()));
-        let df = lf.collect()?;
+        let df = lf.clone().collect()?;
         let rc = df.column("rc")?;
         assert_eq!(
             rc.idx()?.into_no_null_iter().collect::<Vec<_>>(),
             (offset..27 + offset).collect::<Vec<_>>()
         );
+
+        let out = lf
+            .filter(col("rc").gt(lit(-1)))
+            .select([col("calories")])
+            .collect()?;
+        assert!(out.column("calories").is_ok());
+        assert_eq!(out.shape(), (27, 1));
     }
 
     Ok(())
