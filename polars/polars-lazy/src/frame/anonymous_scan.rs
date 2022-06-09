@@ -6,6 +6,8 @@ use polars_io::RowCount;
 pub struct ScanArgsAnonymous {
     pub infer_schema_length: Option<usize>,
     pub schema: Option<Schema>,
+    pub skip_rows: Option<usize>,
+    pub n_rows: Option<usize>,
     pub row_count: Option<RowCount>,
     pub name: &'static str,
 }
@@ -14,6 +16,8 @@ impl Default for ScanArgsAnonymous {
     fn default() -> Self {
         Self {
             infer_schema_length: None,
+            skip_rows: None,
+            n_rows: None,
             schema: None,
             row_count: None,
             name: "ANONYMOUS SCAN",
@@ -29,6 +33,8 @@ impl LazyFrame {
             function,
             args.schema,
             args.infer_schema_length,
+            args.skip_rows,
+            args.n_rows,
             args.name,
         )?
         .build()

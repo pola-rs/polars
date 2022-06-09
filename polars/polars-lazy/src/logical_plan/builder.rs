@@ -56,6 +56,8 @@ impl LogicalPlanBuilder {
         function: Arc<dyn AnonymousScan>,
         schema: Option<Schema>,
         infer_schema_length: Option<usize>,
+        skip_rows: Option<usize>,
+        n_rows: Option<usize>,
         name: &'static str,
     ) -> Result<Self> {
         let schema = Arc::new(match schema {
@@ -71,8 +73,8 @@ impl LogicalPlanBuilder {
             options: AnonymousScanOptions {
                 fmt_str: name,
                 schema,
-                skip_rows: None,
-                n_rows: None,
+                skip_rows,
+                n_rows,
                 output_schema: None,
                 with_columns: None,
             },
