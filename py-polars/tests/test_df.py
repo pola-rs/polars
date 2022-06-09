@@ -15,6 +15,11 @@ import pytest
 import polars as pl
 from polars import testing
 
+if sys.version_info >= (3, 8):
+    from typing import Literal
+else:
+    from typing_extensions import Literal  # pragma: no cover
+
 
 def test_version() -> None:
     pl.__version__
@@ -1821,9 +1826,9 @@ def test_shrink_to_fit(in_place: bool) -> None:
     df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, 7, 8], "ham": ["a", "b", "c"]})
 
     if in_place:
-        assert df.shrink_to_fit(in_place) is None
+        assert df.shrink_to_fit(typing.cast(Literal[True], in_place)) is None
     else:
-        assert df.shrink_to_fit(in_place).frame_equal(df)  # type: ignore
+        assert df.shrink_to_fit(typing.cast(Literal[False], in_place)).frame_equal(df)
 
 
 def test_arithmetic() -> None:
