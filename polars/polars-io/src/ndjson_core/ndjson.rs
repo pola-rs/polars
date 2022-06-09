@@ -232,7 +232,7 @@ impl<'a> CoreJsonReader<'a> {
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<Result<_>>()?,
-                    )?
+                    )
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
