@@ -233,6 +233,70 @@ impl IsIn for BooleanChunked {
     }
 }
 
+#[cfg(feature = "dtype-struct")]
+impl IsIn for StructChunked {
+    fn is_in(&self, other: &Series) -> Result<BooleanChunked> {
+        match other.dtype() {
+            DataType::List(_) => {
+                let mut ca: BooleanChunked = if self.len() == 1 && other.len() != 1 {
+                    let mut value = vec![];
+                    let left = self.clone().into_series();
+                    if let AnyValue::Struct(val, _) = left.get(0) {
+                        value = val
+                    }
+                    other
+                        .list()?
+                        .amortized_iter()
+                        .map(|opt_s| {
+                            opt_s.map(|s| {
+                                let ca = s.as_ref().struct_().unwrap();
+                                ca.into_iter().any(|a| a == value)
+                            }) == Some(true)
+                        })
+                        .collect()
+                } else {
+                    self.into_iter()
+                        .zip(other.list()?.amortized_iter())
+                        .map(|(value, series)| match (value, series) {
+                            (val, Some(series)) => {
+                                let ca = series.as_ref().struct_().unwrap();
+                                ca.into_iter().any(|a| a == val)
+                            }
+                            _ => false,
+                        })
+                        .collect()
+                };
+                ca.rename(self.name());
+                Ok(ca)
+            }
+            _ => {
+                let other = other.struct_()?;
+
+                if self.fields().len() != other.fields().len() {
+                    return Err(PolarsError::ComputeError(format!("Cannot compare structs in 'is_in', the number of fields differ. Fields left: {}, fields right: {}", self.fields().len(), other.fields().len()).into()));
+                }
+
+                let out = self
+                    .fields()
+                    .iter()
+                    .zip(other.fields())
+                    .map(|(lhs, rhs)| lhs.is_in(rhs))
+                    .collect::<Result<Vec<_>>>()?;
+
+                let out = out.into_iter().reduce(|acc, val| {
+                    // all false
+                    if !acc.any() {
+                        acc
+                    } else {
+                        acc & val
+                    }
+                });
+                out.ok_or_else(|| PolarsError::ComputeError("no fields in struct".into()))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::prelude::*;

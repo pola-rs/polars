@@ -514,3 +514,21 @@ def test_arr_unique() -> None:
     assert len(unique_el) == 2
     assert {"a": 2, "b": 12} in unique_el
     assert {"a": 1, "b": 11} in unique_el
+
+
+def test_is_in_struct() -> None:
+    df = pl.DataFrame(
+        {
+            "struct_elem": [{"a": 1, "b": 11}, {"a": 1, "b": 90}],
+            "struct_list": [
+                [{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}],
+                [{"a": 3, "b": 3}],
+            ],
+        }
+    )
+    df
+
+    assert df.filter(pl.col("struct_elem").is_in("struct_list")).to_dict(False) == {
+        "struct_elem": [{"a": 1, "b": 11}],
+        "struct_list": [[{"a": 1, "b": 11}, {"a": 2, "b": 12}, {"a": 3, "b": 13}]],
+    }
