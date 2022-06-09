@@ -1,4 +1,5 @@
 import ctypes
+import sys
 from datetime import date, datetime, time, timedelta
 from typing import Any, Dict, Optional, Sequence, Type, Union
 
@@ -361,6 +362,25 @@ _DTYPE_TO_PY_TYPE: Dict[PolarsDataType, type] = {
     Time: time,
 }
 
+# Map Numpy char codes to polars dtypes.
+#
+# Windows behaves differently from other platforms as C long is
+# only 32-bit on Windows, while it is 64-bit on other platforms.
+# See: https://numpy.org/doc/stable/reference/arrays.scalars.html
+_NUMPY_CHAR_CODE_TO_DTYPE = {
+    "b": Int8,
+    "h": Int16,
+    "i": Int32,
+    ("q" if sys.platform == "win32" else "l"): Int64,
+    "B": UInt8,
+    "H": UInt16,
+    "I": UInt32,
+    ("Q" if sys.platform == "win32" else "L"): UInt64,
+    "f": Float32,
+    "d": Float64,
+    "?": Boolean,
+}
+
 if _PYARROW_AVAILABLE:
     _PY_TYPE_TO_ARROW_TYPE: Dict[type, "pa.lib.DataType"] = {
         float: pa.float64(),
@@ -462,6 +482,17 @@ def dtype_to_arrow_type(dtype: PolarsDataType) -> "pa.lib.DataType":
         return _DTYPE_TO_ARROW_TYPE[lookup]
     except KeyError:  # pragma: no cover
         raise ValueError(f"Cannot parse dtype {dtype} into Arrow dtype.")
+
+
+def supported_numpy_char_code(dtype: str) -> bool:
+    return dtype in _NUMPY_CHAR_CODE_TO_DTYPE
+
+
+def numpy_char_code_to_dtype(dtype: str) -> Type[DataType]:
+    try:
+        return _NUMPY_CHAR_CODE_TO_DTYPE[dtype]
+    except KeyError:  # pragma: no cover
+        raise NotImplementedError
 
 
 def maybe_cast(

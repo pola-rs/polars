@@ -1,6 +1,5 @@
 import sys
 from datetime import date, datetime, timedelta
-from numbers import Number
 from typing import (
     Any,
     Callable,
@@ -66,7 +65,9 @@ from polars.datatypes import (
     dtype_to_ctype,
     dtype_to_ffiname,
     maybe_cast,
+    numpy_char_code_to_dtype,
     py_type_to_dtype,
+    supported_numpy_char_code,
 )
 from polars.utils import (
     _date_to_pl_date,
@@ -2118,7 +2119,11 @@ class Series:
             return self.to_numpy().__array__()
 
     def __array_ufunc__(
-        self, ufunc: Callable[..., Any], method: str, *inputs: Any, **kwargs: Any
+        self,
+        ufunc: np.ufunc,
+        method: str,
+        *inputs: Any,
+        **kwargs: Any,
     ) -> "Series":
         """
         Numpy universal functions.
@@ -2126,39 +2131,70 @@ class Series:
         if self._s.n_chunks() > 1:
             self._s.rechunk(in_place=True)
 
+        s = self._s
+
         if method == "__call__":
-            args: List[Union[Number, np.ndarray]] = []
+            if not ufunc.nout == 1:
+                raise NotImplementedError(
+                    "Only ufuncs that return one 1D array, are supported."
+                )
+
+            args: List[Union[int, float, np.ndarray]] = []
+
             for arg in inputs:
-                if isinstance(arg, Number):
+                if isinstance(arg, int):
+                    args.append(arg)
+                elif isinstance(arg, float):
+                    args.append(arg)
+                elif isinstance(arg, np.ndarray):
                     args.append(arg)
                 elif isinstance(arg, Series):
                     args.append(arg.view(ignore_nulls=True))
                 else:
-                    return NotImplemented
+                    raise ValueError(f"Unsupported type {type(arg)} for {arg}.")
 
-            if "dtype" in kwargs:
-                dtype = kwargs.pop("dtype")
-            else:
-                dtype = self.dtype
+            # Get minimum dtype needed to be able to cast all input arguments to the
+            # same dtype.
+            dtype_char_minimum = np.result_type(*args).char
 
-            try:
-                f = get_ffi_func("apply_ufunc_<>", dtype, self._s)
-                if f is None:
-                    return NotImplemented
-                series = f(lambda out: ufunc(*args, out=out, **kwargs))
-                return wrap_s(series)
-            except TypeError:
-                # some integer to float ufuncs do not work, try on f64
-                s = self.cast(Float64)
-                args[0] = s.view(ignore_nulls=True)
-                f = get_ffi_func("apply_ufunc_<>", Float64, self._s)
-                if f is None:
-                    return NotImplemented
-                series = f(lambda out: ufunc(*args, out=out, **kwargs))
-                return wrap_s(series)
+            # Get all possible output dtypes for ufunc.
+            # Input dtypes and output dtypes seem to always match for ufunc.types,
+            # so pick all the different output dtypes.
+            dtypes_ufunc = [
+                input_output_type[-1]
+                for input_output_type in ufunc.types
+                if supported_numpy_char_code(input_output_type[-1])
+            ]
 
+            # Get the first ufunc dtype from all possible ufunc dtypes for which
+            # the input arguments can be safely cast to that ufunc dtype.
+            for dtype_ufunc in dtypes_ufunc:
+                if np.can_cast(dtype_char_minimum, dtype_ufunc):
+                    dtype_char_minimum = dtype_ufunc
+                    break
+
+            # Override minimum dtype if requested.
+            dtype = (
+                np.dtype(kwargs.pop("dtype")).char
+                if "dtype" in kwargs
+                else dtype_char_minimum
+            )
+
+            f = get_ffi_func(
+                "apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char_minimum), s
+            )
+
+            if f is None:
+                raise NotImplementedError(
+                    f"Could not find `apply_ufunc_{numpy_char_code_to_dtype(dtype)}`."
+                )
+
+            series = f(lambda out: ufunc(*args, out=out, **kwargs))
+            return wrap_s(series)
         else:
-            return NotImplemented
+            raise NotImplementedError(
+                f"Only `__call__` is implemented for numpy ufuncs on a Series, got `{method}`."
+            )
 
     def to_numpy(
         self, *args: Any, zero_copy_only: bool = False, **kwargs: Any

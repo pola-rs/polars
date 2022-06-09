@@ -351,23 +351,49 @@ def test_view() -> None:
 
 
 def test_ufunc() -> None:
-    a = pl.Series("a", [1.0, 2.0, 3.0, 4.0])
-    b = np.multiply(a, 4)
-    assert isinstance(b, pl.Series)
-    assert b == [4, 8, 12, 16]
+    # test if output dtype is calculated correctly.
+    s_float32 = pl.Series("a", [1.0, 2.0, 3.0, 4.0], dtype=pl.Float32)
+    testing.assert_series_equal(np.multiply(s_float32, 4), pl.Series("a", [4.0, 8.0, 12.0, 16.0], dtype=pl.Float32))  # type: ignore[arg-type]
+
+    s_float64 = pl.Series("a", [1.0, 2.0, 3.0, 4.0], dtype=pl.Float64)
+    testing.assert_series_equal(np.multiply(s_float64, 4), pl.Series("a", [4.0, 8.0, 12.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_uint8 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt8)
+    testing.assert_series_equal(np.power(s_uint8, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt8))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_uint8, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_int8 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int8)
+    testing.assert_series_equal(np.power(s_int8, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.Int8))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_int8, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_uint32 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt32)
+    testing.assert_series_equal(np.power(s_uint32, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt32))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_uint32, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_int32 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int32)
+    testing.assert_series_equal(np.power(s_int32, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.Int32))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_int32, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_uint64 = pl.Series("a", [1, 2, 3, 4], dtype=pl.UInt64)
+    testing.assert_series_equal(np.power(s_uint64, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.UInt64))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_uint64, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
+
+    s_int64 = pl.Series("a", [1, -2, 3, -4], dtype=pl.Int64)
+    testing.assert_series_equal(np.power(s_int64, 2), pl.Series("a", [1, 4, 9, 16], dtype=pl.Int64))  # type: ignore[arg-type]
+    testing.assert_series_equal(np.power(s_int64, 2.0), pl.Series("a", [1.0, 4.0, 9.0, 16.0], dtype=pl.Float64))  # type: ignore[arg-type]
 
     # test if null bitmask is preserved
-    a = pl.Series("a", [1.0, None, 3.0])
-    b = np.exp(a)
-    assert b.null_count() == 1
+    a1 = pl.Series("a", [1.0, None, 3.0])
+    b1 = np.exp(a1)
+    assert b1.null_count() == 1  # type: ignore[attr-defined]
 
     # test if it works with chunked series.
-    a = pl.Series("a", [1.0, None, 3.0])
-    b = pl.Series("b", [4.0, 5.0, None])
-    a.append(b)
-    assert a.n_chunks() == 2
-    c = np.multiply(a, 3)
-    testing.assert_series_equal(c, pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]))
+    a2 = pl.Series("a", [1.0, None, 3.0])
+    b2 = pl.Series("b", [4.0, 5.0, None])
+    a2.append(b2)
+    assert a2.n_chunks() == 2
+    c2 = np.multiply(a2, 3)
+    testing.assert_series_equal(c2, pl.Series("a", [3.0, None, 9.0, 12.0, 15.0, None]))  # type: ignore[arg-type]
 
 
 def test_get() -> None:
@@ -1009,14 +1035,12 @@ def test_abs() -> None:
     # ints
     s = pl.Series([1, -2, 3, -4])
     testing.assert_series_equal(s.abs(), pl.Series([1, 2, 3, 4]))
-    testing.assert_series_equal(np.abs(s), pl.Series([1, 2, 3, 4]))  # type: ignore
+    testing.assert_series_equal(np.abs(s), pl.Series([1, 2, 3, 4]))  # type: ignore[arg-type]
 
     # floats
     s = pl.Series([1.0, -2.0, 3, -4.0])
     testing.assert_series_equal(s.abs(), pl.Series([1.0, 2.0, 3.0, 4.0]))
-    testing.assert_series_equal(
-        np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0])  # type: ignore
-    )
+    testing.assert_series_equal(np.abs(s), pl.Series([1.0, 2.0, 3.0, 4.0]))  # type: ignore[arg-type]
     testing.assert_series_equal(
         pl.select(pl.lit(s).abs()).to_series(), pl.Series([1.0, 2.0, 3.0, 4.0])
     )
