@@ -340,3 +340,17 @@ def test_list_ternary_concat() -> None:
         "list2": [["789"], ["zzz"]],
         "result": [["123", "456", "789"], ["zzz"]],
     }
+
+
+def test_list_concat_nulls() -> None:
+    assert pl.DataFrame(
+        {
+            "a": [["a", "b"], None, ["c", "d", "e"], None],
+            "t": [["x"], ["y"], None, None],
+        }
+    ).with_column(pl.concat_list(["a", "t"]).alias("concat"))["concat"].to_list() == [
+        ["a", "b", "x"],
+        None,
+        None,
+        None,
+    ]

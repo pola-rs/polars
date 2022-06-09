@@ -300,22 +300,25 @@ pub trait ListNameSpaceImpl: AsList {
                         continue;
                     }
                 };
-                let mut already_null = false;
+
+                let mut has_nulls = false;
                 for it in &mut iters {
                     match it.next().unwrap() {
                         Some(s) => {
-                            acc.append(s.as_ref())?;
+                            if !has_nulls {
+                                acc.append(s.as_ref())?;
+                            }
                         }
                         None => {
-                            if !already_null {
-                                builder.append_null();
-                                already_null = true;
-                            }
-
-                            continue;
+                            has_nulls = true;
                         }
                     }
                 }
+                if has_nulls {
+                    builder.append_null();
+                    continue;
+                }
+
                 match inner_type {
                     // structs don't have chunks, so we must first rechunk the underlying series
                     #[cfg(feature = "dtype-struct")]
