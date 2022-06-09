@@ -227,13 +227,12 @@ impl<'a> CoreJsonReader<'a> {
                         last_read = read;
                         read += parse_lines(local_bytes, &mut buffers)?;
                     }
-                    let df = DataFrame::new(
+                    DataFrame::new(
                         buffers
                             .into_values()
                             .map(|buf| buf.into_series())
                             .collect::<Result<_>>()?,
-                    )?;
-                    Ok(df)
+                    )?
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
