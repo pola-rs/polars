@@ -663,18 +663,15 @@ struct JsonScan {
 
 impl AnonymousScan for JsonScan {
     fn scan(&self, scan_opts: AnonymousScanOptions) -> polars::prelude::Result<DataFrame> {
-        if let Some(s) = scan_opts.output_schema {
-            JsonLineReader::from_path(&self.path)
-                .expect("unable to read file")
-                .with_schema(&s)
-                .with_chunk_size(self.batch_size)
-                .finish()
-        } else {
-            JsonLineReader::from_path(&self.path)
-                .expect("unable to read file")
-                .with_chunk_size(self.batch_size)
-                .finish()
-        }
+        println!("scan_opts={:#?}", scan_opts);
+        let schema = scan_opts.output_schema.unwrap_or(scan_opts.schema);
+        JsonLineReader::from_path(&self.path)
+            .expect("unable to read file")
+            .with_schema(&schema)
+            .with_chunk_size(self.batch_size)
+            .with_n_rows(scan_opts.n_rows)
+            .finish()
+
     }
 
     fn schema(&self, infer_schema_length: Option<usize>) -> polars::prelude::Result<Schema> {

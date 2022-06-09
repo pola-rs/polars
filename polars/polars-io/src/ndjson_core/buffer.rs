@@ -1,11 +1,11 @@
+use arrow::types::NativeType;
 use num::traits::NumCast;
 use polars_core::prelude::*;
+use polars_core::utils::Wrap;
 use polars_time::prelude::utf8::infer::infer_pattern_single;
 use polars_time::prelude::utf8::infer::DatetimeInfer;
 use polars_time::prelude::utf8::Pattern;
 use serde_json::Value;
-use polars_core::utils::Wrap;
-use arrow::types::NativeType;
 use std::collections::BTreeMap;
 pub(crate) fn init_buffers(schema: &Schema, capacity: usize) -> Result<BTreeMap<String, Buffer>> {
     schema
@@ -52,7 +52,7 @@ pub(crate) enum Buffer<'a> {
     All((Vec<AnyValue<'a>>, &'a str)),
 }
 
-impl <'a> Buffer<'a> {
+impl<'a> Buffer<'a> {
     pub(crate) fn into_series(self) -> Result<Series> {
         let s = match self {
             Buffer::Boolean(v) => v.finish().into_series(),
@@ -227,7 +227,7 @@ fn value_to_dtype(val: &Value) -> DataType {
             } else {
                 DataType::Float64
             }
-        },
+        }
         Value::String(_) => DataType::Utf8,
         Value::Array(arr) => {
             let dtype = value_to_dtype(&arr[0]);
@@ -242,7 +242,6 @@ fn value_to_dtype(val: &Value) -> DataType {
             DataType::Struct(fields.collect()).into()
         }
     }
-
 }
 
 fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {

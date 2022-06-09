@@ -11,10 +11,10 @@ use polars_core::{prelude::*, utils::accumulate_dataframes_vertical, POOL};
 use rayon::prelude::*;
 use serde_json::{Deserializer, Value};
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::Cursor;
 use std::path::PathBuf;
-use std::collections::BTreeMap;
 const QUOTE_CHAR: u8 = "\"".as_bytes()[0];
 const SEP: u8 = ",".as_bytes()[0];
 
@@ -171,10 +171,24 @@ impl<'a> CoreJsonReader<'a> {
         })
     }
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> Result<DataFrame> {
+        let mut bytes = bytes;
         let mut total_rows = 128;
 
         if let Some((mean, std)) = get_line_stats(bytes, self.sample_size) {
+            let line_length_upper_bound = mean + 1.1 * std;
+
             total_rows = (bytes.len() as f32 / (mean - 0.01 * std)) as usize;
+            if let Some(n_rows) = self.n_rows {
+                total_rows = std::cmp::min(n_rows, total_rows);
+                // the guessed upper bound of  the no. of bytes in the file
+                let n_bytes = (line_length_upper_bound * (n_rows as f32)) as usize;
+
+                if n_bytes < bytes.len() {
+                    if let Some(pos) = next_line_position_naive(&bytes[n_bytes..]) {
+                        bytes = &bytes[..n_bytes + pos]
+                    }
+                }
+            }
         }
 
         if total_rows == 128 {
@@ -223,6 +237,7 @@ impl<'a> CoreJsonReader<'a> {
                 })
                 .collect::<Result<Vec<_>>>()
         })?;
+        println!("dfs={:#?}", dfs);
         accumulate_dataframes_vertical(dfs)
     }
     pub fn as_df(&mut self) -> Result<DataFrame> {
