@@ -1236,8 +1236,7 @@ def test_quantile_filtered_agg() -> None:
         .groupby("group")
         .agg(pl.col("value").filter(pl.col("value") < 2).quantile(0.5))["value"]
         .to_list()
-        == [1.0, 1.0]
-    )
+    ) == [1.0, 1.0]
 
 
 def test_lazy_schema() -> None:
@@ -1269,8 +1268,7 @@ def test_deadlocks_3409() -> None:
         )
         .with_columns([pl.col("col1").arr.eval(pl.element().apply(lambda x: x))])
         .to_dict(False)
-        == {"col1": [[1, 2, 3]]}
-    )
+    ) == {"col1": [[1, 2, 3]]}
 
     assert (
         pl.DataFrame(
@@ -1280,5 +1278,4 @@ def test_deadlocks_3409() -> None:
         )
         .with_columns([pl.col("col1").cumulative_eval(pl.element().map(lambda x: 0))])
         .to_dict(False)
-        == {"col1": [0, 0, 0]}
-    )
+    ) == {"col1": [0, 0, 0]}

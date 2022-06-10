@@ -241,7 +241,7 @@ class Expr:
         """
         Compute the square root of the elements
         """
-        return self ** 0.5
+        return self**0.5
 
     def log10(self) -> "Expr":
         """
