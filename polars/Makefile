@@ -75,19 +75,28 @@ bench-save:
 bench-cmp:
 	cargo bench --features=random --bench $(BENCH) -- --load-baseline $(FEAT) --baseline $(BASE)
 
+doctest:
+	cargo doc --all-features -p polars-arrow
+	cargo doc --all-features -p polars-utils
+	cargo doc --features=docs-selection -p polars-core
+	cargo doc -p polars-time
+	cargo doc -p polars-ops
+	cargo doc --all-features -p polars-io
+	cargo doc --all-features -p polars-lazy
+	cargo doc --features=docs-selection -p polars
 
 publish:
 	cargo publish --allow-dirty -p polars-arrow
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars-utils
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars-core
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars-time
 	cargo publish --allow-dirty -p polars-ops
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars-io
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars-lazy
-	sleep 10
+	sleep 15
 	cargo publish --allow-dirty -p polars

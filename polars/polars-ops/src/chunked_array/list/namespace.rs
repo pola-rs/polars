@@ -3,7 +3,7 @@ use polars_arrow::kernels::list::sublist_get;
 use polars_arrow::prelude::ValueSize;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::CustomIterTools;
+use polars_core::utils::{get_supertype, CustomIterTools};
 use std::convert::TryFrom;
 use std::fmt::Write;
 
@@ -216,13 +216,28 @@ pub trait ListNameSpaceImpl: AsList {
         let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();
-        let dtype = ca.dtype();
-        let inner_type = ca.inner_dtype();
+        let mut inner_super_type = ca.inner_dtype();
+
+        for s in &other {
+            match s.dtype() {
+                DataType::List(inner_type) => {
+                    inner_super_type = get_supertype(&inner_super_type, inner_type)?;
+                }
+                dt => {
+                    inner_super_type = get_supertype(&inner_super_type, dt)?;
+                }
+            }
+        }
+
+        // cast lhs
+        let dtype = &DataType::List(Box::new(inner_super_type.clone()));
+        let ca = ca.cast(dtype)?;
+        let ca = ca.list().unwrap();
 
         // broadcasting path in case all unit length
         // this path will not expand the series, so saves memory
         if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
-            cast_rhs(&mut other, &inner_type, dtype, length, false)?;
+            cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
             let to_append = other
                 .iter()
                 .flat_map(|s| {
@@ -235,7 +250,7 @@ pub trait ListNameSpaceImpl: AsList {
                 return Ok(ListChunked::full_null_with_dtype(
                     ca.name(),
                     length,
-                    &inner_type,
+                    &inner_super_type,
                 ));
             }
 
@@ -245,7 +260,7 @@ pub trait ListNameSpaceImpl: AsList {
                 .sum::<usize>();
 
             let mut builder = get_list_builder(
-                &inner_type,
+                &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name(),
@@ -255,7 +270,7 @@ pub trait ListNameSpaceImpl: AsList {
                     for append in &to_append {
                         s.append(append).unwrap();
                     }
-                    match inner_type {
+                    match inner_super_type {
                         // structs don't have chunks, so we must first rechunk the underlying series
                         #[cfg(feature = "dtype-struct")]
                         DataType::Struct(_) => s = s.rechunk(),
@@ -269,7 +284,7 @@ pub trait ListNameSpaceImpl: AsList {
             Ok(builder.finish())
         } else {
             // normal path which may contain same length list or unit length lists
-            cast_rhs(&mut other, &inner_type, dtype, length, true)?;
+            cast_rhs(&mut other, &inner_super_type, dtype, length, true)?;
 
             let vals_size_other = other
                 .iter()
@@ -282,7 +297,7 @@ pub trait ListNameSpaceImpl: AsList {
             }
             let mut first_iter = ca.into_iter();
             let mut builder = get_list_builder(
-                &inner_type,
+                &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
                 length,
                 ca.name(),
@@ -319,7 +334,7 @@ pub trait ListNameSpaceImpl: AsList {
                     continue;
                 }
 
-                match inner_type {
+                match inner_super_type {
                     // structs don't have chunks, so we must first rechunk the underlying series
                     #[cfg(feature = "dtype-struct")]
                     DataType::Struct(_) => acc = acc.rechunk(),
