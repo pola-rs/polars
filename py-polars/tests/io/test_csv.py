@@ -422,3 +422,12 @@ def fallback_chrono_parser() -> None:
     2021-02-02,2021-2-2
     2021-10-10,2021-10-10"""
     assert pl.read_csv(data.encode(), parse_dates=True).null_count().row(0) == (0, 0)
+
+
+def test_csv_string_escaping() -> None:
+    df = pl.DataFrame({"a": ["Free trip to A,B", '''Special rate "1.79"''']})
+    f = io.BytesIO()
+    df.write_csv(f)
+    f.seek(0)
+    df_read = pl.read_csv(f)
+    assert df_read.frame_equal(df)

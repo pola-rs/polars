@@ -423,14 +423,16 @@ impl PyDataFrame {
         has_header: bool,
         sep: u8,
         quote: u8,
+        batch_size: usize,
     ) -> PyResult<()> {
         if let Ok(s) = py_f.extract::<&str>(py) {
             let f = std::fs::File::create(s).unwrap();
-            let f = BufWriter::new(f);
+            // no need for a buffered writer, because the csv writer does internal buffering
             CsvWriter::new(f)
                 .has_header(has_header)
                 .with_delimiter(sep)
                 .with_quoting_char(quote)
+                .with_batch_size(batch_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         } else {
@@ -439,6 +441,7 @@ impl PyDataFrame {
                 .has_header(has_header)
                 .with_delimiter(sep)
                 .with_quoting_char(quote)
+                .with_batch_size(batch_size)
                 .finish(&mut self.df)
                 .map_err(PyPolarsErr::from)?;
         }

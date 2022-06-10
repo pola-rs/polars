@@ -28,8 +28,8 @@ impl<T: Default> LowContentionPool<T> {
     pub fn set(&self, value: T) {
         let size = self.size.fetch_add(1, Ordering::AcqRel);
         // implementation error if this fails
-        assert!(size <= self.stack.len());
-        let mut locked = self.stack[size - 1].lock();
+        // assert!(size <= self.stack.len());
+        let mut locked = self.stack[size].lock();
         *locked = value;
     }
 }

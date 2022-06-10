@@ -94,11 +94,11 @@ impl<'a> Iterator for SeriesIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let idx = self.idx;
-        self.idx += 1;
 
         if idx == self.len {
             None
         } else {
+            self.idx += 1;
             unsafe { Some(arr_to_any_value(self.arr, idx, self.dtype)) }
         }
     }
