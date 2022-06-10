@@ -319,6 +319,8 @@ impl<'a> AggregationContext<'a> {
     /// Calling this function will ensure both are sortened. This will be a no-op
     /// if already aggregated.
     pub(crate) fn sort_by_groups(&mut self) {
+        // make sure that the groups are updated before we use them to sort.
+        self.groups();
         match &self.state {
             AggState::NotAggregated(s) => {
                 // We should not aggregate literals!!

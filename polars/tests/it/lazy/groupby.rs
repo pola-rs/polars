@@ -83,3 +83,29 @@ fn test_list_arithmetic_in_groupby() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_filter_diff_arithmetic() -> Result<()> {
+    let df = df![
+        "user" => [1, 1, 1, 1, 2],
+        "group" => [1, 2, 1, 1, 2],
+        "value" => [1, 5, 14, 17, 20]
+    ]?;
+
+    let out = df
+        .lazy()
+        .groupby([col("user")])
+        .agg([(col("value")
+            .filter(col("group").eq(lit(1)))
+            .diff(1, Default::default())
+            * lit(2))
+        .alias("diff")])
+        .sort("user", Default::default())
+        .explode([col("diff")])
+        .collect()?;
+
+    let out = out.column("diff")?;
+    assert_eq!(out, &Series::new("diff", &[None, Some(26), Some(6), None]));
+
+    Ok(())
+}
