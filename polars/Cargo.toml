@@ -217,7 +217,6 @@ docs-selection = [
   "decompress",
   "mode",
   "take_opt_iter",
-  "extract_jsonpath",
   "cum_agg",
   "rolling_window",
   "interpolate",

@@ -225,7 +225,23 @@ pub fn concat_lst<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> Expr {
     Expr::AnonymousFunction {
         input: s,
         function,
-        output_type: GetOutput::same_type(),
+        output_type: GetOutput::map_dtypes(|dts| {
+            let mut super_type_inner = None;
+
+            for dt in dts {
+                match dt {
+                    DataType::List(inner) => match super_type_inner {
+                        None => super_type_inner = Some(*inner.clone()),
+                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, inner).ok(),
+                    },
+                    dt => match super_type_inner {
+                        None => super_type_inner = Some((*dt).clone()),
+                        Some(st_inner) => super_type_inner = get_supertype(&st_inner, dt).ok(),
+                    },
+                }
+            }
+            DataType::List(Box::new(super_type_inner.unwrap()))
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ApplyFlat,
             input_wildcard_expansion: true,

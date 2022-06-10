@@ -354,3 +354,12 @@ def test_list_concat_nulls() -> None:
         None,
         None,
     ]
+
+
+def test_list_concat_supertype() -> None:
+    df = pl.DataFrame(
+        [pl.Series("a", [1, 2], pl.UInt8), pl.Series("b", [10000, 20000], pl.UInt16)]
+    )
+    assert df.with_column(pl.concat_list(pl.col(["a", "b"])).alias("concat_list"))[
+        "concat_list"
+    ].to_list() == [[1, 10000], [2, 20000]]
