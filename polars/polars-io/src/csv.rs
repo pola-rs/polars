@@ -47,7 +47,7 @@ use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::resolve_homedir;
 use crate::{RowCount, SerReader, SerWriter};
-pub use arrow::io::csv::write;
+
 use polars_core::prelude::*;
 #[cfg(feature = "temporal")]
 use polars_time::prelude::*;
@@ -60,14 +60,18 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
+use super::csv_core::write;
+
 /// Write a DataFrame to csv.
+///
+/// Don't use a `Buffered` writer, the `CsvWriter` internally already buffers writes.
 #[must_use]
 pub struct CsvWriter<W: Write> {
     /// File or Stream handler
     buffer: W,
-    /// arrow specific options
     options: write::SerializeOptions,
     header: bool,
+    batch_size: usize,
 }
 
 impl<W> SerWriter<W> for CsvWriter<W>
@@ -77,8 +81,8 @@ where
     fn new(buffer: W) -> Self {
         // 9f: all nanoseconds
         let options = write::SerializeOptions {
-            time64_format: Some("%T%.9f".to_string()),
-            timestamp_format: Some("%FT%H:%M:%S.%9f".to_string()),
+            time_format: Some("%T%.9f".to_string()),
+            datetime_format: Some("%FT%H:%M:%S.%9f".to_string()),
             ..Default::default()
         };
 
@@ -86,20 +90,17 @@ where
             buffer,
             options,
             header: true,
+            batch_size: 1024,
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> Result<()> {
-        df.rechunk();
+        df.as_single_chunk_par();
         let names = df.get_column_names();
-        let iter = df.iter_chunks();
         if self.header {
             write::write_header(&mut self.buffer, &names, &self.options)?;
         }
-        for batch in iter {
-            write::write_chunk(&mut self.buffer, &batch, &self.options)?;
-        }
-        Ok(())
+        write::write(&mut self.buffer, df, self.batch_size, &self.options)
     }
 }
 
@@ -119,22 +120,26 @@ where
         self
     }
 
+    pub fn with_batch_size(mut self, batch_size: usize) -> Self {
+        self.batch_size = batch_size;
+        self
+    }
+
     /// Set the CSV file's date format
     pub fn with_date_format(mut self, format: Option<String>) -> Self {
-        self.options.date32_format = format;
+        self.options.date_format = format;
         self
     }
 
     /// Set the CSV file's time format
     pub fn with_time_format(mut self, format: Option<String>) -> Self {
-        self.options.time32_format = format.clone();
-        self.options.time64_format = format;
+        self.options.time_format = format;
         self
     }
 
     /// Set the CSV file's timestamp format array in
-    pub fn with_timestamp_format(mut self, format: Option<String>) -> Self {
-        self.options.timestamp_format = format;
+    pub fn with_datetime(mut self, format: Option<String>) -> Self {
+        self.options.datetime_format = format;
         self
     }
 

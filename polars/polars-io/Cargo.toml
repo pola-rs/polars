@@ -1,6 +1,6 @@
 [package]
 name = "polars-io"
-version = "0.22.5"
+version = "0.22.6"
 authors = ["ritchie46 <ritchie46@gmail.com>"]
 edition = "2021"
 license = "MIT"
@@ -23,7 +23,7 @@ dtype-datetime = ["polars-core/dtype-datetime", "polars-core/temporal", "polars-
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
 dtype-categorical = ["polars-core/dtype-categorical"]
-csv-file = ["csv-core", "memmap", "lexical", "arrow/io_csv_write"]
+csv-file = ["csv-core", "memmap", "lexical", "polars-core/rows", "lexical-core"]
 fmt = ["polars-core/fmt"]
 decompress = ["flate2/miniz_oxide"]
 decompress-fast = ["flate2/zlib-ng-compat"]
@@ -43,14 +43,15 @@ csv-core = { version = "0.1.10", optional = true }
 dirs = "4.0"
 flate2 = { version = "1", optional = true, default-features = false }
 lexical = { version = "6", optional = true, default-features = false, features = ["std", "parse-floats", "parse-integers"] }
+lexical-core = { version = "0.8", optional = true }
 memchr = "2.4"
 memmap = { package = "memmap2", version = "0.5.2", optional = true }
 num = "^0.4"
 once_cell = "1"
-polars-arrow = { version = "0.22.5", path = "../polars-arrow" }
-polars-core = { version = "0.22.5", path = "../polars-core", features = ["private"], default-features = false }
-polars-time = { version = "0.22.5", path = "../polars-time", features = ["private"], default-features = false, optional = true }
-polars-utils = { version = "0.22.5", path = "../polars-utils" }
+polars-arrow = { version = "0.22.6", path = "../polars-arrow" }
+polars-core = { version = "0.22.6", path = "../polars-core", features = ["private"], default-features = false }
+polars-time = { version = "0.22.6", path = "../polars-time", features = ["private"], default-features = false, optional = true }
+polars-utils = { version = "0.22.6", path = "../polars-utils" }
 rayon = "1.5"
 regex = "1.5"
 serde = { version = "1", features = ["derive"], optional = true }

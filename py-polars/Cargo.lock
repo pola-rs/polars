@@ -82,7 +82,6 @@ dependencies = [
  "bytemuck",
  "chrono",
  "crc",
- "csv-core",
  "either",
  "fallible-streaming-iterator",
  "futures",
@@ -1148,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "polars"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "polars-core",
  "polars-io",
@@ -1159,7 +1158,7 @@ dependencies = [
 
 [[package]]
 name = "polars-arrow"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "arrow2",
  "hashbrown 0.12.1",
@@ -1170,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "polars-core"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1198,7 +1197,7 @@ dependencies = [
 
 [[package]]
 name = "polars-io"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1207,6 +1206,7 @@ dependencies = [
  "dirs",
  "flate2",
  "lexical",
+ "lexical-core",
  "memchr",
  "memmap2",
  "num",
@@ -1224,7 +1224,7 @@ dependencies = [
 
 [[package]]
 name = "polars-lazy"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "ahash",
  "glob",
@@ -1243,7 +1243,7 @@ dependencies = [
 
 [[package]]
 name = "polars-ops"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "polars-arrow",
  "polars-core",
@@ -1251,7 +1251,7 @@ dependencies = [
 
 [[package]]
 name = "polars-time"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "chrono",
  "lexical",
@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "polars-utils"
-version = "0.22.5"
+version = "0.22.6"
 dependencies = [
  "parking_lot",
  "rayon",

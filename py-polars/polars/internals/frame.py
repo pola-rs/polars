@@ -1083,6 +1083,7 @@ class DataFrame(metaclass=DataFrameMetaClass):
         has_header: bool = True,
         sep: str = ",",
         quote: str = '"',
+        batch_size: int = 1024,
     ) -> Optional[str]:
         """
         Write Dataframe to comma-separated values file (csv).
@@ -1097,6 +1098,8 @@ class DataFrame(metaclass=DataFrameMetaClass):
             Separate CSV fields with this symbol.
         quote
             byte to use as quoting character
+        batch_size
+            rows that will be processed per thread
 
         Examples
         --------
@@ -1117,13 +1120,13 @@ class DataFrame(metaclass=DataFrameMetaClass):
             raise ValueError("only single byte quote char is allowed")
         if file is None:
             buffer = BytesIO()
-            self._df.to_csv(buffer, has_header, ord(sep), ord(quote))
+            self._df.to_csv(buffer, has_header, ord(sep), ord(quote), batch_size)
             return str(buffer.getvalue(), encoding="utf-8")
 
         if isinstance(file, (str, Path)):
             file = format_path(file)
 
-        self._df.to_csv(file, has_header, ord(sep), ord(quote))
+        self._df.to_csv(file, has_header, ord(sep), ord(quote), batch_size)
         return None
 
     def to_csv(

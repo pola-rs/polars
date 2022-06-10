@@ -9,6 +9,7 @@ use crate::RowCount;
 use polars_arrow::array::*;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::{prelude::*, POOL};
+#[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
 use polars_utils::flatten;
 use rayon::prelude::*;

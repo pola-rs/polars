@@ -9,7 +9,9 @@ use crate::prelude::NullValues;
 use once_cell::sync::Lazy;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
+#[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::utf8::infer as date_infer;
+#[cfg(feature = "polars-time")]
 use polars_time::prelude::utf8::Pattern;
 use regex::{Regex, RegexBuilder};
 use std::borrow::Cow;
@@ -94,12 +96,19 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
     // Utf8 for them
     if string.starts_with('"') {
         if parse_dates {
-            match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
-                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                    DataType::Datetime(TimeUnit::Microseconds, None)
+            #[cfg(feature = "polars-time")]
+            {
+                match date_infer::infer_pattern_single(&string[1..string.len() - 1]) {
+                    Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
+                        DataType::Datetime(TimeUnit::Microseconds, None)
+                    }
+                    Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                    None => DataType::Utf8,
                 }
-                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
-                None => DataType::Utf8,
+            }
+            #[cfg(not(feature = "polars-time"))]
+            {
+                panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
             }
         } else {
             DataType::Utf8
@@ -113,12 +122,19 @@ fn infer_field_schema(string: &str, parse_dates: bool) -> DataType {
     } else if INTEGER_RE.is_match(string) {
         DataType::Int64
     } else if parse_dates {
-        match date_infer::infer_pattern_single(string) {
-            Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
-                DataType::Datetime(TimeUnit::Microseconds, None)
+        #[cfg(feature = "polars-time")]
+        {
+            match date_infer::infer_pattern_single(string) {
+                Some(Pattern::DatetimeYMD | Pattern::DatetimeDMY) => {
+                    DataType::Datetime(TimeUnit::Microseconds, None)
+                }
+                Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
+                None => DataType::Utf8,
             }
-            Some(Pattern::DateYMD | Pattern::DateDMY) => DataType::Date,
-            None => DataType::Utf8,
+        }
+        #[cfg(not(feature = "polars-time"))]
+        {
+            panic!("activate one of {{'dtype-date', 'dtype-datetime', dtype-time'}} features")
         }
     } else {
         DataType::Utf8

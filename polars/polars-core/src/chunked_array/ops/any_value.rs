@@ -8,6 +8,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
     idx: usize,
     dtype: &'a DataType,
 ) -> AnyValue<'a> {
+    debug_assert!(idx < arr.len());
     if arr.is_null(idx) {
         return AnyValue::Null;
     }
