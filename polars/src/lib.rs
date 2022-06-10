@@ -296,7 +296,7 @@
 //! * `POLARS_TABLE_WIDTH` -> width of the tables used during DataFrame formatting.
 //! * `POLARS_MAX_THREADS` -> maximum number of threads used to initialize thread pool (on startup).
 //! * `POLARS_VERBOSE` -> print logging info to stderr
-//! * `POLARS_NO_PARTITION` -> Polars may choose to partition the groupby operaiton, based on data
+//! * `POLARS_NO_PARTITION` -> Polars may choose to partition the groupby operation, based on data
 //!                            cardinality. Setting this env var will turn partitioned groupby's off
 //! * `POLARS_PARTITION_SAMPLE_FRAC` -> how large chunk of the dataset to sample to determine cardinality,
 //!                                     defaults to `0.001`

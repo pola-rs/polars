@@ -281,7 +281,7 @@
 //!                 })
 //!                 .collect()
 //!         }
-//!         _ => panic!("unpexptected dtypes"),
+//!         _ => panic!("unexpected dtypes"),
 //!     }
 //! }
 //! ```
@@ -403,7 +403,7 @@
 //! ## Groupby
 //!
 //! Note that Polars lazy is a lot more powerful in and more performant in groupby operations.
-//! In lazy a meriad of aggregations can be combined from expressions.
+//! In lazy a myriad of aggregations can be combined from expressions.
 //!
 //! See more in:
 //!
