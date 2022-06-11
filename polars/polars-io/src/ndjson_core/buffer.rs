@@ -213,6 +213,8 @@ where
         },
     }
 }
+
+#[cfg(feature = "dtype-struct")]
 fn value_to_dtype(val: &Value) -> DataType {
     match val {
         Value::Null => DataType::Null,
@@ -233,15 +235,11 @@ fn value_to_dtype(val: &Value) -> DataType {
         }
         #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
-            if cfg!(feature = "dtype-struct") {
-                let fields = doc.iter().map(|(key, value)| {
-                    let dtype = value_to_dtype(value);
-                    Field::new(key, dtype)
-                });
-                DataType::Struct(fields.collect())
-            } else {
-                DataType::Utf8
-            }
+            let fields = doc.iter().map(|(key, value)| {
+                let dtype = value_to_dtype(value);
+                Field::new(key, dtype)
+            });
+            DataType::Struct(fields.collect())
         }
         _ => DataType::Utf8,
     }
