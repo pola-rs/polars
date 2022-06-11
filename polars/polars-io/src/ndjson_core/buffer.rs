@@ -232,6 +232,7 @@ fn value_to_dtype(val: &Value) -> DataType {
 
             DataType::List(Box::new(dtype))
         }
+        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
             let fields = doc.iter().map(|(key, value)| {
                 let dtype = value_to_dtype(value);
@@ -239,6 +240,8 @@ fn value_to_dtype(val: &Value) -> DataType {
             });
             DataType::Struct(fields.collect())
         }
+        #[cfg(not(feature = "dtype-struct"))]
+        Value::Object(doc) => DataType::Utf8
     }
 }
 
@@ -262,7 +265,7 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
             AnyValue::List(s)
         }
         Value::Null => AnyValue::Null,
-
+        #[cfg(feature = "dtype-struct")]
         Value::Object(doc) => {
             let vals: (Vec<AnyValue>, Vec<Field>) = doc
                 .into_iter()
@@ -275,6 +278,8 @@ fn deserialize_all<'a, 'b>(json: &'b Value) -> AnyValue<'a> {
                 .unzip();
 
             AnyValue::StructOwned(Box::new(vals))
-        }
+        },
+        #[cfg(not(feature = "dtype-struct"))]
+        Value::Object(doc) => AnyValue::Utf8Owned(format!("{:#?}", doc)),
     }
 }
